@@ -160,10 +160,6 @@ func TestManagerEditsAIProfile(t *testing.T) {
 	getProfile(carol, id).RequireError(http.StatusNotFound, dto.ErrorCodeNotFound)
 	patchProfile(carol, id, dto.UpdateProfileRequest{DisplayName: ptr("Hijacked")}).RequireError(http.StatusNotFound, dto.ErrorCodeNotFound)
 	require.Equal(t, "Atlas", profileOf(t, alice, id).DisplayName, "refused edits change nothing")
-
-	// A use grant on the AI, still writable until the sharing routes go, gives carol nothing (AD-016).
-	shareAgent(alice, id, carol.User.ID)
-	getProfile(carol, id).RequireError(http.StatusNotFound, dto.ErrorCodeNotFound)
 }
 
 // A profile shows where the AI lives and whether it is online: current app (the harness) and folder. The machine
@@ -312,43 +308,24 @@ func TestUserProfileRoutesAuthMatrixOnOrganizations(t *testing.T) {
 	}
 }
 
-// Authorization matrix for the profile of the owner's own account: every user reads it, only
-// the owner edits it; an admin has no extra right (ACL-08).
-func TestUserProfileRoutesAuthMatrix(t *testing.T) {
-	m := newMatrix(t)
-	setup := func(_ *testing.T, m *matrix) matrixResource {
-		return matrixResource{"user": m.clients[roleOwner].User.ID}
-	}
-	routes := []matrixRoute{
-		{"get user profile", func(_ *testing.T, _ *matrix, c *testkit.Client, res matrixResource) *testkit.Response {
-			return getProfile(c, res["user"])
-		}, statuses(200, 200, 200, 200, 200)},
-		{"edit user profile", func(_ *testing.T, _ *matrix, c *testkit.Client, res matrixResource) *testkit.Response {
-			return patchProfile(c, res["user"], dto.UpdateProfileRequest{Bio: ptr("Hello")})
-		}, statuses(200, 403, 403, 403, 403)},
-	}
-	m.run(t, setup, routes)
-}
-
-// Authorization matrix for a person: the members of the connection's organization read it and are
-// told, when they try to edit it, that it is history (422, CID-21); the others find nothing.
+// Authorization matrix for a person (design, "People" and "Connections" rows): the members of the connection's
+// organization, whatever their permission, read it and are told, when they try to edit it, that it is history (422,
+// CID-21); an outsider and an admin of the instance find nothing. (The profile of a user is the one above: every user
+// reads it, and only whoever manages it edits it.)
 func TestPersonProfileRoutesAuthMatrix(t *testing.T) {
-	m := newMatrix(t)
-	setup := func(t *testing.T, m *matrix) matrixResource {
-		owner := m.as(t, roleOwner)
-		connectorID, _ := storeChat(t, m.env, owner.User.ID, "family")
-		shareConnector(owner, connectorID, m.as(t, roleViewer).User.ID) // the viewer joins the connection's organization
-		return matrixResource{"person": seedPerson(t, m.env, connectorID, "5511999990000", "Pat")}
-	}
-	routes := []matrixRoute{
-		{"get person profile", func(_ *testing.T, _ *matrix, c *testkit.Client, res matrixResource) *testkit.Response {
+	env := testkit.New(t)
+	roles := env.OrgRoles("acme")
+	connectorID, _ := storeChatIn(t, env, roles.Admin.User.ID, roles.Org.ID, "family")
+	person := seedPerson(t, env, connectorID, "5511999990000", "Pat")
+	setup := func(*testing.T) map[string]string { return map[string]string{"person": person} }
+	runRoleRoutes(t, roles, setup, []roleRoute{
+		{"get person profile", func(_ *testing.T, c *testkit.Client, res map[string]string) *testkit.Response {
 			return getProfile(c, res["person"])
-		}, statuses(200, 200, 404, 404, 404)},
-		{"edit person profile", func(_ *testing.T, _ *matrix, c *testkit.Client, res matrixResource) *testkit.Response {
+		}, connectionWant(200, 200, 404)},
+		{"edit person profile", func(_ *testing.T, c *testkit.Client, res map[string]string) *testkit.Response {
 			return patchProfile(c, res["person"], dto.UpdateProfileRequest{DisplayName: ptr("Patricia")})
-		}, statuses(422, 422, 404, 404, 404)},
-	}
-	m.run(t, setup, routes)
+		}, connectionWant(422, 422, 404)},
+	})
 }
 
 // Agent tokens reach only the /agent routes (TOK-03): the profile routes refuse them.

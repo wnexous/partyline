@@ -105,7 +105,7 @@ func TestOwnerAgentsForAgentTokens(t *testing.T) {
 	info := conn.Welcome(wsWait).Agent
 	env.NewAI(alice, "builder")
 	shared := env.NewAI(bob, "helper")
-	shareAgent(bob, shared, alice.User.ID)
+	shareAI(bob, shared, alice) // alice joins bob's organization: she sees the AI without hosting it
 
 	list := testkit.Decode[dto.List[dto.Agent]](tok.Get("/api/v1/agent/agents").RequireStatus(http.StatusOK)).Items
 	names := map[string]bool{}

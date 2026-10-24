@@ -1245,10 +1245,10 @@ Rewrite `authmatrix_test.go` on `OrgRoles`.
 **Reuses**: `retired_routes_test.go` pattern
 **Requirement**: ORG-02
 **Done when**:
-- [ ] e2e: the three sharing routes → 404 (retired routes test)
-- [ ] `rg -n "grants|Sharing|SetVisibility" internal` finds only migrations and the backfill
-- [ ] `make generate` run
-- [ ] Gate check passes: `make check`
+- [x] e2e: the three sharing routes → 404 (retired routes test)
+- [x] `rg -n "grants|Sharing|SetVisibility" internal` finds only migrations and the backfill
+- [x] `make generate` run
+- [x] Gate check passes: `make check`
 **Tests**: e2e
 **Gate**: build
 **Commit**: `refactor(access): remove per-resource grants`

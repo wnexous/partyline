@@ -187,7 +187,7 @@ export interface AgentWelcomeFrame {
   intelligence: IntelligenceRef;
   /**
    * Owner is the user who hosts the AI, whose computer and token run it. It is deprecated since
-   * organizations: it grants and means nothing, and the identities an AI answers to are its
+   * organizations: it gives nothing, and the identities an AI answers to are its
    * Managers. It stays so that v0.5 CLIs, which print it, keep working.
    */
   owner: IntelligenceRef;
@@ -596,11 +596,6 @@ export const ErrorCodeOrganizationMismatch = "organization_mismatch";
  */
 export const ErrorCodeIdentityBusy = "identity_busy"; // 409
 /**
- * ErrorCodeDMNoSharing is an attempt to share a direct message: a DM is visible to its two
- * intelligences only (422, DM-08).
- */
-export const ErrorCodeDMNoSharing = "dm_no_sharing";
-/**
  * ErrorCodeDMMembersFixed is an attempt to add, change or remove a member of a direct
  * message: it has exactly its two intelligences (422, DM-02).
  */
@@ -663,7 +658,7 @@ export const ErrorCodeIdentityOnline = "identity_online";
 /**
  * Error codes and the HTTP status they come with.
  */
-export type ErrorCode = typeof ErrorCodeInvalid | typeof ErrorCodeUnauthorized | typeof ErrorCodeForbidden | typeof ErrorCodeNotFound | typeof ErrorCodeConflict | typeof ErrorCodeGone | typeof ErrorCodeTooLarge | typeof ErrorCodeRateLimited | typeof ErrorCodeInternal | typeof ErrorCodeUnavailable | typeof ErrorCodeHandleTaken | typeof ErrorCodeAvatarInvalid | typeof ErrorCodeLastInstanceAdmin | typeof ErrorCodeLastAdmin | typeof ErrorCodeHomeOrganization | typeof ErrorCodeAlreadyMember | typeof ErrorCodeNotOperator | typeof ErrorCodeUnknownChat | typeof ErrorCodeUnsupported | typeof ErrorCodeFolderRequired | typeof ErrorCodeFolderInvalid | typeof ErrorCodePositionUnknown | typeof ErrorCodeOrganizationMismatch | typeof ErrorCodeIdentityBusy | typeof ErrorCodeDMNoSharing | typeof ErrorCodeDMMembersFixed | typeof ErrorCodeDMSelf | typeof ErrorCodeContactNotFound | typeof ErrorCodeNoRouteToPerson | typeof ErrorCodeHistoryOnly | typeof ErrorCodeCounterpartDisabled | typeof ErrorCodeChatsNotMembers | typeof ErrorCodeMembersRefused | typeof ErrorCodeOrganizationRequired | typeof ErrorCodeOrganizationNotEmpty | typeof ErrorCodePositionCycle | typeof ErrorCodeIdentityOnline;
+export type ErrorCode = typeof ErrorCodeInvalid | typeof ErrorCodeUnauthorized | typeof ErrorCodeForbidden | typeof ErrorCodeNotFound | typeof ErrorCodeConflict | typeof ErrorCodeGone | typeof ErrorCodeTooLarge | typeof ErrorCodeRateLimited | typeof ErrorCodeInternal | typeof ErrorCodeUnavailable | typeof ErrorCodeHandleTaken | typeof ErrorCodeAvatarInvalid | typeof ErrorCodeLastInstanceAdmin | typeof ErrorCodeLastAdmin | typeof ErrorCodeHomeOrganization | typeof ErrorCodeAlreadyMember | typeof ErrorCodeNotOperator | typeof ErrorCodeUnknownChat | typeof ErrorCodeUnsupported | typeof ErrorCodeFolderRequired | typeof ErrorCodeFolderInvalid | typeof ErrorCodePositionUnknown | typeof ErrorCodeOrganizationMismatch | typeof ErrorCodeIdentityBusy | typeof ErrorCodeDMMembersFixed | typeof ErrorCodeDMSelf | typeof ErrorCodeContactNotFound | typeof ErrorCodeNoRouteToPerson | typeof ErrorCodeHistoryOnly | typeof ErrorCodeCounterpartDisabled | typeof ErrorCodeChatsNotMembers | typeof ErrorCodeMembersRefused | typeof ErrorCodeOrganizationRequired | typeof ErrorCodeOrganizationNotEmpty | typeof ErrorCodePositionCycle | typeof ErrorCodeIdentityOnline;
 /**
  * ErrorBody is the envelope of every error response.
  */
@@ -718,7 +713,7 @@ export interface Page<T extends any> {
   has_more: boolean;
 }
 /**
- * Level is an access level on a room (view < post < manage) or on an agent or connector (use).
+ * Level is an access level on a room (view < post < manage) or on an AI or a connection (use < manage).
  */
 export const LevelView = "view";
 export const LevelPost = "post";
@@ -728,36 +723,6 @@ export const LevelUse = "use";
  * Access levels.
  */
 export type Level = typeof LevelView | typeof LevelPost | typeof LevelManage | typeof LevelUse;
-/**
- * Visibility is a sharing preset; the server stores it as a set of grants (AD-005).
- */
-export const VisibilityPrivate = "private"; // owner only
-export const VisibilityShared = "shared"; // owner plus the listed users
-export const VisibilityPublic = "public"; // every user of the instance
-/**
- * Visibility presets (ACL-07).
- */
-export type Visibility = typeof VisibilityPrivate | typeof VisibilityShared | typeof VisibilityPublic;
-/**
- * Sharing is the body of GET and PUT /{rooms|agents|connectors}/{id}/sharing.
- */
-export interface Sharing {
-  mode: Visibility;
-  users: SharingUser[];
-  /**
-   * PublicLevel is the level everyone gets when Mode is public: view or post for rooms, use otherwise.
-   */
-  public_level?: Level;
-}
-/**
- * SharingUser is one user grant. Username and DisplayName are filled in responses only.
- */
-export interface SharingUser {
-  user_id: string;
-  level: Level;
-  username?: string;
-  display_name?: string;
-}
 
 //////////
 // source: connectors.go
@@ -835,7 +800,7 @@ export interface Connector {
    */
   org_id: string;
   /**
-   * Owner is the user who created the connection. It grants nothing (AD-019).
+   * Owner is the user who created the connection. It gives nothing (AD-019).
    */
   owner: User;
   /**
@@ -1608,7 +1573,7 @@ export interface PersonDetail {
  */
 export interface AIDetail {
   /**
-   * Owner is the user who hosts the AI: whose computer and token run it. It grants nothing (AD-019).
+   * Owner is the user who hosts the AI: whose computer and token run it. It gives nothing (AD-019).
    */
   owner: IntelligenceRef;
   /**
@@ -2118,7 +2083,6 @@ export interface Room {
    */
   org_ids: string[];
   owner: User;
-  visibility: Visibility;
   /**
    * MyLevel is the caller's resolved level on this room (ACL-02).
    */

@@ -129,8 +129,7 @@ func TestAvatarIsStoredAsASquarePNGAndServed(t *testing.T) {
 }
 
 // PROF-07: an AI's avatar is served to the people who can see the AI - the members of its organization, guests
-// included, and the user who hosts it - and is 404 for everybody else (not 403). A use grant on the AI gives
-// nothing (AD-016).
+// included, and the user who hosts it - and is 404 for everybody else (not 403).
 func TestAIAvatarIsServedToWhoCanSeeTheAI(t *testing.T) {
 	env := testkit.New(t)
 	alice, bob, carol, dave, erin := env.NewUser("alice"), env.NewUser("bob"), env.NewUser("carol"), env.NewUser("dave"), env.NewUser("erin")
@@ -145,8 +144,6 @@ func TestAIAvatarIsServedToWhoCanSeeTheAI(t *testing.T) {
 	getAvatar(erin, id).RequireStatus(http.StatusOK)
 	getAvatar(carol, id).RequireError(http.StatusNotFound, dto.ErrorCodeNotFound)
 	getAvatar(dave, id).RequireError(http.StatusNotFound, dto.ErrorCodeNotFound)
-	shareAgent(alice, id, carol.User.ID)
-	getAvatar(carol, id).RequireError(http.StatusNotFound, dto.ErrorCodeNotFound)
 
 	// Seeing the AI is no access to the AI itself.
 	seen := profileOf(t, bob, id)

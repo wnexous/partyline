@@ -277,7 +277,7 @@ func TestAIGroupRefusesAndCreatesNothing(t *testing.T) {
 	hiddenPerson := agentGroup(f.bobAI, "Ops", "@"+personHandle).RequireError(http.StatusUnprocessableEntity, dto.ErrorCodeMembersRefused)
 	require.Equal(t, []dto.RefusedMember{{ID: "@" + personHandle, Reason: dto.RefusedReasonNotFound}}, hiddenPerson.Refused)
 
-	// Once sage joins the organization of atlas the same request works for it; a use grant is not enough.
+	// Once sage joins the organization of atlas the same request works for it; alice seeing sage is not enough.
 	shareAI(f.bob, f.sage, f.alice)
 	agentGroup(f.aliceAI, "Ops", "@alice", "@sage", f.orion).RequireError(http.StatusUnprocessableEntity, dto.ErrorCodeMembersRefused)
 	f.env.AddMember(f.alice.PersonalOrg().ID, f.sage, orgs.PermissionMember, "")

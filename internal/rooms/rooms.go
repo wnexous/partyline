@@ -96,8 +96,6 @@ type Room struct {
 	OwnerUsername string
 	// Level is the caller's level (ACL-02).
 	Level access.Level
-	// Visibility is the sharing preset the room's grants form.
-	Visibility dto.Visibility
 	// MemberCount counts the room's members.
 	MemberCount int64
 	// InstructionsByName is the username of InstructionsBy; empty when unknown (INS-04).
@@ -356,10 +354,6 @@ func ownerIntelligence(id, kind, name, handle, avatar string) db.Intelligence {
 }
 
 func (s *Service) view(ctx context.Context, tag *orgTagger, r db.Room, ownerUsername string, owner db.Intelligence, members int64, l access.Level) (Room, error) {
-	v, err := s.az.Sharing(ctx, access.KindRoom, r.ID)
-	if err != nil {
-		return Room{}, err
-	}
 	by := ""
 	if r.InstructionsBy != "" {
 		u, err := s.store.R().GetUser(ctx, r.InstructionsBy)
@@ -383,7 +377,7 @@ func (s *Service) view(ctx context.Context, tag *orgTagger, r db.Room, ownerUser
 		return Room{}, err
 	}
 	return Room{
-		Room: r, OwnerUsername: ownerUsername, Level: l, Visibility: v.Mode,
+		Room: r, OwnerUsername: ownerUsername, Level: l,
 		MemberCount: members, InstructionsByName: by, OwnerIntelligence: owner,
 		Participants: participants, OrgIDs: orgIDs,
 	}, nil
@@ -447,7 +441,7 @@ func (s *Service) List(ctx context.Context, p authn.Principal) ([]Room, error) {
 	if p.Kind != authn.KindUser {
 		return nil, access.ErrForbidden
 	}
-	granted, err := s.az.GrantedRoomLevels(ctx, p.UserID)
+	levels, err := s.az.RoomLevels(ctx, p.UserID)
 	if err != nil {
 		return nil, err
 	}
@@ -458,7 +452,7 @@ func (s *Service) List(ctx context.Context, p authn.Principal) ([]Room, error) {
 	out := make([]Room, 0, len(rows))
 	tag := s.tagger(p)
 	for _, row := range rows {
-		l := granted[row.Room.ID]
+		l := levels[row.Room.ID]
 		if l == access.None {
 			continue
 		}
@@ -522,7 +516,7 @@ func (s *Service) Update(ctx context.Context, p authn.Principal, roomID string, 
 	return s.Get(ctx, p, roomID)
 }
 
-// Delete removes a room with its members, grants, messages, attachments and cursors, then its blob
+// Delete removes a room with its members, messages, attachments and cursors, then its blob
 // files no other attachment references (ROOM-02); requires manage.
 func (s *Service) Delete(ctx context.Context, p authn.Principal, roomID string) error {
 	if _, err := s.authorize(ctx, p, roomID, dto.LevelManage); err != nil {
@@ -531,9 +525,6 @@ func (s *Service) Delete(ctx context.Context, p authn.Principal, roomID string) 
 	var shas []string
 	err := s.store.WithTx(ctx, func(q *db.Queries) (err error) {
 		if shas, err = q.ListRoomAttachmentSHAs(ctx, roomID); err != nil {
-			return err
-		}
-		if err := q.DeleteGrants(ctx, db.DeleteGrantsParams{ResourceKind: string(access.KindRoom), ResourceID: roomID}); err != nil {
 			return err
 		}
 		// Members, messages, attachments and cursors cascade from the room.
@@ -545,35 +536,4 @@ func (s *Service) Delete(ctx context.Context, p authn.Principal, roomID string) 
 	s.ReleaseBlobs(ctx, shas)
 	s.bus.Publish(events.RoomChanged{RoomID: roomID, Deleted: true})
 	return nil
-}
-
-// Sharing returns the room's visibility preset; requires view.
-func (s *Service) Sharing(ctx context.Context, p authn.Principal, roomID string) (access.Visibility, error) {
-	if _, err := s.authorize(ctx, p, roomID, dto.LevelView); err != nil {
-		return access.Visibility{}, err
-	}
-	return s.az.Sharing(ctx, access.KindRoom, roomID)
-}
-
-// SetSharing replaces the room's grants with a visibility preset (ACL-07); requires manage. A
-// DM cannot be shared: whoever can view it gets access.ErrDMNoSharing (DM-08).
-func (s *Service) SetSharing(ctx context.Context, p authn.Principal, roomID string, v access.Visibility) (access.Visibility, error) {
-	l, err := s.authorize(ctx, p, roomID, dto.LevelView)
-	if err != nil {
-		return access.Visibility{}, err
-	}
-	r, err := s.store.R().GetRoom(ctx, roomID)
-	if err != nil {
-		return access.Visibility{}, err
-	}
-	if r.Kind == string(dto.ConversationKindDM) {
-		return access.Visibility{}, access.ErrDMNoSharing // whoever views it is told so (DM-08)
-	}
-	if !access.AtLeast(l, dto.LevelManage) {
-		return access.Visibility{}, access.ErrForbidden
-	}
-	if err := s.az.SetVisibility(ctx, p.UserID, access.KindRoom, roomID, r.OwnerID, v); err != nil {
-		return access.Visibility{}, err
-	}
-	return s.az.Sharing(ctx, access.KindRoom, roomID)
 }

@@ -660,8 +660,8 @@ func (s *Service) delivery(c db.Connector, in UpdateInput) (dto.ConnectorDeliver
 	return deliver, mentionsOnly, nil
 }
 
-// Delete stops and removes the connector with its chats (and their room memberships), its queue and
-// its grants; requires managing the connection (an admin of its organization).
+// Delete stops and removes the connector with its chats (and their room memberships) and its queue;
+// requires managing the connection (an admin of its organization).
 func (s *Service) Delete(ctx context.Context, p authn.Principal, id string) error {
 	if _, err := s.authorize(ctx, p, id, dto.LevelManage); err != nil {
 		return err
@@ -677,9 +677,6 @@ func (s *Service) Delete(ctx context.Context, p authn.Principal, id string) erro
 	err = s.d.Store.WithTx(ctx, func(q *db.Queries) error {
 		var err error
 		if roomIDs, err = q.DeleteConnectorChatMemberships(ctx, id); err != nil {
-			return err
-		}
-		if err := q.DeleteGrants(ctx, db.DeleteGrantsParams{ResourceKind: string(access.KindConnector), ResourceID: id}); err != nil {
 			return err
 		}
 		if err := q.DeleteConnector(ctx, id); err != nil { // chats, queue items and sends cascade
@@ -701,29 +698,4 @@ func (s *Service) Delete(ctx context.Context, p authn.Principal, id string) erro
 		}
 	}
 	return nil
-}
-
-// Sharing returns the connector's visibility preset; requires use. The presets are inert since AD-016: a
-// grant gives nothing, and they go in T51.
-func (s *Service) Sharing(ctx context.Context, p authn.Principal, id string) (access.Visibility, error) {
-	if _, err := s.authorize(ctx, p, id, dto.LevelUse); err != nil {
-		return access.Visibility{}, err
-	}
-	return s.d.Access.Sharing(ctx, access.KindConnector, id)
-}
-
-// SetSharing replaces the connector's use grants with a visibility preset (ACL-07); requires managing the
-// connection. The change is audited as grants.set.
-func (s *Service) SetSharing(ctx context.Context, p authn.Principal, id string, v access.Visibility) (access.Visibility, error) {
-	if _, err := s.authorize(ctx, p, id, dto.LevelManage); err != nil {
-		return access.Visibility{}, err
-	}
-	c, err := s.d.Store.R().GetConnector(ctx, id)
-	if err != nil {
-		return access.Visibility{}, err
-	}
-	if err := s.d.Access.SetVisibility(ctx, p.UserID, access.KindConnector, id, c.OwnerID, v); err != nil {
-		return access.Visibility{}, err
-	}
-	return s.d.Access.Sharing(ctx, access.KindConnector, id)
 }

@@ -9,7 +9,6 @@ import (
 
 	"github.com/stretchr/testify/require"
 
-	"github.com/wnexous/partyline/internal/access"
 	"github.com/wnexous/partyline/internal/api/dto"
 	"github.com/wnexous/partyline/internal/connectors"
 	"github.com/wnexous/partyline/internal/orgs"
@@ -72,17 +71,10 @@ func createBotIn(c *testkit.Client, org, name string) dto.Connector {
 }
 
 // shareConnector gives the users sight of the connection, as an admin of its organization would by inviting
-// them to it (AD-016): the connection is shared with an organization, not with users. The profile and people
-// code still reads the grant the sharing routes write until T27 moves it to organizations, so the helper
-// writes it too (c must manage the connection).
+// them to it (AD-016): the connection is shared with an organization, not with users.
 func shareConnector(c *testkit.Client, id string, userIDs ...string) {
 	c.T.Helper()
 	c.ShareConnection(id, userIDs...)
-	users := make([]dto.SharingUser, len(userIDs))
-	for i, uid := range userIDs {
-		users[i] = dto.SharingUser{UserID: uid, Level: dto.LevelUse}
-	}
-	c.Put("/api/v1/connectors/"+id+"/sharing", dto.Sharing{Mode: dto.VisibilityShared, Users: users}).RequireStatus(http.StatusOK)
 }
 
 // requireNoSecret fails when a response body carries a synthetic secret (CON-03).
@@ -272,12 +264,6 @@ func TestConnectorRoutesAuthMatrix(t *testing.T) {
 		{"delete connector", func(_ *testing.T, c *testkit.Client, res map[string]string) *testkit.Response {
 			return c.Delete(conn(res, ""))
 		}, connectionWant(204, 403, 404)},
-		{"get sharing", func(_ *testing.T, c *testkit.Client, res map[string]string) *testkit.Response {
-			return c.Get(conn(res, "/sharing"))
-		}, connectionWant(200, 200, 404)},
-		{"put sharing", func(_ *testing.T, c *testkit.Client, res map[string]string) *testkit.Response {
-			return c.Put(conn(res, "/sharing"), dto.Sharing{Mode: dto.VisibilityPrivate})
-		}, connectionWant(200, 403, 404)},
 	})
 
 	// An AI token reaches no connection route (TOK-03), and anonymous callers are 401.
@@ -388,9 +374,6 @@ func TestDeleteConnectorRemovesItsChatsFromRooms(t *testing.T) {
 	require.Empty(t, members.Items)
 	_, err := env.App.Store.R().GetChat(context.Background(), chat)
 	require.Error(t, err, "the chat is gone")
-	levels, err := env.App.Access.Sharing(context.Background(), access.KindConnector, c.ID)
-	require.NoError(t, err)
-	require.Empty(t, levels.Users)
 }
 
 // AUD-01 (connector part): create, update, enable, disable and delete are audited without secrets.

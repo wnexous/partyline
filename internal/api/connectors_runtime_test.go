@@ -26,6 +26,22 @@ func createFakeIdle(c *testkit.Client, name string, enabled bool) dto.Connector 
 	}).RequireStatus(http.StatusCreated))
 }
 
+// createFakeIdleIn is createFakeIdle for a connection of the organization (an id or a slug): c must be an admin
+// of it.
+func createFakeIdleIn(c *testkit.Client, org, name string, enabled bool) dto.Connector {
+	c.T.Helper()
+	return testkit.Decode[dto.Connector](c.Post("/api/v1/connectors", dto.CreateConnectorRequest{
+		OrgID: org, Kind: connectortest.KindName, Name: name, Config: map[string]any{"token": "fake-token-not-real"}, Enabled: &enabled,
+	}).RequireStatus(http.StatusCreated))
+}
+
+// createFakeIn creates a fake connection of the organization, operated by the AI whose id is operator (an AI of
+// the organization), so that it runs when it is enabled; c must be an admin of the organization.
+func createFakeIn(c *testkit.Client, org, name string, enabled bool, operator string) dto.Connector {
+	c.T.Helper()
+	return c.OperateConnector(createFakeIdleIn(c, org, name, enabled).ID, operator)
+}
+
 // createFake creates a fake connection operated by the client's AI Atlas, so that it runs when
 // it is enabled.
 func createFake(c *testkit.Client, name string, enabled bool) dto.Connector {

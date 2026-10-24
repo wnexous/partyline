@@ -19,8 +19,6 @@ func (s *server) connectorRoutes(mux *http.ServeMux) {
 	s.handle(mux, "GET /api/v1/connectors/{id}", authed(s.getConnector))
 	s.handle(mux, "PATCH /api/v1/connectors/{id}", authed(s.updateConnector))
 	s.handle(mux, "DELETE /api/v1/connectors/{id}", authed(s.deleteConnector))
-	s.handle(mux, "GET /api/v1/connectors/{id}/sharing", authed(s.getConnectorSharing))
-	s.handle(mux, "PUT /api/v1/connectors/{id}/sharing", authed(s.putConnectorSharing))
 }
 
 func toConnectorKind(k connectors.Kind) dto.ConnectorKind {
@@ -123,27 +121,5 @@ func (s *server) deleteConnector(w http.ResponseWriter, r *http.Request, p authn
 		return err
 	}
 	w.WriteHeader(http.StatusNoContent)
-	return nil
-}
-
-func (s *server) getConnectorSharing(w http.ResponseWriter, r *http.Request, p authn.Principal) error {
-	v, err := s.Connectors.Sharing(r.Context(), p, r.PathValue("id"))
-	if err != nil {
-		return err
-	}
-	httpx.WriteJSON(w, http.StatusOK, toSharing(v))
-	return nil
-}
-
-func (s *server) putConnectorSharing(w http.ResponseWriter, r *http.Request, p authn.Principal) error {
-	var req dto.Sharing
-	if err := httpx.DecodeJSON(w, r, &req); err != nil {
-		return err
-	}
-	v, err := s.Connectors.SetSharing(r.Context(), p, r.PathValue("id"), visibilityFrom(req))
-	if err != nil {
-		return err
-	}
-	httpx.WriteJSON(w, http.StatusOK, toSharing(v))
 	return nil
 }

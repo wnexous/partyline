@@ -165,12 +165,10 @@ func visibleAgents(t *testing.T, c *testkit.Client) []string {
 
 // MRG-01 (independent test): merging the unlinked identity into the AI of a folder moves its
 // group memberships (the survivor's settings win where both are members), its delivery cursors
-// (the larger wins), who may use it and the messages it wrote; it is gone and the merge is audited.
-func TestMergeMovesGroupsCursorsGrantsAndMessages(t *testing.T) {
+// (the larger wins) and the messages it wrote; it is gone and the merge is audited.
+func TestMergeMovesGroupsCursorsAndMessages(t *testing.T) {
 	w := newMergeWorld(t)
-	shareAgent(w.alice, w.old, w.bob.User.ID)
-	shareAgent(w.alice, w.atlas, w.carol.User.ID)
-	// Bob also belongs to alice's organization, which is how his socket hears of the AIs she runs.
+	// Bob belongs to alice's organization, which is how he sees the AIs she runs and how his socket hears of them.
 	w.env.AddMember(w.alice.PersonalOrg().ID, w.bob.User.ID, orgs.PermissionMember, "")
 
 	ops, dev, ahead, solo := createRoom(w.alice, "ops"), createRoom(w.alice, "dev"), createRoom(w.alice, "ahead"), createRoom(w.alice, "solo")
@@ -210,7 +208,7 @@ func TestMergeMovesGroupsCursorsGrantsAndMessages(t *testing.T) {
 	merge(w.alice, w.old, w.atlas).RequireStatus(http.StatusOK).Decode(&survivor)
 	require.Equal(t, w.atlas, survivor.ID, "the answer is the AI that remains")
 
-	// Bob's socket hears that his group has a new member, that who may use the survivor changed and
+	// Bob's socket hears that his group has a new member, that the survivor's access changed and
 	// that the survivor's profile did. The organizations the merged AI belonged to are announced to
 	// their members before (T24, T32); bob belongs to two of them.
 	for {
@@ -253,19 +251,8 @@ func TestMergeMovesGroupsCursorsGrantsAndMessages(t *testing.T) {
 	require.Equal(t, []int64{3, 4, 5, 1}, []int64{w.cursor(t, w.atlas, ops.ID), w.cursor(t, w.atlas, dev.ID), w.cursor(t, w.atlas, ahead.ID), w.cursor(t, w.atlas, solo.ID)})
 	require.Equal(t, int64(-1), w.cursor(t, w.old, ops.ID), "the old cursors went with it")
 
-	// Who may use old may use the survivor, next to those who already could; the old grants are gone.
-	sharing := testkit.Decode[dto.Sharing](w.alice.Get("/api/v1/agents/" + w.atlas + "/sharing").RequireStatus(http.StatusOK))
-	require.Equal(t, dto.VisibilityShared, sharing.Mode)
-	var users []string
-	for _, u := range sharing.Users {
-		require.Equal(t, dto.LevelUse, u.Level)
-		users = append(users, u.UserID)
-	}
-	require.ElementsMatch(t, []string{w.bob.User.ID, w.carol.User.ID}, users)
-	require.Contains(t, visibleAgents(t, w.bob), w.atlas, "bob can use the survivor")
-	left, err := w.env.App.Store.R().ListGrantsWithUsers(context.Background(), db.ListGrantsWithUsersParams{ResourceKind: "agent", ResourceID: w.old})
-	require.NoError(t, err)
-	require.Empty(t, left)
+	// Who sees the survivor is who belongs to its organizations: bob, a member of alice's, still does.
+	require.Contains(t, visibleAgents(t, w.bob), w.atlas, "bob sees the survivor")
 
 	// The messages it wrote are the survivor's.
 	for _, room := range []string{ops.ID, dev.ID} {
@@ -282,33 +269,6 @@ func TestMergeMovesGroupsCursorsGrantsAndMessages(t *testing.T) {
 	entry := findAudit(t, auditPage(w.admin, "").Items, "agent.merge")
 	require.Equal(t, []any{w.alice.User.ID, "agent", w.atlas}, []any{entry.Actor.ID, entry.TargetKind, entry.TargetID})
 	require.Equal(t, []any{w.old, w.atlas, "old", "atlas"}, []any{entry.Detail["from"], entry.Detail["into"], entry.Detail["from_handle"], entry.Detail["into_handle"]})
-}
-
-// MRG-01: where both AIs grant the same user access, the higher level wins.
-func TestMergeKeepsTheHigherGrantLevel(t *testing.T) {
-	w := newMergeWorld(t)
-	ctx := context.Background()
-	grant := func(ai string, user *testkit.Client, level dto.Level) {
-		t.Helper()
-		require.NoError(t, w.env.App.Store.WithTx(ctx, func(q *db.Queries) error {
-			return q.CreateGrant(ctx, db.CreateGrantParams{ResourceKind: "agent", ResourceID: ai, Subject: user.User.ID, Level: string(level), CreatedAt: time.Now().UnixMilli()})
-		}))
-	}
-	level := func(user *testkit.Client) []string {
-		t.Helper()
-		got, err := w.env.App.Store.R().ListGrantLevels(ctx, db.ListGrantLevelsParams{ResourceKind: "agent", ResourceID: w.atlas, UserID: user.User.ID})
-		require.NoError(t, err)
-		return got
-	}
-	grant(w.old, w.bob, dto.LevelUse)
-	grant(w.atlas, w.bob, dto.LevelView)
-	grant(w.old, w.carol, dto.LevelView)
-	grant(w.atlas, w.carol, dto.LevelUse)
-
-	merge(w.alice, w.old, w.atlas).RequireStatus(http.StatusOK)
-
-	require.Equal(t, []string{"use"}, level(w.bob), "old's higher level replaced the survivor's lower one")
-	require.Equal(t, []string{"use"}, level(w.carol), "the survivor's higher level stays")
 }
 
 // MRG-01: a DM of the merged AI with someone the survivor has no DM with becomes the survivor's DM, as
@@ -699,7 +659,9 @@ func TestMergeAuthorization(t *testing.T) {
 // the cause is gone.
 func TestMergeIsAllOrNothing(t *testing.T) {
 	w := newMergeWorld(t)
-	shareAgent(w.alice, w.old, w.bob.User.ID)
+	ctx := context.Background()
+	bobOrg := w.bob.PersonalOrg().ID
+	w.env.AddMember(bobOrg, w.old, orgs.PermissionMember, "") // old also works in bob's organization, where atlas is not
 	room := createRoom(w.alice, "ops")
 	oldMember := join(t, w.alice, room.ID, w.old)
 	w.say(t, w.old, room.ID, "from old")
@@ -724,15 +686,21 @@ func TestMergeIsAllOrNothing(t *testing.T) {
 	require.Equal(t, int64(1), w.cursor(t, w.old, room.ID))
 	require.Contains(t, members(t, w.alice, dm.ID)[dto.MemberKindAgent], w.old)
 	require.Equal(t, []string{"to old"}, texts(timeline(t, w.alice, dm.ID)))
-	copied, err := w.env.App.Store.R().ListGrantLevels(context.Background(), db.ListGrantLevelsParams{ResourceKind: "agent", ResourceID: w.atlas, UserID: w.bob.User.ID})
+	_, atlasInBobs, err := w.env.App.Authz.Member(ctx, bobOrg, w.atlas)
 	require.NoError(t, err)
-	require.Empty(t, copied, "no grant was copied")
+	require.False(t, atlasInBobs, "no organization membership was moved")
+	_, oldInBobs, err := w.env.App.Authz.Member(ctx, bobOrg, w.old)
+	require.NoError(t, err)
+	require.True(t, oldInBobs, "old kept its own")
 	require.NotContains(t, auditActions(t, w.admin), "agent.merge")
 
 	_, err = raw.ExecContext(context.Background(), "DROP TRIGGER forced_failure")
 	require.NoError(t, err)
 	merge(w.alice, w.old, w.atlas).RequireStatus(http.StatusOK)
 	require.NotContains(t, visibleAgents(t, w.alice), w.old)
+	_, atlasInBobs, err = w.env.App.Authz.Member(ctx, bobOrg, w.atlas)
+	require.NoError(t, err)
+	require.True(t, atlasInBobs, "the membership moved with the merge")
 }
 
 // MRG-02 for a session that attaches while the merge runs: after the check, the AI that was merged

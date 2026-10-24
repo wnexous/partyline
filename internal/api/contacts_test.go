@@ -56,8 +56,8 @@ func aiAtIn(t *testing.T, env *testkit.Env, owner *testkit.Client, orgID, name, 
 // contactsFixture extends the people fixture with AIs. alice owns, on the machine devbox (home
 // /home/alice): Atlas (~/atlas, Claude Code, online), Notes (~/atlas/notes, OpenCode) and Lab
 // (~/c/d/lab, Codex, seen once and offline); on notebook: Dev (~, Claude Code). Old is a v0.3
-// identity without a folder. bob's AI Bobby is shared with alice and his Secret is not; carol's
-// Public is shared with everyone.
+// identity without a folder. bob's AIs Bobby and Secret and carol's Public are in their owners' own
+// organizations, which alice does not belong to.
 type contactsFixture struct {
 	*peopleFixture
 	atlas, notes, lab, dev, old string
@@ -76,8 +76,6 @@ func newContactsFixture(t *testing.T) *contactsFixture {
 	f.bobby = aiAt(t, f.env, f.bob, "Bobby", "bobby", "bobs-pc", "/home/bob/bobby", "/home/bob", "claude")
 	f.secret = aiAt(t, f.env, f.bob, "Secret", "secret", "bobs-pc", "/home/bob/secret", "/home/bob", "claude")
 	f.public = aiAt(t, f.env, f.carol, "Public", "public", "carols-pc", "/srv/public", "/home/carol", "claude")
-	shareAgent(f.bob, f.bobby, f.alice.User.ID)
-	f.carol.Put("/api/v1/agents/"+f.public+"/sharing", dto.Sharing{Mode: dto.VisibilityPublic, PublicLevel: dto.LevelUse}).RequireStatus(http.StatusOK)
 
 	// Lab connects once and leaves; Atlas stays online.
 	lab, resp := f.alice.Token(dto.TokenKindAgent, "devbox").DialFolder(testkit.Folder{Machine: "devbox", Path: "/home/alice/c/d/lab", Home: "/home/alice", Harness: "codex"})
@@ -289,7 +287,6 @@ func TestContactsShowNoMachines(t *testing.T) {
 // other organizations is absent, and a connection is a people group for the members of its organization only.
 func TestContactsOfOtherUsersHoldOnlyTheirOrganizationsData(t *testing.T) {
 	f := newContactsFixture(t)
-	f.bob.Put("/api/v1/agents/"+f.secret+"/sharing", dto.Sharing{Mode: dto.VisibilityPublic, PublicLevel: dto.LevelUse}).RequireStatus(http.StatusOK) // a grant gives nothing
 	carolConn := createFakeIdle(f.carol, "carol-wa", true)
 
 	// bob belongs to "line" (alice's organization with the connection "wa") and to his own: his two AIs are
@@ -305,7 +302,7 @@ func TestContactsOfOtherUsersHoldOnlyTheirOrganizationsData(t *testing.T) {
 	carol := contactsOf(t, f.carol)
 	require.Equal(t, []string{"carol"}, orgNames(carol))
 	require.Equal(t, []string{f.public}, aiIDs(orgGroup(t, carol, "carol").AIs))
-	require.NotContains(t, aiIDs(orgGroup(t, carol, "carol").AIs), f.secret, "bob's public grant gives carol nothing")
+	require.NotContains(t, aiIDs(orgGroup(t, carol, "carol").AIs), f.secret, "bob's AI is in an organization carol does not belong to")
 	require.Equal(t, []dto.PeopleGroup{{Connector: dto.ConnectorRef{ID: carolConn.ID, Kind: connectortest.KindName, Name: "carol-wa"}, Count: 0}}, carol.People,
 		"her connection has seen nobody; alice's is not hers")
 	require.NotContains(t, names(carol.Users), "carol")
@@ -468,8 +465,8 @@ func TestContactsPeoplePagesAndSearches(t *testing.T) {
 	require.Equal(t, []string{"Sam"}, names(f.people(f.alice, "&q=sam&limit=1&after="+f.people(f.alice, "&q=sam&limit=1").Items[0].ID).Items), "paging inside a search")
 }
 
-// CONT-01 (people): the default page is 50 people and the largest 200; the connector's users
-// (owner and use grantee) may read the list, nobody else.
+// CONT-01 (people): the default page is 50 people and the largest 200; the members of the connection's
+// organization (its owner and a colleague) may read the list, nobody else.
 func TestContactsPeoplePageSizeAndAuthorization(t *testing.T) {
 	f := newPeopleFixture(t)
 	senders := make([]string, 60)
@@ -484,7 +481,7 @@ func TestContactsPeoplePageSizeAndAuthorization(t *testing.T) {
 	require.False(t, f.people(f.alice, "&limit=61").HasMore)
 	require.True(t, f.people(f.alice, "&limit=60").HasMore)
 	require.Len(t, f.people(f.alice, "&limit=200").Items, 61)
-	require.Len(t, f.people(f.bob, "&limit=5").Items, 5, "a use grantee reads the list")
+	require.Len(t, f.people(f.bob, "&limit=5").Items, 5, "a member of the organization reads the list")
 
 	for _, c := range []*testkit.Client{f.carol, f.dave, f.admin} {
 		f.peoplePage(c, "").RequireError(http.StatusNotFound, dto.ErrorCodeNotFound)

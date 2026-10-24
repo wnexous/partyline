@@ -10,76 +10,43 @@ import (
 	"github.com/wnexous/partyline/internal/testkit"
 )
 
-// The authorization matrix (spec success criterion: every endpoint is tested with owner,
-// grantee, stranger and admin-without-grant). Features add routes by building a []matrixRoute
-// and a setup that prepares a fresh resource per case.
+// The authorization matrix (design, "Authorization matrix per route group"; spec success criterion: every
+// route is tested with every role) is over the roles of testkit.OrgRoles, because an organization is the only
+// way to share anything (AD-016): the admin and the manager above the target, the target and its peer, a plain
+// member, an inviter and its guest, an outsider and the admin of the instance who is no member. A feature adds
+// its routes by building a []roleRoute and a setup that prepares a fresh resource per case, and states the
+// status each role gets with a want map (groupWant, dmWant, agentWant, connectionWant or everyRole).
 
-// matrixRole is an identity in the authorization matrix.
-type matrixRole string
-
-const (
-	roleOwner    matrixRole = "owner"    // owns the resource
-	roleViewer   matrixRole = "viewer"   // grantee with view (rooms) or use (agents, connectors)
-	rolePoster   matrixRole = "poster"   // grantee with post (rooms)
-	roleStranger matrixRole = "stranger" // member without any grant
-	roleAdmin    matrixRole = "admin"    // instance admin without any grant (ACL-08)
-)
-
-var matrixRoles = []matrixRole{roleOwner, roleViewer, rolePoster, roleStranger, roleAdmin}
-
-// matrix is one app with a logged-in client per role.
-type matrix struct {
-	env     *testkit.Env
-	clients map[matrixRole]*testkit.Client
-}
-
-func newMatrix(t *testing.T, opts ...testkit.Option) *matrix {
-	t.Helper()
-	env := testkit.New(t, opts...)
-	return &matrix{env: env, clients: map[matrixRole]*testkit.Client{
-		roleAdmin:    env.SetupAdmin(),
-		roleOwner:    env.NewUser("owner"),
-		roleViewer:   env.NewUser("viewer"),
-		rolePoster:   env.NewUser("poster"),
-		roleStranger: env.NewUser("stranger"),
-	}}
-}
-
-// as returns role's client with its assertions bound to t (use it inside subtests).
-func (m *matrix) as(t *testing.T, role matrixRole) *testkit.Client {
-	c := *m.clients[role]
-	c.T = t
-	return &c
-}
-
-// matrixResource names the ids a setup created (e.g. "room", "member", "attachment").
-type matrixResource map[string]string
-
-// matrixRoute is one endpoint of the matrix: call performs the request as c against res,
-// want maps every role to the expected status code.
-type matrixRoute struct {
+// roleRoute is one route of an organization-role matrix: call performs the request as c against res, and
+// want maps every role name of testkit.OrgRoles.All to the expected status.
+type roleRoute struct {
 	name string
-	call func(t *testing.T, m *matrix, c *testkit.Client, res matrixResource) *testkit.Response
-	want map[matrixRole]int
+	call func(t *testing.T, c *testkit.Client, res map[string]string) *testkit.Response
+	want map[string]int
 }
 
-// statuses builds a want map in matrixRoles order: owner, viewer, poster, stranger, admin.
-func statuses(owner, viewer, poster, stranger, admin int) map[matrixRole]int {
-	return map[matrixRole]int{roleOwner: owner, roleViewer: viewer, rolePoster: poster, roleStranger: stranger, roleAdmin: admin}
+// everyRole is the expected status of a route that answers the same to every role.
+func everyRole(status int) map[string]int {
+	return map[string]int{
+		"admin": status, "manager": status, "target": status, "peer": status, "member": status,
+		"inviter": status, "guest": status, "outsider": status, "instance_admin": status,
+	}
 }
 
-// run calls every route as every role, each against a fresh resource from setup, and checks
-// the status; 403 and 404 must carry the forbidden and not_found error codes.
-func (m *matrix) run(t *testing.T, setup func(t *testing.T, m *matrix) matrixResource, routes []matrixRoute) {
+// runRoleRoutes calls every route as every role, each against a fresh resource from setup, and checks the
+// status; 403 and 404 must carry the forbidden and not_found error codes.
+func runRoleRoutes(t *testing.T, roles *testkit.OrgRoles, setup func(t *testing.T) map[string]string, routes []roleRoute) {
 	t.Helper()
 	for _, rt := range routes {
 		t.Run(rt.name, func(t *testing.T) {
-			for _, role := range matrixRoles {
-				t.Run(string(role), func(t *testing.T) {
-					want, ok := rt.want[role]
-					require.True(t, ok, "no expectation for %s", role)
-					res := setup(t, m)
-					resp := rt.call(t, m, m.as(t, role), res)
+			for _, role := range roles.All() {
+				t.Run(role.Name, func(t *testing.T) {
+					want, ok := rt.want[role.Name]
+					require.True(t, ok, "no expectation for %s", role.Name)
+					res := setup(t)
+					c := *role.Client
+					c.T = t
+					resp := rt.call(t, &c, res)
 					switch want {
 					case http.StatusForbidden:
 						resp.RequireError(want, dto.ErrorCodeForbidden)

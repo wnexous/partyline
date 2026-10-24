@@ -24,20 +24,6 @@ LEFT JOIN organizations o ON o.id = a.org_id
 LEFT JOIN machines mc ON mc.owner_id = a.owner_id AND mc.hostname = a.machine
 WHERE a.id = ?;
 
--- name: ListAgentsForUser :many
-SELECT sqlc.embed(a), u.username AS owner_username,
-       CAST(COALESCE(ui.display_name, '') AS TEXT) AS owner_display_name,
-       CAST(COALESCE(i.handle, '') AS TEXT) AS handle,
-       CAST(COALESCE(i.display_name, '') AS TEXT) AS profile_name,
-       CAST(COALESCE(i.avatar_sha256, '') AS TEXT) AS profile_avatar
-FROM agents a JOIN users u ON u.id = a.owner_id
-LEFT JOIN intelligences i ON i.id = a.id
-LEFT JOIN intelligences ui ON ui.id = u.id
-WHERE (a.owner_id = sqlc.arg(user_id)
-       OR a.id IN (SELECT g.resource_id FROM grants g
-                   WHERE g.resource_kind = 'agent' AND g.subject IN (sqlc.arg(user_id), '*')))
-ORDER BY a.name, u.username, a.id;
-
 -- name: ListVisibleAgents :many
 -- The AIs a user sees (AD-016): those hosted on their computers and those of the organizations they
 -- belong to, whatever their permission there.

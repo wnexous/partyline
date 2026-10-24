@@ -57,7 +57,7 @@ func newFixture(t *testing.T) *fixture {
 	t.Cleanup(func() { _ = raw.Close() })
 	c := &clock{now: t0}
 	bus := events.NewBus()
-	az := access.New(st, bus, access.Options{Now: c.Now})
+	az := access.New(st, access.Options{})
 	f := &fixture{st: st, raw: raw, bus: bus, az: az, clock: c, dir: dir}
 	f.svc = New(Deps{Store: st, Access: az, Bus: bus, Now: c.Now})
 	return f
@@ -121,12 +121,6 @@ func (f *fixture) chat(t *testing.T, owner authn.Principal, title string) (strin
 	f.exec(t, "INSERT INTO chats (id, connector_id, external_id, title, kind, created_at) VALUES (?, ?, ?, ?, 'group', ?)",
 		chat, conn, "ext-"+chat, title, t0.UnixMilli())
 	return conn, chat
-}
-
-func (f *fixture) grant(t *testing.T, kind access.Kind, id, subject string, level dto.Level) {
-	t.Helper()
-	f.exec(t, "INSERT INTO grants (resource_kind, resource_id, subject, level, created_at) VALUES (?, ?, ?, ?, ?)",
-		string(kind), id, subject, string(level), t0.UnixMilli())
 }
 
 // orgOf is the personal organization of the user (AD-021), where their groups go.
@@ -215,7 +209,6 @@ func TestCreateRoomMakesCallerOwner(t *testing.T) {
 	require.Equal(t, "Ops", r.Name)
 	require.Equal(t, "on call", r.Description)
 	require.Equal(t, int64(DefaultRetentionDays), r.RetentionDays)
-	require.Equal(t, dto.VisibilityPrivate, r.Visibility)
 	require.Equal(t, "alice", r.OwnerUsername)
 	require.Equal(t, int64(0), r.LastSeq())
 	require.Equal(t, events.RoomChanged{RoomID: r.ID}, <-sub)
@@ -252,7 +245,7 @@ func TestCreateRoomValidation(t *testing.T) {
 	require.Zero(t, f.count(t, "SELECT COUNT(*) FROM rooms"))
 }
 
-// ACL-03, ACL-08: without view (strangers, admins without grants, missing rooms) every
+// ACL-03, ACL-08: without view (strangers, admins without membership, missing rooms) every
 // read is ErrNotFound.
 func TestStrangerAndAdminGetNotFound(t *testing.T) {
 	ctx := context.Background()
@@ -264,8 +257,6 @@ func TestStrangerAndAdminGetNotFound(t *testing.T) {
 		_, err := f.svc.Get(ctx, p, r.ID)
 		require.ErrorIs(t, err, access.ErrNotFound)
 		_, err = f.svc.Members(ctx, p, r.ID)
-		require.ErrorIs(t, err, access.ErrNotFound)
-		_, err = f.svc.Sharing(ctx, p, r.ID)
 		require.ErrorIs(t, err, access.ErrNotFound)
 		_, err = f.svc.Update(ctx, p, r.ID, UpdateInput{Name: ptr("x")})
 		require.ErrorIs(t, err, access.ErrNotFound)
@@ -306,8 +297,6 @@ func TestRoomMemberWithoutManageIsForbidden(t *testing.T) {
 		_, err = f.svc.Update(ctx, g, r.ID, UpdateInput{Name: ptr("x")})
 		require.ErrorIs(t, err, access.ErrForbidden)
 		require.ErrorIs(t, f.svc.Delete(ctx, g, r.ID), access.ErrForbidden)
-		_, err = f.svc.SetSharing(ctx, g, r.ID, access.Visibility{Mode: dto.VisibilityPrivate})
-		require.ErrorIs(t, err, access.ErrForbidden)
 		_, err = f.svc.AddMember(ctx, g, r.ID, MemberInput{Kind: dto.MemberKindUser, MemberID: alice.UserID})
 		require.ErrorIs(t, err, access.ErrForbidden)
 		_, err = f.svc.UpdateMember(ctx, g, r.ID, members[0].ID, MemberUpdate{DisplayName: ptr("x")})
@@ -317,24 +306,19 @@ func TestRoomMemberWithoutManageIsForbidden(t *testing.T) {
 }
 
 // ACL-02, AD-016: List returns the rooms the user can view with the resolved level: the groups they are a
-// member of (post), created (manage) or administer (manage), and nothing a grant names.
+// member of (post), created (manage) or administer (manage).
 func TestListVisibleRooms(t *testing.T) {
 	ctx := context.Background()
 	f := newFixture(t)
 	alice := f.user(t, "alice", dto.RoleMember)
 	acme := f.orgOf(t, alice)
 	bob := f.colleague(t, acme, "bob", orgs.PermissionMember)
-	carol := f.colleague(t, acme, "carol", orgs.PermissionMember)
-	dave := f.user(t, "dave", dto.RoleMember) // of no organization of alice's
+	carol := f.colleague(t, acme, "carol", orgs.PermissionMember) // a colleague who is in no room
+	dave := f.user(t, "dave", dto.RoleMember)                     // of no organization of alice's
 	f.room(t, alice, "a-own")
 	shared := f.room(t, alice, "b-shared")
-	granted := f.room(t, alice, "c-granted")
 	f.room(t, bob, "d-bob")
 	_, err := f.svc.AddMember(ctx, alice, shared.ID, MemberInput{Kind: dto.MemberKindUser, MemberID: bob.UserID})
-	require.NoError(t, err)
-	_, err = f.svc.SetSharing(ctx, alice, granted.ID, access.Visibility{Mode: dto.VisibilityShared, Users: []access.UserLevel{{UserID: carol.UserID, Level: dto.LevelPost}}})
-	require.NoError(t, err)
-	_, err = f.svc.SetSharing(ctx, alice, granted.ID, access.Visibility{Mode: dto.VisibilityPublic, PublicLevel: dto.LevelView})
 	require.NoError(t, err)
 
 	type entry struct {
@@ -350,15 +334,15 @@ func TestListVisibleRooms(t *testing.T) {
 		}
 		return out
 	}
-	require.Equal(t, []entry{{"a-own", dto.LevelManage}, {"b-shared", dto.LevelManage}, {"c-granted", dto.LevelManage}}, listOf(alice),
-		"alice created three groups and administers the organization, so she also manages bob's")
+	require.Equal(t, []entry{{"a-own", dto.LevelManage}, {"b-shared", dto.LevelManage}}, listOf(alice),
+		"alice created two groups; bob's group is in bob's own organization, which alice does not belong to")
 	require.Equal(t, []entry{{"b-shared", dto.LevelPost}, {"d-bob", dto.LevelManage}}, listOf(bob), "a member of one group and the creator of another")
-	require.Empty(t, listOf(carol), "a grant lists nothing")
-	require.Empty(t, listOf(dave), "a public grant lists nothing")
+	require.Empty(t, listOf(carol), "a colleague who is in no room lists nothing")
+	require.Empty(t, listOf(dave), "a user of no organization of alice's lists nothing")
 }
 
-// ACL-07, AD-016: an admin of the organization (not only the creator) may change settings and sharing; the
-// creator stays the creator.
+// ACL-07, AD-016: an admin of the organization (not only the creator) may change settings; the creator stays the
+// creator.
 func TestAdminOfTheOrganizationUpdatesRoom(t *testing.T) {
 	ctx := context.Background()
 	f := newFixture(t)
@@ -381,11 +365,6 @@ func TestAdminOfTheOrganizationUpdatesRoom(t *testing.T) {
 	var verr *validation.Error
 	require.ErrorAs(t, err, &verr)
 	require.Contains(t, verr.Fields, "name")
-
-	v, err := f.svc.SetSharing(ctx, bob, r.ID, access.Visibility{Mode: dto.VisibilityPublic, PublicLevel: dto.LevelPost})
-	require.NoError(t, err)
-	require.Equal(t, dto.VisibilityPublic, v.Mode)
-	require.Equal(t, dto.LevelPost, v.PublicLevel)
 }
 
 // ACL-05 replaced (AD-016, ORG-03): adding an agent needs an AI the caller can see - one they host or one
@@ -416,9 +395,6 @@ func TestAddAgentNeedsAnAIOfTheGroupsOrganization(t *testing.T) {
 	require.ErrorIs(t, err, access.ErrForbidden, "bob's AI is not one alice can see")
 	_, err = f.svc.AddMember(ctx, alice, r.ID, MemberInput{Kind: dto.MemberKindAgent, MemberID: store.NewID()})
 	require.ErrorIs(t, err, access.ErrForbidden, "and an AI that does not exist is the same answer")
-	f.grant(t, access.KindAgent, bobs, alice.UserID, dto.LevelUse)
-	_, err = f.svc.AddMember(ctx, alice, r.ID, MemberInput{Kind: dto.MemberKindAgent, MemberID: bobs})
-	require.ErrorIs(t, err, access.ErrForbidden, "a use grant gives nothing")
 
 	// Once bob's AI joins alice's organization she sees it, and it is of the group's organization.
 	f.exec(t, "INSERT INTO org_members (org_id, iid, permission, joined_at) VALUES (?, ?, 'member', ?)", acme, bobs, t0.UnixMilli())
@@ -447,8 +423,7 @@ func TestAddAgentNeedsAnAIOfTheGroupsOrganization(t *testing.T) {
 // ErrChatsNotMembers for a manager of the room, adds nothing and publishes nothing. The caller's
 // rights on the room are checked first: a user who cannot see the room gets not found, a user who
 // can see but not manage it forbidden, and a direct message answers that its members are fixed.
-// Group creation refuses a chat too, and creates no room. The chat branch of ACL-06 (a use grant on
-// the chat's connector) is retired with it.
+// Group creation refuses a chat too, and creates no room. The chat branch of ACL-06 is retired with it.
 func TestChatsAreNeverMembers(t *testing.T) {
 	ctx := context.Background()
 	f := newFixture(t)
@@ -456,7 +431,7 @@ func TestChatsAreNeverMembers(t *testing.T) {
 	bob := f.user(t, "bob", dto.RoleMember)
 	carol := f.user(t, "carol", dto.RoleMember)
 	_, mine := f.chat(t, alice, "family")
-	bobConn, bobs := f.chat(t, bob, "team")
+	_, bobs := f.chat(t, bob, "team")
 	r := f.room(t, alice, "ops")
 	sub, cancel := f.bus.Subscribe(8)
 	defer cancel()
@@ -470,9 +445,6 @@ func TestChatsAreNeverMembers(t *testing.T) {
 		_, err := f.svc.AddMember(ctx, alice, r.ID, in)
 		require.ErrorIs(t, err, ErrChatsNotMembers, name)
 	}
-	f.grant(t, access.KindConnector, bobConn, alice.UserID, dto.LevelUse) // use of the connection does not change it
-	_, err := f.svc.AddMember(ctx, alice, r.ID, MemberInput{Kind: dto.MemberKindChat, MemberID: bobs})
-	require.ErrorIs(t, err, ErrChatsNotMembers)
 	members, err := f.svc.Members(ctx, alice, r.ID)
 	require.NoError(t, err)
 	require.Empty(t, members, "nothing was added")
@@ -562,21 +534,18 @@ func TestUpdateAndRemoveMember(t *testing.T) {
 	require.ErrorIs(t, f.svc.RemoveMember(ctx, alice, r.ID, m.ID), access.ErrNotFound)
 }
 
-// ROOM-02: deleting a room deletes its messages, attachments, cursors, members and grants, and
-// nothing of other rooms.
+// ROOM-02: deleting a room deletes its messages, attachments, cursors and members, and nothing of
+// other rooms.
 func TestDeleteRoomRemovesEverything(t *testing.T) {
 	ctx := context.Background()
 	f := newFixture(t)
 	alice := f.user(t, "alice", dto.RoleMember)
-	bob := f.user(t, "bob", dto.RoleMember)
 	agent := f.agent(t, alice, "builder")
 	_, chat := f.chat(t, alice, "family")
 	doomed := f.room(t, alice, "doomed")
 	kept := f.room(t, alice, "kept")
 	for _, r := range []Room{doomed, kept} {
 		f.seedChatMember(t, alice, r.ID, chat)
-		_, err := f.svc.SetSharing(ctx, alice, r.ID, access.Visibility{Mode: dto.VisibilityShared, Users: []access.UserLevel{{UserID: bob.UserID, Level: dto.LevelView}}})
-		require.NoError(t, err)
 		msg := store.NewID()
 		f.exec(t, "INSERT INTO messages (id, room_id, seq, author_kind, author_id, text, created_at) VALUES (?, ?, 1, 'user', ?, 'hi', ?)", msg, r.ID, alice.UserID, t0.UnixMilli())
 		f.exec(t, "INSERT INTO attachments (id, message_id, sha256, mime, name, size, created_at) VALUES (?, ?, 'abc', 'text/plain', 'a.txt', 3, ?)", store.NewID(), msg, t0.UnixMilli())
@@ -592,14 +561,13 @@ func TestDeleteRoomRemovesEverything(t *testing.T) {
 		return map[string]int{
 			"rooms":       f.count(t, "SELECT COUNT(*) FROM rooms WHERE id = ?", roomID),
 			"members":     f.count(t, "SELECT COUNT(*) FROM room_members WHERE room_id = ?", roomID),
-			"grants":      f.count(t, "SELECT COUNT(*) FROM grants WHERE resource_kind = 'room' AND resource_id = ?", roomID),
 			"messages":    f.count(t, "SELECT COUNT(*) FROM messages WHERE room_id = ?", roomID),
 			"attachments": f.count(t, "SELECT COUNT(*) FROM attachments a JOIN messages m ON m.id = a.message_id WHERE m.room_id = ?", roomID),
 			"cursors":     f.count(t, "SELECT COUNT(*) FROM agent_cursors WHERE room_id = ?", roomID),
 		}
 	}
-	require.Equal(t, map[string]int{"rooms": 0, "members": 0, "grants": 0, "messages": 0, "attachments": 0, "cursors": 0}, countFor(doomed.ID))
-	require.Equal(t, map[string]int{"rooms": 1, "members": 1, "grants": 1, "messages": 1, "attachments": 1, "cursors": 1}, countFor(kept.ID))
+	require.Equal(t, map[string]int{"rooms": 0, "members": 0, "messages": 0, "attachments": 0, "cursors": 0}, countFor(doomed.ID))
+	require.Equal(t, map[string]int{"rooms": 1, "members": 1, "messages": 1, "attachments": 1, "cursors": 1}, countFor(kept.ID))
 	// Orphaned rows would hide behind the joins above: check the totals too.
 	require.Equal(t, 1, f.count(t, "SELECT COUNT(*) FROM attachments"))
 

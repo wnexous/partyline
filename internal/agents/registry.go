@@ -380,7 +380,7 @@ func (r *Registry) membersChanged(roomIDs []string) {
 
 // Delete deletes the AI for good in its home organization (POS-05, POS-06): the right is the organization's
 // (authorizeDelete), decided in the transaction that deletes. The AI goes with its memberships in every
-// organization and room, its grants and cursors. Its direct messages go with it (DM-08): the intelligence's
+// organization and room, and its cursors. Its direct messages go with it (DM-08): the intelligence's
 // deletion cascades to every room that names it as a participant. The platform queue goes too (its rows cascade,
 // CID-24), and the connections the agent operated have no operator afterwards: the bus tells the connector
 // manager, which stops them and shows what to do (CID-02). The AI that is the only admin of an organization is
@@ -431,9 +431,6 @@ func (r *Registry) Delete(ctx context.Context, p authn.Principal, agentID string
 		if roomIDs, err = q.DeleteAgentMemberships(ctx, agentID); err != nil {
 			return err
 		}
-		if err := q.DeleteGrants(ctx, db.DeleteGrantsParams{ResourceKind: string(access.KindAgent), ResourceID: agentID}); err != nil {
-			return err
-		}
 		return q.DeleteAgent(ctx, agentID) // cursors cascade
 	})
 	if err != nil {
@@ -454,31 +451,6 @@ func (r *Registry) Delete(ctx context.Context, p authn.Principal, agentID string
 		r.bus.Publish(events.OrgChanged{OrgID: id})
 	}
 	return nil
-}
-
-// Sharing returns the agent's visibility preset; requires seeing the agent. (The presets are inert since
-// AD-016: a grant gives nothing, and they go in T51.)
-func (r *Registry) Sharing(ctx context.Context, p authn.Principal, agentID string) (access.Visibility, error) {
-	if _, err := r.authorize(ctx, p, agentID, dto.LevelUse); err != nil {
-		return access.Visibility{}, err
-	}
-	return r.az.Sharing(ctx, access.KindAgent, agentID)
-}
-
-// SetSharing replaces the agent's use grants with a visibility preset (ACL-07); requires managing the
-// agent.
-func (r *Registry) SetSharing(ctx context.Context, p authn.Principal, agentID string, v access.Visibility) (access.Visibility, error) {
-	if _, err := r.authorize(ctx, p, agentID, dto.LevelManage); err != nil {
-		return access.Visibility{}, err
-	}
-	a, err := r.store.R().GetAgent(ctx, agentID)
-	if err != nil {
-		return access.Visibility{}, err
-	}
-	if err := r.az.SetVisibility(ctx, p.UserID, access.KindAgent, agentID, a.OwnerID, v); err != nil {
-		return access.Visibility{}, err
-	}
-	return r.az.Sharing(ctx, access.KindAgent, agentID)
 }
 
 func nullMillis(t time.Time) sql.NullInt64 { return sql.NullInt64{Int64: t.UnixMilli(), Valid: true} }

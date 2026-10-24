@@ -51,12 +51,11 @@ func TestReactToAMessageOfAConnectionIsUnsupported(t *testing.T) {
 	e := react("Notes", waiting).RequireError(http.StatusNotFound, dto.ErrorCodeNotFound)
 	require.Equal(t, "message not found", e.Message, "another AI's message")
 	react("Atlas", "no-such-message").RequireError(http.StatusNotFound, dto.ErrorCodeNotFound)
-	// The same-named AI of a user granted use of the connection and of the operator, of a stranger and
-	// of an admin holds no such message: the id is unknown to each of them.
+	// The same-named AI of a colleague of the connection's organization (the operator's too), of a stranger
+	// and of an admin holds no such message: the id is unknown to each of them.
 	bob, carol, root := f.env.NewUser("bob"), f.env.NewUser("carol"), f.env.NewAdmin("root")
 	shareConnector(f.alice, f.conn.ID, bob.User.ID)
-	shareAgent(f.alice, f.atlas, bob.User.ID)
-	for name, u := range map[string]*testkit.Client{"use grantee": bob, "stranger": carol, "admin": root} {
+	for name, u := range map[string]*testkit.Client{"colleague": bob, "stranger": carol, "admin": root} {
 		res := u.Token(dto.TokenKindAgent, "desk").AsAgent("Atlas").Post(replyPath+waiting+"/react", dto.ReactRequest{Emoji: "👍"})
 		require.Equal(t, http.StatusNotFound, res.Status, "%s's own AI of the same folder: %s", name, res.Body)
 		require.Equal(t, "message not found", testkit.Decode[dto.ErrorBody](res).Error.Message, name)

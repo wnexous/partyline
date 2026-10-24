@@ -154,10 +154,10 @@ func (s *Service) AddMember(ctx context.Context, p authn.Principal, roomID strin
 	return s.member(ctx, roomID, id)
 }
 
-// accessChanged tells live clients that who may access the room changed through membership,
-// as sharing does: new members learn the room, removed ones lose it.
+// accessChanged tells live clients that who may access the room changed through membership: new
+// members learn the room, removed ones lose it.
 func (s *Service) accessChanged(roomID string) {
-	s.bus.Publish(events.GrantsChanged{ResourceKind: string(access.KindRoom), ResourceID: roomID})
+	s.bus.Publish(events.AccessChanged{ResourceKind: string(access.KindRoom), ResourceID: roomID})
 }
 
 // CheckMember says why the principal may not put the member in a group of the organization, "" when it

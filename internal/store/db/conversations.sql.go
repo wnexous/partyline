@@ -727,29 +727,6 @@ func (q *Queries) ListRoomReadCursors(ctx context.Context, roomID string) ([]Lis
 	return items, nil
 }
 
-const mergeAgentGrants = `-- name: MergeAgentGrants :exec
-INSERT INTO grants (resource_kind, resource_id, subject, level, created_by, created_at)
-SELECT g.resource_kind, ?1, g.subject, g.level, g.created_by, g.created_at
-FROM grants g
-WHERE g.resource_kind = 'agent' AND g.resource_id = ?2
-ON CONFLICT (resource_kind, resource_id, subject) DO UPDATE SET level =
-    CASE WHEN (CASE excluded.level WHEN 'view' THEN 1 WHEN 'post' THEN 2 WHEN 'use' THEN 3 ELSE 4 END)
-              > (CASE grants.level WHEN 'view' THEN 1 WHEN 'post' THEN 2 WHEN 'use' THEN 3 ELSE 4 END)
-         THEN excluded.level ELSE grants.level END
-`
-
-type MergeAgentGrantsParams struct {
-	IntoID string
-	FromID string
-}
-
-// Merge: who may use the merged AI may use the surviving one; where both grant a subject the higher
-// level wins.
-func (q *Queries) MergeAgentGrants(ctx context.Context, arg MergeAgentGrantsParams) error {
-	_, err := q.db.ExecContext(ctx, mergeAgentGrants, arg.IntoID, arg.FromID)
-	return err
-}
-
 const mergeAgentGroupCursors = `-- name: MergeAgentGroupCursors :exec
 INSERT INTO agent_cursors (agent_id, room_id, seq)
 SELECT ?1, c.room_id, c.seq

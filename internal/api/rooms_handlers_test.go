@@ -31,11 +31,6 @@ func createRoom(c *testkit.Client, name string) dto.Room {
 	return testkit.Decode[dto.Room](c.Post("/api/v1/rooms", dto.CreateRoomRequest{Name: name}).RequireStatus(http.StatusCreated))
 }
 
-func shareRoom(c *testkit.Client, roomID string, users ...dto.SharingUser) {
-	c.T.Helper()
-	c.Put("/api/v1/rooms/"+roomID+"/sharing", dto.Sharing{Mode: dto.VisibilityShared, Users: users}).RequireStatus(http.StatusOK)
-}
-
 // storeAgent inserts an agent row with its profile (the display name and handle are name), placed as the app
 // places a new AI: in its owner's default organization, which is its home, as a member the owner created.
 func storeAgent(t *testing.T, env *testkit.Env, ownerID, name string) string {
@@ -162,12 +157,6 @@ func TestRoomRoutesAuthMatrix(t *testing.T) {
 		{"delete room", func(_ *testing.T, c *testkit.Client, res map[string]string) *testkit.Response {
 			return c.Delete(room(res, ""))
 		}, groupWant(204, 204, 403, 404)},
-		{"get sharing", func(_ *testing.T, c *testkit.Client, res map[string]string) *testkit.Response {
-			return c.Get(room(res, "/sharing"))
-		}, groupWant(200, 200, 200, 404)},
-		{"put sharing", func(_ *testing.T, c *testkit.Client, res map[string]string) *testkit.Response {
-			return c.Put(room(res, "/sharing"), dto.Sharing{Mode: dto.VisibilityPrivate})
-		}, groupWant(200, 200, 403, 404)},
 		{"list members", func(_ *testing.T, c *testkit.Client, res map[string]string) *testkit.Response {
 			return c.Get(room(res, "/members"))
 		}, groupWant(200, 200, 200, 404)},
@@ -243,7 +232,6 @@ func TestCreateRoomEndpoint(t *testing.T) {
 	require.Equal(t, alice.User.ID, r.Owner.ID)
 	require.Equal(t, "alice", r.Owner.Username)
 	require.Equal(t, dto.LevelManage, r.MyLevel)
-	require.Equal(t, dto.VisibilityPrivate, r.Visibility)
 	require.Equal(t, 90, r.RetentionDays)
 	require.Zero(t, r.LastSeq)
 	require.False(t, r.AgentsPaused)
@@ -256,38 +244,6 @@ func TestCreateRoomEndpoint(t *testing.T) {
 	got := testkit.Decode[dto.Room](alice.Patch("/api/v1/rooms/"+r.ID, dto.UpdateRoomRequest{RetentionDays: ptr(0)}).RequireStatus(http.StatusOK))
 	require.Zero(t, got.RetentionDays)
 	require.Equal(t, "Ops", got.Name)
-}
-
-// ACL-07 over HTTP (inert since AD-016): a visibility preset still replaces the room's grants and reads back
-// as a preset, but a grant gives no access to a group: the user it names and everybody, for a public preset,
-// still get 404.
-func TestRoomSharingGivesNoAccess(t *testing.T) {
-	env := testkit.New(t)
-	alice, bob, carol := env.NewUser("alice"), env.NewUser("bob"), env.NewUser("carol")
-	r := createRoom(alice, "ops")
-	path := "/api/v1/rooms/" + r.ID
-
-	shareRoom(alice, r.ID, dto.SharingUser{UserID: bob.User.ID, Level: dto.LevelView})
-	s := testkit.Decode[dto.Sharing](alice.Get(path + "/sharing").RequireStatus(http.StatusOK))
-	require.Equal(t, dto.VisibilityShared, s.Mode)
-	require.Equal(t, []dto.SharingUser{{UserID: bob.User.ID, Level: dto.LevelView, Username: "bob", DisplayName: "bob"}}, s.Users,
-		"an account that chose no name goes by its username")
-	bob.Get(path).RequireError(http.StatusNotFound, dto.ErrorCodeNotFound)
-	bob.Get(path+"/sharing").RequireError(http.StatusNotFound, dto.ErrorCodeNotFound)
-	carol.Get(path).RequireError(http.StatusNotFound, dto.ErrorCodeNotFound)
-	require.Empty(t, testkit.Decode[dto.List[dto.Room]](bob.Get("/api/v1/rooms").RequireStatus(http.StatusOK)).Items)
-
-	s = testkit.Decode[dto.Sharing](alice.Put(path+"/sharing", dto.Sharing{Mode: dto.VisibilityPublic, PublicLevel: dto.LevelPost}).RequireStatus(http.StatusOK))
-	require.Equal(t, dto.Sharing{Mode: dto.VisibilityPublic, PublicLevel: dto.LevelPost, Users: []dto.SharingUser{}}, s)
-	carol.Post(path+"/messages", dto.PostMessageRequest{Text: "hi"}).RequireError(http.StatusNotFound, dto.ErrorCodeNotFound)
-	carol.Get(path).RequireError(http.StatusNotFound, dto.ErrorCodeNotFound)
-	require.Equal(t, dto.VisibilityPublic, testkit.Decode[dto.Room](alice.Get(path).RequireStatus(http.StatusOK)).Visibility)
-
-	alice.Put(path+"/sharing", dto.Sharing{Mode: dto.VisibilityPrivate}).RequireStatus(http.StatusOK)
-	bob.Get(path).RequireError(http.StatusNotFound, dto.ErrorCodeNotFound)
-
-	e := alice.Put(path+"/sharing", dto.Sharing{Mode: dto.VisibilityPublic, PublicLevel: dto.LevelManage}).RequireError(http.StatusUnprocessableEntity, dto.ErrorCodeInvalid)
-	require.Contains(t, e.Fields, "public_level")
 }
 
 // ACL-05 over HTTP. A chat is no member whoever owns its connection (CID-19; the chat branch of

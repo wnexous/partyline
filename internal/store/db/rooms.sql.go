@@ -453,7 +453,7 @@ type ListUserRoomLevelsRow struct {
 // The levels a user holds on rooms (AD-016): post as a user member of a group, manage as the creator
 // of a group (while a member of its organization other than a guest) or as an admin of its
 // organization, and post as a participant of a DM. The DMs the user only views as the manager of an AI
-// are not here, and neither is anything a grant names.
+// are not here.
 func (q *Queries) ListUserRoomLevels(ctx context.Context, userID string) ([]ListUserRoomLevelsRow, error) {
 	rows, err := q.db.QueryContext(ctx, listUserRoomLevels, userID)
 	if err != nil {

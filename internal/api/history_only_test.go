@@ -45,7 +45,6 @@ func newHistoryFixture(t *testing.T) *historyFixture {
 	t.Helper()
 	f := &historyFixture{peopleFixture: newPeopleFixture(t)}
 	f.atlas = f.env.NewAIIn(f.alice, f.line, "atlas") // the connection's organization is Atlas's home
-	shareAgent(f.alice, f.atlas, f.dave.User.ID)      // a use grant, which gives dave nothing
 	f.alice.OperateConnector(f.conn.ID, f.atlas)
 	f.clock.Advance(time.Minute)
 	f.chat, f.dm, f.person = f.platformDM(f.atlas, "5511999990009@s.whatsapp.net", "Pat", "hello Atlas")
@@ -116,8 +115,7 @@ func TestPostInAPlatformDMIsRefusedAsHistory(t *testing.T) {
 		require.Equal(t, []string{c.opening}, texts(timeline(t, f.alice, c.dm)), "%s: nothing was added", c.name)
 	}
 
-	// Reading history still works: the manager of Atlas reads the DM (a use grant gives nothing since
-	// AD-016) and the AI reads its own history.
+	// Reading history still works: the manager of Atlas reads the DM and the AI reads its own history.
 	require.Equal(t, []string{"hello Atlas"}, f.history(t, f.alice))
 	f.dave.Get("/api/v1/rooms/"+f.dm+"/messages").RequireError(http.StatusNotFound, dto.ErrorCodeNotFound)
 	hist := testkit.Decode[dto.Page[dto.AgentMessage]](f.atlasAI.Get("/api/v1/agent/rooms/" + f.dm + "/messages").RequireStatus(http.StatusOK))
@@ -136,9 +134,8 @@ func TestPostInAPlatformDMIsRefusedAsHistory(t *testing.T) {
 
 // CID-21 (authorization matrix of POST /rooms/{id}/messages in a platform DM): who may not post in
 // the DM are refused as before, whatever else is true of it: the manager of the AI can only view it
-// (403 forbidden), the connection's user, the use grantee of the AI (AD-016) and the others cannot see
-// it (404), and anonymous callers get 401; another AI of the owner and another user's AI are not
-// members (403).
+// (403 forbidden), the connection's users and the others cannot see it (404), and anonymous callers
+// get 401; another AI of the owner and another user's AI are not members (403).
 // The refusal for history is the answer of the one who may post, and nothing is added.
 func TestPlatformDMPostAuthorizationMatrix(t *testing.T) {
 	f := newHistoryFixture(t)
@@ -146,7 +143,7 @@ func TestPlatformDMPostAuthorizationMatrix(t *testing.T) {
 	post := func(c *testkit.Client) *testkit.Response { return c.Post(path, dto.PostMessageRequest{Text: "hello"}) }
 
 	post(f.alice).RequireError(http.StatusForbidden, dto.ErrorCodeForbidden) // owns Atlas: views the DM
-	post(f.dave).RequireError(http.StatusNotFound, dto.ErrorCodeNotFound)    // may use Atlas: a grant gives nothing
+	post(f.dave).RequireError(http.StatusNotFound, dto.ErrorCodeNotFound)    // no relation to Atlas
 	post(f.bob).RequireError(http.StatusNotFound, dto.ErrorCodeNotFound)     // may use the connection, not Atlas
 	post(f.carol).RequireError(http.StatusNotFound, dto.ErrorCodeNotFound)   // stranger
 	post(f.admin).RequireError(http.StatusNotFound, dto.ErrorCodeNotFound)   // no implicit access
@@ -177,7 +174,7 @@ func TestEditingAPersonIsRefusedAsHistory(t *testing.T) {
 	live, _ := f.alice.DialLive("")
 	live.Expect(dto.LiveEventTypeHello, nil, connectortest.Timeout)
 
-	for _, c := range []*testkit.Client{f.alice, f.bob} { // owner and use grantee of the connection
+	for _, c := range []*testkit.Client{f.alice, f.bob} { // the owner of the connection and a member of its organization
 		name, handle, bio := "Renamed", "renamed", "A new bio"
 		for _, req := range []dto.UpdateProfileRequest{{DisplayName: &name}, {Handle: &handle}, {Bio: &bio}, {DisplayName: &name, Handle: &handle, Bio: &bio}} {
 			e := patchProfile(c, f.person, req).RequireError(http.StatusUnprocessableEntity, dto.ErrorCodeHistoryOnly)
@@ -207,7 +204,7 @@ func TestEditingAPersonIsRefusedAsHistory(t *testing.T) {
 		require.Equal(t, "Customer", profileOf(t, c, f.person).DisplayName, c.User.Username)
 	}
 	require.False(t, profileOf(t, f.alice, f.person).CanEdit, "the owner of the connection cannot edit a person any more")
-	require.False(t, profileOf(t, f.bob, f.person).CanEdit, "nor the use grantee")
+	require.False(t, profileOf(t, f.bob, f.person).CanEdit, "nor a member of the connection's organization")
 	require.False(t, profileOf(t, f.dave, f.person).CanEdit)
 }
 

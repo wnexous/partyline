@@ -30,9 +30,12 @@ type MembersChanged struct{ RoomID string }
 // changed. ID is the intelligence id, shared with its user, agent or person row.
 type IntelligenceChanged struct{ ID string }
 
-// GrantsChanged reports that who may access a room, agent or connector changed: its grants, or,
-// for a room, its user members (membership is an access source next to grants).
-type GrantsChanged struct{ ResourceKind, ResourceID string }
+// AccessChanged reports that who may access a room or an AI changed through something other than an
+// organization: a group's user members, or an AI that was merged into another. ResourceKind is
+// "room", "agent" or "connector" (as an access.changed frame names it). Live clients look the
+// resource up again, so those who gained it learn it and those who lost it forget it. A change of an
+// organization's own members is OrgChanged.
+type AccessChanged struct{ ResourceKind, ResourceID string }
 
 // OrgChanged reports that something about an organization changed: its name or avatar, its org chart,
 // its members or their permissions and positions. Live clients refresh what they show of it and
@@ -117,7 +120,7 @@ func (MessageCreated) isEvent()      {}
 func (RoomChanged) isEvent()         {}
 func (MembersChanged) isEvent()      {}
 func (IntelligenceChanged) isEvent() {}
-func (GrantsChanged) isEvent()       {}
+func (AccessChanged) isEvent()       {}
 func (OrgChanged) isEvent()          {}
 func (InvitationReceived) isEvent()  {}
 func (ReadChanged) isEvent()         {}

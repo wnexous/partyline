@@ -391,7 +391,7 @@ func TestUpgradeV03KeepsEveryNameInTheIntelligence(t *testing.T) {
 func TestUpgradeV03ListsEveryAgent(t *testing.T) {
 	e := v03Fixture(t)
 	require.NoError(t, e.s.Migrate(context.Background()))
-	rows, err := e.s.R().ListAgentsForUser(context.Background(), "u-alice")
+	rows, err := e.s.R().ListVisibleAgents(context.Background(), "u-alice")
 	require.NoError(t, err)
 	got := map[string]string{}
 	for _, r := range rows {

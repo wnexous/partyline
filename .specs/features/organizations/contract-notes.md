@@ -1879,3 +1879,55 @@ extends what T57 left open; the command's output and exit codes are unchanged.
 - **Web**: the generated `Me` now has `default_org_id?: string`, so the interim `MeWithDefaultOrg` of `web/src/lib/orgs.ts` (T49, which added the field
   with `Me & {...}`) became `Omit<Me, "default_org_id"> & { default_org_id?: string | null }`: the same tolerance of a `null`, which the server
   never sends, without the intersection narrowing the field to `string`.
+
+## T51: Remove grant code, sharing routes and DTOs (ORG-02)
+
+Sharing is organization membership and nothing else (AD-016). Every path that wrote or read a grant is gone; the table itself is dropped by
+`0020` (T52).
+
+- **Removed**:
+  - `access.Authorizer`: `AgentLevel`, `ConnectorLevel`, `CanUseAgent`, `CanUseConnector`, `grantLevel`, `Sharing`, `SetVisibility`, the preset
+    validation, `access.Everyone`, `UserLevel`, `Visibility`, `ErrDMNoSharing`. `access.Options` is `{Authz}` and `access.New(st, opts)` no longer
+    takes a bus or a clock: the Authorizer publishes and records nothing. `GrantedRoomLevels` is now `RoomLevels` (it never read grants after T22).
+  - The routes `GET|PUT /rooms|agents|connectors/{id}/sharing` and the services behind them (`Rooms.Sharing/SetSharing`, `Agents.Sharing/SetSharing`,
+    `Connectors.Sharing/SetSharing`). Every method on those paths is the router's 404 `not_found`; a DM that answered 422 `dm_no_sharing` is as unknown.
+  - DTOs: `Sharing`, `SharingUser`, `Visibility` (and its three constants), `Room.visibility`, `ErrorCodeDMNoSharing`. A room carries no preset any
+    more. `make generate` ran: `types.gen.ts` loses them and rewords three "grants nothing" comments.
+  - SQL: `queries/grants.sql` (`ListGrantLevels`, `CountSubjectGrants`, `ListGrantsWithUsers`, `CreateGrant`, `DeleteGrants`), `ListAgentsForUser` and
+    `MergeAgentGrants`. **sqlc does not delete the generated file of a deleted query file: `internal/store/db/grants.sql.go` was `git rm`-ed by hand.**
+    Deleting a room, an AI or a connection and merging two AIs no longer touch grants.
+  - `audit.ActionGrantsSet`. Old audit rows keep their `grants.set` action string; nothing writes it any more.
+- **`events.GrantsChanged` is renamed `events.AccessChanged{ResourceKind, ResourceID}`**, the event the design names (AD-016 table, "Live hub"). It is still
+  published for a group's **user members** (`rooms.Service.accessChanged`) and for a **merge** (the surviving AI), and the hub renders it exactly as
+  before: `access.changed` for room, agent or connector, after the same visibility check. Only the name and the doc changed. A change of an
+  organization's own members is `OrgChanged` (T32).
+- **Deviation: `dto.LevelUse` stays.** tasks.md lists "`LevelUse`" among the types to delete, but it is no grant level any more: it is `my_level` of an AI,
+  a connection and a profile for whoever sees without managing (T24, T25, T26), which the web reads (`my_level === LevelManage`, the `"use"` fixtures of
+  T45/T47). Removing it would change that contract and the web. `Level` is documented as `view < post < manage` for rooms and `use < manage` for AIs and
+  connections.
+- **Deviation: one line of `web/`.** `web/src/test/fixtures.ts` loses `visibility: "private"` of `makeRoom`: the regenerated `Room` has no such field and
+  `tsc` refuses the literal (TS2353). T50 had left it for this. Nothing else of `web/` changed besides `types.gen.ts`.
+- **Nothing reads grants (the proof).** `TestOnlyTheMigrationsAndTheBackfillNameGrants` (`internal/store/grants_retired_test.go`) is the Done-when
+  `rg -n "grants|Sharing|SetVisibility" internal` as a test: it walks every `.go` and `.sql` file under `internal/` (the embedded web app aside) and fails on a
+  hit outside the allowed set: the migrations, `store/testdata`, `organizations_backfill.go`, the tests of `internal/store` and `api/upgrade_test.go`
+  (T53), which build older databases to upgrade them. Reword a comment that only says the word. With the table dropped by `0020` (T52), a reader the scan
+  missed would fail every e2e test.
+- **Tests**:
+  - `TestShareRoutesAreRetired` (`retired_routes_test.go`): the three paths plus a DM's, for every role of `OrgRoles`, anonymous callers and AI tokens (403
+    by TOK-03), with the request bodies that used to be valid (private, shared with a user, public) and four other methods; nothing is opened, nothing
+    is audited and no room JSON has a `visibility` key.
+  - `authmatrix_test.go` is rewritten on `OrgRoles`: `roleRoute`, `runRoleRoutes` (moved from `room_roles_test.go`) and `everyRole(status)`. The five-role
+    `matrix` (owner, viewer, poster, stranger, admin; `statuses`, `newMatrix`) is gone, and so is `TestUserProfileRoutesAuthMatrix`, which
+    `TestUserProfileRoutesAuthMatrixOnOrganizations` already covered with nine roles. Their users moved to the organization roles: the retired chat and
+    notify routes, the retired fields, the chat routes, the person profile, mark read and `POST /groups` (`createFakeIdleIn`, `createFakeIn`).
+  - `access_test.go`: `TestCanSeeAI` and `TestCanSeeConnection` replace the `AgentLevel` / `ConnectorLevel` tests (host, member, admin, guest, outsider,
+    foreign admin, instance admin, disabled user, an AI acting as itself and never through its host, a connection with no organization).
+  - Deleted with what they tested: `TestSetVisibility*` (4), `TestUseLevelsOnAgentsAndConnectors`, `TestRoomSharingGivesNoAccess`,
+    `TestDMSharingIsRefusedWithItsOwnCode`, `TestMergeKeepsTheHigherGrantLevel` and the "get/put sharing" rows of the room, DM, agent and connection
+    matrices. The merge test keeps its all-or-nothing check on organization memberships instead of copied grants.
+  - A "use grantee" of a test is now a colleague: `shareAI` / `shareConnector` make the user a member of the resource's organization, which is the
+    relation the grant stood for. Where a grant only decorated the fixture it is dropped. `TestRefusedMergesLeaveTheQueueAlone` now expects 403 for such a
+    colleague (sees both AIs, manages neither), the design's answer, where the grant holder used to get 404.
+- **Stale outside `internal/` and `web/`, for T54 and T55**: README.md (lines 32, 332 "Grants", 363 `dm_no_sharing`), README.pt-BR.md (369 and the
+  same sections), `docs/agents.md` (383, 436, 537 and the "Shared with me" / "Share" paragraphs), PRODUCT.md (47), and `web/e2e/smoke.spec.ts:192`, which
+  still shares a room with `PUT /rooms/{id}/sharing`.

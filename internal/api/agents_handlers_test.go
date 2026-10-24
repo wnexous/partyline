@@ -18,15 +18,6 @@ func registerAgent(t *testing.T, env *testkit.Env, owner *testkit.Client, name s
 	return env.NewAI(owner, name)
 }
 
-func shareAgent(c *testkit.Client, agentID string, userIDs ...string) {
-	c.T.Helper()
-	users := make([]dto.SharingUser, len(userIDs))
-	for i, id := range userIDs {
-		users[i] = dto.SharingUser{UserID: id, Level: dto.LevelUse}
-	}
-	c.Put("/api/v1/agents/"+agentID+"/sharing", dto.Sharing{Mode: dto.VisibilityShared, Users: users}).RequireStatus(http.StatusOK)
-}
-
 // agentWant is the expected status of a route on the AI that the role "manager" created and hosts, by role:
 // whoever manages it (its creator and the admin whose position is above the creator's), whoever only sees
 // it (the other people of the organization, guests included) and whoever cannot see it (an outsider and an
@@ -55,12 +46,6 @@ func TestAgentRoutesAuthMatrix(t *testing.T) {
 		}, agentWant(200, 200, 404)},
 		{"update agent", func(_ *testing.T, c *testkit.Client, res map[string]string) *testkit.Response {
 			return c.Patch(agent(res, ""), dto.UpdateAgentRequest{Description: &desc})
-		}, agentWant(200, 403, 404)},
-		{"get sharing", func(_ *testing.T, c *testkit.Client, res map[string]string) *testkit.Response {
-			return c.Get(agent(res, "/sharing"))
-		}, agentWant(200, 200, 404)},
-		{"put sharing", func(_ *testing.T, c *testkit.Client, res map[string]string) *testkit.Response {
-			return c.Put(agent(res, "/sharing"), dto.Sharing{Mode: dto.VisibilityPrivate})
 		}, agentWant(200, 403, 404)},
 	})
 

@@ -138,13 +138,6 @@ func (w *world) person(connectorID, externalID, name string) string {
 	return id
 }
 
-func (w *world) shareAgent(owner *testkit.Client, agentID string, grantee *testkit.Client) {
-	w.t.Helper()
-	require.NoError(w.t, w.env.App.Access.SetVisibility(w.ctx, owner.User.ID, access.KindAgent, agentID, owner.User.ID, access.Visibility{
-		Mode: dto.VisibilityShared, Users: []access.UserLevel{{UserID: grantee.User.ID, Level: dto.LevelUse}},
-	}))
-}
-
 func requireInvalid(t *testing.T, err error, field string) {
 	t.Helper()
 	var verr *validation.Error
@@ -390,7 +383,7 @@ func TestUpdateHandleTaken(t *testing.T) {
 // for a guest, its inviter. An AI acts as itself, so an AI that holds a position edits what is below it.
 // Seeing never allows editing: with sight but without management the answer is forbidden, and without sight it
 // is not found (an AI of organizations the caller is not in). Every user sees every user (the directory), so a
-// stranger who cannot edit a user is told forbidden too. A grant gives nothing (AD-016). A person's profile is
+// stranger who cannot edit a user is told forbidden too. A person's profile is
 // history (CID-21): the users of its connector, who could edit it, are told it is read-only.
 func TestUpdateAuthorization(t *testing.T) {
 	w := newWorld(t)
@@ -400,7 +393,6 @@ func TestUpdateAuthorization(t *testing.T) {
 	boss := w.env.NewLegacyAI(r.Manager, "boss")         // an AI that holds Manager's position, above the Workers
 	w.env.AddMember(r.Org.ID, boss, orgs.PermissionMember, r.ManagerPosition)
 	rover := w.env.NewAI(r.Outsider, "rover") // an AI of the outsider's own organization
-	w.shareAgent(r.Manager, ai, w.erin)       // a use grant on ai, which gives erin nothing
 	pat := w.person(w.connector(w.dave, w.erin), "5511999990000", "Pat")
 
 	rename := intelligences.ProfileUpdate{DisplayName: ptr("Renamed")}
@@ -433,7 +425,7 @@ func TestUpdateAuthorization(t *testing.T) {
 		{"an outsider", asUser(r.Outsider), ai, access.ErrNotFound},
 		{"an admin of the instance without membership", asUser(r.InstanceAdmin), ai, access.ErrNotFound},
 		{"an AI of an outsider", asAgent(r.Outsider, rover), ai, access.ErrNotFound},
-		{"a use grantee", asUser(w.erin), ai, access.ErrNotFound},
+		{"a user of no organization of the AI", asUser(w.erin), ai, access.ErrNotFound},
 
 		{"person: creator of the connection", asUser(w.dave), pat, access.ErrHistoryOnly},
 		{"person: member of its organization", asUser(w.erin), pat, access.ErrHistoryOnly},
@@ -457,7 +449,7 @@ func TestUpdateAuthorization(t *testing.T) {
 
 // CanSee and CanEdit (POS-04, AD-016): every user sees every user; an AI is seen by the people of the
 // organizations it belongs to, guests included, and by the user who hosts it, whatever the chart says about
-// them; nobody else sees it, not even an admin of the instance or a user a grant names. Whoever manages the
+// them; nobody else sees it, not even an admin of the instance. Whoever manages the
 // identity edits it, and so does the identity itself. A person is seen by the members of its connection's
 // organization (and by whoever can view a conversation where it wrote) and edited by nobody (CID-21).
 func TestCanSeeAndCanEdit(t *testing.T) {
@@ -470,7 +462,6 @@ func TestCanSeeAndCanEdit(t *testing.T) {
 	w.env.AddMember(r.Org.ID, w.dave.User.ID, orgs.PermissionMember, "")
 	relay := w.env.NewAIIn(w.dave, r.Org.ID, "relay")
 	require.NoError(t, w.env.App.Orgs.Remove(w.ctx, r.Admin.User.ID, r.Org.ID, w.dave.User.ID))
-	w.shareAgent(r.Manager, ai, w.erin)
 	conn := w.connector(w.dave, w.erin)
 	w.connector(w.alice) // alice owns a connector too, but not Pat's
 	pat := w.person(conn, "5511999990000", "Pat")
@@ -497,7 +488,7 @@ func TestCanSeeAndCanEdit(t *testing.T) {
 		{"the inviter of a guest", asUser(r.Inviter), ai, true, false},
 		{"an outsider", asUser(r.Outsider), ai, false, false},
 		{"an admin of the instance without membership", asUser(r.InstanceAdmin), ai, false, false},
-		{"a use grantee", asUser(w.erin), ai, false, false},
+		{"a user of no organization of the AI", asUser(w.erin), ai, false, false},
 		{"the host who left the AI's organization", asUser(w.dave), relay, true, false},
 		{"the AI itself", asAgent(r.Manager, ai), ai, true, true},
 		{"a sibling AI", asAgent(r.Manager, scout), ai, true, false},

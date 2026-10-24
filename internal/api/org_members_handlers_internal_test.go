@@ -40,7 +40,7 @@ func TestAnAILeavingItsHomeOrganizationIsRefusedWith409(t *testing.T) {
 	alice, err := usersSvc.CreateUser(ctx, users.AccountInput{Username: "alice", Password: "alice-password-1"}, dto.RoleMember)
 	require.NoError(t, err)
 	registry := agents.NewRegistry(agents.Deps{
-		Store: st, Access: access.New(st, bus, access.Options{}), Bus: bus, Presence: agents.NewPresence(st, bus, time.Now),
+		Store: st, Access: access.New(st, access.Options{}), Bus: bus, Presence: agents.NewPresence(st, bus, time.Now),
 	})
 	atlas, err := registry.ResolveFolder(ctx, alice.ID, agents.FolderID{Machine: "devbox", Folder: "/work/atlas"}, false)
 	require.NoError(t, err)

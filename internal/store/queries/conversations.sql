@@ -117,18 +117,6 @@ WHERE c.agent_id = sqlc.arg(from_id) AND r.kind = 'group'
   AND EXISTS (SELECT 1 FROM room_members m WHERE m.room_id = c.room_id AND m.kind = 'agent' AND m.member_id = sqlc.arg(into_id))
 ON CONFLICT (agent_id, room_id) DO UPDATE SET seq = MAX(agent_cursors.seq, excluded.seq);
 
--- name: MergeAgentGrants :exec
--- Merge: who may use the merged AI may use the surviving one; where both grant a subject the higher
--- level wins.
-INSERT INTO grants (resource_kind, resource_id, subject, level, created_by, created_at)
-SELECT g.resource_kind, sqlc.arg(into_id), g.subject, g.level, g.created_by, g.created_at
-FROM grants g
-WHERE g.resource_kind = 'agent' AND g.resource_id = sqlc.arg(from_id)
-ON CONFLICT (resource_kind, resource_id, subject) DO UPDATE SET level =
-    CASE WHEN (CASE excluded.level WHEN 'view' THEN 1 WHEN 'post' THEN 2 WHEN 'use' THEN 3 ELSE 4 END)
-              > (CASE grants.level WHEN 'view' THEN 1 WHEN 'post' THEN 2 WHEN 'use' THEN 3 ELSE 4 END)
-         THEN excluded.level ELSE grants.level END;
-
 -- name: ReassignInviter :exec
 -- Merge: the guests the merged identity invited answer to the surviving one.
 UPDATE org_members SET inviter_iid = sqlc.arg(into_id) WHERE inviter_iid = sqlc.arg(from_id);

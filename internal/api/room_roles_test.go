@@ -75,14 +75,6 @@ func addToRoom(t *testing.T, env *testkit.Env, manager *testkit.Client, roomID s
 		dto.AddMemberRequest{Kind: dto.MemberKindUser, MemberID: u.User.ID}).RequireStatus(http.StatusCreated))
 }
 
-// roleRoute is one route of an organization-role matrix: call performs the request as c against res, and
-// want maps every role name of testkit.OrgRoles.All to the expected status.
-type roleRoute struct {
-	name string
-	call func(t *testing.T, c *testkit.Client, res map[string]string) *testkit.Response
-	want map[string]int
-}
-
 // groupWant is the expected status of a route on a group by role: the creator (the role "member" of
 // testkit.OrgRoles), an admin of the organization, the people in the room (the roles "target" and
 // "guest") and everybody else (a manager above them, a peer, an inviter, an outsider, an instance admin).
@@ -99,33 +91,5 @@ func dmWant(participant, viewer, other int) map[string]int {
 	return map[string]int{
 		"target": participant, "manager": viewer, "admin": viewer,
 		"member": other, "peer": other, "inviter": other, "guest": other, "outsider": other, "instance_admin": other,
-	}
-}
-
-// runRoleRoutes calls every route as every role, each against a fresh resource from setup, and checks the
-// status; 403 and 404 must carry the forbidden and not_found error codes.
-func runRoleRoutes(t *testing.T, roles *testkit.OrgRoles, setup func(t *testing.T) map[string]string, routes []roleRoute) {
-	t.Helper()
-	for _, rt := range routes {
-		t.Run(rt.name, func(t *testing.T) {
-			for _, role := range roles.All() {
-				t.Run(role.Name, func(t *testing.T) {
-					want, ok := rt.want[role.Name]
-					require.True(t, ok, "no expectation for %s", role.Name)
-					res := setup(t)
-					c := *role.Client
-					c.T = t
-					resp := rt.call(t, &c, res)
-					switch want {
-					case http.StatusForbidden:
-						resp.RequireError(want, dto.ErrorCodeForbidden)
-					case http.StatusNotFound:
-						resp.RequireError(want, dto.ErrorCodeNotFound)
-					default:
-						resp.RequireStatus(want)
-					}
-				})
-			}
-		})
 	}
 }

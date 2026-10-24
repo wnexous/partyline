@@ -428,11 +428,11 @@ func TestPlatformFeatureIsOneItemOfAList(t *testing.T) {
 
 // CID-06: a platform event reaches the session of the AI that holds it as it is queued, and no
 // other: not another AI of the same owner, and not the AI of another user with the same machine
-// and folder, whether that user was granted use of Atlas or has nothing to do with it.
+// and folder, whether that user is a colleague who sees Atlas or has nothing to do with it.
 func TestPlatformLivePushReachesOnlyTheAIThatHoldsTheItem(t *testing.T) {
 	f := newPlatformWS(t)
 	bob, carol := f.env.NewUser("bob"), f.env.NewUser("carol")
-	shareAgent(f.alice, f.atlas, bob.User.ID)
+	shareAI(f.alice, f.atlas, bob) // bob joins Atlas's organization: he sees it
 	atlas := f.dial(t, "Atlas")
 	notes := f.dial(t, "Notes")
 	var others []*testkit.AgentConn

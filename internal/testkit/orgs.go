@@ -28,7 +28,7 @@ func (c *Client) PersonalOrg() db.Organization {
 
 // ShareAI gives the users sight of the AI, as its admin would by inviting them to the organization the AI
 // belongs to (AD-016): they become members of its home organization with no position, unless they already are
-// members of it. The grants a v0.5 AI was shared with give nothing any more.
+// members of it.
 func (c *Client) ShareAI(aiID string, users ...*Client) {
 	c.T.Helper()
 	ctx := context.Background()
@@ -45,8 +45,7 @@ func (c *Client) ShareAI(aiID string, users ...*Client) {
 }
 
 // ShareConnection gives the users sight of the connection, as an admin of its organization would by inviting
-// them: they become members of it with no position, unless they already are members (AD-016). The grants a v0.5
-// connection was shared with give nothing any more.
+// them: they become members of it with no position, unless they already are members (AD-016).
 func (c *Client) ShareConnection(connectorID string, userIDs ...string) {
 	c.T.Helper()
 	ctx := context.Background()

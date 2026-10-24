@@ -193,7 +193,7 @@ func TestLiveStreamHasNoOutboxStatus(t *testing.T) {
 	f.requireNoChatDelivery(t)
 }
 
-// CID-22 (T33): naming chats in a post neither grants nor refuses anything: the post keeps the
+// CID-22 (T33): naming chats in a post neither gives nor refuses anything: the post keeps the
 // authorization of the route it goes through, and a refused post stores nothing. The user route needs
 // the post level on the room (the creator, an admin of the organization and the people in the room 201,
 // everybody else 404, anonymous callers 401); the agent route is the AI's own, for a member only: its
