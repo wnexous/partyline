@@ -2,11 +2,9 @@ package cli
 
 import (
 	"context"
-	"encoding/json"
 	"flag"
 	"fmt"
 	"io"
-	"net/http"
 	"slices"
 	"strings"
 	"text/tabwriter"
@@ -54,31 +52,8 @@ func agentsCmd(ctx context.Context, args []string, io stdio) int {
 
 // fetchHostedAgents reads the AIs the token's user hosts from GET /api/v1/agent/agents.
 func fetchHostedAgents(ctx context.Context, creds cliconfig.Config) ([]dto.Agent, error) {
-	ctx, cancel := context.WithTimeout(ctx, agentsTimeout)
-	defer cancel()
-	u := strings.TrimRight(creds.URL, "/") + "/api/v1/agent/agents"
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, u, nil)
-	if err != nil {
-		return nil, err
-	}
-	req.Header.Set("Authorization", "Bearer "+creds.Token)
-	resp, err := http.DefaultClient.Do(req)
-	if err != nil {
-		return nil, fmt.Errorf("cannot reach %s", creds.URL)
-	}
-	defer func() { _ = resp.Body.Close() }()
-	if resp.StatusCode != http.StatusOK {
-		var body dto.ErrorBody
-		if json.NewDecoder(resp.Body).Decode(&body) == nil && body.Error.Message != "" {
-			return nil, fmt.Errorf("the server answered %d: %s", resp.StatusCode, body.Error.Message)
-		}
-		return nil, fmt.Errorf("the server answered %d", resp.StatusCode)
-	}
-	var list dto.List[dto.Agent]
-	if err := json.NewDecoder(resp.Body).Decode(&list); err != nil {
-		return nil, fmt.Errorf("unexpected answer: %w", err)
-	}
-	return list.Items, nil
+	list, err := getFromAgentAPI[dto.List[dto.Agent]](ctx, creds, "agents")
+	return list.Items, err
 }
 
 // agentGroup is the AIs of one organization, as `partyline agents` prints them.

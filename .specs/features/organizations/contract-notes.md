@@ -1409,3 +1409,44 @@ Every section above is kept as its task wrote it. This one records what the merg
   `internal/api/agent_session_start_test.go` (the check for a new AI, the AI of the folder and an adoption, that it changes nothing and publishes nothing, the
   authorization). Mutations of each rule above fail them (flag lists, precedence, consumption, inheritance, the refusal, the order against the warning, the
   statuses that count, header names, encoding and omission).
+
+## T37: `partyline orgs` and the login line (ORG-04)
+
+- **Route**: `GET /api/v1/agent/orgs` (`agentOrgs`, `internal/api/agent_handlers.go`), the token's user and nothing else - whatever AI the request acts as, with
+  or without folder headers - answering `dto.List[dto.AgentOrg]`:
+  `AgentOrg{id, name, slug, permission, position, default, positions[]}` and `AgentOrgPosition{id, name, parent_id?}`. `slug` is what `--org` takes;
+  `permission` is `admin`, `member` or `guest` (a plain string, so Phase 3's `Permission` type does not clash on merge); `position` is the name of the position
+  the user holds there, `""` for none; `default` is true for exactly one organization (`Authz.DefaultStandingOf`: the user's chosen default while they belong to
+  it, else where they have administered longest, else the oldest membership), and for none when the user belongs to none; `positions` is the organization's whole
+  chart, by name (ignoring case, then id), each with its parent's id (absent for a root), **always an array**, as is `items`.
+  - **Who sees what**: the organizations of `Orgs.ListMine` - every membership, guests included (CHART-02: a guest sees the chart) - and of no other. An outsider
+    and an instance admin who are not members get their own organization only and nothing of another's chart, ids included. Nothing is cached: a join or a
+    leave shows on the next request (`TestAgentOrgsFollowMembershipChanges`).
+  - **Authorization**: agent tokens only. A user session or a user token is 403 `forbidden` (`agents.ErrAgentTokenRequired`, the check every agent route makes), no
+    credentials and an unknown token 401, the token of a disabled user 401. It is not written to: nothing else is registered on the path.
+  - **DTO names** are `AgentOrg` / `AgentOrgPosition` on purpose: Phase 3 (T12-T16) adds `Organization`, `OrgMember`, `Position` and `OrgChart`, and this
+    route needs none of them. `make generate` ran: `web/src/lib/api/types.gen.ts` gains the two interfaces (not hand-edited).
+- **`partyline orgs`** (`internal/cli/orgs.go`; flags `--url` and `--token` as `partyline agents`; credentials missing → exit 2; an unreachable server, an error answer, a
+  rejected or user token, an answer that is not JSON → exit 1 with the reason on stderr and nothing on stdout; more than one argument → exit 2):
+  - **Without an argument** a header row and one row per organization in tab-aligned columns - `SLUG` (starred, `* `, for the default; two spaces otherwise), `NAME`,
+    `PERMISSION`, `POSITION` (trailing empty columns left out, so no trailing spaces) - then a blank line and `New AIs join the one marked * unless you pass
+    --org; change your default in Settings.` A user in no organization is told `You belong to no organization: create one in the web app, or ask an admin to
+    invite you.` (exit 0).
+  - **With an address** (any case, or an id; a blank argument counts as none) the organization's name - the heading `partyline agents` uses (the name, with the
+    address in parentheses only when it differs) - and its chart of positions as a tree, two spaces in per level, siblings by name, `(you)` after the position the
+    user holds; an empty chart is `  No positions yet.` An organization the user is not in, existing or not, is
+    `partyline orgs: you belong to no organization with the address "…"; partyline orgs lists yours` on stderr, exit **1**.
+  - `partyline --help` lists `orgs [slug]` and the last help paragraph points at it. The `agents` line of the help still describes the machine tree T57 removed: that is
+    T58's.
+  - A shared reader, `getFromAgentAPI[T]` (`internal/cli/agentapi.go`), does the request for `agents` and `orgs`; its error texts are the ones `partyline agents` had.
+- **`partyline login`** prints, after `Logged in as @<handle> on <instance> (machine <hostname>)`, the line `New AIs join <name> (<slug>); pass --org or change your
+  default in Settings.` for the organization `GET /agent/orgs` marks as the default (name and address both, as the T34 notice does). The call is made with the token
+  just saved and given 5 seconds; **any failure** (unreachable, an error status, an answer that is not JSON) and an answer with no default leave the line out - the
+  login is saved, finished and exits 0 as before. `partyline setup`, which also runs the login step, does not print it: the spec ties the line to `login`.
+- **Docs**: `docs/agents.md` (the login output, `partyline orgs`). README / README.pt-BR: T55.
+- **Tests**: `internal/api/agent_orgs_test.go` (every role of `OrgRoles` - member, guest, outsider and instance admin included -, the default marker following the
+  user's choice and a leave, each organization's own chart, a change shows at once, an empty list, the token's user whatever the folder, the authorization),
+  `internal/cli/orgs_test.go` (the list with two organizations besides the personal one and its default, a guest, the tree for an address in any case and by id, the
+  unknown address, nothing to show, every failure with its exit code, `--help`, and the login line with an organization of her own choice or a failing call behind a
+  proxy). Mutations of the star, the default, the sort, the position name, the parent ids, the lookup, the exit codes, the footer, the trailing columns and the
+  login behaviour each fail them.

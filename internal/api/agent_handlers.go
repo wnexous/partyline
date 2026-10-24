@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"errors"
 	"net/http"
+	"slices"
 	"strconv"
 	"strings"
 	"time"
@@ -63,6 +64,7 @@ func (s *server) agentAPIRoutes(mux *http.ServeMux) {
 	s.handle(mux, "GET /api/v1/agent/agents", s.ownerAgents)
 	s.handle(mux, "GET /api/v1/agent/session", s.agentSession)
 	s.handle(mux, "GET /api/v1/agent/whoami", s.agentWhoAmI)
+	s.handle(mux, "GET /api/v1/agent/orgs", s.agentOrgs)
 }
 
 // agentToken returns the principal of a request made with an agent token; no registered agent
@@ -148,6 +150,55 @@ func (s *server) agentWhoAmI(w http.ResponseWriter, r *http.Request) error {
 		out.Organization = &dto.ContactOrg{ID: st.Org.ID, Name: st.Org.Name, Slug: st.Org.Slug}
 		out.Position = st.Position
 		out.Managers = convert.ManagerRefs(st.Managers, rows)
+	}
+	httpx.WriteJSON(w, http.StatusOK, out)
+	return nil
+}
+
+// agentOrgs lists the organizations the token's user belongs to, for `partyline orgs` and the line `partyline
+// login` prints (ORG-04): the user's permission and position in each, the one a new AI of theirs joins when
+// --org is not given, and each one's chart of positions, so that --org and --position can be told by name. It is
+// the user's own view, whatever AI the request acts as, and it needs no folder and no AI. A user is told the
+// chart of an organization they belong to with any permission, a guest included (CHART-02), and nothing of any
+// other. It reads the memberships when asked, so a change shows on the next request.
+func (s *server) agentOrgs(w http.ResponseWriter, r *http.Request) error {
+	p, err := agentToken(r)
+	if err != nil {
+		return err
+	}
+	ctx := r.Context()
+	authz := s.Orgs.Authz()
+	mine, err := s.Orgs.ListMine(ctx, p.UserID)
+	if err != nil {
+		return err
+	}
+	home, hasHome, err := authz.DefaultStandingOf(ctx, p.UserID, 0)
+	if err != nil {
+		return err
+	}
+	out := dto.List[dto.AgentOrg]{Items: make([]dto.AgentOrg, 0, len(mine))}
+	for _, m := range mine {
+		chart, err := authz.Chart(ctx, m.ID)
+		if err != nil {
+			return err
+		}
+		org := dto.AgentOrg{
+			ID: m.ID, Name: m.Name, Slug: m.Slug, Permission: string(m.Permission),
+			Default: hasHome && home.Org.ID == m.ID, Positions: make([]dto.AgentOrgPosition, 0, len(chart.Positions)),
+		}
+		if pos, ok := chart.Positions[m.PositionID]; ok {
+			org.Position = pos.Name
+		}
+		for _, pos := range chart.Positions {
+			org.Positions = append(org.Positions, dto.AgentOrgPosition{ID: pos.ID, Name: pos.Name, ParentID: pos.ParentID})
+		}
+		slices.SortFunc(org.Positions, func(a, b dto.AgentOrgPosition) int {
+			if c := strings.Compare(strings.ToLower(a.Name), strings.ToLower(b.Name)); c != 0 {
+				return c
+			}
+			return strings.Compare(a.ID, b.ID)
+		})
+		out.Items = append(out.Items, org)
 	}
 	httpx.WriteJSON(w, http.StatusOK, out)
 	return nil

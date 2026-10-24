@@ -397,7 +397,7 @@ func TestHelpDocumentsThePlacementFlags(t *testing.T) {
 	require.Contains(t, out.String(), "A new AI joins your default organization. Put --org <slug> before the arguments to start it in\n"+
 		"another one, --position <name> to give it a position there and --parent <@handle> when one of your\n"+
 		"AIs starts it; PARTYLINE_ORG, PARTYLINE_POSITION and PARTYLINE_PARENT stand in for the flags. An AI\n"+
-		"keeps the organization it was created in.\n")
+		"keeps the organization it was created in. partyline orgs lists the organizations and their positions.\n")
 }
 
 // The pre-flight of the launcher and the processes of the session send the identity headers in the same way:

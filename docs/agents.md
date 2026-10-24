@@ -51,7 +51,12 @@ it saves anything. It then prints:
 
 ```
 Logged in as @<handle> on <instance> (machine <hostname>)
+New AIs join <organization name> (<address>); pass --org or change your default in Settings.
 ```
+
+The second line says which organization a new AI of yours joins when you start a session without
+`--org` (see [Where a new AI goes](#where-a-new-ai-goes-organization-position-and-parent)). Login
+never asks about organizations, and it leaves the line out when the server cannot tell.
 
 The instance URL comes from `--url`, `PARTYLINE_URL`, the saved config, else a prompt. Without a
 browser on the machine, create an agent token in the web app (**API tokens**, kind agent) and run
@@ -257,6 +262,37 @@ With no AI at all it prints `No AIs yet: start a session with partyline claude`.
 
 `partyline agents --url <url> --token <token>` uses explicit credentials; otherwise the saved
 config, `PARTYLINE_URL` and `PARTYLINE_TOKEN` are used.
+
+### `partyline orgs`
+
+`partyline orgs` lists your organizations, by name, with where you stand in each and a star on
+the default (the one a new AI joins when you start a session without `--org`):
+
+```
+  SLUG    NAME    PERMISSION  POSITION
+  acme    Acme    admin       Admin
+* alice   alice   admin       Admin
+  globex  Globex  member      Analyst
+
+New AIs join the one marked * unless you pass --org; change your default in Settings.
+```
+
+`SLUG` is what `--org` takes. `partyline orgs acme` prints that organization's positions as a
+tree, with `(you)` on the one you hold, which is where `--position` names come from:
+
+```
+Acme
+  Admin (you)
+    Director
+      Lead developer
+        Worktrees
+    Sentinel
+```
+
+An address you do not belong to, whether it exists or not, is `partyline orgs: you belong to no
+organization with the address "…"` and exit 1. The default itself is a setting of your account, changed
+in the web app (Settings); a CLI token reaches the agent API only, so `partyline orgs` reads and
+never writes. It takes `--url` and `--token` like `partyline agents`.
 
 ## Claude Code
 

@@ -233,6 +233,47 @@ export interface AgentWhoAmI extends IntelligenceRef {
   managers: IntelligenceRef[];
 }
 /**
+ * AgentOrg is one organization of the token's user as GET /agent/orgs gives it, for `partyline orgs`
+ * (ORG-04): where the user stands in it, whether a new AI of theirs joins it when --org is not given, and its
+ * chart of positions, so that --org and --position can be told by name.
+ */
+export interface AgentOrg {
+  id: string;
+  name: string;
+  /**
+   * Slug is the address --org takes.
+   */
+  slug: string;
+  /**
+   * Permission is the user's in it: admin, member or guest.
+   */
+  permission: string;
+  /**
+   * Position is the name of the position the user holds in it; empty for none.
+   */
+  position: string;
+  /**
+   * Default tells whether it is the organization a new AI of the user joins when --org is not given. Exactly
+   * one organization is the default, unless the user belongs to none.
+   */
+  default: boolean;
+  /**
+   * Positions is the organization's chart, each position with the one above it, by name; always present.
+   */
+  positions: AgentOrgPosition[];
+}
+/**
+ * AgentOrgPosition is one position of an organization's chart.
+ */
+export interface AgentOrgPosition {
+  id: string;
+  name: string;
+  /**
+   * ParentID is the position above this one; absent for a root.
+   */
+  parent_id?: string;
+}
+/**
  * SessionState is GET /agent/session: what the server knows about the AI of the machine and
  * folder named in the headers, without creating anything (SES-01). Online tells whether the AI
  * has a live session; the launcher asks before taking it over.

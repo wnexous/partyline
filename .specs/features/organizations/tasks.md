@@ -983,9 +983,9 @@ Rewrite `connectors_handlers_test.go` and `connector_operator_test.go`.
 **Reuses**: `agentWhoAmI` client pattern, `menu.go` output style
 **Requirement**: ORG-04
 **Done when**:
-- [ ] CLI e2e: the list shows two orgs and marks the default; an unknown slug → non-zero exit; the login prints the line; a failing org call still finishes the login
-- [ ] Route test: a user session cookie on `/agent/orgs` → refused by the path rule
-- [ ] Gate check passes: `make check`
+- [x] CLI e2e: the list shows two orgs and marks the default; an unknown slug → non-zero exit; the login prints the line; a failing org call still finishes the login
+- [x] Route test: a user session cookie on `/agent/orgs` → refused by the path rule
+- [x] Gate check passes: `make check`
 **Tests**: e2e
 **Gate**: build
 **Commit**: `feat(cli): list organizations and positions`
