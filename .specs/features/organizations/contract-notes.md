@@ -1569,3 +1569,43 @@ What the viewer may do about an identity comes from its profile only (T25): `mem
   still published and reaches the organization's members as `access.changed` kind `organization` (T32).
 - **Service addition**: `InvitationFor(actor, invitationID)` (the invitation for whoever answers it; ErrNotFound for anyone else, an
   unknown id and an expired invitation).
+
+## T16: Chart route (CHART-01, CHART-02, CHART-03)
+
+- **Route** (`internal/api/org_chart_handlers.go`, `orgChartRoutes`): `GET /api/v1/orgs/{org}/chart` → 200 `OrgChart` for every member,
+  **guests included**; an outsider, an instance admin without membership and an unknown organization are 404; an agent token is 403
+  (path rule) and no credentials 401. `{org}` is an id or an address. The chart is read in one read snapshot with the member rows.
+- **`OrgChart`** (`internal/api/dto/orgs.go`; the web's interim shapes match it):
+  - `viewer: {admin}`;
+  - `positions`: **every** position as a flat list in **tree order** (a parent before its children, siblings by name ignoring case),
+    each `{id, name, parent_id?, holders: [ChartMember]}`; holders are ordered by display name (ignoring case), then id;
+  - `members`: the members **with no position that hang under another member**; each carries `under`, the id of that member;
+  - `unassigned`: the members with no position and nobody to hang under;
+  - every member is in exactly one of the three places.
+  - `ChartMember`: `intelligence` (`IntelligenceRef`), `permission` (the admin and guest badges), `online`, `under?`, `can_delete`,
+    `delete_effect`, `can_move`.
+- **Where a positionless member hangs (CHART-02)**: a **guest** under its **inviter**; otherwise (or when the inviter left) an AI under
+  its **creator**; each only while that member still belongs to the organization. A member whose chain of creators and inviters leads
+  back to itself is in a loop and hangs under nobody (unassigned); one that only hangs under a loop is placed under it as usual. A
+  member whose `position_id` is not a position of the organization (a stale row, impossible through the services) is shown as having
+  none instead of disappearing.
+- **`online`**: true for an AI with a live session (`Registry.Online`); people have no presence and are always false, so the page draws the
+  dot for AIs only.
+- **Flags, for the viewer (CHART-03)**, computed from the chart by `orgs.viewerActions` and the same rules the routes enforce:
+  - `can_delete` = `Chart.CanDelete(viewer, member)` (POS-05): an admin on everyone but itself, whoever manages a guest on that guest;
+    never on itself;
+  - `delete_effect` = `delete` for an AI whose **home** is this organization, `remove` for anyone else (a person, an AI of another
+    organization) (POS-06);
+  - `can_move` = the viewer is an **admin** (any member, itself included, to any position or none), or it **manages** the member and holds a
+    position with another below it (a manager moves only to positions strictly below its own, so a leaf position moves nobody). This is
+    "offered where the server would accept a move": CHART-03's "only where the viewer manages the target" is its necessary condition for
+    everyone but admins, and an admin's move is what the Members matrix allows.
+  `TestChartFlagsMatchWhatTheRoutesAllow` pins the flags to the routes: a flag that says yes is a request that returns 200, one that says no
+  is 403.
+- **`OrgMember` also carries the flags** (`can_delete`, `delete_effect`, `can_move`, the viewer's), as the web's members table
+  assumed: `GET /members` and the row `PATCH /members/{iid}` answers with. They are the same values as the chart's for the same viewer
+  (`TestMemberRowsCarryTheChartFlags`). `dto.DeleteEffect` is `"delete" | "remove"`.
+- **Service**: `orgs.Service.ChartView(viewer, org)` (`internal/orgs/chartview.go`) returns `ChartView{ViewerAdmin, Positions,
+  Members, Unassigned}`; `ListMembers` and `MemberView` now read the rows, the chart and the AIs whose home is the organization in one
+  read transaction and fill `MemberRow.CanDelete`, `DeletedForGood`, `CanMove` (and `Under` only in the chart). **Query**:
+  `ListOrgHomeAgentIDs`. Converter: `convert.OrgChart`, `convert.OrgMember`.

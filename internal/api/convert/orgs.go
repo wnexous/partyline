@@ -43,7 +43,43 @@ func OrgMember(r orgs.MemberRow) dto.OrgMember {
 		inviter := memberRef(r.InviterIID, r.InviterKind, r.InviterDisplayName, r.InviterHandle, r.InviterAvatarSha256)
 		m.InvitedBy = &inviter
 	}
+	m.CanDelete, m.DeleteEffect, m.CanMove = r.CanDelete, deleteEffect(r), r.CanMove
 	return m
+}
+
+// deleteEffect is what deleting the member does in the organization (POS-06).
+func deleteEffect(r orgs.MemberRow) dto.DeleteEffect {
+	if r.DeletedForGood {
+		return dto.DeleteEffectDelete
+	}
+	return dto.DeleteEffectRemove
+}
+
+// OrgChart renders an organization's org chart; online tells whether an AI has a live session (CHART-01).
+func OrgChart(v orgs.ChartView, online func(agentID string) bool) dto.OrgChart {
+	member := func(r orgs.MemberRow) dto.ChartMember {
+		ref := memberRef(r.IID, r.Kind, r.DisplayName, r.Handle, r.AvatarSha256)
+		return dto.ChartMember{
+			Intelligence: ref, Permission: dto.Permission(r.Permission),
+			Online: ref.Kind == dto.IntelligenceKindAI && online(r.IID), Under: r.Under,
+			CanDelete: r.CanDelete, DeleteEffect: deleteEffect(r), CanMove: r.CanMove,
+		}
+	}
+	members := func(rows []orgs.MemberRow) []dto.ChartMember {
+		out := make([]dto.ChartMember, len(rows))
+		for i, r := range rows {
+			out[i] = member(r)
+		}
+		return out
+	}
+	out := dto.OrgChart{
+		Viewer: dto.ChartViewer{Admin: v.ViewerAdmin}, Positions: make([]dto.ChartPosition, len(v.Positions)),
+		Members: members(v.Members), Unassigned: members(v.Unassigned),
+	}
+	for i, p := range v.Positions {
+		out.Positions[i] = dto.ChartPosition{ID: p.ID, Name: p.Name, ParentID: p.ParentID, Holders: members(p.Holders)}
+	}
+	return out
 }
 
 // memberRef is the summary of an organization member, who is a user or an AI.

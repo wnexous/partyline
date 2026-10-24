@@ -1856,8 +1856,18 @@ export interface UpdateOrgMemberRequest {
   position_id?: string | null;
 }
 /**
+ * DeleteEffect is what deleting a member of an organization does there (POS-06): an AI whose home is the
+ * organization is deleted for good, while a person, or an AI of another organization, is only removed from it.
+ */
+export const DeleteEffectDelete = "delete";
+export const DeleteEffectRemove = "remove";
+/**
+ * Delete effects.
+ */
+export type DeleteEffect = typeof DeleteEffectDelete | typeof DeleteEffectRemove;
+/**
  * OrgMember is one membership of an organization as the members list shows it (OMEM-01, OMEM-03):
- * the identity, its permission and position, and the inviter of a guest.
+ * the identity, its permission and position, the inviter of a guest, and what the viewer may do to it.
  */
 export interface OrgMember {
   intelligence: IntelligenceRef;
@@ -1872,6 +1882,81 @@ export interface OrgMember {
    */
   invited_by?: IntelligenceRef;
   joined_at: string /* RFC 3339 */;
+  /**
+   * CanDelete says whether the viewer may delete the member in this organization (POS-05), and DeleteEffect
+   * what that does (POS-06). CanMove says whether the viewer may move the member to another position
+   * (POS-04): an admin may move anyone; anyone else a member it manages, to a position below its own.
+   */
+  can_delete: boolean;
+  delete_effect: DeleteEffect;
+  can_move: boolean;
+}
+/**
+ * OrgChart is an organization's org chart as one of its members, guests included, sees it (CHART-01..03).
+ * Every member appears once: in the Holders of its position, in Members, or in Unassigned.
+ */
+export interface OrgChart {
+  viewer: ChartViewer;
+  /**
+   * Positions is every position of the organization as a flat list in tree order - a parent before its
+   * children, siblings by name - which ParentID links into the tree.
+   */
+  positions: ChartPosition[];
+  /**
+   * Members are the members with no position that hang under another member: a guest under its inviter,
+   * an AI under its creator (Under names it). A member Under names may be a holder, or itself one of
+   * Members or Unassigned.
+   */
+  members: ChartMember[];
+  /**
+   * Unassigned are the members with no position and nobody to hang under.
+   */
+  unassigned: ChartMember[];
+}
+/**
+ * ChartViewer is what the chart says about the person looking at it.
+ */
+export interface ChartViewer {
+  /**
+   * Admin tells whether the viewer is an admin of the organization, who may edit its positions (CHART-03).
+   */
+  admin: boolean;
+}
+/**
+ * ChartPosition is one position with the members that hold it, ordered by name.
+ */
+export interface ChartPosition {
+  id: string;
+  name: string;
+  /**
+   * ParentID is absent for a root.
+   */
+  parent_id?: string;
+  holders: ChartMember[];
+}
+/**
+ * ChartMember is a member as the chart draws it, with what the viewer may do to it (CHART-03).
+ */
+export interface ChartMember {
+  intelligence: IntelligenceRef;
+  /**
+   * Permission carries the admin and guest badges.
+   */
+  permission: Permission;
+  /**
+   * Online is true for an AI that has a live session; people have no presence and are always false.
+   */
+  online: boolean;
+  /**
+   * Under is the id of the member this one hangs under; set only in Chart.Members.
+   */
+  under?: string;
+  /**
+   * CanDelete, DeleteEffect and CanMove are the viewer's rights over the member, as in OrgMember.
+   */
+  can_delete: boolean;
+  delete_effect: DeleteEffect;
+  can_move: boolean;
 }
 /**
  * CreateInvitationRequest is the body of POST /orgs/{org}/invitations (OMEM-01). Handle is the @handle of

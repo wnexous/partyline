@@ -109,6 +109,7 @@ func (s *server) routes(mux *http.ServeMux) {
 	s.positionRoutes(mux)
 	s.orgMemberRoutes(mux)
 	s.orgInvitationRoutes(mux)
+	s.orgChartRoutes(mux)
 	s.roomRoutes(mux)
 	s.conversationRoutes(mux)
 	s.intelligenceRoutes(mux)

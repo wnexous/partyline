@@ -26,7 +26,8 @@ var (
 )
 
 // MemberRow is a membership as the members list shows it: the identity with its profile summary,
-// its permission and position, and the inviter of a guest (OMEM-01, OMEM-03).
+// its permission and position, the inviter of a guest (OMEM-01, OMEM-03) and what the viewer may do to it
+// (CHART-03).
 type MemberRow struct {
 	IID, Permission                    string
 	PositionID, PositionName           string
@@ -36,6 +37,12 @@ type MemberRow struct {
 	InviterKind, InviterDisplayName    string
 	InviterHandle, InviterAvatarSha256 string
 	JoinedAt                           int64
+	// CanDelete says the viewer may delete the member in this organization (POS-05); DeletedForGood what that
+	// does: an AI whose home is the organization is deleted for good, anyone else is only removed (POS-06).
+	// CanMove says the viewer may move the member to another position (POS-04).
+	CanDelete, DeletedForGood, CanMove bool
+	// Under is set by ChartView on a member with no position that hangs under another member.
+	Under string
 }
 
 func memberRow(r db.ListOrgMembersRow) MemberRow {
@@ -47,46 +54,84 @@ func memberRow(r db.ListOrgMembersRow) MemberRow {
 	}
 }
 
-func memberRowView(r db.GetOrgMemberViewRow) MemberRow {
-	return MemberRow{
-		IID: r.Iid, Permission: r.Permission, PositionID: r.PositionID, PositionName: r.PositionName,
-		Kind: r.Kind, DisplayName: r.DisplayName, Handle: r.Handle, AvatarSha256: r.AvatarSha256,
-		InviterIID: r.InviterIid, InviterKind: r.InviterKind, InviterDisplayName: r.InviterDisplayName,
-		InviterHandle: r.InviterHandle, InviterAvatarSha256: r.InviterAvatarSha256, JoinedAt: r.JoinedAt,
+// orgSnapshot is one consistent read of an organization for a viewer: its chart, its members with their
+// profiles and the AIs whose home it is.
+type orgSnapshot struct {
+	chart *Chart
+	rows  []db.ListOrgMembersRow
+	homes map[string]bool
+}
+
+// snapshot reads the organization in one read transaction, so the rows and the chart agree. The viewer must
+// be a member (ErrNotFound otherwise). With only set it reads that one member, ErrNotFound when it is none.
+func (s *Service) snapshot(ctx context.Context, viewerIID, orgID, only string) (orgSnapshot, error) {
+	snap := orgSnapshot{homes: map[string]bool{}}
+	err := s.store.ReadTx(ctx, func(q *db.Queries) error {
+		var err error
+		if snap.chart, err = Load(ctx, q, orgID); err != nil {
+			return err
+		}
+		if _, ok := snap.chart.Member(viewerIID); !ok {
+			return ErrNotFound
+		}
+		if only != "" {
+			r, err := q.GetOrgMemberView(ctx, db.GetOrgMemberViewParams{OrgID: orgID, Iid: only})
+			if errors.Is(err, sql.ErrNoRows) {
+				return ErrNotFound
+			}
+			if err != nil {
+				return err
+			}
+			snap.rows = []db.ListOrgMembersRow{db.ListOrgMembersRow(r)}
+			home, err := q.GetAgentOrg(ctx, only) // empty for a user
+			if err != nil && !errors.Is(err, sql.ErrNoRows) {
+				return err
+			}
+			snap.homes[only] = home == orgID
+			return nil
+		}
+		if snap.rows, err = q.ListOrgMembers(ctx, orgID); err != nil {
+			return err
+		}
+		homes, err := q.ListOrgHomeAgentIDs(ctx, nullable(orgID))
+		for _, id := range homes {
+			snap.homes[id] = true
+		}
+		return err
+	})
+	return snap, err
+}
+
+// memberRows renders the snapshot's members for the viewer, in the order they were read.
+func (snap orgSnapshot) memberRows(viewerIID string) []MemberRow {
+	actions := newViewerActions(snap.chart, viewerIID)
+	out := make([]MemberRow, len(snap.rows))
+	for i, r := range snap.rows {
+		out[i] = memberRow(r)
+		actions.apply(&out[i], snap.homes)
 	}
+	return out
 }
 
 // ListMembers lists the organization's members with their profile summary, permission, position and,
-// for a guest, its inviter; every member, guests included, sees the list (CHART-02).
+// for a guest, its inviter, and what the viewer may do to each; every member, guests included, sees the
+// list (CHART-02).
 func (s *Service) ListMembers(ctx context.Context, actorIID, orgID string) ([]MemberRow, error) {
-	if err := s.z.RequireMember(ctx, orgID, actorIID); err != nil {
-		return nil, err
-	}
-	rows, err := s.store.R().ListOrgMembers(ctx, orgID)
+	snap, err := s.snapshot(ctx, actorIID, orgID, "")
 	if err != nil {
 		return nil, err
 	}
-	out := make([]MemberRow, len(rows))
-	for i, r := range rows {
-		out[i] = memberRow(r)
-	}
-	return out, nil
+	return snap.memberRows(actorIID), nil
 }
 
 // MemberView returns one member as the members list shows it; an outsider, or a target that is not a
 // member, is ErrNotFound.
 func (s *Service) MemberView(ctx context.Context, actorIID, orgID, targetIID string) (MemberRow, error) {
-	if err := s.z.RequireMember(ctx, orgID, actorIID); err != nil {
-		return MemberRow{}, err
-	}
-	r, err := s.store.R().GetOrgMemberView(ctx, db.GetOrgMemberViewParams{OrgID: orgID, Iid: targetIID})
-	if errors.Is(err, sql.ErrNoRows) {
-		return MemberRow{}, ErrNotFound
-	}
+	snap, err := s.snapshot(ctx, actorIID, orgID, targetIID)
 	if err != nil {
 		return MemberRow{}, err
 	}
-	return memberRowView(r), nil
+	return snap.memberRows(actorIID)[0], nil
 }
 
 // AddMemberInput describes a membership being created.

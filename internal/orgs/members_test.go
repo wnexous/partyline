@@ -753,21 +753,25 @@ func TestListMembersShowsTheProfileThePermissionThePositionAndTheInviter(t *test
 	require.ErrorIs(t, err, ErrNotFound)
 }
 
-// MemberView is one row of the list; an outsider or a target that is not a member is not found.
+// MemberView is one row of the list as the same viewer sees it (the flags are the viewer's); an outsider or a
+// target that is not a member is not found.
 func TestMemberViewIsOneRowOfTheList(t *testing.T) {
 	ctx := context.Background()
 	f := newFixture(t)
 	a := f.acme()
 	out := f.user("out")
 
-	list, err := f.svc.ListMembers(ctx, a.alice, a.org)
-	require.NoError(t, err)
-	for _, row := range list {
-		got, err := f.svc.MemberView(ctx, a.gus, a.org, row.IID)
+	for _, viewer := range []string{a.alice, a.mia, a.gus} {
+		list, err := f.svc.ListMembers(ctx, viewer, a.org)
 		require.NoError(t, err)
-		require.Equal(t, row, got)
+		require.NotEmpty(t, list)
+		for _, row := range list {
+			got, err := f.svc.MemberView(ctx, viewer, a.org, row.IID)
+			require.NoError(t, err)
+			require.Equal(t, row, got, "%s sees %s", viewer, row.IID)
+		}
 	}
-	_, err = f.svc.MemberView(ctx, a.alice, a.org, out)
+	_, err := f.svc.MemberView(ctx, a.alice, a.org, out)
 	require.ErrorIs(t, err, ErrNotFound, "not a member")
 	_, err = f.svc.MemberView(ctx, out, a.org, a.walt)
 	require.ErrorIs(t, err, ErrNotFound, "an outsider")

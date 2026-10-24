@@ -85,6 +85,11 @@ LEFT JOIN intelligences inv ON inv.id = m.inviter_iid
 WHERE m.org_id = ?
 ORDER BY i.display_name COLLATE NOCASE, m.iid;
 
+-- name: ListOrgHomeAgentIDs :many
+-- The AIs whose home is this organization: deleting one of them here deletes it for good, while any other
+-- member is only removed (POS-06).
+SELECT id FROM agents WHERE org_id = ? ORDER BY id;
+
 -- name: GetOrgMemberView :one
 -- One row of ListOrgMembers.
 SELECT m.iid, m.permission, m.joined_at,

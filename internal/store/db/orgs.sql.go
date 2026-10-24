@@ -844,6 +844,35 @@ func (q *Queries) ListOrgChartMembers(ctx context.Context, orgID string) ([]List
 	return items, nil
 }
 
+const listOrgHomeAgentIDs = `-- name: ListOrgHomeAgentIDs :many
+SELECT id FROM agents WHERE org_id = ? ORDER BY id
+`
+
+// The AIs whose home is this organization: deleting one of them here deletes it for good, while any other
+// member is only removed (POS-06).
+func (q *Queries) ListOrgHomeAgentIDs(ctx context.Context, orgID sql.NullString) ([]string, error) {
+	rows, err := q.db.QueryContext(ctx, listOrgHomeAgentIDs, orgID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []string
+	for rows.Next() {
+		var id string
+		if err := rows.Scan(&id); err != nil {
+			return nil, err
+		}
+		items = append(items, id)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const listOrgInvitations = `-- name: ListOrgInvitations :many
 SELECT id, org_id, invitee_iid, permission, position_id, invited_by, created_at, expires_at FROM org_invitations WHERE org_id = ?1 AND expires_at > ?2
 ORDER BY created_at DESC, id

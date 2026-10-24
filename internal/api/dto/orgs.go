@@ -73,8 +73,18 @@ type UpdateOrgMemberRequest struct {
 	PositionID json.RawMessage `json:"position_id,omitempty" tstype:"string | null"`
 }
 
+// DeleteEffect is what deleting a member of an organization does there (POS-06): an AI whose home is the
+// organization is deleted for good, while a person, or an AI of another organization, is only removed from it.
+type DeleteEffect string
+
+// Delete effects.
+const (
+	DeleteEffectDelete DeleteEffect = "delete"
+	DeleteEffectRemove DeleteEffect = "remove"
+)
+
 // OrgMember is one membership of an organization as the members list shows it (OMEM-01, OMEM-03):
-// the identity, its permission and position, and the inviter of a guest.
+// the identity, its permission and position, the inviter of a guest, and what the viewer may do to it.
 type OrgMember struct {
 	Intelligence IntelligenceRef `json:"intelligence"`
 	Permission   Permission      `json:"permission"`
@@ -84,6 +94,57 @@ type OrgMember struct {
 	// InvitedBy is the identity that invited a guest (POS-05); absent for other permissions.
 	InvitedBy *IntelligenceRef `json:"invited_by,omitempty"`
 	JoinedAt  time.Time        `json:"joined_at"`
+	// CanDelete says whether the viewer may delete the member in this organization (POS-05), and DeleteEffect
+	// what that does (POS-06). CanMove says whether the viewer may move the member to another position
+	// (POS-04): an admin may move anyone; anyone else a member it manages, to a position below its own.
+	CanDelete    bool         `json:"can_delete"`
+	DeleteEffect DeleteEffect `json:"delete_effect"`
+	CanMove      bool         `json:"can_move"`
+}
+
+// OrgChart is an organization's org chart as one of its members, guests included, sees it (CHART-01..03).
+// Every member appears once: in the Holders of its position, in Members, or in Unassigned.
+type OrgChart struct {
+	Viewer ChartViewer `json:"viewer"`
+	// Positions is every position of the organization as a flat list in tree order - a parent before its
+	// children, siblings by name - which ParentID links into the tree.
+	Positions []ChartPosition `json:"positions"`
+	// Members are the members with no position that hang under another member: a guest under its inviter,
+	// an AI under its creator (Under names it). A member Under names may be a holder, or itself one of
+	// Members or Unassigned.
+	Members []ChartMember `json:"members"`
+	// Unassigned are the members with no position and nobody to hang under.
+	Unassigned []ChartMember `json:"unassigned"`
+}
+
+// ChartViewer is what the chart says about the person looking at it.
+type ChartViewer struct {
+	// Admin tells whether the viewer is an admin of the organization, who may edit its positions (CHART-03).
+	Admin bool `json:"admin"`
+}
+
+// ChartPosition is one position with the members that hold it, ordered by name.
+type ChartPosition struct {
+	ID   string `json:"id"`
+	Name string `json:"name"`
+	// ParentID is absent for a root.
+	ParentID string        `json:"parent_id,omitempty"`
+	Holders  []ChartMember `json:"holders"`
+}
+
+// ChartMember is a member as the chart draws it, with what the viewer may do to it (CHART-03).
+type ChartMember struct {
+	Intelligence IntelligenceRef `json:"intelligence"`
+	// Permission carries the admin and guest badges.
+	Permission Permission `json:"permission"`
+	// Online is true for an AI that has a live session; people have no presence and are always false.
+	Online bool `json:"online"`
+	// Under is the id of the member this one hangs under; set only in Chart.Members.
+	Under string `json:"under,omitempty"`
+	// CanDelete, DeleteEffect and CanMove are the viewer's rights over the member, as in OrgMember.
+	CanDelete    bool         `json:"can_delete"`
+	DeleteEffect DeleteEffect `json:"delete_effect"`
+	CanMove      bool         `json:"can_move"`
 }
 
 // CreateInvitationRequest is the body of POST /orgs/{org}/invitations (OMEM-01). Handle is the @handle of

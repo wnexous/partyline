@@ -538,14 +538,14 @@ Phases 3-6 reuse these for their authorization matrices.
 **Reuses**: `Chart.ManagedBy`, presence `Online`
 **Requirement**: CHART-01, CHART-02, CHART-03
 **Done when**:
-- [ ] e2e on the spec's example chart (Admin › Director › Manager › Lead developer › Worktrees, plus Sentinel):
+- [x] e2e on the spec's example chart (Admin › Director › Manager › Lead developer › Worktrees, plus Sentinel):
   - the tree shape;
   - three workers positioned in Worktrees, and one positionless worker under Lead;
   - flags for the admin (delete on everyone but itself), for Lead (workers started by Lead are guests: delete true; Sentinel, a member: false; move true on both if below) and for a member (all false);
   - `delete_effect` is `remove` for a person and for an AI of another org;
   - a guest gets 200, and a guest invited by Bob appears under Bob;
   - outsider 404
-- [ ] Gate check passes: `make check`
+- [x] Gate check passes: `make check`
 **Tests**: e2e
 **Gate**: build
 **Commit**: `feat(api): serve the org chart`

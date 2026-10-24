@@ -1,6 +1,7 @@
 package convert_test
 
 import (
+	"encoding/json"
 	"testing"
 	"time"
 
@@ -105,8 +106,15 @@ func TestOrgMember(t *testing.T) {
 			AvatarURL: "/api/v1/intelligences/u1/avatar?v=" + sha,
 		},
 		Permission: dto.PermissionGuest, PositionID: "p1", PositionName: "Lead", InvitedBy: inviter,
-		JoinedAt: convert.Time(1700000000000),
+		JoinedAt: convert.Time(1700000000000), DeleteEffect: dto.DeleteEffectRemove,
 	}, got, "a guest shows its inviter")
+
+	// What the viewer may do to the member travels with it; an AI of the organization is deleted for good.
+	rights := convert.OrgMember(row(func(r *orgs.MemberRow) { r.CanDelete, r.CanMove, r.DeletedForGood = true, true, true }))
+	require.True(t, rights.CanDelete)
+	require.True(t, rights.CanMove)
+	require.Equal(t, dto.DeleteEffectDelete, rights.DeleteEffect)
+	require.False(t, got.CanDelete || got.CanMove)
 
 	for _, permission := range []string{"member", "admin"} {
 		require.Nil(t, convert.OrgMember(row(func(r *orgs.MemberRow) { r.Permission = permission })).InvitedBy,
@@ -154,4 +162,41 @@ func TestInvitation(t *testing.T) {
 	require.Equal(t, dto.IntelligenceKindAI, got.InvitedBy.Kind)
 	require.Empty(t, got.PositionID)
 	require.Empty(t, got.PositionName)
+}
+
+// CHART-01, CHART-03: the chart renders every list as a list - an empty one is [], never null - and asks
+// presence about AIs only, since people have none.
+func TestOrgChart(t *testing.T) {
+	asked := map[string]bool{}
+	online := func(id string) bool { asked[id] = true; return true }
+	chart := convert.OrgChart(orgs.ChartView{
+		ViewerAdmin: true,
+		Positions: []orgs.ChartPosition{{
+			Position: orgs.Position{ID: "p1", Name: "Admin"},
+			Holders: []orgs.MemberRow{
+				{IID: "u1", Kind: "human", DisplayName: "Ana", Handle: "ana", Permission: "admin", CanDelete: false, CanMove: true},
+				{IID: "a1", Kind: "ai", DisplayName: "Atlas", Handle: "atlas", Permission: "guest", CanDelete: true, DeletedForGood: true},
+			},
+		}, {Position: orgs.Position{ID: "p2", Name: "Lead", ParentID: "p1"}, Holders: []orgs.MemberRow{}}},
+		Members: []orgs.MemberRow{{IID: "a2", Kind: "ai", DisplayName: "Vega", Handle: "vega", Permission: "member", Under: "u1"}},
+	}, online)
+
+	require.True(t, chart.Viewer.Admin)
+	require.Equal(t, map[string]bool{"a1": true, "a2": true}, asked, "presence is asked for AIs, not for Ana")
+	ana, atlas := chart.Positions[0].Holders[0], chart.Positions[0].Holders[1]
+	require.False(t, ana.Online)
+	require.True(t, atlas.Online)
+	require.Equal(t, dto.DeleteEffectRemove, ana.DeleteEffect)
+	require.Equal(t, dto.DeleteEffectDelete, atlas.DeleteEffect)
+	require.True(t, ana.CanMove)
+	require.True(t, atlas.CanDelete)
+	require.Equal(t, dto.PermissionGuest, atlas.Permission)
+	require.Equal(t, "p1", chart.Positions[1].ParentID)
+	require.Equal(t, "u1", chart.Members[0].Under)
+
+	raw, err := json.Marshal(chart)
+	require.NoError(t, err)
+	require.Contains(t, string(raw), `"holders":[]`)
+	require.Contains(t, string(raw), `"unassigned":[]`)
+	require.NotContains(t, string(raw), "null")
 }
