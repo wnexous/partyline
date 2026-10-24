@@ -125,6 +125,11 @@ export const changePasswordSchema = z
     ...msg("validation.passwordMatch"),
   });
 
+/** DELETE /me: the current password proves it is the person who deletes their own account. */
+export const deleteAccountSchema = z.object({
+  password: z.string().min(1, msg("validation.required")),
+});
+
 /**
  * Message text length as the server counts it (MSG-02: Unicode code points, Go's rune count),
  * not UTF-16 units: an emoji is one character.
@@ -165,6 +170,7 @@ export type CreateTokenForm = z.input<typeof createTokenSchema>;
 export type ProfileForm = z.input<typeof profileSchema>;
 export type ProfileEditForm = z.input<typeof profileEditSchema>;
 export type ChangePasswordForm = z.input<typeof changePasswordSchema>;
+export type DeleteAccountForm = z.input<typeof deleteAccountSchema>;
 export type RoomSettingsForm = z.input<typeof roomSettingsSchema>;
 export type MemberSettingsForm = z.input<typeof memberSettingsSchema>;
 

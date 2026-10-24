@@ -1204,10 +1204,10 @@ Rewrite `connectors_handlers_test.go` and `connector_operator_test.go`.
 **Reuses**: `select`
 **Requirement**: ORG-04, POS-06
 **Done when**:
-- [ ] Vitest:
+- [x] Vitest:
   - the select shows the current default; changing it calls the API; an error toast shows on 403;
   - delete account: a wrong password (422) shows inline; 409 `last_instance_admin` shows its message; success logs out
-- [ ] Gate check passes: `make check`
+- [x] Gate check passes: `make check`
 **Tests**: unit
 **Gate**: build
 **Commit**: `feat(web): default organization and account deletion settings`

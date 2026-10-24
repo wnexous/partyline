@@ -1,31 +1,54 @@
 import { zodResolver } from "@hookform/resolvers/zod";
-import { createFileRoute } from "@tanstack/react-router";
+import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import { MonitorIcon, MoonIcon, SunIcon } from "lucide-react";
 import { type ReactNode, useId, useState } from "react";
 import { useForm } from "react-hook-form";
 import { toast } from "sonner";
 import { FormAlert, TextField } from "@/components/form-fields";
 import { LOCALE_NAMES, useChooseLocale } from "@/components/language-switch";
-
+import { NativeSelect } from "@/components/native-select";
 import { PageHeader } from "@/components/page-header";
 import { ProfileEditor } from "@/components/profile-editor";
 import { Button } from "@/components/ui/button";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+  DialogTrigger,
+} from "@/components/ui/dialog";
 import { Form } from "@/components/ui/form";
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import { Skeleton } from "@/components/ui/skeleton";
 import { isApiError } from "@/lib/api/client";
 import {
   useChangePassword,
+  useDeleteAccount,
   useIntelligence,
   useMe,
+  useMyOrgs,
   useRevokeSession,
   useSessions,
+  useSetDefaultOrg,
 } from "@/lib/api/queries";
-import { type Me, PasswordMinLength, type Session } from "@/lib/api/types.gen";
+import {
+  ErrorCodeLastInstanceAdmin,
+  type Me,
+  PasswordMinLength,
+  type Session,
+} from "@/lib/api/types.gen";
 import { applyFieldErrors } from "@/lib/forms";
 import { LOCALES, type MessageKey, type Translate, useI18n, useT } from "@/lib/i18n";
 import { useLiveStore } from "@/lib/live/store";
-import { type ChangePasswordForm, changePasswordSchema } from "@/lib/schemas";
+import { defaultOrgIdOf } from "@/lib/orgs";
+import {
+  type ChangePasswordForm,
+  changePasswordSchema,
+  type DeleteAccountForm,
+  deleteAccountSchema,
+} from "@/lib/schemas";
 import type { ThemePreference } from "@/lib/theme";
 import { formatAbsolute, formatRelative } from "@/lib/time";
 import { cn } from "@/lib/utils";
@@ -44,8 +67,10 @@ function SettingsPage() {
       <div className="max-w-2xl divide-y px-4 md:px-8">
         <ProfileSection me={me} />
         <AppearanceSection />
+        <DefaultOrgSection />
         <PasswordSection />
         <SessionsSection />
+        <DeleteAccountSection />
       </div>
     </>
   );
@@ -200,6 +225,81 @@ function Choice({
       <RadioGroupItem id={id} value={value} />
       {children}
     </label>
+  );
+}
+
+/**
+ * The organization new AIs join when they are started without --org (ORG-04): one of the
+ * organizations the account belongs to, guest ones included. Only a member can be chosen; the
+ * server says 403 for any other, and the select goes back to what it was.
+ */
+function DefaultOrgSection() {
+  const t = useT();
+  const id = useId();
+  const me = useMe().data;
+  const mine = useMyOrgs();
+  const setDefault = useSetDefaultOrg();
+  const [choice, setChoice] = useState<string | null>(null);
+  const orgs = mine.data ?? [];
+
+  if (mine.isLoading) {
+    return (
+      <Section id={`${id}-org`} title={t("account.defaultOrg")}>
+        <Skeleton aria-hidden="true" className="h-9 w-full max-w-sm" />
+      </Section>
+    );
+  }
+  // Without organizations to choose from there is nothing to set (or they could not be read).
+  if (orgs.length === 0) return null;
+
+  // A default the account no longer belongs to counts for nothing: the select asks for a choice.
+  const defaultId = defaultOrgIdOf(me);
+  const current = orgs.some((o) => o.id === defaultId) ? (defaultId ?? "") : "";
+  const value = choice ?? current;
+
+  const choose = (orgId: string) => {
+    if (orgId === value) return;
+    setChoice(orgId);
+    setDefault.mutate(orgId, {
+      onSuccess: () =>
+        toast.success(
+          t("account.defaultOrgSaved", { org: orgs.find((o) => o.id === orgId)?.name ?? "" }),
+        ),
+      onError: (err) =>
+        toast.error(
+          isApiError(err) && err.status === 403
+            ? t("account.defaultOrgForbidden")
+            : t("account.defaultOrgFailed"),
+        ),
+      onSettled: () => setChoice(null),
+    });
+  };
+
+  return (
+    <Section
+      id={`${id}-org`}
+      title={t("account.defaultOrg")}
+      description={t("account.defaultOrgBody")}
+    >
+      <NativeSelect
+        aria-label={t("account.defaultOrgLabel")}
+        value={value}
+        disabled={setDefault.isPending}
+        onChange={(e) => choose(e.target.value)}
+        className="max-w-sm"
+      >
+        {value === "" ? (
+          <option value="" disabled>
+            {t("account.defaultOrgNone")}
+          </option>
+        ) : null}
+        {orgs.map((o) => (
+          <option key={o.id} value={o.id}>
+            {o.name}
+          </option>
+        ))}
+      </NativeSelect>
+    </Section>
   );
 }
 
@@ -360,5 +460,91 @@ function SessionsSection() {
         </ul>
       )}
     </Section>
+  );
+}
+
+/**
+ * Deleting one's own account (POS-06): the password proves who asks, and the dialog says what
+ * stays. The AIs, groups and connections belong to their organizations, so they outlive the person.
+ */
+function DeleteAccountSection() {
+  const t = useT();
+  const id = useId();
+  const [open, setOpen] = useState(false);
+  return (
+    <Section id={`${id}-delete`} title={t("account.delete")} description={t("account.deleteBody")}>
+      <Dialog open={open} onOpenChange={setOpen}>
+        <DialogTrigger asChild>
+          <Button variant="outline" className="text-destructive hover:text-destructive">
+            {t("account.deleteOpen")}
+          </Button>
+        </DialogTrigger>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>{t("account.deleteTitle")}</DialogTitle>
+            <DialogDescription>{t("account.deleteDialogBody")}</DialogDescription>
+          </DialogHeader>
+          {/* Mounted only while open: every opening starts with an empty password. */}
+          {open ? <DeleteAccountBody onCancel={() => setOpen(false)} /> : null}
+        </DialogContent>
+      </Dialog>
+    </Section>
+  );
+}
+
+function DeleteAccountBody({ onCancel }: { onCancel: () => void }) {
+  const t = useT();
+  const navigate = useNavigate();
+  const remove = useDeleteAccount();
+  const [error, setError] = useState<string | null>(null);
+  const form = useForm<DeleteAccountForm>({
+    resolver: zodResolver(deleteAccountSchema),
+    defaultValues: { password: "" },
+  });
+  const onSubmit = form.handleSubmit(({ password }) => {
+    if (remove.isPending) return;
+    setError(null);
+    remove.mutate(
+      { password },
+      {
+        onSuccess: () => {
+          toast(t("account.deleted"));
+          void navigate({ to: "/login", search: { redirect: undefined } });
+        },
+        onError: (err) => {
+          if (applyFieldErrors(err, form.setError, ["password"])) return;
+          // The last admin of the instance is needed to inherit the organizations (OUPG-02).
+          if (isApiError(err) && err.code === ErrorCodeLastInstanceAdmin) {
+            setError(t("account.deleteLastAdmin"));
+            return;
+          }
+          setError(formError(t, err));
+        },
+      },
+    );
+  });
+
+  return (
+    <Form {...form}>
+      <form onSubmit={onSubmit} noValidate className="space-y-4">
+        <FormAlert>{error}</FormAlert>
+        <TextField
+          control={form.control}
+          name="password"
+          type="password"
+          label={t("auth.password")}
+          autoComplete="current-password"
+          autoFocus
+        />
+        <DialogFooter>
+          <Button type="button" variant="outline" onClick={onCancel}>
+            {t("common.cancel")}
+          </Button>
+          <Button type="submit" variant="destructive" disabled={remove.isPending}>
+            {t("account.deleteConfirm")}
+          </Button>
+        </DialogFooter>
+      </form>
+    </Form>
   );
 }

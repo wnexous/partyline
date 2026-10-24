@@ -10,7 +10,7 @@ import {
   useQueryClient,
 } from "@tanstack/react-query";
 import { withIntelligence, withoutAI } from "@/lib/contacts";
-import { toMyOrgs } from "@/lib/orgs";
+import { type MeWithDefaultOrg, toMyOrgs } from "@/lib/orgs";
 import { api } from "./client";
 import {
   type AcceptInviteRequest,
@@ -36,6 +36,7 @@ import {
   DefaultActivityLimit,
   DefaultPageSize,
   DefaultPeoplePage,
+  type DeleteAccountRequest,
   type DeviceRequest,
   type FileKind,
   FileKindDocument,
@@ -203,6 +204,36 @@ export function useUpdateMe() {
 export function useChangePassword() {
   return useMutation({
     mutationFn: (req: ChangePasswordRequest) => api<void>("POST", "/me/password", req),
+  });
+}
+
+/**
+ * Chooses the organization new AIs join when they are started without --org (ORG-04). The server
+ * answers 403 for one the account does not belong to. `me` carries the default, so the cached
+ * account is updated once the server has accepted it.
+ */
+export function useSetDefaultOrg() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (orgId: string) => api<unknown>("PUT", "/me/default-org", { org_id: orgId }),
+    onSuccess: (_, orgId) =>
+      qc.setQueryData<MeWithDefaultOrg>(
+        queryKeys.me,
+        (old) => old && { ...old, default_org_id: orgId },
+      ),
+  });
+}
+
+/**
+ * Deletes the caller's own account (POS-06). The password proves who asks; a wrong one is a 422 on
+ * its field, and the last active instance admin gets 409 `last_instance_admin`. The server ends the
+ * session with the account, so nothing cached is kept.
+ */
+export function useDeleteAccount() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (req: DeleteAccountRequest) => api<void>("DELETE", "/me", req),
+    onSuccess: () => qc.clear(),
   });
 }
 

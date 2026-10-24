@@ -405,6 +405,33 @@ describe.each(["en", "pt-BR"] as const)("accessibility (%s)", (locale) => {
     expect(await axe(container, AXE_OPTIONS)).toHaveNoViolations();
   });
 
+  it("the settings page, with the default organization and the account deletion, has no axe violations", async () => {
+    appApi(locale, {
+      "GET /me": json(200, { ...makeMe({ locale }), default_org_id: "o2" }),
+      "GET /intelligences/u1": json(200, ownProfileInOrgs),
+    });
+    const { container } = renderRoute("/settings");
+    await screen.findByRole("combobox", {
+      name:
+        locale === "en" ? "Default organization for new AIs" : "Organização padrão para novas IAs",
+    });
+    expect(await axe(container, AXE_OPTIONS)).toHaveNoViolations();
+  });
+
+  it("the dialog that deletes the account has no axe violations", async () => {
+    appApi(locale);
+    const user = userEvent.setup();
+    renderRoute("/settings");
+    await user.click(
+      await screen.findByRole("button", {
+        name: locale === "en" ? "Delete my account" : "Excluir minha conta",
+      }),
+    );
+    const dialog = await screen.findByRole("dialog");
+    await within(dialog).findByLabelText(locale === "en" ? "Password" : "Senha");
+    expect(await axe(dialog, AXE_OPTIONS)).toHaveNoViolations();
+  });
+
   it("the merge dialog of a hosted AI has no axe violations", async () => {
     // The old helper's home is Acme, where the user hosts Atlas and Notes too: it can be merged into either.
     appApi(locale, {

@@ -1398,3 +1398,38 @@ What the viewer may do about an identity comes from its profile only (T25): `mem
   stale comment above `contactsQuery` (the machine tree, shared AIs) now describes what the query returns.
 - **For T50**: the comment on the `access.changed` branch of `handlers.ts` still talks of sharing ("Sharing decides the shared AIs...");
   T50 rewrites every mention of sharing in `web/src`.
+
+## T49: Default organization setting (ORG-04, POS-06)
+
+- **Default organization** (`DefaultOrgSection`, a section of `settings.tsx`): a select named "Default organization for new AIs" under the
+  heading "Default organization" ("New AIs you start join it, unless you start them with --org."). It lists **every** organization the
+  viewer belongs to, guest ones included (`useMyOrgs`; T9's `SetDefault` takes a member with any permission), and shows the account's
+  default (`me.default_org_id`, read through `defaultOrgIdOf`). An account with no default, or one the viewer no longer belongs to, shows a
+  disabled "Choose an organization" instead of guessing the server's fallback. Choosing sends `PUT /me/default-org` `{org_id}` (the id,
+  `useSetDefaultOrg`), disables the select while it runs and, on success, writes `default_org_id` into the cached account and says "New AIs
+  now join {org}". A 403 reads "You can only choose an organization you belong to.", any other failure "Couldn't change the default
+  organization. Try again."; both put the select back on the old default. The same value again sends nothing. The section is a skeleton while
+  the organizations load and absent when the viewer has none (or they could not be read).
+- **Depends on Phase 3 (T17), which this branch does not have.** `PUT /api/v1/me/default-org` and `default_org_id` on `GET /me` are T17's.
+  On this branch alone the PUT answers 404 and the account has no default, so the select starts on "Choose an organization" and a choice
+  ends in the failure toast; the page needs **no change** once T17 is merged. What the web assumes of T17, from the design: the body
+  `{org_id}`, any 2xx accepts it (the response body is ignored), 403 is "not a member", and `me.default_org_id` carries the default. The
+  request and the field are typed locally (the literal body of `useSetDefaultOrg`, `MeWithDefaultOrg` in `lib/orgs.ts`, T45): **after the
+  merge, type them with the generated DTOs** if tygo produces them.
+- **Delete account** (`DeleteAccountSection`): a section "Delete account" with the button "Delete my account", which opens a dialog with the
+  password field and, literally: "Your account, your sessions and tokens and your direct messages are deleted for good. Your AIs, groups and
+  connections stay in their organizations: your AIs go offline, and an admin of their organization can delete them. This can’t be undone."
+  (what T20 does: the hosted AIs become unlinked identities that stay offline, the groups and connections are re-pointed to the heir, the
+  messages stay). `DELETE /me` `{password}` (`useDeleteAccount`): **204** clears the cache, shows "Your account was deleted" and goes to the
+  login page; **422** with the `password` field shows the server's reason under the field and keeps the dialog; **409 `last_instance_admin`**
+  reads "You’re the only admin of this instance. Make another user an admin before deleting your account."; an unreachable server and any
+  other failure say so inside the dialog. An empty password is refused before asking the server ("Required"). The request is sent once while it
+  runs, cancel sends nothing, and every opening starts with an empty password.
+- **Texts** (en and pt-BR): `account.defaultOrg`, `account.defaultOrgBody`, `account.defaultOrgLabel`, `account.defaultOrgNone`,
+  `account.defaultOrgSaved`, `account.defaultOrgForbidden`, `account.defaultOrgFailed`, `account.delete`, `account.deleteBody`,
+  `account.deleteOpen`, `account.deleteTitle`, `account.deleteDialogBody`, `account.deleteConfirm`, `account.deleteLastAdmin`,
+  `account.deleted`.
+- **Tests**: `settings.test.tsx` (the options and the current default, the hint, changing with the id, the cache, 403 / other failures with the
+  select going back, no resend, no default, a default the viewer left, no organizations, Portuguese; the dialog's wording, no password, 422,
+  409, success with the request body, the cache and the login page, one request at a time, cancel, reopening, 500 and unreachable server,
+  Portuguese) and axe tests of the page and the dialog (en and pt-BR).
