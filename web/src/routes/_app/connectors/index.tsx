@@ -8,29 +8,43 @@ import { platformLabel } from "@/components/message-item";
 import { PageHeader } from "@/components/page-header";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
-import { useConnectors, useMe } from "@/lib/api/queries";
+import { useCurrentOrg } from "@/hooks/use-current-org";
+import { useConnectors } from "@/lib/api/queries";
 import type { Connector } from "@/lib/api/types.gen";
 import { useT } from "@/lib/i18n";
+import { isAdminOf } from "@/lib/orgs";
 
 export const Route = createFileRoute("/_app/connectors/")({
   component: ConnectorsPage,
 });
 
+/*
+ * The connections of the current organization (ORG-02): they belong to it, its members see them
+ * and its admins add and change them (ORG-03, OMEM-04). While the viewer's organizations are not
+ * known the page lists every connection and offers to add one: the server decides who may.
+ */
 function ConnectorsPage() {
   const t = useT();
   const connectors = useConnectors();
+  const { org, orgs, loading } = useCurrentOrg();
   const [adding, setAdding] = useState(false);
   const sorted = useMemo(
-    () => [...(connectors.data ?? [])].sort((a, b) => a.name.localeCompare(b.name)),
-    [connectors.data],
+    () =>
+      (connectors.data ?? [])
+        .filter((c) => !org || c.org_id === org.id)
+        .sort((a, b) => a.name.localeCompare(b.name)),
+    [connectors.data, org],
   );
+  // Only an admin adds a connection, to an organization they administer.
+  const canAdd = orgs.length === 0 || orgs.some(isAdminOf);
+  const canAddHere = !org || isAdminOf(org);
 
-  const add = (
+  const add = canAdd ? (
     <Button onClick={() => setAdding(true)}>
       <PlusIcon aria-hidden="true" />
       {t("connectors.add")}
     </Button>
-  );
+  ) : null;
 
   return (
     <>
@@ -39,7 +53,7 @@ function ConnectorsPage() {
         description={t("page.connectorsBody")}
         actions={sorted.length > 0 ? add : null}
       />
-      {connectors.isPending ? (
+      {connectors.isPending || loading ? (
         <ul aria-hidden="true" className="divide-y border-b">
           {[0, 1].map((i) => (
             <li key={i} className="space-y-2 px-4 py-4 md:px-8">
@@ -57,7 +71,11 @@ function ConnectorsPage() {
         </div>
       ) : sorted.length === 0 ? (
         <EmptyState icon={PlugZapIcon} title={t("connectors.emptyTitle")} action={add}>
-          <p>{t("connectors.emptyBody")}</p>
+          <p>
+            {canAddHere
+              ? t("connectors.emptyBody")
+              : t("connectors.emptyReadOnly", { org: org?.name ?? "" })}
+          </p>
         </EmptyState>
       ) : (
         <ul aria-label={t("connectors.listLabel")} className="divide-y border-b">
@@ -72,10 +90,7 @@ function ConnectorsPage() {
 }
 
 function ConnectorRow({ connector: c }: { connector: Connector }) {
-  const t = useT();
-  const me = useMe().data;
   const { status, lastError } = useConnectorState(c);
-  const foreign = me && c.owner.id !== me.id;
   return (
     <li aria-label={c.name}>
       <Link
@@ -88,11 +103,6 @@ function ConnectorRow({ connector: c }: { connector: Connector }) {
           <span className="shrink-0 rounded-[3px] border px-1.5 py-px text-[0.7rem] text-muted-foreground">
             {platformLabel(c.kind)}
           </span>
-          {foreign ? (
-            <span className="shrink-0 text-xs text-muted-foreground">
-              {t("rooms.ownedBy", { username: c.owner.username })}
-            </span>
-          ) : null}
         </span>
         <ChevronRightIcon
           className="row-span-2 size-4 text-muted-foreground transition-transform group-hover:translate-x-0.5"

@@ -178,6 +178,18 @@ const RESOURCE_KEYS: Record<string, "rooms" | "agents" | "connectors"> = {
   connector: "connectors",
 };
 
+/**
+ * An organization the viewer belongs to (or has just left) changed (CHART-02): their own profile
+ * lists their organizations, the contacts group the AIs by them, and a DM is filed under the ones
+ * both sides belong to. The pages of the organization itself refresh from this event too.
+ */
+function refreshOrganizations(qc: QueryClient) {
+  const meId = qc.getQueryData<Me>(queryKeys.me)?.intelligence.id;
+  if (meId) qc.invalidateQueries({ queryKey: queryKeys.intelligence(meId), exact: true });
+  qc.invalidateQueries({ queryKey: queryKeys.contacts });
+  qc.invalidateQueries({ queryKey: queryKeys.conversations, exact: true });
+}
+
 export function handleLiveEvent(qc: QueryClient, actions: LiveActions, event: LiveEvent): void {
   switch (event.type) {
     case "hello":
@@ -251,6 +263,10 @@ export function handleLiveEvent(qc: QueryClient, actions: LiveActions, event: Li
       return;
 
     case "access.changed": {
+      if (event.data.resource_kind === "organization") {
+        refreshOrganizations(qc);
+        return;
+      }
       const kind = RESOURCE_KEYS[event.data.resource_kind];
       if (!kind) return;
       qc.invalidateQueries({ queryKey: [kind], exact: true });

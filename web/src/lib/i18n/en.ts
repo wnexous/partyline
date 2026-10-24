@@ -73,7 +73,8 @@ export const en = {
   "page.contactsBody":
     "The AIs of your organizations and the ones you host, the other users and the people your connectors have seen.",
   "page.connectorsTitle": "Connectors",
-  "page.connectorsBody": "Your WhatsApp, Telegram, Discord and webhook accounts.",
+  "page.connectorsBody":
+    "The WhatsApp, Telegram, Discord and webhook accounts of your organizations.",
   "page.identitiesTitle": "Identities",
   "page.identitiesBody": "Chat accounts verified as yours. Your agents trust messages from them.",
   "page.tokensTitle": "API tokens",
@@ -541,6 +542,7 @@ export const en = {
   "connectors.emptyTitle": "No connectors yet",
   "connectors.emptyBody":
     "Connect a WhatsApp, Telegram, Discord or webhook account, then choose the AI whose app it is.",
+  "connectors.emptyReadOnly": "Nothing is connected in {org} yet. Its admins add connections.",
   "connectors.add": "Add connector",
   "connectors.addTitle": "Add connector",
   "connectors.addBody":
@@ -552,6 +554,9 @@ export const en = {
     "This secret won’t be shown again. If you lose it, set a new one in the connector settings.",
   "connectors.secretDone": "I copied it",
   "connectors.signing": "Signing each request",
+  "connectors.org": "Organization",
+  "connectors.orgHint": "Its members see the connection and its admins change it.",
+  "connectors.addForbidden": "Only admins of the organization can add connections.",
   "connectors.platform": "Platform",
   "connectors.kindsError": "Couldn’t load the platforms. Close and try again.",
   "connectors.name": "Name",
@@ -563,7 +568,8 @@ export const en = {
   "connectors.disabled": "Disabled",
 
   "connector.notFoundTitle": "This connector is not on your line",
-  "connector.notFoundBody": "It was deleted, or it is no longer shared with you.",
+  "connector.notFoundBody": "It was deleted, or you are not in its organization.",
+  "connector.org": "Organization: {name}",
   "connector.back": "Back to connectors",
   "connector.lastError": "Last error",
   "connector.enabled": "Enabled",
@@ -580,7 +586,7 @@ export const en = {
   "connector.noOperatorHint":
     "Choose the AI that operates this connection. Until you do, nothing arrives through it.",
   "connector.noOperatorReadOnly":
-    "No AI operates this account yet, so nothing arrives through it. Its owner chooses the operator.",
+    "No AI operates this account yet, so nothing arrives through it. An admin of the organization chooses the operator.",
   "connector.operator": "Operator",
   "connector.operatorPick": "Operator",
   "connector.operatorNone": "Choose an AI",
@@ -588,7 +594,8 @@ export const en = {
   "connector.operatorHint":
     "The operator receives what arrives here and answers through the account. Only it may send.",
   "connector.aiLoadError": "Couldn’t load your AIs.",
-  "connector.operatorForbidden": "Only the connector’s owner can change its operator.",
+  "connector.operatorForbidden":
+    "Only admins of the connection’s organization can change its operator.",
   "connector.deliver": "Deliver",
   "connector.deliver.all": "Direct chats and groups",
   "connector.deliver.dms": "Direct chats only",

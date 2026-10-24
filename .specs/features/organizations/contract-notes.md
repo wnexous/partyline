@@ -1243,3 +1243,56 @@ Every section above is kept as its task wrote it. This one records what the merg
   `CreateWithMembers` now records `creator.IID()`: the same for a user, the AI itself for an AI. `instructions_by` stays the user, since
   no route gives an AI's group instructions. `TestTheTextOfAGroupAnAICreatesIsTrustedOnlyWhenThatAIManagesTheRecipient` pins it (a
   sibling and an AI the target manages are untrusted, an AI above the target's creator is trusted; recording the host fails it).
+
+## T45: Connection pages owned by the organization (ORG-03, ORG-07, OMEM-04)
+
+Phase 9 runs on a base without Phase 3 (the organization API, T12-T17) and without Phase 8 (T39-T44). It therefore
+reads only what the merged phases serve. The minimal shared pieces below are what T45-T49 need of T39; **Phase 8 reuses
+them** (T39 may replace the source of `useMyOrgs` by `GET /orgs`, and adds the switcher UI on top of `useCurrentOrg`).
+
+- **`useMyOrgs()`** (`web/src/lib/api/queries.ts`): the viewer's organizations, each with their permission and position,
+  `MyOrg{id, name, slug, permission, position?}` (`web/src/lib/orgs.ts`). The source is `memberships` of **the viewer's own
+  profile** (`GET /intelligences/{me.intelligence.id}`, T25: "all of its own when the caller is the identity"), through the
+  profile's cache entry (`queryKeys.intelligence`), so the settings page and this read cost one request. It is not
+  `GET /orgs` because that route is Phase 3's. Order: the server's (by organization name).
+- **`useCurrentOrg()`** (`web/src/hooks/use-current-org.ts`) returns `{org, orgs, loading, select}`. `org` resolves, in
+  order, to the organization the viewer picked (`useLiveStore.currentOrgId`, kept in `localStorage` under **`pl.org`**, every
+  access wrapped in try/catch by `readStorage`/`writeStorage`), the account's default (`me.default_org_id`, read through
+  `defaultOrgIdOf` because `Me` gains it with T17 and this branch does not have it yet), then the first of `orgs`. A pick or
+  default the viewer no longer belongs to counts for nothing. `org` is `undefined` while the organizations load, when they
+  failed to load and for a viewer who belongs to none: **every consumer then behaves as before this feature** (no filtering,
+  server decides), so an unreachable profile never hides data.
+- **`select(id)`** is `useLiveStore.setCurrentOrg`; there is no UI for it yet (the switcher is T39). Until then the pick is
+  the default.
+- **Pure helpers** (`web/src/lib/orgs.ts`): `isAdminOf`, `canCreateGroupsIn` (admin or member, never a guest, OMEM-04),
+  `resolveCurrentOrg`, `inOrg(conversation, orgId)` (a conversation filed under **no** organization belongs to every one),
+  `toMyOrgs`, `defaultOrgIdOf`.
+- **Live**: `access.changed` with `resource_kind: "organization"` (T32) invalidates the viewer's own profile (their
+  organizations), the contacts and the conversations list (DMs are filed under shared organizations). T39 adds the
+  organization pages' own queries to the same branch of `handlers.ts`.
+- **Fixtures**: `makeMembership()` (a `ProfileMembership`, Acme `member`).
+
+Connections:
+
+- **List** (`connectors/index.tsx`): only the current organization's connections (`org_id`), by name. While the organizations
+  are loading the page shows its skeleton; when they are unknown or empty it lists every connection and offers to add one.
+  "Add connector" is offered when the viewer administers at least one organization (or the organizations are unknown); a
+  viewer who administers none sees the empty state "Nothing is connected in {org} yet. Its admins add connections." and no
+  button. The owner label ("by @user") is gone: the organization owns the connection (AD-019).
+- **Add dialog**: an "Organization" select, listing only the organizations the viewer **administers** (ORG-03); it starts on
+  the current one when the viewer administers it, else on the first they administer, and the request carries `org_id`. With the
+  organizations unknown no select is shown and no `org_id` is sent (the server uses the creator's default). A 403 reads "Only
+  admins of the organization can add connections."
+- **Detail page**: names the organization ("Organization: Acme", from `useMyOrgs`), has no sharing control, no owner label.
+  Admins (`my_level: manage`) edit, enable, change the operator and delivery, delete; every other member reads the operator, the
+  delivery settings and **how many** messages wait (never their text, CID-23). The operator choices are the AIs whose home is
+  the connection's organization (ORG-07, unchanged from T28). A 403 on the operator reads "Only admins of the connection’s
+  organization can change its operator."
+- **Texts changed** (en and pt-BR): `page.connectorsBody`, `connector.notFoundBody`, `connector.noOperatorReadOnly` ("An admin
+  of the organization chooses the operator."), `connector.operatorForbidden`; new `connectors.org`, `connectors.orgHint`,
+  `connectors.emptyReadOnly`, `connectors.addForbidden`, `connector.org`.
+- **Tests**: `connectors.test.tsx` (list scoped to the organization and following the pick, unknown organizations, the empty
+  states, adding for admins only with the select and `org_id`, the read-only member view, the operator among the organization's
+  AIs, no sharing control), `use-current-org.test.tsx`, `lib/orgs.test.ts`, the `access.changed` organization cases of
+  `handlers.test.ts`, and an axe test of the add dialog (en and pt-BR).
+

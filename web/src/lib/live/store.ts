@@ -1,6 +1,7 @@
 import { create } from "zustand";
 import type { ConnectorStatus, Identity } from "@/lib/api/types.gen";
 import { detectLocale, isLocale, type Locale } from "@/lib/i18n";
+import { CURRENT_ORG_KEY } from "@/lib/orgs";
 import {
   LOCALE_KEY,
   readStorage,
@@ -43,6 +44,11 @@ export interface LiveState {
   theme: ThemePreference;
   locale: Locale;
   paletteOpen: boolean;
+  /**
+   * The organization the viewer picked in this browser (ORG-02); null until they pick one. What it
+   * means is hooks/use-current-org.ts's to say: the pick of an organization they left counts for nothing.
+   */
+  currentOrgId: string | null;
 
   setStatus: (status: SocketStatus) => void;
   setPresence: (agentId: string, presence: Presence) => void;
@@ -52,6 +58,7 @@ export interface LiveState {
   setTheme: (theme: ThemePreference) => void;
   setLocale: (locale: Locale) => void;
   setPaletteOpen: (open: boolean) => void;
+  setCurrentOrg: (orgId: string | null) => void;
   resetLive: () => void;
 }
 
@@ -71,6 +78,7 @@ export const useLiveStore = create<LiveState>()((set) => ({
   theme: readThemePreference(),
   locale: initialLocale(),
   paletteOpen: false,
+  currentOrgId: readStorage(CURRENT_ORG_KEY),
 
   setStatus: (status) =>
     set((s) => {
@@ -94,6 +102,10 @@ export const useLiveStore = create<LiveState>()((set) => ({
     set({ locale });
   },
   setPaletteOpen: (paletteOpen) => set({ paletteOpen }),
+  setCurrentOrg: (currentOrgId) => {
+    writeStorage(CURRENT_ORG_KEY, currentOrgId);
+    set({ currentOrgId });
+  },
   resetLive: () =>
     set({
       status: "closed",

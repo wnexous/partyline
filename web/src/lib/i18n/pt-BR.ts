@@ -72,7 +72,8 @@ export const ptBR: Dictionary = {
   "page.contactsBody":
     "As IAs das suas organizações e as que você hospeda, os outros usuários e as pessoas que seus conectores já viram.",
   "page.connectorsTitle": "Conectores",
-  "page.connectorsBody": "Suas contas de WhatsApp, Telegram, Discord e webhook.",
+  "page.connectorsBody":
+    "As contas de WhatsApp, Telegram, Discord e webhook das suas organizações.",
   "page.identitiesTitle": "Identidades",
   "page.identitiesBody":
     "Contas de chat verificadas como suas. Seus agentes confiam nas mensagens delas.",
@@ -548,6 +549,8 @@ export const ptBR: Dictionary = {
   "connectors.emptyTitle": "Nenhum conector ainda",
   "connectors.emptyBody":
     "Conecte uma conta de WhatsApp, Telegram, Discord ou webhook e escolha a IA cujo app ela é.",
+  "connectors.emptyReadOnly":
+    "Nada está conectado em {org} ainda. Quem administra a organização adiciona as conexões.",
   "connectors.add": "Adicionar conector",
   "connectors.addTitle": "Adicionar conector",
   "connectors.addBody":
@@ -559,6 +562,9 @@ export const ptBR: Dictionary = {
     "Este segredo não será mostrado de novo. Se você perdê-lo, defina um novo nas configurações do conector.",
   "connectors.secretDone": "Já copiei",
   "connectors.signing": "Assinatura de cada requisição",
+  "connectors.org": "Organização",
+  "connectors.orgHint": "Os membros veem a conexão e os administradores a alteram.",
+  "connectors.addForbidden": "Só administradores da organização podem adicionar conexões.",
   "connectors.platform": "Plataforma",
   "connectors.kindsError": "Não foi possível carregar as plataformas. Feche e tente de novo.",
   "connectors.name": "Nome",
@@ -570,7 +576,8 @@ export const ptBR: Dictionary = {
   "connectors.disabled": "Desativado",
 
   "connector.notFoundTitle": "Este conector não está na sua linha",
-  "connector.notFoundBody": "Ele foi excluído ou não está mais compartilhado com você.",
+  "connector.notFoundBody": "Ele foi excluído ou você não faz parte da organização dele.",
+  "connector.org": "Organização: {name}",
   "connector.back": "Voltar para conectores",
   "connector.lastError": "Último erro",
   "connector.enabled": "Ativado",
@@ -586,7 +593,7 @@ export const ptBR: Dictionary = {
     "A conta é o app da IA operadora: o que chega aqui vai para a sessão dela, filtrado por estas configurações.",
   "connector.noOperatorHint": "Escolha a IA que opera esta conexão. Até lá, nada chega por ela.",
   "connector.noOperatorReadOnly":
-    "Nenhuma IA opera esta conta ainda, então nada chega por ela. O dono escolhe o operador.",
+    "Nenhuma IA opera esta conta ainda, então nada chega por ela. Quem administra a organização escolhe o operador.",
   "connector.operator": "Operador",
   "connector.operatorPick": "Operador",
   "connector.operatorNone": "Escolha uma IA",
@@ -594,7 +601,8 @@ export const ptBR: Dictionary = {
   "connector.operatorHint":
     "O operador recebe o que chega aqui e responde pela conta. Só ele pode enviar.",
   "connector.aiLoadError": "Não foi possível carregar suas IAs.",
-  "connector.operatorForbidden": "Só o dono do conector pode mudar o operador.",
+  "connector.operatorForbidden":
+    "Só administradores da organização do conector podem mudar o operador.",
   "connector.deliver": "Entregar",
   "connector.deliver.all": "Chats diretos e grupos",
   "connector.deliver.dms": "Só chats diretos",

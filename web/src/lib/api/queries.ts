@@ -10,6 +10,7 @@ import {
   useQueryClient,
 } from "@tanstack/react-query";
 import { withIntelligence, withoutAI } from "@/lib/contacts";
+import { toMyOrgs } from "@/lib/orgs";
 import { api } from "./client";
 import {
   type AcceptInviteRequest,
@@ -589,6 +590,22 @@ export const intelligenceQuery = (id: string) =>
   });
 
 export const useIntelligence = (id: string) => useQuery(intelligenceQuery(id));
+
+const myOrgsOf = (profile: IntelligenceProfile) => toMyOrgs(profile.memberships);
+
+/**
+ * The organizations the viewer belongs to, with what they are in each (OMEM-03): the memberships of
+ * their own profile, which lists every one of them, the personal one included. It shares the
+ * profile's cache entry, so the settings page and this read cost one request.
+ */
+export function useMyOrgs() {
+  const meId = useMe().data?.intelligence.id;
+  return useQuery({
+    ...intelligenceQuery(meId ?? ""),
+    enabled: meId !== undefined,
+    select: myOrgsOf,
+  });
+}
 
 /** The summary every list shows, taken from a full profile. */
 function refOfProfile(p: IntelligenceProfile): IntelligenceRef {

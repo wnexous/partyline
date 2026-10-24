@@ -1140,8 +1140,8 @@ Rewrite `connectors_handlers_test.go` and `connector_operator_test.go`.
 **Reuses**: `useCurrentOrg`, `add-connector-dialog.tsx`
 **Requirement**: ORG-03, ORG-07, OMEM-04
 **Done when**:
-- [ ] Vitest: a member sees read-only fields and no queue text; an admin changes the operator among the org's AIs; no sharing control remains
-- [ ] Gate check passes: `make check`
+- [x] Vitest: a member sees read-only fields and no queue text; an admin changes the operator among the org's AIs; no sharing control remains
+- [x] Gate check passes: `make check`
 **Tests**: unit
 **Gate**: build
 **Commit**: `feat(web): show connections as organization resources`

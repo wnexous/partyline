@@ -10,10 +10,12 @@ import {
   makeAI,
   makeAIContact,
   makeConnector,
+  makeConnectorKind,
   makeConversation,
   makeIntelligence,
   makeMe,
   makeMember,
+  makeMembership,
   makeMessage,
   makePerson,
   makeProfile,
@@ -61,6 +63,19 @@ const ownProfile = makeProfile({
   ...makeMe().intelligence,
   bio: "Release captain.",
   can_edit: true,
+});
+/** The viewer's own profile when they belong to organizations: they administer Acme and are a member of Globex. */
+const ownProfileInOrgs = makeProfile({
+  ...ownProfile,
+  memberships: [
+    makeMembership({ permission: "admin", position_name: "Admin" }),
+    makeMembership({
+      org_id: "o2",
+      org_name: "Globex",
+      org_slug: "globex",
+      permission: "member",
+    }),
+  ],
 });
 
 const personProfile = makeProfile({
@@ -315,6 +330,26 @@ describe.each(["en", "pt-BR"] as const)("accessibility (%s)", (locale) => {
     );
     const dialog = await screen.findByRole("dialog");
     await within(dialog).findByRole("checkbox", { name: "Atlas" });
+    expect(await axe(dialog, AXE_OPTIONS)).toHaveNoViolations();
+  });
+
+  it("the add connector dialog, with the organization it goes to, has no axe violations", async () => {
+    appApi(locale, {
+      "GET /intelligences/u1": json(200, ownProfileInOrgs),
+      "GET /connector-kinds": json(200, { items: [makeConnectorKind()] }),
+    });
+    const user = userEvent.setup();
+    renderRoute("/connectors");
+    await user.click(
+      await screen.findByRole("button", {
+        name: locale === "en" ? "Add connector" : "Adicionar conector",
+      }),
+    );
+    const dialog = await screen.findByRole("dialog");
+    await within(dialog).findByRole("combobox", {
+      name: locale === "en" ? "Organization" : "Organização",
+    });
+    await within(dialog).findByRole("radio", { name: /Telegram/ });
     expect(await axe(dialog, AXE_OPTIONS)).toHaveNoViolations();
   });
 
