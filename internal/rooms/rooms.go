@@ -283,7 +283,7 @@ func (s *Service) CreateWithMembers(ctx context.Context, creator authn.Principal
 	}
 	author := ""
 	if instructions != "" {
-		author = creator.UserID
+		author = creator.UserID // only a user gives a group instructions: an AI's group has none
 	}
 	now := s.now().UnixMilli()
 	id := store.NewID()
@@ -295,7 +295,7 @@ func (s *Service) CreateWithMembers(ctx context.Context, creator authn.Principal
 		if err := q.CreateRoom(ctx, db.CreateRoomParams{
 			ID: id, OwnerID: creator.UserID, Name: name, Description: description, Instructions: instructions,
 			InstructionsBy: author, RetentionDays: int64(retention), CreatedAt: now, UpdatedAt: now,
-			UpdatedBy: creator.UserID, // INS-06: the creator wrote the name and description
+			UpdatedBy: creator.IID(), // INS-06, POS-10: the creator wrote the name and description - an AI itself, not its host
 			OrgID:     sql.NullString{String: orgID, Valid: true}, CreatorIid: sql.NullString{String: creator.IID(), Valid: creator.IID() != ""},
 		}); err != nil {
 			return err

@@ -1237,3 +1237,9 @@ Every section above is kept as its task wrote it. This one records what the merg
 - **Registry.** `Registry.Delete` asks the home organization inside its transaction (T21) and no longer calls `authorize`, which is now
   T24's sight-and-management rule for the other routes. `authorizeDelete` keeps its own reading of "sees the AI" (host, or a shared
   organization), which is the rule `access.CanSeeAI` states: the two could be one.
+- **T30 and T23 together (added after the merge commit, in neither branch).** T30 asked T23 to record a group's creating identity in
+  `rooms.updated_by`; T23 recorded the user the principal acts for, which for an AI is its host. On one branch that lets the host's
+  other AIs trust the name and description an AI wrote with `POST /agent/groups` - the trust T30 withholds from sibling AIs.
+  `CreateWithMembers` now records `creator.IID()`: the same for a user, the AI itself for an AI. `instructions_by` stays the user, since
+  no route gives an AI's group instructions. `TestTheTextOfAGroupAnAICreatesIsTrustedOnlyWhenThatAIManagesTheRecipient` pins it (a
+  sibling and an AI the target manages are untrusted, an AI above the target's creator is trusted; recording the host fails it).
