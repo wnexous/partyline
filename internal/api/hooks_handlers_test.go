@@ -568,11 +568,9 @@ func TestWebhookIdentityCannotBeForgedAcrossConnectors(t *testing.T) {
 	mallory.OperateConnector(mconn.ID, malloryAI)
 	waitHookConnected(t, mallory, mconn.ID)
 
-	// IDN-05: a webhook connector links only its owner's codes, even a code issued for it (mallory
-	// shared it with alice); the refused code stays usable.
-	mallory.Put("/api/v1/connectors/"+mconn.ID+"/sharing", dto.Sharing{
-		Mode: dto.VisibilityShared, Users: []dto.SharingUser{{UserID: e.alice.User.ID, Level: dto.LevelUse}},
-	}).RequireStatus(http.StatusOK)
+	// IDN-05: a webhook connector links only its owner's codes, even a code issued for it (alice belongs
+	// to mallory's organization); the refused code stays usable.
+	shareConnector(mallory, mconn.ID, e.alice.User.ID)
 	code2 := testkit.Decode[dto.PairingCode](e.alice.Post("/api/v1/identities/pairing", dto.PairingRequest{ConnectorID: mconn.ID}).RequireStatus(http.StatusCreated))
 	signedHook(e.env, mconn.ID, msecret, now, payload(t, map[string]any{"chat_id": "m-chat", "sender_id": "alice-id", "text": "!link " + code2.Code})).
 		RequireStatus(http.StatusAccepted)

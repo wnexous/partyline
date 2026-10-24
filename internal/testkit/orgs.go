@@ -44,6 +44,24 @@ func (c *Client) ShareAI(aiID string, users ...*Client) {
 	}
 }
 
+// ShareConnection gives the users sight of the connection, as an admin of its organization would by inviting
+// them: they become members of it with no position, unless they already are members (AD-016). The grants a v0.5
+// connection was shared with give nothing any more.
+func (c *Client) ShareConnection(connectorID string, userIDs ...string) {
+	c.T.Helper()
+	ctx := context.Background()
+	conn, err := c.env.App.Store.R().GetConnector(ctx, connectorID)
+	require.NoError(c.T, err)
+	require.True(c.T, conn.OrgID.Valid, "the connection belongs to an organization")
+	for _, id := range userIDs {
+		_, member, err := c.env.App.Authz.Member(ctx, conn.OrgID.String, id)
+		require.NoError(c.T, err)
+		if !member {
+			c.env.AddMember(conn.OrgID.String, id, orgs.PermissionMember, "")
+		}
+	}
+}
+
 // AddPosition adds a position named name to the organization's chart under parent ("" for a root) and
 // returns its id. It writes the position directly, with no authorization, to set a chart up.
 func (e *Env) AddPosition(org, name, parent string) string {

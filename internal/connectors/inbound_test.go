@@ -391,9 +391,7 @@ func TestMentionsOnlyKeepsRepliesToRecentSends(t *testing.T) {
 func TestInboundTrustIsTheOperatorsOwner(t *testing.T) {
 	e := newInboundEnv(t)
 	bob := e.env.NewUser("bob")
-	e.alice.Put("/api/v1/connectors/"+e.conn.ID+"/sharing", dto.Sharing{
-		Mode: dto.VisibilityShared, Users: []dto.SharingUser{{UserID: bob.User.ID, Level: dto.LevelUse}},
-	}).RequireStatus(http.StatusOK)
+	e.alice.ShareConnection(e.conn.ID, bob.User.ID) // bob joins the connection's organization and may pair through it
 	e.link(t, e.alice, sender2, lid2, "Alice phone")
 	e.link(t, bob, sender3, "", "Bob phone")
 	require.Empty(t, e.queued(t), "pairing commands are not delivered")

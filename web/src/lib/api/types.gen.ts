@@ -664,15 +664,26 @@ export interface Connector {
   id: string;
   kind: string;
   name: string;
+  /**
+   * OrgID is the organization the connection belongs to (ORG-02): its members see it and its admins
+   * manage it.
+   */
+  org_id: string;
+  /**
+   * Owner is the user who created the connection. It grants nothing (AD-019).
+   */
   owner: User;
-  my_level: Level; // manage for the owner, use for grantees
+  /**
+   * MyLevel is manage for the admins of the connection's organization and use for its other members.
+   */
+  my_level: Level;
   enabled: boolean;
   status: ConnectorStatus;
   last_error?: string;
   /**
-   * Operator is the owner's AI the platform account belongs to: what arrives on the account
-   * goes to that AI's session, and only it sends through the account (CID-01). Absent while
-   * nobody operates the connection: it then runs nothing and its status says so (CID-02).
+   * Operator is the AI of the connection's organization the platform account belongs to: what arrives
+   * on the account goes to that AI's session, and only it sends through the account (CID-01, ORG-07).
+   * Absent while nobody operates the connection: it then runs nothing and its status says so (CID-02).
    */
   operator?: IntelligenceRef;
   /**
@@ -708,9 +719,12 @@ export interface Connector {
   updated_at: string /* RFC 3339 */;
 }
 /**
- * CreateConnectorRequest is the body of POST /connectors. Enabled defaults to true.
+ * CreateConnectorRequest is the body of POST /connectors. Enabled defaults to true. OrgID is the id
+ * or slug of the organization the connection belongs to: the caller must be an admin of it, else 403
+ * (ORG-03). Absent, it is the caller's default organization.
  */
 export interface CreateConnectorRequest {
+  org_id?: string;
   kind: string;
   name: string;
   config: { [key: string]: unknown };
@@ -726,14 +740,15 @@ export interface UpdateConnectorRequest {
   enabled?: boolean;
   /**
    * Deliver and GroupsMentionsOnly change what reaches the operator (CID-12): Deliver must be
-   * dms, groups or all (422 on deliver otherwise). Only the owner may change them.
+   * dms, groups or all (422 on deliver otherwise). Only the admins of the connection's organization
+   * may change them.
    */
   deliver?: ConnectorDeliver;
   groups_mentions_only?: boolean;
   /**
-   * OperatorID changes the operator (CID-01): the id of an AI the owner owns; anything else,
-   * the owner's own id and an empty string included, is a 422 on operator_id. Only the owner
-   * may change it. Absent leaves it.
+   * OperatorID changes the operator (CID-01): the id of an AI whose home is the connection's
+   * organization (ORG-07); anything else, an empty string included, is a 422 on operator_id. Only the
+   * admins of the organization may change it. Absent leaves it.
    */
   operator_id?: string;
 }
@@ -749,8 +764,8 @@ export const ConnectorDeliverAll = "all";
  */
 export type ConnectorDeliver = typeof ConnectorDeliverDMs | typeof ConnectorDeliverGroups | typeof ConnectorDeliverAll;
 /**
- * ConnectorNoOperator is the status detail of a connection nobody operates (CID-02): the owner
- * has to choose the AI that operates it before it runs.
+ * ConnectorNoOperator is the status detail of a connection nobody operates (CID-02): an admin of its
+ * organization has to choose the AI that operates it before it runs.
  */
 export const ConnectorNoOperator = "choose the AI that operates this connection";
 /**

@@ -108,7 +108,7 @@ func TestDeletingTheOperatorRemovesItsQueueAndStopsItsConnection(t *testing.T) {
 	got := f.connector(f.alice)
 	require.Nil(t, got.Operator, "the connection has no operator")
 	require.Equal(t, []any{dto.ConnectorStatusError, noOperatorDetail, true, int64(0)}, []any{got.Status, got.LastError, got.Enabled, got.Queued})
-	require.Equal(t, noOperatorDetail, f.connector(f.bob).LastError, "a use grantee sees the same")
+	require.Equal(t, noOperatorDetail, f.connector(f.bob).LastError, "a member sees the same")
 	require.Zero(t, countRows(t, f.env, rows, f.conn.ID), "every item of the connection is gone, acknowledged ones included")
 	require.Zero(t, countRows(t, f.env, "SELECT COUNT(*) FROM platform_attachments"), "and their files")
 	for _, id := range []string{one, two} {
@@ -147,10 +147,10 @@ func TestDeletingAnAIThatOperatesNothingTouchesNoConnection(t *testing.T) {
 }
 
 // CID-24 (authorization matrix of DELETE /agents/{id}): only whoever manages the AI deletes it, so only
-// they orphan its connection. Holders of a use grant, which gives nothing since AD-016, a stranger and
-// the admin get 404, anonymous callers 401, and AI tokens, the operator itself and another user's AI
-// included, 403. Every
-// refusal leaves the operator, the connection's session, its status and its queue as they were.
+// they orphan its connection. A member of its organization and someone who sees it through another one get
+// 403; the holder of a use grant, which gives nothing since AD-016, a stranger and the admin of the instance
+// get 404, anonymous callers 401, and AI tokens, the operator itself and another user's AI included, 403.
+// Every refusal leaves the operator, the connection's session, its status and its queue as they were.
 func TestRefusedAgentDeletesLeaveTheOperatorsConnectionAlone(t *testing.T) {
 	f := newOperatorFixture(t)
 	inst := f.operate(t)
@@ -158,9 +158,9 @@ func TestRefusedAgentDeletesLeaveTheOperatorsConnectionAlone(t *testing.T) {
 	kept := queueItem(t, f.env, f.conn.ID, f.atlas, teamChat, "m1")
 
 	del := func(c *testkit.Client) *testkit.Response { return c.Delete("/api/v1/agents/" + f.atlas) }
-	del(f.bob).RequireError(http.StatusNotFound, dto.ErrorCodeNotFound)  // may use the connection; a use grant on Atlas gives nothing
-	del(f.dave).RequireError(http.StatusNotFound, dto.ErrorCodeNotFound) // holds a use grant on Atlas only
-	del(f.carol).RequireError(http.StatusNotFound, dto.ErrorCodeNotFound)
+	del(f.bob).RequireError(http.StatusForbidden, dto.ErrorCodeForbidden)  // a member of Atlas's organization: sees it, manages nothing
+	del(f.dave).RequireError(http.StatusForbidden, dto.ErrorCodeForbidden) // sees Atlas through another organization
+	del(f.carol).RequireError(http.StatusNotFound, dto.ErrorCodeNotFound)  // holds a use grant on Atlas only, which gives nothing
 	del(f.admin).RequireError(http.StatusNotFound, dto.ErrorCodeNotFound)
 	del(f.env.Anon()).RequireError(http.StatusUnauthorized, dto.ErrorCodeUnauthorized)
 	owner := f.alice.Token(dto.TokenKindAgent, "laptop")

@@ -694,3 +694,42 @@ Where a section refines the design, it says so.
   nothing" and the merge tests that move grants use. The tests that assumed an AI sees what its owner sees now put the AI itself
   in the organization (`TestAIDMTargetsAreThoseItSees` in `api` and `conversations`, `TestToolSendMessageToRefusalsFollowWhatTheAISees`);
   `PlaceInDefaultOrg` came with T24.
+
+## T26: Connections belong to an organization (ORG-03, ORG-07, OMEM-04)
+
+- **Who may do what** (`connectors.Service`, the design's "Connections" matrix): the **admins** of the connection's
+  organization create (below), update, enable and disable, choose the operator of, refresh the chats of and delete it.
+  **Every other member**, guests included, reads it: the connection and its list entry, its chats, operator, status and queue
+  count (never text, CID-23). Everybody else, an admin of the instance without membership included, gets 404; a member who
+  is no admin gets 403 on a write. `my_level` is `manage` for an admin and `use` for the others. A connection with no
+  organization (a fixture; never one the app made) is seen by nobody. `GET /connectors` lists the connections of every
+  organization the caller belongs to, by name (`ListConnectorsOfMember`).
+- **Create**: `POST /connectors` takes `org_id` (`dto.CreateConnectorRequest.OrgID`: an id or a slug, any case, surrounding
+  spaces ignored) or, absent, the creator's default organization (`orgs.DefaultFor`). The creator must be an **admin** of it. A
+  member who is no admin, a guest, an organization the creator is not in and one that does not exist are all 403 `forbidden`
+  with the same body (nothing is told about organizations the caller is not in); a caller who belongs to no organization is
+  422 `organization_required`, field `org_id` (`connectors.ErrNoOrganization`). The organization is checked before the input,
+  so a member who sends a bad config is told 403, and again inside the creating transaction. `connectors.org_id` is the
+  owner; `owner_id` is the creator and a dead anchor (AD-019). The response and every view carry `org_id`; the audit entry
+  `connector.create` gains `org_id`.
+- **Operator (ORG-07)**: `operator_id` must name an AI whose **home** organization (`agents.org_id`) is the connection's. A
+  user, an empty or blank id, a person, an unknown id, an AI of another home organization (also one that is a member of this
+  organization too) and an AI with no home organization are each 422 on `operator_id`, message "must be an AI of the
+  connection's organization" (it was "must be an AI you own"), also next to valid edits, and change nothing.
+- **AIs through a connection**: `Service.Require(ctx, principal, id, want)` takes an agent principal and asks for the AI
+  itself (AD-016), so `POST /agent/connections/{id}/chats/{chat}/messages` no longer asks for the AI's host user. An AI that is
+  a member of the connection's organization and is not its operator is 403 `not_operator`; an AI that is not a member, and an
+  unknown connection, are 404 (`Service.authorize`, the one the user routes use, still refuses anything but a user).
+- **Left for T27 and T32**: `access.ConnectorLevel` / `CanUseConnector` keep reading the creator and the grants; the readers
+  that still use them are the people, the apps of an operator's profile, the linked accounts of a profile
+  (`intelligences/people.go`, `contacts.go`) and the live hub. Pairing already asks `Require` (membership of the connection's
+  organization); T27 adds the rule for webhook kinds (admins only) and moves the people readers to organizations. Until then
+  the api test helper `shareConnector` writes the membership **and** the legacy grant (`Client.ShareConnection` is the
+  membership alone).
+- **Queries**: `CreateConnector` takes `org_id`; `ListConnectorsOfMember(iid)` (connections of the identity's organizations
+  with its permission). `ListConnectorsForUser` stays for the contacts code until T28.
+- **Tests**: `TestConnectorRoutesAuthMatrix` (create, get, chats, refresh, rename, enable, operator, delete and the inert
+  sharing pair over the nine roles), `TestConnectorListFollowsMembership`, `TestCreateConnectorNamesItsOrganization`,
+  `TestOperatorMustBeAnAIOfTheConnectionsOrganization`, `TestOperatorAuthorizationMatrix` (also a second admin),
+  `TestSendToAChatAuthorizationMatrix`; the operator fixture is now an organization (bob a member, dave in a second one that
+  Atlas belongs to, carol with an inert grant), and `storeChat` places its connector in the owner's default organization.

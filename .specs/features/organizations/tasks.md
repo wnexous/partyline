@@ -772,10 +772,10 @@ Rewrite `connectors_handlers_test.go` and `connector_operator_test.go`.
 **Reuses**: `orgs.Authz`
 **Requirement**: ORG-03, ORG-07, OMEM-04
 **Done when**:
-- [ ] e2e: the "Connections" matrix
-- [ ] A member creating → 403; an outsider viewing → 404
-- [ ] An operator from another org → 422 `operator_id`, from the same org → 200
-- [ ] Gate check passes: `make check`
+- [x] e2e: the "Connections" matrix
+- [x] A member creating → 403; an outsider viewing → 404
+- [x] An operator from another org → 422 `operator_id`, from the same org → 200
+- [x] Gate check passes: `make check`
 **Tests**: e2e
 **Gate**: build
 **Commit**: `feat(connectors): own connections by organization`

@@ -69,31 +69,31 @@ func TestIdentityEndpoints(t *testing.T) {
 	require.Empty(t, user, "IDN-04: a deleted identity resolves to no user")
 }
 
-// IDN-01 (S5): a pairing code is requested for one connector the user owns or may use;
-// another user's connector answers 404 and a missing connector 422.
+// IDN-01 (S5): a pairing code is requested for one connector of an organization the user belongs to;
+// another organization's connector answers 404 and a missing connector 422.
 func TestPairingNeedsAUsableConnector(t *testing.T) {
 	fake := connectortest.New()
 	env := testkit.New(t, testkit.WithConnectorKinds(fake.Kind()))
 	alice := env.NewUser("alice")
 	bob := env.NewUser("bob")
 	off := false
-	create := func(c *testkit.Client, name string) dto.Connector {
+	create := func(c *testkit.Client, org, name string) dto.Connector {
 		return testkit.Decode[dto.Connector](c.Post("/api/v1/connectors", dto.CreateConnectorRequest{
-			Kind: connectortest.KindName, Name: name, Config: map[string]any{"token": "fake-token-not-real"}, Enabled: &off,
+			OrgID: org, Kind: connectortest.KindName, Name: name, Config: map[string]any{"token": "fake-token-not-real"}, Enabled: &off,
 		}).RequireStatus(http.StatusCreated))
 	}
-	bobs := create(bob, "bob-tg")
-	shared := create(bob, "bob-shared")
-	bob.Put("/api/v1/connectors/"+shared.ID+"/sharing", dto.Sharing{
-		Mode: dto.VisibilityShared, Users: []dto.SharingUser{{UserID: alice.User.ID, Level: dto.LevelUse}},
-	}).RequireStatus(http.StatusOK)
+	private, err := env.App.Orgs.Create(context.Background(), bob.User.ID, "bob-private") // alice is not in it
+	require.NoError(t, err)
+	bobs := create(bob, private.ID, "bob-tg")
+	shared := create(bob, "", "bob-shared")       // in bob's default organization
+	shareConnector(bob, shared.ID, alice.User.ID) // alice joins it
 
 	bad := alice.Post("/api/v1/identities/pairing", dto.PairingRequest{}).RequireError(http.StatusUnprocessableEntity, dto.ErrorCodeInvalid)
 	require.Equal(t, map[string]string{"connector_id": "required"}, bad.Fields)
 	alice.Post("/api/v1/identities/pairing", dto.PairingRequest{ConnectorID: bobs.ID}).RequireError(http.StatusNotFound, dto.ErrorCodeNotFound)
 	alice.Post("/api/v1/identities/pairing", dto.PairingRequest{ConnectorID: "missing"}).RequireError(http.StatusNotFound, dto.ErrorCodeNotFound)
 	code := testkit.Decode[dto.PairingCode](alice.Post("/api/v1/identities/pairing", dto.PairingRequest{ConnectorID: shared.ID}).RequireStatus(http.StatusCreated))
-	require.Equal(t, shared.ID, code.ConnectorID, "a use grantee may pair through a shared connector")
+	require.Equal(t, shared.ID, code.ConnectorID, "a member of the connection's organization may pair through it")
 }
 
 // S5: whoever controls a connector's endpoint chooses the sender ids it reports, so changing

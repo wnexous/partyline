@@ -182,6 +182,7 @@ export function makeConnector(over: Partial<Connector> = {}): Connector {
     id: "k1",
     kind: "telegram",
     name: "ops-bot",
+    org_id: "o1",
     owner: { id: "u1", username: "ana", display_name: "Ana Souza" },
     my_level: "manage",
     enabled: true,
