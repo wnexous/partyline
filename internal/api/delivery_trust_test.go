@@ -134,9 +134,11 @@ func (w *trustWorld) plant(t *testing.T, userID, text string) string {
 	return id
 }
 
-// trustAuthor is one author of a message to ai and whether ai trusts it.
+// trustAuthor is one author of a message to ai and whether ai trusts it. iid is the author's
+// intelligence id.
 type trustAuthor struct {
 	name    string
+	iid     string
 	trusted bool
 	post    func(t *testing.T, text string) string
 }
@@ -151,14 +153,14 @@ func (w *trustWorld) authors() []trustAuthor {
 		return func(t *testing.T, text string) string { return w.aiPost(t, name, text) }
 	}
 	return []trustAuthor{
-		{"the creator of the AI", true, user(a.Manager)},
-		{"a position above the creator's", true, user(a.Admin)},
-		{"an AI at a position above the creator's", true, ai("lead")},
-		{"a sibling AI of the same user", false, ai("sibling")},
-		{"a peer", false, user(a.Peer)},
-		{"a subordinate", false, ai("sub")},
-		{"an outsider", false, func(t *testing.T, text string) string { return w.plant(t, a.Outsider.User.ID, text) }},
-		{"a manager in a shared organization that is not the home", false, user(a.Member)},
+		{"the creator of the AI", a.Manager.User.ID, true, user(a.Manager)},
+		{"a position above the creator's", a.Admin.User.ID, true, user(a.Admin)},
+		{"an AI at a position above the creator's", w.lead, true, ai("lead")},
+		{"a sibling AI of the same user", w.sibling, false, ai("sibling")},
+		{"a peer", a.Peer.User.ID, false, user(a.Peer)},
+		{"a subordinate", w.sub, false, ai("sub")},
+		{"an outsider", a.Outsider.User.ID, false, func(t *testing.T, text string) string { return w.plant(t, a.Outsider.User.ID, text) }},
+		{"a manager in a shared organization that is not the home", a.Member.User.ID, false, user(a.Member)},
 	}
 }
 

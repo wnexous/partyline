@@ -752,3 +752,29 @@ Where a section refines the design, it says so.
 - **Not changed here**: the wording of the channel instructions and of the instructions notice ("your owner") is stale
   under this rule; it belongs to T35 and to the release notes (T55). `instructions_trusted` and `room_text_trusted` are T30.
 
+## T30: Trust for room instructions and room text (POS-10, INS-04, INS-06)
+
+- **The rule is T29's**: `instructions_trusted` and `room_text_trusted` of `GET /agent/rooms/{room}/info`, and the
+  notice an AI gets on connect, are true when the identity that last wrote the instructions (`rooms.instructions_by`), or
+  the name and description (`rooms.updated_by`), **manages the AI in its home organization** - `Trust.Trusts(writer,
+  agent)`, the same oracle and the same fail-closed default. A writer who left the organization, a peer, a sibling AI and
+  an identity that manages the AI only in another organization are not trusted. It is evaluated when the room is read, not
+  when it was saved.
+- **Each flag has its own writer.** `instructions_trusted` follows `instructions_by` and is false for a room without
+  instructions; `room_text_trusted` follows `updated_by`. A room can have trusted instructions and untrusted text, or the
+  other way round (`TestInstructionsAndRoomTextAreTrustedByTheirOwnWriter`).
+- **The connect notice** (`Gateway.backlog`, one per room with instructions, before its messages) is
+  `InstructionsNotice` when the writer manages the AI and `InstructionsNoticeUntrusted` otherwise, including when the
+  writer is unknown. Both are asked of the backlog's `Trust`, so the notice costs no extra chart read.
+- **What the columns hold.** Both columns keep the id of the **user** who saved the room, which is also the user's
+  intelligence id, so they are the identities `Trusts` expects. They are not changed here: an AI cannot save a room over
+  REST (the path rule keeps agent tokens to `/api/v1/agent/`), and a group an AI creates names no instructions. T23 makes
+  a group's creator an organization identity; it should record that identity here too.
+- **Wording unchanged.** The two notices keep their INS-03 wording (the untrusted one still says "someone other than
+  your owner"); the sentence is stale under this rule like the channel's trust paragraphs (T35, release notes T55). Only
+  the doc comments and `dto.RoomInfo` fields were reworded.
+- **Tests**: `internal/api/room_instructions_trust_test.go`, over the same authors as T29 (`trustWorld`), for `room_info` and
+  the notice; the writers are recorded by a store write so the rule is the subject, plus one test that saves through
+  `PATCH /rooms/{id}`. The mutations "notice keeps the owner rule", "text flag read from the instructions' writer" and "no
+  empty-instructions check" each fail them.
+

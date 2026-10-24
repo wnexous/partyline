@@ -874,8 +874,8 @@ Rewrite `connectors_handlers_test.go` and `connector_operator_test.go`.
 **Reuses**: `delivery.Trust`
 **Requirement**: POS-10
 **Done when**:
-- [ ] e2e: instructions written by the manager → trusted in `room_info` and on the connect notice; by a member peer → untrusted
-- [ ] Gate check passes: `make check`
+- [x] e2e: instructions written by the manager → trusted in `room_info` and on the connect notice; by a member peer → untrusted
+- [x] Gate check passes: `make check`
 **Tests**: e2e
 **Gate**: build
 **Commit**: `feat(agents): trust room instructions from managers`

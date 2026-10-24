@@ -64,10 +64,11 @@ type RoomInfo struct {
 	// InstructionsBy is the username of the user who last saved the instructions; empty when
 	// unknown (INS-04).
 	InstructionsBy string `json:"instructions_by,omitempty"`
-	// InstructionsTrusted is true only when that user is the calling agent's owner (INS-04).
+	// InstructionsTrusted is true only when that user manages the calling agent in the agent's
+	// home organization (INS-04, POS-10).
 	InstructionsTrusted bool `json:"instructions_trusted"`
-	// RoomTextTrusted is true only when the calling agent's owner created the room or last
-	// changed its name or description (INS-06).
+	// RoomTextTrusted is true only when whoever created the room or last changed its name or
+	// description manages the calling agent in the agent's home organization (INS-06, POS-10).
 	RoomTextTrusted bool         `json:"room_text_trusted"`
 	Members         []RoomMember `json:"members"`
 	Me              RoomMember   `json:"me"`

@@ -402,14 +402,23 @@ func (s *server) agentRoomInfo(w http.ResponseWriter, r *http.Request, p authn.P
 	if err != nil {
 		return err
 	}
+	// INS-04, INS-06, POS-10: the instructions, and the name and description, are trusted only when
+	// the identity that last wrote them manages the calling agent in its home organization.
+	trust := s.Trust.Open()
+	instructionsTrusted, err := trust.Trusts(r.Context(), room.InstructionsBy, p.AgentID)
+	if err != nil {
+		return err
+	}
+	textTrusted, err := trust.Trusts(r.Context(), room.UpdatedBy, p.AgentID)
+	if err != nil {
+		return err
+	}
 	out := dto.RoomInfo{
 		Room: delivery.RoomRef(st.ID, st.Name, st.Kind), Instructions: room.Instructions,
-		InstructionsBy: room.InstructionsByName,
-		// INS-04: trusted only when the calling agent's owner saved them.
-		InstructionsTrusted: room.Instructions != "" && room.InstructionsBy == p.UserID,
-		// INS-06: the name and description are trusted only when the owner last wrote them.
-		RoomTextTrusted: room.UpdatedBy == p.UserID,
-		Members:         make([]dto.RoomMember, len(members)),
+		InstructionsBy:      room.InstructionsByName,
+		InstructionsTrusted: room.Instructions != "" && instructionsTrusted,
+		RoomTextTrusted:     textTrusted,
+		Members:             make([]dto.RoomMember, len(members)),
 	}
 	for i, m := range members {
 		out.Members[i] = s.toMember(m)
