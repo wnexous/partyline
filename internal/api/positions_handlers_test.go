@@ -100,22 +100,31 @@ func TestPositionCycleIsConflict(t *testing.T) {
 	require.Equal(t, r.AdminPosition, moved.ParentID)
 }
 
-// POS-09: deleting a position moves its holders and children to its parent, and an unknown
-// position is 404.
+// POS-09: deleting a position moves its holders and its child positions up to its parent, and an
+// unknown position is 404.
 func TestDeletePositionMovesItsChildren(t *testing.T) {
 	env := testkit.New(t)
 	r := env.OrgRoles("acme")
-	parent := testkit.Decode[dto.Position](r.Admin.Post("/api/v1/orgs/"+r.Org.ID+"/positions",
-		dto.CreatePositionRequest{Name: "Parent", ParentID: r.AdminPosition}).RequireStatus(http.StatusCreated))
-	child := testkit.Decode[dto.Position](r.Admin.Post("/api/v1/orgs/"+r.Org.ID+"/positions",
-		dto.CreatePositionRequest{Name: "Child", ParentID: parent.ID}).RequireStatus(http.StatusCreated))
+	parent := newPosition(t, r.Admin, r.Org.ID, "Parent", r.AdminPosition)
+	child := newPosition(t, r.Admin, r.Org.ID, "Child", parent)
+	r.Admin.Patch(memberPath(r.Org.ID, r.Member.User.ID), toPosition(parent)).RequireStatus(http.StatusOK)
+	require.Equal(t, parent, listMembers(t, r.Admin, r.Org.ID)[r.Member.User.ID].PositionID, "the holder is in Parent")
+	parentOf := func() map[string]string {
+		out := map[string]string{}
+		for _, p := range getChart(t, r.Admin, r.Org.ID).Positions {
+			out[p.ID] = p.ParentID
+		}
+		return out
+	}
+	require.Equal(t, parent, parentOf()[child], "Child hangs under Parent")
 
-	r.Admin.Delete("/api/v1/orgs/" + r.Org.ID + "/positions/" + parent.ID).RequireStatus(http.StatusNoContent)
-	// The child is now a root: moving it under Worker fails the cycle check only if it were below
-	// itself; a plain rename shows it is still there.
-	renamed := testkit.Decode[dto.Position](r.Admin.Patch("/api/v1/orgs/"+r.Org.ID+"/positions/"+child.ID,
-		dto.UpdatePositionRequest{Name: ptr("Child 2")}).RequireStatus(http.StatusOK))
-	require.Equal(t, "Child 2", renamed.Name)
+	r.Admin.Delete("/api/v1/orgs/" + r.Org.ID + "/positions/" + parent).RequireStatus(http.StatusNoContent)
+
+	// Parent hung under the root, so both its holder and Child hang there now.
+	require.Equal(t, r.AdminPosition, listMembers(t, r.Admin, r.Org.ID)[r.Member.User.ID].PositionID, "the holder moved up to the parent")
+	positions := parentOf()
+	require.NotContains(t, positions, parent, "Parent is gone")
+	require.Equal(t, r.AdminPosition, positions[child], "Child moved up to the parent")
 
 	r.Admin.Delete("/api/v1/orgs/"+r.Org.ID+"/positions/does-not-exist").
 		RequireError(http.StatusNotFound, dto.ErrorCodeNotFound)

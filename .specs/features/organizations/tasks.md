@@ -2086,14 +2086,14 @@ Rewrite `connectors_handlers_test.go` and `connector_operator_test.go`.
 **Reuses**: `delete-ai-dialog.tsx`, `dropdown-menu`
 **Requirement**: CHART-01, CHART-02, CHART-03, CHART-04
 **Done when**:
-- [ ] Vitest through the route:
+- [x] Vitest through the route:
   - the tree and fields render;
   - arrow keys, Home/End and Enter move focus and expand;
   - actions are present only where flagged (a member sees none; Lead sees delete on its guest workers only; an inviter sees delete on its guests; an admin sees "Remove" on a person);
   - a guest invited by Bob renders inside Bob's item;
   - outsider (404) → not found;
   - axe clean
-- [ ] Gate check passes: `make check`
+- [x] Gate check passes: `make check`
 **Tests**: unit
 **Gate**: build
 **Commit**: `feat(web): show the organization's chart`

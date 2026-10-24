@@ -64,8 +64,8 @@ André wants partyline to mirror a company (2026-10-23, with a hand-drawn org ch
 
 1. WHEN a user creates an organization with a name (1-100 characters) THEN the system SHALL create it with that user as `admin`, holding a root position named "Admin". (ORG-01)
 2. The system SHALL record exactly one owning organization for each AI, connection and group, and none for a DM. (ORG-02)
-3. WHEN an identity creates a group or a connection THEN it SHALL name an organization it is a member of (connections: as `admin`), and the resource SHALL belong to it; otherwise the system SHALL refuse with `forbidden` (HTTP 403). (ORG-03)
-4. WHEN an AI starts for the first time THEN it SHALL belong to the organization given by `--org`, or else to its creator's default organization, and SHALL join it as `member` when a user started it, or as `guest` when another AI did (`--parent`). (ORG-04)
+3. WHEN an identity creates a group or a connection THEN the resource SHALL belong to the organization it names or, when it names none, to its default organization (for an AI, its home organization), and the creator SHALL be a member of that organization (connections: an `admin`); otherwise the system SHALL refuse with `forbidden` (HTTP 403). (ORG-03)
+4. WHEN an AI starts for the first time THEN it SHALL belong to the organization given by `--org`, or else to its creator's default organization, and SHALL join it as a `guest` when another AI started it (`--parent`) or when the user who started it is only a `guest` of that organization, and as a `member` otherwise. IF `--org` names no organization THEN the system SHALL refuse the start with `organization_required` (HTTP 422). (ORG-04)
 5. IF the creator is not a member of that organization THEN the system SHALL refuse the start with `forbidden` (HTTP 403). (ORG-05)
 6. IF an organization still owns AIs, connections or groups THEN deleting it SHALL be refused with `organization_not_empty` (HTTP 409). (ORG-06)
 7. A connection's operator SHALL be an AI that belongs to the connection's organization. (ORG-07)
@@ -86,7 +86,7 @@ André wants partyline to mirror a company (2026-10-23, with a hand-drawn org ch
 4. IF an identity without the `admin` permission creates or edits positions, invites with a permission other than `guest`, changes permissions, manages connections or renames the organization THEN the system SHALL refuse with `forbidden` (HTTP 403). IF a `guest` creates a group THEN the system SHALL refuse with `forbidden` (HTTP 403). (OMEM-04)
 5. IF a change would leave an organization with no `admin` THEN the system SHALL refuse it with `last_admin` (HTTP 409). (OMEM-05)
 6. WHEN a member leaves or is removed THEN the system SHALL take it out of the organization's groups and of its position. AIs that belong to the organization SHALL stay in it. (OMEM-06)
-7. IF an invitation is not answered in 14 days THEN it SHALL expire. (OMEM-07)
+7. IF an invitation is not answered in 14 days THEN it SHALL expire, and accepting or declining it SHALL be refused with `gone` (HTTP 410). (OMEM-07)
 
 **Independent Test**: Alice (admin) invites Bob as a member. Bob creates a group in acme, and gets 403 when he tries to invite someone.
 
@@ -100,11 +100,11 @@ André wants partyline to mirror a company (2026-10-23, with a hand-drawn org ch
 
 1. WHEN an `admin` creates a position with a name (1-60 characters) and an optional parent position of the same organization THEN the system SHALL add it to that organization's chart. (POS-01)
 2. IF a parent change would create a cycle THEN the system SHALL refuse it with `position_cycle` (HTTP 409). (POS-02)
-3. The system SHALL treat identity A as managing identity B in organization X exactly when A holds a position in X strictly above B's position. IF B holds no position THEN A manages B exactly when A created B or A's position is above B's creator's position. (POS-03)
-4. WHILE A manages B the system SHALL let A edit B's profile and settings, end B's live session and move B between positions below A's. (POS-04)
+3. The system SHALL treat identity A as managing identity B in organization X exactly when A holds a position in X strictly above B's position. IF B holds no position THEN A manages B exactly when A created B or A's position is above B's creator's position. The `admin` permission gives no management by itself, but an admin MAY move anyone (POS-04). (POS-03)
+4. WHILE A manages B the system SHALL let A edit B's profile and settings, end B's live session and move B between positions below A's. An `admin` MAY move any member to any position, or to none. (POS-04)
 5. The system SHALL let A delete B in organization X exactly when A is an `admin` of X, or B is a `guest` of X and A is B's inviter, an identity up B's inviter chain, or an identity that manages one of them; otherwise it SHALL refuse with `forbidden` (HTTP 403). (POS-05)
 6. WHEN B is deleted in X THEN an AI whose home organization is X SHALL be deleted for good, and a person (or an AI of another organization) SHALL be removed from X only. A user MAY delete their own account. (POS-06)
-7. WHEN an AI starts with `--position <name>` THEN it SHALL hold that position. IF the position is not below the creator's position and the creator is not an `admin` THEN the start SHALL be refused with `forbidden` (HTTP 403). (POS-07)
+7. WHEN an AI starts with `--position <name>` THEN it SHALL hold that position. IF the position is not below the creator's position and the creator is not an `admin` THEN the start SHALL be refused with `forbidden` (HTTP 403). IF the organization has no position with that name THEN the start SHALL be refused with `position_unknown` (HTTP 422). (POS-07)
 8. WHEN an AI starts with `--parent @handle` (or `PARTYLINE_PARENT`) THEN the system SHALL record that identity as its creator, provided the session's token holder may act for that identity. Otherwise the user who linked the machine SHALL be recorded as the creator. (POS-08)
 9. WHEN a position is deleted THEN its holders and child positions SHALL move to its parent position (or have no position). (POS-09)
 10. The system SHALL set `trusted=true` on a message to an AI only when its author manages that AI in the AI's home organization. (POS-10)
@@ -120,8 +120,8 @@ André wants partyline to mirror a company (2026-10-23, with a hand-drawn org ch
 **Acceptance Criteria**:
 
 1. The chart page SHALL show the chosen organization's positions as a tree. Each position SHALL list its holders with avatar, name, @handle, kind (person or AI), online status and an admin badge where it applies. Members without a position SHALL be shown under their creator or in an "Unassigned" group. (CHART-01)
-2. The chart SHALL be visible only to the organization's members and guests; guests SHALL be shown under their inviter. (CHART-02)
-3. The page SHALL offer "move" only where the viewer manages the target (POS-03), "delete" only where POS-05 allows it, and "edit positions" only to admins. (CHART-03)
+2. The chart SHALL be visible only to the organization's members and guests; guests SHALL be shown under their inviter. Anyone else SHALL get `not_found` (HTTP 404) from the chart and from every other route of the organization. (CHART-02)
+3. The page SHALL offer "move" only where the viewer manages the target (POS-03) or is an admin, who may move anyone (POS-04), "delete" only where POS-05 allows it, and "edit positions" only to admins. (CHART-03)
 4. The chart SHALL be keyboard and screen-reader accessible (tree and treeitem roles) and SHALL fit a 360 px screen. (CHART-04)
 
 ---
@@ -154,39 +154,39 @@ André wants partyline to mirror a company (2026-10-23, with a hand-drawn org ch
 
 | Requirement ID | Story | Phase | Status |
 | --- | --- | --- | --- |
-| ORG-01 | P1: Organizations own resources | Tasks | Implementing |
-| ORG-02 | P1: Organizations own resources | Tasks | Implementing |
-| ORG-03 | P1: Organizations own resources | Tasks | Implementing |
-| ORG-04 | P1: Organizations own resources | Tasks | Implementing |
-| ORG-05 | P1: Organizations own resources | Tasks | Implementing |
-| ORG-06 | P1: Organizations own resources | Tasks | Implementing |
-| ORG-07 | P1: Organizations own resources | Tasks | Implementing |
-| OMEM-01 | P1: Members and permissions | Tasks | Implementing |
-| OMEM-02 | P1: Members and permissions | Tasks | Implementing |
-| OMEM-03 | P1: Members and permissions | Tasks | Implementing |
-| OMEM-04 | P1: Members and permissions | Tasks | Implementing |
-| OMEM-05 | P1: Members and permissions | Tasks | Implementing |
-| OMEM-06 | P1: Members and permissions | Tasks | Implementing |
-| OMEM-07 | P1: Members and permissions | Tasks | Implementing |
-| OMEM-08 | Edge cases | Tasks | Implementing |
-| POS-01 | P1: Org chart of positions | Tasks | Implementing |
-| POS-02 | P1: Org chart of positions | Tasks | Implementing |
-| POS-03 | P1: Org chart of positions | Tasks | Implementing |
-| POS-04 | P1: Org chart of positions | Tasks | Implementing |
-| POS-05 | P1: Org chart of positions | Tasks | Implementing |
-| POS-06 | P1: Org chart of positions | Tasks | Implementing |
-| POS-07 | P1: Org chart of positions | Tasks | Implementing |
-| POS-08 | P1: Org chart of positions | Tasks | Implementing |
-| POS-09 | P1: Org chart of positions | Tasks | Implementing |
-| POS-10 | P1: Org chart of positions | Tasks | Implementing |
-| CHART-01 | P1: Org chart view | Tasks | Implementing |
-| CHART-02 | P1: Org chart view | Tasks | Implementing |
-| CHART-03 | P1: Org chart view | Tasks | Implementing |
-| CHART-04 | P1: Org chart view | Tasks | Implementing |
-| OUPG-01 | Edge cases | Tasks | Implementing |
-| OUPG-02 | Edge cases | Tasks | Implementing |
+| ORG-01 | P1: Organizations own resources | Execute | Verified |
+| ORG-02 | P1: Organizations own resources | Execute | Verified |
+| ORG-03 | P1: Organizations own resources | Execute | Verified |
+| ORG-04 | P1: Organizations own resources | Execute | Verified |
+| ORG-05 | P1: Organizations own resources | Execute | Verified |
+| ORG-06 | P1: Organizations own resources | Execute | Verified |
+| ORG-07 | P1: Organizations own resources | Execute | Verified |
+| OMEM-01 | P1: Members and permissions | Execute | Verified |
+| OMEM-02 | P1: Members and permissions | Execute | Verified |
+| OMEM-03 | P1: Members and permissions | Execute | Verified |
+| OMEM-04 | P1: Members and permissions | Execute | Verified |
+| OMEM-05 | P1: Members and permissions | Execute | Verified |
+| OMEM-06 | P1: Members and permissions | Execute | Verified |
+| OMEM-07 | P1: Members and permissions | Execute | Verified |
+| OMEM-08 | Edge cases | Execute | Verified |
+| POS-01 | P1: Org chart of positions | Execute | Verified |
+| POS-02 | P1: Org chart of positions | Execute | Verified |
+| POS-03 | P1: Org chart of positions | Execute | Verified |
+| POS-04 | P1: Org chart of positions | Execute | Verified |
+| POS-05 | P1: Org chart of positions | Execute | Verified |
+| POS-06 | P1: Org chart of positions | Execute | Verified |
+| POS-07 | P1: Org chart of positions | Execute | Verified |
+| POS-08 | P1: Org chart of positions | Execute | Verified |
+| POS-09 | P1: Org chart of positions | Execute | Verified |
+| POS-10 | P1: Org chart of positions | Execute | Verified |
+| CHART-01 | P1: Org chart view | Execute | Verified |
+| CHART-02 | P1: Org chart view | Execute | Verified |
+| CHART-03 | P1: Org chart view | Execute | Verified |
+| CHART-04 | P1: Org chart view | Execute | Verified |
+| OUPG-01 | Edge cases | Execute | Verified |
+| OUPG-02 | Edge cases | Execute | Verified |
 
-**Coverage:** 31 total, 31 mapped to tasks.
+**Coverage:** 31 total, 31 mapped to tasks (`tasks.md` T1-T58), all Verified (validation.md, 2026-10-24).
 
 ---
 
