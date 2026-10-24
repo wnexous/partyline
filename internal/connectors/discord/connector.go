@@ -32,11 +32,12 @@ const intents = discordgo.IntentsGuilds | discordgo.IntentsGuildMessages | disco
 // Kind returns the Discord connector kind.
 func Kind() connectors.Kind {
 	return connectors.Kind{
-		Name: KindName, Label: "Discord bot", CanListChats: true,
+		Name: KindName, Label: "Discord bot", CanListChats: true, CanReact: true, CanSendFiles: true,
 		Fields: []connectors.Field{
 			{Name: "bot_token", Label: "Bot token", Type: dto.FieldTypeSecret, Required: true,
 				Help: "Developer Portal → Bot; enable the Message Content intent"},
 		},
+		Address: address,
 		New: func(cfg connectors.Config, d connectors.Deps) (connectors.Connector, error) {
 			return New(cfg, d)
 		},

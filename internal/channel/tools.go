@@ -44,18 +44,18 @@ func schema(s string) json.RawMessage { return json.RawMessage(s) }
 func (t *tools) register(srv *mcp.Server) {
 	srv.HandleTool(mcp.ToolDef{
 		Name:        "reply",
-		Description: "Reply to a message by its message_id. A message from one of your connections (a WhatsApp number, a Telegram or Discord bot, a webhook) is answered in that chat through your own account, unsigned, quoting it when the platform supports quotes; a room message is answered in its room. When the platform does not take a reply at once the answer says so and Partyline retries it: do not send it again.",
-		InputSchema: schema(`{"type":"object","properties":{"message_id":{"type":"string","description":"message_id of the message to answer"},"text":{"type":"string","description":"reply text"}},"required":["message_id","text"]}`),
+		Description: "Reply to a message by its message_id. A message from one of your connections (a WhatsApp number, a Telegram or Discord bot, a webhook) is answered in that chat through your own account, unsigned, quoting it when the platform supports quotes (quote: false sends to the same chat without quoting it); a room message is answered in its room. When the platform does not take a reply at once the answer says so and Partyline retries it: do not send it again.",
+		InputSchema: schema(`{"type":"object","properties":{"message_id":{"type":"string","description":"message_id of the message to answer"},"text":{"type":"string","description":"reply text"},"quote":{"type":"boolean","description":"default true: quote the message you answer where the platform supports quotes; false sends to the same chat without quoting it. Only for messages from your connections: a reply in a room always answers its message"}},"required":["message_id","text"]}`),
 	}, t.guard(t.reply))
 	srv.HandleTool(mcp.ToolDef{
 		Name:        "react",
-		Description: "React to a chat message of a room with one emoji; the reaction stays in the room, it is not sent to the chat. Only messages from chats can get reactions; a message from one of your connections cannot (unsupported): answer it with reply.",
+		Description: "React to a message with one emoji. A message from one of your connections (WhatsApp, Telegram or Discord) gets the reaction on the platform, from your own account: take its message_id as for reply; Telegram accepts only its own set of reaction emoji, and a webhook connection cannot (unsupported): answer with reply. A chat message of a room gets the reaction in the room, which does not send it to the chat; other messages of a room cannot get reactions.",
 		InputSchema: schema(`{"type":"object","properties":{"message_id":{"type":"string","description":"message_id of the chat message"},"emoji":{"type":"string","description":"one emoji, e.g. 👍"}},"required":["message_id","emoji"]}`),
 	}, t.guard(t.react))
 	srv.HandleTool(mcp.ToolDef{
 		Name:        "send_message",
-		Description: "Send a message. Give exactly one target: room (post to a room or DM you belong to), to (message an intelligence directly: the DM is created the first time, for any user of this instance and any intelligence you share an organization with), or connection together with chat (write to a chat of a connection you operate, from your own account and unsigned: take the connection_id and chat_id of a message from it). A message the platform does not take at once is retried by Partyline: do not send it again.",
-		InputSchema: schema(`{"type":"object","properties":{"room":{"type":"string","description":"room id, room name, or @handle of the intelligence you have a DM with"},"to":{"type":"string","description":"instead of room: the @handle, handle or id of an intelligence to message directly; the DM is created if you never talked"},"connection":{"type":"string","description":"instead of room and to: the connection_id of a connection you operate, together with chat"},"chat":{"type":"string","description":"with connection: the chat_id of the chat to write to, as a message from that connection carries it"},"text":{"type":"string","description":"message text"}},"required":["text"]}`),
+		Description: "Send a message. Give exactly one target: room (post to a room or DM you belong to), to (message an intelligence directly: the DM is created the first time, for any user of this instance and any intelligence you share an organization with), or connection together with chat (write to a chat of a connection you operate, from your own account and unsigned: take the connection_id and chat_id of a message from it, or start a conversation with someone who never wrote to you by giving their address on the platform as chat). A message the platform does not take at once is retried by Partyline: do not send it again.",
+		InputSchema: schema(`{"type":"object","properties":{"room":{"type":"string","description":"room id, room name, or @handle of the intelligence you have a DM with"},"to":{"type":"string","description":"instead of room: the @handle, handle or id of an intelligence to message directly; the DM is created if you never talked"},"connection":{"type":"string","description":"instead of room and to: the connection_id of a connection you operate, together with chat"},"chat":{"type":"string","description":"with connection: the chat_id of the chat to write to, as a message from that connection carries it; or the address of a chat you have not heard from, to start one: a WhatsApp phone number with its country code, digits only (5511999990000), or a WhatsApp JID; a Telegram chat id; a Discord channel id. You may start 10 such chats an hour"},"text":{"type":"string","description":"message text"}},"required":["text"]}`),
 	}, t.guard(t.sendMessage))
 	srv.HandleTool(mcp.ToolDef{
 		Name:        "room_info",
@@ -79,8 +79,8 @@ func (t *tools) register(srv *mcp.Server) {
 	}, t.guard(t.downloadAttachment))
 	srv.HandleTool(mcp.ToolDef{
 		Name:        "send_file",
-		Description: "Upload a local file to a room, with an optional caption and reply_to. Files go to rooms only: a message from one of your connections cannot be quoted or answered with a file (unsupported); answer it with reply or send_message.",
-		InputSchema: schema(`{"type":"object","properties":{"room":{"type":"string","description":"room id, room name, or @handle of the intelligence you have a DM with"},"path":{"type":"string","description":"local file path"},"caption":{"type":"string","description":"optional text sent with the file"},"reply_to":{"type":"string","description":"optional message_id this file answers"}},"required":["room","path"]}`),
+		Description: "Send a local file. Give exactly one target: room (upload it to a room or DM you belong to, with an optional reply_to), or connection together with chat (send it to a chat of a connection you operate, from your own account and unsigned, as a WhatsApp, Telegram or Discord file; chat is a chat_id, or the address of someone who never wrote to you, as for send_message). A file sent through a connection is sent once and never kept: when the platform does not take it the tool fails and says why, and you may send it again. A webhook connection cannot be sent files (unsupported). A message from one of your connections cannot be quoted in a room (unsupported); to answer it with a file give its connection and chat.",
+		InputSchema: schema(`{"type":"object","properties":{"room":{"type":"string","description":"room id, room name, or @handle of the intelligence you have a DM with"},"connection":{"type":"string","description":"instead of room: the connection_id of a connection you operate, together with chat"},"chat":{"type":"string","description":"with connection: the chat_id of the chat to send the file to, as a message from that connection carries it, or the address of a chat you have not heard from (see send_message)"},"path":{"type":"string","description":"local file path"},"caption":{"type":"string","description":"optional text sent with the file (just before it, for a connection)"},"reply_to":{"type":"string","description":"with room: optional message_id this file answers"}},"required":["path"]}`),
 	}, t.guard(t.sendFile))
 	srv.HandleTool(mcp.ToolDef{
 		Name:        "create_group",
@@ -147,6 +147,7 @@ func (t *tools) reply(ctx context.Context, args json.RawMessage) (string, error)
 	var a struct {
 		MessageID string `json:"message_id"`
 		Text      string `json:"text"`
+		Quote     *bool  `json:"quote"`
 	}
 	if err := decode(args, &a); err != nil {
 		return "", err
@@ -155,7 +156,7 @@ func (t *tools) reply(ctx context.Context, args json.RawMessage) (string, error)
 		return "", err
 	}
 	var out replyAnswer
-	if err := t.api.json(ctx, http.MethodPost, "agent/messages/"+url.PathEscape(a.MessageID)+"/reply", nil, dto.ReplyRequest{Text: a.Text}, &out); err != nil {
+	if err := t.api.json(ctx, http.MethodPost, "agent/messages/"+url.PathEscape(a.MessageID)+"/reply", nil, dto.ReplyRequest{Text: a.Text, Quote: a.Quote}, &out); err != nil {
 		return "", err
 	}
 	if out.Status != "" {
@@ -196,11 +197,14 @@ func (t *tools) react(ctx context.Context, args json.RawMessage) (string, error)
 	if err := required("message_id", a.MessageID, "emoji", a.Emoji); err != nil {
 		return "", err
 	}
-	var m dto.Message
-	if err := t.api.json(ctx, http.MethodPost, "agent/messages/"+url.PathEscape(a.MessageID)+"/react", nil, dto.ReactRequest{Emoji: a.Emoji}, &m); err != nil {
+	var out replyAnswer // the reaction message of a room, or the state of the send through a connection (CID-33)
+	if err := t.api.json(ctx, http.MethodPost, "agent/messages/"+url.PathEscape(a.MessageID)+"/react", nil, dto.ReactRequest{Emoji: a.Emoji}, &out); err != nil {
 		return "", err
 	}
-	return "reacted (message_id " + m.ID + ")", nil
+	if out.Status != "" {
+		return "reacted", nil
+	}
+	return "reacted (message_id " + out.ID + ")", nil
 }
 
 // The refusals of send_message about where a message goes.
@@ -665,18 +669,42 @@ func safeName(s string) string {
 	return s
 }
 
+// The refusals of send_file about where a file goes.
+const (
+	msgFileSeveralTargets = "give either room, or connection with chat, not both: room uploads the file to a room or DM you belong to, connection with chat sends it to a chat of a connection you operate"
+	msgFileNoTarget       = "room, or connection with chat, is required: name the room to upload the file to, or the connection and the chat to send it to"
+	msgFileQuote          = "reply_to applies to rooms: a file sent through a connection is not a quote; to answer a message from a connection with a file, give its connection and chat"
+)
+
+// sendFile uploads a local file to a room, or sends it to a chat of a connection the AI operates
+// (connection and chat, CID-32). It reads the file only once the target is known to be one.
 func (t *tools) sendFile(ctx context.Context, args json.RawMessage) (string, error) {
 	var a struct {
-		Room    string `json:"room"`
-		Path    string `json:"path"`
-		Caption string `json:"caption"`
-		ReplyTo string `json:"reply_to"`
+		Room       string `json:"room"`
+		Connection string `json:"connection"`
+		Chat       string `json:"chat"`
+		Path       string `json:"path"`
+		Caption    string `json:"caption"`
+		ReplyTo    string `json:"reply_to"`
 	}
 	if err := decode(args, &a); err != nil {
 		return "", err
 	}
-	if err := required("room", a.Room, "path", a.Path); err != nil {
+	// An empty value is not given, as models that send every parameter do (DM-04).
+	hasRoom, hasConnection, hasChat := strings.TrimSpace(a.Room) != "", strings.TrimSpace(a.Connection) != "", strings.TrimSpace(a.Chat) != ""
+	switch {
+	case hasConnection != hasChat:
+		return "", errors.New(msgHalfTarget)
+	case hasRoom && hasConnection:
+		return "", errors.New(msgFileSeveralTargets)
+	case !hasRoom && !hasConnection:
+		return "", errors.New(msgFileNoTarget)
+	}
+	if err := required("path", a.Path); err != nil {
 		return "", err
+	}
+	if hasConnection && strings.TrimSpace(a.ReplyTo) != "" {
+		return "", errors.New(msgFileQuote)
 	}
 	data, err := os.ReadFile(a.Path) // #nosec G304 -- the session asks to share this local file
 	if err != nil {
@@ -688,7 +716,14 @@ func (t *tools) sendFile(ctx context.Context, args json.RawMessage) (string, err
 	if err != nil {
 		return "", err
 	}
-	if err := json.NewEncoder(part).Encode(dto.PostMessageRequest{Text: a.Caption, ReplyTo: a.ReplyTo}); err != nil {
+	// The message part is a PostMessageRequest for a room and a SendToChatRequest for a chat; the
+	// caption is the text of both.
+	if hasConnection {
+		err = json.NewEncoder(part).Encode(dto.SendToChatRequest{Text: a.Caption})
+	} else {
+		err = json.NewEncoder(part).Encode(dto.PostMessageRequest{Text: a.Caption, ReplyTo: a.ReplyTo})
+	}
+	if err != nil {
 		return "", err
 	}
 	name := filepath.Base(a.Path)
@@ -709,11 +744,22 @@ func (t *tools) sendFile(ctx context.Context, args json.RawMessage) (string, err
 	if err := mw.Close(); err != nil {
 		return "", err
 	}
-	resp, err := t.api.do(ctx, http.MethodPost, roomPath(a.Room, "/messages"), nil, mw.FormDataContentType(), &body)
+	path := roomPath(a.Room, "/messages")
+	if hasConnection {
+		path = "agent/connections/" + url.PathEscape(strings.TrimSpace(a.Connection)) + "/chats/" + url.PathEscape(strings.TrimSpace(a.Chat)) + "/messages"
+	}
+	resp, err := t.api.do(ctx, http.MethodPost, path, nil, mw.FormDataContentType(), &body)
 	if err != nil {
 		return "", err
 	}
 	defer func() { _ = resp.Body.Close() }()
+	if hasConnection {
+		var res dto.PlatformSendResult
+		if err := json.NewDecoder(resp.Body).Decode(&res); err != nil {
+			return "", fmt.Errorf("partyline: unexpected answer: %w", err)
+		}
+		return platformSent(res), nil
+	}
 	var m dto.Message
 	if err := json.NewDecoder(resp.Body).Decode(&m); err != nil {
 		return "", fmt.Errorf("partyline: unexpected answer: %w", err)

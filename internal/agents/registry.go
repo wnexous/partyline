@@ -107,6 +107,7 @@ type Registry struct {
 	now      func() time.Time
 	posts    *postLimiter
 	creates  *postLimiter
+	newChats *postLimiter
 
 	// allocMu serializes the creation and adoption of folder identities (ResolveFolder), so
 	// concurrent sessions of one new folder end up with the same identity.
@@ -139,6 +140,7 @@ func NewRegistry(d Deps) *Registry {
 	return &Registry{
 		store: d.Store, az: d.Access, bus: d.Bus, presence: d.Presence, audit: d.Audit, log: d.Logger, now: d.Now,
 		posts: newPostLimiter(PostLimit, PostWindow, d.Now), creates: newPostLimiter(CreateLimit, CreateWindow, d.Now),
+		newChats: newPostLimiter(NewChatLimit, NewChatWindow, d.Now),
 		machines: map[machineKey]machineSeen{},
 	}
 }
@@ -205,6 +207,10 @@ func (r *Registry) Online(agentID string) bool { return r.presence.Online(agentI
 // AllowCreate records the creation of a conversation (a DM or a group) by the agent; false means
 // it already created CreateLimit within CreateWindow (DM-04, AGRP-01).
 func (r *Registry) AllowCreate(agentID string) bool { return r.creates.allow(agentID) }
+
+// AllowNewChat records a chat the agent starts on one of its connections; false means it already started
+// NewChatLimit within NewChatWindow (CID-31).
+func (r *Registry) AllowNewChat(agentID string) bool { return r.newChats.allow(agentID) }
 
 // AllowPost records a post by the agent; false means the agent already posted PostLimit
 // messages within PostWindow (TOOL-08).

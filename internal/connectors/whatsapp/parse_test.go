@@ -2,6 +2,9 @@ package whatsapp
 
 import (
 	"encoding/json"
+	"fmt"
+	"strconv"
+	"strings"
 	"testing"
 	"time"
 
@@ -270,4 +273,165 @@ func TestParseDirectMessageTitleFallsBackToNumber(t *testing.T) {
 	p = parse(t, frame(t, testInstance, info, `{"conversation":"hi"}`))
 	require.Equal(t, "acme|"+peerLID, p.Inbound.ChatID)
 	require.Equal(t, "+•••• 0000", p.Inbound.ChatTitle)
+}
+
+// CID-29: the header of an album only counts what is coming; it says nothing a person wrote, so it
+// is no message: it used to arrive as an unsupported message of its own.
+func TestParseAlbumHeaderIsNotAMessage(t *testing.T) {
+	ev, err := DecodeFrame(frame(t, testInstance, groupInfo("ALBUM"), albumHeader))
+	require.NoError(t, err)
+	_, err = Parse(ev)
+	require.ErrorIs(t, err, ErrNotMessage)
+
+	for _, wrapped := range []string{
+		`{"ephemeralMessage":{"message":` + albumHeader + `}}`,
+		`{"albumMessage":{"expectedImageCount":2},"messageContextInfo":{"messageAssociation":{"associationType":"UNKNOWN"}}}`,
+	} {
+		ev, err := DecodeFrame(frame(t, testInstance, groupInfo("ALBUM"), wrapped))
+		require.NoError(t, err)
+		_, err = Parse(ev)
+		require.ErrorIs(t, err, ErrNotMessage, wrapped)
+	}
+}
+
+// CID-29: every item of an album is the photo, video or document it is, whichever way WhatsApp
+// wraps it (not at all, or in an associatedChildMessage with the association beside the wrapper or
+// inside it) and however the association type is written (a number or the enum name): its kind,
+// caption, file and quote are those of any other media message. It used to arrive as an unsupported
+// message when wrapped.
+func TestParseAlbumItems(t *testing.T) {
+	shapes := map[string]func(node, typ string) string{"plain": plainItem, "wrapped": wrappedItem, "wrapped with the association inside": wrappedItemInside}
+	for shape, build := range shapes {
+		for _, typ := range []string{`1`, `"MEDIA_ALBUM"`} {
+			t.Run(shape+"/"+typ, func(t *testing.T) {
+				p := parse(t, frame(t, testInstance, groupInfo("ITEM1"), build(`"imageMessage":`+albumPhoto("the first one"), typ)))
+				require.Equal(t, "ITEM1", p.Inbound.MessageID, "an item is a message of its own")
+				require.Equal(t, string(dto.MessageKindImage), p.Inbound.Kind)
+				require.Equal(t, "the first one", p.Inbound.Text)
+				require.NotNil(t, p.Media)
+				require.Equal(t, []string{"image/jpeg", "image.jpg"}, []string{p.Media.Mime, p.Media.Name})
+				require.Equal(t, int64(2048), p.Media.Size)
+				require.JSONEq(t, `{"imageMessage":`+albumPhoto("the first one")+`}`, string(p.Media.Message), "what downloadmedia gets is the media node alone")
+
+				p = parse(t, frame(t, testInstance, groupInfo("ITEM2"), build(`"videoMessage":{"mimetype":"video/mp4","fileLength":"9000"}`, typ)))
+				require.Equal(t, []string{string(dto.MessageKindVideo), "video/mp4", ""}, []string{p.Inbound.Kind, p.Media.Mime, p.Inbound.Text})
+
+				p = parse(t, frame(t, testInstance, groupInfo("ITEM3"), build(`"documentMessage":{"mimetype":"application/pdf","fileName":"menu.pdf"}`, typ)))
+				require.Equal(t, []string{string(dto.MessageKindDocument), "menu.pdf"}, []string{p.Inbound.Kind, p.Media.Name})
+			})
+		}
+	}
+}
+
+// CID-29: what is said about the item inside its media node is read there, wrapped or not: the
+// mention and the quote of a caption.
+func TestParseAlbumItemMentionsAndQuotes(t *testing.T) {
+	node := `"imageMessage":{"mimetype":"image/jpeg","caption":"@acme look","contextInfo":{"stanzaID":"ORIG1","mentionedJid":["5511999990000@s.whatsapp.net"]}}`
+	for _, build := range []func(node, typ string) string{plainItem, wrappedItem, wrappedItemInside} {
+		p := parse(t, frame(t, testInstance, groupInfo("ITEM1"), build(node, `1`)))
+		require.Equal(t, "ORIG1", p.Inbound.ReplyToID)
+		require.Equal(t, []string{"5511999990000@s.whatsapp.net"}, p.MentionedJIDs)
+	}
+}
+
+// CID-29: an item inside the other wrappers is still an item.
+func TestParseAlbumItemInsideOtherWrappers(t *testing.T) {
+	item := wrappedItem(`"imageMessage":`+albumPhoto("hello"), `1`)
+	for name, msg := range map[string]string{
+		"ephemeral": `{"ephemeralMessage":{"message":` + item + `}}`,
+		"view once": `{"viewOnceMessageV2":{"message":` + item + `}}`,
+	} {
+		p := parse(t, frame(t, testInstance, groupInfo("ITEM1"), msg))
+		require.Equal(t, []string{string(dto.MessageKindImage), "hello"}, []string{p.Inbound.Kind, p.Inbound.Text}, name)
+	}
+}
+
+// CID-29: a wrapped message that does not say what it is attached to is delivered as what it holds;
+// one that says it belongs to something other than an album is not an item and stays as it was, an
+// unsupported message: the better copy of a photo already delivered (the HD upload) must not
+// arrive as a second photo.
+func TestParseAssociatedChildMessagesThatAreNotAlbumItems(t *testing.T) {
+	node := `"imageMessage":` + albumPhoto("")
+	p := parse(t, frame(t, testInstance, groupInfo("CHILD1"), `{"associatedChildMessage":{"message":{`+node+`}}}`))
+	require.Equal(t, string(dto.MessageKindImage), p.Inbound.Kind, "no association: delivered")
+	p = parse(t, frame(t, testInstance, groupInfo("CHILD2"), wrappedItem(node, `0`)))
+	require.Equal(t, string(dto.MessageKindImage), p.Inbound.Kind, "association UNKNOWN: delivered")
+	p = parse(t, frame(t, testInstance, groupInfo("CHILD3"), wrappedItem(node, `"UNKNOWN"`)))
+	require.Equal(t, string(dto.MessageKindImage), p.Inbound.Kind)
+
+	for _, typ := range []string{
+		`10`, `"HD_IMAGE_DUAL_UPLOAD"`, `5`, `"HD_VIDEO_DUAL_UPLOAD"`, `12`, `"MOTION_PHOTO"`, `19`, `21`, `22`, `99`, `"SOMETHING_NEW"`,
+	} {
+		for name, build := range map[string]func(node, typ string) string{"beside": wrappedItem, "inside": wrappedItemInside} {
+			p := parse(t, frame(t, testInstance, groupInfo("HD1"), build(node, typ)))
+			require.Equal(t, string(dto.MessageKindUnknown), p.Inbound.Kind, "%s/%s", name, typ)
+			require.Equal(t, "(unsupported message)", p.Inbound.Text)
+			require.Nil(t, p.Media, "no file is fetched for it")
+		}
+	}
+
+	// A plain message keeps whatever association it carries: the type only matters for a wrapped one.
+	p = parse(t, frame(t, testInstance, groupInfo("PLAIN"), plainItem(node, `10`)))
+	require.Equal(t, string(dto.MessageKindImage), p.Inbound.Kind)
+}
+
+// CID-29: the edit of a caption that is wrapped like an album item is still an edit.
+func TestParseEditOfAWrappedItem(t *testing.T) {
+	msg := `{"editedMessage":{"message":{"protocolMessage":{"type":14,"key":{"ID":"ITEM1"},"editedMessage":{"associatedChildMessage":{"message":{"imageMessage":{"caption":"fixed caption"}}}}}}}}`
+	p := parse(t, frame(t, testInstance, groupInfo("EDIT1"), msg))
+	require.Equal(t, string(dto.MessageKindEdit), p.Inbound.Kind)
+	require.Equal(t, "fixed caption", p.Inbound.Text)
+}
+
+// CID-30: a contact arrives with the numbers of its card, not with its name only: the text names the
+// contact and puts the numbers between parentheses, as the card gives them (the WhatsApp id with a
+// plus). The name is the one the sharer saw, else the card's; a card without numbers, or without a
+// card, gives the name alone.
+func TestParseContactWithNumbers(t *testing.T) {
+	for name, tc := range map[string]struct{ node, want string }{
+		"one number":            {`{"displayName":"Ana Test","vcard":` + quote(cardAna) + `}`, "Contact: Ana Test (+5511999990000)"},
+		"two numbers":           {`{"displayName":"Bruno Test","vcard":` + quote(cardBruno) + `}`, "Contact: Bruno Test (+5521988880000, 2125550000)"},
+		"the name of the card":  {`{"vcard":` + quote(cardAna) + `}`, "Contact: Ana Test (+5511999990000)"},
+		"the sharer's name":     {`{"displayName":"Aninha","vcard":` + quote(cardAna) + `}`, "Contact: Aninha (+5511999990000)"},
+		"a card without number": {`{"displayName":"No Phone","vcard":"BEGIN:VCARD\nFN:No Phone\nEND:VCARD"}`, "Contact: No Phone"},
+		"no card":               {`{"displayName":"Test Contact"}`, "Contact: Test Contact"},
+		"nothing":               {`{}`, "Contact: (no name)"},
+	} {
+		t.Run(name, func(t *testing.T) {
+			p := parse(t, frame(t, testInstance, dmInfo("CARD1"), `{"contactMessage":`+tc.node+`}`))
+			require.Equal(t, string(dto.MessageKindContact), p.Inbound.Kind)
+			require.Equal(t, tc.want, p.Inbound.Text)
+			require.Nil(t, p.Media)
+		})
+	}
+	p := parse(t, frame(t, testInstance, dmInfo("CARD2"), `{"ephemeralMessage":{"message":{"contactMessage":{"displayName":"Ana Test","vcard":`+quote(cardAna)+`}}}}`))
+	require.Equal(t, "Contact: Ana Test (+5511999990000)", p.Inbound.Text, "wrapped like any message")
+}
+
+// CID-30: several contacts shared at once (a contactsArrayMessage) are one message of kind contact
+// that lists them all with their numbers, each on its own, instead of an unsupported message.
+func TestParseSeveralContacts(t *testing.T) {
+	msg := `{"contactsArrayMessage":{"displayName":"2 contacts","contacts":[` +
+		`{"displayName":"Ana Test","vcard":` + quote(cardAna) + `},{"displayName":"Bruno Test","vcard":` + quote(cardBruno) + `},{"displayName":"Carla Test"}]}}`
+	p := parse(t, frame(t, testInstance, dmInfo("CARDS"), msg))
+	require.Equal(t, string(dto.MessageKindContact), p.Inbound.Kind)
+	require.Equal(t, "Contacts: Ana Test (+5511999990000); Bruno Test (+5521988880000, 2125550000); Carla Test", p.Inbound.Text)
+
+	p = parse(t, frame(t, testInstance, dmInfo("CARDS"), `{"contactsArrayMessage":{"displayName":"1 contact","contacts":[{"displayName":"Ana Test","vcard":`+quote(cardAna)+`}]}}`))
+	require.Equal(t, "Contact: Ana Test (+5511999990000)", p.Inbound.Text, "one contact in a list is a contact")
+
+	p = parse(t, frame(t, testInstance, dmInfo("CARDS"), `{"contactsArrayMessage":{"displayName":"0 contacts"}}`))
+	require.Equal(t, "Contacts: (none)", p.Inbound.Text, "an empty list is still a message of kind contact")
+}
+
+// CID-30: a list of contacts is bounded like a card: the first maxContacts are named and the text says
+// how many more there were.
+func TestParseManyContactsIsBounded(t *testing.T) {
+	var contacts []string
+	for i := range maxContacts + 7 {
+		contacts = append(contacts, `{"displayName":"Person `+strconv.Itoa(i)+`","vcard":"TEL:+5511900000`+fmt.Sprintf("%03d", i)+`"}`)
+	}
+	p := parse(t, frame(t, testInstance, dmInfo("MANY"), `{"contactsArrayMessage":{"contacts":[`+strings.Join(contacts, ",")+`]}}`))
+	require.Equal(t, maxContacts, strings.Count(p.Inbound.Text, "Person "))
+	require.True(t, strings.HasSuffix(p.Inbound.Text, "; and 7 more"), p.Inbound.Text[len(p.Inbound.Text)-30:])
 }

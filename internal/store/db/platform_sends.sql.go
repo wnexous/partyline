@@ -82,8 +82,44 @@ func (q *Queries) DeleteFinishedPlatformSends(ctx context.Context, arg DeleteFin
 	return result.RowsAffected()
 }
 
+const failSendingOncePlatformSends = `-- name: FailSendingOncePlatformSends :many
+UPDATE platform_sends
+SET status = 'failed', attempts = 1, last_error = ?, text = '', updated_at = ?
+WHERE status = 'sending' AND once = 1
+RETURNING id
+`
+
+type FailSendingOncePlatformSendsParams struct {
+	LastError string
+	UpdatedAt int64
+}
+
+// A send of a file that a previous process left in flight cannot be repeated: its file is gone.
+func (q *Queries) FailSendingOncePlatformSends(ctx context.Context, arg FailSendingOncePlatformSendsParams) ([]string, error) {
+	rows, err := q.db.QueryContext(ctx, failSendingOncePlatformSends, arg.LastError, arg.UpdatedAt)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []string
+	for rows.Next() {
+		var id string
+		if err := rows.Scan(&id); err != nil {
+			return nil, err
+		}
+		items = append(items, id)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const getPlatformSend = `-- name: GetPlatformSend :one
-SELECT id, connector_id, chat_id, agent_id, text, reply_to_external_id, status, attempts, next_attempt_at, last_error, external_id, created_at, updated_at FROM platform_sends WHERE id = ?
+SELECT id, connector_id, chat_id, agent_id, text, reply_to_external_id, status, attempts, next_attempt_at, last_error, external_id, created_at, updated_at, once FROM platform_sends WHERE id = ?
 `
 
 func (q *Queries) GetPlatformSend(ctx context.Context, id string) (PlatformSend, error) {
@@ -103,12 +139,13 @@ func (q *Queries) GetPlatformSend(ctx context.Context, id string) (PlatformSend,
 		&i.ExternalID,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.Once,
 	)
 	return i, err
 }
 
 const getPlatformSendAttempt = `-- name: GetPlatformSendAttempt :one
-SELECT s.id, s.connector_id, s.chat_id, s.agent_id, s.text, s.reply_to_external_id, s.status, s.attempts, s.next_attempt_at, s.last_error, s.external_id, s.created_at, s.updated_at,
+SELECT s.id, s.connector_id, s.chat_id, s.agent_id, s.text, s.reply_to_external_id, s.status, s.attempts, s.next_attempt_at, s.last_error, s.external_id, s.created_at, s.updated_at, s.once,
        c.external_id AS chat_external_id,
        k.operator_iid AS operator_iid,
        CAST(COALESCE(i.display_name, '') AS TEXT) AS agent_name,
@@ -149,6 +186,7 @@ func (q *Queries) GetPlatformSendAttempt(ctx context.Context, id string) (GetPla
 		&i.PlatformSend.ExternalID,
 		&i.PlatformSend.CreatedAt,
 		&i.PlatformSend.UpdatedAt,
+		&i.PlatformSend.Once,
 		&i.ChatExternalID,
 		&i.OperatorIid,
 		&i.AgentName,
@@ -158,9 +196,9 @@ func (q *Queries) GetPlatformSendAttempt(ctx context.Context, id string) (GetPla
 }
 
 const insertPlatformSend = `-- name: InsertPlatformSend :exec
-INSERT INTO platform_sends (id, connector_id, chat_id, agent_id, text, reply_to_external_id, status,
+INSERT INTO platform_sends (id, connector_id, chat_id, agent_id, text, reply_to_external_id, once, status,
                             attempts, next_attempt_at, created_at, updated_at)
-VALUES (?, ?, ?, ?, ?, ?, 'sending', 0, ?, ?, ?)
+VALUES (?, ?, ?, ?, ?, ?, ?, 'sending', 0, ?, ?, ?)
 `
 
 type InsertPlatformSendParams struct {
@@ -170,6 +208,7 @@ type InsertPlatformSendParams struct {
 	AgentID           string
 	Text              string
 	ReplyToExternalID string
+	Once              bool
 	NextAttemptAt     int64
 	CreatedAt         int64
 	UpdatedAt         int64
@@ -186,6 +225,7 @@ func (q *Queries) InsertPlatformSend(ctx context.Context, arg InsertPlatformSend
 		arg.AgentID,
 		arg.Text,
 		arg.ReplyToExternalID,
+		arg.Once,
 		arg.NextAttemptAt,
 		arg.CreatedAt,
 		arg.UpdatedAt,
@@ -194,7 +234,7 @@ func (q *Queries) InsertPlatformSend(ctx context.Context, arg InsertPlatformSend
 }
 
 const listDuePlatformSends = `-- name: ListDuePlatformSends :many
-SELECT id, connector_id, chat_id, agent_id, text, reply_to_external_id, status, attempts, next_attempt_at, last_error, external_id, created_at, updated_at FROM platform_sends
+SELECT id, connector_id, chat_id, agent_id, text, reply_to_external_id, status, attempts, next_attempt_at, last_error, external_id, created_at, updated_at, once FROM platform_sends
 WHERE status = 'pending' AND next_attempt_at <= ?1
 ORDER BY next_attempt_at, id
 LIMIT ?2
@@ -228,6 +268,7 @@ func (q *Queries) ListDuePlatformSends(ctx context.Context, arg ListDuePlatformS
 			&i.ExternalID,
 			&i.CreatedAt,
 			&i.UpdatedAt,
+			&i.Once,
 		); err != nil {
 			return nil, err
 		}
@@ -312,11 +353,12 @@ func (q *Queries) MarkPlatformSendSent(ctx context.Context, arg MarkPlatformSend
 }
 
 const requeueSendingPlatformSends = `-- name: RequeueSendingPlatformSends :many
-UPDATE platform_sends SET status = 'pending', updated_at = ? WHERE status = 'sending'
+UPDATE platform_sends SET status = 'pending', updated_at = ? WHERE status = 'sending' AND once = 0
 RETURNING id
 `
 
-// Sends a previous process left in flight are due again.
+// Sends a previous process left in flight are due again, except those that are attempted once (a
+// file is not kept, CID-32): those are failed by FailSendingOncePlatformSends.
 func (q *Queries) RequeueSendingPlatformSends(ctx context.Context, updatedAt int64) ([]string, error) {
 	rows, err := q.db.QueryContext(ctx, requeueSendingPlatformSends, updatedAt)
 	if err != nil {

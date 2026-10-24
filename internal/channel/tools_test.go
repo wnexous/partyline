@@ -75,7 +75,7 @@ func TestToolsList(t *testing.T) {
 		"list_rooms":          nil,
 		"history":             {"room"},
 		"download_attachment": {"attachment_id"},
-		"send_file":           {"room", "path"},
+		"send_file":           {"path"}, // room or connection with chat, exactly one: the schema cannot say so
 		"room_info":           {"room"},
 		"react":               {"message_id", "emoji"},
 		"create_group":        {"name", "members"},

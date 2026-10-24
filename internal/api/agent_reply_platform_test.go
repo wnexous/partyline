@@ -30,8 +30,19 @@ type replyFixture struct {
 
 func newReplyFixture(t *testing.T, opts ...testkit.Option) *replyFixture {
 	t.Helper()
+	return newReplyFixtureOfKind(t, nil, opts...)
+}
+
+// newReplyFixtureOfKind is newReplyFixture for a variant of the fake kind: tune changes the kind before
+// it is registered (a platform without a capability).
+func newReplyFixtureOfKind(t *testing.T, tune func(*connectors.Kind), opts ...testkit.Option) *replyFixture {
+	t.Helper()
 	fake := connectortest.New()
-	env := testkit.New(t, append([]testkit.Option{testkit.WithConnectorKinds(fake.Kind())}, opts...)...)
+	kind := fake.Kind()
+	if tune != nil {
+		tune(&kind)
+	}
+	env := testkit.New(t, append([]testkit.Option{testkit.WithConnectorKinds(kind)}, opts...)...)
 	alice := env.NewUser("alice")
 	f := &platformWS{
 		env: env, alice: alice, token: alice.Token(dto.TokenKindAgent, "laptop"),
@@ -265,4 +276,78 @@ func TestReplyToARoomMessageIsStillAMessage(t *testing.T) {
 	require.Equal(t, []any{room.ID, asked.ID, "all green", dto.AuthorKindAgent, f.atlas}, []any{got.RoomID, got.ReplyTo, got.Text, got.AuthorKind, got.AuthorID})
 	require.NotContains(t, keysOf(t, res.Body), "status")
 	require.Empty(t, f.inst.Sent(), "a room reply sends nothing through a connection")
+}
+
+// replyWith answers the message id as the AI of the folder name with a raw JSON body.
+func (f *replyFixture) replyWith(name, id, body string) *testkit.Response {
+	f.env.T.Helper()
+	return f.token.AsAgent(name).DoRaw(http.MethodPost, replyPath+id+"/reply", "application/json", strings.NewReader(body))
+}
+
+// CID-34: a reply that says quote false goes to the chat of the message it answers, unsigned, without
+// quoting it: the platform gets no message to quote and no sender of it, in a group as in a direct chat.
+// Without quote, with quote true and with a null quote the reply quotes as it always did. The state of the
+// send is what any reply answers.
+func TestReplyWithoutAQuoteSendsToTheSameChatPlain(t *testing.T) {
+	f := newReplyFixture(t)
+	asked := f.enqueue(t, f.atlas, f.group, "M1", "where is my order?")
+	direct := f.enqueue(t, f.atlas, f.dm, "M2", "oi")
+
+	res := f.replyWith("Atlas", asked, `{"text":"on its way","quote":false}`).RequireStatus(http.StatusCreated)
+	require.Equal(t, []string{"id", "status"}, keysOf(t, res.Body))
+	got := testkit.Decode[dto.PlatformSendResult](res)
+	require.Equal(t, dto.PlatformSendStatusSent, got.Status)
+	sent := f.inst.WaitSend(t)
+	require.Equal(t, []any{"120363000000000001@g.us", "on its way", true, "", "", ""},
+		[]any{sent.ChatID, sent.Text, sent.Unsigned, sent.Signature(), sent.ReplyToID, sent.ReplyToSenderID})
+	row := f.sendRow(t, got.ID)
+	require.Equal(t, []any{"sent", f.group.ID, ""}, []any{row.Status, row.ChatID, row.ReplyToExternalID}, "the record quotes nothing either")
+
+	f.replyWith("Atlas", direct, `{"text":"oi, tudo bem?","quote":false}`).RequireStatus(http.StatusCreated)
+	sent = f.inst.WaitSend(t)
+	require.Equal(t, []string{"5511999990000", "oi, tudo bem?", ""}, []string{sent.ChatID, sent.Text, sent.ReplyToID}, "a direct chat")
+
+	for name, body := range map[string]string{
+		"no quote":   `{"text":"quoted"}`,
+		"quote true": `{"text":"quoted","quote":true}`,
+		"null quote": `{"text":"quoted","quote":null}`,
+	} {
+		f.replyWith("Atlas", asked, body).RequireStatus(http.StatusCreated)
+		sent = f.inst.WaitSend(t)
+		require.Equal(t, []string{"M1", "5511999990000"}, []string{sent.ReplyToID, sent.ReplyToSenderID}, name)
+	}
+}
+
+// CID-34: a reply without a quote is a reply in every other way: only the operator sends it, an AI that
+// does not hold the message is told it is not found, the text is validated, it counts against the posting
+// limit once it is valid, and a quote that is not a boolean is a malformed request.
+func TestReplyWithoutAQuoteKeepsTheRulesOfAReply(t *testing.T) {
+	f := newReplyFixture(t)
+	id := f.enqueue(t, f.atlas, f.group, "M1", "for Atlas")
+
+	f.replyWith("Notes", id, `{"text":"x","quote":false}`).RequireError(http.StatusNotFound, dto.ErrorCodeNotFound)
+	e := f.replyWith("Atlas", id, `{"text":" ","quote":false}`).RequireError(http.StatusUnprocessableEntity, dto.ErrorCodeInvalid)
+	require.Contains(t, e.Fields, "text")
+	f.replyWith("Atlas", id, `{"text":"x","quote":"no"}`).RequireError(http.StatusBadRequest, dto.ErrorCodeInvalid)
+	f.replyWith("Atlas", id, `{"text":"x","quote":0}`).RequireError(http.StatusBadRequest, dto.ErrorCodeInvalid)
+	require.Empty(t, f.inst.Sent())
+
+	for i := 1; i <= 30; i++ {
+		f.replyWith("Atlas", id, fmt.Sprintf(`{"text":"answer %d","quote":false}`, i)).RequireStatus(http.StatusCreated)
+	}
+	f.replyWith("Atlas", id, `{"text":"one too many","quote":false}`).RequireError(http.StatusTooManyRequests, dto.ErrorCodeRateLimited)
+}
+
+// CID-34: quote is about the platform: a reply to a room message is a message of the room that answers it
+// (reply_to), as the web app's replies are, whatever quote says.
+func TestQuoteFalseDoesNotChangeAReplyInARoom(t *testing.T) {
+	f := newReplyFixture(t)
+	room := createRoom(f.alice, "Support")
+	f.alice.Post("/api/v1/rooms/"+room.ID+"/members", dto.AddMemberRequest{Kind: dto.MemberKindAgent, MemberID: f.atlas}).RequireStatus(http.StatusCreated)
+	asked := testkit.Decode[dto.Message](f.alice.Post("/api/v1/rooms/"+room.ID+"/messages", dto.PostMessageRequest{Text: "status?"}).RequireStatus(http.StatusCreated))
+
+	res := f.replyWith("Atlas", asked.ID, `{"text":"all green","quote":false}`).RequireStatus(http.StatusCreated)
+	got := testkit.Decode[dto.Message](res)
+	require.Equal(t, []any{room.ID, asked.ID, "all green"}, []any{got.RoomID, got.ReplyTo, got.Text})
+	require.Empty(t, f.inst.Sent())
 }

@@ -298,6 +298,7 @@ type PlatformSend struct {
 	ExternalID        string
 	CreatedAt         int64
 	UpdatedAt         int64
+	Once              bool
 }
 
 type Position struct {

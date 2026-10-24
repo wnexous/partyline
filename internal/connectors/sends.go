@@ -1,18 +1,23 @@
 package connectors
 
 import (
+	"bytes"
 	"context"
 	"database/sql"
 	"errors"
 	"fmt"
+	"io"
 	"log/slog"
 	"strings"
+	"sync"
 	"sync/atomic"
 	"time"
+	"unicode"
 	"unicode/utf8"
 
 	"github.com/wnexous/partyline/internal/access"
 	"github.com/wnexous/partyline/internal/api/dto"
+	"github.com/wnexous/partyline/internal/events"
 	"github.com/wnexous/partyline/internal/store"
 	"github.com/wnexous/partyline/internal/store/db"
 	"github.com/wnexous/partyline/internal/validation"
@@ -22,14 +27,25 @@ import (
 var (
 	// ErrNotOperator means the AI that sends is not the operator of the connection (CID-03).
 	ErrNotOperator = errors.New("only the AI that operates the connection can send through it")
-	// ErrUnknownChat means the chat is not a chat of the connection (CID-17).
+	// ErrUnknownChat means the chat is not a chat of the connection (CID-17), and not an address its
+	// platform lets the operator start a chat at either (CID-31).
 	ErrUnknownChat = errors.New("the chat does not belong to the connection")
+	// ErrNewChatRateLimited means the AI started too many chats on its connections lately (CID-31).
+	ErrNewChatRateLimited = errors.New("too many new chats")
+	// ErrFilesUnsupported means the platform of the connection has no media send (CID-32).
+	ErrFilesUnsupported = errors.New("the platform of the connection cannot be sent files")
+	// ErrNoReactionTarget means the message to react to has no platform id: the platform gave it none
+	// (CID-33).
+	ErrNoReactionTarget = errors.New("the message has no platform id to react to")
 )
 
 const (
 	// SendAttemptTimeout bounds one attempt to send through a connection: the synchronous one
 	// Send makes and each retry of the worker (CID-18).
 	SendAttemptTimeout = 15 * time.Second
+	// SendFileTimeout bounds the one attempt to send a file: an upload takes longer than a text
+	// (CID-32).
+	SendFileTimeout = 90 * time.Second
 	// SendRetention is how long a finished send keeps its row, which holds no text: long enough
 	// for a reply to a message the account sent to be recognized under mentions-only (CID-12),
 	// short enough not to be a log of what the AI sends.
@@ -41,6 +57,12 @@ const (
 
 	// maxSendAttempts is how many attempts a send gets before it is failed (CID-18).
 	maxSendAttempts = 5
+
+	// interruptedFile is why a send of a file fails when the process that was sending it died (CID-32).
+	interruptedFile = "interrupted by a restart: the file was not kept"
+
+	// maxFileName is the longest file name a send takes, in bytes.
+	maxFileName = 255
 
 	sendPoll     = time.Second
 	sendBatch    = 50
@@ -57,6 +79,8 @@ func sendBackoff(attempt int) time.Duration {
 // carry no secrets (the Manager redacts them).
 type Transport interface {
 	Send(ctx context.Context, connectorID string, m Outbound) (platformID string, err error)
+	// React sends a reaction; ErrReactionsUnsupported when the platform has none (CID-33).
+	React(ctx context.Context, connectorID string, r Reaction) error
 }
 
 // SendsDeps are the collaborators of Sends.
@@ -67,11 +91,22 @@ type SendsDeps struct {
 	// echo of a send from something typed on the account (CID-14); nil remembers nothing, and
 	// only the record of the sends then tells them apart.
 	Sent *SentIDs
+	// Kinds are the connector kinds: the Address of a connection's kind says which names it takes as a
+	// chat it has not heard from yet (CID-31). Without it a send goes only to chats the connection has.
+	Kinds *Registry
+	// Bus announces the chats a send creates; defaults to a bus nobody listens to.
+	Bus *events.Bus
+	// AllowNewChat says whether an AI may start one more chat now, and counts it; the API wires the
+	// registry's limit of 10 an hour. Nil allows everything. It is asked only when a chat is about to
+	// be created, never for a chat the connection has.
+	AllowNewChat func(agentID string) bool
 	// Now returns the current time; defaults to time.Now.
 	Now    func() time.Time
 	Logger *slog.Logger
-	// AttemptTimeout bounds one attempt; defaults to SendAttemptTimeout.
-	AttemptTimeout time.Duration
+	// AttemptTimeout bounds one attempt; defaults to SendAttemptTimeout. FileAttemptTimeout bounds the
+	// attempt of a send with a file; defaults to SendFileTimeout.
+	AttemptTimeout     time.Duration
+	FileAttemptTimeout time.Duration
 	// PollInterval is how often the worker looks for retries that are due; defaults to 1 s.
 	PollInterval time.Duration
 }
@@ -95,8 +130,14 @@ func NewSends(d SendsDeps) *Sends {
 	if d.Logger == nil {
 		d.Logger = slog.Default()
 	}
+	if d.Bus == nil {
+		d.Bus = events.NewBus()
+	}
 	if d.AttemptTimeout <= 0 {
 		d.AttemptTimeout = SendAttemptTimeout
+	}
+	if d.FileAttemptTimeout <= 0 {
+		d.FileAttemptTimeout = SendFileTimeout
 	}
 	if d.PollInterval <= 0 {
 		d.PollInterval = sendPoll
@@ -109,61 +150,276 @@ type SendInput struct {
 	// AgentID is the AI that sends: it must operate the connection (CID-03).
 	AgentID     string
 	ConnectorID string
-	// ChatID is Partyline's id of the chat, a chat of ConnectorID (CID-17).
+	// ChatID is Partyline's id of the chat, a chat of ConnectorID (CID-17); or else the address of a
+	// chat the connection has not heard from yet (a phone number, a Telegram chat id, ...), which the
+	// kind of the connection accepts and which the send then creates (CID-31).
 	ChatID string
 	Text   string
 	// ReplyTo is the platform's id of the message to quote, empty for a plain message; a platform
 	// that cannot quote sends the text alone (CID-15).
 	ReplyTo string
+	// File, when set, is a file sent with the text as its caption (CID-32). It is held in memory for
+	// the one attempt and never stored, so the send is attempted once and a platform that refuses it
+	// fails it.
+	File *SendFile
+}
+
+// SendFile is the file of a send (CID-32).
+type SendFile struct {
+	Name string
+	Mime string
+	Data []byte
 }
 
 // Check refuses what Send would refuse before it stores or sends anything, and changes nothing: a
 // connection that does not exist is access.ErrNotFound, an AI that does not operate it (also while
-// nobody does) ErrNotOperator, a chat that is not one of its chats ErrUnknownChat and an unusable text
-// a *validation.Error on text. A caller that limits how much an AI sends calls it first, so that a
-// refused request does not count against the limit and the AI keeps seeing why it was refused.
+// nobody does) ErrNotOperator, a chat that is neither one of its chats nor an address its platform
+// accepts ErrUnknownChat and an unusable text a *validation.Error on text. A caller that limits how
+// much an AI sends calls it first, so that a refused request does not count against the limit and the
+// AI keeps seeing why it was refused.
 func (s *Sends) Check(ctx context.Context, in SendInput) error {
+	_, err := s.plan(ctx, in)
+	return err
+}
+
+// sendPlan is what a send is going to do: the chat it goes to, or the chat to create first.
+type sendPlan struct {
+	chat   db.Chat
+	create *ChatInfo
+}
+
+// plan makes the checks of Check, in its order, and says where the send goes (CID-03, CID-17, CID-31).
+func (s *Sends) plan(ctx context.Context, in SendInput) (sendPlan, error) {
 	conn, err := s.d.Store.R().GetConnector(ctx, in.ConnectorID)
 	if errors.Is(err, sql.ErrNoRows) {
-		return access.ErrNotFound
+		return sendPlan{}, access.ErrNotFound
 	}
 	if err != nil {
-		return err
+		return sendPlan{}, err
 	}
 	if !conn.OperatorIid.Valid || conn.OperatorIid.String != in.AgentID {
-		return ErrNotOperator
+		return sendPlan{}, ErrNotOperator
 	}
-	chat, err := s.d.Store.R().GetChat(ctx, in.ChatID)
+	if in.File != nil && !s.canSendFiles(conn) {
+		return sendPlan{}, ErrFilesUnsupported
+	}
+	p, err := s.destination(ctx, conn, in.ChatID)
+	if err != nil {
+		return sendPlan{}, err
+	}
+	return p, validateContent(in.Text, in.File)
+}
+
+// canSendFiles tells whether the connection's kind has a media send (CID-32).
+func (s *Sends) canSendFiles(conn db.Connector) bool {
+	if s.d.Kinds == nil {
+		return false
+	}
+	kind, ok := s.d.Kinds.Lookup(conn.Kind)
+	return ok && kind.CanSendFiles
+}
+
+// destination finds the chat a send to ref goes to: a chat of the connection by its id, else an
+// address the kind of the connection accepts, which is the chat of that address when the connection
+// has one and otherwise a chat to create. Anything else, the id of a chat of another connection
+// included, is an unknown chat.
+func (s *Sends) destination(ctx context.Context, conn db.Connector, ref string) (sendPlan, error) {
+	chat, err := s.d.Store.R().GetChat(ctx, ref)
 	switch {
-	case errors.Is(err, sql.ErrNoRows), err == nil && chat.ConnectorID != in.ConnectorID:
-		return ErrUnknownChat
-	case err != nil:
-		return err
+	case err == nil && chat.ConnectorID == conn.ID:
+		return sendPlan{chat: chat}, nil
+	case err != nil && !errors.Is(err, sql.ErrNoRows):
+		return sendPlan{}, err
 	}
-	return validateAnswer(in.Text)
+	info, ok := s.address(conn, ref)
+	if !ok {
+		return sendPlan{}, ErrUnknownChat
+	}
+	chat, err = s.d.Store.R().GetChatByExternalID(ctx, db.GetChatByExternalIDParams{ConnectorID: conn.ID, ExternalID: info.ID})
+	switch {
+	case err == nil:
+		return sendPlan{chat: chat}, nil
+	case !errors.Is(err, sql.ErrNoRows):
+		return sendPlan{}, err
+	}
+	return sendPlan{create: &info}, nil
+}
+
+// address asks the connection's kind whether ref is an address it can start a chat at (CID-31). The
+// kind sees the public fields of the connection's config only.
+func (s *Sends) address(conn db.Connector, ref string) (ChatInfo, bool) {
+	if s.d.Kinds == nil {
+		return ChatInfo{}, false
+	}
+	kind, ok := s.d.Kinds.Lookup(conn.Kind)
+	if !ok || kind.Address == nil {
+		return ChatInfo{}, false
+	}
+	cfg, err := Decode(nil, conn.ConfigJson, nil)
+	if err != nil {
+		return ChatInfo{}, false
+	}
+	return kind.Address(cfg, ref)
 }
 
 // Send stores the answer after the checks of Check and makes one attempt at once, under
 // SendAttemptTimeout, through the connection. The result is sent when the platform took the message;
 // when it refused or did not answer in time the send is pending, the result carries the reason and the
 // worker retries it (CID-18). The attempt is not abandoned when ctx is done: the caller going away
-// does not unsend a message in flight.
+// does not unsend a message in flight. A send to an address the connection has no chat for first
+// creates the chat, unless the AI started too many lately (ErrNewChatRateLimited, CID-31).
 func (s *Sends) Send(ctx context.Context, in SendInput) (dto.PlatformSendResult, error) {
-	if err := s.Check(ctx, in); err != nil {
+	p, err := s.plan(ctx, in)
+	if err != nil {
+		return dto.PlatformSendResult{}, err
+	}
+	chat, err := s.chatOf(ctx, in, p)
+	if err != nil {
 		return dto.PlatformSendResult{}, err
 	}
 	id, now := store.NewID(), s.d.Now().UnixMilli()
 	// The row is created claimed (sending): the worker only takes pending sends.
-	err := s.d.Store.WithTx(ctx, func(q *db.Queries) error {
+	err = s.d.Store.WithTx(ctx, func(q *db.Queries) error {
 		return q.InsertPlatformSend(ctx, db.InsertPlatformSendParams{
-			ID: id, ConnectorID: in.ConnectorID, ChatID: in.ChatID, AgentID: in.AgentID, Text: in.Text,
-			ReplyToExternalID: in.ReplyTo, NextAttemptAt: now, CreatedAt: now, UpdatedAt: now,
+			ID: id, ConnectorID: in.ConnectorID, ChatID: chat.ID, AgentID: in.AgentID, Text: in.Text,
+			ReplyToExternalID: in.ReplyTo, Once: in.File != nil, NextAttemptAt: now, CreatedAt: now, UpdatedAt: now,
 		})
 	})
 	if err != nil {
 		return dto.PlatformSendResult{}, err
 	}
-	return s.attempt(context.WithoutCancel(ctx), id)
+	return s.attempt(context.WithoutCancel(ctx), id, delivery{file: in.File})
+}
+
+// chatOf is the chat a planned send goes to, created now when it is a new one (CID-31): the AI's
+// allowance for new chats is spent first, and the chat is announced like any discovered chat. The
+// chat is kept whatever becomes of the first message: the platform refusing it does not unmake it.
+func (s *Sends) chatOf(ctx context.Context, in SendInput, p sendPlan) (db.Chat, error) {
+	if p.create == nil {
+		return p.chat, nil
+	}
+	if s.d.AllowNewChat != nil && !s.d.AllowNewChat(in.AgentID) {
+		return db.Chat{}, ErrNewChatRateLimited
+	}
+	return UpsertChat(ctx, s.d.Store, s.d.Bus, in.ConnectorID, *p.create, time.Time{}, s.d.Now())
+}
+
+// ReactInput is a reaction of an AI to a message that arrived on its connection (CID-33).
+type ReactInput struct {
+	// AgentID is the AI that reacts: it must operate the connection (CID-03).
+	AgentID     string
+	ConnectorID string
+	// ChatID is Partyline's id of the chat the message arrived in, a chat of ConnectorID.
+	ChatID string
+	// TargetID is the platform's id of the message reacted to, TargetSenderID the platform's id of whoever
+	// wrote it, and TargetFromSelf tells that the account itself did.
+	TargetID       string
+	TargetSenderID string
+	TargetFromSelf bool
+	// Emoji is one emoji; surrounding white space is dropped.
+	Emoji string
+}
+
+// CheckReaction refuses what React would refuse before it records or sends anything, and changes nothing:
+// a connection that does not exist is access.ErrNotFound, an AI that does not operate it ErrNotOperator,
+// a platform without reactions ErrReactionsUnsupported, a chat that is not one of its chats ErrUnknownChat,
+// a message without a platform id ErrNoReactionTarget and anything but one emoji a *validation.Error on
+// emoji (CID-33). A caller that limits how much an AI sends calls it first, as for a send.
+func (s *Sends) CheckReaction(ctx context.Context, in ReactInput) error {
+	_, err := s.planReaction(ctx, in)
+	return err
+}
+
+func (s *Sends) planReaction(ctx context.Context, in ReactInput) (ReactInput, error) {
+	conn, err := s.d.Store.R().GetConnector(ctx, in.ConnectorID)
+	if errors.Is(err, sql.ErrNoRows) {
+		return in, access.ErrNotFound
+	}
+	if err != nil {
+		return in, err
+	}
+	if !conn.OperatorIid.Valid || conn.OperatorIid.String != in.AgentID {
+		return in, ErrNotOperator
+	}
+	if !s.canReact(conn) {
+		return in, ErrReactionsUnsupported
+	}
+	chat, err := s.d.Store.R().GetChat(ctx, in.ChatID)
+	switch {
+	case errors.Is(err, sql.ErrNoRows), err == nil && chat.ConnectorID != conn.ID:
+		return in, ErrUnknownChat
+	case err != nil:
+		return in, err
+	}
+	if in.TargetID == "" {
+		return in, ErrNoReactionTarget
+	}
+	in.Emoji = strings.TrimSpace(in.Emoji)
+	if !validation.OneEmoji(in.Emoji) { // REACT-05
+		check := validation.Check{}
+		check.Add("emoji", "must be one emoji")
+		return in, check.Err()
+	}
+	return in, nil
+}
+
+// canReact tells whether the connection's kind has reactions (CID-33).
+func (s *Sends) canReact(conn db.Connector) bool {
+	if s.d.Kinds == nil {
+		return false
+	}
+	kind, ok := s.d.Kinds.Lookup(conn.Kind)
+	return ok && kind.CanReact
+}
+
+// React sends the reaction after the checks of CheckReaction, once: it is recorded as a send of the AI
+// without text, attempted at once under AttemptTimeout through the connection, and a platform that
+// refuses it, or does not answer in time, fails it with the reason; nothing tries again (CID-33). The
+// record is what makes the echo of the reaction, which a platform that reports the account's own messages
+// sends back, recognizable (CID-14).
+func (s *Sends) React(ctx context.Context, in ReactInput) (dto.PlatformSendResult, error) {
+	in, err := s.planReaction(ctx, in)
+	if err != nil {
+		return dto.PlatformSendResult{}, err
+	}
+	id, now := store.NewID(), s.d.Now().UnixMilli()
+	err = s.d.Store.WithTx(ctx, func(q *db.Queries) error {
+		return q.InsertPlatformSend(ctx, db.InsertPlatformSendParams{
+			ID: id, ConnectorID: in.ConnectorID, ChatID: in.ChatID, AgentID: in.AgentID, ReplyToExternalID: in.TargetID,
+			Once: true, NextAttemptAt: now, CreatedAt: now, UpdatedAt: now,
+		})
+	})
+	if err != nil {
+		return dto.PlatformSendResult{}, err
+	}
+	return s.attempt(context.WithoutCancel(ctx), id, delivery{react: &in})
+}
+
+// validateContent checks what a send holds: a text, or a file with an optional caption (CID-32).
+func validateContent(text string, file *SendFile) error {
+	if file == nil {
+		return validateAnswer(text)
+	}
+	check := validation.Check{}
+	if utf8.RuneCountInString(text) > dto.MaxTextLength {
+		check.Add("text", "must have at most 16000 characters")
+	}
+	switch {
+	case len(file.Data) == 0:
+		check.Add("file", "must not be empty")
+	case !plainFileName(file.Name):
+		check.Add("file", "must have a name of at most 255 bytes without a path or control characters")
+	}
+	return check.Err()
+}
+
+// plainFileName reports whether name is a file name and not a path: something, at most maxFileName bytes,
+// without a separator or a control character.
+func plainFileName(name string) bool {
+	if name == "" || len(name) > maxFileName || name == "." || name == ".." || strings.ContainsAny(name, `/\`) {
+		return false
+	}
+	return strings.IndexFunc(name, unicode.IsControl) < 0
 }
 
 // validateAnswer applies the message limits (MSG-02): at least one character that is not white
@@ -179,9 +435,17 @@ func validateAnswer(text string) error {
 	return check.Err()
 }
 
+// delivery is what one attempt of a send does besides the text: it sends a file (CID-32) or reacts
+// (CID-33). Both are attempted once, with the data the request brought and nothing keeps.
+type delivery struct {
+	file  *SendFile
+	react *ReactInput
+}
+
 // attempt sends the claimed send once and records the outcome, also when ctx ends meanwhile, so that
-// the send is not left in flight.
-func (s *Sends) attempt(ctx context.Context, id string) (dto.PlatformSendResult, error) {
+// the send is not left in flight. A send of a file or a reaction (once) is attempted only here, by the
+// request that made it: it is never retried, so a refusal fails it.
+func (s *Sends) attempt(ctx context.Context, id string, d delivery) (dto.PlatformSendResult, error) {
 	row, err := s.d.Store.R().GetPlatformSendAttempt(ctx, id)
 	if err != nil {
 		return dto.PlatformSendResult{}, err
@@ -193,15 +457,37 @@ func (s *Sends) attempt(ctx context.Context, id string) (dto.PlatformSendResult,
 		// while this send waited for its retry. Nothing was tried, so the attempts stay.
 		return s.fail(rec, send, int(send.Attempts), noLongerOperator, true)
 	}
+	if send.Once && d.file == nil && d.react == nil { // nothing keeps a file: this is a retry that should not exist
+		return s.fail(rec, send, int(send.Attempts)+1, interruptedFile, true)
+	}
+	created := &createdIDs{}
 	out := Outbound{
 		ChatID: row.ChatExternalID, Text: send.Text, ReplyToID: send.ReplyToExternalID, ReplyToSenderID: row.ReplyToSenderID,
 		MessageID: send.ID, AuthorName: row.AgentName, CreatedAt: time.UnixMilli(send.CreatedAt).UTC(),
 		// The account is the AI's own: no author line, whoever the AI is (CID-15, CID-16).
 		Unsigned: true,
-		Created:  func(platformID string) { s.d.Sent.Add(send.ChatID, platformID) },
+		Created: func(platformID string) {
+			created.add(platformID)
+			s.d.Sent.Add(send.ChatID, platformID)
+		},
 	}
-	sendCtx, cancel := context.WithTimeout(ctx, s.d.AttemptTimeout)
-	platformID, err := s.d.Transport.Send(sendCtx, send.ConnectorID, out)
+	timeout := s.d.AttemptTimeout
+	if d.file != nil {
+		out.Files = []OutFile{outFile(d.file)}
+		timeout = s.d.FileAttemptTimeout
+	}
+	sendCtx, cancel := context.WithTimeout(ctx, timeout)
+	var platformID string
+	if d.react != nil {
+		err = s.d.Transport.React(sendCtx, send.ConnectorID, Reaction{
+			ChatID: row.ChatExternalID, TargetID: d.react.TargetID, TargetSenderID: d.react.TargetSenderID,
+			TargetFromMe: d.react.TargetFromSelf, Emoji: d.react.Emoji, MessageID: send.ID,
+			CreatedAt: out.CreatedAt, Created: out.Created,
+		})
+		platformID = created.first()
+	} else {
+		platformID, err = s.d.Transport.Send(sendCtx, send.ConnectorID, out)
+	}
 	timedOut := errors.Is(sendCtx.Err(), context.DeadlineExceeded)
 	cancel()
 
@@ -214,9 +500,55 @@ func (s *Sends) attempt(ctx context.Context, id string) (dto.PlatformSendResult,
 	}
 	reason := err.Error()
 	if timedOut {
-		reason = fmt.Sprintf("the platform did not answer within %s", s.d.AttemptTimeout)
+		reason = fmt.Sprintf("the platform did not answer within %s", timeout)
+		if d.file != nil {
+			reason += "; the file may or may not have arrived"
+		}
 	}
-	return s.fail(rec, send, int(send.Attempts)+1, reason, false)
+	if d.file != nil && send.Text != "" && created.count() > 0 && !timedOut {
+		reason += "; the caption was sent, the file was not"
+	}
+	return s.fail(rec, send, int(send.Attempts)+1, reason, send.Once)
+}
+
+// createdIDs collects the platform ids of the messages one attempt created, as the connector reports
+// them.
+type createdIDs struct {
+	mu  sync.Mutex
+	ids []string
+}
+
+func (c *createdIDs) add(id string) {
+	c.mu.Lock()
+	c.ids = append(c.ids, id)
+	c.mu.Unlock()
+}
+
+func (c *createdIDs) count() int {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return len(c.ids)
+}
+
+// first is the id of the first message created, "" when none was reported.
+func (c *createdIDs) first() string {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if len(c.ids) == 0 {
+		return ""
+	}
+	return c.ids[0]
+}
+
+// outFile is the file of a send as a connector reads it: from memory, as often as it asks.
+func outFile(f *SendFile) OutFile {
+	mime := f.Mime
+	if mime == "" {
+		mime = "application/octet-stream"
+	}
+	return OutFile{Name: f.Name, Mime: mime, Size: int64(len(f.Data)), Open: func() (io.ReadCloser, error) {
+		return io.NopCloser(bytes.NewReader(f.Data)), nil
+	}}
 }
 
 // fail records that attempt number n did not send the message: the send waits for the next attempt
@@ -256,16 +588,23 @@ func shorten(s string, n int) string {
 // Running reports whether Run finished its start-up pass and is waiting for work.
 func (s *Sends) Running() bool { return s.running.Load() }
 
-// Recover makes the sends a previous process left in flight due again. It runs once: the app calls
-// it before the server accepts requests, so a send started by a request is never taken for one a
-// previous process left behind and sent twice; Run calls it too, for a Sends started on its own.
+// Recover makes the sends a previous process left in flight due again, except those attempted once
+// (a file is not kept, CID-32), which it fails. It runs once: the app calls it before the server accepts
+// requests, so a send started by a request is never taken for one a previous process left behind and
+// sent twice; Run calls it too, for a Sends started on its own.
 func (s *Sends) Recover(ctx context.Context) error {
 	if s.recovered.Load() {
 		return nil
 	}
 	var ids []string
 	err := s.d.Store.WithTx(ctx, func(q *db.Queries) (err error) {
-		ids, err = q.RequeueSendingPlatformSends(ctx, s.d.Now().UnixMilli())
+		now := s.d.Now().UnixMilli()
+		ids, err = q.RequeueSendingPlatformSends(ctx, now)
+		if err != nil {
+			return err
+		}
+		// A file is not kept: the send that was sending one cannot be sent again (CID-32).
+		_, err = q.FailSendingOncePlatformSends(ctx, db.FailSendingOncePlatformSendsParams{LastError: interruptedFile, UpdatedAt: now})
 		return err
 	})
 	if err != nil {
@@ -336,7 +675,7 @@ func (s *Sends) retry(ctx context.Context, id string) error {
 	if err != nil || claimed == 0 {
 		return err
 	}
-	if _, err := s.attempt(ctx, id); err != nil && !errors.Is(err, sql.ErrNoRows) {
+	if _, err := s.attempt(ctx, id, delivery{}); err != nil && !errors.Is(err, sql.ErrNoRows) {
 		return err
 	}
 	return ctx.Err()

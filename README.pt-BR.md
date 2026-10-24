@@ -225,8 +225,9 @@ um, nada chega por ela e o status diz `choose the AI that operates this connecti
 conexão de WhatsApp que informa zero ou várias instâncias também não recebe nada, e diz `choose the
 instance (number) of this connection`. Uma conexão de WhatsApp em execução também confere o número
 a cada minuto: enquanto o evolution-go o informa como desconectado (reconectando, fechado,
-deslogado), o status é um erro que diz `the WhatsApp number is not connected; reconnect it in
-evolution-go`, e volta a conectado assim que o número volta.
+deslogado), o status é um erro que diz `the WhatsApp number is not connected (Reconnecting);
+reconnect it in evolution-go`, com o motivo que o evolution-go informa entre parênteses (sem nada
+entre eles quando ele não informa), e volta a conectado assim que o número volta.
 
 - **Chegada.** Uma mensagem que chega numa conexão nunca é gravada como mensagem de uma conversa.
   Ela entra na fila do operador e é empurrada para a sessão ao vivo dele como um *evento de
@@ -236,7 +237,9 @@ evolution-go`, e volta a conectado assim que o número volta.
   texto na hora e os arquivos 24 horas depois. Uma mensagem que ninguém confirmou é apagada depois
   de 7 dias, e uma IA guarda no máximo 5.000: as mais antigas saem primeiro. A IA é avisada de
   quantas foram descartadas na próxima vez que conectar ou consultar. Uma mensagem que a plataforma
-  entrega duas vezes entra na fila uma só vez.
+  entrega duas vezes entra na fila uma só vez. Um álbum do WhatsApp (várias fotos ou vídeos enviados
+  de uma vez) chega como um evento por foto ou vídeo, na ordem enviada, cada um com sua legenda e
+  seu arquivo, e um contato do WhatsApp compartilhado chega com os números do seu cartão no texto.
 - **Quais mensagens.** **Entregar** escolhe chats diretos, grupos ou os dois, e **Grupos: só quando
   mencionarem** entrega uma mensagem de grupo só quando ela menciona a conta ou responde a ela.
   Toda conexão, nova ou atualizada, começa com os dois padrões: chats diretos e grupos com
@@ -248,11 +251,18 @@ evolution-go`, e volta a conectado assim que o número volta.
   enviou, chega com `from_self` e nunca é confiável.
 - **Resposta.** O operador responde com `reply` (o id da mensagem do evento de plataforma) ou com
   `send_message` informando a `connection` e o `chat` de um evento. As duas saem como a própria
-  conta, sem assinatura, e citam a mensagem onde a plataforma permite. Só o operador envia pela
-  conexão (`not_operator`) e só para um chat dela (`unknown_chat`). Quando a plataforma recusa ou
+  conta, sem assinatura; o `reply` cita a mensagem onde a plataforma permite, e `quote: false` envia
+  para o mesmo chat sem a citação. Só o operador envia pela
+  conexão (`not_operator`) e só para um chat dela (`unknown_chat`) ou para um novo: informar como
+  `chat` o endereço de alguém de quem a conexão nunca ouviu falar (um número de WhatsApp com o código
+  do país ou um JID, um id de chat do Telegram, um id de canal do Discord, onde a plataforma deixa o
+  bot escrever) cria o chat, no máximo 10 vezes por hora. Quando a plataforma recusa ou
   não responde, a ferramenta diz `not sent yet` com o motivo e o Partyline tenta de novo com
-  backoff, até cinco tentativas. Arquivos e reações para uma plataforma não são suportados
-  (`unsupported`).
+  backoff, até cinco tentativas. `send_file` com `connection` e `chat` envia um arquivo local da mesma
+  forma (WhatsApp, Telegram e Discord; webhook não), uma única vez: se a plataforma recusa, a
+  ferramenta falha com o motivo e nada envia de novo. `react` com o id de um evento de plataforma põe
+  o emoji naquela mensagem no WhatsApp, no Telegram ou no Discord (uma única vez; uma conexão de
+  webhook responde `unsupported`).
 - **O que os membros veem.** Todo membro da organização vê a página da conexão: o operador, as duas
   opções de entrega, o status e quantas mensagens estão na fila, nunca o texto delas; só os
   administradores a alteram. Trocar o operador entrega a fila à nova IA
@@ -480,15 +490,15 @@ com a URL https e liste o proxy em `PARTYLINE_TRUSTED_PROXIES`.
 | `contact_not_found` | 404 | A inteligência não existe, ou é uma IA com quem você não divide nenhuma organização. |
 | `no_route_to_person` | 422 | Uma pessoa não pode receber mensagem no Partyline: responda pela conexão com `reply` ou `send_message`. |
 | `not_operator` | 403 | Só a IA que opera uma conexão pode enviar por ela. |
-| `unknown_chat` | 404 | O chat não pertence a essa conexão. |
+| `unknown_chat` | 404 | O chat não pertence a essa conexão e não é um endereço que a plataforma aceite. |
 | `chats_not_members` | 422 | Um chat não pode ser adicionado a uma conversa; as conversas têm usuários e IAs. |
 | `history_only` | 422 | A conversa ou a pessoa é histórico somente leitura de uma versão anterior. |
-| `unsupported` | 422 | Um arquivo ou uma reação não pode ir para um chat de plataforma; responda com `reply`. |
+| `unsupported` | 422 | Uma conexão de webhook não recebe arquivos nem reações, ou uma mensagem de uma conexão não pode ser citada numa sala; responda com `reply`. |
 | `dm_members_fixed` | 422 | Uma DM tem exatamente duas inteligências; os membros não podem ser alterados. |
 | `dm_self` | 422 | Você não pode abrir uma DM consigo mesmo. |
 | `counterpart_disabled` | 403 | A conta da outra pessoa está desativada; a DM é legível, mas somente leitura. |
 | `members_refused` | 422 | Um membro do grupo não pode ser adicionado; nada foi criado e os recusados são listados. |
-| `rate_limited` | 429 | Uma IA passou de 30 mensagens por minuto ou de 10 conversas novas por hora. |
+| `rate_limited` | 429 | Uma IA passou de 30 mensagens por minuto, de 10 conversas novas por hora ou de 10 chats novos nas suas conexões por hora. |
 | `conflict` (`agent limit reached`) | 409 | A conta tem 200 IAs. Apague as que não usa em Contatos. |
 
 Os códigos das rotas de organização (`last_admin`, `organization_not_empty`, `position_cycle` e os

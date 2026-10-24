@@ -48,7 +48,7 @@ const instanceChoiceDetail = "choose the instance (number) of this connection"
 // Kind returns the WhatsApp (evolution-go) connector kind.
 func Kind() connectors.Kind {
 	return connectors.Kind{
-		Name: KindName, Label: "WhatsApp (evolution-go)", CanListChats: true,
+		Name: KindName, Label: "WhatsApp (evolution-go)", CanListChats: true, CanReact: true, CanSendFiles: true,
 		Fields: []connectors.Field{
 			{Name: "base_url", Label: "evolution-go URL", Type: dto.FieldTypeURL, Required: true, Endpoint: true,
 				Help: "e.g. https://evolution.example.com"},
@@ -56,6 +56,7 @@ func Kind() connectors.Kind {
 			{Name: "instances", Label: "Instances", Type: dto.FieldTypeStringList, Required: true,
 				Help: "exactly one instance: the number of this connection"},
 		},
+		Address: address,
 		New: func(cfg connectors.Config, d connectors.Deps) (connectors.Connector, error) {
 			return New(cfg, d)
 		},
@@ -96,6 +97,9 @@ type instance struct {
 	// Connected tells that the WhatsApp session of the instance's number is up; nil when evolution-go
 	// does not say.
 	Connected *flag `json:"connected"`
+	// DisconnectReason is why evolution-go says the number is not connected ("Reconnecting"); empty
+	// when it is, and when evolution-go does not say.
+	DisconnectReason reason `json:"disconnect_reason"`
 	// JID is the WhatsApp account of a connected instance, "<number>:<device>@s.whatsapp.net";
 	// empty for an instance that is not connected and for versions that do not report it.
 	JID string `json:"jid"`
@@ -111,6 +115,19 @@ func (f *flag) UnmarshalJSON(b []byte) error {
 		*f = true
 	default:
 		*f = false
+	}
+	return nil
+}
+
+// reason reads the disconnect_reason of an instance. evolution-go sends text; any other JSON value
+// is no reason, so that a field of an unexpected type never fails the whole instance list, which
+// the connection cannot run without.
+type reason string
+
+func (r *reason) UnmarshalJSON(b []byte) error {
+	var s string
+	if json.Unmarshal(b, &s) == nil {
+		*r = reason(s)
 	}
 	return nil
 }
@@ -629,10 +646,17 @@ func (c *Connector) callWith(ctx context.Context, client *http.Client, key, meth
 		return nil
 	}
 	if err := json.NewDecoder(resp.Body).Decode(out); err != nil {
+		if _, ok := out.(bestEffort); ok {
+			return nil
+		}
 		return fmt.Errorf("%s %s: invalid response (%s)", method, path, decodeReason(err))
 	}
 	return nil
 }
+
+// bestEffort marks the destination of an answer the caller can do without: a body that is empty or
+// not what is expected is then no failure of a call evolution-go answered with a success status.
+type bestEffort interface{ bestEffort() }
 
 // decodeReason describes a JSON decode failure without echoing response content: the field
 // and the types for a type mismatch, otherwise only that the body is not the expected JSON.
