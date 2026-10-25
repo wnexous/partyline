@@ -158,11 +158,25 @@ func (f *managerFixture) insert(t *testing.T, enabled bool) string {
 	return id
 }
 
+// insertWithConfig stores an enabled fake connector with cfg, operated by a new AI.
+func (f *managerFixture) insertWithConfig(t *testing.T, cfg connectors.Config) string {
+	t.Helper()
+	id := f.insertConfig(t, cfg, true)
+	f.setOperator(t, id, f.ai(t))
+	return id
+}
+
 // insertWithoutOperator stores a fake connector that nobody operates.
 func (f *managerFixture) insertWithoutOperator(t *testing.T, enabled bool) string {
 	t.Helper()
+	return f.insertConfig(t, connectors.Config{"token": fakeToken}, enabled)
+}
+
+// insertConfig stores a fake connector with cfg and returns its id.
+func (f *managerFixture) insertConfig(t *testing.T, cfg connectors.Config, enabled bool) string {
+	t.Helper()
 	id := store.NewID()
-	public, sealed, err := f.kind.Encode(f.box, connectors.Config{"token": fakeToken})
+	public, sealed, err := f.kind.Encode(f.box, cfg)
 	require.NoError(t, err)
 	require.NoError(t, f.st.WithTx(context.Background(), func(q *db.Queries) error {
 		return q.CreateConnector(context.Background(), db.CreateConnectorParams{

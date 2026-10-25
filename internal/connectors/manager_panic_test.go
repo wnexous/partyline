@@ -245,6 +245,38 @@ func TestManagerReportsAKindThatPanicsWhenItStarts(t *testing.T) {
 	require.ErrorIs(t, err, connectors.ErrNotRunning)
 }
 
+// CON-15: reading a kind's secret values is a call into connector code like any other. A panic
+// there leaves that one connection in error, with the type of the panic as the detail and nothing of
+// its value in the status or the logs, and the other connections start as usual.
+func TestManagerReportsAKindThatPanicsWhenItReadsItsSecrets(t *testing.T) {
+	logs := &logBuffer{}
+	f := newManagerFixture(t)
+	m := connectors.NewManager(connectors.ManagerDeps{
+		Store: f.st, Bus: f.bus, Box: f.box, Kinds: connectors.NewRegistry(f.kind), Wait: f.waits.Wait,
+		Logger: slog.New(slog.NewTextHandler(logs, nil)),
+	})
+	t.Cleanup(m.Close)
+	connectors.SetSecretValues(m, func(_ connectors.Kind, cfg connectors.Config) []string {
+		if cfg.String("label") == "boom" {
+			panic("secret values bug on " + fakeToken)
+		}
+		return []string{cfg.String("token")}
+	})
+	bad := f.insertWithConfig(t, connectors.Config{"token": fakeToken, "label": "boom"})
+	good := f.insertWithConfig(t, connectors.Config{"token": fakeToken, "label": "fine"})
+
+	m.Start(context.Background())
+
+	f.settled(t, bad, "error", "the connector crashed in secrets: panic of type string")
+	require.Nil(t, f.fake.Lookup(bad), "a connector whose secrets were not read does not start")
+	f.fake.Instance(t, good).WaitRun(t)
+	require.Empty(t, f.row(t, good).LastError, "the other connection starts as usual")
+	require.Contains(t, logs.String(), "a connector panicked")
+	require.NotContains(t, logs.String(), fakeToken, "the panic value, which carries a secret, is not logged")
+	_, err := m.Send(context.Background(), bad, connectors.Outbound{ChatID: "chat-1", Text: "x"})
+	require.ErrorIs(t, err, connectors.ErrNotRunning)
+}
+
 // hookConnector is a connector that receives HTTP requests and panics on them.
 type hookConnector struct{}
 

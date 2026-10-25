@@ -138,6 +138,9 @@ type Manager struct {
 	running map[string]*supervisor
 	// unwatch ends the manager's listening for operators that went away (watchOperators).
 	unwatch func()
+	// secretValues reads a kind's secret values; it defaults to Kind.SecretValues and tests replace
+	// it (export_test.go) to make that call panic.
+	secretValues func(Kind, Config) []string
 }
 
 type supervisor struct {
@@ -198,7 +201,7 @@ func NewManager(d ManagerDeps) *Manager {
 	if d.Now == nil {
 		d.Now = time.Now
 	}
-	return &Manager{d: d, running: map[string]*supervisor{}}
+	return &Manager{d: d, running: map[string]*supervisor{}, secretValues: Kind.SecretValues}
 }
 
 func sleep(ctx context.Context, d time.Duration) error {
@@ -341,8 +344,17 @@ func (m *Manager) Apply(id string) {
 		m.persist(id, StatusError, "cannot read the connector config")
 		return
 	}
-	sec := k.SecretValues(cfg)
 	log := m.d.Logger.With("connector_id", id, "kind", k.Name)
+	var sec []string
+	if err := Guard(log, "secrets", func() error {
+		sec = m.secretValues(k, cfg)
+		return nil
+	}); err != nil {
+		// Nothing was read, so there is nothing to redact: the detail says where it panicked and the
+		// type of the panic, never its value (SEC-05). The connector does not start.
+		m.persist(id, StatusError, err.Error())
+		return
+	}
 	var conn Connector
 	err = Guard(log, "start", func() (err error) {
 		conn, err = k.New(cfg, Deps{
