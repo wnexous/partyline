@@ -1,25 +1,27 @@
 import { useNavigate, useRouter } from "@tanstack/react-router";
-import { CheckCheckIcon, Trash2Icon, UserRoundIcon } from "lucide-react";
+import { CheckCheckIcon, LogOutIcon, Trash2Icon, UserRoundIcon } from "lucide-react";
 import { useRef, useState } from "react";
 import { toast } from "sonner";
 import { ActionMenu, type MenuAction } from "@/components/action-menu";
 import { ConfirmDialog } from "@/components/confirm-dialog";
 import { useProfilePanel } from "@/hooks/use-profile-panel";
-import { useDeleteRoom, useMarkRead } from "@/lib/api/queries";
-import { type Conversation, ConversationKindDM, LevelManage } from "@/lib/api/types.gen";
+import { useDeleteRoom, useLeaveRoom, useMarkRead, useMe, useRoomMembers } from "@/lib/api/queries";
+import {
+  type Conversation,
+  ConversationKindDM,
+  ConversationKindGroup,
+  LevelManage,
+  LevelPost,
+} from "@/lib/api/types.gen";
 import { type Translate, useT } from "@/lib/i18n";
 
 /*
- * The actions of a conversation of the sidebar (ACT-03, ACT-04): Mark as read where something
- * waits, View profile for a DM, and Delete group for a group the viewer manages, after a question.
- * They use the routes that were already there (`PUT /rooms/{id}/read`, `DELETE /rooms/{id}`) and
- * the rules those routes have: a group is managed with `manage`, and a DM is nobody's to delete
- * (DM-02).
- *
- * There is no "Leave group". Under AD-016 a member row gives `post` and `manage` comes only from
- * creating the group or administering its organization, while taking a member row out needs
- * `manage`: a plain member is refused, and a manager who takes their own row out keeps the group.
- * Leaving needs a server rule (a member may remove their own row), which is not this UI's to add.
+ * The actions of a conversation of the sidebar (ACT-03, ACT-04, ROOM-01): Mark as read where
+ * something waits, View profile for a DM, Leave group for a member and Delete group for a manager,
+ * the last two after a question. They use the routes that were already there (`PUT /rooms/{id}/read`,
+ * `DELETE /rooms/{id}/members/{mid}`, `DELETE /rooms/{id}`) and the rules those routes have: a
+ * member takes their own member row out to leave (manage is not needed for that), a group is
+ * deleted with `manage`, and a DM is nobody's to delete or leave (DM-02).
  */
 
 /** What a row's menu is open for. */
@@ -35,12 +37,18 @@ export interface ConversationMenuTarget {
 const managesGroup = (c: Conversation) =>
   c.kind !== ConversationKindDM && c.my_level === LevelManage;
 
+/** A member of a group is one with a `post` level: the member row is what gives it (AD-016). */
+const memberOfGroup = (c: Conversation) =>
+  c.kind === ConversationKindGroup && c.my_level === LevelPost;
+
 /** Whether a conversation has anything to offer: a row with nothing leaves the browser's own menu alone. */
 export function hasConversationActions(c: Conversation): boolean {
   return (
     c.unread > 0 ||
     (c.kind === ConversationKindDM && c.counterpart !== undefined) ||
-    managesGroup(c)
+    managesGroup(c) ||
+    // Leaving needs no unread and no manage: a plain member may always leave a group (ROOM-01).
+    memberOfGroup(c)
   );
 }
 
@@ -54,11 +62,16 @@ function describe(t: Translate, c: Conversation): string {
   return `${kind} · ${waiting}`;
 }
 
-/** The group a Delete group is about to remove, and who gets focus back when it is answered. */
-interface Question {
-  conversation: Conversation;
-  opener: HTMLElement | null;
-}
+/** What a question is about, and who gets focus back when it is answered. */
+type Question =
+  | { kind: "delete"; conversation: Conversation; opener: HTMLElement | null }
+  | {
+      kind: "leave";
+      conversation: Conversation;
+      opener: HTMLElement | null;
+      /** The viewer's own member row: the one the DELETE takes out. */
+      memberId: string;
+    };
 
 export function ConversationMenu({
   target,
@@ -75,6 +88,8 @@ export function ConversationMenu({
   const navigate = useNavigate();
   const markRead = useMarkRead();
   const remove = useDeleteRoom();
+  const leave = useLeaveRoom();
+  const me = useMe().data?.id;
 
   // The last target stays drawn while the menu fades out.
   const last = useRef<ConversationMenuTarget | null>(null);
@@ -82,6 +97,12 @@ export function ConversationMenu({
   const shown = last.current;
   const c = shown?.conversation;
   const manages = c !== undefined && managesGroup(c);
+  // Leaving a group is taking the viewer's own member row out, so the row has to be looked up.
+  const members = useRoomMembers(c?.id ?? "", target !== null && c?.kind !== ConversationKindDM);
+  const own =
+    c && c.kind !== ConversationKindDM && me
+      ? members.data?.find((m) => m.kind === "user" && m.member_id === me)
+      : undefined;
 
   const [question, setQuestion] = useState<Question | null>(null);
   const [asking, setAsking] = useState(false);
@@ -131,13 +152,22 @@ export function ConversationMenu({
         },
       });
     }
+    if (own) {
+      actions.push({
+        id: "leave",
+        label: t("actions.leaveGroup"),
+        icon: LogOutIcon,
+        onSelect: () =>
+          ask({ kind: "leave", conversation: c, opener: shown.opener, memberId: own.id }),
+      });
+    }
     if (manages) {
       actions.push({
         id: "delete",
         label: t("actions.deleteGroup"),
         icon: Trash2Icon,
         destructive: true,
-        onSelect: () => ask({ conversation: c, opener: shown.opener }),
+        onSelect: () => ask({ kind: "delete", conversation: c, opener: shown.opener }),
       });
     }
   }
@@ -146,6 +176,20 @@ export function ConversationMenu({
     if (!question) return;
     const { conversation } = question;
     const name = conversation.title;
+    if (question.kind === "leave") {
+      leave.mutate(
+        { roomId: conversation.id, memberId: question.memberId },
+        {
+          onSuccess: () => {
+            setAsking(false);
+            toast(t("actions.left", { name }));
+            leaveIfOpen(conversation.id);
+          },
+          onError: () => toast.error(t("actions.leaveFailed", { name })),
+        },
+      );
+      return;
+    }
     remove.mutate(conversation.id, {
       onSuccess: () => {
         setAsking(false);
@@ -174,10 +218,12 @@ export function ConversationMenu({
         <ConfirmDialog
           open={asking}
           onOpenChange={setAsking}
-          title={t("actions.deleteTitle", { name: question.conversation.title })}
-          body={t("actions.deleteBody")}
-          confirmLabel={t("actions.deleteGroup")}
-          pending={remove.isPending}
+          title={t(question.kind === "leave" ? "actions.leaveTitle" : "actions.deleteTitle", {
+            name: question.conversation.title,
+          })}
+          body={t(question.kind === "leave" ? "actions.leaveBody" : "actions.deleteBody")}
+          confirmLabel={t(question.kind === "leave" ? "actions.leaveGroup" : "actions.deleteGroup")}
+          pending={question.kind === "leave" ? leave.isPending : remove.isPending}
           onConfirm={confirm}
           onCloseFocus={(event) => {
             event.preventDefault();

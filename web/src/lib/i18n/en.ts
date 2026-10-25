@@ -446,6 +446,12 @@ export const en = {
   "actions.deleteBody":
     "Its messages, attachments and pending deliveries are removed for everyone in it. This can’t be undone.",
   "actions.deleteFailed": "Couldn’t delete {name}.",
+  "actions.leaveGroup": "Leave group",
+  "actions.leaveTitle": "Leave {name}?",
+  "actions.leaveBody":
+    "You stop receiving its messages and it leaves your conversations. It stays for everyone else, with the organization’s admins still managing it.",
+  "actions.left": "You left {name}",
+  "actions.leaveFailed": "Couldn’t leave {name}.",
   "actions.message": "Actions for the message from {name}",
   "actions.reply": "Reply",
   "actions.copyText": "Copy text",

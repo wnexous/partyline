@@ -422,10 +422,12 @@ export function useResumeRoom(id: string) {
   });
 }
 
-export const useRoomMembers = (id: string) =>
+/** The members of a room; `enabled` keeps a caller that has no room yet from asking for one. */
+export const useRoomMembers = (id: string, enabled = true) =>
   useQuery({
     queryKey: queryKeys.roomMembers(id),
     queryFn: () => api<List<RoomMember>>("GET", `/rooms/${id}/members`).then(items),
+    enabled: enabled && id !== "",
   });
 
 export function useAddMember(roomId: string) {
@@ -453,6 +455,28 @@ export function useRemoveMember(roomId: string) {
   return useMutation({
     mutationFn: (memberId: string) => api<void>("DELETE", `/rooms/${roomId}/members/${memberId}`),
     onSuccess: () => qc.invalidateQueries({ queryKey: queryKeys.roomMembers(roomId) }),
+  });
+}
+
+/**
+ * Takes the caller's own member row out of a group (ROOM-01): that is leaving, so the room goes
+ * from every list at once, as the room.deleted event that follows it does.
+ */
+export function useLeaveRoom() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ roomId, memberId }: { roomId: string; memberId: string }) =>
+      api<void>("DELETE", `/rooms/${roomId}/members/${memberId}`),
+    onSuccess: (_, { roomId }) => {
+      qc.removeQueries({ queryKey: queryKeys.room(roomId) });
+      qc.setQueryData<Room[]>(queryKeys.rooms, (old) => old?.filter((r) => r.id !== roomId));
+      qc.setQueryData<Conversation[]>(queryKeys.conversations, (old) =>
+        old?.filter((c) => c.id !== roomId),
+      );
+      qc.setQueryData<ActivityItem[]>(queryKeys.activity, (old) =>
+        old?.filter((a) => a.room.id !== roomId),
+      );
+    },
   });
 }
 

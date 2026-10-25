@@ -293,6 +293,14 @@ func TestRoomMemberWithoutManageIsForbidden(t *testing.T) {
 		members, err := f.svc.Members(ctx, g, r.ID)
 		require.NoError(t, err)
 		require.NotEmpty(t, members)
+		// Taking their own row out is leaving, which a member may do; anyone else's needs manage.
+		var notMine string
+		for _, m := range members {
+			if m.MemberID != g.UserID {
+				notMine = m.ID
+			}
+		}
+		require.NotEmpty(t, notMine)
 
 		_, err = f.svc.Update(ctx, g, r.ID, UpdateInput{Name: ptr("x")})
 		require.ErrorIs(t, err, access.ErrForbidden)
@@ -301,7 +309,7 @@ func TestRoomMemberWithoutManageIsForbidden(t *testing.T) {
 		require.ErrorIs(t, err, access.ErrForbidden)
 		_, err = f.svc.UpdateMember(ctx, g, r.ID, members[0].ID, MemberUpdate{DisplayName: ptr("x")})
 		require.ErrorIs(t, err, access.ErrForbidden)
-		require.ErrorIs(t, f.svc.RemoveMember(ctx, g, r.ID, members[0].ID), access.ErrForbidden)
+		require.ErrorIs(t, f.svc.RemoveMember(ctx, g, r.ID, notMine), access.ErrForbidden)
 	}
 }
 

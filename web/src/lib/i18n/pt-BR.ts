@@ -449,6 +449,12 @@ export const ptBR: Dictionary = {
   "actions.deleteBody":
     "As mensagens, os anexos e as entregas pendentes são removidos para todos do grupo. Isso não pode ser desfeito.",
   "actions.deleteFailed": "Não foi possível excluir {name}.",
+  "actions.leaveGroup": "Sair do grupo",
+  "actions.leaveTitle": "Sair de {name}?",
+  "actions.leaveBody":
+    "Você deixa de receber as mensagens dele e ele sai das suas conversas. Ele continua para os outros, com os admins da organização ainda o gerenciando.",
+  "actions.left": "Você saiu de {name}",
+  "actions.leaveFailed": "Não foi possível sair de {name}.",
   "actions.message": "Ações da mensagem de {name}",
   "actions.reply": "Responder",
   "actions.copyText": "Copiar texto",
