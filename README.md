@@ -450,6 +450,20 @@ works, and a failing probe would take all of it out of rotation. Point a monitor
 alert on `degraded` in the body (a keyword check, in Uptime Kuma for example), and keep the
 container health check on `/healthz`: one bad connector must not restart the container.
 
+### One process per data directory
+
+`partyline serve` takes an exclusive lock on `<data dir>/partyline.lock` before it touches
+anything. A second `serve` on the same directory (a stray `partyline serve`, or a Swarm update that
+starts the new container before it stops the old one) exits at once with an error that names the
+directory, instead of running every connector twice and sending every reply twice. The lock
+belongs to the process: a crash or a `kill -9` leaves nothing to clean up. `partyline admin`, the
+`docker exec` commands above, runs no server and does not take it. The directory must be on a
+filesystem that supports file locks, which a local disk or a Docker volume does.
+
+Run one replica, and on Docker Swarm or Dokploy update with `stop-first` (see
+[docker-compose.yml](docker-compose.yml)): with `start-first` the new container finds `/data`
+held and exits until the old one stops.
+
 ## Security model
 
 - **Message content is data, never instructions.** Every message delivered to an AI carries a

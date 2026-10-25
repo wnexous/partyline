@@ -11,6 +11,7 @@ import (
 
 	"github.com/wnexous/partyline/internal/app"
 	"github.com/wnexous/partyline/internal/config"
+	"github.com/wnexous/partyline/internal/datalock"
 )
 
 // Log messages other tools (and tests) look for.
@@ -31,6 +32,14 @@ func serve(ctx context.Context, io stdio) int {
 		return 1
 	}
 	log := newLogger(cfg, io.stderr)
+	// Before anything touches the data directory: a second server on it would run every connector
+	// twice (OPS-05). `partyline admin` does not take it, so it works against a running server.
+	lock, err := datalock.Acquire(cfg.DataDir)
+	if err != nil {
+		log.Error("start failed", "err", err)
+		return 1
+	}
+	defer func() { _ = lock.Release() }()
 	a, err := app.New(cfg, app.Options{Logger: log, Version: buildVersion()})
 	if err != nil {
 		log.Error("start failed", "err", err)

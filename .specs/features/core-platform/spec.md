@@ -166,6 +166,7 @@ People run many Claude Code sessions (some in loops) and want them reachable fro
 7. WHEN the daily retention job runs THEN the system SHALL delete messages and attachments older than the room's retention days (default 90, 0 = forever). (OPS-02)
 8. The container image SHALL run as a non-root user and store all state under `/data`. (OPS-03)
 9. WHILE some connectors are crash-looping (CON-15) `/readyz` SHALL still respond 200, with `status` `degraded` and their number in `connectors_crash_looping`, and `/healthz`, which the container health check asks, SHALL respond 200 as usual: one bad connector must neither take the rest of the server out of rotation nor make the platform restart the container. (OPS-04)
+10. WHEN `partyline serve` starts THEN the system SHALL take an exclusive lock on `partyline.lock` in the data directory before it touches anything, and IF another process holds it THEN the system SHALL exit with status 1 at once, with an error that names the data directory and the lock file, and run nothing: two servers on one directory would run every connector twice. The lock SHALL belong to the process, so a crash leaves nothing to clean up, and `partyline admin`, which runs no server, SHALL NOT take it. (OPS-05)
 
 **Independent Test**: Run the image, check headers with curl, attempt a cross-origin POST, inspect logs for message text.
 

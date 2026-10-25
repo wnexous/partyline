@@ -461,6 +461,21 @@ um monitor para o `/readyz` e alerte quando o corpo tiver `degraded` (uma checag
 no Uptime Kuma por exemplo), e mantenha a verificação de saúde do contêiner no `/healthz`: um
 conector com defeito não deve reiniciar o contêiner.
 
+### Um processo por diretório de dados
+
+O `partyline serve` pega um lock exclusivo em `<data dir>/partyline.lock` antes de mexer em
+qualquer coisa. Um segundo `serve` no mesmo diretório (um `partyline serve` esquecido, ou uma
+atualização do Swarm que sobe o contêiner novo antes de parar o antigo) termina na hora com um erro
+que cita o diretório, em vez de rodar cada conector duas vezes e enviar cada resposta duas vezes. O
+lock pertence ao processo: uma queda ou um `kill -9` não deixa nada para limpar. O `partyline
+admin`, os comandos `docker exec` acima, não sobe servidor e não pega o lock. O diretório precisa
+ficar num sistema de arquivos com suporte a locks, o que vale para um disco local ou um volume do
+Docker.
+
+Rode uma réplica só e, no Docker Swarm ou no Dokploy, atualize com `stop-first` (veja o
+[docker-compose.yml](docker-compose.yml)): com `start-first` o contêiner novo encontra o `/data`
+ocupado e sai até o antigo parar.
+
 ## Modelo de segurança
 
 - **Conteúdo de mensagem é dado, nunca instrução.** Toda mensagem entregue a uma IA traz uma flag

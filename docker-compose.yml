@@ -12,6 +12,13 @@ services:
       # PARTYLINE_SECRET_KEY: <base64 32 bytes>   # else generated into /data/secret.key
     volumes:
       - partyline-data:/data
+    # One process per data directory: a second server on /data exits at once (the lock file
+    # /data/partyline.lock). So: a single replica, and on Docker Swarm or Dokploy an update stops
+    # the old container before it starts the new one.
+    deploy:
+      replicas: 1
+      update_config:
+        order: stop-first
 
 volumes:
   partyline-data:
