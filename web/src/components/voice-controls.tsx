@@ -94,11 +94,18 @@ export function MicButton({
     press.current = null;
     window.clearTimeout(p.timer);
     onHold("off");
+    const held = Date.now() - p.at >= HOLD_MS;
+    const slid = p.state === "cancel" || e.clientX - p.x <= -SLIDE_CANCEL_PX;
+    // A hold that slid away cancels whatever the phase: while the browser is still asking for the
+    // microphone, the answer may yet arrive, and it must not start the recording the user cancelled.
+    if (held && slid) {
+      onCancel();
+      return;
+    }
     // Let go before the hold time, or before the microphone was even granted: a tap, and the
     // recording stays on with its buttons.
-    if (Date.now() - p.at < HOLD_MS || phase !== "recording") return;
-    if (p.state === "cancel" || e.clientX - p.x <= -SLIDE_CANCEL_PX) onCancel();
-    else onSend();
+    if (!held || phase !== "recording") return;
+    onSend();
   };
 
   // The system took the pointer (a gesture of its own): what is recording keeps recording.
