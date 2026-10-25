@@ -205,14 +205,16 @@ exported API is needed):
   private scalar.
 - `TestVAPIDPublicKeyIsAnUncompressedPoint`: base64url-decoding `Public` yields 65 bytes with the first
   byte `0x04` and `ecdh.P256().NewPublicKey` accepts it.
-- `TestVAPIDRefusesACorruptFile`: writing `"not-base64"` (or sealing a P-384 key) makes the loader
-  return an error and leaves the file unchanged; it never writes a replacement.
+- `TestVAPIDReplacesACorruptFileAndDropsSubscriptions`: writing `"not-base64"` (or sealing a P-384 key)
+  with a stored subscription makes the loader return a new valid key, replace the file and delete the
+  subscription row; it never stops startup (PUSH-26).
 - `TestTheAppLoadsTheVAPIDKey`: `testkit.New(t)` starts and `env.App.VAPID.Public` decodes to 65 bytes;
   `<data dir>/vapid.key` exists. Restarting the env (`env.Restart()`) returns the same public key.
 **Done when**:
-- [ ] `internal/archtest` passes with `webpush` in the app layer and the allow-list untouched
-- [ ] a corrupt key file stops `app.New` (the test covers it)
-- [ ] Gate check passes: `make check`
+- [x] `internal/archtest` passes with `webpush` in the app layer and the allow-list untouched
+- [x] a corrupt key file replaces the pair and drops the subscriptions instead of stopping `app.New`
+      (the tests cover it)
+- [x] Gate check passes: `make check`
 **Tests**: unit + integration
 **Gate**: build
 **Commit**: `feat(webpush): generate and seal the VAPID key pair`

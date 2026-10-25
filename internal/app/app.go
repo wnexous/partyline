@@ -36,6 +36,7 @@ import (
 	"github.com/wnexous/partyline/internal/secrets"
 	"github.com/wnexous/partyline/internal/store"
 	"github.com/wnexous/partyline/internal/users"
+	"github.com/wnexous/partyline/internal/webpush"
 	"github.com/wnexous/partyline/internal/webui"
 )
 
@@ -87,6 +88,8 @@ type App struct {
 	Logger *slog.Logger
 	Store  *store.Store
 	Box    *secrets.Box
+	// VAPID signs the Web Push requests; it is the instance key from <data dir>/vapid.key.
+	VAPID  *webpush.VAPID
 	Bus    *events.Bus
 	Users  *users.Service
 	Access *access.Authorizer
@@ -149,6 +152,13 @@ func New(cfg *config.Config, opts Options) (*App, error) {
 	if err != nil {
 		return nil, err
 	}
+	vapid, err := webpush.LoadOrCreateVAPID(cfg.DataDir, box)
+	if err != nil {
+		return nil, fmt.Errorf("vapid key: %w", err)
+	}
+	if vapid.Replaced {
+		opts.Logger.Warn("webpush: replaced an invalid VAPID key file and dropped the stored subscriptions", "file", webpush.VAPIDKeyFile)
+	}
 	st, err := store.Open(filepath.Join(cfg.DataDir, DatabaseFile))
 	if err != nil {
 		return nil, err
@@ -180,6 +190,7 @@ func New(cfg *config.Config, opts Options) (*App, error) {
 		Logger:        opts.Logger,
 		Store:         st,
 		Box:           box,
+		VAPID:         vapid,
 		Bus:           bus,
 		Users:         usersSvc,
 		Access:        az,
