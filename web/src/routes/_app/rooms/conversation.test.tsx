@@ -13,6 +13,7 @@ import {
   makeMessage,
   makeRoom,
 } from "@/test/fixtures";
+import { LoadedImage } from "@/test/image";
 import { stubLayout } from "@/test/layout";
 import { stubViewport } from "@/test/media";
 import { renderRoute } from "@/test/render";
@@ -249,6 +250,50 @@ describe("conversation header", () => {
     expect(bar.queryByText("Online")).toBeNull();
     // Who can read a group is who is in it: the header says nothing of private, shared or public.
     for (const label of ["Private", "Shared", "Public"]) expect(bar.queryByText(label)).toBeNull();
+  });
+
+  it("draws a group with its photo, and with its initials when it has none (GAV-07)", async () => {
+    vi.stubGlobal("Image", LoadedImage);
+    const photo = "/api/v1/rooms/g1/avatar?v=abc";
+    api({ "GET /rooms/g1": json(200, { ...group, avatar_url: photo }) });
+    renderRoute("/rooms/g1");
+    const bar = within(await header());
+    await bar.findByRole("heading", { name: "release-crew", level: 1 });
+    expect(bar.getByTestId("intelligence-avatar").querySelector("img")).toHaveAttribute(
+      "src",
+      photo,
+    );
+    expect(bar.getByTestId("intelligence-avatar")).not.toHaveTextContent("R");
+  });
+
+  it("changes the photo of a group live, and brings the initials back when it is removed (GAV-07)", async () => {
+    vi.stubGlobal("Image", LoadedImage);
+    api();
+    const { queryClient } = renderRoute("/rooms/g1");
+    const bar = within(await header());
+    await bar.findByRole("heading", { name: "release-crew", level: 1 });
+    expect(bar.getByTestId("intelligence-avatar").querySelector("img")).toBeNull();
+
+    const photo = "/api/v1/rooms/g1/avatar?v=new";
+    act(() =>
+      handleLiveEvent(queryClient, useLiveStore.getState(), {
+        type: "room.changed",
+        data: { ...group, avatar_url: photo },
+      }),
+    );
+    await waitFor(() =>
+      expect(bar.getByTestId("intelligence-avatar").querySelector("img")).toHaveAttribute(
+        "src",
+        photo,
+      ),
+    );
+    act(() =>
+      handleLiveEvent(queryClient, useLiveStore.getState(), { type: "room.changed", data: group }),
+    );
+    await waitFor(() =>
+      expect(bar.getByTestId("intelligence-avatar").querySelector("img")).toBeNull(),
+    );
+    expect(bar.getByTestId("intelligence-avatar")).toHaveTextContent("R");
   });
 
   it("shows the description of a group under its name", async () => {

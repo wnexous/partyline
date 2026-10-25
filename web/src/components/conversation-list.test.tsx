@@ -16,6 +16,7 @@ import {
   makeMessage,
   makeRoom,
 } from "@/test/fixtures";
+import { LoadedImage } from "@/test/image";
 import { stubLayout } from "@/test/layout";
 import { memberIn, viewerIn } from "@/test/orgs";
 import { renderRoute } from "@/test/render";
@@ -768,5 +769,69 @@ describe("the current organization (ORG-02)", () => {
     });
     renderRoute("/");
     expect(await screen.findByText("Nenhuma conversa em Acme ainda")).toBeInTheDocument();
+  });
+});
+
+describe("a group's photo in the list (GAV-07)", () => {
+  const PHOTO = "/api/v1/rooms/r1/avatar?v=abc";
+  const NEXT = "/api/v1/rooms/r1/avatar?v=def";
+  const face = (list: HTMLElement, id: string) =>
+    within(
+      within(list)
+        .getAllByRole("link")
+        .find((a) => a.getAttribute("href") === `/rooms/${id}`) as HTMLElement,
+    ).getByTestId("intelligence-avatar");
+  const withPhoto = [
+    makeConversation({ id: "r1", title: "deploys", avatar_url: PHOTO }),
+    makeConversation({ id: "r4", title: "ops" }),
+    makeConversation({ id: "r2", kind: "dm", title: "Atlas", counterpart: atlas }),
+  ];
+
+  it("draws a group with its photo, a group without one with its initials, and a DM with its counterpart", async () => {
+    vi.stubGlobal("Image", LoadedImage);
+    api(withPhoto);
+    renderRoute("/");
+    const list = await sidebar();
+
+    const photo = face(list, "r1").querySelector("img");
+    expect(photo).toHaveAttribute("src", PHOTO);
+    expect(photo).toHaveAttribute("alt", ""); // the name sits beside it
+    expect(face(list, "r4").querySelector("img")).toBeNull();
+    expect(face(list, "r4")).toHaveTextContent("O");
+    expect(face(list, "r2").querySelector("img")).toBeNull();
+    expect(face(list, "r2")).toHaveTextContent("A");
+  });
+
+  it("keeps the photo on the rows a search finds", async () => {
+    vi.stubGlobal("Image", LoadedImage);
+    api(withPhoto);
+    const user = userEvent.setup();
+    renderRoute("/");
+    await sidebar();
+    await user.type(screen.getByRole("searchbox", { name: "Search conversations" }), "deplo");
+    await waitFor(async () => expect(hrefs(await sidebar())).toEqual(["/rooms/r1"]));
+    expect(face(await sidebar(), "r1").querySelector("img")).toHaveAttribute("src", PHOTO);
+  });
+
+  it("follows the photo as it changes live: a new one replaces it and its removal brings the initials back", async () => {
+    vi.stubGlobal("Image", LoadedImage);
+    api(withPhoto);
+    const { queryClient } = renderRoute("/");
+    const list = await sidebar();
+    const send = (room: ReturnType<typeof makeRoom>) =>
+      act(() =>
+        handleLiveEvent(queryClient, useLiveStore.getState(), { type: "room.changed", data: room }),
+      );
+
+    send(makeRoom({ id: "r1", name: "deploys", avatar_url: NEXT }));
+    await waitFor(() => expect(face(list, "r1").querySelector("img")).toHaveAttribute("src", NEXT));
+    send(makeRoom({ id: "r4", name: "ops", avatar_url: PHOTO }));
+    await waitFor(() =>
+      expect(face(list, "r4").querySelector("img")).toHaveAttribute("src", PHOTO),
+    );
+
+    send(makeRoom({ id: "r1", name: "deploys" }));
+    await waitFor(() => expect(face(list, "r1").querySelector("img")).toBeNull());
+    expect(face(list, "r1")).toHaveTextContent("D");
   });
 });

@@ -10,6 +10,18 @@ import (
 	"database/sql"
 )
 
+const countRoomAvatar = `-- name: CountRoomAvatar :one
+SELECT COUNT(*) FROM rooms WHERE avatar_sha256 = ?
+`
+
+// How many groups use the blob as their photo: the retention sweep keeps a blob they use (GAV-05).
+func (q *Queries) CountRoomAvatar(ctx context.Context, avatarSha256 string) (int64, error) {
+	row := q.db.QueryRowContext(ctx, countRoomAvatar, avatarSha256)
+	var count int64
+	err := row.Scan(&count)
+	return count, err
+}
+
 const countRoomChatMembers = `-- name: CountRoomChatMembers :one
 SELECT COUNT(*) FROM room_members WHERE room_id = ? AND kind = 'chat'
 `
@@ -124,7 +136,7 @@ func (q *Queries) DeleteRoomMember(ctx context.Context, id string) error {
 }
 
 const getRoom = `-- name: GetRoom :one
-SELECT id, owner_id, name, description, retention_days, next_seq, agent_streak, agents_paused, created_at, updated_at, instructions, instructions_by, updated_by, kind, dm_a, dm_b, read_baseline, org_id, creator_iid FROM rooms WHERE id = ?
+SELECT id, owner_id, name, description, retention_days, next_seq, agent_streak, agents_paused, created_at, updated_at, instructions, instructions_by, updated_by, kind, dm_a, dm_b, read_baseline, org_id, creator_iid, avatar_sha256 FROM rooms WHERE id = ?
 `
 
 func (q *Queries) GetRoom(ctx context.Context, id string) (Room, error) {
@@ -150,6 +162,7 @@ func (q *Queries) GetRoom(ctx context.Context, id string) (Room, error) {
 		&i.ReadBaseline,
 		&i.OrgID,
 		&i.CreatorIid,
+		&i.AvatarSha256,
 	)
 	return i, err
 }
@@ -212,7 +225,7 @@ func (q *Queries) GetRoomMemberByMember(ctx context.Context, arg GetRoomMemberBy
 }
 
 const getRoomWithOwner = `-- name: GetRoomWithOwner :one
-SELECT r.id, r.owner_id, r.name, r.description, r.retention_days, r.next_seq, r.agent_streak, r.agents_paused, r.created_at, r.updated_at, r.instructions, r.instructions_by, r.updated_by, r.kind, r.dm_a, r.dm_b, r.read_baseline, r.org_id, r.creator_iid, u.username AS owner_username,
+SELECT r.id, r.owner_id, r.name, r.description, r.retention_days, r.next_seq, r.agent_streak, r.agents_paused, r.created_at, r.updated_at, r.instructions, r.instructions_by, r.updated_by, r.kind, r.dm_a, r.dm_b, r.read_baseline, r.org_id, r.creator_iid, r.avatar_sha256, u.username AS owner_username,
        CAST(COALESCE(oi.kind, '') AS TEXT) AS owner_ikind,
        CAST(COALESCE(oi.display_name, '') AS TEXT) AS owner_iname,
        CAST(COALESCE(oi.handle, '') AS TEXT) AS owner_handle,
@@ -256,6 +269,7 @@ func (q *Queries) GetRoomWithOwner(ctx context.Context, id string) (GetRoomWithO
 		&i.Room.ReadBaseline,
 		&i.Room.OrgID,
 		&i.Room.CreatorIid,
+		&i.Room.AvatarSha256,
 		&i.OwnerUsername,
 		&i.OwnerIkind,
 		&i.OwnerIname,
@@ -350,7 +364,7 @@ func (q *Queries) ListRoomMembers(ctx context.Context, roomID string) ([]ListRoo
 }
 
 const listRoomsForUser = `-- name: ListRoomsForUser :many
-SELECT r.id, r.owner_id, r.name, r.description, r.retention_days, r.next_seq, r.agent_streak, r.agents_paused, r.created_at, r.updated_at, r.instructions, r.instructions_by, r.updated_by, r.kind, r.dm_a, r.dm_b, r.read_baseline, r.org_id, r.creator_iid, u.username AS owner_username,
+SELECT r.id, r.owner_id, r.name, r.description, r.retention_days, r.next_seq, r.agent_streak, r.agents_paused, r.created_at, r.updated_at, r.instructions, r.instructions_by, r.updated_by, r.kind, r.dm_a, r.dm_b, r.read_baseline, r.org_id, r.creator_iid, r.avatar_sha256, u.username AS owner_username,
        CAST(COALESCE(oi.kind, '') AS TEXT) AS owner_ikind,
        CAST(COALESCE(oi.display_name, '') AS TEXT) AS owner_iname,
        CAST(COALESCE(oi.handle, '') AS TEXT) AS owner_handle,
@@ -410,6 +424,7 @@ func (q *Queries) ListRoomsForUser(ctx context.Context, userID string) ([]ListRo
 			&i.Room.ReadBaseline,
 			&i.Room.OrgID,
 			&i.Room.CreatorIid,
+			&i.Room.AvatarSha256,
 			&i.OwnerUsername,
 			&i.OwnerIkind,
 			&i.OwnerIname,
@@ -475,6 +490,22 @@ func (q *Queries) ListUserRoomLevels(ctx context.Context, userID string) ([]List
 		return nil, err
 	}
 	return items, nil
+}
+
+const setRoomAvatar = `-- name: SetRoomAvatar :exec
+UPDATE rooms SET avatar_sha256 = ?, updated_at = ? WHERE id = ?
+`
+
+type SetRoomAvatarParams struct {
+	AvatarSha256 string
+	UpdatedAt    int64
+	ID           string
+}
+
+// The blob of a group's photo; the empty string removes it (GAV-01).
+func (q *Queries) SetRoomAvatar(ctx context.Context, arg SetRoomAvatarParams) error {
+	_, err := q.db.ExecContext(ctx, setRoomAvatar, arg.AvatarSha256, arg.UpdatedAt, arg.ID)
+	return err
 }
 
 const updateRoom = `-- name: UpdateRoom :exec

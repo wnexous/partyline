@@ -87,6 +87,9 @@ type Conversation struct {
 	// for a DM the organizations both participants are members of, else the default organization of
 	// the caller; empty when there is none.
 	OrgIDs []string `json:"org_ids"`
+	// AvatarURL is the photo of a group, as Room.AvatarURL (GAV-04); absent without one and for a DM, which is
+	// drawn with its Counterpart.
+	AvatarURL string `json:"avatar_url,omitempty"`
 }
 
 // MaxConversationMemberNames bounds Conversation.MemberNames.

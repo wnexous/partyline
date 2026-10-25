@@ -342,6 +342,7 @@ type Room struct {
 	ReadBaseline   int64
 	OrgID          sql.NullString
 	CreatorIid     sql.NullString
+	AvatarSha256   string
 }
 
 type RoomMember struct {

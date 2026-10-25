@@ -16,7 +16,7 @@ import type {
 } from "../src/lib/api/types.gen";
 import { ADMIN, apiCall, expect, MEMBER, settled, test } from "./fixtures";
 import { agentJSON, connectAI, isMobile, loginAs, MACHINE, trackLive } from "./helpers";
-import { postPictures } from "./images";
+import { makePng, postPictures } from "./images";
 import type { Instance } from "./server";
 import { shoot } from "./shots";
 
@@ -673,6 +673,91 @@ test("a profile photo is uploaded from the profile page and shows across the she
     "src",
     photo,
   );
+});
+
+test("a group's photo is set from its settings and shows in the list, the header and the palette (GAV-06, GAV-07)", async ({
+  context,
+  page,
+  instance,
+}, testInfo) => {
+  await loginAs(context, instance, ADMIN);
+  const room = await apiCall<Room>(context.request, instance, "POST", "/groups", {
+    name: "e2e-photo",
+    members: [],
+  });
+  await page.goto(`/rooms/${room.id}`);
+  const header = page.getByTestId("conversation-header");
+  await expect(header.getByRole("heading", { name: "e2e-photo", level: 1 })).toBeVisible();
+  // Until it has a photo the group is its initials.
+  await expect(header.getByTestId("intelligence-avatar")).toHaveText("E");
+  await expect(header.locator("img")).toHaveCount(0);
+
+  await page.getByRole("button", { name: "Room settings" }).click();
+  const sheet = page.getByRole("dialog", { name: "Room settings" });
+  const crew = makePng(120, 80, (x) => (x < 60 ? [200, 60, 40] : [40, 90, 200]));
+  await sheet.getByLabel("Upload photo").setInputFiles({
+    name: "e2e-crew.png",
+    mimeType: "image/png",
+    buffer: crew,
+  });
+  // Sent as soon as it is chosen: no Save. The header takes it at once, and so does the sheet.
+  const photo = new RegExp(`/api/v1/rooms/${room.id}/avatar\\?v=[0-9a-f]{64}$`);
+  await expect(sheet.getByTestId("intelligence-avatar").locator("img")).toHaveAttribute(
+    "src",
+    photo,
+  );
+  await expect(header.getByTestId("intelligence-avatar").locator("img")).toHaveAttribute(
+    "src",
+    photo,
+  );
+  await shoot(page, "group-photo-settings", testInfo);
+  await page.keyboard.press("Escape");
+  await expect(sheet).toBeHidden();
+
+  // The stored picture is a 256x256 PNG the browser can draw, and it is still the photo after a reload.
+  const src = (await header.locator("img").getAttribute("src")) ?? "";
+  const served = await context.request.get(`${instance.url}${src}`);
+  expect(served.status()).toBe(200);
+  expect(served.headers()["content-type"]).toBe("image/png");
+  await page.reload();
+  const reloaded = page.getByTestId("conversation-header").locator("img");
+  await expect(reloaded).toHaveAttribute("src", photo);
+  expect(await reloaded.evaluate((img: HTMLImageElement) => img.naturalWidth)).toBe(256);
+
+  // The command palette shows it on the group's row.
+  await page.keyboard.press("Control+K");
+  const palette = page.getByRole("dialog", { name: "Go to" });
+  await expect(palette.getByRole("option", { name: /e2e-photo/ }).locator("img")).toHaveAttribute(
+    "src",
+    photo,
+  );
+  await shoot(page, "group-photo-palette", testInfo);
+  await page.keyboard.press("Escape");
+  await expect(palette).toBeHidden();
+
+  // So does the sidebar list: beside the page, or the home screen of a phone.
+  if (isMobile(testInfo)) await page.getByRole("link", { name: "Back to conversations" }).click();
+  const row = page
+    .getByRole("list", { name: "Conversations" })
+    .getByRole("link", { name: /e2e-photo/ });
+  await expect(row.locator("img")).toHaveAttribute("src", photo);
+  await shoot(page, "group-photo", testInfo);
+
+  // Removing the photo brings the initials back.
+  if (isMobile(testInfo)) await row.click();
+  await page.getByRole("button", { name: "Room settings" }).click();
+  await page
+    .getByRole("dialog", { name: "Room settings" })
+    .getByRole("button", { name: "Remove photo" })
+    .click();
+  await expect(page.getByTestId("conversation-header").locator("img")).toHaveCount(0);
+  await expect(
+    page.getByTestId("conversation-header").getByTestId("intelligence-avatar"),
+  ).toHaveText("E");
+  await page.keyboard.press("Escape");
+  if (isMobile(testInfo)) await page.getByRole("link", { name: "Back to conversations" }).click();
+  await expect(row.locator("img")).toHaveCount(0);
+  await expect(row.getByTestId("intelligence-avatar")).toHaveText("E");
 });
 
 test("main pages fit the viewport with no horizontal page scroll (UI-24, LAY-05)", async ({

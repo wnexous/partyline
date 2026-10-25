@@ -1,11 +1,12 @@
 import type { ReactNode } from "react";
 import { AiStatusLine } from "@/components/ai-status";
 import { BackToConversations } from "@/components/back-link";
+import { GroupAvatar } from "@/components/group-avatar";
 import { IntelligenceAvatar } from "@/components/intelligence/intelligence-avatar";
 import { IntelligenceName } from "@/components/intelligence/intelligence-name";
 import { ProfileLink } from "@/components/profile-link";
 import { ConversationKindDM, type Room } from "@/lib/api/types.gen";
-import { counterpartOf, groupFace } from "@/lib/conversations";
+import { counterpartOf } from "@/lib/conversations";
 import { type Translate, useT } from "@/lib/i18n";
 
 /** What a conversation is called: a group by its name, a DM by the other participant. */
@@ -72,11 +73,10 @@ export function ConversationHeader({
           <IntelligenceAvatar intelligence={face} size="lg" decorative />
         </ProfileLink>
       ) : (
-        <IntelligenceAvatar
-          intelligence={groupFace(room.id, room.name)}
+        <GroupAvatar
+          group={{ id: room.id, name: room.name, avatarUrl: room.avatar_url }}
           size="lg"
           decorative
-          className="rounded-lg *:rounded-lg"
         />
       )}
       <div className="min-w-0 flex-1">

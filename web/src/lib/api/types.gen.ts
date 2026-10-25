@@ -1252,6 +1252,11 @@ export interface Conversation {
    * the caller; empty when there is none.
    */
   org_ids: string[];
+  /**
+   * AvatarURL is the photo of a group, as Room.AvatarURL (GAV-04); absent without one and for a DM, which is
+   * drawn with its Counterpart.
+   */
+  avatar_url?: string;
 }
 /**
  * MaxConversationMemberNames bounds Conversation.MemberNames.
@@ -2068,6 +2073,11 @@ export interface Room {
   participants: IntelligenceRef[];
   name: string;
   description: string;
+  /**
+   * AvatarURL is /api/v1/rooms/{id}/avatar?v=<sha>, the photo a manager gave a group (GAV-01); absent
+   * without one and for a DM, which shows the other party. The hash is a cache key: a new photo has a new URL.
+   */
+  avatar_url?: string;
   /**
    * Instructions is free text for the room's agents (INS-01), up to MaxRoomInstructions
    * characters; agents read it with the room_info tool.

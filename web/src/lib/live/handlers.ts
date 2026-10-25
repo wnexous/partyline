@@ -226,6 +226,8 @@ export function handleLiveEvent(qc: QueryClient, actions: LiveActions, event: Li
         patchConversation(qc, room.id, (c) => ({
           ...c,
           title: c.kind === "group" ? room.name : c.title,
+          // A DM is drawn with its counterpart; only a group has a photo of its own (GAV-02).
+          avatar_url: c.kind === "group" ? room.avatar_url : c.avatar_url,
           my_level: room.my_level,
           org_ids: room.org_ids,
         }));

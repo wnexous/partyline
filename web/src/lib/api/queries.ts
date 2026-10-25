@@ -372,6 +372,44 @@ export function useDeleteRoom() {
   });
 }
 
+/** Shows a group's photo, or its absence, on the cached room, rooms list and sidebar row (GAV-07). */
+function showRoomPhoto(qc: QueryClient, roomId: string, avatarUrl: string | undefined) {
+  const photo = <T extends { avatar_url?: string }>({ avatar_url: _old, ...rest }: T) =>
+    (avatarUrl ? { ...rest, avatar_url: avatarUrl } : rest) as unknown as T;
+  qc.setQueryData<Room>(queryKeys.room(roomId), (old) => old && photo(old));
+  qc.setQueryData<Room[]>(queryKeys.rooms, (old) =>
+    old?.map((r) => (r.id === roomId ? photo(r) : r)),
+  );
+  patchConversation(qc, roomId, photo);
+}
+
+/** Uploads a group's photo: the image file goes as the raw body (GAV-01); 422 `avatar_invalid`. */
+export function useUploadRoomAvatar(id: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (image: Blob) =>
+      putAvatarImage<Room>(`/rooms/${encodeURIComponent(id)}/avatar`, image),
+    onSuccess: (room) => {
+      storeRoom(qc, room);
+      showRoomPhoto(qc, room.id, room.avatar_url);
+    },
+  });
+}
+
+/** Removes a group's photo: its initials show again everywhere. */
+export function useRemoveRoomAvatar(id: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: () => api<void>("DELETE", `/rooms/${encodeURIComponent(id)}/avatar`),
+    onSuccess: () => {
+      showRoomPhoto(qc, id, undefined);
+      qc.invalidateQueries({ queryKey: queryKeys.room(id), exact: true });
+      qc.invalidateQueries({ queryKey: queryKeys.rooms, exact: true });
+      qc.invalidateQueries({ queryKey: queryKeys.conversations, exact: true });
+    },
+  });
+}
+
 export function useResumeRoom(id: string) {
   const qc = useQueryClient();
   return useMutation({
@@ -759,21 +797,23 @@ export function useUpdateIntelligence(id: string) {
  * leave the photo "sending" forever. */
 export const AvatarUploadTimeoutMs = 30_000;
 
+/** Sends an avatar image as the raw body of a PUT, and gives up on a connection that stalls. */
+async function putAvatarImage<T>(path: string, image: Blob): Promise<T> {
+  const abort = new AbortController();
+  const timer = setTimeout(() => abort.abort(), AvatarUploadTimeoutMs);
+  try {
+    return await api<T>("PUT", path, image, { signal: abort.signal });
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
 /** Uploads an avatar: the image file goes as the raw body (PROF-07); 422 `avatar_invalid`. */
 export function useUploadAvatar(id: string) {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: async (image: Blob) => {
-      const abort = new AbortController();
-      const timer = setTimeout(() => abort.abort(), AvatarUploadTimeoutMs);
-      try {
-        return await api<IntelligenceProfile>("PUT", `/intelligences/${id}/avatar`, image, {
-          signal: abort.signal,
-        });
-      } finally {
-        clearTimeout(timer);
-      }
-    },
+    mutationFn: (image: Blob) =>
+      putAvatarImage<IntelligenceProfile>(`/intelligences/${id}/avatar`, image),
     onSuccess: (profile) => storeProfile(qc, profile),
   });
 }
@@ -931,17 +971,8 @@ export function useUpdateOrg(id: string) {
 export function useUploadOrgAvatar(id: string) {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: async (image: Blob) => {
-      const abort = new AbortController();
-      const timer = setTimeout(() => abort.abort(), AvatarUploadTimeoutMs);
-      try {
-        return await api<Organization>("PUT", `/orgs/${encodeURIComponent(id)}/avatar`, image, {
-          signal: abort.signal,
-        });
-      } finally {
-        clearTimeout(timer);
-      }
-    },
+    mutationFn: (image: Blob) =>
+      putAvatarImage<Organization>(`/orgs/${encodeURIComponent(id)}/avatar`, image),
     onSuccess: (org) => storeOrg(qc, org),
   });
 }

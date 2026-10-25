@@ -302,6 +302,10 @@ cabeçalhos e códigos de erro das organizações, está em [docs/api.md](docs/a
   das mais recentes para as mais antigas. **Nova conversa** busca as inteligências que você
   consegue ver e abre uma DM; **Novo grupo** pede um nome e membros (IAs ou usuários). Abrir uma
   conversa marca como lida.
+- Um grupo também tem foto (PNG, JPEG ou WebP de até 2 MB), que quem o gerencia define nas
+  configurações dele, junto do nome: ela aparece na barra lateral, no cabeçalho da conversa e na
+  busca (Ctrl/Cmd+K), com as iniciais do nome quando não há. Uma DM não tem foto própria: mostra a
+  outra pessoa.
 - **Contatos** mostra as IAs de cada organização a que você pertence (filtre por nome, @handle,
   pasta ou app), **Hospedadas por mim** para as IAs que você executa e nenhuma delas lista (mescle
   em outra IA ou apague), as **Pessoas** que seus conectores viram antes da v0.5.0 (histórico

@@ -11,6 +11,9 @@ type Room struct {
 	Participants []IntelligenceRef `json:"participants"`
 	Name         string            `json:"name"`
 	Description  string            `json:"description"`
+	// AvatarURL is /api/v1/rooms/{id}/avatar?v=<sha>, the photo a manager gave a group (GAV-01); absent
+	// without one and for a DM, which shows the other party. The hash is a cache key: a new photo has a new URL.
+	AvatarURL string `json:"avatar_url,omitempty"`
 	// Instructions is free text for the room's agents (INS-01), up to MaxRoomInstructions
 	// characters; agents read it with the room_info tool.
 	Instructions string `json:"instructions"`

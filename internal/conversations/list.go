@@ -73,8 +73,11 @@ func (s *Service) List(ctx context.Context, p authn.Principal) ([]dto.Conversati
 					c.MemberNames = []string{memberName(part.DisplayName, part.Handle)}
 				}
 			}
-		} else if n := namesBy[r.ID]; n != nil {
-			c.MemberNames = n
+		} else {
+			c.AvatarURL = convert.RoomAvatarURL(r.ID, r.AvatarSha256)
+			if n := namesBy[r.ID]; n != nil {
+				c.MemberNames = n
+			}
 		}
 		if m, ok := last[r.ID]; ok {
 			if c.Kind == dto.ConversationKindDM {

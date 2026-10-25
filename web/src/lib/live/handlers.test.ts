@@ -567,6 +567,32 @@ describe("live handlers", () => {
       expect(row("r2")?.org_ids).toEqual([]);
     });
 
+    it("room.changed puts a group's new photo on its row, and takes it off when the photo is removed (GAV-07)", () => {
+      const photo = "/api/v1/rooms/r3/avatar?v=abc";
+      expect(row("r3")?.avatar_url).toBeUndefined();
+      handleLiveEvent(qc, actions(), {
+        type: "room.changed",
+        data: makeRoom({ id: "r3", avatar_url: photo }),
+      });
+      expect(row("r3")?.avatar_url).toBe(photo);
+      handleLiveEvent(qc, actions(), { type: "room.changed", data: makeRoom({ id: "r3" }) });
+      expect(row("r3")?.avatar_url).toBeUndefined();
+      expect(stale()).toBe(false);
+    });
+
+    it("room.changed leaves a DM without a photo of its own: it is drawn with its counterpart (GAV-02)", () => {
+      handleLiveEvent(qc, actions(), {
+        type: "room.changed",
+        data: makeRoom({
+          id: "r2",
+          kind: "dm",
+          name: "",
+          avatar_url: "/api/v1/rooms/r2/avatar?v=x",
+        }),
+      });
+      expect(row("r2")?.avatar_url).toBeUndefined();
+    });
+
     it("room.changed for a conversation the list does not have refetches it, every time", () => {
       handleLiveEvent(qc, actions(), { type: "room.changed", data: makeRoom({ id: "r7" }) });
       expect(stale()).toBe(true);

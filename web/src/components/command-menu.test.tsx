@@ -11,6 +11,7 @@ import {
   makeMe,
   makeProfile,
 } from "@/test/fixtures";
+import { LoadedImage } from "@/test/image";
 import { renderRoute } from "@/test/render";
 
 vi.mock("@/lib/live", () => ({ startLive: vi.fn(() => () => {}) }));
@@ -102,6 +103,41 @@ describe("command palette (UI-22)", () => {
     await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
     await user.keyboard("{Meta>}k{/Meta}");
     expect(await palette()).toBeInTheDocument();
+  });
+
+  it("draws each conversation with its face: a group's photo or initials, a DM's counterpart (GAV-07)", async () => {
+    vi.stubGlobal("Image", LoadedImage);
+    const photo = "/api/v1/rooms/r1/avatar?v=abc";
+    api("member", {
+      "GET /conversations": json(200, {
+        items: [
+          makeConversation({ id: "r1", title: "general", avatar_url: photo }),
+          makeConversation({ id: "r2", title: "deploys" }),
+          makeConversation({
+            id: "r3",
+            kind: "dm",
+            title: "Atlas",
+            counterpart: makeAI({ id: "a1", display_name: "Atlas", handle: "atlas" }),
+          }),
+        ],
+      }),
+    });
+    const user = userEvent.setup();
+    renderRoute("/");
+    await screen.findByRole("list", { name: "Conversations" });
+    await user.keyboard("{Control>}k{/Control}");
+    const dialog = await palette();
+    const face = async (name: RegExp) =>
+      within(await within(dialog).findByRole("option", { name })).getByTestId(
+        "intelligence-avatar",
+      );
+
+    const group = await face(/general/);
+    expect(group.querySelector("img")).toHaveAttribute("src", photo);
+    expect(group).toHaveAttribute("aria-hidden", "true"); // the name is beside it
+    expect(await face(/deploys/)).toHaveTextContent("D");
+    expect((await face(/deploys/)).querySelector("img")).toBeNull();
+    expect(await face(/Atlas/)).toHaveTextContent("A");
   });
 
   it("filters as the user types", async () => {

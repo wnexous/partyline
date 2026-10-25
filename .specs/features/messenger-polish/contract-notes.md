@@ -98,3 +98,42 @@ release server and an installed binary in a temp directory). 40 tests, 232 with 
   A built binary was run end to end against a local TLS server (update, `--check`, a tampered checksum, a
   read-only directory, an untrusted certificate, a hand-over redirect): outputs as above.
 - **Docs.** `README.md`, `README.pt-BR.md` (command table; the upgrade note) and `docs/agents.md` (section 1).
+
+## A photo for groups (GAV-01..GAV-07)
+
+Server: `internal/rooms/avatar.go` (`SetAvatar`, `ClearAvatar`, `Avatar`), the handlers in
+`internal/api/avatar_handlers.go`, the body limit in `internal/api/middleware.go`. Web: `GroupAvatar`,
+`ConversationAvatar`, the photo editor in `room-settings-sheet.tsx`. Tests: `internal/api/room_avatar_test.go`,
+`internal/rooms/retention_test.go`, `internal/store/room_avatar_migration_test.go`, `middleware_test.go`
+(`TestAvatarUploadBodyLimit`) and, in `web/src`, `group-avatar`, `room-settings-sheet`, `conversation-list`,
+`command-menu`, `rooms/conversation` and `live/handlers`.
+
+- **Schema.** Migration `0022_room_avatar.sql` adds `rooms.avatar_sha256 TEXT NOT NULL DEFAULT ''` and a partial
+  index on the non-empty values, like `intelligences`. `CountRoomAvatar` is the fourth reference the sweep counts
+  (attachments, platform files, intelligences, organizations, groups); `SetRoomAvatar` bumps `updated_at` and
+  nothing else: `updated_by` is the author of the name and description (INS-06), not of the photo.
+- **Who and in which order.** `rooms.Service.authorize(manage)` runs before the image is read: 404 for who cannot
+  see the group, 403 for who only posts, and only then `avatars.Process`, so a refusal never depends on the image.
+  A DM is never managed, so it answers like `PATCH` and `DELETE` of a DM do; `GET` on a DM is 404 for everybody
+  (no photo to give), and `avatar_url` is never set for a DM.
+- **Transport.** The image is the raw request body, as for intelligences and organizations and as the web app
+  sends it (`putAvatarImage`, one helper for the three uploads, with the 30 s abandon). There is no multipart
+  variant: it was considered and dropped on 2026-10-24, for one way in that is exactly that of the avatars of
+  intelligences and organizations.
+- **413.** The middleware refuses a body whose `Content-Length` is over 2 MiB before it reads it
+  (`isAvatarUpload` now includes `PUT /rooms/{id}/avatar`), exactly as for an intelligence; a body that hides its
+  length and is longer is cut by the limit and refused as an image that is not one (422), also as there.
+- **Same image, no change.** Storing the sha the group already has changes and announces nothing; a change is a
+  `room.changed` to the people who see the group (the existing `RoomChanged` event; the frame is the `Room`, so it
+  carries `avatar_url`).
+- **Blobs.** A replaced or removed photo is swept after the one-hour grace like any avatar. Deleting a group adds
+  its photo to the blobs released with its files (`Delete`), and `ReleaseBlobs` keeps a blob another group (or
+  anything else) still uses: one image is one blob.
+- **List and live.** `Conversation.avatar_url` (groups only) feeds the sidebar and the command menu; the
+  `room.changed` handler patches it on the row of a group and ignores it for a DM. The mutations patch the room,
+  the rooms list and the row at once and refetch the lists.
+- **Web.** `PhotoEditor` is shared with the profile and the organization page and now says `type="button"` on
+  "Remove photo": the editor sits inside the settings form here, where a default button would submit it (and
+  Enter in the name field would have removed the photo). `GroupAvatar` is the one place that draws a group (a
+  rounded square); `ConversationAvatar` picks the counterpart of a DM or the group, for the sidebar and the
+  palette, whose rows had an icon for every conversation before.

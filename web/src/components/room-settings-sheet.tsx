@@ -4,6 +4,8 @@ import { type ReactNode, useId, useState } from "react";
 import { type ControllerRenderProps, useForm } from "react-hook-form";
 import { toast } from "sonner";
 import { FieldError, FormAlert, TextField } from "@/components/form-fields";
+import { GroupAvatar } from "@/components/group-avatar";
+import { PhotoEditor } from "@/components/photo-editor";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -37,7 +39,12 @@ import {
 } from "@/components/ui/sheet";
 import { Textarea } from "@/components/ui/textarea";
 import { isApiError } from "@/lib/api/client";
-import { useDeleteRoom, useUpdateRoom } from "@/lib/api/queries";
+import {
+  useDeleteRoom,
+  useRemoveRoomAvatar,
+  useUpdateRoom,
+  useUploadRoomAvatar,
+} from "@/lib/api/queries";
 import { MaxRoomInstructions, type Room, type UpdateRoomRequest } from "@/lib/api/types.gen";
 import { applyFieldErrors } from "@/lib/forms";
 import { useI18n } from "@/lib/i18n";
@@ -45,9 +52,10 @@ import { type RoomSettingsForm, roomSettingsSchema, textLength } from "@/lib/sch
 import { cn } from "@/lib/utils";
 
 /**
- * Room settings for managers: name, description, instructions for agents (INS-01), retention, and
- * deleting the room (ROOMDEL-01). Chat bridging, broadcast and the catch-all lock are gone with
- * platform chats as members (CID-22); the stored columns are dead until the server drops them.
+ * Room settings for managers: the group's photo (GAV-06), name, description, instructions for
+ * agents (INS-01), retention, and deleting the room (ROOMDEL-01). Chat bridging, broadcast and the
+ * catch-all lock are gone with platform chats as members (CID-22); the stored columns are dead
+ * until the server drops them.
  */
 export function RoomSettingsSheet({ room, trigger }: { room: Room; trigger: ReactNode }) {
   const { t } = useI18n();
@@ -118,6 +126,7 @@ function SettingsForm({ room, onDone }: { room: Room; onDone: () => void }) {
       <form onSubmit={onSubmit} noValidate className="flex min-h-0 flex-1 flex-col">
         <div className="flex-1 space-y-6 overflow-y-auto p-4">
           <FormAlert>{formError}</FormAlert>
+          <RoomPhoto room={room} />
           <TextField
             control={form.control}
             name="name"
@@ -183,6 +192,31 @@ function SettingsForm({ room, onDone }: { room: Room; onDone: () => void }) {
         </SheetFooter>
       </form>
     </FormProvider>
+  );
+}
+
+/**
+ * The group's photo: the editor every picture shares, wired to this room's routes. It sends a chosen
+ * file at once, so the photo does not wait for the Save of the form it sits in (GAV-06).
+ */
+function RoomPhoto({ room }: { room: Room }) {
+  const upload = useUploadRoomAvatar(room.id);
+  const remove = useRemoveRoomAvatar(room.id);
+  return (
+    <PhotoEditor
+      face={
+        <GroupAvatar
+          group={{ id: room.id, name: room.name, avatarUrl: room.avatar_url }}
+          size="xl"
+          decorative
+        />
+      }
+      hasPhoto={Boolean(room.avatar_url)}
+      upload={upload.mutateAsync}
+      remove={(done) => remove.mutate(undefined, done)}
+      removing={remove.isPending}
+      className="sm:w-auto"
+    />
   );
 }
 

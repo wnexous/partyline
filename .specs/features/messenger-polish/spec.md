@@ -6,6 +6,8 @@ After v0.4.0, André asked for three things while testing (2026-10-22): mention 
 
 On 2026-10-23 the product owner asked for three more things in the web app: images that open inside the app instead of in a new tab, an Enter key that does not send on a phone, and a profile panel that opens wherever an identity appears.
 
+On 2026-10-24 the product owner looked for a way to set a group's photo and found none: a group shows its initials only, while people, AIs and organizations can have a picture.
+
 ## Goals
 
 - [ ] Typing `@` in the composer suggests the conversation's participants and inserts `@handle`.
@@ -14,6 +16,7 @@ On 2026-10-23 the product owner asked for three more things in the web app: imag
 - [ ] An image in the timeline opens in a viewer inside the app, and the arrows walk the conversation's images (IMG-01..IMG-06).
 - [ ] On a touch device Enter in the composer adds a new line and only the Send button sends (ENT-01..ENT-05).
 - [ ] Clicking an identity anywhere opens its profile in a side panel (a drawer on a phone), with the actions the viewer may use (PRF-01..PRF-06).
+- [ ] A manager gives a group a photo that shows wherever the group does, with its initials as the fallback (GAV-01..GAV-07).
 
 ## Out of Scope
 
@@ -23,6 +26,7 @@ On 2026-10-23 the product owner asked for three more things in the web app: imag
 | Auto-updating in the background | The user runs the command |
 | Updating harness registrations during `update` | `partyline setup` does that |
 | Zoom, rotate, slideshow, video or audio in the viewer | Not asked; "Open original" opens the file itself |
+| A photo for a DM, or a group photo set from an AI's tools | A DM shows the other party; the routes are the web app's (a user's session or token) and need the manage level (AD-016) |
 | Editing a profile inside the panel, presence of users, a person's DM | The panel shows and routes; the page edits (PROF-05), the API has no presence for users (AD-010) and a person is history (CID-21) |
 
 ---
@@ -50,6 +54,11 @@ On 2026-10-23 the product owner asked for three more things in the web app: imag
 | Presence in the panel | Only AIs have presence (AD-010): an AI shows online or offline and its app; a user or a person shows neither | The API has no presence for the others; the UI never invents fields | n |
 | Edit profile | Offered on the viewer's own profile when it says they may edit it (`can_edit`); it opens the profile page, where the editor is. The AIs a viewer manages are edited from the page too ("Open full profile") | The request names the viewer's own profile; the page stays the one place that edits | n |
 | Viewer chrome | A paper strip on top (name, position, Download, Open original, Close) over a dark stage; previous and next sit on the stage's edges | Operate surface: standard controls, the image is the only dark thing on the screen | n |
+| Group photo transport | The image is the raw request body (`Content-Type` image/png, image/jpeg or image/webp), like the photo of an intelligence or an organization; there is no multipart form | One way in, one processing path (`avatars.Process`, 256×256 PNG, blob store), and the web app reuses the code of the profile photo. A multipart form was considered and dropped on 2026-10-24 | y |
+| Who may change it | The manage level on the group (its creator and the admins of its organization, AD-016); who only posts gets 403, who cannot see the group 404 | The same rule as renaming or deleting the group | n |
+| DM | No avatar of its own: the routes answer like the other manage-only routes of a DM (403 to who sees it, 404 to the rest) and `avatar_url` is absent; the app shows the other party | A DM is not managed by anyone (DM-02) | n |
+| Where the list gets it | `Conversation.avatar_url` next to `Room.avatar_url`: the sidebar list and the command menu read the conversation list, the header reads the room | The list does not fetch rooms | n |
+| The blob | The group row holds the sha256 of the stored PNG (`rooms.avatar_sha256`, '' for none); the sweep counts it, and a deleted group releases it with its files | Like `intelligences.avatar_sha256` and `organizations.avatar_sha256` | n |
 
 **Open questions:** none - all resolved or logged above.
 
@@ -156,6 +165,24 @@ On 2026-10-23 the product owner asked for three more things in the web app: imag
 
 ---
 
+### P1: A photo for groups ⭐ MVP
+
+**User Story**: As a manager of a group, I want to give it a photo so that people tell it apart in the list and in the conversation at a glance, instead of by its initials.
+
+**Acceptance Criteria**:
+
+1. WHEN a user who manages a group sends `PUT /api/v1/rooms/{id}/avatar` with a PNG, JPEG or WebP image up to 2 MiB THEN the server SHALL store it centre-cropped as a 256×256 PNG, answer 200 with the `Room`, whose `avatar_url` is `/api/v1/rooms/{id}/avatar?v=<sha256>`, and serve that PNG at the URL to whoever can see the group, with the headers of the other avatars; `DELETE /api/v1/rooms/{id}/avatar` SHALL remove it (204, also when there is none). (GAV-01)
+2. Only a caller who manages the group SHALL change it: who can see it and only posts in it gets 403 forbidden, who cannot see it 404 not_found, an anonymous caller 401. A DM has no avatar of its own: nobody manages it, so its routes answer 403 to the people who see it and 404 to everybody else, and its `avatar_url` is absent. (GAV-02)
+3. IF the file is not a PNG, JPEG or WebP image, or cannot be decoded, THEN the server SHALL answer 422 avatar_invalid; IF the body is over 2 MiB THEN it SHALL answer 413 avatar_invalid before reading it; either way the old avatar SHALL stay. (GAV-03)
+4. `Room.avatar_url` and `Conversation.avatar_url` SHALL be absent for a DM and for a group without a photo; WHEN the photo changes THEN the people who can see the group SHALL receive a live `room.changed` with the new `Room`. (GAV-04)
+5. The retention sweep SHALL count a group's avatar as a reference to its blob, so the blob stays for as long as the group points at it; the blob of a replaced or removed avatar SHALL be swept after the grace period, and the one of a deleted group SHALL be released with the group's files. (GAV-05)
+6. The group settings sheet SHALL offer managers a photo editor: a chosen file SHALL be sent at once, a photo over 2 MiB or 1024 px SHALL be resized in the browser first, the server's refusal SHALL show next to the preview with the old photo kept, and "Remove photo" SHALL bring the initials back. (GAV-06)
+7. The photo SHALL show in the sidebar list (also while the list is searched), in the conversation header and in the command menu, with the group's initials as the fallback and DMs unchanged, and SHALL change there when a `room.changed` arrives. (GAV-07)
+
+**Independent Test**: As the creator of a group, open its settings, choose a PNG: the sidebar row, the header and the command menu show it without a reload; remove it and the initials are back.
+
+---
+
 ## Requirement Traceability
 
 | Requirement ID | Story | Phase | Status |
@@ -193,8 +220,15 @@ On 2026-10-23 the product owner asked for three more things in the web app: imag
 | PRF-04 | P1: Profile panel | Execute | Implementing |
 | PRF-05 | P1: Profile panel | Execute | Implementing |
 | PRF-06 | P1: Profile panel | Execute | Implementing |
+| GAV-01 | P1: A photo for groups | Execute | Implementing |
+| GAV-02 | P1: A photo for groups | Execute | Implementing |
+| GAV-03 | P1: A photo for groups | Execute | Implementing |
+| GAV-04 | P1: A photo for groups | Execute | Implementing |
+| GAV-05 | P1: A photo for groups | Execute | Implementing |
+| GAV-06 | P1: A photo for groups | Execute | Implementing |
+| GAV-07 | P1: A photo for groups | Execute | Implementing |
 
-**Coverage:** 33 total
+**Coverage:** 40 total
 
 ---
 
@@ -206,3 +240,4 @@ On 2026-10-23 the product owner asked for three more things in the web app: imag
 - [ ] The product owner clicks a picture in a conversation, flips through the others and closes it without leaving the app.
 - [ ] The product owner writes three lines on his phone, sends them with one tap, and on his computer Enter still sends.
 - [ ] The product owner clicks a name in a message, a member list or a contact list and sees who it is, on a side panel (a drawer on his phone), then messages them or opens their page.
+- [ ] The product owner opens a group's settings, chooses a picture and sees it in the list, the header and the search at once; removing it brings the initials back.

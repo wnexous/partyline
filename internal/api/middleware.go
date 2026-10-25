@@ -164,15 +164,15 @@ func bodyLimit(maxUpload int64, next http.Handler) http.Handler {
 	})
 }
 
-// isAvatarUpload reports whether r uploads an avatar image: PUT /intelligences/{id}/avatar or
-// PUT /agent/profile/avatar.
+// isAvatarUpload reports whether r uploads an avatar image: PUT /intelligences/{id}/avatar,
+// PUT /rooms/{id}/avatar or PUT /agent/profile/avatar.
 func isAvatarUpload(r *http.Request) bool {
 	if r.Method != http.MethodPut {
 		return false
 	}
 	path := r.URL.Path
 	return path == agentPathPrefix+"profile/avatar" ||
-		(strings.HasPrefix(path, "/api/v1/intelligences/") && strings.HasSuffix(path, "/avatar"))
+		((strings.HasPrefix(path, "/api/v1/intelligences/") || strings.HasPrefix(path, "/api/v1/rooms/")) && strings.HasSuffix(path, "/avatar"))
 }
 
 var errUnauthorized = httpx.NewError(http.StatusUnauthorized, dto.ErrorCodeUnauthorized, "invalid or expired credentials")
