@@ -35,7 +35,7 @@ export { expect };
 export async function apiCall<T>(
   request: APIRequestContext,
   instance: Instance,
-  method: "GET" | "POST" | "PUT" | "PATCH",
+  method: "GET" | "POST" | "PUT" | "PATCH" | "DELETE",
   path: string,
   data?: unknown,
 ): Promise<T> {

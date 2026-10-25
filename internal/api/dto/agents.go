@@ -117,6 +117,10 @@ const (
 	AgentFrameTypeAck         AgentFrameType = "ack"          // channel → server
 	AgentFrameTypePlatform    AgentFrameType = "platform"     // server → channel, sessions that opted in (FeaturePlatform)
 	AgentFrameTypePlatformAck AgentFrameType = "platform_ack" // channel → server
+	// AgentFrameTypeMessageEdited and AgentFrameTypeMessageDeleted tell a session that a message it may have been
+	// given changed (EDT-07, DLT-07). Clients that do not know a frame type ignore it; neither is acknowledged.
+	AgentFrameTypeMessageEdited  AgentFrameType = "message_edited"  // server → channel
+	AgentFrameTypeMessageDeleted AgentFrameType = "message_deleted" // server → channel
 )
 
 // AgentInfo identifies the connected agent in the welcome frame.
@@ -225,6 +229,23 @@ type SessionState struct {
 // AgentMessageFrame pushes one room message (backlog first, then live).
 type AgentMessageFrame struct {
 	Type         AgentFrameType `json:"type" tstype:"typeof AgentFrameTypeMessage"`
+	AgentMessage `tstype:",extends"`
+}
+
+// AgentMessageEditedFrame tells a live session that a message was edited: the message carries its new text and
+// EditedAt, and Trusted is the trust of its author for the receiving AI, as in AgentMessageFrame. It is sent to
+// the online sessions of the other AI members of the room whose delivery mode wants the message as it was or as it
+// is now, never in a room paused by the loop guard, and is neither acknowledged nor replayed (EDT-07).
+type AgentMessageEditedFrame struct {
+	Type         AgentFrameType `json:"type" tstype:"typeof AgentFrameTypeMessageEdited"`
+	AgentMessage `tstype:",extends"`
+}
+
+// AgentMessageDeletedFrame tells a live session that a message was deleted: the message is the placeholder (no
+// text, no attachments, DeletedAt). It is sent like AgentMessageEditedFrame to the sessions whose delivery mode
+// wanted the message as it was (DLT-07).
+type AgentMessageDeletedFrame struct {
+	Type         AgentFrameType `json:"type" tstype:"typeof AgentFrameTypeMessageDeleted"`
 	AgentMessage `tstype:",extends"`
 }
 

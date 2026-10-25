@@ -278,6 +278,8 @@ func mapError(err error) error {
 		return httpx.NewError(http.StatusConflict, dto.ErrorCodeIdentityOnline, "the AI is online: end its session before merging it")
 	case errors.Is(err, conversations.ErrRateLimited):
 		return httpx.NewError(http.StatusTooManyRequests, dto.ErrorCodeRateLimited, "too many new conversations, try again later")
+	case errors.Is(err, rooms.ErrMessageDeleted):
+		return httpx.NewError(http.StatusConflict, dto.ErrorCodeConflict, "the message was deleted")
 	case errors.Is(err, rooms.ErrAlreadyMember):
 		return httpx.NewError(http.StatusConflict, dto.ErrorCodeConflict, "already a member of the room")
 	case errors.Is(err, access.ErrForbidden):

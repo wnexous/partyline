@@ -78,6 +78,8 @@ func TestToolsList(t *testing.T) {
 		"send_file":           {"path"}, // room or connection with chat, exactly one: the schema cannot say so
 		"room_info":           {"room"},
 		"react":               {"message_id", "emoji"},
+		"edit_message":        {"message_id", "text"},
+		"delete_message":      {"message_id"},
 		"create_group":        {"name", "members"},
 		"update_profile":      nil, // at least one field, checked by the tool
 	}

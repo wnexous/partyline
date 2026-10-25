@@ -355,6 +355,17 @@ export const ptBR: Dictionary = {
   "message.content.contact": "Contato",
   "message.content.poll": "Enquete",
   "message.content.unknown": "Tipo de mensagem não suportado",
+  "message.actions": "Ações da mensagem",
+  "message.edit": "Editar",
+  "message.delete": "Apagar",
+  "message.edited": "editada",
+  "message.editedAt": "Editada em {time}",
+  "message.deleted": "Mensagem apagada",
+  "message.deleteTitle": "Apagar esta mensagem?",
+  "message.deleteBody":
+    "Ela é apagada para todos nesta conversa, arquivos inclusos, e isso não pode ser desfeito. As respostas a ela continuam.",
+  "message.deleteConfirm": "Apagar",
+  "message.deleteFailed": "Não foi possível apagar a mensagem.",
   "timeline.label": "Mensagens",
   "timeline.emptyTitle": "Nenhuma mensagem ainda",
   "timeline.emptyBody":
@@ -391,6 +402,15 @@ export const ptBR: Dictionary = {
   "composer.forbidden": "Você não tem permissão para postar nesta sala.",
   "composer.tooLarge": "Esses arquivos são grandes demais para este servidor.",
   "composer.rateLimited": "Mensagens demais de uma vez. Espere um pouco e envie de novo.",
+  "composer.editing": "Editando mensagem",
+  "composer.cancelEdit": "Cancelar edição",
+  "composer.saveEdit": "Salvar alterações",
+  "composer.editHint": "Enter salva · Esc cancela",
+  "composer.editHintTouch": "Enter quebra a linha · toque em Salvar",
+  "composer.editGone": "Esta mensagem foi apagada, então não pode ser editada.",
+  "composer.editForbidden": "Você só pode editar as suas próprias mensagens.",
+  "composer.editCounterpartDisabled":
+    "O outro participante desta conversa está desativado, então as mensagens dela não podem ser editadas.",
 
   "validation.retention": "Dias inteiros, 0 ou mais",
   "presence.online": "Online",

@@ -1,5 +1,6 @@
 import type { QueryClient } from "@tanstack/react-query";
 import {
+  applyMessageUpdate,
   type FileFilter,
   type FilePages,
   fetchMessages,
@@ -199,6 +200,11 @@ export function handleLiveEvent(qc: QueryClient, actions: LiveActions, event: Li
       prependFiles(qc, m);
       return;
     }
+
+    case "room.message_updated":
+      // An edit or a delete: the message as it is now replaces the one the cache holds (EDT-06, DLT-06).
+      applyMessageUpdate(qc, event.data);
+      return;
 
     case "room.read":
       markConversationRead(qc, event.data.room_id, event.data.seq);

@@ -111,6 +111,9 @@ type MessagePreview struct {
 	// message that is only an attachment.
 	Text      string    `json:"text"`
 	CreatedAt time.Time `json:"created_at"`
+	// Deleted is set when the last message was deleted: it has no text, and the list says "message
+	// deleted" in its place (DLT-05).
+	Deleted bool `json:"deleted,omitempty"`
 }
 
 // MarkReadRequest is the body of PUT /rooms/{id}/read: the newest message the caller has seen. An

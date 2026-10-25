@@ -41,6 +41,7 @@ import {
   DefaultPeoplePage,
   type DeleteAccountRequest,
   type DeviceRequest,
+  type EditMessageRequest,
   ErrorCodeAlreadyMember,
   type FileKind,
   FileKindDocument,
@@ -526,6 +527,81 @@ export function usePostMessage(roomId: string) {
   });
 }
 
+/**
+ * Puts a message where the cached copy of it is - the same id, in whichever page holds it - and touches
+ * nothing else: an edit or a delete keeps the message's place (EDT-01, DLT-01). A message the pages do not hold
+ * is not added: its first fetch has it as it is.
+ */
+export function replaceMessage(
+  data: MessagePages | undefined,
+  m: Message,
+): MessagePages | undefined {
+  if (!data) return data;
+  let found = false;
+  const pages = data.pages.map((page) => {
+    const index = page.items.findIndex((x) => x.id === m.id);
+    if (index < 0) return page;
+    found = true;
+    const items = page.items.slice();
+    items[index] = m;
+    return { ...page, items };
+  });
+  return found ? { ...data, pages } : data;
+}
+
+/**
+ * A message was edited or deleted, by this client (the answer of the request) or by anyone (the live
+ * room.message_updated frame): everywhere the cache shows it, it becomes the message as it is now (EDT-06,
+ * DLT-06). The timeline, the preview of the conversation if it is the last message, the dashboard feed; the
+ * files of a deleted message leave the files lists. Nothing is added, counted as unread or moved up: the message
+ * keeps its place. Applying the same update twice changes nothing more.
+ */
+export function applyMessageUpdate(qc: QueryClient, m: Message) {
+  qc.setQueryData<MessagePages>(queryKeys.roomMessages(m.room_id), (old) => replaceMessage(old, m));
+  patchConversation(qc, m.room_id, (c) =>
+    c.last_message?.seq === m.seq ? { ...c, last_message: previewOf(m, c.kind) } : c,
+  );
+  qc.setQueryData<ActivityItem[]>(queryKeys.activity, (old) =>
+    old?.map((a) => (a.message.id === m.id ? { ...a, message: m } : a)),
+  );
+  if (m.deleted_at === undefined) return;
+  for (const [key, data] of qc.getQueriesData<FilePages>({
+    queryKey: ["rooms", m.room_id, "files"],
+  })) {
+    if (!data) continue;
+    qc.setQueryData<FilePages>(key, {
+      ...data,
+      pages: data.pages.map((page) => ({
+        ...page,
+        items: page.items.filter((f) => f.message_id !== m.id),
+      })),
+    });
+  }
+}
+
+/** Replaces the text of a message the viewer wrote (EDT-01); the answer is the message as it is now. */
+export function useEditMessage(roomId: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ id, text }: { id: string; text: string }) =>
+      api<Message>("PATCH", `/rooms/${roomId}/messages/${id}`, {
+        text,
+      } satisfies EditMessageRequest),
+    // The live frame says the same to everyone else; writing the answer here keeps this client right when its
+    // socket is down.
+    onSuccess: (m) => applyMessageUpdate(qc, m),
+  });
+}
+
+/** Deletes a message (DLT-01); the answer is its placeholder. */
+export function useDeleteMessage(roomId: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (id: string) => api<Message>("DELETE", `/rooms/${roomId}/messages/${id}`),
+    onSuccess: (m) => applyMessageUpdate(qc, m),
+  });
+}
+
 export const attachmentUrl = (id: string) => `/api/v1/attachments/${id}`;
 
 // ---------------------------------------------------------------------------------------------
@@ -571,12 +647,21 @@ function firstCodePoints(text: string, max: number): string {
 export function previewOf(m: Message, kind: ConversationKind): MessagePreview {
   const file = m.attachments[0]?.name;
   const blank = m.text.trim() === "";
+  const deleted = m.deleted_at !== undefined;
   return {
     seq: m.seq,
     author_id: m.author.id,
     author_name: kind === "group" ? m.author_name : "",
-    text: blank ? (file ? `[${file}]` : "") : firstCodePoints(m.text, MaxPreviewLength),
+    // A deleted message previews nothing of what it said (DLT-05); the list says "Message deleted".
+    text: deleted
+      ? ""
+      : blank
+        ? file
+          ? `[${file}]`
+          : ""
+        : firstCodePoints(m.text, MaxPreviewLength),
     created_at: m.created_at,
+    ...(deleted ? { deleted: true } : {}),
   };
 }
 

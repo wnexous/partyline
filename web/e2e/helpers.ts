@@ -160,7 +160,7 @@ export function agentCall(
   context: BrowserContext,
   instance: Instance,
   agent: AgentClient,
-  method: "GET" | "POST",
+  method: "GET" | "POST" | "PATCH" | "DELETE",
   path: string,
   data?: unknown,
 ) {
@@ -179,7 +179,7 @@ export async function agentJSON<T>(
   context: BrowserContext,
   instance: Instance,
   agent: AgentClient,
-  method: "GET" | "POST",
+  method: "GET" | "POST" | "PATCH" | "DELETE",
   path: string,
   data?: unknown,
 ): Promise<T> {

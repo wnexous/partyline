@@ -1,4 +1,4 @@
-import type { BrowserContext, Page, TestInfo } from "@playwright/test";
+import type { BrowserContext, Locator, Page, TestInfo } from "@playwright/test";
 import type {
   AddMemberRequest,
   AgentMessage,
@@ -10,12 +10,21 @@ import type {
   Invitation,
   List,
   Me,
+  Message,
   Organization,
   Room,
   Token,
 } from "../src/lib/api/types.gen";
 import { ADMIN, apiCall, expect, MEMBER, settled, test } from "./fixtures";
-import { agentJSON, connectAI, isMobile, loginAs, MACHINE, trackLive } from "./helpers";
+import {
+  agentJSON,
+  connectAI,
+  expectNoSidewaysScroll,
+  isMobile,
+  loginAs,
+  MACHINE,
+  trackLive,
+} from "./helpers";
 import { makePng, postPictures } from "./images";
 import type { Instance } from "./server";
 import { shoot } from "./shots";
@@ -1114,4 +1123,177 @@ test("a click on a name opens the profile panel: a sidebar on a wide screen, a d
   await expect(page).toHaveURL(`${instance.url}/contacts/${agent.ai.id}`);
   await expect(page.getByRole("heading", { name, level: 1 })).toBeVisible();
   await expect(page.getByRole("dialog")).toHaveCount(0);
+});
+
+test("a message is edited from its menu and deleted after a question; a second window and the AI's own edits follow live (EDT-01, EDT-10, DLT-01, DLT-09, DLT-10)", async ({
+  browser,
+  context,
+  page,
+  instance,
+}, testInfo) => {
+  await loginAs(context, instance, ADMIN);
+  const agent = await connectAI(context, instance, "/work/editor");
+  const room = await apiCall<Room>(context.request, instance, "POST", "/groups", {
+    name: "e2e-edit",
+    members: [],
+  });
+  await apiCall(context.request, instance, "POST", `/rooms/${room.id}/members`, {
+    kind: "agent",
+    member_id: agent.ai.id,
+  });
+  const rows = (on: Page) => on.locator('[data-testid^="message-"]');
+  const menuOf = (row: Locator) => row.getByRole("button", { name: "Message actions" });
+  const box = page.getByRole("textbox", { name: "Message e2e-edit" });
+
+  // A second window of the same account follows everything live, without a reload.
+  const other = await browser.newContext();
+  try {
+    await loginAs(other, instance, ADMIN);
+    const watcher = await other.newPage();
+    const live = trackLive(watcher);
+    await watcher.goto(`/rooms/${room.id}`);
+    await expect.poll(() => live.ready).toBe(true);
+    await page.goto(`/rooms/${room.id}`);
+    await expect(box).toBeVisible();
+    await Promise.all(
+      [page, watcher].map((on) =>
+        on.evaluate(() => Object.assign(window, { e2eSameDocument: true })),
+      ),
+    );
+
+    // The first message is the viewer's, the second the AI's, so a change to the first shows it keeps its place.
+    await box.fill("helo wrld");
+    await box.press("Enter");
+    await expect(rows(page)).toHaveCount(1);
+    await agentJSON<Message>(context, instance, agent, "POST", `/agent/rooms/${room.id}/messages`, {
+      text: "noted",
+    });
+    for (const on of [page, watcher]) {
+      await expect(rows(on)).toHaveCount(2);
+      await expect(rows(on).nth(0)).toContainText("helo wrld");
+      await expect(rows(on).nth(1)).toContainText("noted");
+    }
+
+    // EDT-10: Edit loads the text into the composer and focus is in the box; Escape leaves and sends nothing.
+    await box.fill("a draft");
+    await menuOf(rows(page).nth(0)).click();
+    await page.getByRole("menuitem", { name: "Edit" }).click();
+    await expect(page.getByText("Editing message")).toBeVisible();
+    await expect(page.getByRole("button", { name: "Attach files" })).toHaveCount(0);
+    await expect(box).toHaveValue("helo wrld");
+    await expect(box).toBeFocused();
+    await page.keyboard.press("Escape");
+    await expect(page.getByText("Editing message")).toHaveCount(0);
+    await expect(box).toHaveValue("a draft");
+    await expect(rows(page).nth(0)).not.toContainText("edited");
+
+    // EDT-01: Enter saves; the message keeps its place, says "edited" and the other window gets it live.
+    await menuOf(rows(page).nth(0)).click();
+    await page.getByRole("menuitem", { name: "Edit" }).click();
+    await expect(box).toBeFocused();
+    await box.fill("hello world");
+    await box.press("Enter");
+    await expect(page.getByText("Editing message")).toHaveCount(0);
+    await expect(box).toHaveValue("a draft");
+    for (const on of [page, watcher]) {
+      await expect(rows(on)).toHaveCount(2);
+      await expect(rows(on).nth(0)).toContainText("hello world");
+      await expect(rows(on).nth(0).getByText("edited", { exact: true })).toBeVisible();
+      await expect(rows(on).nth(1)).toContainText("noted");
+      await expect(rows(on).nth(1)).not.toContainText("edited");
+    }
+    await expectNoSidewaysScroll(page, "a conversation with an edited message");
+
+    // The AI's message gets no Edit from the viewer, only Delete as the creator of the group (DLT-02).
+    await menuOf(rows(page).nth(1)).click();
+    await expect(page.getByRole("menuitem", { name: "Delete" })).toBeVisible();
+    await expect(page.getByRole("menuitem", { name: "Edit" })).toHaveCount(0);
+    await page.keyboard.press("Escape");
+    await expect(page.getByRole("menu")).toHaveCount(0);
+
+    // DLT-09: Delete asks first; Cancel leaves the message, and the page still answers to clicks afterwards.
+    await menuOf(rows(page).nth(0)).click();
+    await page.getByRole("menuitem", { name: "Delete" }).click();
+    const question = page.getByRole("alertdialog", { name: "Delete this message?" });
+    await expect(question).toBeVisible();
+    await expect(question).toContainText("deleted for everyone");
+    await question.getByRole("button", { name: "Cancel" }).click();
+    await expect(page.getByRole("alertdialog")).toHaveCount(0);
+    await expect(rows(page).nth(0)).toContainText("hello world");
+    await box.click();
+    await expect(box).toBeFocused();
+
+    // Confirming leaves the placeholder where the message was, here and in the other window, at once.
+    await menuOf(rows(page).nth(0)).click();
+    await page.getByRole("menuitem", { name: "Delete" }).click();
+    await page
+      .getByRole("alertdialog", { name: "Delete this message?" })
+      .getByRole("button", { name: "Delete" })
+      .click();
+    await expect(page.getByRole("alertdialog")).toHaveCount(0);
+    for (const on of [page, watcher]) {
+      await expect(rows(on)).toHaveCount(2);
+      await expect(rows(on).nth(0)).toContainText("Message deleted");
+      await expect(rows(on).nth(0)).not.toContainText("hello world");
+      await expect(menuOf(rows(on).nth(0))).toHaveCount(0);
+      await expect(rows(on).nth(1)).toContainText("noted");
+    }
+    await box.click();
+    await expect(box).toBeFocused();
+    if (!isMobile(testInfo)) {
+      // The list beside the conversation previews the last message, which is the AI's.
+      await expect(
+        page.getByRole("list", { name: "Conversations" }).getByRole("link", { name: /e2e-edit/ }),
+      ).toContainText("noted");
+    }
+
+    // EDT-08, DLT-08: the AI changes and deletes its own message through its own routes; both windows follow.
+    const mine = await agentJSON<Message>(
+      context,
+      instance,
+      agent,
+      "POST",
+      `/agent/rooms/${room.id}/messages`,
+      { text: "sending the bulid" },
+    );
+    for (const on of [page, watcher]) await expect(rows(on)).toHaveCount(3);
+    await agentJSON<Message>(context, instance, agent, "PATCH", `/agent/messages/${mine.id}`, {
+      text: "sending the build",
+    });
+    for (const on of [page, watcher]) {
+      await expect(rows(on).nth(2)).toContainText("sending the build");
+      await expect(rows(on).nth(2).getByText("edited", { exact: true })).toBeVisible();
+    }
+    await agentJSON<Message>(context, instance, agent, "DELETE", `/agent/messages/${mine.id}`);
+    for (const on of [page, watcher]) {
+      await expect(rows(on).nth(2)).toContainText("Message deleted");
+      await expect(rows(on).nth(2)).not.toContainText("sending the build");
+    }
+    if (!isMobile(testInfo)) {
+      await expect(
+        page.getByRole("list", { name: "Conversations" }).getByRole("link", { name: /e2e-edit/ }),
+      ).toContainText("Message deleted");
+    }
+
+    // DLT-02: the creator of the group removes the AI's other message from the menu.
+    await menuOf(rows(page).nth(1)).click();
+    await page.getByRole("menuitem", { name: "Delete" }).click();
+    await page
+      .getByRole("alertdialog", { name: "Delete this message?" })
+      .getByRole("button", { name: "Delete" })
+      .click();
+    for (const on of [page, watcher]) {
+      await expect(rows(on).nth(1)).toContainText("Message deleted");
+      await expect(rows(on).nth(1)).not.toContainText("noted");
+    }
+    await expectNoSidewaysScroll(page, "a conversation with deleted messages");
+    await shoot(page, "message-deleted", testInfo);
+
+    // Nothing reloaded: the live frames and the answers of the requests did all of it.
+    for (const on of [page, watcher]) {
+      expect(await on.evaluate(() => "e2eSameDocument" in window)).toBe(true);
+    }
+  } finally {
+    await other.close();
+  }
 });

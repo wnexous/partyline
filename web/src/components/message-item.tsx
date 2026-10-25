@@ -1,4 +1,5 @@
 import {
+  BanIcon,
   CornerDownRightIcon,
   FileIcon,
   InfoIcon,
@@ -11,6 +12,7 @@ import {
 import { lazy, memo, Suspense } from "react";
 import { IntelligenceAvatar } from "@/components/intelligence/intelligence-avatar";
 import { IntelligenceName } from "@/components/intelligence/intelligence-name";
+import { MessageActions } from "@/components/message-actions";
 import { ProfileLink } from "@/components/profile-link";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { attachmentUrl } from "@/lib/api/queries";
@@ -157,6 +159,12 @@ export interface MessageItemProps {
   onJumpTo?: (messageId: string) => void;
   /** Opens an image attachment in the viewer (IMG-01). */
   onOpenImage: (attachmentId: string) => void;
+  /** The viewer manages this group: the menu lets them delete any message of it (DLT-02). */
+  canModerate?: boolean;
+  /** Starts editing a message in the composer (EDT-10); without it the menu has no Edit. */
+  onEdit?: (message: Message) => void;
+  /** The conversation is history (CID-21): nothing in it can be edited or deleted, so no menu. */
+  frozen?: boolean;
 }
 
 export const MessageItem = memo(function MessageItem({
@@ -168,9 +176,14 @@ export const MessageItem = memo(function MessageItem({
   fresh = false,
   onJumpTo,
   onOpenImage,
+  canModerate = false,
+  onEdit,
+  frozen = false,
 }: MessageItemProps) {
   const { t, locale } = useI18n();
   const kind = AUTHOR_KIND[message.author_kind] ?? AUTHOR_KIND.system;
+  // A deleted message is a placeholder (DLT-10): its author and time stay, nothing it said does.
+  const deleted = message.deleted_at !== undefined;
   const time = (
     <time
       dateTime={message.created_at}
@@ -179,6 +192,20 @@ export const MessageItem = memo(function MessageItem({
     >
       {formatClock(message.created_at, locale)}
     </time>
+  );
+  // The time, and "edited" after it for a message whose text was changed (EDT-10); the title says when.
+  const stamp = (
+    <>
+      {time}
+      {message.edited_at !== undefined && !deleted ? (
+        <span
+          title={t("message.editedAt", { time: formatAbsolute(message.edited_at, locale) })}
+          className="text-[0.7rem] text-muted-foreground"
+        >
+          {t("message.edited")}
+        </span>
+      ) : null}
+    </>
   );
 
   if (message.author_kind === "system") {
@@ -215,12 +242,19 @@ export const MessageItem = memo(function MessageItem({
         fresh && "animate-tape-settle",
       )}
     >
-      <div className="flex justify-center">
+      {/* Top right: the menu of the message and, in a row that folds its header away, its time. */}
+      <div className="absolute top-1 right-4 flex items-center gap-1.5 empty:hidden md:right-6">
         {grouped ? (
-          <span className="absolute top-1 right-4 opacity-0 transition-opacity group-hover/message:opacity-100 group-focus-within/message:opacity-100 md:right-6">
-            {time}
+          <span className="flex items-center gap-1.5 opacity-0 transition-opacity group-hover/message:opacity-100 group-focus-within/message:opacity-100 [@media(hover:none)]:opacity-100">
+            {stamp}
           </span>
-        ) : profile ? (
+        ) : null}
+        {frozen ? null : (
+          <MessageActions message={message} meId={meId} canModerate={canModerate} onEdit={onEdit} />
+        )}
+      </div>
+      <div className="flex justify-center">
+        {grouped ? null : profile ? (
           <ProfileLink
             id={profile.id}
             aria-label={t("message.openProfile", { name: profile.display_name })}
@@ -278,7 +312,7 @@ export const MessageItem = memo(function MessageItem({
                 <TrustBadge trust={chatTrust(message, meId)} />
               </>
             ) : null}
-            {time}
+            {stamp}
           </header>
         )}
 
@@ -287,7 +321,9 @@ export const MessageItem = memo(function MessageItem({
         ) : null}
 
         <div className="text-[0.9375rem] leading-relaxed">
-          {message.author_kind === "agent" && message.text ? (
+          {deleted ? (
+            <DeletedPlaceholder />
+          ) : message.author_kind === "agent" && message.text ? (
             <Suspense fallback={<PlainText text={message.text} />}>
               <Markdown text={message.text} />
             </Suspense>
@@ -296,7 +332,7 @@ export const MessageItem = memo(function MessageItem({
           )}
         </div>
 
-        {message.attachments.length > 0 ? (
+        {!deleted && message.attachments.length > 0 ? (
           <ul className="mt-1.5 flex flex-wrap gap-2">
             {message.attachments.map((a) => (
               <li key={a.id} className="max-w-full">
@@ -309,6 +345,17 @@ export const MessageItem = memo(function MessageItem({
     </article>
   );
 });
+
+/** What is left of a deleted message (DLT-10). */
+function DeletedPlaceholder() {
+  const t = useI18n().t;
+  return (
+    <p className="inline-flex items-center gap-1.5 text-muted-foreground italic">
+      <BanIcon className="size-3.5 shrink-0" aria-hidden="true" />
+      {t("message.deleted")}
+    </p>
+  );
+}
 
 function PlainText({ text }: { text: string }) {
   return <p className="break-words whitespace-pre-wrap">{text}</p>;
@@ -383,7 +430,11 @@ function ReplyContext({
   const body = target ? (
     <>
       <span className="font-medium text-foreground/80">{authorDisplayName(target)}</span>{" "}
-      <span className="truncate">{target.text || ""}</span>
+      {target.deleted_at !== undefined ? (
+        <span className="truncate italic">{t("message.deleted")}</span>
+      ) : (
+        <span className="truncate">{target.text || ""}</span>
+      )}
     </>
   ) : (
     <span>{t("message.replyMissing")}</span>

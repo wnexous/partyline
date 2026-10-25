@@ -147,6 +147,86 @@ describe("conversation list (LAY-01, DM-06)", () => {
     expect(group.getByText("11:00 AM")).toHaveAttribute("datetime", today(11, 0));
   });
 
+  it("previews a deleted last message as 'Message deleted', after the sender in a group (DLT-10)", async () => {
+    api([
+      makeConversation({
+        id: "r1",
+        title: "deploys",
+        activity_at: today(11, 0),
+        last_message: preview({
+          seq: 4,
+          author_name: "Bob Lima",
+          text: "",
+          deleted: true,
+          created_at: today(11, 0),
+        }),
+      }),
+      makeConversation({
+        id: "r2",
+        kind: "dm",
+        title: "Atlas",
+        counterpart: atlas,
+        activity_at: today(10, 0),
+        last_message: preview({
+          seq: 8,
+          author_id: "a1",
+          text: "",
+          deleted: true,
+          created_at: today(10, 0),
+        }),
+      }),
+    ]);
+    renderRoute("/");
+    const rows = within(await sidebar()).getAllByRole("link");
+    expect(
+      within(rows[0] as HTMLElement).getByText("Bob Lima: Message deleted"),
+    ).toBeInTheDocument();
+    expect(within(rows[1] as HTMLElement).getByText("Message deleted")).toBeInTheDocument();
+    expect(within(rows[0] as HTMLElement).queryByText("No messages yet")).toBeNull();
+  });
+
+  it("follows a live edit of the last message, and its delete, in the preview (EDT-10, DLT-10)", async () => {
+    api();
+    const { queryClient } = renderRoute("/");
+    const rows = within(await sidebar()).getAllByRole("link");
+    expect(within(rows[1] as HTMLElement).getByText("Bob Lima: rolled back")).toBeInTheDocument();
+    const sent = (over: Partial<Message>) => ({
+      type: "room.message_updated" as const,
+      data: makeMessage({
+        room_id: "r1",
+        seq: 4,
+        author_id: "u2",
+        author_name: "Bob Lima",
+        author: bob,
+        ...over,
+      }),
+    });
+
+    act(() =>
+      handleLiveEvent(
+        queryClient,
+        useLiveStore.getState(),
+        sent({ text: "rolled forward", edited_at: today(11, 5) }),
+      ),
+    );
+    expect(
+      await within(rows[1] as HTMLElement).findByText("Bob Lima: rolled forward"),
+    ).toBeInTheDocument();
+    expect(within(rows[1] as HTMLElement).queryByText(/edited/)).toBeNull();
+
+    act(() =>
+      handleLiveEvent(
+        queryClient,
+        useLiveStore.getState(),
+        sent({ text: "", deleted_at: today(11, 10) }),
+      ),
+    );
+    expect(
+      await within(rows[1] as HTMLElement).findByText("Bob Lima: Message deleted"),
+    ).toBeInTheDocument();
+    expect(within(rows[1] as HTMLElement).queryByText(/rolled/)).toBeNull();
+  });
+
   it("says so when a conversation has no message yet", async () => {
     api();
     renderRoute("/");

@@ -197,7 +197,8 @@ const ConversationRow = memo(function ConversationRow({
   const { t, locale } = useI18n();
   const last = c.last_message;
   const sender = last?.author_name ?? "";
-  const text = last?.text ?? "";
+  // A deleted last message previews nothing of what it said (DLT-10).
+  const text = last?.deleted ? t("message.deleted") : (last?.text ?? "");
 
   return (
     <Link

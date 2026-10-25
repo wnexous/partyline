@@ -59,6 +59,7 @@ func Message(m rooms.Message) dto.Message {
 		SenderName: m.SenderName, Kind: dto.MessageKind(m.Kind), Text: m.Text, ReplyTo: m.ReplyTo,
 		Recipients: m.Recipients(), ExternalID: m.ExternalID.String,
 		Attachments: make([]dto.Attachment, len(m.Attachments)), CreatedAt: Time(m.CreatedAt),
+		EditedAt: OptTime(m.EditedAt), DeletedAt: OptTime(m.DeletedAt),
 	}
 	for i, a := range m.Attachments {
 		out.Attachments[i] = dto.Attachment{ID: a.ID, Name: a.Name, Mime: a.Mime, Size: a.Size, Status: dto.AttachmentStatus(a.Status)}
