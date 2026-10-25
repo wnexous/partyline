@@ -596,6 +596,13 @@ and queues what arrives, hands it to the AI's session and sends what the AI answ
 - **What people see.** The members of the connection's organization see the operator, the
   settings, the status and how many messages are queued, never their text. Partyline keeps no
   history of what comes in or goes out.
+- **Alerts.** When a connection stops working, every device of the organization's admins and of the
+  host of the AI that operates it gets a push `Connection down: <name>` with one fixed sentence —
+  `The WhatsApp number was disconnected`, `Login expired`, `The connection has no AI operating it`
+  or `Cannot reach the service` — and the notification opens its page. Each person is notified once,
+  whatever their group setting; a connection disabled on purpose sends nothing, a recovery sends
+  nothing, and a new alert needs a recovery and then 30 minutes since the last one. The platform's
+  own error, the config, tokens and chat content never appear in the push or in the logs.
 
 ## Tools
 

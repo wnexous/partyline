@@ -66,12 +66,19 @@ func (f *alertFixture) device(userID, endpoint string) db.PushSubscription {
 // marks it as seen healthy unless the status says otherwise (ALERT-10, ALERT-11).
 func (f *alertFixture) connector(id, name, operator, status string) {
 	f.t.Helper()
+	f.connectorOfKind(id, name, "whatsapp", operator, status)
+}
+
+// connectorOfKind stores the connection with an arbitrary kind; the app's registry is what decides
+// whether it can start.
+func (f *alertFixture) connectorOfKind(id, name, kind, operator, status string) {
+	f.t.Helper()
 	ctx := context.Background()
 	now := time.Now().UnixMilli()
 	require.NoError(f.t, f.env.App.Store.WithTx(ctx, func(q *db.Queries) error {
 		if err := q.CreateConnector(ctx, db.CreateConnectorParams{
 			ID: id, OwnerID: f.admin.User.ID, OrgID: sql.NullString{String: f.org, Valid: true},
-			Kind: "whatsapp", Name: name, ConfigJson: "{}", Enabled: true,
+			Kind: kind, Name: name, ConfigJson: "{}", Enabled: true,
 			CreatedAt: now, UpdatedAt: now,
 		}); err != nil {
 			return err
@@ -560,4 +567,97 @@ func TestAlerterIgnoresLaggedAndClosesWithoutRun(t *testing.T) {
 	running.Close()
 	publishStatus(env, "k1", string(dto.ConnectorStatusError), alertWhatsAppDetail)
 	noMore(t, r, 0)
+}
+
+// lineWith returns the first log line containing marker, or the empty string.
+func lineWith(logs, marker string) string {
+	for _, line := range strings.Split(logs, "\n") {
+		if strings.Contains(line, marker) {
+			return line
+		}
+	}
+	return ""
+}
+
+// ALERT-01, ALERT-09, ALERT-14: the app builds the alerter and Start runs it, so a connection that
+// reports healthy and then fails sends the fixed alert through the shared Deliverer.
+func TestAppStartsTheConnectionAlerter(t *testing.T) {
+	var buf logBuffer
+	env := testkit.New(t, testkit.WithLogger(testLogger(&buf)))
+	require.NotNil(t, env.App.Alerts, "app.New builds the alerter")
+
+	f := newAlertFixture(t, env)
+	f.device(f.admin.User.ID, "not a push endpoint")
+	_, operator := f.host("carol")
+	// The app seeded before this row existed, so the connection is unseen and must report
+	// connected before its error is a new outage (ALERT-11).
+	f.connector("k1", "ops", operator, "connected")
+
+	publishStatus(env, "k1", string(dto.ConnectorStatusConnected), "")
+	publishStatus(env, "k1", string(dto.ConnectorStatusError), alertWhatsAppDetail)
+
+	require.Eventually(t, func() bool {
+		line := lineWith(buf.String(), "webpush: connection alert queued")
+		return strings.Contains(line, "connector_id=k1") && strings.Contains(line, "status=error")
+	}, notifierWait, 10*time.Millisecond, "the app's alerter queued the alert")
+	require.NotContains(t, buf.String(), "WhatsApp number", "the platform detail never reaches a log")
+
+	// The app's own Deliverer took the job and failed before any network I/O, because the endpoint
+	// is not a URL.
+	require.Eventually(t, func() bool { return strings.Contains(buf.String(), "endpoint_host=invalid") },
+		notifierWait, 10*time.Millisecond, "the shared Deliverer delivered the queued job")
+}
+
+// ALERT-01: WithoutPush still builds the alerter, but Start never runs it, so an outage event sends
+// nothing.
+func TestWithoutPushStopsTheConnectionAlerter(t *testing.T) {
+	var buf logBuffer
+	env := testkit.New(t, testkit.WithoutPush(), testkit.WithLogger(testLogger(&buf)))
+	require.NotNil(t, env.App.Alerts, "app.New builds the alerter even with push off")
+
+	f := newAlertFixture(t, env)
+	f.device(f.admin.User.ID, "https://push.example.test/alice-1")
+	_, operator := f.host("carol")
+	f.connector("k1", "ops", operator, "connected")
+
+	publishStatus(env, "k1", string(dto.ConnectorStatusConnected), "")
+	publishStatus(env, "k1", string(dto.ConnectorStatusError), alertWhatsAppDetail)
+	require.Never(t, func() bool { return strings.Contains(buf.String(), "connection alert") },
+		300*time.Millisecond, 10*time.Millisecond, "a disabled alerter sends nothing")
+}
+
+// ALERT-10, ALERT-11: Start seeds the alert state before the connections start, so a connection
+// stored in error stays silent through the boot error and one stored healthy alerts on it.
+func TestAppSeedsTheAlertStateBeforeTheConnectionsStart(t *testing.T) {
+	for _, tc := range []struct {
+		name   string
+		stored string
+		alerts bool
+	}{
+		{name: "stored error is the same outage", stored: string(dto.ConnectorStatusError), alerts: false},
+		{name: "stored healthy is a new outage", stored: string(dto.ConnectorStatusConnected), alerts: true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			var buf logBuffer
+			env := testkit.New(t, testkit.WithLogger(testLogger(&buf)))
+			f := newAlertFixture(t, env)
+			f.device(f.admin.User.ID, "not a push endpoint")
+			_, operator := f.host("carol")
+			// A kind the app does not know: the running manager never applies this row, and the
+			// manager started by Restart persists that boot error during its Start.
+			f.connectorOfKind("k1", "ops", "unknown-platform", operator, tc.stored)
+
+			env.Restart()
+
+			if tc.alerts {
+				require.Eventually(t, func() bool {
+					return strings.Contains(lineWith(buf.String(), "webpush: connection alert queued"), "connector_id=k1")
+				}, notifierWait, 10*time.Millisecond, "a connection stored healthy alerts on its first error")
+				return
+			}
+			require.Never(t, func() bool { return strings.Contains(buf.String(), "connection alert") },
+				300*time.Millisecond, 10*time.Millisecond,
+				"a connection stored in error stays silent through its boot burst")
+		})
+	}
 }
