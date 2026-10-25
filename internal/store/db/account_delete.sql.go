@@ -50,7 +50,7 @@ func (q *Queries) DeleteUserRoomMemberships(ctx context.Context, memberID string
 }
 
 const getHeirAdmin = `-- name: GetHeirAdmin :one
-SELECT id, username, password_hash, role, locale, disabled_at, created_at, notify_chat_id, default_org_id FROM users WHERE role = 'admin' AND disabled_at IS NULL AND id <> ? ORDER BY created_at, id LIMIT 1
+SELECT id, username, password_hash, role, locale, disabled_at, created_at, notify_chat_id, default_org_id, push_groups FROM users WHERE role = 'admin' AND disabled_at IS NULL AND id <> ? ORDER BY created_at, id LIMIT 1
 `
 
 // The oldest active instance admin other than the given user: who inherits what an account that is
@@ -68,6 +68,7 @@ func (q *Queries) GetHeirAdmin(ctx context.Context, id string) (User, error) {
 		&i.CreatedAt,
 		&i.NotifyChatID,
 		&i.DefaultOrgID,
+		&i.PushGroups,
 	)
 	return i, err
 }

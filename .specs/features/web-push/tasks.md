@@ -174,10 +174,10 @@ sqlc queries in `internal/store/queries/push.sql` (`UpsertPushSubscription`,
 - `TestPushTargetsSkipUsersWithoutASubscription` and the `push_groups` value is returned on every row.
 
 **Done when**:
-- [ ] the migration test above passes on a database that existed before `0025` and on a fresh one
-- [ ] `make generate` ran and the sqlc output is committed
-- [ ] no Go hook is added (the migration is pure SQL)
-- [ ] Gate check passes: `make check`
+- [x] the migration test above passes on a database that existed before `0025` and on a fresh one
+- [x] `make generate` ran and the sqlc output is committed
+- [x] no Go hook is added (the migration is pure SQL)
+- [x] Gate check passes: `make check`
 **Tests**: integration
 **Gate**: build
 **Commit**: `feat(store): add push subscriptions and the group notification setting`

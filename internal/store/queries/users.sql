@@ -23,6 +23,10 @@ UPDATE users SET disabled_at = ? WHERE id = ?;
 -- name: SetUserLocale :exec
 UPDATE users SET locale = ? WHERE id = ?;
 
+-- name: SetUserPushGroups :exec
+-- How group messages notify the account: all, mentions or off (PUSH-06).
+UPDATE users SET push_groups = ? WHERE id = ?;
+
 -- name: UpdateUserPassword :exec
 UPDATE users SET password_hash = ? WHERE id = ?;
 
