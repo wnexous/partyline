@@ -58,3 +58,19 @@ func TestEncryptRejectsAnOffCurveOrWrongLengthKey(t *testing.T) {
 		require.NotContains(t, err.Error(), string(key))
 	}
 }
+
+// TestEncryptRefusesAPayloadLargerThanOneRecord: one record is plaintext + delimiter + tag, so
+// 4079 bytes fit and 4080 do not (RFC 8188).
+func TestEncryptRefusesAPayloadLargerThanOneRecord(t *testing.T) {
+	ua := decodeRawURL(t, rfcUAKey)
+	auth := decodeRawURL(t, rfcAuth)
+	private := rfcASPrivateKey(t)
+	salt := decodeRawURL(t, rfcSalt)
+
+	body, err := webpush.Encrypt(make([]byte, 4079), ua, auth, private, salt)
+	require.NoError(t, err)
+	require.NotEmpty(t, body)
+
+	_, err = webpush.Encrypt(make([]byte, 4080), ua, auth, private, salt)
+	require.EqualError(t, err, "cannot encrypt payload")
+}

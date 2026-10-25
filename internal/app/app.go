@@ -35,6 +35,7 @@ import (
 	"github.com/wnexous/partyline/internal/rooms"
 	"github.com/wnexous/partyline/internal/secrets"
 	"github.com/wnexous/partyline/internal/store"
+	"github.com/wnexous/partyline/internal/store/db"
 	"github.com/wnexous/partyline/internal/users"
 	"github.com/wnexous/partyline/internal/webpush"
 	"github.com/wnexous/partyline/internal/webui"
@@ -95,7 +96,8 @@ type App struct {
 	Logger *slog.Logger
 	Store  *store.Store
 	Box    *secrets.Box
-	// VAPID signs the Web Push requests; it is the instance key from <data dir>/vapid.key.
+	// VAPID signs the Web Push requests; it is the instance key from <data dir>/vapid.key. It is
+	// nil when the key file is unusable: the push routes answer 503 and the notifier does not run.
 	VAPID *webpush.VAPID
 	// Push notifies the browsers of the users of a room; it subscribes to the bus in New and
 	// runs in Start (PUSH-14).
@@ -169,10 +171,10 @@ func New(cfg *config.Config, opts Options) (*App, error) {
 	}
 	vapid, err := webpush.LoadOrCreateVAPID(cfg.DataDir, box)
 	if err != nil {
-		return nil, fmt.Errorf("vapid key: %w", err)
-	}
-	if vapid.Replaced {
-		opts.Logger.Warn("webpush: replaced an invalid VAPID key file and dropped the stored subscriptions", "file", webpush.VAPIDKeyFile)
+		// A bad key file must never stop the server: push stays off until it is fixed (PUSH-26).
+		opts.Logger.Error("webpush: push is disabled because the VAPID key file is unusable",
+			"file", webpush.VAPIDKeyFile, "err", err)
+		vapid = nil
 	}
 	st, err := store.Open(filepath.Join(cfg.DataDir, DatabaseFile))
 	if err != nil {
@@ -275,7 +277,7 @@ func New(cfg *config.Config, opts Options) (*App, error) {
 	a.PushService = webpush.NewService(webpush.ServiceDeps{
 		Store: st, VAPID: vapid, Queue: a.Push, Now: opts.Now,
 	})
-	a.pushWorker = !opts.DisablePush
+	a.pushWorker = !opts.DisablePush && vapid != nil
 	a.handler = api.New(api.Deps{
 		Config:        cfg,
 		Users:         usersSvc,
@@ -318,6 +320,20 @@ func (a *App) SetupToken() string { return a.Users.SetupToken() }
 func (a *App) Start(ctx context.Context) error {
 	if err := a.Store.Migrate(ctx); err != nil {
 		return fmt.Errorf("migrate: %w", err)
+	}
+	if a.VAPID != nil && a.VAPID.New {
+		var dropped int64
+		err := a.Store.WithTx(ctx, func(q *db.Queries) error {
+			var err error
+			dropped, err = q.DeleteAllPushSubscriptions(ctx)
+			return err
+		})
+		if err != nil {
+			return fmt.Errorf("reset push subscriptions: %w", err)
+		}
+		if dropped > 0 {
+			a.Logger.Warn("webpush: a new VAPID key dropped the stored push subscriptions", "rows", dropped)
+		}
 	}
 	if a.sendWorker {
 		// Before the server takes requests: a send a request starts must not look interrupted.

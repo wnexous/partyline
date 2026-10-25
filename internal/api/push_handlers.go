@@ -19,9 +19,13 @@ func (s *server) pushRoutes(mux *http.ServeMux) {
 	s.handle(mux, "POST /api/v1/push/test", authed(s.testPush))
 }
 
-// pushKey answers the instance's VAPID public key (PUSH-02).
+// pushKey answers the instance's VAPID public key (PUSH-02), or 503 while push is off.
 func (s *server) pushKey(w http.ResponseWriter, _ *http.Request, _ authn.Principal) error {
-	httpx.WriteJSON(w, http.StatusOK, dto.PushKey{PublicKey: s.Push.Key()})
+	key, err := s.Push.Key()
+	if err != nil {
+		return err
+	}
+	httpx.WriteJSON(w, http.StatusOK, dto.PushKey{PublicKey: key})
 	return nil
 }
 

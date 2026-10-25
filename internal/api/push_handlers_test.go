@@ -6,6 +6,8 @@ import (
 	"crypto/rand"
 	"encoding/base64"
 	"net/http"
+	"os"
+	"path/filepath"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -13,6 +15,7 @@ import (
 	"github.com/wnexous/partyline/internal/api/dto"
 	"github.com/wnexous/partyline/internal/store/db"
 	"github.com/wnexous/partyline/internal/testkit"
+	"github.com/wnexous/partyline/internal/webpush"
 )
 
 // pushKeyPair returns one valid browser subscription key material: an uncompressed P-256 point
@@ -264,4 +267,28 @@ func TestGroupPushSetting(t *testing.T) {
 
 	alice.Token(dto.TokenKindAgent, "agent").Patch("/api/v1/me", dto.UpdateMeRequest{PushGroups: &off}).
 		RequireError(http.StatusForbidden, dto.ErrorCodeForbidden)
+}
+
+// TestPushUnavailableWhenTheKeyFileIsADirectory: a key file that cannot be loaded or replaced
+// never stops the server; the key, subscribe and test routes are 503 and messages still work
+// (PUSH-26).
+func TestPushUnavailableWhenTheKeyFileIsADirectory(t *testing.T) {
+	env := testkit.New(t, testkit.WithoutPush())
+	alice := env.NewUser("alice")
+	path := filepath.Join(env.App.Config.DataDir, webpush.VAPIDKeyFile)
+	require.NoError(t, os.Remove(path))
+	require.NoError(t, os.Mkdir(path, 0o700))
+	env.Restart()
+
+	require.Nil(t, env.App.VAPID, "push runs with no key")
+	alice.Get("/api/v1/push/key").RequireError(http.StatusServiceUnavailable, dto.ErrorCodeUnavailable)
+	p256dh, auth := pushKeyPair(t)
+	alice.Post("/api/v1/push/subscriptions", dto.PushSubscriptionRequest{
+		Endpoint: "https://push.example.test/e2e", P256dh: p256dh, Auth: auth,
+	}).RequireError(http.StatusServiceUnavailable, dto.ErrorCodeUnavailable)
+	alice.Post("/api/v1/push/test", nil).RequireError(http.StatusServiceUnavailable, dto.ErrorCodeUnavailable)
+
+	room := createRoom(alice, "push-off")
+	alice.Post("/api/v1/rooms/"+room.ID+"/messages", dto.PostMessageRequest{Text: "still works"}).
+		RequireStatus(http.StatusCreated)
 }

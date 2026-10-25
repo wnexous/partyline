@@ -322,6 +322,8 @@ func mapError(err error) error {
 		return httpx.NewError(http.StatusTooManyRequests, dto.ErrorCodeRateLimited, "too many test notifications, try again later")
 	case errors.Is(err, webpush.ErrBusy):
 		return httpx.NewError(http.StatusServiceUnavailable, dto.ErrorCodeUnavailable, "try again in a moment")
+	case errors.Is(err, webpush.ErrUnavailable):
+		return httpx.NewError(http.StatusServiceUnavailable, dto.ErrorCodeUnavailable, "push is unavailable on this server")
 	}
 	return err
 }

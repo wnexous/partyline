@@ -29,6 +29,9 @@ const (
 	// rolling minute (PUSH-15).
 	testLimit  = 3
 	testWindow = time.Minute
+	// MaxSubscriptionsPerUser bounds the devices one account can register, so one account
+	// cannot fill the shared push queue with fake endpoints (PUSH-03, PUSH-27).
+	MaxSubscriptionsPerUser = 10
 )
 
 // The refusals of the push routes that carry a status of their own.
@@ -41,6 +44,8 @@ var (
 	ErrRateLimited = errors.New("webpush: too many test notifications")
 	// ErrBusy is a full queue that took none of the test jobs: 503.
 	ErrBusy = errors.New("webpush: the push queue is full")
+	// ErrUnavailable is a push route while the instance has no VAPID key: 503.
+	ErrUnavailable = errors.New("webpush: push is unavailable")
 )
 
 // SubscribeInput is one registration of a browser subscription (PUSH-03). SessionID is empty
@@ -59,7 +64,8 @@ type TestQueue interface {
 	EnqueueTest(ctx context.Context, subs []db.PushSubscription) int
 }
 
-// ServiceDeps configure a Service; Store, VAPID and Queue are required.
+// ServiceDeps configure a Service; Store and Queue are required. VAPID may be nil when the key
+// file is unusable: the routes then answer ErrUnavailable and push stays off.
 type ServiceDeps struct {
 	Store *store.Store
 	VAPID *VAPID
@@ -94,12 +100,21 @@ func NewService(deps ServiceDeps) *Service {
 	}
 }
 
-// Key returns the instance's VAPID public key, base64url without padding (PUSH-02).
-func (s *Service) Key() string { return s.vapid.Public }
+// Key returns the instance's VAPID public key, base64url without padding (PUSH-02), or
+// ErrUnavailable while push is off.
+func (s *Service) Key() (string, error) {
+	if s.vapid == nil {
+		return "", ErrUnavailable
+	}
+	return s.vapid.Public, nil
+}
 
 // Subscribe validates the body and stores one row per endpoint: a second registration of the
 // same endpoint updates it and moves it to the caller and the caller's session (PUSH-03).
 func (s *Service) Subscribe(ctx context.Context, in SubscribeInput) (db.PushSubscription, error) {
+	if s.vapid == nil {
+		return db.PushSubscription{}, ErrUnavailable
+	}
 	fields := map[string]string{}
 	if reason := endpointProblem(in.Endpoint); reason != "" {
 		fields["endpoint"] = reason
@@ -115,10 +130,30 @@ func (s *Service) Subscribe(ctx context.Context, in SubscribeInput) (db.PushSubs
 	if len(fields) > 0 {
 		return db.PushSubscription{}, &validation.Error{Fields: fields}
 	}
-	// A write goes through the single writer, never the read pool.
+	// A write goes through the single writer, never the read pool. The cap and the insert are
+	// in the same transaction, so two registrations cannot both see room for one device.
 	var row db.PushSubscription
 	err := s.store.WithTx(ctx, func(q *db.Queries) error {
-		var err error
+		exists, err := q.HasPushSubscriptionForUserEndpoint(ctx, db.HasPushSubscriptionForUserEndpointParams{
+			UserID: in.UserID, Endpoint: in.Endpoint,
+		})
+		if err != nil {
+			return err
+		}
+		if !exists {
+			for {
+				count, err := q.CountPushSubscriptionsByUser(ctx, in.UserID)
+				if err != nil {
+					return err
+				}
+				if count < MaxSubscriptionsPerUser {
+					break
+				}
+				if _, err := q.DeleteOldestPushSubscriptionOfUser(ctx, in.UserID); err != nil {
+					return err
+				}
+			}
+		}
 		row, err = q.UpsertPushSubscription(ctx, db.UpsertPushSubscriptionParams{
 			ID:        store.NewID(),
 			UserID:    in.UserID,
@@ -159,6 +194,9 @@ func (s *Service) Unsubscribe(ctx context.Context, userID, endpoint string) erro
 // an account without a subscription is 409 and a rate-limited one is 429 whatever the queue
 // holds (PUSH-27).
 func (s *Service) Test(ctx context.Context, userID string) (int, error) {
+	if s.vapid == nil {
+		return 0, ErrUnavailable
+	}
 	subs, err := s.store.R().ListPushSubscriptionsByUser(ctx, userID)
 	if err != nil {
 		return 0, err

@@ -14,8 +14,9 @@ import (
 const (
 	// recordSize is the RFC 8188 record size advertised in every body (4096 octets).
 	recordSize = 4096
-	// maxPayload is the largest plaintext accepted for one notification.
-	maxPayload = 4096
+	// maxPayload is the largest plaintext one record carries: recordSize minus the delimiter
+	// byte and the 16-byte GCM tag (RFC 8188).
+	maxPayload = recordSize - 17
 	// saltSize and authSecretSize are the RFC 8291 sizes of the injected salt and the
 	// subscription's auth secret; publicKeySize is the uncompressed P-256 point.
 	saltSize       = 16
