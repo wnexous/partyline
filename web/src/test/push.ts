@@ -32,6 +32,11 @@ export interface FakePushOptions {
   supported?: boolean;
   /** Whether the browser already holds a subscription, as after a reload. */
   subscribed?: boolean;
+  /**
+   * What `navigator.serviceWorker.ready` answers; when it is omitted the worker is ready at once.
+   * A promise that never settles models a registration that failed (offline, a bad `/sw.js`).
+   */
+  ready?: Promise<unknown>;
 }
 
 export interface FakePush {
@@ -75,7 +80,7 @@ export function stubPush(options: FakePushOptions = {}): FakePush {
     },
   };
   const serviceWorker = {
-    ready: Promise.resolve(registration),
+    ready: options.ready ?? Promise.resolve(registration),
     register: vi.fn(async () => registration),
   };
   // The app reads the three APIs behind lib/push/subscription.ts, so stubbing the globals is enough.

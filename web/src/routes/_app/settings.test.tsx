@@ -1,4 +1,4 @@
-import { screen, waitFor, within } from "@testing-library/react";
+import { act, fireEvent, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { Session } from "@/lib/api/types.gen";
@@ -45,7 +45,10 @@ beforeEach(() => {
   window.localStorage.clear();
   useLiveStore.setState({ locale: "en", theme: "system" });
 });
-afterEach(() => vi.unstubAllGlobals());
+afterEach(() => {
+  vi.useRealTimers();
+  vi.unstubAllGlobals();
+});
 
 describe("settings page", () => {
   it("persists the theme choice in localStorage (UI-23)", async () => {
@@ -245,6 +248,46 @@ describe("notifications on this device (PUSH-18)", () => {
     });
     expect(await screen.findByText("On for this device")).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Disable notifications" })).toBeEnabled();
+  });
+
+  it("gives up enabling after 10 s when the service worker never gets ready", async () => {
+    // A registration that failed leaves `navigator.serviceWorker.ready` pending forever.
+    const push = stubPush({ answer: "granted", ready: new Promise(() => {}) });
+    const { calls } = mockApi(pushBase);
+    renderRoute("/settings");
+    const enable = await screen.findByRole("button", { name: "Enable notifications" });
+
+    // Only the app's own wait runs on the fake clock, which starts once the page is up.
+    vi.useFakeTimers();
+    // fireEvent, not userEvent: the latter drains through a real 0 ms timer that the fake clock
+    // would hold forever.
+    fireEvent.click(enable);
+    // Let the permission and the server key reach the wait for the worker.
+    for (let i = 0; i < 30; i += 1) {
+      await act(async () => {
+        await Promise.resolve();
+      });
+    }
+    expect(enable).toBeDisabled();
+    expect(vi.getTimerCount()).toBe(1);
+
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(9_999);
+    });
+    expect(enable).toBeDisabled();
+    expect(
+      screen.queryByText("Couldn’t turn notifications on for this device. Try again."),
+    ).toBeNull();
+
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(1);
+    });
+    expect(enable).toBeEnabled();
+    expect(
+      screen.getByText("Couldn’t turn notifications on for this device. Try again."),
+    ).toBeInTheDocument();
+    expect(push.current()).toBeNull();
+    expect(posts(calls, "/push/subscriptions")).toHaveLength(0);
   });
 
   it("explains a denied permission and never subscribes", async () => {
