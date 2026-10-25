@@ -1,5 +1,5 @@
 import { CopyIcon, PencilIcon, ReplyIcon, Trash2Icon } from "lucide-react";
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
 import { ActionMenu, type MenuAction } from "@/components/action-menu";
 import { EmojiGrid } from "@/components/emoji-grid";
@@ -81,6 +81,7 @@ export function hasMessageActions(message: Message, c: MessageCapabilities): boo
 
 export function MessageMenu({
   target,
+  messages,
   onClose,
   touch,
   capabilities,
@@ -89,6 +90,8 @@ export function MessageMenu({
   onReact,
 }: {
   target: MessageMenuTarget | null;
+  /** The timeline's messages by id, as they are now: the actions follow the live copy (EDT-06, DLT-06). */
+  messages?: Map<string, Message>;
   onClose: () => void;
   touch: boolean;
   capabilities: MessageCapabilities;
@@ -117,7 +120,23 @@ export function MessageMenu({
   // not take it back.
   const handedOver = useRef(false);
 
-  const message = shown?.message;
+  // The actions act on the message as it is now, not on the copy taken when they opened: an edit
+  // shows through at once, and a message deleted meanwhile (DLT-06) takes them - and the question
+  // about deleting it - back with it.
+  const live = (m: Message) => messages?.get(m.id) ?? m;
+  const message = shown ? live(shown.message) : undefined;
+  const retired = message !== undefined && message.deleted_at !== undefined;
+  const pending = deleting ? live(deleting.message) : null;
+  const pendingRetired = pending !== null && pending.deleted_at !== undefined;
+  useEffect(() => {
+    if (!retired && !pendingRetired) return;
+    setExpandedFor(null);
+    setPicking(false);
+    setDeleting(null);
+    setAsking(false);
+    if (retired) onClose();
+  }, [retired, pendingRetired, onClose]);
+
   const set = message ? messageActionSet(message, capabilities) : null;
   const name = message ? authorDisplayName(message) : "";
   const reacted = message
@@ -224,7 +243,7 @@ export function MessageMenu({
     <>
       {shown && message ? (
         <ActionMenu
-          open={target !== null}
+          open={target !== null && !retired}
           onClose={onClose}
           touch={touch}
           title={name}
@@ -239,7 +258,7 @@ export function MessageMenu({
               handedOver.current = false;
               return;
             }
-            shown.opener?.focus({ preventScroll: true });
+            focusMessage(shown.opener);
           }}
         />
       ) : null}
@@ -261,21 +280,50 @@ export function MessageMenu({
           }
           onCloseFocus={(event) => {
             event.preventDefault();
-            shown.opener?.focus({ preventScroll: true });
+            focusRow(shown.opener);
           }}
         />
       ) : null}
-      {deleting ? (
+      {deleting && pending && !pendingRetired ? (
         <DeleteMessageDialog
-          message={deleting.message}
+          message={pending}
           open={asking}
           onOpenChange={setAsking}
           onCloseFocus={(event) => {
             event.preventDefault();
-            deleting.opener?.focus({ preventScroll: true });
+            focusMessage(deleting.opener);
           }}
         />
       ) : null}
     </>
   );
+}
+
+/**
+ * Takes focus back to the message whose actions closed: the "⋯" that opened them when it has one,
+ * else its own row, made focusable for the moment (it joins no Tab order).
+ */
+function focusMessage(opener: HTMLElement | null): void {
+  if (!opener?.isConnected) return;
+  const trigger = opener
+    .closest<HTMLElement>("article")
+    ?.querySelector<HTMLElement>('[aria-haspopup="menu"]');
+  if (trigger) {
+    trigger.focus({ preventScroll: true });
+    return;
+  }
+  focusRow(opener);
+}
+
+/** Takes focus back to a message row, or to whatever opened a surface outside one. */
+function focusRow(opener: HTMLElement | null): void {
+  if (!opener?.isConnected) return;
+  const row = opener.closest<HTMLElement>("article");
+  if (!row) {
+    opener.focus({ preventScroll: true });
+    return;
+  }
+  // Programmatically focusable, never in the Tab order.
+  if (row.tabIndex < 0) row.tabIndex = -1;
+  row.focus({ preventScroll: true });
 }
