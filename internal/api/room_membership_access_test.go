@@ -174,11 +174,13 @@ func TestUserMemberOfAGroupPosts(t *testing.T) {
 	require.Len(t, timelineOf(t, alice, room.ID), 1)
 	require.Len(t, membersOf(t, bob, room.ID), 1)
 
-	// Not a manager.
+	// Not a manager: someone else's row is not the member's to take out.
+	dave := env.NewUser("dave")
+	daveMember := addToRoom(t, env, alice, room.ID, dave)
 	bob.Patch(path, dto.UpdateRoomRequest{Name: ptr("mine")}).RequireError(http.StatusForbidden, dto.ErrorCodeForbidden)
 	bob.Delete(path).RequireError(http.StatusForbidden, dto.ErrorCodeForbidden)
 	bob.Post(path+"/members", dto.AddMemberRequest{Kind: dto.MemberKindUser, MemberID: carol.User.ID}).RequireError(http.StatusForbidden, dto.ErrorCodeForbidden)
-	bob.Delete(path+"/members/"+member.ID).RequireError(http.StatusForbidden, dto.ErrorCodeForbidden)
+	bob.Delete(path+"/members/"+daveMember.ID).RequireError(http.StatusForbidden, dto.ErrorCodeForbidden)
 	bob.Post(path+"/resume", nil).RequireError(http.StatusForbidden, dto.ErrorCodeForbidden)
 	// A non-member sees nothing.
 	carol.Get(path).RequireError(http.StatusNotFound, dto.ErrorCodeNotFound)

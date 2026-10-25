@@ -168,7 +168,12 @@ func TestRoomRoutesAuthMatrix(t *testing.T) {
 		}, groupWant(200, 200, 403, 404)},
 		{"remove member", func(_ *testing.T, c *testkit.Client, res map[string]string) *testkit.Response {
 			return c.Delete(room(res, "/members/"+res["user"]))
-		}, groupWant(204, 204, 403, 404)},
+		}, map[string]int{
+			// The row is the target's own: they leave it (204), while the guest is taking out
+			// someone else's row and needs manage (403).
+			"member": 204, "admin": 204, "target": 204, "guest": 403,
+			"manager": 404, "peer": 404, "inviter": 404, "outsider": 404, "instance_admin": 404,
+		}},
 		{"remove a chat member", func(_ *testing.T, c *testkit.Client, res map[string]string) *testkit.Response {
 			return c.Delete(room(res, "/members/"+res["chat"]))
 		}, groupWant(204, 204, 403, 404)},

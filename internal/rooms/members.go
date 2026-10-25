@@ -294,13 +294,27 @@ func (s *Service) UpdateMember(ctx context.Context, p authn.Principal, roomID, m
 }
 
 // RemoveMember removes a member; later messages are no longer delivered to it (ROOM-01).
-// Requires manage.
+// A manager removes any member; a user takes their own user row out of a group to leave it, without
+// manage, and the group keeps its creator and organization admins. A DM is unchanged: nobody takes a
+// member out of one (DM-02), its own row included.
 func (s *Service) RemoveMember(ctx context.Context, p authn.Principal, roomID, memberRowID string) error {
-	if _, err := s.authorizeMembers(ctx, p, roomID); err != nil {
+	m, err := s.store.R().GetRoomMember(ctx, db.GetRoomMemberParams{ID: memberRowID, RoomID: roomID})
+	if err != nil && !errors.Is(err, sql.ErrNoRows) {
+		return err
+	}
+	// The caller's own user row in a group is theirs to take out: it is what a member leaving is.
+	// Everything else needs manage, exactly as before.
+	leaving := err == nil && p.Kind == authn.KindUser &&
+		m.Kind == string(dto.MemberKindUser) && m.MemberID == p.UserID
+	if leaving {
+		if err := s.authorizeLeaving(ctx, p, roomID); err != nil {
+			return err
+		}
+	} else if _, err := s.authorizeMembers(ctx, p, roomID); err != nil {
 		return err
 	}
 	var removedKind string
-	err := s.store.WithTx(ctx, func(q *db.Queries) error {
+	err = s.store.WithTx(ctx, func(q *db.Queries) error {
 		m, err := q.GetRoomMember(ctx, db.GetRoomMemberParams{ID: memberRowID, RoomID: roomID})
 		if err != nil {
 			if errors.Is(err, sql.ErrNoRows) {
@@ -317,6 +331,25 @@ func (s *Service) RemoveMember(ctx context.Context, p authn.Principal, roomID, m
 	s.bus.Publish(events.MembersChanged{RoomID: roomID})
 	if removedKind == string(dto.MemberKindUser) {
 		s.accessChanged(roomID) // the user loses the access membership gave
+	}
+	return nil
+}
+
+// authorizeLeaving authorizes a user taking their own member row out of a group: it is enough that
+// they can see the room, and a DM keeps its two members (DM-02).
+func (s *Service) authorizeLeaving(ctx context.Context, p authn.Principal, roomID string) error {
+	if _, err := s.authorize(ctx, p, roomID, dto.LevelView); err != nil {
+		return err
+	}
+	r, err := s.store.R().GetRoom(ctx, roomID)
+	if errors.Is(err, sql.ErrNoRows) {
+		return access.ErrNotFound
+	}
+	if err != nil {
+		return err
+	}
+	if r.Kind == string(dto.ConversationKindDM) {
+		return ErrDMMembersFixed
 	}
 	return nil
 }

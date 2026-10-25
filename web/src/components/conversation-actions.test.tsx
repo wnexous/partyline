@@ -4,10 +4,10 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { axe } from "vitest-axe";
 import * as matchers from "vitest-axe/matchers";
 import { useProfilePanelStore } from "@/hooks/use-profile-panel";
-import type { Conversation } from "@/lib/api/types.gen";
+import type { Conversation, RoomMember } from "@/lib/api/types.gen";
 import { useLiveStore } from "@/lib/live/store";
 import { json, mockApi } from "@/test/fetch";
-import { makeConversation, makeIntelligence, makeMe, makeRoom } from "@/test/fixtures";
+import { makeConversation, makeIntelligence, makeMe, makeMember, makeRoom } from "@/test/fixtures";
 import { finger, HOLD, longPress, mouseDevice, touchDevice, wait } from "@/test/gestures";
 import { stubLayout } from "@/test/layout";
 import { renderRoute } from "@/test/render";
@@ -24,9 +24,10 @@ vi.mock("sonner", async (importOriginal) => ({
 
 /*
  * What a conversation of the sidebar offers on a long press, a right click or its "⋯" button
- * (ACT-01..ACT-04, ACT-06): mark it read, look at who it is with, delete a group. Each uses
- * the route that was already there and the rule that route already has: deleting needs `manage` on a
- * group and is for no direct message, and it asks first. Leaving is not offered: see the menu.
+ * (ACT-01..ACT-04, ACT-06, ROOM-01): mark it read, look at who it is with, leave a group, delete
+ * one. Each uses the route that was already there and the rule that route already has: a member
+ * leaves by taking their own member row out, deleting a group needs `manage`, and neither is for
+ * a direct message. The last two ask first.
  */
 
 const AXE_OPTIONS = { rules: { "color-contrast": { enabled: false } } };
@@ -39,6 +40,15 @@ const atlas = makeIntelligence({
   handle: "atlas",
 });
 const me = makeMe();
+
+/** The viewer's own row in a group: the one leaving takes out. */
+const ana = makeMember({
+  id: "mb-ana",
+  kind: "user",
+  member_id: "u1",
+  name: "Ana Souza",
+  owner: "",
+});
 
 const dm = (over: Partial<Conversation> = {}) =>
   makeConversation({
@@ -58,6 +68,9 @@ interface World {
   /** What the viewer's profile says: the app speaks it once the profile is loaded. */
   locale?: "en" | "pt-BR";
   failDelete?: boolean;
+  /** The member rows of r1; without one of the viewer, there is nothing for them to leave. */
+  members?: RoomMember[];
+  failLeave?: boolean;
 }
 
 function serve(world: World) {
@@ -65,8 +78,13 @@ function serve(world: World) {
   const api = mockApi({
     "GET /me": json(200, makeMe({ locale: world.locale ?? "en" })),
     "GET /conversations": () => json(200, { items: list }),
-    "GET /rooms/r1/members": json(200, { items: [] }),
+    "GET /rooms/r1/members": () => json(200, { items: world.members ?? [] }),
     "PUT /rooms/r2/read": json(200, { room_id: "r2", seq: 9, unread: 0 }),
+    "DELETE /rooms/r1/members/mb-ana": () => {
+      if (world.failLeave) return json(500, { error: { code: "internal", message: "no" } });
+      list = list.filter((c) => c.id !== "r1");
+      return new Response(null, { status: 204 });
+    },
     "DELETE /rooms/r1": () => {
       if (world.failDelete) return json(500, { error: { code: "internal", message: "no" } });
       list = list.filter((c) => c.id !== "r1");
@@ -220,18 +238,15 @@ describe("what a conversation offers, and to whom (ACT-03)", () => {
     expect(within(sheet).queryByRole("button", { name: /Delete group/ })).toBeNull();
   });
 
-  it("offers a group that is read, to someone who only posts in it, nothing: no sheet opens", async () => {
-    const api = serve({ list: [group({ my_level: "post", unread: 0 })] });
+  it("offers a group that is read, to someone who only posts in it, Leave group", async () => {
+    const api = serve({ list: [group({ my_level: "post", unread: 0 })], members: [ana] });
     renderRoute("/");
-    const row = await rowOf(/deploys/);
-    fireEvent.pointerDown(row, finger());
-    await act(() => wait(HOLD));
-    fireEvent.pointerUp(row, finger());
-    expect(screen.queryByRole("dialog")).toBeNull();
-    // It asks for nothing: there is nothing to decide.
-    expect(api.calls.filter((c) => c.path.startsWith("/rooms/r1"))).toHaveLength(0);
-    // The browser's own menu is left alone on a row that has none of ours.
-    expect(fireEvent.contextMenu(row)).toBe(true);
+    await longPress(await rowOf(/deploys/));
+    const sheet = await screen.findByRole("dialog", { name: "deploys" });
+    expect(await within(sheet).findByRole("button", { name: "Leave group" })).toBeInTheDocument();
+    expect(within(sheet).queryByRole("button", { name: "Delete group" })).toBeNull();
+    // The viewer's row is the one that leaves: it has to be looked up.
+    expect(calls(api, "GET", "/rooms/r1/members")).toHaveLength(1);
   });
 
   it("offers Delete group to whoever manages a group, last, in the destructive colour", async () => {
@@ -249,26 +264,14 @@ describe("what a conversation offers, and to whom (ACT-03)", () => {
     );
   });
 
-  it("offers no Leave group to anyone: under the rules of the server it could not take effect", async () => {
-    // A manager who took their own member row out would still manage the group (the creator and
-    // an administrator of its organization do), and a plain member is not allowed to remove it.
-    const api = serve({
-      list: [
-        group({ unread: 2 }),
-        group({ id: "r5", title: "post-only", my_level: "post", unread: 1 }),
-      ],
-    });
+  it("offers no Leave group when the group lists no member row of the viewer", async () => {
+    // A manager who created the group has no member row to take out; only a member has one.
+    const api = serve({ list: [group({ unread: 2 })] });
     renderRoute("/");
     await longPress(await rowOf(/deploys/));
     const sheet = await screen.findByRole("dialog", { name: "deploys" });
-    await act(() => wait(150));
+    await waitFor(() => expect(calls(api, "GET", "/rooms/r1/members")).toHaveLength(1));
     expect(within(sheet).queryByRole("button", { name: /Leave/ })).toBeNull();
-    expect(calls(api, "GET", "/rooms/r1/members")).toHaveLength(0);
-    await userEvent.keyboard("{Escape}");
-    await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
-    await longPress(await rowOf(/post-only/));
-    const other = await screen.findByRole("dialog", { name: "post-only" });
-    expect(within(other).queryByRole("button", { name: /Leave/ })).toBeNull();
   });
 });
 
@@ -314,6 +317,81 @@ describe("View profile (ACT-03)", () => {
     // The panel gives focus back to the row when it closes.
     expect(useProfilePanelStore.getState().opener).toBe(row);
     expect(router.state.location.pathname).toBe("/");
+  });
+});
+
+describe("Leave group (ACT-03, ROOM-01)", () => {
+  beforeEach(touchDevice);
+
+  const chooseLeave = async () => {
+    await longPress(await rowOf(/deploys/));
+    await userEvent.click(await screen.findByRole("button", { name: "Leave group" }));
+    return screen.findByRole("alertdialog", { name: "Leave deploys?" });
+  };
+
+  it("is offered to a member of a group and never to a DM", async () => {
+    serve({ list: [group({ my_level: "post" }), dm()], members: [ana] });
+    renderRoute("/");
+    await longPress(await rowOf(/deploys/));
+    const sheet = await screen.findByRole("dialog", { name: "deploys" });
+    expect(await within(sheet).findByRole("button", { name: "Leave group" })).toBeInTheDocument();
+
+    await userEvent.keyboard("{Escape}");
+    await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+    await longPress(await rowOf(/Atlas/));
+    const dmSheet = await screen.findByRole("dialog", { name: "Atlas" });
+    expect(within(dmSheet).queryByRole("button", { name: /Leave/ })).toBeNull();
+  });
+
+  it("asks first, then takes the viewer's own member row out and leaves the list", async () => {
+    const api = serve({ list: [group({ my_level: "post" }), dm({ unread: 0 })], members: [ana] });
+    renderRoute("/");
+    const dialog = await chooseLeave();
+    expect(dialog).toHaveAccessibleDescription(/leaves your conversations/);
+    expect(within(dialog).getByRole("button", { name: "Cancel" })).toHaveFocus();
+    expect(calls(api, "DELETE", "/rooms/r1/members/mb-ana")).toHaveLength(0);
+
+    await userEvent.click(within(dialog).getByRole("button", { name: "Leave group" }));
+    await waitFor(() => expect(calls(api, "DELETE", "/rooms/r1/members/mb-ana")).toHaveLength(1));
+    await waitFor(() =>
+      expect(
+        within(screen.getByRole("list", { name: LIST })).queryByRole("link", {
+          name: /deploys/,
+        }),
+      ).toBeNull(),
+    );
+    expect(toast).toHaveBeenCalledWith("You left deploys");
+    expect(screen.queryByRole("alertdialog")).toBeNull();
+  });
+
+  it("goes back to the list when the open conversation is the one left", async () => {
+    serve({ list: [group({ my_level: "post" })], members: [ana] });
+    const { router } = renderRoute("/rooms/r1");
+    const dialog = await chooseLeave();
+    await userEvent.click(within(dialog).getByRole("button", { name: "Leave group" }));
+    await waitFor(() => expect(router.state.location.pathname).toBe("/"));
+  });
+
+  it("keeps the conversation and says so when the server refuses", async () => {
+    serve({
+      list: [group({ my_level: "post" }), dm({ unread: 0 })],
+      members: [ana],
+      failLeave: true,
+    });
+    renderRoute("/");
+    const dialog = await chooseLeave();
+    await userEvent.click(within(dialog).getByRole("button", { name: "Leave group" }));
+    await waitFor(() => expect(toast.error).toHaveBeenCalledWith("Couldn’t leave deploys."));
+    // The dialog stays to try again from, and the row is still behind it.
+    expect(screen.getByRole("alertdialog", { name: "Leave deploys?" })).toBeInTheDocument();
+    expect(rowBehind(/deploys/)).toBeInTheDocument();
+  });
+
+  it("has no axe violations in the dialog", async () => {
+    serve({ list: [group({ my_level: "post" })], members: [ana] });
+    renderRoute("/");
+    const dialog = await chooseLeave();
+    expect(await axe(dialog, AXE_OPTIONS)).toHaveNoViolations();
   });
 });
 
@@ -446,14 +524,17 @@ describe("a mouse (ACT-02)", () => {
   });
 
   it("shows the ⋯ button on hover and on keyboard focus, never when it could do nothing", async () => {
-    serve({ list: [group({ my_level: "post", unread: 0 }), dm()] });
+    serve({
+      list: [group({ my_level: "post", unread: 0 }), dm({ counterpart: undefined, unread: 0 })],
+      members: [ana],
+    });
     renderRoute("/");
     await sidebar();
-    const more = screen.getByRole("button", { name: "Actions for Atlas" });
+    const more = screen.getByRole("button", { name: "Actions for deploys" });
     expect(more).toHaveClass("opacity-0");
     expect(more).toHaveClass("group-hover/row:opacity-100");
     expect(more).toHaveClass("group-focus-within/row:opacity-100");
-    expect(screen.queryByRole("button", { name: "Actions for deploys" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "Actions for Atlas" })).toBeNull();
   });
 
   it("gives focus back to the ⋯ button when its menu closes", async () => {
@@ -508,7 +589,12 @@ describe("a mouse (ACT-02)", () => {
 describe("the row of a mouse and the row of a finger differ in two small things", () => {
   it("a finger's row does not select text: a long press must not start a selection", async () => {
     touchDevice();
-    serve({ list: [group({ unread: 2 }), group({ id: "r5", title: "quiet", my_level: "post" })] });
+    serve({
+      list: [
+        group({ unread: 2 }),
+        dm({ id: "r5", title: "quiet", counterpart: undefined, unread: 0 }),
+      ],
+    });
     renderRoute("/");
     const row = await rowOf(/deploys/);
     expect(row).toHaveClass("select-none");
