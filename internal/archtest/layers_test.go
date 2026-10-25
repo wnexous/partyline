@@ -34,7 +34,7 @@ var packagesOf = map[layer][]string{
 	app: {
 		"rooms", "conversations",
 		"delivery", // room -> AI rules
-		"live", "webui",
+		"live", "webui", "webpush",
 	},
 	kernel: {
 		"orgs", "access", "intelligences", "users", "authn", "audit", "events", "handles", "validation",
