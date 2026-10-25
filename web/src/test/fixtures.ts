@@ -109,6 +109,7 @@ export function makeMe(over: Partial<Me> = {}): Me {
     },
     role: "member",
     locale: "en",
+    push_groups: "mentions",
     created_at: "2026-10-01T12:00:00Z",
     ...over,
   };

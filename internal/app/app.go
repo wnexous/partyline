@@ -99,10 +99,13 @@ type App struct {
 	VAPID *webpush.VAPID
 	// Push notifies the browsers of the users of a room; it subscribes to the bus in New and
 	// runs in Start (PUSH-14).
-	Push   *webpush.Notifier
-	Bus    *events.Bus
-	Users  *users.Service
-	Access *access.Authorizer
+	Push *webpush.Notifier
+	// PushService serves the push routes: the key, the subscriptions and the test notification
+	// (PUSH-02, PUSH-03, PUSH-04, PUSH-05, PUSH-15).
+	PushService *webpush.Service
+	Bus         *events.Bus
+	Users       *users.Service
+	Access      *access.Authorizer
 	// Authz answers the organization questions: membership, the admin permission, who manages whom
 	// and who is trusted (AD-017). Every service that authorizes through organizations asks it.
 	Authz *orgs.Authz
@@ -269,6 +272,9 @@ func New(cfg *config.Config, opts Options) (*App, error) {
 		Store: st, Bus: bus, Delivery: pushDelivery, PublicURL: cfg.PublicURL, Logger: opts.Logger,
 		QueueSize: opts.PushQueueSize,
 	})
+	a.PushService = webpush.NewService(webpush.ServiceDeps{
+		Store: st, VAPID: vapid, Queue: a.Push, Now: opts.Now,
+	})
 	a.pushWorker = !opts.DisablePush
 	a.handler = api.New(api.Deps{
 		Config:        cfg,
@@ -292,6 +298,7 @@ func New(cfg *config.Config, opts Options) (*App, error) {
 		AgentWS:       a.Gateway,
 		Inbox:         a.Gateway,
 		Trust:         trust,
+		Push:          a.PushService,
 		WebUI:         webui.Handler(cfg.PublicURL),
 		Logger:        opts.Logger,
 		Ready:         a.ready.Load,

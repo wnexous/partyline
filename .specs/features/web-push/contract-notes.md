@@ -13,3 +13,14 @@ store, yet it must drop every `push_subscriptions` row when it replaces a bad ke
 `<data dir>/partyline.db` itself for that one `DELETE`, after checking that the table exists: `app.New`
 runs before `Start`'s migrations, so on a fresh or pre-`0025` database there is nothing to drop. A
 failure to drop is a warning, never a startup error.
+
+## T7: the app wiring and the web fixture follow from the routes
+
+T7's **What** asks for the service "stored on `App.PushService`" and for `api.Deps.Push`, but its
+**Also** line omits `internal/app/app.go`. That file is the only place that builds `api.Deps`, so it
+gains the `PushService` field, `webpush.NewService` next to the notifier and the `Push` argument; no
+other behaviour changes there.
+
+`dto.Me` now carries the required `push_groups`, so the regenerated TypeScript type makes
+`web/src/test/fixtures.ts`'s `makeMe` fail `tsc` without the field. The fixture gains the default
+`"mentions"`; the Settings UI itself stays for T8.

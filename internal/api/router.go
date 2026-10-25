@@ -27,6 +27,7 @@ import (
 	"github.com/wnexous/partyline/internal/rooms"
 	"github.com/wnexous/partyline/internal/users"
 	"github.com/wnexous/partyline/internal/validation"
+	"github.com/wnexous/partyline/internal/webpush"
 )
 
 // Deps are the services the API serves.
@@ -72,6 +73,9 @@ type Deps struct {
 	// Trust opens the trust of each request that tells an AI what it may trust: the history tool and the
 	// room's instructions (POS-10). Without it nothing is trusted.
 	Trust delivery.TrustSource
+	// Push serves the Web Push routes: the key, the subscriptions and the test notification
+	// (PUSH-02, PUSH-03, PUSH-04, PUSH-05, PUSH-15).
+	Push *webpush.Service
 	// WebUI serves the web app for every other GET path (SPA fallback).
 	WebUI  http.Handler
 	Logger *slog.Logger
@@ -128,6 +132,7 @@ func (s *server) routes(mux *http.ServeMux) {
 	s.identityRoutes(mux)
 	s.chatRoutes(mux)
 	s.hookRoutes(mux)
+	s.pushRoutes(mux)
 	s.deviceRoutes(mux)
 	if s.Live != nil {
 		mux.Handle("GET /api/v1/live", s.Live)
@@ -309,6 +314,14 @@ func mapError(err error) error {
 	case errors.Is(err, connectors.ErrNewChatRateLimited):
 		return httpx.NewError(http.StatusTooManyRequests, dto.ErrorCodeRateLimited,
 			fmt.Sprintf("rate limited: at most %d new chats an hour", agents.NewChatLimit))
+	case errors.Is(err, webpush.ErrNoSubscriptions):
+		return httpx.NewError(http.StatusConflict, dto.ErrorCodeConflict, "no push subscription for this account")
+	case errors.Is(err, webpush.ErrSubscriptionNotFound):
+		return httpx.NewError(http.StatusNotFound, dto.ErrorCodeNotFound, "not found")
+	case errors.Is(err, webpush.ErrRateLimited):
+		return httpx.NewError(http.StatusTooManyRequests, dto.ErrorCodeRateLimited, "too many test notifications, try again later")
+	case errors.Is(err, webpush.ErrBusy):
+		return httpx.NewError(http.StatusServiceUnavailable, dto.ErrorCodeUnavailable, "try again in a moment")
 	}
 	return err
 }

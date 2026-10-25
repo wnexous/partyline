@@ -19,6 +19,16 @@ const maxDisplayName = 64
 // localeRE accepts BCP 47 style tags such as "en" or "pt-BR".
 var localeRE = regexp.MustCompile(`^[a-zA-Z]{2,3}(-[a-zA-Z0-9]{2,8})*$`)
 
+// validPushGroups reports whether v is a value of users.push_groups (PUSH-06): the same values
+// as the column's CHECK.
+func validPushGroups(v string) bool {
+	switch v {
+	case "all", "mentions", "off":
+		return true
+	}
+	return false
+}
+
 // GetUser returns an account by id.
 func (s *Service) GetUser(ctx context.Context, id string) (db.User, error) {
 	u, err := s.store.R().GetUser(ctx, id)
@@ -32,9 +42,12 @@ func (s *Service) GetUser(ctx context.Context, id string) (db.User, error) {
 type ProfileUpdate struct {
 	DisplayName *string
 	Locale      *string
+	// PushGroups is how group messages notify the account: all, mentions or off (PUSH-06).
+	PushGroups *string
 }
 
-// UpdateProfile changes the user's display name (the name of their intelligence) or locale.
+// UpdateProfile changes the user's display name (the name of their intelligence), locale or
+// group notification setting.
 func (s *Service) UpdateProfile(ctx context.Context, userID string, up ProfileUpdate) (db.User, error) {
 	fields := map[string]string{}
 	if up.DisplayName != nil && utf8.RuneCountInString(*up.DisplayName) > maxDisplayName {
@@ -42,6 +55,9 @@ func (s *Service) UpdateProfile(ctx context.Context, userID string, up ProfileUp
 	}
 	if up.Locale != nil && *up.Locale != "" && !localeRE.MatchString(*up.Locale) {
 		fields["locale"] = "must be a language tag such as en or pt-BR"
+	}
+	if up.PushGroups != nil && !validPushGroups(*up.PushGroups) {
+		fields["push_groups"] = "must be all, mentions or off"
 	}
 	if len(fields) > 0 {
 		return db.User{}, &ValidationError{Fields: fields}
@@ -60,6 +76,12 @@ func (s *Service) UpdateProfile(ctx context.Context, userID string, up ProfileUp
 		if up.Locale != nil {
 			u.Locale = *up.Locale
 			if err := q.SetUserLocale(ctx, db.SetUserLocaleParams{Locale: u.Locale, ID: userID}); err != nil {
+				return err
+			}
+		}
+		if up.PushGroups != nil {
+			u.PushGroups = *up.PushGroups
+			if err := q.SetUserPushGroups(ctx, db.SetUserPushGroupsParams{PushGroups: u.PushGroups, ID: userID}); err != nil {
 				return err
 			}
 		}
