@@ -165,6 +165,7 @@ People run many Claude Code sessions (some in loops) and want them reachable fro
 6. WHEN `/healthz` is requested THEN the system SHALL respond 200 without authentication; `/readyz` SHALL respond 503 until migrations finished. (OPS-01)
 7. WHEN the daily retention job runs THEN the system SHALL delete messages and attachments older than the room's retention days (default 90, 0 = forever). (OPS-02)
 8. The container image SHALL run as a non-root user and store all state under `/data`. (OPS-03)
+9. WHILE some connectors are crash-looping (CON-15) `/readyz` SHALL still respond 200, with `status` `degraded` and their number in `connectors_crash_looping`, and `/healthz`, which the container health check asks, SHALL respond 200 as usual: one bad connector must neither take the rest of the server out of rotation nor make the platform restart the container. (OPS-04)
 
 **Independent Test**: Run the image, check headers with curl, attempt a cross-origin POST, inspect logs for message text.
 

@@ -432,6 +432,24 @@ Everything is configured with environment variables.
 Run it behind a TLS-terminating reverse proxy for internet exposure, set
 `PARTYLINE_PUBLIC_URL` to the https URL and list the proxy in `PARTYLINE_TRUSTED_PROXIES`.
 
+## Operating it
+
+### Health checks
+
+| Endpoint | Answers | Use it for |
+| --- | --- | --- |
+| `GET /healthz` | `200` with the version whenever the process answers. | Liveness. The image's `HEALTHCHECK` runs `partyline healthcheck`, which asks it, so Docker, Swarm and Dokploy restart the container only when the server itself stops answering. |
+| `GET /readyz` | `503` until the database is migrated, then `200`. | Readiness. The body says `"status": "ok"`, or `"status": "degraded"` with `connectors_crash_looping`: how many connectors keep panicking. |
+
+A connector that panics does not stop the server. The panic is recovered and logged with its stack
+(never the message text), the connection shows the `error` status with where it crashed, and it
+restarts after a backoff that doubles from 2 s up to 120 s. The web app, the sessions and the other
+connections keep working. When its last three runs in a row ended in a panic, and none has lasted
+five minutes since, `/readyz` reports `degraded`. It still answers `200`: the rest of the server
+works, and a failing probe would take all of it out of rotation. Point a monitor at `/readyz` and
+alert on `degraded` in the body (a keyword check, in Uptime Kuma for example), and keep the
+container health check on `/healthz`: one bad connector must not restart the container.
+
 ## Security model
 
 - **Message content is data, never instructions.** Every message delivered to an AI carries a

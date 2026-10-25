@@ -72,10 +72,11 @@ type Connector struct {
 	self   string            // the bot's user id, once the gateway said it (READY)
 }
 
-// running is the handler and context of the current Run.
+// running is the handler and context of the current Run; fail ends that Run with an error.
 type running struct {
-	ctx context.Context
-	h   connectors.Handler
+	ctx  context.Context
+	h    connectors.Handler
+	fail context.CancelCauseFunc
 }
 
 var (
@@ -102,15 +103,37 @@ func newWithSession(s session, d connectors.Deps) *Connector {
 		log = slog.Default()
 	}
 	c := &Connector{s: s, userAgent: d.UserAgent, log: log, client: d.MediaClient(60 * time.Second), titles: map[string]string{}}
-	s.AddHandler(c.onMessage)
-	s.AddHandler(c.onReady)
+	s.AddHandler(func(sess *discordgo.Session, m *discordgo.MessageCreate) {
+		c.guard("message", func() { c.onMessage(sess, m) })
+	})
+	s.AddHandler(func(sess *discordgo.Session, r *discordgo.Ready) {
+		c.guard("ready", func() { c.onReady(sess, r) })
+	})
 	return c
+}
+
+// guard calls fn, the body of a handler of discordgo. discordgo runs each handler in a goroutine of its
+// own and does not recover, so a panic there would end the whole process: it ends Run instead, which the
+// supervisor restarts after a backoff (CON-15).
+func (c *Connector) guard(where string, fn func()) {
+	err := connectors.Guard(c.log, where, func() error { fn(); return nil })
+	if err == nil {
+		return
+	}
+	c.mu.Lock()
+	run := c.run
+	c.mu.Unlock()
+	if run != nil {
+		run.fail(err)
+	}
 }
 
 // Run opens the gateway and hands messages to h until ctx ends; discordgo reconnects by itself.
 func (c *Connector) Run(ctx context.Context, h connectors.Handler) error {
+	ctx, fail := context.WithCancelCause(ctx)
+	defer fail(nil)
 	c.mu.Lock()
-	c.run = &running{ctx: ctx, h: h}
+	c.run = &running{ctx: ctx, h: h, fail: fail}
 	c.mu.Unlock()
 	defer func() {
 		c.mu.Lock()
@@ -123,7 +146,7 @@ func (c *Connector) Run(ctx context.Context, h connectors.Handler) error {
 	h.Status(connectors.StatusConnected, "")
 	<-ctx.Done()
 	_ = c.s.Close()
-	return ctx.Err()
+	return context.Cause(ctx)
 }
 
 // onReady remembers the bot's user id, to tell its own messages (ACC-05), and reports its

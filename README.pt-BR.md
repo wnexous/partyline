@@ -442,6 +442,25 @@ Tudo é configurado por variáveis de ambiente.
 Para expor na internet, rode atrás de um proxy reverso com TLS, defina `PARTYLINE_PUBLIC_URL`
 com a URL https e liste o proxy em `PARTYLINE_TRUSTED_PROXIES`.
 
+## Operação
+
+### Verificações de saúde
+
+| Endpoint | Responde | Serve para |
+| --- | --- | --- |
+| `GET /healthz` | `200` com a versão sempre que o processo responde. | Vivacidade. O `HEALTHCHECK` da imagem roda `partyline healthcheck`, que consulta este endpoint, então o Docker, o Swarm e o Dokploy só reiniciam o contêiner quando o próprio servidor para de responder. |
+| `GET /readyz` | `503` até o banco ser migrado, depois `200`. | Prontidão. O corpo diz `"status": "ok"` ou `"status": "degraded"` com `connectors_crash_looping`: quantos conectores continuam em pânico. |
+
+Um conector que entra em pânico não derruba o servidor. O pânico é capturado e registrado no log
+com a pilha (nunca com o texto das mensagens), a conexão mostra o status `error` com o ponto onde
+caiu e volta depois de uma espera que dobra de 2 s até 120 s. O app web, as sessões e as outras
+conexões continuam funcionando. Quando as três últimas execuções seguidas de um conector terminaram
+em pânico e nenhuma durou cinco minutos desde então, o `/readyz` informa `degraded`. Ele continua
+respondendo `200`: o resto do servidor funciona, e uma sonda que falhasse tiraria tudo do ar. Aponte
+um monitor para o `/readyz` e alerte quando o corpo tiver `degraded` (uma checagem de palavra-chave,
+no Uptime Kuma por exemplo), e mantenha a verificação de saúde do contêiner no `/healthz`: um
+conector com defeito não deve reiniciar o contêiner.
+
 ## Modelo de segurança
 
 - **Conteúdo de mensagem é dado, nunca instrução.** Toda mensagem entregue a uma IA traz uma flag

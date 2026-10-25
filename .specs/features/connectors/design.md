@@ -118,6 +118,7 @@ Uses `connectors`, `chats`, `identities`, `pairing_codes` from core migrations.
 | Media download fails | attachment status `unavailable` | Placeholder in timeline |
 | Send fails | Outbox retry (core DLV-07) | Failed badge after 5 attempts |
 | Webhook bad signature | 401, nothing stored, audit entry | Caller sees 401 |
+| A connector panics (its `Run`, a send, a reaction, a chat listing, a hook request, or the server code it calls) | `connectors.Guard` recovers; the stack is logged without the panic's value (it may carry message text); a run that panicked ends in status `error: the connector crashed in <where>` and restarts with backoff, a call that panicked fails alone; three runs in a row make the connector crash-looping, which `/readyz` reports as `degraded` (CON-15, OPS-04) | Red badge naming where it crashed; the rest of the server keeps working |
 
 ## Risks & Concerns
 
@@ -127,6 +128,7 @@ Uses `connectors`, `chats`, `identities`, `pairing_codes` from core migrations.
 | Secrets in error strings (Telegram token in URL) | telegram client | Token in logs/status | `redact(err, secrets...)` in supervisor; never log URLs |
 | SSRF through user-set URLs (`outbound_url`, `api_base`, `base_url`) and media URLs | every adapter | Server calls internal services | `internal/connectors/safehttp`: dial-time address check after DNS (loopback, private, link-local, CGNAT, multicast, unspecified, reserved), no redirects, timeouts, body caps (4 MiB JSON/API, upload limit for media); `PARTYLINE_ALLOW_PRIVATE_NETWORKS=true` lifts the address check, `PARTYLINE_PRIVATE_NETWORK_ALLOWLIST` lets listed CIDRs/hosts through (CON-13). Platform error bodies never reach status text |
 | Discord gateway hard to test | discord | Low coverage | Session seam with fake; handler logic in pure functions |
+| A goroutine an adapter starts itself | every adapter | A panic in a goroutine nobody recovers ends the whole process, whatever supervises `Run` | The manager guards every call it makes and every call the connector makes into it; an adapter wraps each goroutine it starts, and each callback a library runs in a goroutine of its own, in `connectors.Guard` and ends its `Run` with the error (whatsapp `ping` and `watch`, discord handlers) |
 
 ## Tech Decisions
 

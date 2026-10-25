@@ -203,9 +203,14 @@ func (c *Connector) Run(ctx context.Context, h connectors.Handler) error {
 	var watching sync.WaitGroup
 	defer watching.Wait() // its last report comes before Run returns, so before the supervisor's
 	defer cancel(nil)
-	go c.ping(ctx, conn, func() { cancel(nil) })
+	// A panic in a goroutine of ours ends the process, whatever supervises Run: these two end Run instead (CON-15).
+	go func() {
+		if err := connectors.Guard(c.log, "ping", func() error { c.ping(ctx, conn, func() { cancel(nil) }); return nil }); err != nil {
+			cancel(err)
+		}
+	}()
 	watching.Go(func() {
-		if err := c.watch(ctx, h, first); err != nil {
+		if err := connectors.Guard(c.log, "watch", func() error { return c.watch(ctx, h, first) }); err != nil {
 			cancel(err)
 		}
 	})

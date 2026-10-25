@@ -5,6 +5,7 @@ import (
 	"log/slog"
 	"net/http"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -85,6 +86,40 @@ func TestRunFollowsTheNumberOfItsInstance(t *testing.T) {
 	check(t, checks)
 	check(t, checks)
 	require.True(t, rec.NoStatus(), "only the connection's own number counts")
+}
+
+// statusPanics is a Handler whose Status panics from its second call on, like a bug in the code behind it.
+type statusPanics struct {
+	*connectortest.Recorder
+	calls atomic.Int32
+}
+
+func (h *statusPanics) Status(s connectors.Status, detail string) {
+	if h.calls.Add(1) > 1 {
+		panic("status bug")
+	}
+	h.Recorder.Status(s, detail)
+}
+
+// CON-15: the check of the instance runs in a goroutine of its own, where a panic would end the whole
+// process. It is recovered and ends Run with it, for the supervisor to show the error and start the
+// connector again.
+func TestAPanicWhileCheckingTheInstanceEndsRun(t *testing.T) {
+	f := newFakeEvolution(t)
+	c := newConnector(t, f)
+	checks := checkOnDemand(c)
+	h := &statusPanics{Recorder: connectortest.NewRecorder()}
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	done := make(chan error, 1)
+	go func() { done <- c.Run(ctx, h) }()
+	f.socket()
+	require.Equal(t, connectors.StatusConnected, h.NextStatus(t))
+
+	f.setConnected("acme", false)
+	check(t, checks) // the check reports the new state, which panics
+
+	require.ErrorIs(t, ended(t, done), connectors.ErrPanic)
 }
 
 // WA-06: with the production pause the connector looks at its instance every 60 seconds and not in
