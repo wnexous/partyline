@@ -20,8 +20,8 @@ function photoError(t: Translate, err: unknown): string {
 }
 
 /**
- * The photo of an intelligence or an organization: the current one with a way to remove it, and a
- * picker. A chosen file is sent at once, cropped as it will be shown; the server's refusal (not an
+ * The photo of an intelligence, an organization or a group: the current one with a way to remove it,
+ * and a picker. A chosen file is sent at once, cropped as it will be shown; the server's refusal (not an
  * image it can use) stays next to the preview, so the old photo is never lost. A big photo is
  * resized first, and an upload that stalls is abandoned by `upload`, so the sending state always
  * ends. What the picture belongs to is the caller's: it passes the current face and the calls.
@@ -32,6 +32,7 @@ export function PhotoEditor({
   upload,
   remove,
   removing,
+  className,
 }: {
   /** The current picture, shown while no new file is chosen. */
   face: ReactNode;
@@ -41,6 +42,8 @@ export function PhotoEditor({
   /** Removes the current picture and says how it went. */
   remove: (done: { onSuccess: () => void; onError: () => void }) => void;
   removing: boolean;
+  /** Where the editor sits decides its width: a narrow column beside a form, the whole width alone. */
+  className?: string;
 }) {
   const t = useT();
   const hintId = useId();
@@ -102,7 +105,7 @@ export function PhotoEditor({
   };
 
   return (
-    <div className="flex flex-col gap-3 sm:w-44">
+    <div className={cn("flex flex-col gap-3 sm:w-44", className)}>
       <h3 className="text-sm font-medium">{t("profile.photo")}</h3>
       {picked ? (
         <img
@@ -132,7 +135,7 @@ export function PhotoEditor({
           {t("profile.photoUpload")}
         </label>
         {hasPhoto ? (
-          <Button variant="ghost" size="sm" disabled={removing} onClick={clear}>
+          <Button type="button" variant="ghost" size="sm" disabled={removing} onClick={clear}>
             {t("profile.photoRemove")}
           </Button>
         ) : null}

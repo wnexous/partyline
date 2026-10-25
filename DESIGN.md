@@ -114,7 +114,8 @@ Avatar fallbacks (`IntelligenceAvatar`) show initials on a tint picked by a hash
 a rename keeps the face and the same id has the same tint whatever the kind. People, AIs and groups
 draw from the same eight: nothing in a face says whether it is an AI (AD-024). A hairline in the
 tint's own ink keeps a pale face visible on a pale surface (the active row). Red and green are never
-tints.
+tints. A group's face (`GroupAvatar`) is the photo its managers gave it, or those initials, in a rounded
+square where a person or an AI is a circle, so a list that mixes them reads at a glance.
 
 | Tint | Hue | Light fill / ink | Dark fill / ink |
 | --- | --- | --- | --- |

@@ -73,6 +73,14 @@ WHERE id = ?;
 -- name: DeleteRoom :exec
 DELETE FROM rooms WHERE id = ?;
 
+-- name: SetRoomAvatar :exec
+-- The blob of a group's photo; the empty string removes it (GAV-01).
+UPDATE rooms SET avatar_sha256 = ?, updated_at = ? WHERE id = ?;
+
+-- name: CountRoomAvatar :one
+-- How many groups use the blob as their photo: the retention sweep keeps a blob they use (GAV-05).
+SELECT COUNT(*) FROM rooms WHERE avatar_sha256 = ?;
+
 -- name: ListRoomMembers :many
 -- Agent and user members are named by their intelligence (PROF-03); a chat by its title.
 SELECT sqlc.embed(m),

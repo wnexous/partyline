@@ -269,9 +269,10 @@ func TestSessionCookieIsUserPrincipal(t *testing.T) {
 	require.Equal(t, f.adminID, e.UserID)
 }
 
-// PROF-06: an avatar upload is a raw image capped at 2 MiB. A larger body is answered 413
+// PROF-06, GAV-03: an avatar upload is a raw image capped at 2 MiB. A larger body is answered 413
 // avatar_invalid before it is read, so a browser gets a JSON answer instead of a cut connection.
-// Only PUT on the two avatar routes gets this; every other route keeps its own limit.
+// Only PUT on the avatar routes (an intelligence's, the agent's own and a group's) gets this; every
+// other route keeps its own limit.
 func TestAvatarUploadBodyLimit(t *testing.T) {
 	const upload = 3 << 20
 	f := newMWFixture(t, nil, upload)
@@ -289,7 +290,7 @@ func TestAvatarUploadBodyLimit(t *testing.T) {
 		require.NotEmpty(t, body.Error.Message, path)
 	}
 	// The routes do not exist in this fixture: a body within the limit reaches the router (404).
-	for _, path := range []string{"/api/v1/intelligences/abc/avatar", "/api/v1/agent/profile/avatar"} {
+	for _, path := range []string{"/api/v1/intelligences/abc/avatar", "/api/v1/agent/profile/avatar", "/api/v1/rooms/abc/avatar"} {
 		require.Equal(t, http.StatusNotFound, send(http.MethodPut, path, 2<<20).StatusCode, path+": up to 2 MiB reaches the handler")
 		oversized(http.MethodPut, path, 2<<20+1)
 		oversized(http.MethodPut, path, upload)
@@ -297,7 +298,8 @@ func TestAvatarUploadBodyLimit(t *testing.T) {
 	for _, c := range []struct{ method, path string }{
 		{http.MethodPost, "/api/v1/intelligences/abc/avatar"}, // another method
 		{http.MethodPut, "/api/v1/intelligences/abc"},         // the profile, not its avatar
-		{http.MethodPut, "/api/v1/rooms/abc/avatar"},          // another resource
+		{http.MethodPut, "/api/v1/rooms/abc"},                 // the room, not its avatar
+		{http.MethodPut, "/api/v1/rooms/abc/read"},            // another route of the room
 		{http.MethodPut, "/api/v1/agent/profile"},             // an agent route that is no upload
 	} {
 		requireErrorCode(t, send(c.method, c.path, httpx.MaxJSONBody+1), http.StatusRequestEntityTooLarge, dto.ErrorCodeTooLarge)

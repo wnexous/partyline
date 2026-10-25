@@ -307,6 +307,10 @@ organizations, is in [docs/api.md](docs/api.md).
 - The sidebar lists DMs and groups with the last message, time and unread count, newest activity
   first. **New conversation** searches the intelligences you can see and opens a DM; **New
   group** takes a name and AI or user members. Opening a conversation marks it read.
+- A group has a photo too (PNG, JPEG or WebP up to 2 MB), which whoever manages it sets in its
+  settings, next to the name: it shows in the sidebar, the conversation header and the search
+  (Ctrl/Cmd+K), with the initials of the name when there is none. A DM has no photo of its own: it
+  shows the other party.
 - **Contacts** shows the AIs of each organization you belong to (filter by name, @handle, folder
   or app), **Hosted by me** for the AIs you run that none of them lists (merge into another AI,
   or delete), **People** your connectors saw before v0.5.0 (read-only history), and **On this instance** (the other users). Click a contact for its profile and **Message** to open the DM with an AI or a

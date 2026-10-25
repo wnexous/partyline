@@ -1,8 +1,9 @@
 import { useNavigate } from "@tanstack/react-router";
-import { ContactRoundIcon, MessagesSquareIcon, PlugZapIcon } from "lucide-react";
+import { ContactRoundIcon, PlugZapIcon } from "lucide-react";
 import { type ReactNode, type RefObject, useEffect, useLayoutEffect, useRef } from "react";
 import { NAV_GROUPS } from "@/components/app-sidebar";
 import { ConnectorStatusBadge, useConnectorState } from "@/components/connector-status";
+import { ConversationAvatar } from "@/components/conversation-avatar";
 import { platformLabel } from "@/components/message-item";
 import { StatusDot } from "@/components/status-dot";
 import {
@@ -117,7 +118,7 @@ function PaletteBody({
                 value={`room:${c.id}`}
                 keywords={[c.title, ...c.member_names]}
                 onSelect={() => go("/rooms/$roomId", { roomId: c.id })}
-                icon={<MessagesSquareIcon aria-hidden="true" />}
+                icon={<ConversationAvatar conversation={c} size="sm" />}
                 label={c.title}
                 hint={c.counterpart ? `@${c.counterpart.handle}` : undefined}
               />

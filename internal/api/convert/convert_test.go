@@ -84,6 +84,21 @@ func TestAvatarURL(t *testing.T) {
 	require.Equal(t, "/api/v1/intelligences/u1/avatar?v="+sha, convert.AvatarURL("u1", sha))
 }
 
+// GAV-01, GAV-04: the photo of a group is a URL under its room that carries the content hash as its cache
+// key, absent without a photo, and the room and its DTO say the same.
+func TestRoomAvatarURL(t *testing.T) {
+	require.Equal(t, "", convert.RoomAvatarURL("r1", ""))
+	require.Equal(t, "/api/v1/rooms/r1/avatar?v="+sha, convert.RoomAvatarURL("r1", sha))
+
+	room := func(sha string) rooms.Room {
+		return rooms.Room{Room: db.Room{ID: "r1", Kind: "group", Name: "ops", AvatarSha256: sha}}
+	}
+	require.Equal(t, "/api/v1/rooms/r1/avatar?v="+sha, convert.Room(room(sha)).AvatarURL)
+	encoded, err := json.Marshal(convert.Room(room("")))
+	require.NoError(t, err)
+	require.NotContains(t, string(encoded), "avatar_url", "the key is absent without a photo")
+}
+
 // OMEM-01, POS-05: a member of an organization is a user or an AI with its permission and position, and
 // only a guest shows the identity that invited it - not a member or an admin, whatever the row holds, and
 // not a guest whose inviter is gone.

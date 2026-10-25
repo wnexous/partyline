@@ -424,7 +424,7 @@ func (q *Queries) ListMessagesBefore(ctx context.Context, arg ListMessagesBefore
 
 const nextRoomSeq = `-- name: NextRoomSeq :one
 UPDATE rooms SET next_seq = next_seq + 1, updated_at = ? WHERE id = ?
-RETURNING id, owner_id, name, description, retention_days, next_seq, agent_streak, agents_paused, created_at, updated_at, instructions, instructions_by, updated_by, kind, dm_a, dm_b, read_baseline, org_id, creator_iid
+RETURNING id, owner_id, name, description, retention_days, next_seq, agent_streak, agents_paused, created_at, updated_at, instructions, instructions_by, updated_by, kind, dm_a, dm_b, read_baseline, org_id, creator_iid, avatar_sha256
 `
 
 type NextRoomSeqParams struct {
@@ -455,6 +455,7 @@ func (q *Queries) NextRoomSeq(ctx context.Context, arg NextRoomSeqParams) (Room,
 		&i.ReadBaseline,
 		&i.OrgID,
 		&i.CreatorIid,
+		&i.AvatarSha256,
 	)
 	return i, err
 }

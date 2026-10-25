@@ -24,13 +24,23 @@ func Room(r rooms.Room) dto.Room {
 	}
 	return dto.Room{
 		ID: r.ID, Kind: dto.ConversationKind(r.Kind), Participants: participants,
-		Name: r.Name, Description: r.Description, Instructions: r.Instructions, OrgID: r.OrgID.String, OrgIDs: orgIDs(r.OrgIDs),
+		Name: r.Name, Description: r.Description, AvatarURL: RoomAvatarURL(r.ID, r.AvatarSha256), Instructions: r.Instructions,
+		OrgID: r.OrgID.String, OrgIDs: orgIDs(r.OrgIDs),
 		Owner:         dto.User{ID: r.OwnerID, Username: r.OwnerUsername, DisplayName: r.OwnerIntelligence.DisplayName, Intelligence: ownerRef(r)},
 		MyLevel:       r.Level,
 		RetentionDays: int(r.RetentionDays), AgentsPaused: r.AgentsPaused, CanResume: r.CanResume, LastSeq: r.LastSeq(),
 		MemberCount: int(r.MemberCount),
 		CreatedAt:   Time(r.CreatedAt), UpdatedAt: Time(r.UpdatedAt),
 	}
+}
+
+// RoomAvatarURL is the URL of a group's photo, empty without one. The content hash is a cache key: a new
+// photo has a new URL.
+func RoomAvatarURL(id, sha string) string {
+	if sha == "" {
+		return ""
+	}
+	return "/api/v1/rooms/" + id + "/avatar?v=" + sha
 }
 
 // orgIDs is the tags of a room, an empty list rather than null when it has none.

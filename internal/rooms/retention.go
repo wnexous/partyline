@@ -93,7 +93,7 @@ func (s *Service) RunRetention(ctx context.Context, interval time.Duration, log 
 }
 
 // blobReferenced reports whether a message attachment, a file of a platform queue item, an
-// intelligence's avatar or an organization's avatar uses the blob.
+// intelligence's avatar, an organization's avatar or a group's photo uses the blob.
 func (s *Service) blobReferenced(ctx context.Context, sha string) (bool, error) {
 	n, err := s.store.R().CountAttachmentsBySHA(ctx, sha)
 	if err != nil || n > 0 {
@@ -108,6 +108,10 @@ func (s *Service) blobReferenced(ctx context.Context, sha string) (bool, error) 
 		return n > 0, err
 	}
 	n, err = s.store.R().CountOrganizationAvatar(ctx, sha)
+	if err != nil || n > 0 {
+		return n > 0, err
+	}
+	n, err = s.store.R().CountRoomAvatar(ctx, sha)
 	return n > 0, err
 }
 

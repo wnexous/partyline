@@ -6,8 +6,8 @@ import {
   UsersRoundIcon,
 } from "lucide-react";
 import { memo, useMemo, useRef } from "react";
+import { ConversationAvatar } from "@/components/conversation-avatar";
 import { EmptyState } from "@/components/empty-state";
-import { IntelligenceAvatar } from "@/components/intelligence/intelligence-avatar";
 import { NewConversationDialog } from "@/components/new-conversation-dialog";
 import { NewGroupDialog } from "@/components/new-group-dialog";
 import { Button } from "@/components/ui/button";
@@ -15,7 +15,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { useCurrentOrg } from "@/hooks/use-current-org";
 import { useConversations } from "@/lib/api/queries";
 import type { Conversation } from "@/lib/api/types.gen";
-import { conversationMatches, groupFace } from "@/lib/conversations";
+import { conversationMatches } from "@/lib/conversations";
 import { useI18n, useT } from "@/lib/i18n";
 import { inOrg } from "@/lib/orgs";
 import { formatAbsolute, formatListTime } from "@/lib/time";
@@ -212,13 +212,7 @@ const ConversationRow = memo(function ConversationRow({
           className="pointer-events-none absolute inset-0 -z-10 animate-tape-settle"
         />
       ) : null}
-      <IntelligenceAvatar
-        intelligence={c.counterpart ?? groupFace(c.id, c.title)}
-        size="lg"
-        decorative
-        // Groups are squares, people circles: the list reads at a glance.
-        className={c.counterpart ? undefined : "rounded-lg *:rounded-lg"}
-      />
+      <ConversationAvatar conversation={c} size="lg" />
       <div className="min-w-0">
         <div className="flex items-baseline gap-2">
           <span className="min-w-0 flex-1 truncate font-semibold tracking-[-0.01em]">
