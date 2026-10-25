@@ -115,23 +115,35 @@ func (s *Service) Subscribe(ctx context.Context, in SubscribeInput) (db.PushSubs
 	if len(fields) > 0 {
 		return db.PushSubscription{}, &validation.Error{Fields: fields}
 	}
-	return s.store.R().UpsertPushSubscription(ctx, db.UpsertPushSubscriptionParams{
-		ID:        store.NewID(),
-		UserID:    in.UserID,
-		SessionID: sql.NullString{String: in.SessionID, Valid: in.SessionID != ""},
-		Endpoint:  in.Endpoint,
-		// The stored form is the canonical unpadded base64url the client decodes (PUSH-04).
-		P256dh:    base64.RawURLEncoding.EncodeToString(p256dh),
-		Auth:      base64.RawURLEncoding.EncodeToString(auth),
-		CreatedAt: s.now().UnixMilli(),
+	// A write goes through the single writer, never the read pool.
+	var row db.PushSubscription
+	err := s.store.WithTx(ctx, func(q *db.Queries) error {
+		var err error
+		row, err = q.UpsertPushSubscription(ctx, db.UpsertPushSubscriptionParams{
+			ID:        store.NewID(),
+			UserID:    in.UserID,
+			SessionID: sql.NullString{String: in.SessionID, Valid: in.SessionID != ""},
+			Endpoint:  in.Endpoint,
+			// The stored form is the canonical unpadded base64url the client decodes (PUSH-04).
+			P256dh:    base64.RawURLEncoding.EncodeToString(p256dh),
+			Auth:      base64.RawURLEncoding.EncodeToString(auth),
+			CreatedAt: s.now().UnixMilli(),
+		})
+		return err
 	})
+	return row, err
 }
 
 // Unsubscribe removes the caller's row for endpoint; an endpoint that is unknown or belongs to
 // another account is ErrSubscriptionNotFound and nothing is deleted (PUSH-05).
 func (s *Service) Unsubscribe(ctx context.Context, userID, endpoint string) error {
-	deleted, err := s.store.R().DeletePushSubscription(ctx, db.DeletePushSubscriptionParams{
-		Endpoint: endpoint, UserID: userID,
+	var deleted int64
+	err := s.store.WithTx(ctx, func(q *db.Queries) error {
+		var err error
+		deleted, err = q.DeletePushSubscription(ctx, db.DeletePushSubscriptionParams{
+			Endpoint: endpoint, UserID: userID,
+		})
+		return err
 	})
 	if err != nil {
 		return err
