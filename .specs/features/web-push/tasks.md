@@ -256,9 +256,9 @@ inject a `Doer`.
 - `TestClientReturnsThePushServiceStatus`: 404, 410 and 500 are returned as those codes without an
   error; a closed server returns a non-nil error.
 **Done when**:
-- [ ] the RFC vector test passes with the exact expected string (no library call, no golden file)
-- [ ] no dependency is added to `go.mod`
-- [ ] Gate check passes: `make check`
+- [x] the RFC vector test passes with the exact expected string (no library call, no golden file)
+- [x] no dependency is added to `go.mod`
+- [x] Gate check passes: `make check`
 **Tests**: unit
 **Gate**: build
 **Commit**: `feat(webpush): encrypt payloads and sign VAPID requests`
