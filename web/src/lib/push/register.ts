@@ -1,5 +1,6 @@
 import { api } from "@/lib/api/client";
 import type { PushKey, PushSubscriptionRequest } from "@/lib/api/types.gen";
+import { activeRegistration } from "@/lib/push/subscription";
 
 /*
  * The page's half of the push setup (PUSH-19, PUSH-28): register the worker that shows the
@@ -33,7 +34,7 @@ let running: Promise<void> | null = null;
  * a VAPID key the server had to replace) has to be told about the device again (PUSH-19, PUSH-28).
  *
  * It is safe to call on every signed-in mount: concurrent calls share one run and it resolves even
- * when the browser has nothing to offer.
+ * when the browser has nothing to offer or its worker never gets ready.
  */
 export function ensurePushSubscription(): Promise<void> {
   running ??= registerExisting()
@@ -64,7 +65,8 @@ async function registerExisting(): Promise<void> {
 async function pushManager(): Promise<PushManager | null> {
   const container = navigator.serviceWorker;
   if (!container) return null;
-  const registration = await container.ready;
+  // Rejects when the worker never gets ready; ensurePushSubscription stays quiet about that.
+  const registration = await activeRegistration();
   return registration.pushManager ?? null;
 }
 

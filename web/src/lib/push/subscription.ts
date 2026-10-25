@@ -25,14 +25,31 @@ export function requestPermission(): Promise<NotificationPermission> {
   return Notification.requestPermission();
 }
 
-/** The registration of the app's worker, waiting for it when it is not active yet (PUSH-19). */
-async function registration(): Promise<ServiceWorkerRegistration> {
-  return navigator.serviceWorker.ready;
+/** How long the page waits for the app's worker before giving up on notifications (PUSH-19). */
+export const READY_TIMEOUT_MS = 10_000;
+
+/**
+ * activeRegistration is the registration of the app's worker, waiting for it when it is not
+ * active yet (PUSH-19). `ready` never settles when the registration failed (offline, a bad
+ * `/sw.js` answer), so the wait rejects after READY_TIMEOUT_MS instead of leaving the caller
+ * waiting forever.
+ */
+export async function activeRegistration(): Promise<ServiceWorkerRegistration> {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const expired = new Promise<never>((_, reject) => {
+    timer = setTimeout(() => reject(new Error()), READY_TIMEOUT_MS);
+  });
+  try {
+    return await Promise.race([navigator.serviceWorker.ready, expired]);
+  } finally {
+    // A worker that gets ready in time leaves no timer behind.
+    clearTimeout(timer);
+  }
 }
 
 /** The subscription this browser holds; null when it holds none. */
 export async function currentSubscription(): Promise<PushSubscription | null> {
-  const active = await registration();
+  const active = await activeRegistration();
   return active.pushManager.getSubscription();
 }
 
@@ -40,7 +57,7 @@ export async function currentSubscription(): Promise<PushSubscription | null> {
 export async function subscribe(
   applicationServerKey: Uint8Array<ArrayBuffer>,
 ): Promise<PushSubscription> {
-  const active = await registration();
+  const active = await activeRegistration();
   return active.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey });
 }
 

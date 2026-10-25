@@ -124,6 +124,7 @@ beforeEach(() => {
 });
 
 afterEach(() => {
+  vi.useRealTimers();
   vi.unstubAllGlobals();
 });
 
@@ -194,6 +195,48 @@ describe("re-registering a subscription the browser already holds (PUSH-19, PUSH
       expect(posts(api.calls)).toHaveLength(0);
     },
   );
+
+  it("gives up quietly after 10 s when the worker never gets ready", async () => {
+    vi.useFakeTimers();
+    const manager = pushManager(subscription({}));
+    useBrowser({
+      serviceWorker: {
+        register: vi.fn(async () => ({ scope: "/" })),
+        // A registration that failed leaves `ready` pending forever.
+        ready: new Promise(() => {}),
+      },
+    });
+    const api = mockPushApi();
+
+    let outcome = "pending";
+    const done = ensurePushSubscription().then(() => {
+      outcome = "resolved";
+    });
+
+    await vi.advanceTimersByTimeAsync(9_999);
+    expect(outcome).toBe("pending");
+
+    await vi.advanceTimersByTimeAsync(1);
+    await done;
+
+    expect(outcome).toBe("resolved");
+    expect(manager.getSubscription).not.toHaveBeenCalled();
+    expect(posts(api.calls)).toHaveLength(0);
+    expect(vi.getTimerCount()).toBe(0);
+  });
+
+  it("posts as soon as the worker is ready instead of waiting for the timeout", async () => {
+    vi.useFakeTimers();
+    const existing = subscription({});
+    const manager = pushManager(existing);
+    useBrowser({ serviceWorker: serviceWorker(manager) });
+    const api = mockPushApi();
+
+    await ensurePushSubscription();
+
+    expect(posts(api.calls)).toHaveLength(1);
+    expect(vi.getTimerCount()).toBe(0);
+  });
 
   it("posts nothing when the browser holds no subscription", async () => {
     const manager = pushManager(null);
