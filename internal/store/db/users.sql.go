@@ -59,7 +59,7 @@ func (q *Queries) CreateUser(ctx context.Context, arg CreateUserParams) error {
 }
 
 const getUser = `-- name: GetUser :one
-SELECT id, username, password_hash, role, locale, disabled_at, created_at, notify_chat_id, default_org_id FROM users WHERE id = ?
+SELECT id, username, password_hash, role, locale, disabled_at, created_at, notify_chat_id, default_org_id, push_groups FROM users WHERE id = ?
 `
 
 func (q *Queries) GetUser(ctx context.Context, id string) (User, error) {
@@ -75,12 +75,13 @@ func (q *Queries) GetUser(ctx context.Context, id string) (User, error) {
 		&i.CreatedAt,
 		&i.NotifyChatID,
 		&i.DefaultOrgID,
+		&i.PushGroups,
 	)
 	return i, err
 }
 
 const getUserByUsername = `-- name: GetUserByUsername :one
-SELECT id, username, password_hash, role, locale, disabled_at, created_at, notify_chat_id, default_org_id FROM users WHERE username = ?
+SELECT id, username, password_hash, role, locale, disabled_at, created_at, notify_chat_id, default_org_id, push_groups FROM users WHERE username = ?
 `
 
 func (q *Queries) GetUserByUsername(ctx context.Context, username string) (User, error) {
@@ -96,6 +97,7 @@ func (q *Queries) GetUserByUsername(ctx context.Context, username string) (User,
 		&i.CreatedAt,
 		&i.NotifyChatID,
 		&i.DefaultOrgID,
+		&i.PushGroups,
 	)
 	return i, err
 }
@@ -144,7 +146,7 @@ func (q *Queries) ListContactUsers(ctx context.Context, id string) ([]ListContac
 }
 
 const listUsers = `-- name: ListUsers :many
-SELECT id, username, password_hash, role, locale, disabled_at, created_at, notify_chat_id, default_org_id FROM users ORDER BY username
+SELECT id, username, password_hash, role, locale, disabled_at, created_at, notify_chat_id, default_org_id, push_groups FROM users ORDER BY username
 `
 
 func (q *Queries) ListUsers(ctx context.Context) ([]User, error) {
@@ -166,6 +168,7 @@ func (q *Queries) ListUsers(ctx context.Context) ([]User, error) {
 			&i.CreatedAt,
 			&i.NotifyChatID,
 			&i.DefaultOrgID,
+			&i.PushGroups,
 		); err != nil {
 			return nil, err
 		}
@@ -205,6 +208,21 @@ type SetUserLocaleParams struct {
 
 func (q *Queries) SetUserLocale(ctx context.Context, arg SetUserLocaleParams) error {
 	_, err := q.db.ExecContext(ctx, setUserLocale, arg.Locale, arg.ID)
+	return err
+}
+
+const setUserPushGroups = `-- name: SetUserPushGroups :exec
+UPDATE users SET push_groups = ? WHERE id = ?
+`
+
+type SetUserPushGroupsParams struct {
+	PushGroups string
+	ID         string
+}
+
+// How group messages notify the account: all, mentions or off (PUSH-06).
+func (q *Queries) SetUserPushGroups(ctx context.Context, arg SetUserPushGroupsParams) error {
+	_, err := q.db.ExecContext(ctx, setUserPushGroups, arg.PushGroups, arg.ID)
 	return err
 }
 

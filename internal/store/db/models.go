@@ -329,6 +329,17 @@ type Project struct {
 	CreatedAt int64
 }
 
+type PushSubscription struct {
+	ID        string
+	UserID    string
+	SessionID sql.NullString
+	Endpoint  string
+	P256dh    string
+	Auth      string
+	CreatedAt int64
+	LastOkAt  sql.NullInt64
+}
+
 type ReadCursor struct {
 	UserID string
 	RoomID string
@@ -393,6 +404,7 @@ type User struct {
 	CreatedAt    int64
 	NotifyChatID sql.NullString
 	DefaultOrgID sql.NullString
+	PushGroups   string
 }
 
 type WebhookReplay struct {
