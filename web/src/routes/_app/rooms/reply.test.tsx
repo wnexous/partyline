@@ -1,4 +1,4 @@
-import { screen, waitFor, within } from "@testing-library/react";
+import { fireEvent, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { Message, Room } from "@/lib/api/types.gen";
@@ -142,10 +142,46 @@ describe("Reply on a phone (ACT-05, ACT-07)", () => {
     serve();
     renderRoute("/rooms/g1");
     const row = await screen.findByTestId("message-2");
-    const { fireEvent } = await import("@testing-library/react");
     fireEvent.pointerDown(row, finger());
     fireEvent.pointerUp(row, finger());
     fireEvent.click(row);
+    expect(screen.queryByTestId("reply-strip")).toBeNull();
+  });
+});
+
+describe("a swipe on a phone (SWP-01, SWP-04)", () => {
+  beforeEach(() => {
+    touchDevice();
+    vi.stubGlobal("navigator", { ...navigator, vibrate: vi.fn() });
+  });
+
+  const swipe = (target: Element, dx: number) => {
+    fireEvent.pointerDown(target, finger({ clientX: 100, clientY: 300 }));
+    fireEvent.pointerMove(target, finger({ clientX: 100 + dx, clientY: 300 }));
+    fireEvent.pointerUp(target, finger({ clientX: 100 + dx, clientY: 300 }));
+  };
+
+  it("puts the message in the composer, with the cursor, as Reply does", async () => {
+    serve();
+    renderRoute("/rooms/g1");
+    swipe(await screen.findByTestId("message-2"), 90);
+    const strip = await screen.findByTestId("reply-strip");
+    expect(within(strip).getByText("Replying to Atlas")).toBeInTheDocument();
+    expect(within(strip).getByText("the build is green")).toBeInTheDocument();
+    await waitFor(async () => expect(await textbox()).toHaveFocus());
+  });
+
+  it("answers nothing for a short drag", async () => {
+    serve();
+    renderRoute("/rooms/g1");
+    swipe(await screen.findByTestId("message-2"), 40);
+    expect(screen.queryByTestId("reply-strip")).toBeNull();
+  });
+
+  it("is not there for someone who may only read", async () => {
+    serve(room({ my_level: "view" }));
+    renderRoute("/rooms/g1");
+    swipe(await screen.findByTestId("message-2"), 90);
     expect(screen.queryByTestId("reply-strip")).toBeNull();
   });
 });

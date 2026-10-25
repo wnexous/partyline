@@ -338,6 +338,7 @@ export function MessageTimeline({
                     onMenu={hasMessageActions(m, onReply !== undefined) ? openMenu : undefined}
                     touch={touch}
                     menuOpen={menu?.message.id === m.id}
+                    onSwipeReply={m.author_kind !== "system" ? onReply : undefined}
                   />
                 </div>
               );

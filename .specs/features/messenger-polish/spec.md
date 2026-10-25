@@ -71,6 +71,7 @@ On 2026-10-24 the product owner, using partyline on an Android phone (Chrome), a
 | Text on a touch device | A row that has actions does not select text on a touch device: Chrome would select the word under a long press and show its own toolbar beside the sheet. Copy text takes the whole message. A mouse selects as before | One gesture, one answer | n |
 | Where the notice of Copy text goes | At the top of the screen, for two seconds: the other notices sit at the bottom right, over the composer's Send row, which a reply strip or a long draft makes taller still | A confirmation must not hide the control that is next | n |
 | Opening the sheet | Focus goes to the sheet itself, not to its first action: a row that opens with a ring on it looks chosen. The first Tab reaches the first action, and the menu of a mouse moves with the arrows | Nothing is pre-selected | n |
+| The swipe | A drag to the right of 60 px or more, with a finger or a pen, answers the message; it is a shortcut for Reply, which the sheet and the "⋯" give with a button. The row follows the finger through its own style (with resistance past 60 px, 96 px at most), a reply icon shows under it and takes the accent while letting go would answer, and one 10 ms tick marks the crossing. A finger that rested half a second first is a press, not a swipe; a drag that begins mostly vertical or to the left is left alone for good. The row keeps vertical scroll and pinch-zoom to the browser (`touch-action: pan-y pinch-zoom`) | The page must keep scrolling under a finger that did not mean to swipe, and a swipe that has begun must not scroll it | n |
 | Voice recording | `MediaRecorder` on the microphone stream, 32 kbit/s, the first of `audio/webm;codecs=opus` and `audio/ogg;codecs=opus` the browser can record, else the browser's default (Safari records `audio/mp4`); at most 10 minutes. The file is `voice-message-<date>-<time>.<ext>` and goes through the message upload as the only attachment, with no text. The server's size limit is not published, so a recording it refuses (413) says so and stays in the composer to retry or discard | "In the format the browser records", through the existing upload | n |
 | Tap or hold | A tap on the microphone starts a recording that stays on until Send or Cancel; a hold longer than 0.5 s records while held, sends on release and cancels when the finger slides 80 px to the left | Both gestures the owner named | n |
 | Focus around a recording | The text box is hidden while a recording is on, so focus moves to the button that sends it; when the recording ends it goes back to the text box if that had focus as it began, else it stays on the microphone | Escape and screen readers need focus inside the composer, and a hold on a phone must not open the keyboard behind the conversation | n |
@@ -328,10 +329,10 @@ On 2026-10-24 the product owner, using partyline on an Android phone (Chrome), a
 | ACT-05 | P1: Long-press actions | Execute | Implemented |
 | ACT-06 | P1: Long-press actions | Execute | Implemented |
 | ACT-07 | P1: Long-press actions | Execute | Implemented |
-| SWP-01 | P2: Swipe to reply | Execute | Implementing |
-| SWP-02 | P2: Swipe to reply | Execute | Implementing |
-| SWP-03 | P2: Swipe to reply | Execute | Implementing |
-| SWP-04 | P2: Swipe to reply | Execute | Implementing |
+| SWP-01 | P2: Swipe to reply | Execute | Implemented |
+| SWP-02 | P2: Swipe to reply | Execute | Implemented |
+| SWP-03 | P2: Swipe to reply | Execute | Implemented |
+| SWP-04 | P2: Swipe to reply | Execute | Implemented |
 | RCT-01 | P2: Reactions | Execute | Implementing |
 | RCT-02 | P2: Reactions | Execute | Implementing |
 | RCT-03 | P2: Reactions | Execute | Implementing |

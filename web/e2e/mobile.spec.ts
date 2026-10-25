@@ -1013,3 +1013,95 @@ test("a message opens its actions: Copy text copies it, Reply answers it (ACT-01
     await context.close();
   }
 });
+
+test("a message is answered with a swipe to the right; a vertical drag is left to the browser (SWP-01..SWP-04)", async ({
+  browser,
+  phone,
+}, testInfo) => {
+  test.skip(!isMobile(testInfo), "a phone's gesture");
+  const { context, page } = await openPage(browser, phone, testInfo);
+  try {
+    // A conversation long enough to scroll, ending in what an AI said.
+    const room = await newGroup(
+      context,
+      phone,
+      "e2e-swipe",
+      Array.from({ length: 30 }, (_, i) => `filler ${i + 1}`),
+    );
+    const ai = await connectAI(context, phone, "/work/e2e-swipe");
+    await apiCall(context.request, phone, "POST", `/rooms/${room.id}/members`, {
+      kind: "agent",
+      member_id: ai.ai.id,
+    });
+    await agentJSON(context, phone, ai, "POST", `/agent/rooms/${room.id}/messages`, {
+      text: "the release is green",
+    });
+    await page.goto(`/rooms/${room.id}`);
+    const log = page.getByRole("log");
+    const said = log.locator('[data-testid^="message-"]', { hasText: "the release is green" });
+    await expect(said).toBeInViewport();
+    const strip = page.getByTestId("reply-strip");
+    const finger = await pointer(page, context, testInfo);
+    const transform = () => said.evaluate((el) => el.style.transform);
+    const restingLeft = (await rect(said)).left;
+
+    // SWP-01: the row follows the finger and the reply icon appears; past 60 px it is armed.
+    const at = await centre(said);
+    await finger.down(at.x, at.y);
+    await finger.move(at.x + 50, at.y);
+    await expect.poll(transform).toBe("translateX(50px)");
+    expect((await rect(said)).left).toBeCloseTo(restingLeft + 50, 0);
+    await expect(said).not.toHaveAttribute("data-armed", "true");
+    await shoot(page, "swipe-reply", testInfo);
+    await finger.move(at.x + 90, at.y);
+    await expect(said).toHaveAttribute("data-armed", "true");
+    await shoot(page, "swipe-reply-armed", testInfo);
+    await finger.up();
+    // It answers: the strip is up with the cursor in the text box, and the row is home again.
+    await expect(strip).toContainText("the release is green");
+    await expect(page.getByRole("textbox", { name: "Message e2e-swipe" })).toBeFocused();
+    await expect.poll(transform).toBe("");
+    await expect.poll(async () => (await rect(said)).left).toBeCloseTo(restingLeft, 0);
+    await page.getByRole("button", { name: "Cancel reply" }).click();
+    await expect(strip).toHaveCount(0);
+
+    // SWP-02: a release before 60 px springs back and answers nothing.
+    await finger.down(at.x, at.y);
+    await finger.move(at.x + 35, at.y);
+    await expect.poll(transform).toBe("translateX(35px)");
+    await finger.up();
+    await expect.poll(transform).toBe("");
+    await expect(strip).toHaveCount(0);
+
+    // SWP-02: the row leaves vertical panning to the browser, which is what makes a drag up or down
+    // the log's scroll (a headless browser does not pan on touch, so what is checked is the
+    // contract: the row's `touch-action`); and a mostly vertical drag moves nothing and answers nothing.
+    expect(await said.evaluate((el) => getComputedStyle(el).touchAction)).toBe("pan-y pinch-zoom");
+    await finger.down(at.x, at.y);
+    for (let step = 1; step <= 12; step += 1) {
+      await finger.move(at.x + step / 2, at.y - step * 18);
+      await page.waitForTimeout(16);
+    }
+    expect(await transform()).toBe("");
+    await expect(said).not.toHaveAttribute("data-armed", "true");
+    await finger.up();
+    await expect(strip).toHaveCount(0);
+
+    // SWP-02: a drag that began across is a swipe to its end, whatever the finger does next: the
+    // row stays where the finger took it, and letting go short of 60 px answers nothing.
+    const again = await centre(said);
+    await finger.down(again.x, again.y);
+    await finger.move(again.x + 40, again.y);
+    await expect.poll(transform).toBe("translateX(40px)");
+    for (let step = 1; step <= 10; step += 1) {
+      await finger.move(again.x + 40, again.y + step * 16);
+      await page.waitForTimeout(16);
+    }
+    expect(await transform()).toBe("translateX(40px)");
+    await finger.up();
+    await expect.poll(transform).toBe("");
+    await expect(strip).toHaveCount(0);
+  } finally {
+    await context.close();
+  }
+});

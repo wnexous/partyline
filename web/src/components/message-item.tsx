@@ -4,6 +4,7 @@ import {
   InfoIcon,
   type LucideIcon,
   MessageCircleIcon,
+  ReplyIcon,
   ShieldAlertIcon,
   ShieldCheckIcon,
   UserIcon,
@@ -17,6 +18,7 @@ import { ProfileLink } from "@/components/profile-link";
 import { RowMenuButton } from "@/components/row-menu-button";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { useLongPress } from "@/hooks/use-long-press";
+import { useSwipeReply } from "@/hooks/use-swipe-reply";
 import { attachmentUrl } from "@/lib/api/queries";
 import type {
   Attachment,
@@ -171,7 +173,20 @@ export interface MessageItemProps {
   touch?: boolean;
   /** The actions of this message are open. */
   menuOpen?: boolean;
+  /**
+   * Answers this message when it is dragged to the right (SWP-01). Absent where there is nothing to
+   * answer in: a notice, a viewer who may not post. It only exists on a touch device.
+   */
+  onSwipeReply?: (message: Message) => void;
 }
+
+/** Two handlers for one event: both gestures listen to the same finger, the long press first. */
+const both =
+  <E,>(first: (e: E) => void, second: (e: E) => void) =>
+  (e: E) => {
+    first(e);
+    second(e);
+  };
 
 export const MessageItem = memo(function MessageItem({
   message,
@@ -185,6 +200,7 @@ export const MessageItem = memo(function MessageItem({
   onMenu,
   touch = false,
   menuOpen = false,
+  onSwipeReply,
 }: MessageItemProps) {
   const { t, locale } = useI18n();
   const press = useLongPress<HTMLElement>(
@@ -192,6 +208,8 @@ export const MessageItem = memo(function MessageItem({
     { enabled: onMenu !== undefined },
   );
   const withButton = onMenu !== undefined && !touch;
+  const swipeable = onSwipeReply !== undefined && touch;
+  const swipe = useSwipeReply<HTMLElement>(() => onSwipeReply?.(message), { enabled: swipeable });
   const kind = AUTHOR_KIND[message.author_kind] ?? AUTHOR_KIND.system;
   const time = (
     <time
@@ -232,6 +250,10 @@ export const MessageItem = memo(function MessageItem({
     <article
       data-testid={`message-${message.seq}`}
       {...press}
+      onPointerDown={both(press.onPointerDown, swipe.onPointerDown)}
+      onPointerMove={both(press.onPointerMove, swipe.onPointerMove)}
+      onPointerUp={both(press.onPointerUp, swipe.onPointerUp)}
+      onPointerCancel={both(press.onPointerCancel, swipe.onPointerCancel)}
       className={cn(
         "group/message relative grid grid-cols-[2rem_minmax(0,1fr)] gap-x-3 px-4 transition-colors hover:bg-accent/35 md:px-6",
         grouped ? "py-0.5" : "pt-2.5 pb-1",
@@ -239,8 +261,24 @@ export const MessageItem = memo(function MessageItem({
         // A long press is the sheet's: it must not select the word under the finger or call up a
         // link's own preview. Copy text takes the whole message.
         onMenu && touch && "select-none [-webkit-touch-callout:none]",
+        // The page keeps its vertical scroll and zoom; a drag across is the swipe's.
+        swipeable && "touch-pan-y touch-pinch-zoom",
       )}
     >
+      {swipeable ? (
+        // Under the row, to its left: it shows as the row slides right, and takes the accent
+        // (what you act on) once letting go would answer.
+        <span
+          aria-hidden="true"
+          style={{
+            opacity: "var(--swipe-progress, 0)",
+            transform: "translateY(-50%) scale(calc(0.6 + 0.4 * var(--swipe-progress, 0)))",
+          }}
+          className="pointer-events-none absolute top-1/2 -left-11 grid size-9 place-items-center rounded-full bg-secondary text-muted-foreground transition-colors group-data-[armed=true]/message:bg-primary group-data-[armed=true]/message:text-primary-foreground"
+        >
+          <ReplyIcon className="size-4" />
+        </span>
+      ) : null}
       {grouped || withButton ? (
         <div className="absolute top-1 right-4 flex items-center gap-1.5 md:right-6">
           {grouped ? (
