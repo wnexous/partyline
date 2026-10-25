@@ -76,6 +76,7 @@ type options struct {
 	kinds            []connectors.Kind
 	outbox           bool
 	push             bool
+	pushQueueSize    int
 	version          string
 	database         string
 	inboundWait      func(ctx context.Context, d time.Duration) error
@@ -111,6 +112,10 @@ func WithOutbox() Option { return func(o *options) { o.outbox = true } }
 // WithoutPush keeps the app's Web Push notifier from running, so a test that constructs its own
 // notifier on App.Store/App.Bus does not get a second set of notifications (PUSH-14).
 func WithoutPush() Option { return func(o *options) { o.push = true } }
+
+// WithPushQueueSize sets how many push jobs the app's notifier holds while its workers are busy.
+// A test lowers it to fill the queue and see the test route answer 503 (PUSH-27).
+func WithPushQueueSize(n int) Option { return func(o *options) { o.pushQueueSize = n } }
 
 // WithConnectorKinds makes the app support exactly kinds (e.g. a fake kind from
 // connectors/connectortest) instead of the built-in ones.
@@ -159,7 +164,7 @@ func New(t testing.TB, opts ...Option) *Env {
 
 	e := &Env{
 		T: t, Server: srv, URL: base, Origin: cfg.PublicURL.Scheme + "://" + cfg.PublicURL.Host, cfg: cfg,
-		appOpts: app.Options{Logger: o.logger, Now: o.now, LiveSessionCheck: o.liveSessionCheck, ConnectorKinds: o.kinds, DisableOutbox: !o.outbox, DisablePush: o.push, Version: o.version, InboundWait: o.inboundWait, ConnectorWait: o.connectorWait},
+		appOpts: app.Options{Logger: o.logger, Now: o.now, LiveSessionCheck: o.liveSessionCheck, ConnectorKinds: o.kinds, DisableOutbox: !o.outbox, DisablePush: o.push, PushQueueSize: o.pushQueueSize, Version: o.version, InboundWait: o.inboundWait, ConnectorWait: o.connectorWait},
 	}
 	e.startApp()
 	srv.Config.Handler = http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { (*e.handler.Load()).ServeHTTP(w, r) })

@@ -62,6 +62,9 @@ type Options struct {
 	// notifier does not get a second one (PUSH-14). The notifier is built either way; only
 	// Start skips it.
 	DisablePush bool
+	// PushQueueSize is how many push jobs wait for a worker; zero means 256. Tests lower it to
+	// fill the queue and see the test route answer 503 (PUSH-27).
+	PushQueueSize int
 	// ConnectorKinds are the supported connector kinds; nil means BuiltinKinds().
 	ConnectorKinds []connectors.Kind
 	// Version is the build version, sent by connectors as User-Agent "partyline/<version>".
@@ -93,7 +96,10 @@ type App struct {
 	Store  *store.Store
 	Box    *secrets.Box
 	// VAPID signs the Web Push requests; it is the instance key from <data dir>/vapid.key.
-	VAPID  *webpush.VAPID
+	VAPID *webpush.VAPID
+	// Push notifies the browsers of the users of a room; it subscribes to the bus in New and
+	// runs in Start (PUSH-14).
+	Push   *webpush.Notifier
 	Bus    *events.Bus
 	Users  *users.Service
 	Access *access.Authorizer
@@ -134,6 +140,8 @@ type App struct {
 	ready   atomic.Bool
 	// sendWorker is whether Start runs the worker that retries the sends of Sends.
 	sendWorker bool
+	// pushWorker is whether Start runs the Web Push notifier (app.Options.DisablePush).
+	pushWorker bool
 
 	stop context.CancelFunc
 	bg   sync.WaitGroup
@@ -254,6 +262,14 @@ func New(cfg *config.Config, opts Options) (*App, error) {
 		Sessions: usersSvc, SessionCheckInterval: opts.LiveSessionCheck,
 	})
 	a.Devices = devices.New(devices.Deps{Store: st, Users: usersSvc, Box: box, Audit: auditLog, Now: opts.Now})
+	pushDelivery := webpush.NewDeliverer(webpush.DelivererDeps{
+		Store: st, Sender: webpush.NewClient(vapid, cfg.PublicURL.String()), Now: opts.Now, Logger: opts.Logger,
+	})
+	a.Push = webpush.NewNotifier(webpush.NotifierDeps{
+		Store: st, Bus: bus, Delivery: pushDelivery, PublicURL: cfg.PublicURL, Logger: opts.Logger,
+		QueueSize: opts.PushQueueSize,
+	})
+	a.pushWorker = !opts.DisablePush
 	a.handler = api.New(api.Deps{
 		Config:        cfg,
 		Users:         usersSvc,
@@ -308,6 +324,9 @@ func (a *App) Start(ctx context.Context) error {
 		Store: a.Store, Bus: a.Bus, Agents: a.Gateway, Load: a.Gateway.Message, Trust: a.trust, Logger: a.Logger,
 	})
 	a.background(bg, "agent-dispatcher", dispatcher.Run)
+	if a.pushWorker {
+		a.background(bg, "webpush", a.Push.Run)
+	}
 	if a.sendWorker {
 		a.background(bg, "platform-sends", a.Sends.Run)
 	}
@@ -341,6 +360,11 @@ func (a *App) Shutdown(_ context.Context) error {
 	a.ready.Store(false)
 	if a.stop != nil {
 		a.stop()
+	}
+	// Close cancels the bus subscription also when Run never started (DisablePush); Run then
+	// stops with the canceled context above and bg.Wait below waits for it.
+	if a.Push != nil {
+		a.Push.Close()
 	}
 	a.ConnectorManager.Close()
 	a.Gateway.Close()
