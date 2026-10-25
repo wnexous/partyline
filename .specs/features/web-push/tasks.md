@@ -599,10 +599,10 @@ it is only used here)
   `image/png`; `navigator.serviceWorker.getRegistration()` → scope ends with `/`.
 - 360 px: open Settings, `expectNoSidewaysScroll(page)`.
 **Done when**:
-- [ ] `make e2e` passes for both projects (desktop-1280 and mobile-360)
-- [ ] the test makes no request to a real push service (the stubbed subscription is only stored)
-- [ ] no existing e2e test is weakened or skipped
-- [ ] `make check` still passes
+- [x] `make e2e` passes for both projects (desktop-1280 and mobile-360)
+- [x] the test makes no request to a real push service (the stubbed subscription is only stored)
+- [x] no existing e2e test is weakened or skipped
+- [x] `make check` still passes
 **Tests**: e2e
 **Gate**: e2e
 **Commit**: `test(e2e): cover the push settings flow and the PWA files`
