@@ -148,6 +148,7 @@ updates the pending one.
 
 | Route | Who | Result |
 | --- | --- | --- |
+| `PATCH /me` `{display_name?, locale?, push_groups?}` | — | 200 `Me`; absent fields are unchanged. `push_groups` is `all`, `mentions` or `off` (see [Web push notifications](#web-push-notifications)); any other value is 422 `invalid` on `push_groups`. |
 | `PUT /me/default-org` `{org_id}` | — | 200 `Me`. The caller must be a member (any permission) of the organization, by its **id**; anything else is 403. |
 | `DELETE /me` `{password}` | — | 204 and the session cookie is cleared. A wrong password is 422 on `password`; 409 `last_instance_admin` for the last active instance admin. See below. |
 | `GET /me` | — | `default_org_id` is the organization a new AI of the account joins: the one chosen while still a member, else where the user has been admin the longest, else the longest membership. |
@@ -190,6 +191,62 @@ tokens, linked chat accounts and DMs are deleted. Messages stay readable.
 | `PATCH`, `DELETE /connectors/{id}`, the operator, enabling | Admins of its organization | 403 for other members. An operator must be an AI whose home is the connection's organization: 422 on `operator_id` otherwise. |
 | `POST /identities/pairing` `{connector_id}` | Members of the connection's organization; for a connection of a kind whose caller chooses sender ids freely (a webhook), only its admins | A user outside the organization gets 404 for every kind. |
 | `GET /contacts` | — | `{me, org_ais, hosted, users, people}`: `org_ais` has one group per organization of the caller (`org` and its `ais`), `hosted` the AIs the caller hosts that no group lists. |
+
+### Web push notifications
+
+The web app registers a browser subscription and the server sends it an encrypted notification for
+each message the account would see as unread. The routes below take a session or a user token; an
+agent token is 403 `forbidden` and an anonymous caller 401 `unauthorized`, like every route outside
+`/api/v1/agent/`. The service worker and the manifest are files served from the site root
+(`/sw.js`, `/manifest.webmanifest`), not API routes.
+
+| Route | Who | Result |
+| --- | --- | --- |
+| `GET /push/key` | — | 200 `{"public_key": "…"}`: the instance's VAPID public key, an uncompressed P-256 point in base64url without padding. It is what `pushManager.subscribe` takes as `applicationServerKey`. |
+| `POST /push/subscriptions` `{endpoint, p256dh, auth}` | — | 200 `PushSubscription`: `id`, `endpoint`, `created_at`, and `last_ok_at` once the push service has answered a 2xx. One row per endpoint, so the same endpoint again **updates** that row and moves it to the caller and the caller's session, keeping `created_at`; it is never a 201 and never a second row. 422 `invalid` naming the field: `endpoint` must be an absolute `https` URL with a host and at most 2048 characters, `p256dh` a 65-byte uncompressed P-256 point that is on the curve, and `auth` exactly 16 bytes, both base64url and accepted padded or unpadded; the stored form is the canonical unpadded base64url. |
+| `DELETE /push/subscriptions` `{endpoint}` | — | 204 after deleting the caller's row. The endpoint travels in the body, because it is a URL with slashes and a long capability token. 404 `not_found` for an endpoint that does not exist or belongs to another account, and then nothing is deleted; the web app treats that 404 on disable as already off. |
+| `POST /push/test` | — | 202 `{"queued": n}`: one test notification queued for each subscription of the caller. The push itself happens in the background worker, never in the request. 409 `conflict` when the account has no subscription, 429 `rate_limited` after 3 test asks in a rolling minute, 503 `unavailable` when the push queue is full. |
+
+The group setting is part of `PATCH /me` (in [Account](#account)): `push_groups` is `all`,
+`mentions` or `off`, `mentions` by default for every account, and an unknown value is 422 `invalid`
+on the `push_groups` field. A DM ignores it and always notifies; a group message notifies with `all`,
+with `mentions` only when its text contains the user's `@handle` on a word boundary
+(case-insensitive), and never with `off`, a group mention included. The author's own messages and
+system notices never notify, and neither does a message the user's read cursor already covers. At
+most 10 notifications go to one account in a rolling minute; a user with several devices counts
+once and gets one on each.
+
+The payload is a JSON object encrypted for the browser's subscription (RFC 8291, `aes128gcm`), and
+the request to the push service is authenticated with a VAPID JWT (RFC 8292):
+
+| Field | Value |
+| --- | --- |
+| `v` | `1`; a later version may add fields, and a worker shows what it knows |
+| `title` | the group's name, or in a DM the other participant's display name |
+| `author` | the sender's display name in that conversation |
+| `preview` | the message text with every run of whitespace collapsed to one space and trimmed, at most 120 characters: a longer text is cut at the 120th with `…`, and a file-only message has an empty preview |
+| `url` | the absolute URL of the conversation, under the instance's public URL |
+| `tag` | `room:{id}`, so the operating system collapses a conversation's notifications instead of stacking one per message |
+
+No message id, attachment, participant list, token or server secret is in the payload.
+
+A subscription belongs to the session that registered it: a logout, a device revoked in Settings or
+a password change deletes its rows, and deleting the account deletes them all (the browser registers
+its existing subscription again on the next signed-in load, without asking for permission again). A
+push service that answers 404 or 410 deletes the row; any other non-2xx, a network error or a
+timeout keeps it.
+
+**Privacy.** On the wire the payload is encrypted to the browser's subscription key; the push
+service sees the endpoint (and its token), the VAPID public key, the JWT and the ciphertext. At rest
+the server keeps the endpoint, the two browser keys and the timestamps, never the message text, the
+payload, the JWT or the private VAPID key outside its sealed file. Logs carry the endpoint's
+**hostname** and the status code only (`webpush: notification delivered`, `... failed`, `... dropped
+the subscription`), and a network error is reduced to `network`, `timeout` or `canceled`, because
+the HTTP client's error contains the endpoint path and its capability token. No message text, no
+preview, no endpoint path, no key and no token appears in a log, an error or a status; validation
+errors name the field, never the value. In the browser the page sends only the subscription, and the
+service worker keeps the payload in memory for `showNotification`, writing nothing to
+`localStorage`, IndexedDB or a cache.
 
 ### Agent API
 

@@ -567,10 +567,10 @@ subscriptions, worker-enforced focus rule). No behaviour changes.
 code in `internal/api/router.go` and `mapError` appears in `docs/api.md`, and that `README.md`'s data-dir
 row mentions both key files.
 **Done when**:
-- [ ] every new route has its caller, success and error codes in `docs/api.md`
-- [ ] `README.md` names `vapid.key` and the backup warning
-- [ ] `.specs/STATE.md` gains AD-027 without changing any other decision
-- [ ] Gate check passes: `make check`
+- [x] every new route has its caller, success and error codes in `docs/api.md`
+- [x] `README.md` names `vapid.key` and the backup warning
+- [x] `.specs/STATE.md` gains AD-027 without changing any other decision
+- [x] Gate check passes: `make check`
 **Tests**: docs (no code; `make check` only)
 **Gate**: build
 **Commit**: `docs(web-push): document the routes, the key file and the decision`

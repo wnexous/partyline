@@ -335,6 +335,22 @@
 - **Status**: active
 - **Amends**: AD-015 (rooms hold conversations that can now change after they were sent; platform messages and sends are not editable) and the agent channel protocol (two additive frame types).
 
+### AD-027
+- **Decision**: Web push notifications are an app-layer feature of the messenger, built on the standard Web Push stack (RFC 8291 payload encryption, RFC 8292 VAPID).
+  - **Layer**: `internal/webpush` sits in the app layer, next to `live`, because it reads rooms and users through the shared `store/db`. It never becomes a dependency of `connectors`, `platform`, `agents`, `identities` or `channel` (AD-025), and the core → app allow-list is unchanged.
+  - **Key file**: one VAPID P-256 key pair, generated on first start with its private key sealed by the instance `secrets.Box` into `<data dir>/vapid.key` (mode 0600), like `secret.key`; only the public key is served. A corrupt or unreadable file is replaced, every stored subscription is dropped (they were bound to the old key) and the server still starts (PUSH-26); it is backed up with `secret.key` and the database.
+  - **Subscriptions**: one row per push endpoint, tied to the user and the session that registered it. A logout, a revoked device, a password change or an account deletion removes it (PUSH-07), and a push service answering 404/410 removes it too (PUSH-12); the browser re-registers its existing subscription on the next signed-in load (PUSH-28).
+  - **Focus rule**: the service worker suppresses the notification for the conversation a focused window already shows, comparing the window's URL path; the live socket stays server → client only and gains no focus frame (PUSH-17).
+- **Reason**: A phone and a desktop must hear about a message while the app is closed, and the browser is the only app Partyline owns (AD-015 retired the WhatsApp copies of AI DMs). The standard stack needs no push service of our own, and keeping the worker in the app layer keeps the funnel usable without the messenger.
+- **Trade-off**:
+  - The pair is one per instance and is not rotated; losing `vapid.key` invalidates every stored subscription (they are dropped, and browsers re-subscribe).
+  - iPhones receive notifications only for a web app added to the Home Screen (iOS 16.4 or later) and only while `PARTYLINE_PUBLIC_URL` is https, because Apple's push service refuses a non-https VAPID subject.
+  - Notifications are ephemeral: there is no outbox and no retry, so a full queue or a slow push service drops one instead of delaying the message post.
+  - A subscription dies with its session, so a device is quiet after a logout until its next signed-in load registers it again.
+- **Scope**: store (migration `0025`), webpush, api, app (wiring), webui (manifest, worker, icons), web-app (Settings, service worker, registration), docs.
+- **Date**: 2026-10-25
+- **Status**: active (the three `Confirmed? n` defaults of the web-push spec still await the product owner)
+
 ## Handoff
 
 - **Feature**: organizations
