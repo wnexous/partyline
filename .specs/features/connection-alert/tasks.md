@@ -252,10 +252,10 @@ connection as seen healthy):
 - `TestAlerterIgnoresLaggedAndClosesWithoutRun`: `Lagged` → no job and no panic; `Close()` without
   `Run` does not panic and a later publish delivers nothing.
 **Done when**:
-- [ ] the bus is subscribed in `NewAlerter`, before `Seed`/`Run`, and `Close()` cancels it
-- [ ] `Submit` never blocks the bus consumer; a full queue is logged with the id and status only
-- [ ] no log line carries the connection name, the reason, the platform detail, the URL or a device
-- [ ] Gate check passes: `make check`
+- [x] the bus is subscribed in `NewAlerter`, before `Seed`/`Run`, and `Close()` cancels it
+- [x] `Submit` never blocks the bus consumer; a full queue is logged with the id and status only
+- [x] no log line carries the connection name, the reason, the platform detail, the URL or a device
+- [x] Gate check passes: `make check`
 **Tests**: integration
 **Gate**: build
 **Commit**: `feat(webpush): alert connections that go down`
