@@ -70,6 +70,7 @@ On 2026-10-24 the product owner, using partyline on an Android phone (Chrome), a
 | What a message offers | Reply, Copy text (when it has text) and the reactions bar (RCT). No Delete: there is no route | Existing routes only | n |
 | Voice recording | `MediaRecorder` on the microphone stream, 32 kbit/s, the first of `audio/webm;codecs=opus` and `audio/ogg;codecs=opus` the browser can record, else the browser's default (Safari records `audio/mp4`); at most 10 minutes. The file is `voice-message-<date>-<time>.<ext>` and goes through the message upload as the only attachment, with no text. The server's size limit is not published, so a recording it refuses (413) says so and stays in the composer to retry or discard | "In the format the browser records", through the existing upload | n |
 | Tap or hold | A tap on the microphone starts a recording that stays on until Send or Cancel; a hold longer than 0.5 s records while held, sends on release and cancels when the finger slides 80 px to the left | Both gestures the owner named | n |
+| Focus around a recording | The text box is hidden while a recording is on, so focus moves to the button that sends it; when the recording ends it goes back to the text box if that had focus as it began, else it stays on the microphone | Escape and screen readers need focus inside the composer, and a hold on a phone must not open the keyboard behind the conversation | n |
 | Where reactions live | A `message_reactions` table (message, intelligence, emoji) and two routes on a room's message: `POST /rooms/{id}/messages/{mid}/reactions` with `{"emoji"}` and `DELETE /rooms/{id}/messages/{mid}/reactions/{emoji}` (the emoji percent-encoded); `Message.reactions` lists, per emoji, the intelligences that used it, in the order they reacted. The agent `react` tool is for platform messages and stays as it is | The API had no user route (the agent route stores a message of kind `reaction` aimed at a chat, which AD-015 retired for rooms). Smallest change that every client can render | n |
 | Who may react | Whoever may post in the room (`post` level); the author may react to their own message; one emoji per request (`validation.OneEmoji`); at most 12 different emoji on a message | Reacting is taking part | n |
 
@@ -202,15 +203,15 @@ On 2026-10-24 the product owner, using partyline on an Android phone (Chrome), a
 **Acceptance Criteria**:
 
 1. WHERE the browser has `MediaRecorder` and a microphone API the composer SHALL show a microphone button; where it has not, it SHALL show none. (VOI-01)
-2. WHEN the user taps the microphone THEN the app SHALL ask for the microphone, start recording and show a recording bar in place of the text box: the elapsed time counting up (m:ss), Cancel and Send; start and end SHALL be announced to assistive technology. (VOI-02)
+2. WHEN the user taps the microphone THEN the app SHALL ask for the microphone, start recording and show a recording bar in place of the text box: the elapsed time counting up (m:ss), Cancel (a button with its word beside its icon) and Send; start and end SHALL be announced to assistive technology, and focus SHALL move to the Send button while the text box is hidden, so Escape and a screen reader still find the composer. (VOI-02)
 3. WHEN the user holds the microphone for more than 0.5 s THEN it SHALL record while held and send on release, and cancel when the finger has slid 80 px to the left, saying so while it is armed. (VOI-03)
-4. WHEN the user activates Send THEN the app SHALL stop the recording and post it as a message with one audio attachment, in the format the browser recorded, through the message upload; the text box SHALL keep focus. IF the send fails THEN the app SHALL say why (too large, network, forbidden) and keep the recording to send again or discard. (VOI-04)
+4. WHEN the user activates Send THEN the app SHALL stop the recording and post it as a message with one audio attachment, in the format the browser recorded, through the message upload; WHEN the text box had focus as the recording began it SHALL have it again once the message is sent, and otherwise focus SHALL stay on the microphone so that no keyboard opens. IF the send fails THEN the app SHALL say why (too large, network, forbidden) and keep the recording to send again or discard. (VOI-04)
 5. WHEN the user activates Cancel, presses Escape or slides away THEN the recording SHALL be discarded and the microphone released; nothing is sent. The microphone SHALL also be released when the recording reaches 10 minutes (it waits to be sent), when the composer closes and when the page is left. (VOI-05)
 6. IF the user denies the microphone, none exists, or another app holds it THEN the app SHALL say which, in plain words, next to the composer and SHALL NOT leave a recording bar behind. (VOI-06)
 7. WHEN a message has an audio attachment THEN the timeline SHALL play it inline with a compact player: play/pause, the elapsed and total time and a seek bar that is a slider with its position as text; starting one SHALL pause any other. (VOI-07)
 8. The player SHALL show the length of a recording whose container does not carry it, and SHALL work at 360 px with controls at least 44 px on a touch device. (VOI-08)
 
-**Independent Test**: With a stand-in `MediaRecorder`, tap the microphone, wait two seconds, tap Send: one multipart post with an `audio/webm;codecs=opus` file goes out, the bar is gone and the text box is focused; the message appears in the timeline with a player that plays and seeks.
+**Independent Test**: With a stand-in `MediaRecorder`, tap the microphone, wait two seconds, tap Send: one multipart post with an `audio/webm;codecs=opus` file goes out and the bar is gone; the message appears in the timeline with a player that plays and seeks.
 
 ---
 
@@ -303,20 +304,20 @@ On 2026-10-24 the product owner, using partyline on an Android phone (Chrome), a
 | PRF-04 | P1: Profile panel | Execute | Implementing |
 | PRF-05 | P1: Profile panel | Execute | Implementing |
 | PRF-06 | P1: Profile panel | Execute | Implementing |
-| KBD-01 | P1: Composer above the keyboard | Execute | Implementing |
-| KBD-02 | P1: Composer above the keyboard | Execute | Implementing |
-| KBD-03 | P1: Composer above the keyboard | Execute | Implementing |
-| KBD-04 | P1: Composer above the keyboard | Execute | Implementing |
-| KBD-05 | P1: Composer above the keyboard | Execute | Implementing |
-| KBD-06 | P1: Composer above the keyboard | Execute | Implementing |
-| VOI-01 | P1: Voice messages | Execute | Implementing |
-| VOI-02 | P1: Voice messages | Execute | Implementing |
-| VOI-03 | P1: Voice messages | Execute | Implementing |
-| VOI-04 | P1: Voice messages | Execute | Implementing |
-| VOI-05 | P1: Voice messages | Execute | Implementing |
-| VOI-06 | P1: Voice messages | Execute | Implementing |
-| VOI-07 | P1: Voice messages | Execute | Implementing |
-| VOI-08 | P1: Voice messages | Execute | Implementing |
+| KBD-01 | P1: Composer above the keyboard | Execute | Implemented |
+| KBD-02 | P1: Composer above the keyboard | Execute | Implemented |
+| KBD-03 | P1: Composer above the keyboard | Execute | Implemented |
+| KBD-04 | P1: Composer above the keyboard | Execute | Implemented |
+| KBD-05 | P1: Composer above the keyboard | Execute | Implemented |
+| KBD-06 | P1: Composer above the keyboard | Execute | Implemented |
+| VOI-01 | P1: Voice messages | Execute | Implemented |
+| VOI-02 | P1: Voice messages | Execute | Implemented |
+| VOI-03 | P1: Voice messages | Execute | Implemented |
+| VOI-04 | P1: Voice messages | Execute | Implemented |
+| VOI-05 | P1: Voice messages | Execute | Implemented |
+| VOI-06 | P1: Voice messages | Execute | Implemented |
+| VOI-07 | P1: Voice messages | Execute | Implemented |
+| VOI-08 | P1: Voice messages | Execute | Implemented |
 | ACT-01 | P1: Long-press actions | Execute | Implementing |
 | ACT-02 | P1: Long-press actions | Execute | Implementing |
 | ACT-03 | P1: Long-press actions | Execute | Implementing |

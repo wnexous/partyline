@@ -20,7 +20,12 @@ export default defineConfig({
     browserName: "chromium",
     locale: "en-US",
     trace: "retain-on-failure",
-    launchOptions: { executablePath },
+    launchOptions: {
+      executablePath,
+      // A fake microphone, for the voice test that records with the browser's own MediaRecorder
+      // (mobile.spec.ts): no permission prompt and a synthetic stream. Nothing else asks for one.
+      args: ["--use-fake-ui-for-media-stream", "--use-fake-device-for-media-stream"],
+    },
   },
   projects: [
     { name: "desktop-1280", use: { viewport: { width: 1280, height: 800 } } },

@@ -679,3 +679,77 @@ describe("the timeline follows the visible area (KBD-02, KBD-06)", () => {
     );
   });
 });
+
+describe("audio attachments (VOI-07)", () => {
+  const recording = {
+    id: "v1",
+    name: "voice-message-2026-10-24-140509.webm",
+    mime: "audio/webm;codecs=opus",
+    size: 41_230,
+    status: "stored" as const,
+  };
+
+  it("plays a recording inline, in a player instead of a download link", async () => {
+    mockApi({
+      "GET /rooms/r1/messages": page([makeMessage({ seq: 1, text: "", attachments: [recording] })]),
+    });
+    renderTimeline();
+    const player = await screen.findByRole("group", { name: "Voice message" });
+    expect(within(player).getByRole("button", { name: "Play" })).toBeInTheDocument();
+    expect(within(player).getByRole("slider", { name: "Seek" })).toBeInTheDocument();
+    expect(player.closest("article")?.querySelector("audio")).toHaveAttribute(
+      "src",
+      "/api/v1/attachments/v1",
+    );
+    expect(screen.queryByRole("link", { name: /voice-message/ })).toBeNull();
+  });
+
+  it("leaves room above a grouped recording for the time that shows on hover, so the player's own time stays readable", async () => {
+    mockApi({
+      "GET /rooms/r1/messages": page([
+        makeMessage({ seq: 1, text: "listen to this" }),
+        makeMessage({ seq: 2, text: "", attachments: [recording] }),
+        makeMessage({ seq: 3, text: "and this", attachments: [{ ...recording, id: "v2" }] }),
+      ]),
+    });
+    renderTimeline();
+    const players = await screen.findAllByRole("group", { name: "Voice message" });
+    const list = (n: number) => players[n]?.closest("ul");
+    // Grouped under the first message and with no text of its own: the time sits above the player.
+    expect(list(0)).toHaveClass("mt-5");
+    // With text above it, the attachments follow the text as usual.
+    expect(list(1)).not.toHaveClass("mt-5");
+  });
+
+  it("plays any audio file, named by the file, and leaves other files as downloads", async () => {
+    mockApi({
+      "GET /rooms/r1/messages": page([
+        makeMessage({
+          seq: 1,
+          attachments: [
+            { id: "a1", name: "song.mp3", mime: "audio/mpeg", size: 3_000_000, status: "stored" },
+            { id: "a2", name: "notes.pdf", mime: "application/pdf", size: 9_000, status: "stored" },
+          ],
+        }),
+      ]),
+    });
+    renderTimeline();
+    expect(await screen.findByRole("group", { name: "song.mp3" })).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: /notes\.pdf/ })).toHaveAttribute("download");
+  });
+
+  it("shows audio that was not stored as the missing file it is, with no player", async () => {
+    mockApi({
+      "GET /rooms/r1/messages": page([
+        makeMessage({
+          seq: 1,
+          attachments: [{ ...recording, status: "too_large" as const }],
+        }),
+      ]),
+    });
+    renderTimeline();
+    await screen.findByText(/voice-message-2026-10-24-140509\.webm/);
+    expect(screen.queryByRole("group", { name: "Voice message" })).toBeNull();
+    expect(screen.queryByRole("slider")).toBeNull();
+  });
+});

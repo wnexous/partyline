@@ -212,6 +212,15 @@ describe("Enter on touch devices (ENT-01..ENT-05)", () => {
       expect(screen.queryByText(sendsOnEnter)).toBeNull();
     });
 
+    it("ENT-03: the hint wraps to a second line beside the three buttons, never cut with an ellipsis", () => {
+      touch();
+      mockApi({});
+      renderComposer();
+      const hint = screen.getByText(newLineOnEnter);
+      expect(hint).toHaveClass("line-clamp-2");
+      expect(hint).not.toHaveClass("truncate");
+    });
+
     it("ENT-03: the hint is in Portuguese when the app is", () => {
       touch();
       useLiveStore.setState({ locale: "pt-BR" });

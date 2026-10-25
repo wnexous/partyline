@@ -9,6 +9,7 @@ import {
   UserIcon,
 } from "lucide-react";
 import { lazy, memo, Suspense } from "react";
+import { AudioPlayer } from "@/components/audio-player";
 import { IntelligenceAvatar } from "@/components/intelligence/intelligence-avatar";
 import { IntelligenceName } from "@/components/intelligence/intelligence-name";
 import { ProfileLink } from "@/components/profile-link";
@@ -24,6 +25,7 @@ import type {
 import { type MessageKey, type Translate, useI18n } from "@/lib/i18n";
 import { formatAbsolute, formatClock } from "@/lib/time";
 import { cn } from "@/lib/utils";
+import { isAudio } from "@/lib/voice";
 
 const Markdown = lazy(() => import("@/components/markdown"));
 
@@ -297,7 +299,14 @@ export const MessageItem = memo(function MessageItem({
         </div>
 
         {message.attachments.length > 0 ? (
-          <ul className="mt-1.5 flex flex-wrap gap-2">
+          <ul
+            className={cn(
+              "mt-1.5 flex flex-wrap gap-2",
+              // The time of a grouped row shows at its top right on hover and focus: with no text
+              // above them, the attachments start below it, so a player's own time stays readable.
+              grouped && !message.text && !CONTENT_KIND[message.kind] && "mt-5",
+            )}
+          >
             {message.attachments.map((a) => (
               <li key={a.id} className="max-w-full">
                 <AttachmentView attachment={a} onOpenImage={onOpenImage} />
@@ -471,6 +480,8 @@ function AttachmentView({
       </button>
     );
   }
+  // A recording or any audio file plays in the row (VOI-07); the player falls back to a download.
+  if (isAudio(a.mime)) return <AudioPlayer attachment={a} />;
   return (
     <a
       href={url}

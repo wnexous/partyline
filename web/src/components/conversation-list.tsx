@@ -20,6 +20,7 @@ import { useI18n, useT } from "@/lib/i18n";
 import { inOrg } from "@/lib/orgs";
 import { formatAbsolute, formatListTime } from "@/lib/time";
 import { cn } from "@/lib/utils";
+import { isVoicePreview } from "@/lib/voice";
 
 /*
  * The sidebar's conversation list (LAY-01, DM-06): direct messages and groups together, newest
@@ -197,7 +198,9 @@ const ConversationRow = memo(function ConversationRow({
   const { t, locale } = useI18n();
   const last = c.last_message;
   const sender = last?.author_name ?? "";
-  const text = last?.text ?? "";
+  // A message that is only a recording is named as one, not by the file it made (VOI-04).
+  const text =
+    last && isVoicePreview(last.text) ? t("conversations.voiceMessage") : (last?.text ?? "");
 
   return (
     <Link

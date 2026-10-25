@@ -1,7 +1,8 @@
 import type { Browser, BrowserContext, Locator, Page, TestInfo } from "@playwright/test";
-import type { Me, Room, SetupRequest } from "../src/lib/api/types.gen";
+import type { Me, Message, Page as Paged, Room, SetupRequest } from "../src/lib/api/types.gen";
+import { makeWav, postVoice } from "./audio";
 import { apiCall, test as base, type Credentials, expect, settled } from "./fixtures";
-import { isMobile, loginAs } from "./helpers";
+import { expectNoSidewaysScroll, isMobile, loginAs } from "./helpers";
 import { type Instance, startInstance } from "./server";
 import { shoot } from "./shots";
 
@@ -84,6 +85,7 @@ async function rect(locator: Locator) {
     top: box.y,
     bottom: box.y + box.height,
     height: box.height,
+    width: box.width,
     left: box.x,
     right: box.x + box.width,
   };
@@ -98,6 +100,8 @@ declare global {
     /** The stand-in for the on-screen keyboard: shrinks the visual viewport, not the layout one. */
     __viewport: (over: { height?: number | null; offsetTop?: number; scale?: number }) => void;
     __blurs: number;
+    /** What the stand-in microphone was asked for and told (see `microphoneStandIn`). */
+    __mic: { requests: number; stopped: number; types: string[] };
   }
 }
 
@@ -309,3 +313,348 @@ test("a browser that resizes the page for the keyboard is followed too: Chrome w
     await context.close();
   }
 });
+
+/** A tap on a phone, a click elsewhere. */
+const press = (testInfo: TestInfo, target: Locator) =>
+  isMobile(testInfo) ? target.tap() : target.click();
+
+/** The middle of an element, where a finger lands on it. */
+async function centre(locator: Locator) {
+  const box = await rect(locator);
+  return { x: (box.left + box.right) / 2, y: (box.top + box.bottom) / 2 };
+}
+
+/**
+ * A finger on a phone (touch events through the browser's own input pipeline, so the page sees the
+ * pointer events and the capture a real finger makes), a mouse button elsewhere: the same three
+ * moves for a hold, a slide and a release.
+ */
+async function pointer(page: Page, context: BrowserContext, testInfo: TestInfo) {
+  if (!isMobile(testInfo)) {
+    return {
+      down: async (x: number, y: number) => {
+        await page.mouse.move(x, y);
+        await page.mouse.down();
+      },
+      move: (x: number, y: number) => page.mouse.move(x, y, { steps: 6 }),
+      up: () => page.mouse.up(),
+    };
+  }
+  const cdp = await context.newCDPSession(page);
+  const touch = (type: "touchStart" | "touchMove" | "touchEnd", x?: number, y?: number) =>
+    cdp.send("Input.dispatchTouchEvent", {
+      type,
+      touchPoints: x === undefined || y === undefined ? [] : [{ x, y }],
+    });
+  return {
+    down: (x: number, y: number) => touch("touchStart", x, y),
+    move: (x: number, y: number) => touch("touchMove", x, y),
+    up: () => touch("touchEnd"),
+  };
+}
+
+/**
+ * A headless browser has no microphone and records nothing. This puts a stand-in in front of
+ * `getUserMedia` and `MediaRecorder`: asking for the microphone gives a stream whose tracks count
+ * their `stop()`, or fails with the error named in `deny`; a recorder hands over, when it stops,
+ * 8 seconds of a tone (a WAV, labelled with the type it was asked for: a stand-in has no encoder).
+ * With `absent` the browser has no `MediaRecorder` at all. The page's own code is untouched.
+ */
+async function microphoneStandIn(page: Page, options: { deny?: string; absent?: boolean } = {}) {
+  await page.addInitScript(
+    ({ wav, deny, absent }) => {
+      if (absent) {
+        Object.defineProperty(window, "MediaRecorder", { configurable: true, value: undefined });
+        return;
+      }
+      const mic = { requests: 0, stopped: 0, types: [] as string[] };
+      window.__mic = mic;
+      const track = {
+        stop: () => {
+          mic.stopped += 1;
+        },
+      };
+      const stream = { getTracks: () => [track], getAudioTracks: () => [track] };
+      Object.defineProperty(navigator.mediaDevices, "getUserMedia", {
+        configurable: true,
+        value: async () => {
+          mic.requests += 1;
+          if (deny) throw new DOMException("The user denied the microphone", deny);
+          return stream;
+        },
+      });
+      const bytes = Uint8Array.from(atob(wav), (c) => c.charCodeAt(0));
+      class StandInRecorder {
+        static isTypeSupported = (type: string) => type === "audio/webm;codecs=opus";
+        state = "inactive";
+        mimeType: string;
+        ondataavailable: ((event: { data: Blob }) => void) | null = null;
+        onstop: (() => void) | null = null;
+        onerror: (() => void) | null = null;
+        constructor(_stream: unknown, init: { mimeType?: string } = {}) {
+          this.mimeType = init.mimeType ?? "audio/webm;codecs=opus";
+          mic.types.push(this.mimeType);
+        }
+        start() {
+          this.state = "recording";
+        }
+        stop() {
+          if (this.state === "inactive") return;
+          this.state = "inactive";
+          setTimeout(() => {
+            this.ondataavailable?.({ data: new Blob([bytes], { type: this.mimeType }) });
+            this.onstop?.();
+          }, 0);
+        }
+      }
+      Object.defineProperty(window, "MediaRecorder", {
+        configurable: true,
+        writable: true,
+        value: StandInRecorder,
+      });
+    },
+    {
+      wav: makeWav(8).toString("base64"),
+      deny: options.deny ?? null,
+      absent: options.absent ?? false,
+    },
+  );
+}
+
+/** The voice messages of a room, oldest first, as the API has them. */
+async function voiceMessages(context: BrowserContext, instance: Instance, roomId: string) {
+  const sent = await apiCall<Paged<Message>>(
+    context.request,
+    instance,
+    "GET",
+    `/rooms/${roomId}/messages?limit=50`,
+  );
+  return sent.items
+    .filter((m) => m.attachments.some((a) => a.mime.startsWith("audio/")))
+    .sort((a, b) => a.seq - b.seq);
+}
+
+test("a voice message is recorded, sent and played back in the timeline (VOI-01, VOI-02, VOI-04, VOI-07, VOI-08)", async ({
+  browser,
+  phone,
+}, testInfo) => {
+  const { context, page } = await openPage(browser, phone, testInfo);
+  try {
+    await microphoneStandIn(page);
+    const room = await newGroup(context, phone, "e2e-voice", ["a word first", "and another"]);
+    await page.goto(`/rooms/${room.id}`);
+    const log = page.getByRole("log");
+    const box = page.getByRole("textbox", { name: "Message e2e-voice" });
+    const record = page.getByRole("button", { name: "Record a voice message" });
+    const players = log.getByRole("group", { name: "Voice message" });
+
+    // VOI-01, VOI-02: the microphone is in the composer; a tap records, and the bar that counts
+    // the time and offers Cancel and Send takes the text box's place.
+    await expect(record).toBeVisible();
+    await press(testInfo, record);
+    await expect(page.getByText("Recording", { exact: true })).toBeVisible();
+    await expect(box).toBeHidden();
+    await expect(page.getByRole("button", { name: "Cancel recording" })).toBeVisible();
+    await expect(page.getByRole("timer")).toHaveText(/^0:0[1-9]$/);
+    expect(await page.evaluate(() => window.__mic.requests)).toBe(1);
+    await shoot(page, "voice-recording", testInfo);
+
+    // VOI-04: Send stops the recording and posts it as one audio attachment, in the format the
+    // recorder was asked for, with no text; the microphone is let go and the box is back.
+    await press(testInfo, page.getByRole("button", { name: "Send voice message" }));
+    await expect(players).toHaveCount(1);
+    await expect(page.getByText("Recording", { exact: true })).toHaveCount(0);
+    await expect(box).toBeVisible();
+    expect(await page.evaluate(() => window.__mic.stopped)).toBe(1);
+    expect(await page.evaluate(() => window.__mic.types)).toEqual(["audio/webm;codecs=opus"]);
+    const [sent] = await voiceMessages(context, phone, room.id);
+    expect(sent?.text).toBe("");
+    expect(sent?.attachments).toHaveLength(1);
+    expect(sent?.attachments[0]).toMatchObject({
+      mime: "audio/webm;codecs=opus",
+      status: "stored",
+    });
+    expect(sent?.attachments[0]?.name).toMatch(/^voice-message-\d{4}-\d{2}-\d{2}-\d{6}\.webm$/);
+
+    // VOI-07, VOI-08: the player knows how long the recording is, plays it, and its targets are
+    // finger-sized on a phone.
+    const mine = players.first();
+    const play = mine.getByRole("button", { name: "Play" });
+    const slider = mine.getByRole("slider", { name: "Seek" });
+    await expect(mine.getByText("0:00 / 0:08")).toBeVisible();
+    if (isMobile(testInfo)) {
+      expect((await rect(play)).width).toBeGreaterThanOrEqual(44);
+      for (const control of [play, slider]) {
+        expect((await rect(control)).height).toBeGreaterThanOrEqual(44);
+      }
+    }
+    await expectNoSidewaysScroll(page, "a conversation with a voice message");
+    await press(testInfo, play);
+    await expect(mine.getByRole("button", { name: "Pause" })).toBeVisible();
+    await expect(mine.getByText(/^0:0[1-4] \/ 0:08$/)).toBeVisible();
+    await press(testInfo, mine.getByRole("button", { name: "Pause" }));
+    await expect(play).toBeVisible();
+
+    // The seek bar is a slider that says where it is, and the arrow keys move the recording.
+    await slider.focus();
+    const before = Number(await slider.inputValue());
+    await page.keyboard.press("ArrowRight");
+    await expect.poll(async () => Number(await slider.inputValue())).toBe(before + 1);
+    await expect(slider).toHaveAttribute("aria-valuetext", `0:0${before + 1} of 0:08`);
+    const heard = await mine.locator("audio").evaluate((el: HTMLAudioElement) => el.currentTime);
+    expect(heard).toBeCloseTo(before + 1, 0);
+
+    // VOI-07: starting another recording pauses this one.
+    await postVoice(context.request, phone, room.id, { seconds: 40, stamp: "2026-10-24-140509" });
+    await expect(players).toHaveCount(2);
+    const other = players.nth(1);
+    await press(testInfo, play);
+    await expect(mine.getByRole("button", { name: "Pause" })).toBeVisible();
+    await press(testInfo, other.getByRole("button", { name: "Play" }));
+    await expect(other.getByRole("button", { name: "Pause" })).toBeVisible();
+    await expect(play).toBeVisible();
+
+    // The picture: one player at rest, one part-way through.
+    await press(testInfo, other.getByRole("button", { name: "Pause" }));
+    const otherSlider = other.getByRole("slider", { name: "Seek" });
+    await otherSlider.focus();
+    for (let step = 0; step < 18; step += 1) await page.keyboard.press("ArrowRight");
+    await expect(otherSlider).toHaveAttribute("aria-valuetext", /^0:(1[89]|2\d) of 0:40$/);
+    await mine.getByRole("button", { name: "Play" }).hover();
+    await shoot(page, "voice-player", testInfo);
+  } finally {
+    await context.close();
+  }
+});
+
+test("a refused microphone is said in plain words and leaves no recording bar behind (VOI-06)", async ({
+  browser,
+  phone,
+}, testInfo) => {
+  const { context, page } = await openPage(browser, phone, testInfo);
+  try {
+    await microphoneStandIn(page, { deny: "NotAllowedError" });
+    const room = await newGroup(context, phone, "e2e-mic-denied", ["nobody is listening"]);
+    await page.goto(`/rooms/${room.id}`);
+    const box = page.getByRole("textbox", { name: "Message e2e-mic-denied" });
+    const record = page.getByRole("button", { name: "Record a voice message" });
+
+    await press(testInfo, record);
+    const alert = page.getByRole("alert").filter({ hasText: "Microphone access is blocked" });
+    await expect(alert).toBeVisible();
+    await expect(alert).toContainText("Allow it for this site in your browser settings");
+    await expect(page.getByText("Recording", { exact: true })).toHaveCount(0);
+    await expect(box).toBeVisible();
+    await expect(record).toBeEnabled();
+    expect(await page.evaluate(() => window.__mic.requests)).toBe(1);
+    await shoot(page, "voice-denied", testInfo);
+    // Typing goes on as before, and the message goes away with the next try at the text.
+    await box.fill("then I will type");
+    await page.getByRole("button", { name: "Send" }).click();
+    await expect(log(page).getByText("then I will type", { exact: true })).toBeVisible();
+  } finally {
+    await context.close();
+  }
+});
+
+test("no microphone button is shown where the browser cannot record (VOI-01)", async ({
+  browser,
+  phone,
+}, testInfo) => {
+  const { context, page } = await openPage(browser, phone, testInfo);
+  try {
+    await microphoneStandIn(page, { absent: true });
+    const room = await newGroup(context, phone, "e2e-no-recorder", ["text only"]);
+    await page.goto(`/rooms/${room.id}`);
+    await expect(page.getByRole("textbox", { name: "Message e2e-no-recorder" })).toBeVisible();
+    await expect(page.getByRole("button", { name: "Send" })).toBeVisible();
+    await expect(page.getByLabel("Attach files")).toBeAttached();
+    await expect(page.getByRole("button", { name: "Record a voice message" })).toHaveCount(0);
+  } finally {
+    await context.close();
+  }
+});
+
+test("a hold records while held, sends on release and cancels when the finger slides away (VOI-03, VOI-05)", async ({
+  browser,
+  phone,
+}, testInfo) => {
+  const { context, page } = await openPage(browser, phone, testInfo);
+  try {
+    await microphoneStandIn(page);
+    const room = await newGroup(context, phone, "e2e-hold", ["hold the microphone"]);
+    await page.goto(`/rooms/${room.id}`);
+    const record = page.getByRole("button", { name: "Record a voice message" });
+    const players = log(page).getByRole("group", { name: "Voice message" });
+    await expect(record).toBeVisible();
+    const finger = await pointer(page, context, testInfo);
+    const { x, y } = await centre(record);
+
+    // Held for more than half a second: it records, says how to cancel, and sends on release.
+    await finger.down(x, y);
+    await expect(page.getByText("Recording", { exact: true })).toBeVisible();
+    await expect(page.getByText("Slide left to cancel")).toBeVisible();
+    await finger.up();
+    await expect(players).toHaveCount(1);
+    await expect(page.getByText("Recording", { exact: true })).toHaveCount(0);
+    expect(await page.evaluate(() => window.__mic.stopped)).toBe(1);
+
+    // Held and slid 120 px to the left: it says so before the finger lets go, and nothing is sent.
+    const again = await centre(record);
+    await finger.down(again.x, again.y);
+    await expect(page.getByText("Slide left to cancel")).toBeVisible();
+    await finger.move(again.x - 120, again.y);
+    await expect(page.getByText("Release to cancel")).toBeVisible();
+    await finger.up();
+    await expect(page.getByText("Recording", { exact: true })).toHaveCount(0);
+    await expect(record).toBeVisible();
+    await page.waitForTimeout(300);
+    expect(await page.evaluate(() => window.__mic.stopped)).toBe(2);
+    expect(await voiceMessages(context, phone, room.id)).toHaveLength(1);
+    await expect(players).toHaveCount(1);
+  } finally {
+    await context.close();
+  }
+});
+
+test("the browser's own recorder reaches the timeline, with a fake microphone (VOI-02, VOI-04, VOI-08)", async ({
+  browser,
+  phone,
+}, testInfo) => {
+  const { context, page } = await openPage(browser, phone, testInfo);
+  try {
+    const room = await newGroup(context, phone, "e2e-recorder", ["the real recorder"]);
+    await page.goto(`/rooms/${room.id}`);
+    const canRecord = await page.evaluate(
+      () =>
+        typeof MediaRecorder === "function" &&
+        MediaRecorder.isTypeSupported("audio/webm;codecs=opus"),
+    );
+    test.skip(!canRecord, "this browser cannot record WebM/Opus");
+    const record = page.getByRole("button", { name: "Record a voice message" });
+    const player = log(page).getByRole("group", { name: "Voice message" });
+
+    await press(testInfo, record);
+    await expect(page.getByText("Recording", { exact: true })).toBeVisible();
+    await expect(page.getByRole("timer")).toHaveText(/^0:0[1-9]$/);
+    await press(testInfo, page.getByRole("button", { name: "Send voice message" }));
+    await expect(player).toHaveCount(1);
+
+    // What the recorder made went through the upload as it was, and the server kept it.
+    const [sent] = await voiceMessages(context, phone, room.id);
+    expect(sent?.attachments[0]?.mime).toMatch(/^audio\/(webm|ogg)/);
+    expect(sent?.attachments[0]?.size).toBeGreaterThan(500);
+    expect(sent?.attachments[0]?.status).toBe("stored");
+    // The player works out the length of a recording the container does not carry (VOI-08).
+    await expect(player.getByText(/ \/ 0:0[1-5]$/)).toBeVisible();
+    await press(testInfo, player.getByRole("button", { name: "Play" }));
+    await expect
+      .poll(() => player.locator("audio").evaluate((el: HTMLAudioElement) => el.currentTime > 0))
+      .toBe(true);
+  } finally {
+    await context.close();
+  }
+});
+
+/** The conversation's message log. */
+const log = (page: Page) => page.getByRole("log");

@@ -1,4 +1,4 @@
-import { EyeIcon, PaperclipIcon, SendHorizontalIcon, XIcon } from "lucide-react";
+import { EyeIcon, PaperclipIcon, SendHorizontalIcon, Trash2Icon, XIcon } from "lucide-react";
 import {
   type ChangeEvent,
   type KeyboardEvent,
@@ -17,7 +17,9 @@ import {
   mentionOptionId,
 } from "@/components/mention-suggestions";
 import { Button } from "@/components/ui/button";
+import { type HoldState, MicButton, RecordingBar } from "@/components/voice-controls";
 import { useEnterSends } from "@/hooks/use-enter-sends";
+import { useVoiceRecorder } from "@/hooks/use-voice-recorder";
 import { isApiError } from "@/lib/api/client";
 import { useMe, usePostMessage } from "@/lib/api/queries";
 import {
@@ -28,9 +30,10 @@ import {
   MaxTextLength,
   type RoomMember,
 } from "@/lib/api/types.gen";
-import { type Translate, useI18n } from "@/lib/i18n";
+import { type MessageKey, type Translate, useI18n } from "@/lib/i18n";
 import { textLength } from "@/lib/schemas";
 import { cn } from "@/lib/utils";
+import type { VoiceFailure } from "@/lib/voice";
 
 /*
  * Message composer (UI-07). Enter sends the trimmed text and Shift+Enter adds a line, with a mouse
@@ -39,6 +42,13 @@ import { cn } from "@/lib/utils";
  * intelligences: chats are not members and there is no recipient picker any more (CID-22,
  * ROUTE-06/DLV-03..05 and their listen-only mapping are retired). The body carries the text and
  * files only. `members` still feeds the mention list below.
+ *
+ * A microphone button records a voice message (VOI-01..VOI-06, hooks/use-voice-recorder.ts): a tap
+ * records until Send or Cancel, a hold records while held. It is sent as a message of its own, an
+ * audio attachment with no text, and the draft stays where it is. The recording bar takes the text
+ * box's place, so focus moves to the button that sends it and, when the recording ends, goes back
+ * to the text box if it was there and stays on the microphone otherwise (no keyboard pops up
+ * after a hold).
  *
  * Typing `@` at the start of a word suggests the conversation's participants (MEN-01..MEN-06):
  * the filtered list opens above the box, Up/Down move, Enter, Tab or a tap complete `@handle `
@@ -63,6 +73,14 @@ function postErrorText(t: Translate, err: unknown): string {
 
 /** Cancels the press that would move focus off the text box; the click that follows still happens. */
 const keepFocus = (e: SyntheticEvent) => e.preventDefault();
+
+/** What each reason the microphone could not be had is called (VOI-06). */
+const MIC_FAILURES: Record<VoiceFailure, MessageKey> = {
+  denied: "composer.micDenied",
+  missing: "composer.micMissing",
+  busy: "composer.micBusy",
+  failed: "composer.micFailed",
+};
 
 export interface ComposerProps {
   roomId: string;
@@ -113,7 +131,21 @@ function ComposerForm({
   const viewerId = useMe().data?.id;
   // False on a touch device, where Enter is a new line (ENT-01).
   const sendsOnEnter = useEnterSends();
+  const voice = useVoiceRecorder();
+  // A finger that is down on the microphone: a hold, and whether it has slid far enough to cancel.
+  const [hold, setHold] = useState<HoldState>("off");
+  const [announcement, setAnnouncement] = useState("");
+  // From the moment Send stops a recording until the answer: that stop is the user's own.
+  const sendingVoice = useRef(false);
+  const micRef = useRef<HTMLButtonElement>(null);
+  // Whether the text box had focus when the recording began. It gets focus back afterwards, and
+  // only then: a hold on the microphone must not open the on-screen keyboard (VOI-04).
+  const typing = useRef(false);
+  // What takes focus once the recording is over and its bar has gone.
+  const refocus = useRef<"text" | "mic" | null>(null);
+  const voiceOn = voice.phase === "recording" || voice.phase === "recorded";
 
+  const shownError = voice.failure ? t(MIC_FAILURES[voice.failure]) : error;
   const length = textLength(text);
   const tooLong = length > MaxTextLength;
   const trimmed = text.trim();
@@ -155,8 +187,78 @@ function ComposerForm({
     setCaret(position);
   }, [text]);
 
+  // What a screen reader hears of a recording: that it started, and that it stopped by itself.
+  useEffect(() => {
+    if (voice.phase === "recording") setAnnouncement(t("composer.announceRecording"));
+    else if (voice.phase === "recorded" && !sendingVoice.current) {
+      setAnnouncement(t("composer.announceReady"));
+    }
+  }, [voice.phase, t]);
+
+  // The text box is hidden for as long as a recording is on, and focus must not fall off the page
+  // with it: it moves to the button that sends the recording, which Escape and a screen reader
+  // then still reach (VOI-02, VOI-05).
+  useEffect(() => {
+    if (voice.phase !== "recording") return;
+    const active = document.activeElement;
+    if (!active || active === document.body || active === textRef.current) {
+      micRef.current?.focus({ preventScroll: true });
+    }
+  }, [voice.phase]);
+
+  // The bar is gone again: focus goes back to where it was before the recording.
+  useEffect(() => {
+    if (voice.phase !== "idle" || !refocus.current) return;
+    const target = refocus.current === "text" ? textRef : micRef;
+    refocus.current = null;
+    target.current?.focus({ preventScroll: true });
+  }, [voice.phase]);
+
+  const startVoice = () => {
+    typing.current = document.activeElement === textRef.current;
+    refocus.current = null;
+    void voice.start();
+  };
+
+  /** Stops the recording and posts it as a message of its own: one audio file, no text (VOI-04). */
+  const sendVoice = async () => {
+    if (post.isPending) return;
+    sendingVoice.current = true;
+    const recorded = await voice.stop();
+    if (!recorded) {
+      sendingVoice.current = false;
+      return;
+    }
+    setError(null);
+    post.mutate(
+      { text: "", files: [recorded.file] },
+      {
+        onSuccess: () => {
+          sendingVoice.current = false;
+          refocus.current = typing.current ? "text" : "mic";
+          setAnnouncement("");
+          voice.cancel();
+        },
+        // The recording stays, stopped, to send again or to discard.
+        onError: (err) => {
+          sendingVoice.current = false;
+          setError(postErrorText(t, err));
+        },
+      },
+    );
+  };
+
+  const cancelVoice = () => {
+    refocus.current = typing.current ? "text" : "mic";
+    voice.cancel();
+    setHold("off");
+    setError(null);
+    setAnnouncement(t("composer.announceDiscarded"));
+  };
+
   const send = () => {
     if (!canSend) return;
+    voice.clearFailure();
     setError(null);
     post.mutate(
       {
@@ -242,12 +344,22 @@ function ComposerForm({
         e.preventDefault();
         send();
       }}
+      onKeyDown={(e) => {
+        // Escape drops a recording, wherever focus is in the composer (VOI-05).
+        if (e.key === "Escape" && voiceOn) {
+          e.preventDefault();
+          cancelVoice();
+        }
+      }}
     >
-      {error ? (
+      {shownError ? (
         <p id={errorId} role="alert" className="mb-2 text-sm text-destructive">
-          {error}
+          {shownError}
         </p>
       ) : null}
+      <p role="status" className="sr-only">
+        {announcement}
+      </p>
       <div
         className={cn(
           "relative rounded-lg border border-input bg-card shadow-xs transition-[border-color,box-shadow] focus-within:border-ring focus-within:ring-[3px] focus-within:ring-ring/25",
@@ -255,7 +367,7 @@ function ComposerForm({
             "border-destructive focus-within:border-destructive focus-within:ring-destructive/20",
         )}
       >
-        {open ? (
+        {open && !voiceOn ? (
           <MentionSuggestions
             id={mentionListId}
             candidates={candidates}
@@ -263,7 +375,14 @@ function ComposerForm({
             onPick={completeMention}
           />
         ) : null}
-        {files.length > 0 ? (
+        {voiceOn ? (
+          <RecordingBar
+            phase={voice.phase as "recording" | "recorded"}
+            elapsedMs={voice.elapsedMs}
+            hold={hold}
+          />
+        ) : null}
+        {files.length > 0 && !voiceOn ? (
           <ul className="flex flex-wrap gap-1.5 px-3 pt-2.5">
             {files.map((f) => (
               <li
@@ -295,6 +414,7 @@ function ComposerForm({
           onClick={syncCaret}
           onFocus={syncCaret}
           rows={1}
+          hidden={voiceOn}
           aria-label={t("composer.label", { room: roomName })}
           aria-invalid={tooLong || undefined}
           /* MEN-06: with the list open the box is the popup's combobox and names the active
@@ -311,60 +431,99 @@ function ComposerForm({
           // The on-screen Return key shows what it does (ENT-04).
           enterKeyHint={sendsOnEnter ? "send" : "enter"}
           placeholder={t("composer.placeholder", { room: roomName })}
-          className="block max-h-[min(10rem,calc(var(--app-height,100dvh)*0.4))] min-h-11 w-full resize-none overflow-y-auto bg-transparent px-3 pt-2.5 pb-1 text-[0.9375rem] leading-relaxed outline-none [field-sizing:content] placeholder:text-muted-foreground"
+          className={cn(
+            "block max-h-[min(10rem,calc(var(--app-height,100dvh)*0.4))] min-h-11 w-full resize-none overflow-y-auto bg-transparent px-3 pt-2.5 pb-1 text-[0.9375rem] leading-relaxed outline-none [field-sizing:content] placeholder:text-muted-foreground",
+            voiceOn && "hidden",
+          )}
         />
         <div className="flex items-center gap-1 px-1.5 pb-1.5">
-          {/* The file input itself takes focus; the label draws it as an icon button. */}
-          <label
-            title={t("composer.attach")}
-            className="relative inline-flex size-8 cursor-pointer items-center justify-center rounded-md text-muted-foreground transition-colors focus-within:ring-[3px] focus-within:ring-ring/70 hover:bg-accent hover:text-accent-foreground"
-          >
-            <input
-              ref={fileInput}
-              type="file"
-              multiple
-              className="sr-only"
-              aria-label={t("composer.attach")}
-              onChange={(e) => addFiles(e.target.files)}
-            />
-            <PaperclipIcon className="size-4" aria-hidden="true" />
-          </label>
+          {voiceOn ? (
+            <Button
+              type="button"
+              variant="ghost"
+              size="sm"
+              className="text-muted-foreground pointer-coarse:h-11"
+              aria-label={t(
+                voice.phase === "recorded"
+                  ? "composer.discardRecording"
+                  : "composer.cancelRecording",
+              )}
+              onClick={cancelVoice}
+            >
+              <Trash2Icon aria-hidden="true" />
+              {t(voice.phase === "recorded" ? "composer.discard" : "common.cancel")}
+            </Button>
+          ) : (
+            /* The file input itself takes focus; the label draws it as an icon button. */
+            <label
+              title={t("composer.attach")}
+              className="relative inline-flex size-8 cursor-pointer items-center justify-center rounded-md text-muted-foreground transition-colors focus-within:ring-[3px] focus-within:ring-ring/70 hover:bg-accent hover:text-accent-foreground pointer-coarse:size-11"
+            >
+              <input
+                ref={fileInput}
+                type="file"
+                multiple
+                className="sr-only"
+                aria-label={t("composer.attach")}
+                onChange={(e) => addFiles(e.target.files)}
+              />
+              <PaperclipIcon className="size-4" aria-hidden="true" />
+            </label>
+          )}
           {/* A phone has no Shift key to remember, but it does need to be told Enter no longer
               sends: its hint shows at every width and gives way to the counter's room (ENT-03). */}
-          <span
-            className={cn(
-              "ml-auto text-[0.7rem] text-muted-foreground",
-              sendsOnEnter ? "hidden lg:inline" : "min-w-0 truncate",
-            )}
-          >
-            {t(sendsOnEnter ? "composer.hint" : "composer.hintTouch")}
-          </span>
-          {length >= COUNTER_FROM ? (
+          {voiceOn ? null : (
             <span
-              id={counterId}
-              data-testid="composer-counter"
               className={cn(
-                "font-mono text-[0.7rem] tabular",
-                sendsOnEnter ? "ml-auto lg:ml-2" : "ml-2 shrink-0",
-                tooLong ? "font-semibold text-destructive" : "text-muted-foreground",
+                "min-w-0 flex-1 text-balance text-right text-[0.7rem] leading-tight text-muted-foreground",
+                // Two lines keep the whole hint beside the three buttons of a 360 px phone.
+                sendsOnEnter ? "hidden truncate lg:block" : "line-clamp-2",
               )}
             >
-              {fmt(length)} / {fmt(MaxTextLength)}
+              {t(sendsOnEnter ? "composer.hint" : "composer.hintTouch")}
             </span>
-          ) : null}
-          <Button
-            type="submit"
-            size="icon-sm"
-            disabled={!canSend}
-            aria-label={t("composer.send")}
-            // A press on Send must not take focus from the text box: that closes the on-screen
-            // keyboard, and the composer jumps while it does (KBD-03). The click still sends.
-            onPointerDown={keepFocus}
-            onMouseDown={keepFocus}
-            className={cn(sendsOnEnter ? length < COUNTER_FROM && "ml-auto lg:ml-2" : "ml-2")}
-          >
-            <SendHorizontalIcon aria-hidden="true" />
-          </Button>
+          )}
+          <div className="ml-auto flex items-center gap-1">
+            {!voiceOn && length >= COUNTER_FROM ? (
+              <span
+                id={counterId}
+                data-testid="composer-counter"
+                className={cn(
+                  "mr-1 shrink-0 font-mono text-[0.7rem] tabular",
+                  tooLong ? "font-semibold text-destructive" : "text-muted-foreground",
+                )}
+              >
+                {fmt(length)} / {fmt(MaxTextLength)}
+              </span>
+            ) : null}
+            {voice.supported ? (
+              <MicButton
+                ref={micRef}
+                phase={voice.phase}
+                sending={voiceOn && post.isPending}
+                onStart={startVoice}
+                onSend={() => void sendVoice()}
+                onCancel={cancelVoice}
+                onHold={setHold}
+                className="pointer-coarse:size-11"
+              />
+            ) : null}
+            {voiceOn ? null : (
+              <Button
+                type="submit"
+                size="icon-sm"
+                disabled={!canSend}
+                aria-label={t("composer.send")}
+                // A press on Send must not take focus from the text box: that closes the on-screen
+                // keyboard, and the composer jumps while it does (KBD-03). The click still sends.
+                onPointerDown={keepFocus}
+                onMouseDown={keepFocus}
+                className="pointer-coarse:size-11"
+              >
+                <SendHorizontalIcon aria-hidden="true" />
+              </Button>
+            )}
+          </div>
         </div>
       </div>
     </form>
