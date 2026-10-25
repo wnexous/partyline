@@ -189,9 +189,10 @@ describe("what it leaves in the cache (RCT-01, RCT-06, RCT-08)", () => {
     expect(reactionsOf(1)).toEqual([{ emoji: "👍", by: [THEM, ME] }]);
   });
 
-  it("undoes only itself when another toggle was made meanwhile", async () => {
+  it("leaves a failed toggle to the last one still on its way", async () => {
     const first = pending();
     const second = pending();
+    const failed = vi.fn();
     mockApi({
       "POST /rooms/r1/messages/m-r1-1/reactions": (_url, init) => {
         const emoji = (JSON.parse(String(init?.body)) as { emoji: string }).emoji;
@@ -199,13 +200,19 @@ describe("what it leaves in the cache (RCT-01, RCT-06, RCT-08)", () => {
       },
     });
     seed(makeMessage({ seq: 1 }));
-    const { result } = renderHook(() => useToggleReaction("r1"), { wrapper });
+    const { result } = renderHook(() => useToggleReaction("r1", failed), { wrapper });
     act(() => result.current.mutate({ messageId: "m-r1-1", emoji: "👍", add: true, by: ME }));
     act(() => result.current.mutate({ messageId: "m-r1-1", emoji: "❤️", add: true, by: ME }));
     await waitFor(() => expect(reactionsOf(1)).toHaveLength(2));
 
+    // The first failure must not undo itself on top of the second toggle: the second's answer,
+    // which knows both, settles the message.
     await act(async () => first.release(apiError(500, "internal")));
-    await waitFor(() => expect(reactionsOf(1)).toEqual([{ emoji: "❤️", by: [ME] }]));
+    await waitFor(() => expect(failed).toHaveBeenCalledTimes(1));
+    expect(reactionsOf(1)).toEqual([
+      { emoji: "👍", by: [ME] },
+      { emoji: "❤️", by: [ME] },
+    ]);
     await act(async () => second.release(answer([{ emoji: "❤️", by: [ME] }])));
     await waitFor(() => expect(reactionsOf(1)).toEqual([{ emoji: "❤️", by: [ME] }]));
   });
@@ -285,6 +292,91 @@ describe("what it leaves in the cache (RCT-01, RCT-06, RCT-08)", () => {
     expect(qc.getQueryData<ActivityItem[]>(queryKeys.activity)?.[0]?.message.reactions).toEqual([
       { emoji: "👍", by: [ME] },
     ]);
+  });
+});
+
+describe("rollback under rapid toggles (RCT-08)", () => {
+  it("puts the chip back when one toggle fails", async () => {
+    mockApi({
+      "POST /rooms/r1/messages/m-r1-1/reactions": apiError(500, "internal"),
+      "GET /rooms/r1/messages": json(200, {
+        items: [makeMessage({ seq: 1, reactions: [{ emoji: "🎉", by: [THEM] }] })],
+        has_more: false,
+      }),
+    });
+    seed(makeMessage({ seq: 1, reactions: [{ emoji: "🎉", by: [THEM] }] }));
+    const { result } = renderHook(() => useToggleReaction("r1"), { wrapper });
+    await act(async () => {
+      await result.current
+        .mutateAsync({ messageId: "m-r1-1", emoji: "👍", add: true, by: ME })
+        .catch(() => {});
+    });
+    await waitFor(() => expect(reactionsOf(1)).toEqual([{ emoji: "🎉", by: [THEM] }]));
+  });
+
+  it("keeps an add that failed from undoing the remove that follows it", async () => {
+    const add = pending();
+    const remove = pending();
+    const failed = vi.fn();
+    mockApi({
+      "POST /rooms/r1/messages/m-r1-1/reactions": () => add.response as never,
+      "DELETE /rooms/r1/messages/m-r1-1/reactions/%F0%9F%91%8D": () => remove.response as never,
+    });
+    seed(makeMessage({ seq: 1 }));
+    const { result } = renderHook(() => useToggleReaction("r1", failed), { wrapper });
+    act(() => result.current.mutate({ messageId: "m-r1-1", emoji: "👍", add: true, by: ME }));
+    await waitFor(() => expect(reactionsOf(1)).toEqual([{ emoji: "👍", by: [ME] }]));
+    act(() => result.current.mutate({ messageId: "m-r1-1", emoji: "👍", add: false, by: ME }));
+    await waitFor(() => expect(reactionsOf(1)).toEqual([]));
+
+    // The add fails while the remove is still out: the screen keeps what the remove shows.
+    await act(async () => add.release(apiError(500, "internal")));
+    await waitFor(() => expect(failed).toHaveBeenCalledTimes(1));
+    expect(reactionsOf(1)).toEqual([]);
+    await act(async () => remove.release(answer([])));
+    await waitFor(() => expect(reactionsOf(1)).toEqual([]));
+  });
+
+  it("follows the server when the add succeeds and the later remove fails", async () => {
+    const add = pending();
+    const remove = pending();
+    mockApi({
+      "POST /rooms/r1/messages/m-r1-1/reactions": () => add.response as never,
+      "DELETE /rooms/r1/messages/m-r1-1/reactions/%F0%9F%91%8D": () => remove.response as never,
+      // The server holds a list the failing remove's opposite toggle cannot know: the refetch wins.
+      "GET /rooms/r1/messages": json(200, {
+        items: [
+          makeMessage({
+            seq: 1,
+            reactions: [
+              { emoji: "🎉", by: [THEM] },
+              { emoji: "👍", by: [ME] },
+            ],
+          }),
+        ],
+        has_more: false,
+      }),
+    });
+    seed(makeMessage({ seq: 1 }));
+    const { result } = renderHook(() => useToggleReaction("r1"), { wrapper });
+    act(() => result.current.mutate({ messageId: "m-r1-1", emoji: "👍", add: true, by: ME }));
+    await waitFor(() => expect(reactionsOf(1)).toEqual([{ emoji: "👍", by: [ME] }]));
+    act(() => result.current.mutate({ messageId: "m-r1-1", emoji: "👍", add: false, by: ME }));
+    await waitFor(() => expect(reactionsOf(1)).toEqual([]));
+
+    // The add reaches the server, but its answer is held while the remove is still out.
+    await act(async () => add.release(answer([{ emoji: "👍", by: [ME] }])));
+    await act(() => new Promise((r) => setTimeout(r, 20)));
+    expect(reactionsOf(1)).toEqual([]);
+
+    // The remove fails last: the screen takes the server's list, not a local opposite toggle.
+    await act(async () => remove.release(apiError(500, "internal")));
+    await waitFor(() =>
+      expect(reactionsOf(1)).toEqual([
+        { emoji: "🎉", by: [THEM] },
+        { emoji: "👍", by: [ME] },
+      ]),
+    );
   });
 });
 
