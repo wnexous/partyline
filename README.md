@@ -427,6 +427,7 @@ Everything is configured with environment variables.
 | `PARTYLINE_PUBLIC_URL` | `http://localhost:8080` | URL people open in the browser. Used for the Origin checks, invite links and cookies (`Secure` when https). |
 | `PARTYLINE_SECRET_KEY` | generated | Base64 32-byte key that encrypts connector secrets. When unset, one is generated into `<data>/secret.key` (mode 0600). |
 | `PARTYLINE_MAX_UPLOAD_MB` | `25` | Maximum size of one uploaded file. |
+| `PARTYLINE_MEMORY_LIMIT` | from the container | Soft memory limit of the server: a size such as `300MiB` (units `B`, `KiB`, `MiB`, `GiB`, `TiB`; at least `16MiB`), or `off`. Unset, it is `GOMEMLIMIT` when you set that, else 90% of the container's memory limit, else none. See [Memory](#memory). |
 | `PARTYLINE_LOG_LEVEL` | `info` | `debug`, `info`, `warn` or `error`. |
 | `PARTYLINE_LOG_FORMAT` | `json` | `json` or `text`. |
 | `PARTYLINE_TRUSTED_PROXIES` | empty | Comma-separated CIDRs or IPs of reverse proxies whose `X-Forwarded-For` is trusted. |
@@ -435,6 +436,58 @@ Everything is configured with environment variables.
 
 Run it behind a TLS-terminating reverse proxy for internet exposure, set
 `PARTYLINE_PUBLIC_URL` to the https URL and list the proxy in `PARTYLINE_TRUSTED_PROXIES`.
+
+## Operating it
+
+### Health checks
+
+| Endpoint | Answers | Use it for |
+| --- | --- | --- |
+| `GET /healthz` | `200` with the version whenever the process answers. | Liveness. The image's `HEALTHCHECK` runs `partyline healthcheck`, which asks it, so Docker, Swarm and Dokploy restart the container only when the server itself stops answering. |
+| `GET /readyz` | `503` until the database is migrated, then `200`. | Readiness. The body says `"status": "ok"`, or `"status": "degraded"` with `connectors_crash_looping`: how many connectors keep panicking. |
+
+A connector that panics does not stop the server. The panic is recovered and logged with its stack
+(never the message text), the connection shows the `error` status with where it crashed, and it
+restarts after a backoff that doubles from 2 s up to 120 s. The web app, the sessions and the other
+connections keep working. When its last three runs in a row ended in a panic, and none has lasted
+five minutes since, `/readyz` reports `degraded`. It still answers `200`: the rest of the server
+works, and a failing probe would take all of it out of rotation. Point a monitor at `/readyz` and
+alert on `degraded` in the body (a keyword check, in Uptime Kuma for example), and keep the
+container health check on `/healthz`: one bad connector must not restart the container.
+
+### One process per data directory
+
+`partyline serve` takes an exclusive lock on `<data dir>/partyline.lock` before it touches
+anything. A second `serve` on the same directory (a stray `partyline serve`, or a Swarm update that
+starts the new container before it stops the old one) exits at once with an error that names the
+directory, instead of running every connector twice and sending every reply twice. The lock
+belongs to the process: a crash or a `kill -9` leaves nothing to clean up. `partyline admin`, the
+`docker exec` commands above, runs no server and does not take it. The directory must be on a
+filesystem that supports file locks, which a local disk or a Docker volume does.
+
+Run one replica, and on Docker Swarm or Dokploy update with `stop-first` (see
+[docker-compose.yml](docker-compose.yml)): with `start-first` the new container finds `/data`
+held and exits until the old one stops.
+
+### Memory
+
+Bound the memory of the server in two layers. Give the container a hard limit
+(`deploy.resources.limits.memory` in [docker-compose.yml](docker-compose.yml), `--memory` for
+`docker run`): a leak or a burst then stays in the container instead of squeezing the other
+services of the host. A fresh server idles at about 20 MiB, so `512M` leaves generous room for
+uploads, image processing and busy conversations.
+
+Inside the container the Go runtime gets a soft limit, so that the garbage collector works harder
+as the heap nears the container's limit, instead of the kernel's OOM killer ending the server
+first. `partyline serve` picks it:
+
+1. `PARTYLINE_MEMORY_LIMIT`, when set: a size such as `300MiB`, or `off` for no limit.
+2. Else `GOMEMLIMIT`, the Go runtime's own variable, which it applies by itself.
+3. Else 90% of the memory limit of the container (cgroup v1 or v2; also the limit of a systemd
+   service or of the slice it runs in), when there is one.
+4. Else no limit.
+
+The server logs the limit it uses when it starts (`memory limit`, with its source).
 
 ## Security model
 

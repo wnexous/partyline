@@ -437,6 +437,7 @@ Tudo é configurado por variáveis de ambiente.
 | `PARTYLINE_PUBLIC_URL` | `http://localhost:8080` | URL que as pessoas abrem no navegador. Usada na checagem de Origin, nos links de convite e nos cookies (`Secure` quando https). |
 | `PARTYLINE_SECRET_KEY` | gerada | Chave base64 de 32 bytes que criptografa os segredos dos conectores. Se ausente, uma é gerada em `<data>/secret.key` (modo 0600). |
 | `PARTYLINE_MAX_UPLOAD_MB` | `25` | Tamanho máximo de um arquivo enviado. |
+| `PARTYLINE_MEMORY_LIMIT` | do contêiner | Limite suave de memória do servidor: um tamanho como `300MiB` (unidades `B`, `KiB`, `MiB`, `GiB`, `TiB`; no mínimo `16MiB`) ou `off`. Sem ela, vale o `GOMEMLIMIT` se você o definir; senão 90% do limite de memória do contêiner; senão nenhum. Veja [Memória](#memória). |
 | `PARTYLINE_LOG_LEVEL` | `info` | `debug`, `info`, `warn` ou `error`. |
 | `PARTYLINE_LOG_FORMAT` | `json` | `json` ou `text`. |
 | `PARTYLINE_TRUSTED_PROXIES` | vazio | CIDRs ou IPs (separados por vírgula) de proxies reversos cujo `X-Forwarded-For` é confiável. |
@@ -445,6 +446,60 @@ Tudo é configurado por variáveis de ambiente.
 
 Para expor na internet, rode atrás de um proxy reverso com TLS, defina `PARTYLINE_PUBLIC_URL`
 com a URL https e liste o proxy em `PARTYLINE_TRUSTED_PROXIES`.
+
+## Operação
+
+### Verificações de saúde
+
+| Endpoint | Responde | Serve para |
+| --- | --- | --- |
+| `GET /healthz` | `200` com a versão sempre que o processo responde. | Vivacidade. O `HEALTHCHECK` da imagem roda `partyline healthcheck`, que consulta este endpoint, então o Docker, o Swarm e o Dokploy só reiniciam o contêiner quando o próprio servidor para de responder. |
+| `GET /readyz` | `503` até o banco ser migrado, depois `200`. | Prontidão. O corpo diz `"status": "ok"` ou `"status": "degraded"` com `connectors_crash_looping`: quantos conectores continuam em pânico. |
+
+Um conector que entra em pânico não derruba o servidor. O pânico é capturado e registrado no log
+com a pilha (nunca com o texto das mensagens), a conexão mostra o status `error` com o ponto onde
+caiu e volta depois de uma espera que dobra de 2 s até 120 s. O app web, as sessões e as outras
+conexões continuam funcionando. Quando as três últimas execuções seguidas de um conector terminaram
+em pânico e nenhuma durou cinco minutos desde então, o `/readyz` informa `degraded`. Ele continua
+respondendo `200`: o resto do servidor funciona, e uma sonda que falhasse tiraria tudo do ar. Aponte
+um monitor para o `/readyz` e alerte quando o corpo tiver `degraded` (uma checagem de palavra-chave,
+no Uptime Kuma por exemplo), e mantenha a verificação de saúde do contêiner no `/healthz`: um
+conector com defeito não deve reiniciar o contêiner.
+
+### Um processo por diretório de dados
+
+O `partyline serve` pega um lock exclusivo em `<data dir>/partyline.lock` antes de mexer em
+qualquer coisa. Um segundo `serve` no mesmo diretório (um `partyline serve` esquecido, ou uma
+atualização do Swarm que sobe o contêiner novo antes de parar o antigo) termina na hora com um erro
+que cita o diretório, em vez de rodar cada conector duas vezes e enviar cada resposta duas vezes. O
+lock pertence ao processo: uma queda ou um `kill -9` não deixa nada para limpar. O `partyline
+admin`, os comandos `docker exec` acima, não sobe servidor e não pega o lock. O diretório precisa
+ficar num sistema de arquivos com suporte a locks, o que vale para um disco local ou um volume do
+Docker.
+
+Rode uma réplica só e, no Docker Swarm ou no Dokploy, atualize com `stop-first` (veja o
+[docker-compose.yml](docker-compose.yml)): com `start-first` o contêiner novo encontra o `/data`
+ocupado e sai até o antigo parar.
+
+### Memória
+
+Limite a memória do servidor em duas camadas. Dê ao contêiner um limite rígido
+(`deploy.resources.limits.memory` no [docker-compose.yml](docker-compose.yml), `--memory` no
+`docker run`): um vazamento ou um pico fica dentro do contêiner, em vez de apertar os outros
+serviços da máquina. Um servidor recém-iniciado fica em torno de 20 MiB, então `512M` deixa folga
+de sobra para envios de arquivos, processamento de imagens e conversas movimentadas.
+
+Dentro do contêiner, o runtime do Go recebe um limite suave, para que o coletor de lixo trabalhe
+mais à medida que o heap se aproxima do limite do contêiner, em vez de o OOM killer do kernel
+encerrar o servidor antes. O `partyline serve` escolhe o limite:
+
+1. `PARTYLINE_MEMORY_LIMIT`, quando definida: um tamanho como `300MiB`, ou `off` para não ter limite.
+2. Senão `GOMEMLIMIT`, a variável do próprio runtime do Go, que ele aplica sozinho.
+3. Senão 90% do limite de memória do contêiner (cgroup v1 ou v2; também o limite de um serviço do
+   systemd ou da slice em que ele roda), quando existir.
+4. Senão nenhum limite.
+
+O servidor registra no log o limite que usa ao iniciar (`memory limit`, com a origem).
 
 ## Modelo de segurança
 

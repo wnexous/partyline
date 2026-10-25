@@ -52,6 +52,16 @@ func Backoff(n int) time.Duration {
 	return min(d, MaxBackoff)
 }
 
+// Limits of the crash-loop report (CON-15).
+const (
+	// CrashLoopThreshold is how many runs in a row must end in a panic for a connector to count as
+	// crash-looping.
+	CrashLoopThreshold = 3
+	// StableRun is how long a run must last for the panic that ends it to count as a new, isolated
+	// one rather than another turn of a loop. A connector that has run this long is healthy again.
+	StableRun = 5 * time.Minute
+)
+
 // Redacted replaces secrets in texts shown to users or stored.
 const Redacted = "[redacted]"
 
@@ -112,10 +122,13 @@ type ManagerDeps struct {
 	MigrateChat func(ctx context.Context, src Source, oldID, newID string)
 	// Wait sleeps for d or until ctx is done; defaults to a timer. Tests pass a fake clock.
 	Wait func(ctx context.Context, d time.Duration) error
+	// Now returns the current time, which tells how long a run lasted (CON-15); defaults to time.Now.
+	Now func() time.Time
 }
 
 // Manager runs enabled connectors, each under a supervisor that restarts Run with backoff
-// and reports status changes (CON-04, CON-06).
+// and reports status changes (CON-04, CON-06). A panic of a connector is recovered, reported as
+// its error and restarted the same way, so one bad connector never ends the process (CON-15).
 type Manager struct {
 	d ManagerDeps
 
@@ -128,13 +141,50 @@ type Manager struct {
 }
 
 type supervisor struct {
-	id        string
-	kind      Kind
-	conn      Connector
-	secrets   []string
+	id      string
+	kind    Kind
+	conn    Connector
+	secrets []string
+	// log is scoped to the connector.
+	log       *slog.Logger
 	cancel    context.CancelFunc
 	done      chan struct{}
 	connected atomic.Bool
+
+	mu sync.Mutex // guards crashes and since
+	// crashes is how many runs in a row ended in a panic; since is when the current run began, zero
+	// while the supervisor waits to restart it (CON-15).
+	crashes int
+	since   time.Time
+}
+
+// began records that a run starts at now.
+func (s *supervisor) began(now time.Time) {
+	s.mu.Lock()
+	s.since = now
+	s.mu.Unlock()
+}
+
+// ended records how a run ended: in a panic or not, after lived. A run that did not panic, or that
+// lasted StableRun before it did, starts the count over.
+func (s *supervisor) ended(panicked bool, lived time.Duration) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.since = time.Time{}
+	if !panicked || lived >= StableRun {
+		s.crashes = 0
+	}
+	if panicked {
+		s.crashes++
+	}
+}
+
+// crashLooping tells whether the connector keeps panicking: CrashLoopThreshold runs in a row ended in
+// a panic, and the one that runs now, if any, has not lasted StableRun yet.
+func (s *supervisor) crashLooping(now time.Time) bool {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.crashes >= CrashLoopThreshold && (s.since.IsZero() || now.Sub(s.since) < StableRun)
 }
 
 // NewManager returns a Manager; call Start to run the enabled connectors.
@@ -144,6 +194,9 @@ func NewManager(d ManagerDeps) *Manager {
 	}
 	if d.Wait == nil {
 		d.Wait = sleep
+	}
+	if d.Now == nil {
+		d.Now = time.Now
 	}
 	return &Manager{d: d, running: map[string]*supervisor{}}
 }
@@ -289,17 +342,22 @@ func (m *Manager) Apply(id string) {
 		return
 	}
 	sec := k.SecretValues(cfg)
-	conn, err := k.New(cfg, Deps{
-		ID: id, Logger: m.d.Logger.With("connector_id", id, "kind", k.Name), UserAgent: m.d.UserAgent, FileURL: m.d.FileURL,
-		AllowPrivateNetworks: m.d.AllowPrivateNetworks, PrivateAllowlist: m.d.PrivateAllowlist,
-		MaxMediaBytes: m.d.MaxMediaBytes, Replays: m.d.Replays,
+	log := m.d.Logger.With("connector_id", id, "kind", k.Name)
+	var conn Connector
+	err = Guard(log, "start", func() (err error) {
+		conn, err = k.New(cfg, Deps{
+			ID: id, Logger: log, UserAgent: m.d.UserAgent, FileURL: m.d.FileURL,
+			AllowPrivateNetworks: m.d.AllowPrivateNetworks, PrivateAllowlist: m.d.PrivateAllowlist,
+			MaxMediaBytes: m.d.MaxMediaBytes, Replays: m.d.Replays,
+		})
+		return err
 	})
 	if err != nil {
 		m.persist(id, StatusError, Redact(err.Error(), sec))
 		return
 	}
 	ctx, cancel := context.WithCancel(base)
-	s := &supervisor{id: id, kind: k, conn: conn, secrets: sec, cancel: cancel, done: make(chan struct{})}
+	s := &supervisor{id: id, kind: k, conn: conn, secrets: sec, log: log, cancel: cancel, done: make(chan struct{})}
 	m.mu.Lock()
 	m.running[id] = s
 	m.mu.Unlock()
@@ -332,13 +390,18 @@ func (m *Manager) current(id string) *supervisor {
 	return m.running[id]
 }
 
-// Send delivers m through the running connector; secrets are redacted from its error.
+// Send delivers m through the running connector; secrets are redacted from its error. A panic of the
+// connector fails this send alone (CON-15).
 func (m *Manager) Send(ctx context.Context, connectorID string, msg Outbound) (string, error) {
 	s := m.current(connectorID)
 	if s == nil {
 		return "", ErrNotRunning
 	}
-	ext, err := s.conn.Send(ctx, msg)
+	var ext string
+	err := Guard(s.log, "send", func() (err error) {
+		ext, err = s.conn.Send(ctx, msg)
+		return err
+	})
 	if err != nil {
 		return "", errors.New(Redact(err.Error(), s.secrets))
 	}
@@ -357,20 +420,34 @@ func (m *Manager) React(ctx context.Context, connectorID string, r Reaction) err
 	if !ok {
 		return ErrReactionsUnsupported
 	}
-	if err := reactor.React(ctx, r); err != nil {
+	if err := Guard(s.log, "react", func() error { return reactor.React(ctx, r) }); err != nil {
 		return errors.New(Redact(err.Error(), s.secrets))
 	}
 	return nil
 }
 
-// Hook returns the running connector when it receives messages over HTTP.
+// Hook returns the running connector when it receives messages over HTTP. A panic of the
+// connector fails that request alone (CON-15).
 func (m *Manager) Hook(connectorID string) (HookReceiver, bool) {
 	s := m.current(connectorID)
 	if s == nil {
 		return nil, false
 	}
 	r, ok := s.conn.(HookReceiver)
-	return r, ok
+	if !ok {
+		return nil, false
+	}
+	return guardedHook{r: r, log: s.log}, true
+}
+
+// guardedHook is a HookReceiver that turns the panic of the connector into an error.
+type guardedHook struct {
+	r   HookReceiver
+	log *slog.Logger
+}
+
+func (g guardedHook) ReceiveHook(ctx context.Context, req HookRequest) error {
+	return Guard(g.log, "hook", func() error { return g.r.ReceiveHook(ctx, req) })
 }
 
 // ListChats lists the chats of the running connector (CON-09). A platform failure is
@@ -384,7 +461,14 @@ func (m *Manager) ListChats(ctx context.Context, connectorID string) ([]ChatInfo
 	if !ok {
 		return nil, ErrCannotListChats
 	}
-	chats, err := lister.ListChats(ctx)
+	var chats []ChatInfo
+	err := Guard(s.log, "list chats", func() (err error) {
+		chats, err = lister.ListChats(ctx)
+		return err
+	})
+	if errors.Is(err, ErrPanic) {
+		return nil, err // a bug of the connector, not a failure of the platform: the API answers 500
+	}
 	if err != nil {
 		detail := Redact(err.Error(), s.secrets)
 		m.d.Logger.Warn("connectors: list chats failed", "connector_id", connectorID, "err", detail)
@@ -394,20 +478,29 @@ func (m *Manager) ListChats(ctx context.Context, connectorID string) ([]ChatInfo
 }
 
 // supervise calls Run until ctx ends, waiting Backoff(n) after the n-th consecutive failure;
-// a connection that reached StatusConnected resets the count (CON-06).
+// a connection that reached StatusConnected resets the count (CON-06). A panic is a failure like
+// any other, except that a connection which crashes soon after it connected does not reset the
+// count: a connector that connects and panics over and over backs off like one that cannot
+// connect (CON-15).
 func (m *Manager) supervise(ctx context.Context, s *supervisor) {
 	defer close(s.done)
 	failures := 0
 	for {
 		m.report(s, StatusConnecting, "")
-		err := s.conn.Run(ctx, handler{m: m, s: s})
+		start := m.d.Now()
+		s.began(start)
+		err := m.run(ctx, s)
 		if ctx.Err() != nil {
 			return
 		}
 		if err == nil {
 			err = errors.New("connection closed")
 		}
-		if s.connected.Swap(false) {
+		panicked := errors.Is(err, ErrPanic)
+		lived := m.d.Now().Sub(start)
+		s.ended(panicked, lived)
+		connected := s.connected.Swap(false)
+		if connected && (!panicked || lived >= StableRun) {
 			failures = 0
 		}
 		failures++
@@ -416,6 +509,42 @@ func (m *Manager) supervise(ctx context.Context, s *supervisor) {
 			return
 		}
 	}
+}
+
+// run calls the connector's Run once. A panic of Run, or of a call the connector made into the
+// manager, ends it with an error that matches ErrPanic.
+func (m *Manager) run(ctx context.Context, s *supervisor) error {
+	runCtx, end := context.WithCancelCause(ctx)
+	defer end(nil)
+	err := Guard(s.log, "run", func() error { return s.conn.Run(runCtx, handler{m: m, s: s, end: end}) })
+	if ctx.Err() == nil {
+		// A panic of a handler call ended runCtx (handler.guard): that is why Run returned, whatever
+		// it answers to being cancelled.
+		if cause := context.Cause(runCtx); errors.Is(cause, ErrPanic) {
+			return cause
+		}
+	}
+	return err
+}
+
+// CrashLooping counts the running connectors that keep panicking: CrashLoopThreshold runs in a
+// row ended in a panic and none has lasted StableRun since (CON-15). /readyz reports the server
+// degraded while it is not zero.
+func (m *Manager) CrashLooping() int {
+	m.mu.Lock()
+	all := make([]*supervisor, 0, len(m.running))
+	for _, s := range m.running {
+		all = append(all, s)
+	}
+	m.mu.Unlock()
+	now := m.d.Now()
+	n := 0
+	for _, s := range all {
+		if s.crashLooping(now) {
+			n++
+		}
+	}
+	return n
 }
 
 // report persists a status of a still-current supervisor.
@@ -438,39 +567,57 @@ func (m *Manager) persist(id string, st Status, detail string) {
 	m.d.Bus.Publish(events.ConnectorStatus{ConnectorID: id, Status: string(st), Detail: detail})
 }
 
-// handler is the Handler of one supervisor.
+// handler is the Handler of one run of one supervisor.
 type handler struct {
 	m *Manager
 	s *supervisor
+	// end stops the run this handler was made for, with the cause run returns.
+	end context.CancelCauseFunc
+}
+
+// guard calls fn, a call of the connector into Partyline. The panic of such a call (a bug of the
+// inbound pipeline met through a connector's goroutine, say) must not end the process: it is
+// recovered and stops the connector's run, which the supervisor restarts after a backoff like any
+// failure (CON-15). The connector does not see the panic: its call returns.
+func (h handler) guard(where string, fn func()) {
+	if err := Guard(h.s.log, where, func() error { fn(); return nil }); err != nil {
+		h.end(err)
+	}
 }
 
 func (h handler) Inbound(ctx context.Context, msg Inbound) {
-	if h.m.d.Inbound == nil || h.m.current(h.s.id) != h.s {
-		return
-	}
-	h.m.d.Inbound(ctx, h.source(), msg)
+	h.guard("inbound", func() {
+		if h.m.d.Inbound == nil || h.m.current(h.s.id) != h.s {
+			return
+		}
+		h.m.d.Inbound(ctx, h.source(), msg)
+	})
 }
 
 func (h handler) MigrateChat(ctx context.Context, oldID, newID string) {
-	if h.m.d.MigrateChat == nil || h.m.current(h.s.id) != h.s {
-		return
-	}
-	h.m.d.MigrateChat(ctx, h.source(), oldID, newID)
+	h.guard("migrate chat", func() {
+		if h.m.d.MigrateChat == nil || h.m.current(h.s.id) != h.s {
+			return
+		}
+		h.m.d.MigrateChat(ctx, h.source(), oldID, newID)
+	})
 }
 
 // Account stores how the platform names the connector's account (ACC-07): trimmed, without
 // control characters, at most MaxAccountLabel code points.
 func (h handler) Account(label string) {
-	if h.m.current(h.s.id) != h.s {
-		return
-	}
-	label = cleanAccountLabel(label)
-	err := h.m.d.Store.WithTx(context.Background(), func(q *db.Queries) error {
-		return q.SetConnectorAccountLabel(context.Background(), db.SetConnectorAccountLabelParams{AccountLabel: label, ID: h.s.id})
+	h.guard("account", func() {
+		if h.m.current(h.s.id) != h.s {
+			return
+		}
+		label = cleanAccountLabel(label)
+		err := h.m.d.Store.WithTx(context.Background(), func(q *db.Queries) error {
+			return q.SetConnectorAccountLabel(context.Background(), db.SetConnectorAccountLabelParams{AccountLabel: label, ID: h.s.id})
+		})
+		if err != nil {
+			h.m.d.Logger.Error("connectors: store account label", "connector_id", h.s.id, "err", err)
+		}
 	})
-	if err != nil {
-		h.m.d.Logger.Error("connectors: store account label", "connector_id", h.s.id, "err", err)
-	}
 }
 
 // MaxAccountLabel is the longest account label in code points.
@@ -494,8 +641,10 @@ func (h handler) source() Source {
 }
 
 func (h handler) Status(st Status, detail string) {
-	if st == StatusConnected {
-		h.s.connected.Store(true)
-	}
-	h.m.report(h.s, st, detail)
+	h.guard("status", func() {
+		if st == StatusConnected {
+			h.s.connected.Store(true)
+		}
+		h.m.report(h.s, st, detail)
+	})
 }

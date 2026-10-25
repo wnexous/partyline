@@ -48,6 +48,9 @@ type Deps struct {
 	// signed attachment links of GET /api/v1/hooks/files/{token}.
 	Hooks     HookSource
 	FileLinks *connectors.FileLinks
+	// Crashes counts the connectors that keep crashing: /readyz reports the server degraded while
+	// there are some, and stays 200 (CON-15).
+	Crashes CrashSource
 	// Identities manages pairing codes and verified chat identities.
 	Identities *identities.Service
 	// Devices approves new machines (partyline setup --browser).
@@ -305,15 +308,33 @@ func mapError(err error) error {
 	return err
 }
 
-// healthz answers 200 with the server version.
+// CrashSource counts the connectors that keep crashing; the connectors' Manager implements it.
+type CrashSource interface {
+	CrashLooping() int
+}
+
+// healthz is the liveness check, which the container HEALTHCHECK asks: 200 with the server version
+// whenever the process answers. A connector that keeps crashing never fails it, or the platform
+// would restart the whole container for one bad connector (CON-15).
 func (s *server) healthz(w http.ResponseWriter, _ *http.Request) {
 	httpx.WriteJSON(w, http.StatusOK, map[string]string{"status": "ok", "version": s.Version})
 }
 
+// readyz is the readiness check: 503 until the migrations have run (OPS-01), then 200. While some
+// connectors keep crashing it stays 200, because the rest of the server works and a failing probe
+// would take all of it out of rotation, but says so: status "degraded" with their number in
+// connectors_crash_looping, for a monitor that reads the body (CON-15).
 func (s *server) readyz(w http.ResponseWriter, _ *http.Request) {
 	if s.Ready == nil || !s.Ready() {
 		httpx.WriteError(w, httpx.NewError(http.StatusServiceUnavailable, dto.ErrorCodeUnavailable, "starting"))
 		return
 	}
-	httpx.WriteJSON(w, http.StatusOK, map[string]string{"status": "ok", "version": s.Version})
+	body := map[string]any{"status": "ok", "version": s.Version}
+	if s.Crashes != nil {
+		if n := s.Crashes.CrashLooping(); n > 0 {
+			body["status"] = "degraded"
+			body["connectors_crash_looping"] = n
+		}
+	}
+	httpx.WriteJSON(w, http.StatusOK, body)
 }

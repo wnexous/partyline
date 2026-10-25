@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"log/slog"
+	"maps"
 	"net/http"
 	"strings"
 	"sync"
@@ -73,12 +74,19 @@ const serveDeadline = 2 * time.Minute
 // startServe runs `partyline serve` on a random local port until stop is called.
 func startServe(t *testing.T, dataDir string) *server {
 	t.Helper()
+	return startServeWith(t, dataDir, nil)
+}
+
+// startServeWith is startServe with more variables in the environment of the server.
+func startServeWith(t *testing.T, dataDir string, extra map[string]string) *server {
+	t.Helper()
 	env := map[string]string{
 		"PARTYLINE_ADDR":       "127.0.0.1:0",
 		"PARTYLINE_DATA_DIR":   dataDir,
 		"PARTYLINE_LOG_FORMAT": "json",
 		"PARTYLINE_LOG_LEVEL":  "debug",
 	}
+	maps.Copy(env, extra)
 	logs := &syncBuffer{}
 	ctx, cancel := context.WithCancel(context.Background())
 	done := make(chan int, 1)

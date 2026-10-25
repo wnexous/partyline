@@ -89,7 +89,7 @@ func Address(_ connectors.Config, raw string) (connectors.ChatInfo, bool) {
 func (f *Fake) newInstance(cfg connectors.Config, d connectors.Deps) (connectors.Connector, error) {
 	inst := &Instance{
 		ID: d.ID, Config: cfg, Deps: d,
-		runs: make(chan struct{}, 64), stops: make(chan struct{}, 64), fail: make(chan error, 64),
+		runs: make(chan struct{}, 64), stops: make(chan struct{}, 64), fail: make(chan error, 64), crash: make(chan any, 64),
 		sends: make(chan connectors.Outbound, 64), sending: make(chan struct{}, 64), reacts: make(chan connectors.Reaction, 64),
 	}
 	f.mu.Lock()
@@ -160,10 +160,13 @@ type Instance struct {
 	reactErr  error
 	nextReact int
 	reacted   []connectors.Reaction
+	// sendPanic, reactPanic and listPanic make the call panic with them (SetSendPanic and the like).
+	sendPanic, reactPanic, listPanic *panicValue
 
 	runs    chan struct{}
 	stops   chan struct{}
 	fail    chan error
+	crash   chan any
 	sends   chan connectors.Outbound
 	sending chan struct{}
 	reacts  chan connectors.Reaction
@@ -181,6 +184,8 @@ func (i *Instance) Run(ctx context.Context, h connectors.Handler) error {
 		return ctx.Err()
 	case err := <-i.fail:
 		return err
+	case v := <-i.crash:
+		panic(v)
 	}
 }
 
@@ -193,8 +198,11 @@ func (i *Instance) Send(ctx context.Context, m connectors.Outbound) (string, err
 	err := i.sendErr
 	i.nextID++
 	id := "ext-" + strconv.Itoa(i.nextID)
-	gate, parts, quiet, failAfter := i.gate, i.parts, i.quiet, i.failAfter
+	gate, parts, quiet, failAfter, crash := i.gate, i.parts, i.quiet, i.failAfter, i.sendPanic
 	i.mu.Unlock()
+	if crash != nil {
+		panic(crash.v)
+	}
 	if err != nil {
 		return "", err
 	}
@@ -277,8 +285,11 @@ func (i *Instance) React(ctx context.Context, r connectors.Reaction) error {
 	err := i.reactErr
 	i.nextReact++
 	id := "react-" + strconv.Itoa(i.nextReact)
-	gate, quiet := i.gate, i.quiet
+	gate, quiet, crash := i.gate, i.quiet, i.reactPanic
 	i.mu.Unlock()
+	if crash != nil {
+		panic(crash.v)
+	}
 	if err != nil {
 		return err
 	}
@@ -331,6 +342,9 @@ func (i *Instance) WaitReact(t testing.TB) connectors.Reaction {
 func (i *Instance) ListChats(context.Context) ([]connectors.ChatInfo, error) {
 	i.mu.Lock()
 	defer i.mu.Unlock()
+	if i.listPanic != nil {
+		panic(i.listPanic.v)
+	}
 	if i.listErr != nil {
 		return nil, i.listErr
 	}
@@ -367,6 +381,37 @@ func (i *Instance) SetSendError(err error) {
 	i.mu.Unlock()
 }
 
+// panicValue holds a value a call panics with, so that "no panic" is not a nil value.
+type panicValue struct{ v any }
+
+// SetSendPanic makes later sends panic with v, like a connector with a bug (nil restores success).
+func (i *Instance) SetSendPanic(v any) {
+	i.mu.Lock()
+	i.sendPanic = panicOf(v)
+	i.mu.Unlock()
+}
+
+// SetReactPanic makes later reactions panic with v (nil restores success).
+func (i *Instance) SetReactPanic(v any) {
+	i.mu.Lock()
+	i.reactPanic = panicOf(v)
+	i.mu.Unlock()
+}
+
+// SetListPanic makes ListChats panic with v (nil restores it).
+func (i *Instance) SetListPanic(v any) {
+	i.mu.Lock()
+	i.listPanic = panicOf(v)
+	i.mu.Unlock()
+}
+
+func panicOf(v any) *panicValue {
+	if v == nil {
+		return nil
+	}
+	return &panicValue{v}
+}
+
 // WaitRun waits until Run was called (once per call of WaitRun).
 func (i *Instance) WaitRun(t testing.TB) {
 	t.Helper()
@@ -389,6 +434,9 @@ func (i *Instance) WaitStop(t testing.TB) {
 
 // Fail makes the running (or next) Run return err.
 func (i *Instance) Fail(err error) { i.fail <- err }
+
+// Panic makes the running (or next) Run panic with v, like a connector with a bug.
+func (i *Instance) Panic(v any) { i.crash <- v }
 
 // Connected reports StatusConnected through the handler of the current Run.
 func (i *Instance) Connected() { i.handler().Status(connectors.StatusConnected, "") }
