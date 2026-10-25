@@ -53,9 +53,9 @@ The HTTP request that stores the message only publishes the event; it never wait
 - content: `base64.StdEncoding(Box.Seal(x509.MarshalPKCS8PrivateKey(priv)))` + `"\n"`;
 - mode 0600, created with `O_CREATE|O_EXCL`; if another process created it first, the file is read again (single writer is guaranteed by `datalock`, `internal/cli/serve.go:43`, but the read-again path keeps a test restart safe);
 - generated once with `ecdsa.GenerateKey(elliptic.P256(), rand.Reader)`; the public key is `priv.PublicKey.ECDH().Bytes()` (65-byte uncompressed point, `0x04` first);
-- corrupt/wrong-curve/unreadable file → **error at startup**, never regenerate (PUSH-26); subscriptions are bound to the key.
+- corrupt/wrong-curve/unreadable file → warn (no content), replace it with a new pair and delete every `push_subscriptions` row in the same startup (they were bound to the old key); the server always starts (PUSH-26). Browsers heal themselves on their next signed-in load: `ensurePushSubscription` sees a different `applicationServerKey` and subscribes again (PUSH-28).
 
-`app.New` loads it next to the secret key (`internal/app/app.go:141-150`) and fails startup on error, exactly as it does for the secret key. The public key is served as `base64.RawURLEncoding` without padding.
+`app.New` loads it next to the secret key (`internal/app/app.go:141-150`). Unlike the secret key, a bad VAPID file never fails startup (see above); only an I/O error writing the new file does. The public key is served as `base64.RawURLEncoding` without padding.
 
 No environment override in v1: the brief says "generated once and stored under the data dir", and an env override would make the file and the process disagree. Backup guidance: keep `vapid.key` with `secret.key` (design, Operations).
 
@@ -362,7 +362,7 @@ click     → focus/navigate or openWindow(url)
 `show(data)`:
 
 1. `const focused = await clients.matchAll({ type: "window", includeUncontrolled: true })`;
-2. if a client has `focused === true` and `new URL(client.url).pathname === new URL(data.url).pathname`, return (PUSH-17);
+2. if a client has `focused === true` and `new URL(client.url).pathname === new URL(data.url).pathname`, show it with `silent: true` and close it right away (`registration.getNotifications({tag})` → `close()`), never return without a notification: Safari revokes a subscription that gets pushes without one, and Chrome shows a generic one (PUSH-17);
 3. `registration.showNotification(data.title || "partyline", { body: data.preview ? (data.author ? data.author + ": " + data.preview : data.preview) : (data.author || "New message"), tag: data.tag, data: { url: data.url }, icon: "/icons/icon-192.png" })`.
 
 `click`:
@@ -383,7 +383,7 @@ Keeping the rule server-side would mean replacing `CloseRead` with a read loop p
 
 - `web/src/lib/push/register.ts`:
   - `registerServiceWorker()`: if `serviceWorker` is in `navigator`, `navigator.serviceWorker.register("/sw.js", { scope: "/" })`; failures are swallowed (a browser without it is handled by Settings). Called once from `web/src/main.tsx`.
-  - `ensurePushSubscription()`: if `Notification.permission === "granted"` and `navigator.serviceWorker` exists, wait for `ready`, `getSubscription()`; when a subscription exists, `POST /api/v1/push/subscriptions` with its keys. It never calls `requestPermission`. Called from `web/src/routes/_app.tsx` (only after login, so no 401 on the login page). This restores the server row after a session was revoked or the database was restored; it is idempotent (upsert).
+  - `ensurePushSubscription()`: if `Notification.permission === "granted"` and `navigator.serviceWorker` exists, wait for `ready`, `getSubscription()`; when a subscription exists, compare its `options.applicationServerKey` with `GET /push/key`: equal → `POST /api/v1/push/subscriptions` with its keys; different → `unsubscribe()`, `subscribe` with the current key (permission is already granted, no prompt) and POST the new one (PUSH-28). It never calls `requestPermission`. Called from `web/src/routes/_app.tsx` (only after login, so no 401 on the login page). This restores the server row after a session was revoked or the database was restored; it is idempotent (upsert).
 - `web/src/lib/push/subscription.ts` (helpers used by Settings and its tests): `pushSupported()`, `permissionState()`, `currentSubscription()`, `subscribe(publicKey)`, `unsubscribe()`, `subscriptionJSON(sub)` (endpoint + `toJSON().keys`), `applicationServerKey(base64url)` (base64url → `Uint8Array`). `register.ts` (above) keeps only the two registration functions, so the Settings task and the PWA task touch different files.
 
 ### Settings
@@ -477,7 +477,7 @@ The push service in tests is an `httptest.Server` (or the injectable `Sender` fo
 | Push service 404/410 | Delete the subscription, log status + host | The device stops receiving until enabled again |
 | Push service 429/5xx/network | Keep the subscription, log status + host or the sanitized kind | Nothing; the next message may succeed |
 | Corrupt stored subscription key | Log the error without content, keep the row, continue with the next job | Nothing |
-| Corrupt/unreadable VAPID key file | Refuse to start (PUSH-26) | The operator sees the startup error |
+| Corrupt/unreadable VAPID key file | New pair, stored subscriptions deleted, server starts (PUSH-26); browsers re-subscribe (PUSH-28) | Notifications pause until the next page load |
 | Permission denied / unsupported browser | No subscription; Settings explains; no prompt loop | "Notifications are blocked" or "This browser cannot show notifications" |
 | Service worker registration fails | Swallowed; Settings reports unsupported | The rest of the app works |
 | Key fetch or subscription POST fails | The page unsubscribes the just-created local subscription and shows the error, so browser and server agree | "Could not turn on notifications; try again" |
@@ -492,7 +492,7 @@ The push service in tests is an `httptest.Server` (or the injectable `Sender` fo
 | `store/db` is shared by all layers | `internal/store/db` | A future split of the store by layer would move these queries | The push SQL lives only in `push.sql`; the notifier reads no room service, so the move is mechanical |
 | A subscription endpoint is user-controlled outbound traffic | `internal/webpush/client.go` | SSRF against the instance's network | `safehttp.NewClient` refuses private/loopback/link-local addresses at dial time and does not follow redirects |
 | `http.Client` errors embed the endpoint URL | `internal/webpush/delivery.go` | The capability token in the path could reach a log | Never log the error; `sendErrorKind` reduces it to `network`/`timeout`/`canceled`, and the host is the only endpoint part logged |
-| Losing `vapid.key` invalidates every subscription | `<data dir>/vapid.key` | The server refuses to start or every stored subscription fails | Back up the file with `secret.key`; never regenerate (PUSH-26); the browser can subscribe again if the operator accepts it |
+| Losing `vapid.key` invalidates every subscription | `<data dir>/vapid.key` | Every stored subscription is lost | Back up the file with `secret.key`; a bad file is replaced and the subscriptions dropped (PUSH-26); browsers re-subscribe by themselves (PUSH-28) |
 | Session cascade removes a device's subscription | `push_subscriptions.session_id` | After a logout the device is off until enabled again | `ensurePushSubscription` re-POSTs an existing browser subscription on the next signed-in load (no prompt); the user can also press Enable |
 | iOS Safari requires an installed PWA and 16.4+ | Web platform | A user may see no notifications on an old iPhone | The manifest makes installation possible; Settings explains the unsupported state; the design does not promise iOS delivery |
 | The preview is visible on a locked screen | OS notification settings | Anyone holding the phone can read 120 characters | The payload is the product decision; the OS owns lock-screen visibility; a per-device hide setting is out of scope |
@@ -517,7 +517,7 @@ The push service in tests is an `httptest.Server` (or the injectable `Sender` fo
 
 ## Operations
 
-- **Backup**: `<data dir>/vapid.key` must be backed up with `secret.key` and the database. Without it the server refuses to start (PUSH-26); regenerating it would break every stored subscription (the browser's `applicationServerKey` no longer matches), so it is never regenerated automatically.
+- **Backup**: `<data dir>/vapid.key` must be backed up with `secret.key` and the database. Without it a new pair is made and the stored subscriptions are dropped (PUSH-26); browsers subscribe again with the new key on their next signed-in load (PUSH-28).
 - **One instance**: the worker and the rate limiter are in-process; a second instance on the same database is not supported (AD-001 and `datalock`).
 - **Logs**: `make check` does not run a real push; the worker's logs in production are `webpush: push sent/failed/expired` with `endpoint_host` and `status`.
 - **Removal**: deleting a subscription is `DELETE`; deleting an account is the existing `DELETE /api/v1/me`, which cascades. There is no admin view of other users' subscriptions.

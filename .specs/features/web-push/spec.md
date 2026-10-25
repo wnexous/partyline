@@ -46,8 +46,8 @@ The decisions below are fixed by the product owner's brief:
 
 | Assumption / decision | Chosen default | Rationale | Confirmed? |
 | --- | --- | --- | --- |
-| What "mentions always" means | A DM always notifies; a group message notifies in `all` for every message, in `mentions` only when it contains the user's `@handle`, and never in `off` (a group mention included); DMs ignore the group setting | The brief says "DMs and mentions always" and also "group messages per a user setting (all / mentions only / off)"; making `off` still deliver group mentions would make `off` equal `mentions` | n |
-| What counts as a mention | `@<handle>`, case-insensitive, on a word boundary; not the display name, not keyword lists, not a reply | The composer inserts the @handle when the user picks a mention (MEN-03); the handle is unique and resistant to impersonation (AD-024) | n |
+| What "mentions always" means | A DM always notifies; a group message notifies in `all` for every message, in `mentions` only when it contains the user's `@handle`, and never in `off` (a group mention included); DMs ignore the group setting | The brief says "DMs and mentions always" and also "group messages per a user setting (all / mentions only / off)"; making `off` still deliver group mentions would make `off` equal `mentions` | y (coordinator, delegated by the owner, 2026-10-25) |
+| What counts as a mention | `@<handle>`, case-insensitive, on a word boundary; not the display name, not keyword lists, not a reply | The composer inserts the @handle when the user picks a mention (MEN-03); the handle is unique and resistant to impersonation (AD-024) | y (coordinator, delegated by the owner, 2026-10-25) |
 | Which messages are excluded | The recipient's own messages and system notices (loop-guard pauses, membership notices) | "Own messages never notify" is in the brief; a notice has no author to name and no useful preview | y |
 | "Unread" | The message's sequence number is above the user's `read_cursors` row and above the room's `read_baseline`, exactly as `CountUnreadByRoom` computes it | Reuses the unread definition of the conversation list instead of inventing a second one | y |
 | When unread is evaluated | When the background worker handles the `MessageCreated` event, not when the HTTP post returns | The worker is asynchronous; a message the user read in the meantime must not produce a notification | y |
@@ -61,7 +61,7 @@ The decisions below are fixed by the product owner's brief:
 | Worker shape | One background worker subscribed to `events.MessageCreated`, a queue of 256 jobs, 4 send goroutines, a 10 s HTTP timeout, a recovered panic per job and a stop on context cancellation | The agent dispatcher already has this shape (`internal/delivery/dispatcher.go`); the queue keeps a slow push service away from the bus | y |
 | Push-service failures | 404 and 410 delete the subscription; every other failure keeps it; only the status code and the endpoint hostname are logged | RFC 8030 says 404/410 are gone for good; other errors may be transient | y |
 | Who may call the push routes | A logged-in user (session or user token); an agent token gets 403 everywhere outside `/api/v1/agent/`; an anonymous caller gets 401; `DELETE` touches only the caller's rows | Same boundary as the other user routes (`internal/api/middleware.go`) | y |
-| Test notification | `POST /api/v1/push/test` enqueues a real push through the worker to every subscription of the caller, 3 a minute | A local `showNotification` would not exercise encryption, VAPID or the push service | n |
+| Test notification | `POST /api/v1/push/test` enqueues a real push through the worker to every subscription of the caller, 3 a minute | A local `showNotification` would not exercise encryption, VAPID or the push service | y (coordinator, delegated by the owner, 2026-10-25) |
 | Platform coverage | Web Push capable browsers: Chromium, Firefox, and Safari 16.4+ for an installed PWA; other browsers get an explanation, not a broken button | The PWA basics are only there to make Android installation reliable | y |
 | Browser support states | Unsupported, permission not asked, granted and subscribed, granted but not subscribed, denied | Each state needs its own sentence and action in Settings | y |
 
@@ -117,7 +117,7 @@ The decisions below are fixed by the product owner's brief:
 **Acceptance Criteria**:
 
 1. WHEN a push arrives THEN the service worker SHALL show a notification with the payload's conversation title, author and preview and, when the user activates it, SHALL focus an open window of the app and open the conversation, or open a new window when none is open. (PUSH-16)
-2. IF a window of the app is focused and its URL path is the conversation of the push THEN the service worker SHALL NOT show the notification. (PUSH-17)
+2. IF a window of the app is focused and its URL path is the conversation of the push THEN the service worker SHALL show the notification silently (`silent: true`, no sound or vibration) and close it at once, so that no push ever ends without a notification (Safari revokes a subscription that receives pushes without one, and Chrome then shows a generic one). (PUSH-17)
 3. The Settings page SHALL offer "Notifications on this device" with enable (which asks for permission only after the user presses it), test, disable and the group setting (all, mentions only, off), and SHALL show the state of this device. (PUSH-18)
 4. WHEN the app loads for a signed-in user THEN it SHALL register the service worker at `/sw.js` with scope `/` and, when the browser already holds a push subscription and permission is granted, SHALL register that subscription with the current session without asking permission again. (PUSH-19)
 5. The app SHALL publish a web app manifest with the name, `start_url` `/`, `display` `standalone`, the theme colour from DESIGN.md and 192 px and 512 px icons, and the Go server SHALL serve the manifest, the icons and the service worker from the root path under the existing CSP. (PUSH-20)
@@ -142,7 +142,8 @@ The decisions below are fixed by the product owner's brief:
 
 ## Edge Cases
 
-- WHEN `<data dir>/vapid.key` is unreadable, corrupt or holds a key that is not P-256 THEN the server SHALL refuse to start and SHALL NOT generate a new pair. (PUSH-26)
+- WHEN `<data dir>/vapid.key` is unreadable, corrupt or holds a key that is not P-256 THEN the server SHALL keep starting: it SHALL log a warning without the file's content, replace the file with a new pair, and delete every stored push subscription (they were bound to the old key); browsers re-subscribe on their next signed-in load (PUSH-28). Notifications SHALL never stop the server from starting. (PUSH-26)
+- WHEN a signed-in page loads with notification permission granted AND the browser's subscription was made with a different `applicationServerKey` than `GET /push/key` returns THEN the web SHALL unsubscribe it, subscribe again with the current key (no permission prompt, it is already granted) and POST the new subscription. (PUSH-28)
 - IF the push queue is full THEN the system SHALL drop the notification without affecting the message; a test request that queues nothing SHALL answer 503 `unavailable`. (PUSH-27)
 
 ---
@@ -193,6 +194,7 @@ The decisions below are fixed by the product owner's brief:
 | PUSH-24 | P1: Notify the right person | Execute | Pending |
 | PUSH-25 | P2: Documentation | Execute | Pending |
 | PUSH-26 | Edge cases | Execute | Pending |
+| PUSH-28 | Edge cases | Execute | Pending |
 | PUSH-27 | Edge cases | Execute | Pending |
 
 **Coverage:** 27 total, 27 mapped to tasks (`tasks.md` T1-T12), status Pending (the plan is not executed yet).

@@ -189,8 +189,9 @@ sqlc queries in `internal/store/queries/push.sql` (`UpsertPushSubscription`,
 the design's [VAPID keys](../web-push/design.md#vapid-keys). Add `"webpush"` to the `app` list in the
 architecture table, load the key in `app.New` next to the secret key, and store it on `App.VAPID`. The
 private key is PKCS#8 DER sealed with the instance box, written base64 with mode 0600 and `O_EXCL`;
-an existing file is opened and parsed, never regenerated; a wrong curve or corrupt file fails startup
-(PUSH-26).
+an existing valid file is opened and parsed, never regenerated; a wrong-curve, corrupt or unreadable file
+is logged at warn (no content), replaced with a new pair, and every `push_subscriptions` row is deleted;
+startup always continues (PUSH-26). Test: a corrupt file → a new valid key, the rows gone, no error.
 
 **Where**: `internal/webpush/vapid.go`
 **Also**: `internal/webpush/vapid_test.go`, `internal/archtest/layers_test.go`, `internal/app/app.go`
@@ -487,14 +488,16 @@ the served header. The CSP is unchanged.
 `web/index.html`, `web/src/lib/push/register.ts`, `web/src/main.tsx`, `web/src/routes/_app.tsx`,
 `internal/webui/webui.go`, `internal/webui/webui_test.go`, `web/src/lib/push/register.test.ts`
 **Depends on**: T7
-**Requirement**: PUSH-19, PUSH-20
+**Requirement**: PUSH-19, PUSH-20, PUSH-28
 **Tests first**:
 - `register.test.ts`: `registerServiceWorker` calls
   `navigator.serviceWorker.register("/sw.js", {scope:"/"})` once; a rejected registration is swallowed
   (no unhandled rejection); no call when `serviceWorker` is absent.
 - `ensurePushSubscription`: permission `"granted"` + an existing fake subscription → one POST with its
   endpoint/keys; permission `"default"`/`"denied"` → no POST and `requestPermission` not called; no
-  subscription → no POST.
+  subscription → no POST; an existing subscription whose `applicationServerKey` differs from `GET /push/key` →
+  `unsubscribe` then `subscribe` with the new key, one POST of the new subscription, `requestPermission` not
+  called (PUSH-28).
 - `manifest` (same test file, `?raw` import): parsing `web/public/manifest.webmanifest` gives `name
   "partyline"`, `start_url "/"`, `scope "/"`, `display "standalone"`, `theme_color "#fafafa"`, and icons
   with sizes `192x192` and `512x512` under `/icons/`.
@@ -527,7 +530,7 @@ fake `self` that captures the registered listeners; the test awaits the `waitUnt
 - `push` with `{title:"Design", author:"Ana", preview:"green", url:"https://partyline.example/rooms/r1",
   tag:"room:r1"}` and no clients → `showNotification("Design", {body:"Ana: green", tag:"room:r1", …})`.
 - a file-only message (`author:"Ana"`, `preview:""`) → body `"Ana"`.
-- one client `{focused:true, url:"https://partyline.example/rooms/r1"}` → `showNotification` not called.
+- one client `{focused:true, url:"https://partyline.example/rooms/r1"}` → `showNotification` called once with `silent: true`, then that notification closed (never zero notifications for a push, PUSH-17).
 - one focused client in `/rooms/r2` → shown (only the exact conversation is suppressed).
 - a client in `/rooms/r1` but `focused:false` → shown.
 - `click` with a client → `notification.close()`, `client.focus()`, `client.navigate(url)`; with no
