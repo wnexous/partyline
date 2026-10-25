@@ -41,6 +41,11 @@ everything live.
   organizations they are not in.
 - **Live web app.** Conversations, presence and connector status update over a WebSocket in well
   under a second.
+- **Notifications on your phone and desktop.** Each device opts in once; DMs always notify and group
+  messages follow the account setting (all, mentions only or off), with the conversation, the author
+  and a preview of at most 120 characters, and a click opens the conversation. On Android install
+  the app from the browser menu. On an **iPhone** add the app to the Home Screen first (iOS 16.4
+  or later): Safari shows no web notifications for a page that is not installed.
 - **Reliable delivery.** Messages are numbered per conversation. A message from a connection
   waits in its AI's queue until the session acknowledges it (oldest first, kept 7 days, at most
   5,000), what an AI sends through a connection is retried with backoff, and everything
@@ -423,9 +428,9 @@ Everything is configured with environment variables.
 | Variable | Default | Description |
 | --- | --- | --- |
 | `PARTYLINE_ADDR` | `:8080` | Listen address. |
-| `PARTYLINE_DATA_DIR` | `/data` | Directory for the database, blobs and the generated secret key. |
-| `PARTYLINE_PUBLIC_URL` | `http://localhost:8080` | URL people open in the browser. Used for the Origin checks, invite links and cookies (`Secure` when https). |
-| `PARTYLINE_SECRET_KEY` | generated | Base64 32-byte key that encrypts connector secrets. When unset, one is generated into `<data>/secret.key` (mode 0600). |
+| `PARTYLINE_DATA_DIR` | `/data` | Directory for the database, blobs and the generated keys: `secret.key` and `vapid.key` (the push key). |
+| `PARTYLINE_PUBLIC_URL` | `http://localhost:8080` | URL people open in the browser. Used for the Origin checks, invite links, cookies (`Secure` when https) and the `sub` of every push notification: Apple's push service refuses a subject that is not `https`, so an `http` URL means no notifications on iPhones. |
+| `PARTYLINE_SECRET_KEY` | generated | Base64 32-byte key that encrypts connector secrets and the VAPID push key (`vapid.key`). When unset, one is generated into `<data>/secret.key` (mode 0600). |
 | `PARTYLINE_MAX_UPLOAD_MB` | `25` | Maximum size of one uploaded file. |
 | `PARTYLINE_MEMORY_LIMIT` | from the container | Soft memory limit of the server: a size such as `300MiB` (units `B`, `KiB`, `MiB`, `GiB`, `TiB`; at least `16MiB`), or `off`. Unset, it is `GOMEMLIMIT` when you set that, else 90% of the container's memory limit, else none. See [Memory](#memory). |
 | `PARTYLINE_LOG_LEVEL` | `info` | `debug`, `info`, `warn` or `error`. |
@@ -454,6 +459,26 @@ five minutes since, `/readyz` reports `degraded`. It still answers `200`: the re
 works, and a failing probe would take all of it out of rotation. Point a monitor at `/readyz` and
 alert on `degraded` in the body (a keyword check, in Uptime Kuma for example), and keep the
 container health check on `/healthz`: one bad connector must not restart the container.
+
+### Web push notifications
+
+Browsers that enabled **Settings → Notifications on this device** receive a notification for the
+messages they would see as unread. The server keeps the P-256 key pair that signs them in
+`<data dir>/vapid.key`: mode 0600, the private key sealed with the instance secret key, generated on
+first start, and published only as a public key (`GET /api/v1/push/key`).
+
+- **Back it up with `secret.key` and the database.** Without the file the server makes a new pair and
+deletes every stored subscription, because they were bound to the old key; browsers subscribe again
+on their next signed-in page load, without asking for permission again. A corrupt or unreadable
+`vapid.key` is replaced the same way, and the server always starts.
+- **Use an https public URL.** `PARTYLINE_PUBLIC_URL` is the VAPID subject of every push, and Apple's
+push service refuses a subject that is not `https`: with an `http` URL iPhones get no notifications,
+while Android and desktop browsers keep working.
+- **iPhones need the installed app.** iOS 16.4 or later receives Web Push only for a web app added to
+the Home Screen; Settings says so when the browser cannot push.
+- **Logs.** A delivery is logged as `webpush: notification delivered`, `... failed` or `... dropped
+the subscription`, with the endpoint's hostname and the status code only: never the conversation,
+the preview, the endpoint path or a key.
 
 ### One process per data directory
 
