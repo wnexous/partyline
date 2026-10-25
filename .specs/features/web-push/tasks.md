@@ -466,10 +466,10 @@ fake):
 - unsupported (no `PushManager`): explanation, no request, the rest of Settings still renders.
 - the existing `a11y.test.tsx` route audit passes.
 **Done when**:
-- [ ] no permission prompt on mount (asserted)
-- [ ] the disabled/denied/unsupported states each have a sentence and no broken action
-- [ ] `bun run lint` and `bun run typecheck` are clean
-- [ ] Gate check passes: `make check`
+- [x] no permission prompt on mount (asserted)
+- [x] the disabled/denied/unsupported states each have a sentence and no broken action
+- [x] `bun run lint` and `bun run typecheck` are clean
+- [x] Gate check passes: `make check`
 **Tests**: web unit
 **Gate**: build
 **Commit**: `feat(web): add notifications on this device to settings`

@@ -7,6 +7,7 @@ import { LOCALE_KEY, THEME_KEY } from "@/lib/theme";
 import { apiError, json, mockApi } from "@/test/fetch";
 import { makeMe, makeProfile } from "@/test/fixtures";
 import { memberIn, viewerIn } from "@/test/orgs";
+import { PUSH_AUTH, PUSH_ENDPOINT, PUSH_P256DH, PUSH_SERVER_KEY, stubPush } from "@/test/push";
 import { renderRoute } from "@/test/render";
 
 vi.mock("@/lib/live", () => ({ startLive: vi.fn(() => () => {}) }));
@@ -188,6 +189,183 @@ describe("settings page", () => {
     await waitFor(() =>
       expect(calls.some((c) => c.method === "DELETE" && c.path === "/me/sessions/s2")).toBe(true),
     );
+  });
+});
+
+/*
+ * "Notifications on this device" (PUSH-18, PUSH-21, PUSH-22): the browser asks for permission only
+ * when the user presses Enable, stores and removes the subscription with the API, sends a test and
+ * carries the account's group setting.
+ */
+describe("notifications on this device (PUSH-18)", () => {
+  const pushBase = { ...base, "GET /push/key": json(200, { public_key: PUSH_SERVER_KEY }) };
+  const posts = <T extends { method: string; path: string }>(calls: T[], path: string) =>
+    calls.filter((c) => c.method === "POST" && c.path === path);
+  const bytesOf = (base64url: string) =>
+    Array.from(
+      Uint8Array.from(atob(base64url.replace(/-/g, "+").replace(/_/g, "/")), (c) =>
+        c.charCodeAt(0),
+      ),
+    );
+
+  it("shows this device's state and the group setting without asking for permission", async () => {
+    const push = stubPush();
+    const { calls } = mockApi(pushBase);
+    renderRoute("/settings");
+    expect(await screen.findByRole("radio", { name: "Mentions only" })).toBeChecked();
+    expect(screen.getByRole("button", { name: "Enable notifications" })).toBeEnabled();
+    expect(screen.getByText("Not enabled on this device")).toBeInTheDocument();
+    expect(push.requestPermission).not.toHaveBeenCalled();
+    expect(calls.some((c) => c.path === "/push/key")).toBe(false);
+  });
+
+  it("enables notifications on click: permission once, the server key, one POST", async () => {
+    const push = stubPush({ answer: "granted" });
+    const { calls } = mockApi({
+      ...pushBase,
+      "POST /push/subscriptions": json(200, {
+        id: "sub1",
+        endpoint: PUSH_ENDPOINT,
+        created_at: "2026-10-19T12:00:00Z",
+      }),
+    });
+    const user = userEvent.setup();
+    renderRoute("/settings");
+    await user.click(await screen.findByRole("button", { name: "Enable notifications" }));
+    expect(push.requestPermission).toHaveBeenCalledTimes(1);
+    expect(push.subscribe).toHaveBeenCalledTimes(1);
+    const asked = push.subscribe.mock.calls[0]?.[0] as PushSubscriptionOptionsInit;
+    expect(asked.userVisibleOnly).toBe(true);
+    expect(Array.from(asked.applicationServerKey as Uint8Array)).toEqual(bytesOf(PUSH_SERVER_KEY));
+    await waitFor(() => expect(posts(calls, "/push/subscriptions")).toHaveLength(1));
+    expect(posts(calls, "/push/subscriptions")[0]?.body).toEqual({
+      endpoint: PUSH_ENDPOINT,
+      p256dh: PUSH_P256DH,
+      auth: PUSH_AUTH,
+    });
+    expect(await screen.findByText("On for this device")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Disable notifications" })).toBeEnabled();
+  });
+
+  it("explains a denied permission and never subscribes", async () => {
+    const push = stubPush({ answer: "denied" });
+    const { calls } = mockApi(pushBase);
+    const user = userEvent.setup();
+    renderRoute("/settings");
+    await user.click(await screen.findByRole("button", { name: "Enable notifications" }));
+    expect(push.requestPermission).toHaveBeenCalledTimes(1);
+    expect(await screen.findByText(/Notifications are blocked for partyline/)).toBeInTheDocument();
+    expect(posts(calls, "/push/subscriptions")).toHaveLength(0);
+    expect(screen.getByRole("button", { name: "Enable notifications" })).toBeDisabled();
+  });
+
+  it("says notifications are blocked on mount and asks for nothing", async () => {
+    const push = stubPush({ permission: "denied" });
+    mockApi(pushBase);
+    renderRoute("/settings");
+    expect(await screen.findByText(/Notifications are blocked for partyline/)).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Enable notifications" })).toBeDisabled();
+    expect(push.requestPermission).not.toHaveBeenCalled();
+  });
+
+  it("sends a test notification and reports it was queued", async () => {
+    stubPush({ permission: "granted", subscribed: true });
+    const { calls } = mockApi({ ...pushBase, "POST /push/test": json(202, { queued: 1 }) });
+    const user = userEvent.setup();
+    renderRoute("/settings");
+    await user.click(await screen.findByRole("button", { name: "Send test" }));
+    await waitFor(() => expect(posts(calls, "/push/test")).toHaveLength(1));
+    expect(await screen.findByText("Test notification queued")).toBeInTheDocument();
+  });
+
+  it("asks to enable notifications first when the server has none (409)", async () => {
+    stubPush({ permission: "granted", subscribed: true });
+    mockApi({
+      ...pushBase,
+      "POST /push/test": apiError(409, "conflict", "no subscription"),
+    });
+    const user = userEvent.setup();
+    renderRoute("/settings");
+    await user.click(await screen.findByRole("button", { name: "Send test" }));
+    expect(await screen.findByText("Enable notifications first")).toBeInTheDocument();
+  });
+
+  it("drops the local subscription when the server refuses to store it", async () => {
+    const push = stubPush();
+    const { calls } = mockApi({
+      ...pushBase,
+      "POST /push/subscriptions": apiError(500, "internal", "boom"),
+    });
+    const user = userEvent.setup();
+    renderRoute("/settings");
+    await user.click(await screen.findByRole("button", { name: "Enable notifications" }));
+    await waitFor(() => expect(push.subscribe).toHaveBeenCalledTimes(1));
+    expect(
+      await screen.findByText("Couldn’t turn notifications on for this device. Try again."),
+    ).toBeInTheDocument();
+    expect(push.current()?.unsubscribe).toHaveBeenCalledTimes(1);
+    expect(posts(calls, "/push/subscriptions")).toHaveLength(1);
+    expect(screen.getByText("Not enabled on this device")).toBeInTheDocument();
+  });
+
+  it("disables notifications: drops the browser subscription and the server row", async () => {
+    const push = stubPush({ permission: "granted", subscribed: true });
+    const { calls } = mockApi({
+      ...pushBase,
+      "DELETE /push/subscriptions": new Response(null, { status: 204 }),
+    });
+    const user = userEvent.setup();
+    renderRoute("/settings");
+    expect(await screen.findByText("On for this device")).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "Disable notifications" }));
+    await waitFor(() =>
+      expect(calls.some((c) => c.method === "DELETE" && c.path === "/push/subscriptions")).toBe(
+        true,
+      ),
+    );
+    expect(calls.find((c) => c.method === "DELETE")?.body).toEqual({ endpoint: PUSH_ENDPOINT });
+    expect(push.current()?.unsubscribe).toHaveBeenCalledTimes(1);
+    expect(await screen.findByText("Not enabled on this device")).toBeInTheDocument();
+  });
+
+  it("saves the group setting on the account", async () => {
+    stubPush();
+    const { calls } = mockApi({
+      ...pushBase,
+      "PATCH /me": json(200, { ...me, push_groups: "off" }),
+    });
+    const user = userEvent.setup();
+    renderRoute("/settings");
+    await user.click(await screen.findByRole("radio", { name: "Off" }));
+    await waitFor(() =>
+      expect(calls.some((c) => c.method === "PATCH" && c.path === "/me")).toBe(true),
+    );
+    expect(calls.find((c) => c.method === "PATCH")?.body).toEqual({ push_groups: "off" });
+    await waitFor(() => expect(screen.getByRole("radio", { name: "Off" })).toBeChecked());
+  });
+
+  it("keeps the previous group setting when the account refuses it", async () => {
+    stubPush();
+    mockApi({ ...pushBase, "PATCH /me": apiError(500, "internal", "boom") });
+    const user = userEvent.setup();
+    renderRoute("/settings");
+    const off = await screen.findByRole("radio", { name: "Off" });
+    await user.click(off);
+    expect(
+      await screen.findByText("Couldn’t change the group setting. Try again."),
+    ).toBeInTheDocument();
+    expect(off).not.toBeChecked();
+    expect(screen.getByRole("radio", { name: "Mentions only" })).toBeChecked();
+  });
+
+  it("explains an unsupported browser and leaves the rest of Settings usable", async () => {
+    const push = stubPush({ supported: false });
+    mockApi(base);
+    renderRoute("/settings");
+    expect(await screen.findByText(/This browser cannot show notifications/)).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Enable notifications" })).toBeNull();
+    expect(push.requestPermission).not.toHaveBeenCalled();
+    expect(await screen.findByLabelText(/Display name/)).toBeInTheDocument();
   });
 });
 

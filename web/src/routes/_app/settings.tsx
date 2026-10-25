@@ -1,7 +1,7 @@
 import { zodResolver } from "@hookform/resolvers/zod";
 import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import { MonitorIcon, MoonIcon, SunIcon } from "lucide-react";
-import { type ReactNode, useId, useState } from "react";
+import { type ReactNode, useEffect, useId, useRef, useState } from "react";
 import { useForm } from "react-hook-form";
 import { toast } from "sonner";
 import { FormAlert, TextField } from "@/components/form-fields";
@@ -30,9 +30,14 @@ import {
   useIntelligence,
   useMe,
   useMyOrgs,
+  usePushKey,
   useRevokeSession,
   useSessions,
   useSetDefaultOrg,
+  useSubscribePush,
+  useTestPush,
+  useUnsubscribePush,
+  useUpdateMe,
 } from "@/lib/api/queries";
 import {
   ErrorCodeLastInstanceAdmin,
@@ -44,6 +49,16 @@ import { applyFieldErrors } from "@/lib/forms";
 import { LOCALES, type MessageKey, type Translate, useI18n, useT } from "@/lib/i18n";
 import { useLiveStore } from "@/lib/live/store";
 import { defaultOrgIdOf } from "@/lib/orgs";
+import {
+  applicationServerKey,
+  currentSubscription,
+  permissionState,
+  pushSupported,
+  requestPermission,
+  subscribe,
+  subscriptionJSON,
+  unsubscribe,
+} from "@/lib/push/subscription";
 import {
   type ChangePasswordForm,
   changePasswordSchema,
@@ -68,6 +83,7 @@ function SettingsPage() {
       <div className="max-w-2xl divide-y px-4 md:px-8">
         <ProfileSection me={me} />
         <AppearanceSection />
+        <NotificationsSection me={me} />
         <DefaultOrgSection />
         <PasswordSection />
         <SessionsSection />
@@ -202,6 +218,225 @@ function Choice({
       <RadioGroupItem id={id} value={value} />
       {children}
     </label>
+  );
+}
+
+type PushGroup = "all" | "mentions" | "off";
+type DeviceState = "unsupported" | "blocked" | "off" | "on";
+
+const PUSH_GROUPS: { value: PushGroup; label: MessageKey }[] = [
+  { value: "all", label: "push.group.all" },
+  { value: "mentions", label: "push.group.mentions" },
+  { value: "off", label: "push.group.off" },
+];
+
+/** The account's group setting; the server only stores all, mentions or off (PUSH-06). */
+function pushGroupOf(me: Me): PushGroup {
+  return PUSH_GROUPS.find((choice) => choice.value === me.push_groups)?.value ?? "mentions";
+}
+
+/**
+ * Notifications on this device (PUSH-18, PUSH-21, PUSH-22): the browser's permission and
+ * subscription, the test notification, and which group messages notify this account. Permission
+ * is asked for only when the user presses Enable; mounting the page never prompts. A browser
+ * that cannot push keeps the rest of Settings usable and says why.
+ */
+function NotificationsSection({ me }: { me: Me }) {
+  const t = useT();
+  const id = useId();
+  const supported = pushSupported();
+  // The browser's subscription is not React state: it lives in the browser, which answers async.
+  const held = useRef<PushSubscription | null>(null);
+  const [device, setDevice] = useState<DeviceState>(() =>
+    supported ? (permissionState() === "denied" ? "blocked" : "off") : "unsupported",
+  );
+  const [busy, setBusy] = useState<"enable" | "disable" | null>(null);
+  const [notice, setNotice] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [groupError, setGroupError] = useState<string | null>(null);
+  const key = usePushKey();
+  const store = useSubscribePush();
+  const remove = useUnsubscribePush();
+  const test = useTestPush();
+  const updateMe = useUpdateMe();
+
+  // Whether this browser already holds a subscription; a granted permission never prompts again.
+  useEffect(() => {
+    if (!supported || permissionState() !== "granted") return;
+    let live = true;
+    void currentSubscription().then(
+      (sub) => {
+        if (!live) return;
+        held.current = sub;
+        setDevice(sub ? "on" : "off");
+      },
+      () => {
+        if (live) setDevice("off");
+      },
+    );
+    return () => {
+      live = false;
+    };
+  }, [supported]);
+
+  const enable = async () => {
+    if (busy) return;
+    setBusy("enable");
+    setNotice(null);
+    setError(null);
+    try {
+      const answer = await requestPermission();
+      if (answer !== "granted") {
+        setDevice(answer === "denied" ? "blocked" : "off");
+        return;
+      }
+      const { data } = await key.refetch();
+      if (!data) throw new Error("push key unavailable");
+      const created = await subscribe(applicationServerKey(data.public_key));
+      try {
+        await store.mutateAsync(subscriptionJSON(created));
+      } catch (err) {
+        // The browser and the server must agree: drop the subscription the server refused.
+        await unsubscribe();
+        throw err;
+      }
+      held.current = created;
+      setDevice("on");
+    } catch {
+      setError(t("push.enableFailed"));
+    } finally {
+      setBusy(null);
+    }
+  };
+
+  const disable = async () => {
+    if (busy) return;
+    setBusy("disable");
+    setNotice(null);
+    setError(null);
+    try {
+      const sub = held.current;
+      if (!sub) {
+        setDevice("off");
+        return;
+      }
+      const { endpoint } = subscriptionJSON(sub);
+      await unsubscribe();
+      held.current = null;
+      try {
+        await remove.mutateAsync(endpoint);
+      } catch (err) {
+        // A row another device already removed is the state this button wants (PUSH-05).
+        if (!(isApiError(err) && err.status === 404)) throw err;
+      }
+      setDevice("off");
+    } catch {
+      setError(t("push.disableFailed"));
+    } finally {
+      setBusy(null);
+    }
+  };
+
+  const sendTest = () => {
+    setNotice(null);
+    setError(null);
+    test.mutate(undefined, {
+      onSuccess: () => setNotice(t("push.testQueued")),
+      onError: (err) => {
+        if (isApiError(err) && err.status === 409) setError(t("push.testNoSubscription"));
+        else if (isApiError(err) && err.status === 429) setError(t("push.testRateLimited"));
+        else setError(t("push.testFailed"));
+      },
+    });
+  };
+
+  const group = pushGroupOf(me);
+  const chooseGroup = (value: string) => {
+    if (value === group) return;
+    setGroupError(null);
+    updateMe.mutate(
+      { push_groups: value },
+      { onError: () => setGroupError(t("push.groupFailed")) },
+    );
+  };
+
+  return (
+    <Section id={`${id}-notifications`} title={t("push.title")} description={t("push.body")}>
+      <div className="space-y-6">
+        <div className="space-y-3">
+          <p role="status" className="text-sm text-muted-foreground">
+            {device === "unsupported"
+              ? t("push.state.unsupported")
+              : device === "blocked"
+                ? t("push.state.blocked")
+                : device === "on"
+                  ? t("push.state.on")
+                  : t("push.state.off")}
+          </p>
+          {supported ? (
+            <div className="flex flex-wrap gap-2">
+              {device === "on" ? null : (
+                <Button
+                  type="button"
+                  disabled={device === "blocked" || busy !== null}
+                  onClick={() => void enable()}
+                >
+                  {t("push.enable")}
+                </Button>
+              )}
+              <Button type="button" variant="outline" disabled={busy !== null} onClick={sendTest}>
+                {t("push.test")}
+              </Button>
+              {device === "on" ? (
+                <Button
+                  type="button"
+                  variant="outline"
+                  disabled={busy !== null}
+                  onClick={() => void disable()}
+                >
+                  {t("push.disable")}
+                </Button>
+              ) : null}
+            </div>
+          ) : null}
+          {notice ? (
+            <p role="status" className="text-sm text-muted-foreground">
+              {notice}
+            </p>
+          ) : null}
+          {error ? (
+            <p role="alert" className="text-sm text-destructive">
+              {error}
+            </p>
+          ) : null}
+        </div>
+        <fieldset>
+          <legend className="mb-2 text-sm font-medium">{t("push.group.label")}</legend>
+          <RadioGroup
+            value={group}
+            onValueChange={chooseGroup}
+            disabled={updateMe.isPending}
+            className="grid gap-2"
+          >
+            {PUSH_GROUPS.map(({ value, label }) => (
+              <Choice
+                key={value}
+                id={`${id}-push-${value}`}
+                value={value}
+                checked={group === value}
+              >
+                {t(label)}
+              </Choice>
+            ))}
+          </RadioGroup>
+          {groupError ? (
+            <p role="alert" className="mt-2 text-sm text-destructive">
+              {groupError}
+            </p>
+          ) : null}
+        </fieldset>
+      </div>
+    </Section>
   );
 }
 

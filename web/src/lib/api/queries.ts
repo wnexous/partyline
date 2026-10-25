@@ -72,6 +72,10 @@ import {
   type PairingRequest,
   type Position,
   type PostMessageRequest,
+  type PushKey,
+  type PushSubscription,
+  type PushSubscriptionRequest,
+  type PushTest,
   type Reaction,
   type ReadState,
   type Room,
@@ -105,6 +109,8 @@ export const queryKeys = {
   invite: (token: string) => ["invite", token] as const,
   users: ["users"] as const,
   sessions: ["me", "sessions"] as const,
+  /** The instance's VAPID public key; read when the user enables notifications (PUSH-02). */
+  pushKey: ["push", "key"] as const,
   tokens: ["tokens"] as const,
   rooms: ["rooms"] as const,
   conversations: ["conversations"] as const,
@@ -268,6 +274,41 @@ export function useRevokeSession() {
     mutationFn: (id: string) => api<void>("DELETE", `/me/sessions/${id}`),
     onSuccess: () => qc.invalidateQueries({ queryKey: queryKeys.sessions }),
   });
+}
+
+// ---------------------------------------------------------------------------------------------
+// Web Push (PUSH-02, PUSH-03, PUSH-05, PUSH-15)
+
+/**
+ * The instance's VAPID public key. It is not read on mount: only pressing Enable needs it, so the
+ * query starts disabled and Settings calls `refetch` (PUSH-18).
+ */
+export const usePushKey = () =>
+  useQuery({
+    queryKey: queryKeys.pushKey,
+    queryFn: () => api<PushKey>("GET", "/push/key"),
+    enabled: false,
+    staleTime: Number.POSITIVE_INFINITY,
+  });
+
+/** Stores this browser's subscription; the same endpoint again updates its row (PUSH-03). */
+export function useSubscribePush() {
+  return useMutation({
+    mutationFn: (req: PushSubscriptionRequest) =>
+      api<PushSubscription>("POST", "/push/subscriptions", req),
+  });
+}
+
+/** Removes this browser's row; an endpoint the server does not know is a 404 (PUSH-05). */
+export function useUnsubscribePush() {
+  return useMutation({
+    mutationFn: (endpoint: string) => api<void>("DELETE", "/push/subscriptions", { endpoint }),
+  });
+}
+
+/** Queues one test notification per subscription and answers how many it took (PUSH-15). */
+export function useTestPush() {
+  return useMutation({ mutationFn: () => api<PushTest>("POST", "/push/test") });
 }
 
 // ---------------------------------------------------------------------------------------------
