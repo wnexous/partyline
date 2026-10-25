@@ -36,3 +36,10 @@ function subscribe(onChange: () => void) {
 export function useEnterSends(): boolean {
   return useSyncExternalStore(subscribe, enterSends, () => true);
 }
+
+/**
+ * `isTouchFirst()` that follows the device when its main pointer changes. A touch-first device
+ * opens the actions of a row with a long press and a sheet; a mouse with a right click, a "⋯" button
+ * and a menu (ACT-01, ACT-02).
+ */
+export const useTouchFirst = (): boolean => !useEnterSends();

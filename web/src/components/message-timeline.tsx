@@ -6,8 +6,10 @@ import { toast } from "sonner";
 import { EmptyState } from "@/components/empty-state";
 import { collectImages, ImageViewer } from "@/components/image-viewer";
 import { MessageItem } from "@/components/message-item";
+import { hasMessageActions, MessageMenu, type MessageMenuTarget } from "@/components/message-menu";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
+import { useTouchFirst } from "@/hooks/use-enter-sends";
 import { useStickToEnd } from "@/hooks/use-stick-to-end";
 import { useRoomMessages } from "@/lib/api/queries";
 import type { Message, Page, RoomMember } from "@/lib/api/types.gen";
@@ -76,10 +78,32 @@ export interface MessageTimelineProps {
   members?: RoomMember[];
   focus?: MessageFocus | null;
   className?: string;
+  /**
+   * Makes a message the one the next message answers (ACT-07). Absent where the viewer may not
+   * post: the actions of a message then offer no Reply.
+   */
+  onReply?: (message: Message) => void;
 }
 
-export function MessageTimeline({ roomId, meId, members, focus, className }: MessageTimelineProps) {
+export function MessageTimeline({
+  roomId,
+  meId,
+  members,
+  focus,
+  className,
+  onReply,
+}: MessageTimelineProps) {
   const { t, locale } = useI18n();
+  // The actions of a message (ACT-01, ACT-02, ACT-05): one menu for the whole timeline, opened by
+  // a long press on a touch device and by a right click or the "⋯" with a mouse.
+  const touch = useTouchFirst();
+  const [menu, setMenu] = useState<MessageMenuTarget | null>(null);
+  const openMenu = useCallback(
+    (message: Message, at: MessageMenuTarget["at"], opener: HTMLElement) =>
+      setMenu({ message, at, opener }),
+    [],
+  );
+  const closeMenu = useCallback(() => setMenu(null), []);
   const query = useRoomMessages(roomId);
   const { hasNextPage, isFetchingNextPage, fetchNextPage } = query;
   const items = useMemo(() => flattenPages(query.data), [query.data]);
@@ -311,6 +335,9 @@ export function MessageTimeline({ roomId, meId, members, focus, className }: Mes
                     }
                     onJumpTo={jumpTo}
                     onOpenImage={openImage}
+                    onMenu={hasMessageActions(m, onReply !== undefined) ? openMenu : undefined}
+                    touch={touch}
+                    menuOpen={menu?.message.id === m.id}
                   />
                 </div>
               );
@@ -319,6 +346,7 @@ export function MessageTimeline({ roomId, meId, members, focus, className }: Mes
           <div className="h-3" />
         </div>
       </div>
+      <MessageMenu target={menu} onClose={closeMenu} touch={touch} onReply={onReply} />
       <ImageViewer
         images={images}
         currentId={viewing}

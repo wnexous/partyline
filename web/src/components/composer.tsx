@@ -1,4 +1,11 @@
-import { EyeIcon, PaperclipIcon, SendHorizontalIcon, Trash2Icon, XIcon } from "lucide-react";
+import {
+  EyeIcon,
+  PaperclipIcon,
+  ReplyIcon,
+  SendHorizontalIcon,
+  Trash2Icon,
+  XIcon,
+} from "lucide-react";
 import {
   type ChangeEvent,
   type KeyboardEvent,
@@ -16,6 +23,7 @@ import {
   mentionCandidates,
   mentionOptionId,
 } from "@/components/mention-suggestions";
+import { authorDisplayName } from "@/components/message-item";
 import { Button } from "@/components/ui/button";
 import { type HoldState, MicButton, RecordingBar } from "@/components/voice-controls";
 import { useEnterSends } from "@/hooks/use-enter-sends";
@@ -28,9 +36,11 @@ import {
   LevelManage,
   LevelPost,
   MaxTextLength,
+  type Message,
   type RoomMember,
 } from "@/lib/api/types.gen";
 import { type MessageKey, type Translate, useI18n } from "@/lib/i18n";
+import { messageExcerpt } from "@/lib/message-excerpt";
 import { textLength } from "@/lib/schemas";
 import { cn } from "@/lib/utils";
 import type { VoiceFailure } from "@/lib/voice";
@@ -49,6 +59,9 @@ import type { VoiceFailure } from "@/lib/voice";
  * box's place, so focus moves to the button that sends it and, when the recording ends, goes back
  * to the text box if it was there and stays on the microphone otherwise (no keyboard pops up
  * after a hold).
+ *
+ * A message chosen to answer (ACT-07) shows as a strip above the text box, with a way to take it
+ * back; the next message sent, text or voice, carries its id as `reply_to`.
  *
  * Typing `@` at the start of a word suggests the conversation's participants (MEN-01..MEN-06):
  * the filtered list opens above the box, Up/Down move, Enter, Tab or a tap complete `@handle `
@@ -87,9 +100,20 @@ export interface ComposerProps {
   roomName: string;
   level: Level;
   members?: RoomMember[];
+  /** The message the next one answers (ACT-07); the room page holds it. */
+  replyTo?: Message | null;
+  /** Takes the reply back, or says it was sent: the room page drops `replyTo`. */
+  onClearReply?: () => void;
 }
 
-export function Composer({ roomId, roomName, level, members }: ComposerProps) {
+export function Composer({
+  roomId,
+  roomName,
+  level,
+  members,
+  replyTo,
+  onClearReply,
+}: ComposerProps) {
   const { t } = useI18n();
   if (!canPost(level)) {
     return (
@@ -99,17 +123,29 @@ export function Composer({ roomId, roomName, level, members }: ComposerProps) {
       </div>
     );
   }
-  return <ComposerForm roomId={roomId} roomName={roomName} members={members} />;
+  return (
+    <ComposerForm
+      roomId={roomId}
+      roomName={roomName}
+      members={members}
+      replyTo={replyTo ?? null}
+      onClearReply={onClearReply}
+    />
+  );
 }
 
 function ComposerForm({
   roomId,
   roomName,
   members,
+  replyTo,
+  onClearReply,
 }: {
   roomId: string;
   roomName: string;
   members?: RoomMember[];
+  replyTo: Message | null;
+  onClearReply?: () => void;
 }) {
   const { t, locale } = useI18n();
   const post = usePostMessage(roomId);
@@ -126,6 +162,7 @@ function ComposerForm({
   // Where the caret goes once a completion re-renders the controlled textarea.
   const pendingCaret = useRef<number | null>(null);
   const counterId = useId();
+  const replyStripId = useId();
   const errorId = useId();
   const mentionListId = useId();
   const viewerId = useMe().data?.id;
@@ -145,6 +182,7 @@ function ComposerForm({
   const refocus = useRef<"text" | "mic" | null>(null);
   const voiceOn = voice.phase === "recording" || voice.phase === "recorded";
 
+  const replyExcerpt = replyTo ? messageExcerpt(replyTo, t("player.voice")) : "";
   const shownError = voice.failure ? t(MIC_FAILURES[voice.failure]) : error;
   const length = textLength(text);
   const tooLong = length > MaxTextLength;
@@ -169,6 +207,16 @@ function ComposerForm({
   const active = candidates.length > 0 ? Math.min(activeIndex, candidates.length - 1) : 0;
   const activeCandidate = candidates[active];
   const mentionStart = mention?.start ?? null;
+
+  // Choosing a message to answer puts the cursor in the box (and opens the keyboard of a phone).
+  // One tick later: the menu that was chosen from is still on screen for a moment, and its focus
+  // trap would take the cursor straight back.
+  const replyId = replyTo?.id;
+  useEffect(() => {
+    if (replyId === undefined) return;
+    const timer = window.setTimeout(() => textRef.current?.focus(), 0);
+    return () => window.clearTimeout(timer);
+  }, [replyId]);
 
   // Leaving the `@word` (or sending) resets the Escape dismissal; the next mention opens again.
   useEffect(() => {
@@ -231,12 +279,13 @@ function ComposerForm({
     }
     setError(null);
     post.mutate(
-      { text: "", files: [recorded.file] },
+      { text: "", files: [recorded.file], ...(replyTo ? { reply_to: replyTo.id } : {}) },
       {
         onSuccess: () => {
           sendingVoice.current = false;
           refocus.current = typing.current ? "text" : "mic";
           setAnnouncement("");
+          if (replyTo) onClearReply?.();
           voice.cancel();
         },
         // The recording stays, stopped, to send again or to discard.
@@ -264,11 +313,13 @@ function ComposerForm({
       {
         text: trimmed,
         ...(files.length ? { files } : {}),
+        ...(replyTo ? { reply_to: replyTo.id } : {}),
       },
       {
         onSuccess: () => {
           setText("");
           setFiles([]);
+          if (replyTo) onClearReply?.();
           textRef.current?.focus();
         },
         onError: (err) => setError(postErrorText(t, err)),
@@ -325,6 +376,12 @@ function ComposerForm({
         return;
       }
     }
+    if (e.key === "Escape" && replyTo && onClearReply) {
+      // Take the reply back, keeping what was typed.
+      e.preventDefault();
+      onClearReply();
+      return;
+    }
     if (e.key !== "Enter" || e.shiftKey || !sendsOnEnter) return;
     e.preventDefault();
     send();
@@ -374,6 +431,36 @@ function ComposerForm({
             activeIndex={active}
             onPick={completeMention}
           />
+        ) : null}
+        {replyTo ? (
+          <div
+            id={replyStripId}
+            data-testid="reply-strip"
+            className="flex items-center gap-2.5 border-b px-3 py-2"
+          >
+            <ReplyIcon className="size-4 shrink-0 text-muted-foreground" aria-hidden="true" />
+            <div className="min-w-0 flex-1 text-xs leading-snug">
+              <p className="truncate font-medium">
+                {t("composer.replyingTo", { name: authorDisplayName(replyTo) })}
+              </p>
+              {replyExcerpt ? (
+                <p className="truncate text-muted-foreground">{replyExcerpt}</p>
+              ) : null}
+            </div>
+            <Button
+              type="button"
+              variant="ghost"
+              size="icon-xs"
+              aria-label={t("composer.cancelReply")}
+              // Taking it back must not close the keyboard of someone who is typing (KBD-03).
+              onPointerDown={keepFocus}
+              onMouseDown={keepFocus}
+              onClick={onClearReply}
+              className="text-muted-foreground pointer-coarse:size-11"
+            >
+              <XIcon aria-hidden="true" />
+            </Button>
+          </div>
         ) : null}
         {voiceOn ? (
           <RecordingBar
@@ -427,7 +514,11 @@ function ComposerForm({
           aria-activedescendant={
             open && activeCandidate ? mentionOptionId(mentionListId, activeCandidate.id) : undefined
           }
-          aria-describedby={length >= COUNTER_FROM ? counterId : undefined}
+          aria-describedby={
+            [replyTo ? replyStripId : null, length >= COUNTER_FROM ? counterId : null]
+              .filter(Boolean)
+              .join(" ") || undefined
+          }
           // The on-screen Return key shows what it does (ENT-04).
           enterKeyHint={sendsOnEnter ? "send" : "enter"}
           placeholder={t("composer.placeholder", { room: roomName })}

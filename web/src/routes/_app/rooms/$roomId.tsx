@@ -12,7 +12,7 @@ import {
 import { useState } from "react";
 import { toast } from "sonner";
 import { BackToConversations } from "@/components/back-link";
-import { Composer } from "@/components/composer";
+import { Composer, canPost } from "@/components/composer";
 import {
   ConversationHeader,
   conversationTitle,
@@ -45,6 +45,7 @@ import {
   ConversationKindDM,
   type IntelligenceRef,
   LevelManage,
+  type Message,
   type Room,
   type RoomMember,
 } from "@/lib/api/types.gen";
@@ -79,6 +80,14 @@ function RoomPage() {
   }
   const [panelTab, setPanelTab] = useState<PanelTab>("members");
   const [focus, setFocus] = useState<MessageFocus | null>(null);
+  // The message the next one answers (ACT-07). It belongs to the conversation it was chosen in:
+  // reaching another one starts with nothing to answer.
+  const [replyTo, setReplyTo] = useState<Message | null>(null);
+  const [replyRoom, setReplyRoom] = useState(roomId);
+  if (replyRoom !== roomId) {
+    setReplyRoom(roomId);
+    setReplyTo(null);
+  }
 
   if (room.isError && isApiError(room.error) && room.error.status === 404) {
     return <RoomNotFound />;
@@ -178,6 +187,7 @@ function RoomPage() {
           meId={me.id}
           members={memberList}
           focus={focus}
+          onReply={canPost(r.my_level) && !historyOnly ? setReplyTo : undefined}
         />
         {historyOnly ? (
           <HistoryNotice platform={history ?? ""} />
@@ -188,6 +198,8 @@ function RoomPage() {
             roomName={title}
             level={r.my_level}
             members={memberList}
+            replyTo={replyTo}
+            onClearReply={() => setReplyTo(null)}
           />
         )}
       </div>

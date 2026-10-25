@@ -5,14 +5,22 @@ import {
   SearchIcon,
   UsersRoundIcon,
 } from "lucide-react";
-import { memo, useMemo, useRef } from "react";
+import { memo, useCallback, useMemo, useRef, useState } from "react";
+import {
+  ConversationMenu,
+  type ConversationMenuTarget,
+  hasConversationActions,
+} from "@/components/conversation-menu";
 import { EmptyState } from "@/components/empty-state";
 import { IntelligenceAvatar } from "@/components/intelligence/intelligence-avatar";
 import { NewConversationDialog } from "@/components/new-conversation-dialog";
 import { NewGroupDialog } from "@/components/new-group-dialog";
+import { RowMenuButton } from "@/components/row-menu-button";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useCurrentOrg } from "@/hooks/use-current-org";
+import { useTouchFirst } from "@/hooks/use-enter-sends";
+import { useLongPress } from "@/hooks/use-long-press";
 import { useConversations } from "@/lib/api/queries";
 import type { Conversation } from "@/lib/api/types.gen";
 import { conversationMatches, groupFace } from "@/lib/conversations";
@@ -31,6 +39,9 @@ import { isVoicePreview } from "@/lib/voice";
  * The list is the current organization's (ORG-02): its groups, and each DM filed under it. While
  * the viewer's organizations are not known it lists everything, so an unreachable profile never
  * hides a conversation.
+ *
+ * A long press (touch), a right click or the "⋯" on a row (mouse) opens what the conversation
+ * offers: mark it read, its profile, leave and delete (ACT-01..ACT-04, components/conversation-menu).
  */
 
 const FRESH_MS = 1_500;
@@ -68,6 +79,23 @@ export function ConversationList({
   const t = useT();
   const conversations = useConversations();
   const { org, loading: orgLoading } = useCurrentOrg();
+  const touch = useTouchFirst();
+  const [menu, setMenu] = useState<ConversationMenuTarget | null>(null);
+  // The menu shows the row as it is now (a message may have come in), not as it was when it opened.
+  const menuTarget = useMemo(
+    () =>
+      menu && {
+        ...menu,
+        conversation:
+          conversations.data?.find((x) => x.id === menu.conversation.id) ?? menu.conversation,
+      },
+    [menu, conversations.data],
+  );
+  const openMenu = useCallback<MenuOpener>(
+    (conversation, at, opener) => setMenu({ conversation, at, opener }),
+    [],
+  );
+  const closeMenu = useCallback(() => setMenu(null), []);
   // Tracked on the whole list, so a hidden conversation that gets a message settles when shown.
   const fresh = useFreshConversations(conversations.data);
   const text = query.trim();
@@ -155,10 +183,14 @@ export function ConversationList({
       {rows.length > 0 ? (
         <ul aria-label={t("conversations.label")} className="pb-2">
           {rows.map((c) => (
-            // Rows far off screen skip layout and paint; a live message re-renders only its own row.
-            <li key={c.id} className="[contain-intrinsic-size:auto_4rem] [content-visibility:auto]">
-              <ConversationRow conversation={c} fresh={fresh.has(c.id)} />
-            </li>
+            <ConversationRow
+              key={c.id}
+              conversation={c}
+              fresh={fresh.has(c.id)}
+              touch={touch}
+              menuOpen={menu?.conversation.id === c.id}
+              onMenu={openMenu}
+            />
           ))}
         </ul>
       ) : (
@@ -184,16 +216,30 @@ export function ConversationList({
           />
         </div>
       ) : null}
+      <ConversationMenu target={menuTarget} onClose={closeMenu} touch={touch} />
     </>
   );
 }
 
+/** Opens a row's actions: where, and which element takes focus back when they close. */
+type MenuOpener = (
+  conversation: Conversation,
+  at: ConversationMenuTarget["at"],
+  opener: HTMLElement,
+) => void;
+
 const ConversationRow = memo(function ConversationRow({
   conversation: c,
   fresh,
+  touch,
+  menuOpen,
+  onMenu,
 }: {
   conversation: Conversation;
   fresh: boolean;
+  touch: boolean;
+  menuOpen: boolean;
+  onMenu: MenuOpener;
 }) {
   const { t, locale } = useI18n();
   const last = c.last_message;
@@ -201,60 +247,89 @@ const ConversationRow = memo(function ConversationRow({
   // A message that is only a recording is named as one, not by the file it made (VOI-04).
   const text =
     last && isVoicePreview(last.text) ? t("conversations.voiceMessage") : (last?.text ?? "");
+  // A row with nothing to offer is a plain link: no press, no button, the browser's own menu.
+  const actionable = hasConversationActions(c);
+  const press = useLongPress<HTMLAnchorElement>(
+    (where) => onMenu(c, { x: where.x, y: where.y }, where.element),
+    { enabled: actionable },
+  );
+  const withButton = actionable && !touch;
 
   return (
-    <Link
-      to="/rooms/$roomId"
-      params={{ roomId: c.id }}
-      className="relative isolate grid grid-cols-[2.5rem_minmax(0,1fr)] items-center gap-x-3 px-3 py-2.5 outline-none transition-colors hover:bg-sidebar-accent focus-visible:bg-sidebar-accent focus-visible:ring-2 focus-visible:ring-sidebar-ring focus-visible:ring-inset data-[status=active]:bg-tape"
-    >
-      {fresh ? (
-        <span
-          key={last?.seq}
-          aria-hidden="true"
-          className="pointer-events-none absolute inset-0 -z-10 animate-tape-settle"
+    // Rows far off screen skip layout and paint; a live message re-renders only its own row.
+    <li className="group/row relative [contain-intrinsic-size:auto_4rem] [content-visibility:auto]">
+      <Link
+        to="/rooms/$roomId"
+        params={{ roomId: c.id }}
+        {...press}
+        className={cn(
+          "relative isolate grid grid-cols-[2.5rem_minmax(0,1fr)] items-center gap-x-3 px-3 py-2.5 outline-none transition-colors hover:bg-sidebar-accent focus-visible:bg-sidebar-accent focus-visible:ring-2 focus-visible:ring-sidebar-ring focus-visible:ring-inset data-[status=active]:bg-tape",
+          // A long press must not select the name under the finger or call up the link's own preview.
+          actionable && touch && "select-none [-webkit-touch-callout:none]",
+        )}
+      >
+        {fresh ? (
+          <span
+            key={last?.seq}
+            aria-hidden="true"
+            className="pointer-events-none absolute inset-0 -z-10 animate-tape-settle"
+          />
+        ) : null}
+        <IntelligenceAvatar
+          intelligence={c.counterpart ?? groupFace(c.id, c.title)}
+          size="lg"
+          decorative
+          // Groups are squares, people circles: the list reads at a glance.
+          className={c.counterpart ? undefined : "rounded-lg *:rounded-lg"}
+        />
+        <div className="min-w-0">
+          <div className="flex items-baseline gap-2">
+            <span className="min-w-0 flex-1 truncate font-semibold tracking-[-0.01em]">
+              {c.title}
+            </span>
+            {last ? (
+              <time
+                dateTime={last.created_at}
+                title={formatAbsolute(last.created_at, locale)}
+                className={cn(
+                  "shrink-0 font-mono text-[0.7rem] tabular",
+                  // An unread row wears the accent twice: its count and its time.
+                  c.unread > 0 ? "text-link" : "text-muted-foreground",
+                  // The "⋯" takes the time's place while the row is hovered or has focus.
+                  withButton && "group-focus-within/row:opacity-0 group-hover/row:opacity-0",
+                )}
+              >
+                {formatListTime(last.created_at, locale)}
+              </time>
+            ) : null}
+          </div>
+          <div className="flex items-center gap-2">
+            <span
+              className={
+                c.unread > 0
+                  ? "min-w-0 flex-1 truncate text-sm text-foreground/85"
+                  : "min-w-0 flex-1 truncate text-sm text-muted-foreground"
+              }
+            >
+              {last
+                ? sender && text
+                  ? `${sender}: ${text}`
+                  : text
+                : t("conversations.noMessages")}
+            </span>
+            {c.unread > 0 ? <UnreadBadge count={c.unread} /> : null}
+          </div>
+        </div>
+      </Link>
+      {withButton ? (
+        <RowMenuButton
+          label={t("actions.conversation", { name: c.title })}
+          expanded={menuOpen}
+          onOpen={(at, button) => onMenu(c, at, button)}
+          className="absolute top-2.5 right-3 opacity-0 group-focus-within/row:opacity-100 group-hover/row:opacity-100 aria-expanded:opacity-100"
         />
       ) : null}
-      <IntelligenceAvatar
-        intelligence={c.counterpart ?? groupFace(c.id, c.title)}
-        size="lg"
-        decorative
-        // Groups are squares, people circles: the list reads at a glance.
-        className={c.counterpart ? undefined : "rounded-lg *:rounded-lg"}
-      />
-      <div className="min-w-0">
-        <div className="flex items-baseline gap-2">
-          <span className="min-w-0 flex-1 truncate font-semibold tracking-[-0.01em]">
-            {c.title}
-          </span>
-          {last ? (
-            <time
-              dateTime={last.created_at}
-              title={formatAbsolute(last.created_at, locale)}
-              className={cn(
-                "shrink-0 font-mono text-[0.7rem] tabular",
-                // An unread row wears the accent twice: its count and its time.
-                c.unread > 0 ? "text-link" : "text-muted-foreground",
-              )}
-            >
-              {formatListTime(last.created_at, locale)}
-            </time>
-          ) : null}
-        </div>
-        <div className="flex items-center gap-2">
-          <span
-            className={
-              c.unread > 0
-                ? "min-w-0 flex-1 truncate text-sm text-foreground/85"
-                : "min-w-0 flex-1 truncate text-sm text-muted-foreground"
-            }
-          >
-            {last ? (sender && text ? `${sender}: ${text}` : text) : t("conversations.noMessages")}
-          </span>
-          {c.unread > 0 ? <UnreadBadge count={c.unread} /> : null}
-        </div>
-      </div>
-    </Link>
+    </li>
   );
 });
 

@@ -1,8 +1,16 @@
 import type { Browser, BrowserContext, Locator, Page, TestInfo } from "@playwright/test";
-import type { Me, Message, Page as Paged, Room, SetupRequest } from "../src/lib/api/types.gen";
+import type {
+  Conversation,
+  List,
+  Me,
+  Message,
+  Page as Paged,
+  Room,
+  SetupRequest,
+} from "../src/lib/api/types.gen";
 import { makeWav, postVoice } from "./audio";
 import { apiCall, test as base, type Credentials, expect, settled } from "./fixtures";
-import { expectNoSidewaysScroll, isMobile, loginAs } from "./helpers";
+import { agentJSON, connectAI, expectNoSidewaysScroll, isMobile, loginAs } from "./helpers";
 import { type Instance, startInstance } from "./server";
 import { shoot } from "./shots";
 
@@ -658,3 +666,350 @@ test("the browser's own recorder reaches the timeline, with a fake microphone (V
 
 /** The conversation's message log. */
 const log = (page: Page) => page.getByRole("log");
+
+/** A conversation the viewer has not read: an AI that is a member of a new group says something in it. */
+async function groupWithUnread(
+  context: BrowserContext,
+  instance: Instance,
+  name: string,
+  folder: string,
+  said: string,
+) {
+  const ai = await connectAI(context, instance, folder);
+  const room = await newGroup(context, instance, name, ["welcome"]);
+  await apiCall(context.request, instance, "POST", `/rooms/${room.id}/members`, {
+    kind: "agent",
+    member_id: ai.ai.id,
+  });
+  await agentJSON(context, instance, ai, "POST", `/agent/rooms/${room.id}/messages`, {
+    text: said,
+  });
+  return { room, ai };
+}
+
+/** The viewer's conversations, as the API lists them. */
+const conversations = (context: BrowserContext, instance: Instance) =>
+  apiCall<List<Conversation>>(context.request, instance, "GET", "/conversations").then(
+    (list) => list.items,
+  );
+
+/**
+ * What opens the actions of an element: a finger resting on it on a phone, the right button of a
+ * mouse elsewhere. It returns once the sheet or the menu named `name` is up; the finger stays down
+ * until `release()`, as it does for a person who has not yet lifted it.
+ */
+async function openActions(
+  page: Page,
+  context: BrowserContext,
+  testInfo: TestInfo,
+  target: Locator,
+  name: string | RegExp,
+) {
+  const { x, y } = await centre(target);
+  if (isMobile(testInfo)) {
+    const finger = await pointer(page, context, testInfo);
+    await finger.down(x, y);
+    await expect(surface(page, testInfo, name)).toBeVisible();
+    return {
+      release: async () => {
+        await finger.up();
+      },
+      x,
+      y,
+    };
+  }
+  await page.mouse.click(x, y, { button: "right" });
+  await expect(surface(page, testInfo, name)).toBeVisible();
+  return { release: async () => {}, x, y };
+}
+
+/** The sheet of a phone or the menu of a mouse that was just opened, named after what it acts on. */
+const surface = (page: Page, testInfo: TestInfo, name: string | RegExp) =>
+  isMobile(testInfo) ? page.getByRole("dialog", { name }) : page.getByRole("menu", { name });
+
+/** One of its actions: a button in the sheet, an item in the menu. */
+const action = (page: Page, testInfo: TestInfo, name: string) =>
+  isMobile(testInfo)
+    ? page.getByRole("dialog").getByRole("button", { name, exact: true })
+    : page.getByRole("menu").getByRole("menuitem", { name, exact: true });
+
+test("a conversation of the list opens its actions, and each one does what it says (ACT-01..ACT-04, ACT-06)", async ({
+  browser,
+  phone,
+}, testInfo) => {
+  const { context, page } = await openPage(browser, phone, testInfo);
+  try {
+    const crew = await groupWithUnread(
+      context,
+      phone,
+      "e2e-crew",
+      "/work/e2e-actions",
+      "release is green",
+    );
+    const doomed = await newGroup(context, phone, "e2e-doomed", ["nothing to see here"]);
+    await page.goto("/");
+    const list = page.getByRole("list", { name: "Conversations" });
+    const row = (name: string) => list.getByRole("link", { name: new RegExp(name) });
+    await expect(row("e2e-crew")).toBeVisible();
+    await expect(row("e2e-crew").getByText("1 unread message")).toBeVisible();
+
+    if (isMobile(testInfo)) {
+      // ACT-01: a drag that begins on a row is a scroll, not a press; and a tap opens the conversation.
+      const finger = await pointer(page, context, testInfo);
+      const at = await centre(row("e2e-doomed"));
+      await finger.down(at.x, at.y);
+      await finger.move(at.x, at.y + 40);
+      await page.waitForTimeout(700);
+      await finger.up();
+      await expect(page.getByRole("dialog")).toHaveCount(0);
+    }
+
+    // ACT-01, ACT-02: the actions of a group that has something unread and that the viewer manages.
+    const press = await openActions(page, context, testInfo, row("e2e-crew"), "e2e-crew");
+    const actions = surface(page, testInfo, "e2e-crew");
+    await expect(actions).toBeVisible();
+    await expect(action(page, testInfo, "Mark as read")).toBeVisible();
+    await expect(action(page, testInfo, "Delete group")).toBeVisible();
+    // There is no Leave group: the server's rules give it no effect (see conversation-menu.tsx).
+    await expect(page.getByText("Leave group")).toHaveCount(0);
+    if (isMobile(testInfo)) {
+      // The sheet comes up from the bottom edge, as wide as the screen, with rows a finger can hit.
+      const sheet = await rect(actions);
+      const screen = page.viewportSize() ?? { width: 0, height: 0 };
+      expect(sheet.bottom).toBeCloseTo(screen.height, 0);
+      expect(sheet.width).toBeCloseTo(screen.width, 0);
+      for (const name of ["Mark as read", "Delete group"]) {
+        expect((await rect(action(page, testInfo, name))).height).toBeGreaterThanOrEqual(44);
+      }
+      await expect(actions).toHaveAccessibleDescription("Group · 1 unread message");
+      await shoot(page, "actions-sheet", testInfo);
+    } else {
+      // A menu at the pointer: its corner is where the button was pressed.
+      const menu = await rect(actions);
+      expect(Math.abs(menu.left - press.x)).toBeLessThanOrEqual(8);
+      expect(Math.abs(menu.top - press.y)).toBeLessThanOrEqual(8);
+      await shoot(page, "actions-menu", testInfo);
+    }
+    await press.release();
+    // The press that opened it did not open the conversation.
+    await expect(page).toHaveURL(`${phone.url}/`);
+
+    // Escape closes it and focus goes back to the row.
+    await page.keyboard.press("Escape");
+    await expect(surface(page, testInfo, "e2e-crew")).toHaveCount(0);
+    if (!isMobile(testInfo)) {
+      await expect(row("e2e-crew")).toBeFocused();
+      // With a mouse the "⋯" shows where the time was while the row is hovered, and only then.
+      const more = page.getByRole("button", { name: "Actions for e2e-crew" });
+      // At rest: the pointer is away and the row has let go of focus (focus within shows it too).
+      await page.mouse.move(2, 2);
+      await row("e2e-crew").blur();
+      await expect(more).toHaveCSS("opacity", "0");
+      await row("e2e-crew").hover();
+      await expect(more).toHaveCSS("opacity", "1");
+      await shoot(page, "actions-hover", testInfo);
+      await page.mouse.move(2, 2);
+    }
+
+    // Mark as read: the count goes, on the screen and on the server.
+    await (await openActions(page, context, testInfo, row("e2e-crew"), "e2e-crew")).release();
+    await action(page, testInfo, "Mark as read").click();
+    // The row is there, and says nothing is unread; the server agrees.
+    await expect(row("e2e-crew")).toBeVisible();
+    await expect(row("e2e-crew").getByText(/unread/)).toHaveCount(0);
+    await expect
+      .poll(
+        async () =>
+          (await conversations(context, phone)).find((c) => c.id === crew.room.id)?.unread,
+      )
+      .toBe(0);
+
+    // ACT-04: Delete group asks first, with Cancel focused; cancelling leaves everything.
+    await (await openActions(page, context, testInfo, row("e2e-doomed"), "e2e-doomed")).release();
+    await action(page, testInfo, "Delete group").click();
+    const ask = page.getByRole("alertdialog", { name: "Delete e2e-doomed?" });
+    await expect(ask).toBeVisible();
+    await expect(ask.getByRole("button", { name: "Cancel" })).toBeFocused();
+    await ask.getByRole("button", { name: "Cancel" }).click();
+    await expect(ask).toHaveCount(0);
+    expect((await conversations(context, phone)).map((c) => c.id)).toContain(doomed.id);
+    // Confirmed: it goes, and the user is told.
+    await (await openActions(page, context, testInfo, row("e2e-doomed"), "e2e-doomed")).release();
+    await action(page, testInfo, "Delete group").click();
+    await page
+      .getByRole("alertdialog", { name: "Delete e2e-doomed?" })
+      .getByRole("button", { name: "Delete group" })
+      .click();
+    await expect(row("e2e-doomed")).toHaveCount(0);
+    await expect(page.getByText("e2e-doomed deleted")).toBeVisible();
+    expect((await conversations(context, phone)).map((c) => c.id)).not.toContain(doomed.id);
+  } finally {
+    await context.close();
+  }
+});
+
+test("a tap on a conversation still opens it, and the click that ends a long press does not (ACT-01)", async ({
+  browser,
+  phone,
+}, testInfo) => {
+  test.skip(!isMobile(testInfo), "a phone's gesture");
+  const { context, page } = await openPage(browser, phone, testInfo);
+  try {
+    await newGroup(context, phone, "e2e-tap", ["tap me"]);
+    await page.goto("/");
+    const row = page
+      .getByRole("list", { name: "Conversations" })
+      .getByRole("link", { name: /e2e-tap/ });
+    await expect(row).toBeVisible();
+    // Held for a good while and let go: the sheet is up and the conversation is not open.
+    const held = await openActions(page, context, testInfo, row, "e2e-tap");
+    await expect(page.getByRole("dialog", { name: "e2e-tap" })).toBeVisible();
+    await page.waitForTimeout(700);
+    await held.release();
+    await expect(page).toHaveURL(`${phone.url}/`);
+    await page.keyboard.press("Escape");
+    await expect(page.getByRole("dialog")).toHaveCount(0);
+    // A plain tap opens it.
+    await row.tap();
+    await expect(page).toHaveURL(/\/rooms\/[^/]+$/);
+  } finally {
+    await context.close();
+  }
+});
+
+test("a direct message offers no Delete, and View profile opens the profile on the page that is open (ACT-03)", async ({
+  browser,
+  phone,
+}, testInfo) => {
+  const { context, page } = await openPage(browser, phone, testInfo);
+  try {
+    // A DM is nobody's to delete (DM-02): it offers its unread count and the profile of who it is with.
+    const ai = await connectAI(context, phone, "/work/e2e-dm");
+    const dm = await apiCall<Room>(context.request, phone, "POST", "/conversations/dm", {
+      with: ai.ai.id,
+    });
+    await agentJSON(context, phone, ai, "POST", `/agent/rooms/${dm.id}/messages`, {
+      text: "psst, over here",
+    });
+    await page.goto("/");
+    const row = page
+      .getByRole("list", { name: "Conversations" })
+      .getByRole("link", { name: /psst, over here/ });
+    await expect(row).toBeVisible();
+    const press = await openActions(page, context, testInfo, row, ai.ai.display_name);
+    const actions = surface(page, testInfo, ai.ai.display_name);
+    await expect(actions).toBeVisible();
+    await expect(action(page, testInfo, "Mark as read")).toBeVisible();
+    await expect(action(page, testInfo, "View profile")).toBeVisible();
+    await expect(page.getByText("Delete group")).toHaveCount(0);
+    await press.release();
+    // View profile opens the panel of the AI, on the page that is open.
+    await action(page, testInfo, "View profile").click();
+    await expect(page.getByRole("dialog", { name: ai.ai.display_name })).toBeVisible();
+    await expect(page).toHaveURL(`${phone.url}/`);
+  } finally {
+    await context.close();
+  }
+});
+
+test("a message opens its actions: Copy text copies it, Reply answers it (ACT-01, ACT-02, ACT-05, ACT-07)", async ({
+  browser,
+  phone,
+}, testInfo) => {
+  const { context, page } = await openPage(browser, phone, testInfo);
+  try {
+    await context.grantPermissions(["clipboard-read", "clipboard-write"]);
+    const said = "release is green, ship it";
+    const { room, ai } = await groupWithUnread(
+      context,
+      phone,
+      "e2e-answer",
+      "/work/e2e-answer",
+      said,
+    );
+    const author = ai.ai.display_name;
+    await page.goto(`/rooms/${room.id}`);
+    const log = page.getByRole("log");
+    // The row, by its number: once it is answered, the answer quotes it and so says it too.
+    const first = log.locator('[data-testid^="message-"]', { hasText: said });
+    await expect(first).toBeVisible();
+    const message = log.getByTestId((await first.getAttribute("data-testid")) ?? "");
+    const box = page.getByRole("textbox", { name: "Message e2e-answer" });
+    // The sheet is named after the author; the mouse's menu says whose message it is.
+    const named = new RegExp(author);
+
+    // ACT-05: Reply and Copy text, and a line of what the message says.
+    const press = await openActions(page, context, testInfo, message, named);
+    await expect(action(page, testInfo, "Reply")).toBeVisible();
+    await expect(action(page, testInfo, "Copy text")).toBeVisible();
+    if (isMobile(testInfo)) {
+      await expect(surface(page, testInfo, named)).toHaveAccessibleDescription(said);
+      for (const name of ["Reply", "Copy text"]) {
+        expect((await rect(action(page, testInfo, name))).height).toBeGreaterThanOrEqual(44);
+      }
+      await shoot(page, "actions-message-sheet", testInfo);
+    }
+    await press.release();
+
+    // Copy text: the whole text is on the clipboard and the user is told.
+    await action(page, testInfo, "Copy text").click();
+    await expect(page.getByText("Text copied")).toBeVisible();
+    expect(await page.evaluate(() => navigator.clipboard.readText())).toBe(said);
+
+    // ACT-02: with a mouse the "⋯" of the row opens the same menu; it shows on hover.
+    let reply: () => Promise<void>;
+    if (isMobile(testInfo)) {
+      reply = async () => {
+        await (await openActions(page, context, testInfo, message, named)).release();
+        await action(page, testInfo, "Reply").click();
+      };
+    } else {
+      const more = message.getByRole("button", { name: `Actions for the message from ${author}` });
+      await expect(more).toHaveCSS("opacity", "0");
+      await message.hover();
+      await expect(more).toHaveCSS("opacity", "1");
+      await shoot(page, "actions-message-hover", testInfo);
+      reply = async () => {
+        await message.hover();
+        await expect(more).toHaveCSS("opacity", "1");
+        await more.click();
+        await action(page, testInfo, "Reply").click();
+      };
+    }
+
+    // ACT-07: Reply puts the message above the text box, with the cursor in it.
+    await reply();
+    const strip = page.getByTestId("reply-strip");
+    await expect(strip).toContainText(`Replying to ${author}`);
+    await expect(strip).toContainText(said);
+    await expect(box).toBeFocused();
+    await shoot(page, "reply-strip", testInfo);
+
+    // The answer carries it, and the strip goes.
+    await box.fill("shipping it now");
+    await page.getByRole("button", { name: "Send" }).click();
+    await expect(strip).toHaveCount(0);
+    const answer = log.locator('[data-testid^="message-"]', { hasText: "shipping it now" });
+    await expect(answer.getByTestId("reply-context")).toContainText(said);
+    const sent = await apiCall<Paged<Message>>(
+      context.request,
+      phone,
+      "GET",
+      `/rooms/${room.id}/messages?limit=5`,
+    );
+    const original = sent.items.find((m) => m.text === said);
+    expect(sent.items.find((m) => m.text === "shipping it now")?.reply_to).toBe(original?.id);
+
+    // Taking a reply back: Cancel reply, and Escape in the text box.
+    await reply();
+    await expect(strip).toBeVisible();
+    await page.getByRole("button", { name: "Cancel reply" }).click();
+    await expect(strip).toHaveCount(0);
+    await reply();
+    await expect(strip).toBeVisible();
+    await box.press("Escape");
+    await expect(strip).toHaveCount(0);
+  } finally {
+    await context.close();
+  }
+});

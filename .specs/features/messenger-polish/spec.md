@@ -32,7 +32,7 @@ On 2026-10-24 the product owner, using partyline on an Android phone (Chrome), a
 | Zoom, rotate, slideshow, video or audio in the viewer | Not asked; "Open original" opens the file itself |
 | Editing a profile inside the panel, presence of users, a person's DM | The panel shows and routes; the page edits (PROF-05), the API has no presence for users (AD-010) and a person is history (CID-21) |
 | Deleting a message | The API has no route to delete or edit a message; the message menu has no such action until one exists |
-| Leaving a group as a plain member | Removing a member needs `manage` on the group (AD-016); the list offers Leave exactly where the server allows it. A self-service leave for every member is a permission change, not a UI one |
+| Leaving a group | A member row gives `post`, and `manage` comes only from creating the group or administering its organization (AD-016); taking a member row out needs `manage`. A plain member is refused, and a manager who takes their own row out keeps the group, so "Leave group" could not take effect and the menu does not offer it. It needs a server rule (a user may remove their own member row), a permission change that is not the UI's to make: asked of the coordinator on 2026-10-25, unanswered when this was written |
 | A waveform in the voice player, previewing a recording before it is sent, transcription | Not asked; the player has play, time and a seek bar |
 | Reactions on messages that arrived through a connection, custom emoji, reaction notifications to AIs | Rooms hold users and AIs only (AD-015); the agent `react` tool keeps reacting to platform messages; AIs are not told about a reaction |
 
@@ -66,8 +66,11 @@ On 2026-10-24 the product owner, using partyline on an Android phone (Chrome), a
 | Text box height | At most 6 lines (10 rem) and 40 % of the visible area, whichever is smaller; it then scrolls inside itself | The Send, attach and microphone buttons live below it and must stay on screen | n |
 | Touch or pointer | The same helper as ENT (`isTouchFirst`): a coarse main pointer, or one that cannot hover, gets a long press and a bottom sheet; a mouse or trackpad gets a right click, a "⋯" button and a menu at the pointer, whatever the width | A narrow desktop window is still a mouse; a tablet is still a finger | n |
 | Long press | 500 ms still (10 px of movement at most) with a finger or a pen; the `contextmenu` event of a touch (Android's long press, TalkBack's long click) opens the same sheet and keeps the browser's own menu closed | Chrome's own threshold is about the same, so ours wins the race | n |
-| What the conversation list offers | Mark as read (when something is unread), View profile (a DM's counterpart), Leave group and Delete group where the server allows them. Leaving removes the viewer's own member row (`DELETE /rooms/{id}/members/{mid}`, `manage` needed); deleting is `DELETE /rooms/{id}` (`manage`, never a DM). Both ask first | Existing routes and their rules; nothing is added on the server for them | n |
+| What the conversation list offers | Mark as read (when something is unread), View profile (a DM's counterpart) and Delete group (`DELETE /rooms/{id}`: `manage`, never a DM), which asks first. No Leave group (see Out of Scope) | Existing routes and their rules; nothing is added on the server for them | n |
 | What a message offers | Reply, Copy text (when it has text) and the reactions bar (RCT). No Delete: there is no route | Existing routes only | n |
+| Text on a touch device | A row that has actions does not select text on a touch device: Chrome would select the word under a long press and show its own toolbar beside the sheet. Copy text takes the whole message. A mouse selects as before | One gesture, one answer | n |
+| Where the notice of Copy text goes | At the top of the screen, for two seconds: the other notices sit at the bottom right, over the composer's Send row, which a reply strip or a long draft makes taller still | A confirmation must not hide the control that is next | n |
+| Opening the sheet | Focus goes to the sheet itself, not to its first action: a row that opens with a ring on it looks chosen. The first Tab reaches the first action, and the menu of a mouse moves with the arrows | Nothing is pre-selected | n |
 | Voice recording | `MediaRecorder` on the microphone stream, 32 kbit/s, the first of `audio/webm;codecs=opus` and `audio/ogg;codecs=opus` the browser can record, else the browser's default (Safari records `audio/mp4`); at most 10 minutes. The file is `voice-message-<date>-<time>.<ext>` and goes through the message upload as the only attachment, with no text. The server's size limit is not published, so a recording it refuses (413) says so and stays in the composer to retry or discard | "In the format the browser records", through the existing upload | n |
 | Tap or hold | A tap on the microphone starts a recording that stays on until Send or Cancel; a hold longer than 0.5 s records while held, sends on release and cancels when the finger slides 80 px to the left | Both gestures the owner named | n |
 | Focus around a recording | The text box is hidden while a recording is on, so focus moves to the button that sends it; when the recording ends it goes back to the text box if that had focus as it began, else it stays on the microphone | Escape and screen readers need focus inside the composer, and a hold on a phone must not open the keyboard behind the conversation | n |
@@ -223,11 +226,11 @@ On 2026-10-24 the product owner, using partyline on an Android phone (Chrome), a
 
 1. WHEN a finger or pen rests on a conversation of the list or on a message for 0.5 s, moving at most 10 px, THEN an action sheet SHALL open from the bottom. A tap, a scroll, a drag or a press released earlier SHALL NOT open it; a tap still opens the conversation; the click that ends a long press SHALL NOT open the conversation. (ACT-01)
 2. WHEN the user right-clicks a conversation or a message, or presses the context-menu key or Shift+F10 on it, THEN a menu SHALL open at the pointer; a "⋯" button on the row, shown on hover and on keyboard focus, SHALL open the same menu. The browser's own menu SHALL NOT open. (ACT-02)
-3. A conversation's menu SHALL offer, in this order and only where they apply: Mark as read (it has unread messages), View profile (a DM), Leave group and Delete group (the viewer may manage the group; never a DM). They use the existing routes (`PUT /rooms/{id}/read`, `GET /rooms/{id}/members` and `DELETE /rooms/{id}/members/{mid}`, `DELETE /rooms/{id}`). (ACT-03)
-4. Leave group and Delete group SHALL ask first in an alert dialog that names the conversation, with Cancel focused; a failure SHALL leave the conversation where it is and say so; deleting the open conversation SHALL go back to the list. (ACT-04)
+3. A conversation's menu SHALL offer, in this order and only where they apply: Mark as read (it has unread messages), View profile (a DM) and Delete group (the viewer manages the group; never a DM). They use the existing routes (`PUT /rooms/{id}/read`, `DELETE /rooms/{id}`). It SHALL NOT offer Leave group, which the rules of the server leave without effect. (ACT-03)
+4. Delete group SHALL ask first in an alert dialog that names the conversation, with Cancel focused; a failure SHALL leave the conversation where it is and say so; deleting the open conversation SHALL go back to the list. (ACT-04)
 5. A message's menu SHALL offer Reply and, when it has text, Copy text; Copy SHALL confirm with a notice. Nothing is offered for a system message. (ACT-05)
 6. The sheet and the menu SHALL be named after what they act on, trap focus, close with Escape and give focus back to what opened them; a menu moves with the arrow keys; destructive actions carry the destructive colour, an icon and their word; every sheet row is at least 44 px. (ACT-06)
-7. WHEN the user chooses Reply THEN the composer SHALL show "Replying to <name>" with an excerpt and a Cancel button above the text box, and the next message sent (text or voice) SHALL carry `reply_to`; changing conversation or sending SHALL clear it. (ACT-07)
+7. WHEN the user chooses Reply THEN the composer SHALL show "Replying to <name>" with an excerpt and a Cancel button above the text box, with the cursor in the text box, and the next message sent (text or voice) SHALL carry `reply_to`; changing conversation or sending SHALL clear it, and so SHALL Cancel and Escape in the text box (what was typed stays). A failed send keeps it. (ACT-07)
 
 **Independent Test**: At 360 px press and hold a group in the list for 0.6 s: a sheet named after the group opens with Mark as read and Delete group; Delete group asks first. At 1280 px right-click a message: a menu with Reply and Copy text opens at the pointer.
 
@@ -318,13 +321,13 @@ On 2026-10-24 the product owner, using partyline on an Android phone (Chrome), a
 | VOI-06 | P1: Voice messages | Execute | Implemented |
 | VOI-07 | P1: Voice messages | Execute | Implemented |
 | VOI-08 | P1: Voice messages | Execute | Implemented |
-| ACT-01 | P1: Long-press actions | Execute | Implementing |
-| ACT-02 | P1: Long-press actions | Execute | Implementing |
-| ACT-03 | P1: Long-press actions | Execute | Implementing |
-| ACT-04 | P1: Long-press actions | Execute | Implementing |
-| ACT-05 | P1: Long-press actions | Execute | Implementing |
-| ACT-06 | P1: Long-press actions | Execute | Implementing |
-| ACT-07 | P1: Long-press actions | Execute | Implementing |
+| ACT-01 | P1: Long-press actions | Execute | Implemented |
+| ACT-02 | P1: Long-press actions | Execute | Implemented |
+| ACT-03 | P1: Long-press actions | Execute | Implemented |
+| ACT-04 | P1: Long-press actions | Execute | Implemented |
+| ACT-05 | P1: Long-press actions | Execute | Implemented |
+| ACT-06 | P1: Long-press actions | Execute | Implemented |
+| ACT-07 | P1: Long-press actions | Execute | Implemented |
 | SWP-01 | P2: Swipe to reply | Execute | Implementing |
 | SWP-02 | P2: Swipe to reply | Execute | Implementing |
 | SWP-03 | P2: Swipe to reply | Execute | Implementing |

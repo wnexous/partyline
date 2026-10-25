@@ -12,8 +12,11 @@ import { lazy, memo, Suspense } from "react";
 import { AudioPlayer } from "@/components/audio-player";
 import { IntelligenceAvatar } from "@/components/intelligence/intelligence-avatar";
 import { IntelligenceName } from "@/components/intelligence/intelligence-name";
+import type { MessageMenuTarget } from "@/components/message-menu";
 import { ProfileLink } from "@/components/profile-link";
+import { RowMenuButton } from "@/components/row-menu-button";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
+import { useLongPress } from "@/hooks/use-long-press";
 import { attachmentUrl } from "@/lib/api/queries";
 import type {
   Attachment,
@@ -159,6 +162,15 @@ export interface MessageItemProps {
   onJumpTo?: (messageId: string) => void;
   /** Opens an image attachment in the viewer (IMG-01). */
   onOpenImage: (attachmentId: string) => void;
+  /**
+   * Opens the actions of this message (ACT-01, ACT-02, ACT-05). Absent when it has none: a system
+   * notice, or a message with nothing to answer or copy.
+   */
+  onMenu?: (message: Message, at: MessageMenuTarget["at"], opener: HTMLElement) => void;
+  /** A touch-first device opens them with a long press; a mouse has a "⋯" button and a right click. */
+  touch?: boolean;
+  /** The actions of this message are open. */
+  menuOpen?: boolean;
 }
 
 export const MessageItem = memo(function MessageItem({
@@ -170,8 +182,16 @@ export const MessageItem = memo(function MessageItem({
   fresh = false,
   onJumpTo,
   onOpenImage,
+  onMenu,
+  touch = false,
+  menuOpen = false,
 }: MessageItemProps) {
   const { t, locale } = useI18n();
+  const press = useLongPress<HTMLElement>(
+    (where) => onMenu?.(message, { x: where.x, y: where.y }, where.element),
+    { enabled: onMenu !== undefined },
+  );
+  const withButton = onMenu !== undefined && !touch;
   const kind = AUTHOR_KIND[message.author_kind] ?? AUTHOR_KIND.system;
   const time = (
     <time
@@ -211,18 +231,35 @@ export const MessageItem = memo(function MessageItem({
   return (
     <article
       data-testid={`message-${message.seq}`}
+      {...press}
       className={cn(
         "group/message relative grid grid-cols-[2rem_minmax(0,1fr)] gap-x-3 px-4 transition-colors hover:bg-accent/35 md:px-6",
         grouped ? "py-0.5" : "pt-2.5 pb-1",
         fresh && "animate-tape-settle",
+        // A long press is the sheet's: it must not select the word under the finger or call up a
+        // link's own preview. Copy text takes the whole message.
+        onMenu && touch && "select-none [-webkit-touch-callout:none]",
       )}
     >
+      {grouped || withButton ? (
+        <div className="absolute top-1 right-4 flex items-center gap-1.5 md:right-6">
+          {grouped ? (
+            <span className="opacity-0 transition-opacity group-focus-within/message:opacity-100 group-hover/message:opacity-100">
+              {time}
+            </span>
+          ) : null}
+          {withButton ? (
+            <RowMenuButton
+              label={t("actions.message", { name: authorDisplayName(message) })}
+              expanded={menuOpen}
+              onOpen={(at, button) => onMenu?.(message, at, button)}
+              className="border bg-card opacity-0 shadow-xs group-focus-within/message:opacity-100 group-hover/message:opacity-100 hover:bg-accent aria-expanded:opacity-100"
+            />
+          ) : null}
+        </div>
+      ) : null}
       <div className="flex justify-center">
-        {grouped ? (
-          <span className="absolute top-1 right-4 opacity-0 transition-opacity group-hover/message:opacity-100 group-focus-within/message:opacity-100 md:right-6">
-            {time}
-          </span>
-        ) : profile ? (
+        {grouped ? null : profile ? (
           <ProfileLink
             id={profile.id}
             aria-label={t("message.openProfile", { name: profile.display_name })}
