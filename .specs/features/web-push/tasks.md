@@ -370,13 +370,13 @@ contains the endpoint). Wire it in `app.New`/`app.Start`/`Shutdown` exactly as t
   subscription causes no send and no error. `testkit.New(t, testkit.WithoutPush())` leaves the notifier
   constructed but not running (no delivery after a post).
 **Done when**:
-- [ ] `app.New` loads the VAPID key and builds the notifier (subscribed before the server accepts
+- [x] `app.New` loads the VAPID key and builds the notifier (subscribed before the server accepts
       requests); `app.Start` runs it; `app.Shutdown` cancels and waits
-- [ ] `DisablePush` is honoured (the app does not run it, but the field is usable by the routes' tests)
-- [ ] `Notifier.Close()` cancels the bus subscription and is called from `App.Shutdown`
-- [ ] `PushQueueSize` reaches `webpush.NewNotifier` and `testkit.WithPushQueueSize(1)` makes the queue
+- [x] `DisablePush` is honoured (the app does not run it, but the field is usable by the routes' tests)
+- [x] `Notifier.Close()` cancels the bus subscription and is called from `App.Shutdown`
+- [x] `PushQueueSize` reaches `webpush.NewNotifier` and `testkit.WithPushQueueSize(1)` makes the queue
       hold one test job (used by T7's 503 case)
-- [ ] Gate check passes: `make check`
+- [x] Gate check passes: `make check`
 **Tests**: integration
 **Gate**: build
 **Commit**: `feat(webpush): deliver push jobs and run the notifier`
