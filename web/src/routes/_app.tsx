@@ -17,6 +17,7 @@ import { meQuery, useMe } from "@/lib/api/queries";
 import { isLocale, useT } from "@/lib/i18n";
 import { startLive } from "@/lib/live";
 import { useLiveStore } from "@/lib/live/store";
+import { ensurePushSubscription } from "@/lib/push/register";
 import { LOCALE_KEY, readStorage } from "@/lib/theme";
 
 export const Route = createFileRoute("/_app")({
@@ -47,6 +48,11 @@ function AppLayout() {
   const isMobile = useIsMobile();
 
   useEffect(() => startLive(queryClient), [queryClient]);
+  // A browser that already holds a push subscription hands it to this session without a prompt
+  // (PUSH-19, PUSH-28).
+  useEffect(() => {
+    void ensurePushSubscription();
+  }, []);
   // The conversation is as tall as what the user can see, keyboard included (KBD-01).
   useVisualViewport();
 

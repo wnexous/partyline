@@ -507,10 +507,10 @@ the served header. The CSP is unchanged.
   answers `Content-Type: application/manifest+json` and `/sw.js` answers `text/javascript` with
   `Cache-Control: no-cache`.
 **Done when**:
-- [ ] the two PNGs are committed and their dimensions are 192 and 512 (the generator prints/asserts them)
-- [ ] the manifest is linked in `index.html` and the worker is registered with scope `/`
-- [ ] no Go CSP change is needed (a test asserts the existing policy still serves HTML)
-- [ ] Gate check passes: `make check`
+- [x] the two PNGs are committed and their dimensions are 192 and 512 (the generator prints/asserts them)
+- [x] the manifest is linked in `index.html` and the worker is registered with scope `/`
+- [x] no Go CSP change is needed (a test asserts the existing policy still serves HTML)
+- [x] Gate check passes: `make check`
 **Tests**: web unit + Go unit
 **Gate**: build
 **Commit**: `feat(web): publish the PWA manifest and register the service worker`
