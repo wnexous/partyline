@@ -131,9 +131,9 @@ existing `user`, `org`, `member`, `pushSubscription` and `intelligence` helpers;
   `connected`; the rows are those three pairs in id order, `stopped` included; deleting one leaves two.
 - `TestConnectorAlertTargetsOfADeletedConnector`: deleting `k1` and querying its id returns zero rows.
 **Done when**:
-- [ ] the four tests pass; the `UNION` dedupes a user and every device of a responsible user is a row
-- [ ] `make generate` ran and the sqlc output is committed; a second `make generate` is clean
-- [ ] Gate check passes: `make check`
+- [x] the four tests pass; the `UNION` dedupes a user and every device of a responsible user is a row
+- [x] `make generate` ran and the sqlc output is committed; a second `make generate` is clean
+- [x] Gate check passes: `make check`
 **Tests**: integration
 **Gate**: build
 **Commit**: `feat(store): list the users responsible for a connection`

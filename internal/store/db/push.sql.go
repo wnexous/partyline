@@ -102,6 +102,98 @@ func (q *Queries) HasPushSubscriptionForUserEndpoint(ctx context.Context, arg Ha
 	return exists, err
 }
 
+const listConnectorAlertTargets = `-- name: ListConnectorAlertTargets :many
+WITH responsible AS (
+    SELECT m.iid AS user_id
+    FROM connectors c
+    JOIN org_members m ON m.org_id = c.org_id AND m.permission = 'admin'
+    WHERE c.id = ?1
+    UNION
+    SELECT a.owner_id AS user_id
+    FROM connectors c
+    JOIN agents a ON a.id = c.operator_iid
+    WHERE c.id = ?1
+)
+SELECT r.user_id, s.id AS subscription_id, s.endpoint, s.p256dh, s.auth
+FROM responsible r
+JOIN users u ON u.id = r.user_id AND u.disabled_at IS NULL
+JOIN push_subscriptions s ON s.user_id = r.user_id
+ORDER BY r.user_id, s.created_at, s.id
+`
+
+type ListConnectorAlertTargetsRow struct {
+	UserID         string
+	SubscriptionID string
+	Endpoint       string
+	P256dh         string
+	Auth           string
+}
+
+// The accounts responsible for a connection and their devices (ALERT-02): the admins of the owning
+// organization and the host of the AI that operates it, each distinct account once (UNION), skipping
+// a disabled account. users.push_groups is not read: an alert follows the devices (ALERT-13).
+func (q *Queries) ListConnectorAlertTargets(ctx context.Context, connectorID string) ([]ListConnectorAlertTargetsRow, error) {
+	rows, err := q.db.QueryContext(ctx, listConnectorAlertTargets, connectorID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []ListConnectorAlertTargetsRow
+	for rows.Next() {
+		var i ListConnectorAlertTargetsRow
+		if err := rows.Scan(
+			&i.UserID,
+			&i.SubscriptionID,
+			&i.Endpoint,
+			&i.P256dh,
+			&i.Auth,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listConnectorStatuses = `-- name: ListConnectorStatuses :many
+SELECT id, status FROM connectors ORDER BY id
+`
+
+type ListConnectorStatusesRow struct {
+	ID     string
+	Status string
+}
+
+// The stored status of every connection, the alert consumer's start state (ALERT-10).
+func (q *Queries) ListConnectorStatuses(ctx context.Context) ([]ListConnectorStatusesRow, error) {
+	rows, err := q.db.QueryContext(ctx, listConnectorStatuses)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []ListConnectorStatusesRow
+	for rows.Next() {
+		var i ListConnectorStatusesRow
+		if err := rows.Scan(&i.ID, &i.Status); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const listDMPushTargets = `-- name: ListDMPushTargets :many
 SELECT s.user_id, i.handle, u.push_groups, s.id AS subscription_id,
        s.endpoint, s.p256dh, s.auth,
