@@ -423,6 +423,7 @@ Everything is configured with environment variables.
 | `PARTYLINE_PUBLIC_URL` | `http://localhost:8080` | URL people open in the browser. Used for the Origin checks, invite links and cookies (`Secure` when https). |
 | `PARTYLINE_SECRET_KEY` | generated | Base64 32-byte key that encrypts connector secrets. When unset, one is generated into `<data>/secret.key` (mode 0600). |
 | `PARTYLINE_MAX_UPLOAD_MB` | `25` | Maximum size of one uploaded file. |
+| `PARTYLINE_MEMORY_LIMIT` | from the container | Soft memory limit of the server: a size such as `300MiB` (units `B`, `KiB`, `MiB`, `GiB`, `TiB`; at least `16MiB`), or `off`. Unset, it is `GOMEMLIMIT` when you set that, else 90% of the container's memory limit, else none. See [Memory](#memory). |
 | `PARTYLINE_LOG_LEVEL` | `info` | `debug`, `info`, `warn` or `error`. |
 | `PARTYLINE_LOG_FORMAT` | `json` | `json` or `text`. |
 | `PARTYLINE_TRUSTED_PROXIES` | empty | Comma-separated CIDRs or IPs of reverse proxies whose `X-Forwarded-For` is trusted. |
@@ -463,6 +464,26 @@ filesystem that supports file locks, which a local disk or a Docker volume does.
 Run one replica, and on Docker Swarm or Dokploy update with `stop-first` (see
 [docker-compose.yml](docker-compose.yml)): with `start-first` the new container finds `/data`
 held and exits until the old one stops.
+
+### Memory
+
+Bound the memory of the server in two layers. Give the container a hard limit
+(`deploy.resources.limits.memory` in [docker-compose.yml](docker-compose.yml), `--memory` for
+`docker run`): a leak or a burst then stays in the container instead of squeezing the other
+services of the host. A fresh server idles at about 20 MiB, so `512M` leaves generous room for
+uploads, image processing and busy conversations.
+
+Inside the container the Go runtime gets a soft limit, so that the garbage collector works harder
+as the heap nears the container's limit, instead of the kernel's OOM killer ending the server
+first. `partyline serve` picks it:
+
+1. `PARTYLINE_MEMORY_LIMIT`, when set: a size such as `300MiB`, or `off` for no limit.
+2. Else `GOMEMLIMIT`, the Go runtime's own variable, which it applies by itself.
+3. Else 90% of the memory limit of the container (cgroup v1 or v2; also the limit of a systemd
+   service or of the slice it runs in), when there is one.
+4. Else no limit.
+
+The server logs the limit it uses when it starts (`memory limit`, with its source).
 
 ## Security model
 
