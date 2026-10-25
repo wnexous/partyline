@@ -1,7 +1,8 @@
-import { fireEvent, screen, waitFor, within } from "@testing-library/react";
+import { act, fireEvent, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { Message, Room } from "@/lib/api/types.gen";
+import { handleLiveEvent } from "@/lib/live/handlers";
 import { useLiveStore } from "@/lib/live/store";
 import { json, mockApi } from "@/test/fetch";
 import { makeConversation, makeIntelligence, makeMe, makeMessage, makeRoom } from "@/test/fixtures";
@@ -127,6 +128,55 @@ describe("Reply on a phone (ACT-05, ACT-07)", () => {
     await router.navigate({ to: "/rooms/$roomId", params: { roomId: "g1" } });
     await textbox();
     expect(screen.queryByTestId("reply-strip")).toBeNull();
+  });
+
+  it("lets the reply go when the message it answers is deleted live, and sends with no reply_to", async () => {
+    const api = serve();
+    const { queryClient } = renderRoute("/rooms/g1");
+    await longPress(await screen.findByTestId("message-2"));
+    await userEvent.click(await screen.findByRole("button", { name: "Reply" }));
+    expect(await screen.findByTestId("reply-strip")).toHaveTextContent("the build is green");
+
+    // Someone else deletes the message (DLT-06): the timeline repaints it as a placeholder.
+    act(() =>
+      handleLiveEvent(queryClient, useLiveStore.getState(), {
+        type: "room.message_updated",
+        data: { ...said(2, ""), deleted_at: "2026-10-19T14:00:00Z" },
+      }),
+    );
+    await waitFor(() => expect(screen.queryByTestId("reply-strip")).toBeNull());
+
+    await userEvent.type(await textbox(), "too late for that");
+    await userEvent.click(screen.getByRole("button", { name: "Send" }));
+    await waitFor(() =>
+      expect(
+        api.calls.filter((c) => c.method === "POST" && c.path === "/rooms/g1/messages"),
+      ).toHaveLength(1),
+    );
+    expect(api.calls.find((c) => c.method === "POST")?.body).toEqual({ text: "too late for that" });
+  });
+
+  it("shows the current text of the message it answers when it is edited live", async () => {
+    serve();
+    const { queryClient } = renderRoute("/rooms/g1");
+    await longPress(await screen.findByTestId("message-2"));
+    await userEvent.click(await screen.findByRole("button", { name: "Reply" }));
+    expect(await screen.findByTestId("reply-strip")).toHaveTextContent("the build is green");
+
+    act(() =>
+      handleLiveEvent(queryClient, useLiveStore.getState(), {
+        type: "room.message_updated",
+        data: {
+          ...said(2, "the build is blue now"),
+          edited_at: "2026-10-19T13:00:00Z",
+        },
+      }),
+    );
+    const strip = screen.getByTestId("reply-strip");
+    await waitFor(() =>
+      expect(within(strip).getByText("the build is blue now")).toBeInTheDocument(),
+    );
+    expect(within(strip).queryByText("the build is green")).toBeNull();
   });
 
   it("offers no Reply to someone who may only read, and Copy text still", async () => {

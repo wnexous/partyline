@@ -51,6 +51,15 @@ export function flattenPages(data: InfiniteData<Page<Message>, unknown> | undefi
   return out.sort((a, b) => a.seq - b.seq);
 }
 
+/**
+ * The room's messages by id, as the timeline has them now: what a reply, an edit and the actions of
+ * a message follow, so an edit or a deletion that arrives live shows through (EDT-06, DLT-06).
+ */
+export function useTimelineMessages(roomId: string): Map<string, Message> {
+  const query = useRoomMessages(roomId);
+  return useMemo(() => new Map(flattenPages(query.data).map((m) => [m.id, m])), [query.data]);
+}
+
 const dayKey = (iso: string) => new Date(iso).toDateString();
 
 function dayLabel(iso: string, t: Translate, locale: string): string {
@@ -117,6 +126,13 @@ export function MessageTimeline({
   // a long press on a touch device and by a right click or the "⋯" with a mouse.
   const touch = useTouchFirst();
   const [menu, setMenu] = useState<MessageMenuTarget | null>(null);
+  // The actions belong to one conversation: reaching another one closes them, and the question a
+  // delete may have left pending (the caller's key may not have remounted this timeline).
+  const [menuRoom, setMenuRoom] = useState(roomId);
+  if (menuRoom !== roomId) {
+    setMenuRoom(roomId);
+    setMenu(null);
+  }
   const openMenu = useCallback(
     (message: Message, at: MessageMenuTarget["at"], opener: HTMLElement) =>
       setMenu({ message, at, opener }),
@@ -381,7 +397,9 @@ export function MessageTimeline({
         </div>
       </div>
       <MessageMenu
+        key={roomId}
         target={menu}
+        messages={byId}
         onClose={closeMenu}
         touch={touch}
         capabilities={capabilities}

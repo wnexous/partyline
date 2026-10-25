@@ -22,7 +22,11 @@ import { EmptyState } from "@/components/empty-state";
 import { MemberList } from "@/components/member-list";
 import { MemberPicker } from "@/components/member-picker";
 import { platformName } from "@/components/message-item";
-import { type MessageFocus, MessageTimeline } from "@/components/message-timeline";
+import {
+  type MessageFocus,
+  MessageTimeline,
+  useTimelineMessages,
+} from "@/components/message-timeline";
 import { ParticipantList } from "@/components/participant-list";
 import { RoomFiles } from "@/components/room-files";
 import { RoomSettingsSheet } from "@/components/room-settings-sheet";
@@ -80,17 +84,17 @@ function RoomPage() {
   }
   const [panelTab, setPanelTab] = useState<PanelTab>("members");
   const [focus, setFocus] = useState<MessageFocus | null>(null);
-  // The message the next one answers (ACT-07). It belongs to the conversation it was chosen in:
-  // reaching another one starts with nothing to answer.
-  const [replyTo, setReplyTo] = useState<Message | null>(null);
-  const [replyRoom, setReplyRoom] = useState(roomId);
-  if (replyRoom !== roomId) {
-    setReplyRoom(roomId);
-    setReplyTo(null);
-  }
-  // The message being edited in the composer (EDT-10) belongs to the conversation it was chosen in.
-  const [edit, setEdit] = useState<{ roomId: string; message: Message } | null>(null);
-  const editing = edit?.roomId === roomId ? edit.message : null;
+  // The messages as the timeline has them now: a reply and an edit follow their message by id, so
+  // an edit shows its new text and a deletion takes the action back (EDT-06, DLT-06).
+  const messages = useTimelineMessages(roomId);
+  // The message the next one answers (ACT-07).
+  const [replyChoice, setReplyChoice] = useState<Message | null>(null);
+  const replyTo = liveMessage(replyChoice, messages);
+  if (replyChoice && replyTo === null) setReplyChoice(null);
+  // The message being edited in the composer (EDT-10).
+  const [editChoice, setEditChoice] = useState<Message | null>(null);
+  const editing = liveMessage(editChoice, messages);
+  if (editChoice && editing === null) setEditChoice(null);
 
   if (room.isError && isApiError(room.error) && room.error.status === 404) {
     return <RoomNotFound />;
@@ -108,16 +112,16 @@ function RoomPage() {
   const onEdit =
     canPost(r.my_level) && !historyOnly
       ? (message: Message) => {
-          setReplyTo(null);
-          setEdit({ roomId, message });
+          setReplyChoice(null);
+          setEditChoice(message);
         }
       : undefined;
   // Reply needs a composer to answer in (ACT-07).
   const onReply =
     canPost(r.my_level) && !historyOnly
       ? (message: Message) => {
-          setEdit(null);
-          setReplyTo(message);
+          setEditChoice(null);
+          setReplyChoice(message);
         }
       : undefined;
   const memberList = members.data ?? [];
@@ -223,9 +227,9 @@ function RoomPage() {
             level={r.my_level}
             members={memberList}
             replyTo={replyTo}
-            onClearReply={() => setReplyTo(null)}
+            onClearReply={() => setReplyChoice(null)}
             editing={editing}
-            onEditDone={() => setEdit(null)}
+            onEditDone={() => setEditChoice(null)}
           />
         )}
       </div>
@@ -256,6 +260,16 @@ function RoomPage() {
 }
 
 type PanelTab = "members" | "files";
+
+/**
+ * The message as the timeline has it now, or null when it is gone or was deleted: a placeholder is
+ * no one's to answer or edit (DLT-10).
+ */
+function liveMessage(choice: Message | null, messages: Map<string, Message>): Message | null {
+  if (!choice) return null;
+  const live = messages.get(choice.id);
+  return live !== undefined && live.deleted_at === undefined ? live : null;
+}
 
 /**
  * The conversation's side panel: its members and files as tabs (FILES-04). A DM lists its two

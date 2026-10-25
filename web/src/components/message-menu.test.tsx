@@ -10,6 +10,7 @@ import {
 } from "@/components/message-menu";
 import { MessageTimeline } from "@/components/message-timeline";
 import type { Message } from "@/lib/api/types.gen";
+import { handleLiveEvent } from "@/lib/live/handlers";
 import { useLiveStore } from "@/lib/live/store";
 import { json, mockApi } from "@/test/fetch";
 import { makeMessage } from "@/test/fixtures";
@@ -152,6 +153,18 @@ describe("a long press on a message (ACT-01, ACT-05)", () => {
     await screen.findByRole("dialog", { name: "Ana" });
     await userEvent.keyboard("{Escape}");
     await waitFor(() => expect(screen.queryByRole("dialog", { name: "Ana" })).toBeNull());
+  });
+
+  it("gives focus back to the message itself on Escape, which joins no Tab order", async () => {
+    renderTimeline([ana(1)]);
+    await screen.findByText("ana says 1");
+    await longPress(row(1));
+    await screen.findByRole("dialog", { name: "Ana" });
+    await userEvent.keyboard("{Escape}");
+    await waitFor(() => expect(screen.queryByRole("dialog", { name: "Ana" })).toBeNull());
+    await waitFor(() => expect(document.activeElement).not.toBe(document.body));
+    expect(document.activeElement).toBe(row(1));
+    expect(row(1)).toHaveAttribute("tabindex", "-1");
   });
 
   it("has no axe violations", async () => {
@@ -417,6 +430,36 @@ describe("a mouse (ACT-02)", () => {
     await userEvent.keyboard("{Escape}");
     await waitFor(() => expect(screen.queryByRole("menu")).toBeNull());
     await waitFor(() => expect(more).toHaveFocus());
+  });
+
+  it("gives focus back inside the message after a right click, on the ⋯ it has", async () => {
+    renderTimeline([ana(1)]);
+    await screen.findByText("ana says 1");
+    const more = within(row(1)).getByRole("button", { name: "Actions for the message from Ana" });
+    fireEvent.contextMenu(row(1), { clientX: 400, clientY: 220 });
+    await screen.findByRole("menu", { name: "Actions for the message from Ana" });
+    await userEvent.keyboard("{Escape}");
+    await waitFor(() => expect(screen.queryByRole("menu")).toBeNull());
+    await waitFor(() => expect(more).toHaveFocus());
+    expect(document.activeElement).not.toBe(document.body);
+  });
+
+  it("closes when the message it acts on is deleted live", async () => {
+    const { queryClient } = renderTimeline([ana(1)]);
+    await screen.findByText("ana says 1");
+    await userEvent.click(
+      within(row(1)).getByRole("button", { name: "Actions for the message from Ana" }),
+    );
+    await screen.findByRole("menu", { name: "Actions for the message from Ana" });
+
+    act(() =>
+      handleLiveEvent(queryClient, useLiveStore.getState(), {
+        type: "room.message_updated",
+        data: ana(1, { text: "", deleted_at: "2026-10-19T14:00:00Z" }),
+      }),
+    );
+    await waitFor(() => expect(screen.queryByRole("menu")).toBeNull());
+    expect(within(row(1)).getByText("Message deleted")).toBeInTheDocument();
   });
 
   it("moves with the arrow keys and chooses with Enter", async () => {

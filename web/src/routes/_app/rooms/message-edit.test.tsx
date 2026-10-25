@@ -166,6 +166,25 @@ describe("editing from the menu (EDT-10)", () => {
     expect(screen.queryByText("Editing message")).toBeNull();
     expect(screen.getByRole("textbox", { name: "Message support" })).toHaveValue("");
   });
+
+  it("leaves editing when the message it edits is deleted live", async () => {
+    roomApi();
+    const user = userEvent.setup();
+    const { queryClient } = renderRoute("/rooms/r1");
+    await chooseEdit(user, 1);
+    expect(await screen.findByText("Editing message")).toBeInTheDocument();
+
+    // Someone else deletes the message (DLT-06): there is nothing left to edit.
+    act(() =>
+      handleLiveEvent(queryClient, useLiveStore.getState(), {
+        type: "room.message_updated",
+        data: { ...mine, text: "", deleted_at: "2026-10-19T14:00:00Z" },
+      }),
+    );
+    await waitFor(() => expect(screen.queryByText("Editing message")).toBeNull());
+    expect(within(row(1)).getByText("Message deleted")).toBeInTheDocument();
+    expect(box()).toHaveValue("");
+  });
 });
 
 describe("deleting from the menu (DLT-09, DLT-10)", () => {
@@ -228,5 +247,43 @@ describe("deleting from the menu (DLT-09, DLT-10)", () => {
     await waitFor(() => expect(within(row(2)).getByText("Message deleted")).toBeInTheDocument());
     expect(screen.queryByText("see you")).toBeNull();
     expect(within(row(2)).getByText("Bob Lima")).toBeInTheDocument();
+  });
+
+  it("closes the actions and the delete question when another conversation opens", async () => {
+    roomApi({}, [mine, bobs], {
+      "GET /rooms/r2": json(200, makeRoom({ id: "r2", name: "support" })),
+      "GET /rooms/r2/members": json(200, { items: [] }),
+      "GET /rooms/r2/messages": page([makeMessage({ room_id: "r2", seq: 1, text: "elsewhere" })]),
+    });
+    const user = userEvent.setup();
+    const { router } = renderRoute("/rooms/r1");
+    await screen.findByTestId("message-1");
+    await openMenu(user, 1);
+    await user.click(screen.getByRole("menuitem", { name: "Delete" }));
+    await screen.findByRole("alertdialog", { name: "Delete this message?" });
+
+    await act(() => router.navigate({ to: "/rooms/$roomId", params: { roomId: "r2" } }));
+    await screen.findByText("elsewhere");
+    expect(screen.queryByRole("menu")).toBeNull();
+    expect(screen.queryByRole("alertdialog")).toBeNull();
+  });
+
+  it("closes the delete question when the message is deleted meanwhile", async () => {
+    roomApi();
+    const user = userEvent.setup();
+    const { queryClient } = renderRoute("/rooms/r1");
+    await screen.findByTestId("message-1");
+    await openMenu(user, 1);
+    await user.click(screen.getByRole("menuitem", { name: "Delete" }));
+    await screen.findByRole("alertdialog", { name: "Delete this message?" });
+
+    act(() =>
+      handleLiveEvent(queryClient, useLiveStore.getState(), {
+        type: "room.message_updated",
+        data: { ...mine, text: "", deleted_at: "2026-10-19T14:00:00Z" },
+      }),
+    );
+    await waitFor(() => expect(screen.queryByRole("alertdialog")).toBeNull());
+    expect(within(row(1)).getByText("Message deleted")).toBeInTheDocument();
   });
 });
