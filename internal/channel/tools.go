@@ -53,6 +53,16 @@ func (t *tools) register(srv *mcp.Server) {
 		InputSchema: schema(`{"type":"object","properties":{"message_id":{"type":"string","description":"message_id of the chat message"},"emoji":{"type":"string","description":"one emoji, e.g. 👍"}},"required":["message_id","emoji"]}`),
 	}, t.guard(t.react))
 	srv.HandleTool(mcp.ToolDef{
+		Name:        "edit_message",
+		Description: "Change the text of a message you sent, by its message_id, in a room or DM you belong to. Only your own messages can be edited, at any time; the message keeps its place and is shown as edited, and the members' AIs are told its new text. A message with files keeps them and only its text changes.",
+		InputSchema: schema(`{"type":"object","properties":{"message_id":{"type":"string","description":"message_id of your message"},"text":{"type":"string","description":"the new text"}},"required":["message_id","text"]}`),
+	}, t.guard(t.editMessage))
+	srv.HandleTool(mcp.ToolDef{
+		Name:        "delete_message",
+		Description: "Delete a message you sent, by its message_id. Only your own messages can be deleted. Its text and files are removed for everyone and cannot be brought back; it stays in its place as a deleted message, so replies to it still make sense.",
+		InputSchema: schema(`{"type":"object","properties":{"message_id":{"type":"string","description":"message_id of your message"}},"required":["message_id"]}`),
+	}, t.guard(t.deleteMessage))
+	srv.HandleTool(mcp.ToolDef{
 		Name:        "send_message",
 		Description: "Send a message. Give exactly one target: room (post to a room or DM you belong to), to (message an intelligence directly: the DM is created the first time, for any user of this instance and any intelligence you share an organization with), or connection together with chat (write to a chat of a connection you operate, from your own account and unsigned: take the connection_id and chat_id of a message from it). A message the platform does not take at once is retried by Partyline: do not send it again.",
 		InputSchema: schema(`{"type":"object","properties":{"room":{"type":"string","description":"room id, room name, or @handle of the intelligence you have a DM with"},"to":{"type":"string","description":"instead of room: the @handle, handle or id of an intelligence to message directly; the DM is created if you never talked"},"connection":{"type":"string","description":"instead of room and to: the connection_id of a connection you operate, together with chat"},"chat":{"type":"string","description":"with connection: the chat_id of the chat to write to, as a message from that connection carries it"},"text":{"type":"string","description":"message text"}},"required":["text"]}`),
@@ -201,6 +211,55 @@ func (t *tools) react(ctx context.Context, args json.RawMessage) (string, error)
 		return "", err
 	}
 	return "reacted (message_id " + m.ID + ")", nil
+}
+
+// editMessage changes the text of a message the AI sent (EDT-08).
+func (t *tools) editMessage(ctx context.Context, args json.RawMessage) (string, error) {
+	var a struct {
+		MessageID string `json:"message_id"`
+		Text      string `json:"text"`
+	}
+	if err := decode(args, &a); err != nil {
+		return "", err
+	}
+	if err := required("message_id", a.MessageID, "text", a.Text); err != nil {
+		return "", err
+	}
+	var m dto.Message
+	err := t.api.json(ctx, http.MethodPatch, "agent/messages/"+url.PathEscape(a.MessageID), nil, dto.EditMessageRequest{Text: a.Text}, &m)
+	if err := ownMessages(err, "edit"); err != nil {
+		return "", err
+	}
+	return "edited (message_id " + m.ID + ")", nil
+}
+
+// deleteMessage deletes a message the AI sent (DLT-08).
+func (t *tools) deleteMessage(ctx context.Context, args json.RawMessage) (string, error) {
+	var a struct {
+		MessageID string `json:"message_id"`
+	}
+	if err := decode(args, &a); err != nil {
+		return "", err
+	}
+	if err := required("message_id", a.MessageID); err != nil {
+		return "", err
+	}
+	var m dto.Message
+	err := t.api.json(ctx, http.MethodDelete, "agent/messages/"+url.PathEscape(a.MessageID), nil, nil, &m)
+	if err := ownMessages(err, "delete"); err != nil {
+		return "", err
+	}
+	return "deleted (message_id " + m.ID + ")", nil
+}
+
+// ownMessages says why the server refused an edit or a delete with 403, which its own words ("not allowed") do not:
+// an AI changes the messages it sent and no others. Every other error is the server's.
+func ownMessages(err error, verb string) error {
+	var refusal *statusError
+	if errors.As(err, &refusal) && refusal.status == http.StatusForbidden {
+		return fmt.Errorf("forbidden (403): you can %s only your own messages", verb)
+	}
+	return err
 }
 
 // The refusals of send_message about where a message goes.

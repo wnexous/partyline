@@ -89,6 +89,22 @@ func (a *AgentConn) Message(timeout time.Duration) dto.AgentMessageFrame {
 	return m
 }
 
+// Edited reads the next frame, which must be a message_edited frame.
+func (a *AgentConn) Edited(timeout time.Duration) dto.AgentMessageEditedFrame {
+	a.T.Helper()
+	var m dto.AgentMessageEditedFrame
+	a.nextOf(dto.AgentFrameTypeMessageEdited, &m, timeout)
+	return m
+}
+
+// Deleted reads the next frame, which must be a message_deleted frame.
+func (a *AgentConn) Deleted(timeout time.Duration) dto.AgentMessageDeletedFrame {
+	a.T.Helper()
+	var m dto.AgentMessageDeletedFrame
+	a.nextOf(dto.AgentFrameTypeMessageDeleted, &m, timeout)
+	return m
+}
+
 // Platform reads the next frame, which must be a platform frame.
 func (a *AgentConn) Platform(timeout time.Duration) dto.AgentPlatformFrame {
 	a.T.Helper()

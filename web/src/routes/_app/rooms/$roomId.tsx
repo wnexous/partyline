@@ -12,7 +12,7 @@ import {
 import { useState } from "react";
 import { toast } from "sonner";
 import { BackToConversations } from "@/components/back-link";
-import { Composer } from "@/components/composer";
+import { Composer, canPost } from "@/components/composer";
 import {
   ConversationHeader,
   conversationTitle,
@@ -45,6 +45,7 @@ import {
   ConversationKindDM,
   type IntelligenceRef,
   LevelManage,
+  type Message,
   type Room,
   type RoomMember,
 } from "@/lib/api/types.gen";
@@ -79,6 +80,9 @@ function RoomPage() {
   }
   const [panelTab, setPanelTab] = useState<PanelTab>("members");
   const [focus, setFocus] = useState<MessageFocus | null>(null);
+  // The message being edited in the composer (EDT-10) belongs to the conversation it was chosen in.
+  const [edit, setEdit] = useState<{ roomId: string; message: Message } | null>(null);
+  const editing = edit?.roomId === roomId ? edit.message : null;
 
   if (room.isError && isApiError(room.error) && room.error.status === 404) {
     return <RoomNotFound />;
@@ -91,6 +95,11 @@ function RoomPage() {
   const canManage = !isDM && r.my_level === LevelManage;
   const history = historyPlatform(r);
   const historyOnly = history !== null || refusedAsHistory;
+  // Edit needs a composer to edit in; a conversation that is history changes no more (EDT-05, DLT-03).
+  const onEdit =
+    canPost(r.my_level) && !historyOnly
+      ? (message: Message) => setEdit({ roomId, message })
+      : undefined;
   const memberList = members.data ?? [];
   const participantCount = isDM ? r.participants.length : memberList.length;
   const title = conversationTitle(r, me.id, t);
@@ -178,6 +187,9 @@ function RoomPage() {
           meId={me.id}
           members={memberList}
           focus={focus}
+          canModerate={canManage}
+          onEdit={onEdit}
+          frozen={historyOnly}
         />
         {historyOnly ? (
           <HistoryNotice platform={history ?? ""} />
@@ -188,6 +200,8 @@ function RoomPage() {
             roomName={title}
             level={r.my_level}
             members={memberList}
+            editing={editing}
+            onEditDone={() => setEdit(null)}
           />
         )}
       </div>

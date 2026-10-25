@@ -372,7 +372,7 @@ func (q *Queries) ListChatDMRoomIDs(ctx context.Context, memberID string) ([]str
 }
 
 const listLastMessages = `-- name: ListLastMessages :many
-SELECT v.id, v.room_id, v.seq, v.author_kind, v.author_id, v.author_user_id, v.author_iid, v.sender_id, v.sender_alt_id, v.sender_name, v.kind, v.text, v.reply_to, v.recipients_json, v.external_id, v.created_at, v.author_name, v.author_handle, v.author_ikind, v.author_avatar FROM message_views v
+SELECT v.id, v.room_id, v.seq, v.author_kind, v.author_id, v.author_user_id, v.author_iid, v.sender_id, v.sender_alt_id, v.sender_name, v.kind, v.text, v.reply_to, v.recipients_json, v.external_id, v.created_at, v.edited_at, v.deleted_at, v.author_name, v.author_handle, v.author_ikind, v.author_avatar FROM message_views v
 JOIN (SELECT m.room_id, MAX(m.seq) AS seq FROM messages m
       WHERE m.room_id IN (/*SLICE:room_ids*/?) GROUP BY m.room_id) newest
   ON newest.room_id = v.room_id AND newest.seq = v.seq
@@ -415,6 +415,8 @@ func (q *Queries) ListLastMessages(ctx context.Context, roomIds []string) ([]Mes
 			&i.RecipientsJson,
 			&i.ExternalID,
 			&i.CreatedAt,
+			&i.EditedAt,
+			&i.DeletedAt,
 			&i.AuthorName,
 			&i.AuthorHandle,
 			&i.AuthorIkind,

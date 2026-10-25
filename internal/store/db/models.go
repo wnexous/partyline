@@ -184,6 +184,8 @@ type Message struct {
 	ExternalID     sql.NullString
 	CreatedAt      int64
 	AuthorIid      string
+	EditedAt       sql.NullInt64
+	DeletedAt      sql.NullInt64
 }
 
 type MessageView struct {
@@ -203,6 +205,8 @@ type MessageView struct {
 	RecipientsJson string
 	ExternalID     sql.NullString
 	CreatedAt      int64
+	EditedAt       sql.NullInt64
+	DeletedAt      sql.NullInt64
 	AuthorName     string
 	AuthorHandle   string
 	AuthorIkind    string

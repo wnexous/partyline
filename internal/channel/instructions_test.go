@@ -40,6 +40,9 @@ const (
 	groupsSentence = `Start a group with create_group (name, members as "@handle" or id, optional description, optional organization): the group belongs to an organization you are a member of, not a guest, named by its address in organization (your home organization when you leave it out); you are added automatically, everyone else only when listed, and each of them must belong to that organization; if any member cannot be added nothing is created and the refused ones are named.`
 	// identityNoticeSentence is what the full channel says the connect notice tells.
 	identityNoticeSentence = `When Partyline connects you get a notice that says who you are, which organization you belong to and who manages you (names and @handles).`
+	// changesSentence is what every text says about changing a message (EDT-08, EDT-09, DLT-08): the two tools, and what
+	// the event of a change is.
+	changesSentence = `edit_message (message_id, text) corrects a message you sent and delete_message (message_id) takes one back. When someone changes a message you were given, you get it again with the same message_id, saying that it was edited (its new text follows) or deleted: that is not a new message.`
 )
 
 // variantsOf is the text each of the three variants of the instructions gives the session: Claude Code's channel,
@@ -209,5 +212,14 @@ func TestOnlyTheChannelPromisesTheNoticeOfWhoManagesTheAI(t *testing.T) {
 	require.Contains(t, v["channel"], identityNoticeSentence)
 	for _, name := range []string{"tools-only", "omp"} {
 		require.NotContains(t, v[name], "which organization you belong to", name)
+	}
+}
+
+// EDT-08, EDT-09, DLT-08: each of the three texts names the tools that change a message the AI sent and says what
+// the event of a change is, so that the model neither answers it as a new message nor looks for it in the tools.
+func TestInstructionsNameTheEditAndDeleteToolsAndTheirEvents(t *testing.T) {
+	for name, got := range variantsOf(t) {
+		require.Contains(t, got, changesSentence, "%s instructions", name)
+		require.Equal(t, 1, strings.Count(got, changesSentence), "%s instructions say it once", name)
 	}
 }

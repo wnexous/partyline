@@ -31,6 +31,8 @@ func (s *server) roomRoutes(mux *http.ServeMux) {
 	s.handle(mux, "DELETE /api/v1/rooms/{id}/members/{mid}", authed(s.removeMember))
 	s.handle(mux, "GET /api/v1/rooms/{id}/messages", authed(s.listMessages))
 	s.handle(mux, "POST /api/v1/rooms/{id}/messages", authed(s.postMessage))
+	s.handle(mux, "PATCH /api/v1/rooms/{id}/messages/{mid}", authed(s.editMessage))
+	s.handle(mux, "DELETE /api/v1/rooms/{id}/messages/{mid}", authed(s.deleteMessage))
 	s.handle(mux, "POST /api/v1/rooms/{id}/resume", authed(s.resumeRoom))
 	s.handle(mux, "GET /api/v1/rooms/{id}/attachments", authed(s.listRoomFiles))
 	s.handle(mux, "GET /api/v1/attachments/{id}", authed(s.downloadAttachment))
@@ -292,6 +294,31 @@ func multipartError(err error) error {
 		return errUploadTooLarge
 	}
 	return httpx.NewError(http.StatusBadRequest, dto.ErrorCodeInvalid, "malformed multipart body")
+}
+
+// editMessage replaces the text of a message its author wrote and answers 200 with the message (EDT-01..EDT-05).
+func (s *server) editMessage(w http.ResponseWriter, r *http.Request, p authn.Principal) error {
+	var req dto.EditMessageRequest
+	if err := httpx.DecodeJSON(w, r, &req); err != nil {
+		return err
+	}
+	m, err := s.Rooms.EditMessage(r.Context(), p, r.PathValue("id"), r.PathValue("mid"), req.Text)
+	if err != nil {
+		return err
+	}
+	httpx.WriteJSON(w, http.StatusOK, convert.Message(m))
+	return nil
+}
+
+// deleteMessage turns a message into its placeholder and answers 200 with it (DLT-01..DLT-04). The message
+// stays, so the answer is the message and not 204.
+func (s *server) deleteMessage(w http.ResponseWriter, r *http.Request, p authn.Principal) error {
+	m, err := s.Rooms.DeleteMessage(r.Context(), p, r.PathValue("id"), r.PathValue("mid"))
+	if err != nil {
+		return err
+	}
+	httpx.WriteJSON(w, http.StatusOK, convert.Message(m))
+	return nil
 }
 
 func (s *server) resumeRoom(w http.ResponseWriter, r *http.Request, p authn.Principal) error {

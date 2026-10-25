@@ -395,7 +395,7 @@ func (q *Queries) InsertFolderAgent(ctx context.Context, arg InsertFolderAgentPa
 }
 
 const listAgentBacklog = `-- name: ListAgentBacklog :many
-SELECT id, room_id, seq, author_kind, author_id, author_user_id, author_iid, sender_id, sender_alt_id, sender_name, kind, text, reply_to, recipients_json, external_id, created_at, author_name, author_handle, author_ikind, author_avatar FROM message_views
+SELECT id, room_id, seq, author_kind, author_id, author_user_id, author_iid, sender_id, sender_alt_id, sender_name, kind, text, reply_to, recipients_json, external_id, created_at, edited_at, deleted_at, author_name, author_handle, author_ikind, author_avatar FROM message_views
 WHERE room_id = ?1 AND seq > ?2
   AND NOT (author_kind = 'agent' AND author_id = ?3)
 ORDER BY seq DESC
@@ -440,6 +440,8 @@ func (q *Queries) ListAgentBacklog(ctx context.Context, arg ListAgentBacklogPara
 			&i.RecipientsJson,
 			&i.ExternalID,
 			&i.CreatedAt,
+			&i.EditedAt,
+			&i.DeletedAt,
 			&i.AuthorName,
 			&i.AuthorHandle,
 			&i.AuthorIkind,
@@ -459,7 +461,7 @@ func (q *Queries) ListAgentBacklog(ctx context.Context, arg ListAgentBacklogPara
 }
 
 const listAgentPending = `-- name: ListAgentPending :many
-SELECT id, room_id, seq, author_kind, author_id, author_user_id, author_iid, sender_id, sender_alt_id, sender_name, kind, text, reply_to, recipients_json, external_id, created_at, author_name, author_handle, author_ikind, author_avatar FROM message_views
+SELECT id, room_id, seq, author_kind, author_id, author_user_id, author_iid, sender_id, sender_alt_id, sender_name, kind, text, reply_to, recipients_json, external_id, created_at, edited_at, deleted_at, author_name, author_handle, author_ikind, author_avatar FROM message_views
 WHERE room_id = ?1 AND seq > ?2
   AND NOT (author_kind = 'agent' AND author_id = ?3)
 ORDER BY seq ASC
@@ -504,6 +506,8 @@ func (q *Queries) ListAgentPending(ctx context.Context, arg ListAgentPendingPara
 			&i.RecipientsJson,
 			&i.ExternalID,
 			&i.CreatedAt,
+			&i.EditedAt,
+			&i.DeletedAt,
 			&i.AuthorName,
 			&i.AuthorHandle,
 			&i.AuthorIkind,

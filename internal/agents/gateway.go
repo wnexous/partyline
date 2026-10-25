@@ -158,6 +158,20 @@ func (g *Gateway) Push(agentID string, m dto.AgentMessage) bool {
 	return ok && c.push(m)
 }
 
+// PushUpdate queues, without blocking, the frame that tells the agent's connection that a message was edited
+// (dto.AgentFrameTypeMessageEdited) or deleted (dto.AgentFrameTypeMessageDeleted); m carries the message as it
+// is now. Like Push it reports false when the agent is offline or its queue overflowed. Such a frame is never
+// acknowledged and never sent again: a connection that was not there hears nothing of it, and reads the
+// current state of the message when it connects (EDT-07, DLT-07).
+func (g *Gateway) PushUpdate(agentID string, t dto.AgentFrameType, m dto.AgentMessage) bool {
+	s, ok := g.d.Presence.Session(agentID)
+	if !ok {
+		return false
+	}
+	c, ok := s.(*conn)
+	return ok && c.enqueue(outbound{typ: t, msg: m})
+}
+
 // Online reports whether the agent is connected.
 func (g *Gateway) Online(agentID string) bool { return g.d.Presence.Online(agentID) }
 
@@ -223,7 +237,7 @@ func (g *Gateway) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	stopReq := context.AfterFunc(r.Context(), cancel)
 	defer stopReq()
 
-	c := &conn{ws: ws, queue: make(chan dto.AgentMessage, QueueSize), cancel: cancel}
+	c := &conn{ws: ws, queue: make(chan outbound, QueueSize), cancel: cancel}
 	if hs.platform && g.d.Platform != nil {
 		c.feed = newPlatformFeed(g.d.Platform, row.Agent.ID)
 	}
@@ -427,10 +441,17 @@ func (g *Gateway) placement(ctx context.Context, a db.Agent) (welcomePlacement, 
 	return out, nil
 }
 
+// outbound is a live frame waiting for a connection: a room message, or the edit or the delete of one
+// (typ is the frame type).
+type outbound struct {
+	typ dto.AgentFrameType
+	msg dto.AgentMessage
+}
+
 // conn is one agent connection; it is the agent's Session in Presence.
 type conn struct {
 	ws     *websocket.Conn
-	queue  chan dto.AgentMessage
+	queue  chan outbound
 	cancel context.CancelFunc
 	// feed sends the AI's platform items; nil for a client that did not opt in to them.
 	feed *platformFeed
@@ -461,13 +482,28 @@ func (c *conn) closing() bool {
 }
 
 func (c *conn) push(m dto.AgentMessage) bool {
+	return c.enqueue(outbound{typ: dto.AgentFrameTypeMessage, msg: m})
+}
+
+func (c *conn) enqueue(o outbound) bool {
 	select {
-	case c.queue <- m:
+	case c.queue <- o:
 		return true
 	default:
 		c.Close(websocket.StatusTryAgainLater, "lagged")
 		return false
 	}
+}
+
+// framed is the frame o is sent as.
+func framed(o outbound) any {
+	switch o.typ {
+	case dto.AgentFrameTypeMessageEdited:
+		return dto.AgentMessageEditedFrame{Type: o.typ, AgentMessage: o.msg}
+	case dto.AgentFrameTypeMessageDeleted:
+		return dto.AgentMessageDeletedFrame{Type: o.typ, AgentMessage: o.msg}
+	}
+	return dto.AgentMessageFrame{Type: dto.AgentFrameTypeMessage, AgentMessage: o.msg}
 }
 
 func (c *conn) write(ctx context.Context, v any) error {
@@ -532,11 +568,11 @@ func (g *Gateway) run(ctx context.Context, c *conn, row db.GetAgentWithOwnerRow)
 			if err != nil {
 				return err
 			}
-		case m := <-c.queue:
-			if m.Message.Seq <= sent[m.Room.ID] {
+		case o := <-c.queue:
+			if o.typ == dto.AgentFrameTypeMessage && o.msg.Message.Seq <= sent[o.msg.Room.ID] {
 				continue // already delivered by the backlog
 			}
-			if err := c.write(ctx, dto.AgentMessageFrame{Type: dto.AgentFrameTypeMessage, AgentMessage: m}); err != nil {
+			if err := c.write(ctx, framed(o)); err != nil {
 				return err
 			}
 		}

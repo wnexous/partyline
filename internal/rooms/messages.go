@@ -191,12 +191,16 @@ func ValidatePost(in PostInput) error {
 }
 
 // validate applies MSG-02.
-func (d draft) validate() error {
+func (d draft) validate() error { return validateText(d.text, len(d.files) > 0) }
+
+// validateText applies MSG-02 to the text of a message that has files or not: at most 16,000 characters, and not
+// empty unless there are files. An edit applies it to the files the message already has (EDT-04).
+func validateText(text string, hasFiles bool) error {
 	check := validation.Check{}
-	if utf8.RuneCountInString(d.text) > dto.MaxTextLength {
+	if utf8.RuneCountInString(text) > dto.MaxTextLength {
 		check.Add("text", "must have at most 16000 characters")
 	}
-	if strings.TrimSpace(d.text) == "" && len(d.files) == 0 {
+	if strings.TrimSpace(text) == "" && !hasFiles {
 		check.Add("text", "must not be empty without attachments")
 	}
 	return check.Err()

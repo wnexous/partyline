@@ -55,6 +55,8 @@ func (s *server) agentAPIRoutes(mux *http.ServeMux) {
 	s.handle(mux, "GET /api/v1/agent/rooms/{room}/messages", s.agentOnly(s.agentHistory))
 	s.handle(mux, "POST /api/v1/agent/rooms/{room}/messages", s.agentOnly(s.agentPost))
 	s.handle(mux, "POST /api/v1/agent/messages/{id}/reply", s.agentOnly(s.agentReply))
+	s.handle(mux, "PATCH /api/v1/agent/messages/{id}", s.agentOnly(s.agentEdit))
+	s.handle(mux, "DELETE /api/v1/agent/messages/{id}", s.agentOnly(s.agentDelete))
 	s.handle(mux, "POST /api/v1/agent/connections/{id}/chats/{chat}/messages", s.agentOnly(s.agentConnectionSend))
 	s.handle(mux, "POST /api/v1/agent/messages/{id}/react", s.agentOnly(s.agentReact))
 	s.handle(mux, "GET /api/v1/agent/attachments/{id}", s.agentOnly(s.agentAttachment))
@@ -610,6 +612,47 @@ func (s *server) agentTarget(ctx context.Context, p authn.Principal, id string) 
 		return rooms.Message{}, errMessageNotFound // the agent is not in the message's room
 	}
 	return orig, nil
+}
+
+// agentEdit replaces the text of a message the AI wrote in one of its rooms (EDT-08). A message that is no message
+// of one of its rooms is unknown (404); one it did not write is 403. It uses one of the AI's 30 posts a minute
+// (TOOL-08).
+func (s *server) agentEdit(w http.ResponseWriter, r *http.Request, p authn.Principal) error {
+	var req dto.EditMessageRequest
+	if err := httpx.DecodeJSON(w, r, &req); err != nil {
+		return err
+	}
+	orig, err := s.agentTarget(r.Context(), p, r.PathValue("id"))
+	if err != nil {
+		return err
+	}
+	if !s.Agents.AllowPost(p.AgentID) {
+		return errAgentRateLimited
+	}
+	m, err := s.Rooms.EditMessage(r.Context(), p, orig.RoomID, orig.ID, req.Text)
+	if err != nil {
+		return err
+	}
+	httpx.WriteJSON(w, http.StatusOK, convert.Message(m))
+	return nil
+}
+
+// agentDelete deletes a message the AI wrote in one of its rooms and answers with the placeholder (DLT-08). An AI
+// never manages a group, so it deletes its own messages only. It uses one of the AI's 30 posts a minute.
+func (s *server) agentDelete(w http.ResponseWriter, r *http.Request, p authn.Principal) error {
+	orig, err := s.agentTarget(r.Context(), p, r.PathValue("id"))
+	if err != nil {
+		return err
+	}
+	if !s.Agents.AllowPost(p.AgentID) {
+		return errAgentRateLimited
+	}
+	m, err := s.Rooms.DeleteMessage(r.Context(), p, orig.RoomID, orig.ID)
+	if err != nil {
+		return err
+	}
+	httpx.WriteJSON(w, http.StatusOK, convert.Message(m))
+	return nil
 }
 
 // agentReply answers a message in its room with reply_to set; a reply to a chat message

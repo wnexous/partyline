@@ -55,6 +55,12 @@ func Format(m dto.AgentMessage) Notification {
 	if msg.ReplyTo != "" {
 		meta["reply_to"] = msg.ReplyTo
 	}
+	switch {
+	case msg.DeletedAt != nil:
+		meta["deleted"] = "true"
+	case msg.EditedAt != nil:
+		meta["edited"] = "true"
+	}
 	if c := msg.Chat; c != nil && msg.AuthorKind == dto.AuthorKindChat {
 		meta["chat_id"] = c.ID
 		meta["chat_title"] = c.Title
@@ -62,7 +68,48 @@ func Format(m dto.AgentMessage) Notification {
 		meta["platform"] = c.Platform
 		meta["sender_id"] = msg.SenderID
 	}
-	return Notification{Content: contentOf(msg.Text, msg.Attachments), Meta: meta}
+	content := contentOf(msg.Text, msg.Attachments)
+	if msg.DeletedAt != nil {
+		content = DeletedPlaceholder
+	}
+	return Notification{Content: content, Meta: meta}
+}
+
+// DeletedPlaceholder is the content of a deleted message in history, pending messages and the backlog: the
+// message stays in its place, with its id, and nothing of what it said (DLT-05). A notification is never empty.
+const DeletedPlaceholder = "[message deleted]"
+
+// The type of the notification of a live edit or delete, and the sentences its content is made of. The content
+// is words, so every adapter frames it as it frames any message, whatever version it is (EDT-09, DLT-08).
+const (
+	EditedType  = "edited"
+	DeletedType = "deleted"
+
+	editedLead  = "This message was edited. New text:\n"
+	editedEmpty = "This message was edited. It no longer has any text."
+	deletedText = "This message was deleted."
+)
+
+// FormatUpdate renders the live edit or delete of a message (EDT-09, DLT-08): t is
+// dto.AgentFrameTypeMessageEdited or dto.AgentFrameTypeMessageDeleted, m the message as it is now. The
+// notification is about the original message: it has its message_id and the other keys of Format, so the AI can
+// still reply to it, and the trusted flag of its author for this AI; its type is "edited" or "deleted" and its
+// content says what happened and, for an edit, gives the new text. It is never acknowledged: the message was
+// acknowledged when it was first delivered.
+func FormatUpdate(t dto.AgentFrameType, m dto.AgentMessage) Notification {
+	n := Format(m)
+	switch t {
+	case dto.AgentFrameTypeMessageDeleted:
+		n.Meta["type"], n.Meta["deleted"] = DeletedType, "true"
+		n.Content = deletedText
+	default:
+		n.Meta["type"], n.Meta["edited"] = EditedType, "true"
+		n.Content = editedEmpty
+		if m.Message.Text != "" {
+			n.Content = editedLead + m.Message.Text
+		}
+	}
+	return n
 }
 
 // contentOf is the content of a notification: the text, then one line per attachment.

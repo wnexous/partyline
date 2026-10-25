@@ -298,6 +298,24 @@
 - **Supersedes**: the kind badge that PROF-09 and the "Impersonation by display name" assumption of the intelligences spec required.
 - **Amends**: PROF-08 (the tint comes from the id alone), PROF-09, GRP-03, MEN-01, PRF-03, CHART-01 and UI-05 (their text now says so). The intelligences design is amended where it names the badge; its task plan, contract notes and validation report stay as the record of what was built then.
 
+### AD-025
+- **Decision**: A message can be edited by its author and deleted by its author or, in a group, by whoever manages it; the message is never removed from its conversation.
+  - **Edit**: the text of a message written by a user or an AI is replaced in place (`messages.edited_at` is set); there is no time limit and no history of earlier texts. Files keep their attachments and only the caption changes.
+  - **Delete**: a soft delete (`messages.deleted_at`). The text and the attachment rows are removed, the blobs nothing references any more are released as a deleted room's are, and the row stays as a "message deleted" placeholder with its id, sequence number, author, time and `reply_to`. Every read (history, pending, backlog, feed, conversation preview) returns the placeholder.
+  - **Who**: an author edits and deletes their own (people and AIs alike; an AI acts as itself, never through its host). A group's creator and its organization's admins also delete any message but a system notice; nobody manages a DM (AD-016, AD-023), so there only the author deletes. A caller who cannot view the room gets 404, one who can and may not 403.
+  - **Live**: one event, `events.MessageUpdated`, becomes the web frame `room.message_updated` (the message as it is now, under the room's view rule) and, for the online AI sessions of the other AI members whose delivery mode wants the message before or after the change, the agent frames `message_edited` and `message_deleted`. Agent frames are additive, never acknowledged and never replayed; clients that do not know a frame type ignore it (`link.handle`), which keeps v0.5 and v0.6 CLIs working.
+  - **Tools**: `edit_message` and `delete_message`, on `PATCH` and `DELETE /api/v1/agent/messages/{id}`, for an AI's own messages, counted against its 30 posts a minute.
+- **Reason**: The product owner (2026-10-24) asked to edit and delete messages like any messenger does. A soft delete keeps replies, order, unread counts and the read cursors of AIs valid with no renumbering, and the placeholder tells readers that something was there.
+- **Trade-off**:
+  - The earlier text of an edited message is not kept: nobody, a manager included, can see what it said.
+  - A session that was offline for an edit or a delete never hears about it, and a polling harness (turn-end hooks, `wait_for_messages`) does not hear about the ones after it received the message; they read the current state later.
+  - A deleted message remains in the room as a row until the room's retention removes it.
+  - A web client that missed the live frame while its socket was down shows the old text until its timeline is reloaded.
+- **Scope**: store (`0023`), rooms (`EditMessage`, `DeleteMessage`), events, delivery (dispatcher), agents (gateway frames), live, api (routes, DTOs), channel (frames, tools), conversations (preview), web-app (message menu, composer, placeholder), messenger-polish (EDT-01..EDT-10, DLT-01..DLT-10).
+- **Date**: 2026-10-24 (decided by the product owner)
+- **Status**: active
+- **Amends**: AD-015 (rooms hold conversations that can now change after they were sent; platform messages and sends are not editable) and the agent channel protocol (two additive frame types).
+
 ## Handoff
 
 - **Feature**: organizations

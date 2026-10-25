@@ -199,6 +199,19 @@ type Message struct {
 	Chat        *ChatRef     `json:"chat,omitempty"`
 	Attachments []Attachment `json:"attachments"`
 	CreatedAt   time.Time    `json:"created_at"`
+	// EditedAt is when the author last changed the text; absent for a message that was never edited (EDT-01).
+	EditedAt *time.Time `json:"edited_at,omitempty"`
+	// DeletedAt is when the message was deleted; absent otherwise. A deleted message is a placeholder that
+	// stays in its place: its text is empty, it has no attachments and no EditedAt, and it keeps its id,
+	// sequence number, author, time and reply_to (DLT-01).
+	DeletedAt *time.Time `json:"deleted_at,omitempty"`
+}
+
+// EditMessageRequest is the body of PATCH /rooms/{id}/messages/{mid} and of PATCH /agent/messages/{id}: the new
+// text of a message its author wrote. The answer is the message (EDT-01). The same rules as a post apply to the
+// text (MSG-02), except that a message with attachments may have none (EDT-04).
+type EditMessageRequest struct {
+	Text string `json:"text"`
 }
 
 // PostMessageRequest is the body of POST /rooms/{id}/messages (JSON), or the JSON of the

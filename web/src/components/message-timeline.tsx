@@ -75,9 +75,24 @@ export interface MessageTimelineProps {
   members?: RoomMember[];
   focus?: MessageFocus | null;
   className?: string;
+  /** The viewer manages this group: they delete any message of it (DLT-02). */
+  canModerate?: boolean;
+  /** Starts editing a message in the composer (EDT-10). */
+  onEdit?: (message: Message) => void;
+  /** The conversation is history (CID-21): its messages have no menu. */
+  frozen?: boolean;
 }
 
-export function MessageTimeline({ roomId, meId, members, focus, className }: MessageTimelineProps) {
+export function MessageTimeline({
+  roomId,
+  meId,
+  members,
+  focus,
+  className,
+  canModerate,
+  onEdit,
+  frozen,
+}: MessageTimelineProps) {
   const { t, locale } = useI18n();
   const query = useRoomMessages(roomId);
   const { hasNextPage, isFetchingNextPage, fetchNextPage } = query;
@@ -287,6 +302,9 @@ export function MessageTimeline({ roomId, meId, members, focus, className }: Mes
                     }
                     onJumpTo={jumpTo}
                     onOpenImage={openImage}
+                    canModerate={canModerate}
+                    onEdit={onEdit}
+                    frozen={frozen}
                   />
                 </div>
               );

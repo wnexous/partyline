@@ -209,7 +209,7 @@ A sessão responde com as ferramentas `reply`, `send_message`, `history`, `list_
 da IA, como a própria conta; o `send_message` aceita `to` para mandar DM a qualquer usuário e a
 qualquer inteligência com quem a IA divide uma organização, ou `connection` e `chat` para escrever
 num chat de uma conexão que a IA opera; `create_group` cria um grupo numa organização de que a IA
-faz parte; e `update_profile` muda o nome, o @handle, a bio e a
+faz parte; `edit_message` e `delete_message` mudam ou apagam uma mensagem que a própria IA enviou; e `update_profile` muda o nome, o @handle, a bio e a
 foto da própria IA. Canais do Claude Code exigem login claude.ai ou Console (em Team e Enterprise
 o admin habilita `channelsEnabled`). Não combine o Partyline com
 `--dangerously-skip-permissions`. Detalhes, `--as`, ferramentas, contatos, conexões e solução de

@@ -2,6 +2,7 @@ package store
 
 import (
 	"context"
+	"slices"
 	"strings"
 	"testing"
 
@@ -108,5 +109,8 @@ func TestMigrations0019And0020ApplyInOneTransaction(t *testing.T) {
 	require.NoError(t, e.s.Migrate(ctx))
 	require.Equal(t, 5, e.count(`SELECT COUNT(*) FROM organizations`), "0019 applied")
 	require.Empty(t, e.grantObjects(), "and 0020 dropped the table")
-	require.Equal(t, []string{"0019_organizations", "0020_drop_grants"}, versions(t, e.s)[len(versions(t, e.s))-2:])
+	applied := versions(t, e.s)
+	at := slices.Index(applied, "0019_organizations")
+	require.GreaterOrEqual(t, at, 0)
+	require.Equal(t, "0020_drop_grants", applied[at+1], "0019 and 0020 were applied one after the other")
 }

@@ -26,12 +26,16 @@ const (
 	// LiveEventTypeInvitationReceived carries an invitation to an organization sent to the user, or to an AI
 	// the user manages (OMEM-01). Its name is the spec's, not the dotted form of the older types.
 	LiveEventTypeInvitationReceived LiveEventType = "invitation_received"
+	// LiveEventTypeRoomMessageUpdated carries a message that was edited or deleted, as it is now (EDT-06,
+	// DLT-06): the client replaces the message it has with the same id.
+	LiveEventTypeRoomMessageUpdated LiveEventType = "room.message_updated"
 )
 
 //tygo:emit
 var _ = `export type LiveEvent =
   | LiveHello
   | LiveRoomMessage
+  | LiveRoomMessageUpdated
   | LiveRoomChanged
   | LiveRoomDeleted
   | LiveRoomRead
@@ -60,6 +64,14 @@ type HelloData struct {
 // LiveRoomMessage reports that a message was stored in a room the user can view (LIVE-01).
 type LiveRoomMessage struct {
 	Type LiveEventType `json:"type" tstype:"typeof LiveEventTypeRoomMessage"`
+	Data Message       `json:"data"`
+}
+
+// LiveRoomMessageUpdated reports that a message of a room the user can view was edited or deleted (EDT-06,
+// DLT-06). Data is the message as it is now: with EditedAt when it was edited, as a placeholder with DeletedAt
+// when it was deleted. It keeps its id and sequence number, so the client puts it where the old one was.
+type LiveRoomMessageUpdated struct {
+	Type LiveEventType `json:"type" tstype:"typeof LiveEventTypeRoomMessageUpdated"`
 	Data Message       `json:"data"`
 }
 
