@@ -419,6 +419,28 @@ describe("editing a message in the composer (EDT-10)", () => {
     expect(save).toBeDisabled();
   });
 
+  it("an unchanged edit is not saved, even when the stored text has surrounding whitespace", async () => {
+    const cushioned = makeMessage({ seq: 4, text: "hello\n" });
+    const { calls } = mockApi({ [`PATCH ${patchPath}`]: saved({ text: "hello\n" }) });
+    const user = userEvent.setup();
+    const { onEditDone } = renderEditing(cushioned);
+    expect(box()).toHaveValue("hello\n");
+    expect(screen.getByRole("button", { name: "Save changes" })).toBeDisabled();
+
+    // Enter without typing anything: the stored newline is not a change to save.
+    await user.keyboard("{Enter}");
+    expect(patches(calls)).toHaveLength(0);
+    expect(onEditDone).not.toHaveBeenCalled();
+    expect(screen.getByText("Editing message")).toBeInTheDocument();
+
+    // One typed character is a change, and saves what the box holds.
+    await user.type(box(), "!");
+    await user.keyboard("{Enter}");
+    await waitFor(() => expect(patches(calls)).toHaveLength(1));
+    expect(patches(calls)[0]?.body).toEqual({ text: "hello\n!" });
+    await waitFor(() => expect(onEditDone).toHaveBeenCalledTimes(1));
+  });
+
   it("a message with files may lose its text: the files stay", async () => {
     const withFile = makeMessage({
       seq: 4,
