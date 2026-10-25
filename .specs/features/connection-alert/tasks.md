@@ -183,10 +183,10 @@ No I/O, no clock of its own (the caller passes `now`), no store or bus import.
   `connected` then `error` at `t0+30m` → `true`; an unknown status on a healthy rule → `false` and
   unchanged.
 **Done when**:
-- [ ] every row of the design's transition table is a case, including the exact 30-minute edge
-- [ ] `alertrule.go` imports only `encoding/json`, `net/url`, `strings`, `time` and `internal/api/dto`;
+- [x] every row of the design's transition table is a case, including the exact 30-minute edge
+- [x] `alertrule.go` imports only `encoding/json`, `net/url`, `strings`, `time` and `internal/api/dto`;
       no `store`, `events` or `net/http`
-- [ ] Gate check passes: `make check`
+- [x] Gate check passes: `make check`
 **Tests**: unit
 **Gate**: build
 **Commit**: `feat(webpush): decide and write a connection alert`
