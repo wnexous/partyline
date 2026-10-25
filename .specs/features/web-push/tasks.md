@@ -283,9 +283,9 @@ matrix. No I/O, no clock, no store.
 - `TestPreview`: 120 `a`s stay 120 `a`s; 121 `a`s become 119 `a`s + `…`; `"a\n\nb\t c"` becomes
   `"a b c"`; leading/trailing whitespace is trimmed; `""` stays `""`.
 **Done when**:
-- [ ] every row of the matrix is a case and each excluding column has a case where only it excludes
-- [ ] no import of `store`, `events`, `api` or `net/http` in the file
-- [ ] Gate check passes: `make check`
+- [x] every row of the matrix is a case and each excluding column has a case where only it excludes
+- [x] no import of `store`, `events`, `api` or `net/http` in the file
+- [x] Gate check passes: `make check`
 **Tests**: unit
 **Gate**: build
 **Commit**: `feat(webpush): decide which unread messages notify`
