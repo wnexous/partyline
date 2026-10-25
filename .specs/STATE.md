@@ -298,6 +298,25 @@
 - **Supersedes**: the kind badge that PROF-09 and the "Impersonation by display name" assumption of the intelligences spec required.
 - **Amends**: PROF-08 (the tint comes from the id alone), PROF-09, GRP-03, MEN-01, PRF-03, CHART-01 and UI-05 (their text now says so). The intelligences design is amended where it names the badge; its task plan, contract notes and validation report stay as the record of what was built then.
 
+### AD-025
+- **Decision**: The core never imports the app. Partyline is a funnel with a messenger on top of it, and the funnel must work, and be testable, without the messenger.
+  - **Core** (the funnel): integrations → per-AI queues → AI sessions → sends. `connectors` and its kinds (`whatsapp`, `telegram`, `discord`, `webhook`, `safehttp`, `connectortest`), `platform` (the per-AI queue), `agents` (registry, presence, the session gateway), `identities`, `channel` and `channel/mcp` (the session's end).
+  - **App** (the messenger): `rooms`, `conversations`, `delivery` (the room → AI rules), `live`, `webui`.
+  - **Shared kernel**: `orgs`, `access`, `intelligences`, `users`, `authn`, `audit`, `events`, `handles`, `validation`, `attachments`, `avatars`, `secrets`, `api/dto`, `api/httpx`. **Infra**: `store`, `store/db`, `config`, `app` (the wiring), `api`, `api/convert`, `cli`, `cliconfig`, `harness`, `devices`, `testkit` and the small process packages (`datalock`, `memlimit`). The kernel is what both sides share; infra builds, wires and exposes both.
+  - "Never imports" counts the whole chain: a core package must not reach an app package through any other package, kernel or infra included. Test files do not count.
+  - `internal/archtest` enforces it in `make check`, from a table that places every package of `internal/` in a layer (a new package is a decision, and fails the test until it is placed). A new core → app import fails with the chain of imports that leads to the app.
+  - The imports that still break it are an explicit allow-list in that test: `agents` → `rooms`, `delivery` and `api/convert` (the session gateway builds the room backlog of an AI, checks its room membership and puts messages on the wire in the shape of the HTTP API). **The list only shrinks**: an entry whose import is gone, or that no longer leads to the app, fails the test until it is removed, and so does a list longer than its ceiling. An exception is never added: the code moves instead, into the app or behind an interface that the app implements and the wiring registers.
+  - The way the exceptions go (architecture review, 2026-10-24): a feed seam in `agents` (the gateway loops over feeds; the core implements the platform feed and the app registers the room feed when it wires), to be done once the message-edit work that touches `delivery` has merged.
+- **Reason**: The owner's rule, written down after the architecture review of 2026-10-24. AD-015 already made platform chats stop being room members, and the review found that only the session gateway still breaks the rule at import level. The rule can therefore be enforced now, and the last exceptions removed one step at a time, instead of drifting back with every feature.
+- **Trade-off**:
+  - The check sees imports, not data. All packages share one sqlc package (`store/db`), so a core package can still query the room tables: deleting a connection removes its room memberships, file links resolve through `GetAttachmentRoom`, and the AI registry lists room states and deletes room memberships when an AI is deleted. Splitting `db` by layer is a later step, and only then can the check see those.
+  - `access` holds both the AI and connection rules (kernel) and the room levels (app), and is placed in the kernel, so the check cannot see a core package using room levels through it. Splitting it is a later step too.
+  - A new package under `internal/` has to be placed in a layer before it merges.
+- **Scope**: every package of `internal/` (its layer) and `internal/archtest`.
+- **Date**: 2026-10-24
+- **Status**: active
+- **Builds on**: AD-015 (platform chats are no longer room members).
+
 ## Handoff
 
 - **Feature**: organizations
