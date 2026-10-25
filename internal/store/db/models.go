@@ -186,6 +186,14 @@ type Message struct {
 	AuthorIid      string
 }
 
+type MessageReaction struct {
+	ID             int64
+	MessageID      string
+	IntelligenceID string
+	Emoji          string
+	CreatedAt      int64
+}
+
 type MessageView struct {
 	ID             string
 	RoomID         string

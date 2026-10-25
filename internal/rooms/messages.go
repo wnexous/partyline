@@ -23,10 +23,12 @@ import (
 // PauseNotice is the text of the system message posted when the loop guard pauses a room.
 const PauseNotice = "Agent delivery is paused: agents posted too many messages in a row. A room manager can resume it."
 
-// Message is a stored message with its author name and attachments.
+// Message is a stored message with its author name, attachments and reactions.
 type Message struct {
 	db.MessageView
 	Attachments []db.Attachment
+	// Reactions are the emoji people reacted with, in the order each was first used (RCT-05).
+	Reactions []Reaction
 	// Chat is the chat a chat-authored message came from (CTX-01): its title, kind and
 	// connector kind (platform). Nil for other authors and for chats deleted since.
 	Chat *db.ListChatRefsRow
@@ -389,6 +391,13 @@ func (s *Service) withDetails(ctx context.Context, views []db.MessageView) ([]Me
 	for _, a := range atts {
 		m := &out[index[a.MessageID]]
 		m.Attachments = append(m.Attachments, a)
+	}
+	rows, err := s.store.R().ListReactionsByMessages(ctx, ids)
+	if err != nil {
+		return nil, err
+	}
+	for id, list := range groupReactions(rows) {
+		out[index[id]].Reactions = list
 	}
 	return out, nil
 }

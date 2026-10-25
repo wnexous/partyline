@@ -8,8 +8,10 @@ type LiveEventType string
 
 // Live event types.
 const (
-	LiveEventTypeHello           LiveEventType = "hello"
-	LiveEventTypeRoomMessage     LiveEventType = "room.message"
+	LiveEventTypeHello       LiveEventType = "hello"
+	LiveEventTypeRoomMessage LiveEventType = "room.message"
+	// LiveEventTypeRoomReactions carries the reactions of a message that someone changed (RCT-06).
+	LiveEventTypeRoomReactions   LiveEventType = "room.reactions"
 	LiveEventTypeRoomChanged     LiveEventType = "room.changed"
 	LiveEventTypeRoomDeleted     LiveEventType = "room.deleted"
 	LiveEventTypeRoomRead        LiveEventType = "room.read"
@@ -32,6 +34,7 @@ const (
 var _ = `export type LiveEvent =
   | LiveHello
   | LiveRoomMessage
+  | LiveRoomReactions
   | LiveRoomChanged
   | LiveRoomDeleted
   | LiveRoomRead

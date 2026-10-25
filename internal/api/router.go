@@ -111,6 +111,7 @@ func (s *server) routes(mux *http.ServeMux) {
 	s.orgInvitationRoutes(mux)
 	s.orgChartRoutes(mux)
 	s.roomRoutes(mux)
+	s.reactionRoutes(mux)
 	s.conversationRoutes(mux)
 	s.intelligenceRoutes(mux)
 	s.contactRoutes(mux)
@@ -254,6 +255,8 @@ func mapError(err error) error {
 		return httpx.NewError(http.StatusConflict, dto.ErrorCodeHandleTaken, "handle already taken")
 	case errors.Is(err, access.ErrHistoryOnly):
 		return httpx.NewError(http.StatusUnprocessableEntity, dto.ErrorCodeHistoryOnly, "this is history: answer people on their platform, through the connection")
+	case errors.Is(err, rooms.ErrReactionLimit):
+		return httpx.NewError(http.StatusUnprocessableEntity, dto.ErrorCodeReactionLimit, "a message has at most 12 different reactions")
 	case errors.Is(err, rooms.ErrDMMembersFixed):
 		return httpx.NewError(http.StatusUnprocessableEntity, dto.ErrorCodeDMMembersFixed, "the members of a direct message cannot be changed")
 	case errors.Is(err, rooms.ErrChatsNotMembers):

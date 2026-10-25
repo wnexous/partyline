@@ -601,6 +601,11 @@ export const ErrorCodeIdentityBusy = "identity_busy"; // 409
  */
 export const ErrorCodeDMMembersFixed = "dm_members_fixed";
 /**
+ * ErrorCodeReactionLimit is a new emoji on a message that carries MaxMessageEmoji different ones
+ * already (422, RCT-04).
+ */
+export const ErrorCodeReactionLimit = "reaction_limit";
+/**
  * ErrorCodeDMSelf is a direct message opened with oneself (422, DM-01).
  */
 export const ErrorCodeDMSelf = "dm_self";
@@ -658,7 +663,7 @@ export const ErrorCodeIdentityOnline = "identity_online";
 /**
  * Error codes and the HTTP status they come with.
  */
-export type ErrorCode = typeof ErrorCodeInvalid | typeof ErrorCodeUnauthorized | typeof ErrorCodeForbidden | typeof ErrorCodeNotFound | typeof ErrorCodeConflict | typeof ErrorCodeGone | typeof ErrorCodeTooLarge | typeof ErrorCodeRateLimited | typeof ErrorCodeInternal | typeof ErrorCodeUnavailable | typeof ErrorCodeHandleTaken | typeof ErrorCodeAvatarInvalid | typeof ErrorCodeLastInstanceAdmin | typeof ErrorCodeLastAdmin | typeof ErrorCodeHomeOrganization | typeof ErrorCodeAlreadyMember | typeof ErrorCodeNotOperator | typeof ErrorCodeUnknownChat | typeof ErrorCodeUnsupported | typeof ErrorCodeFolderRequired | typeof ErrorCodeFolderInvalid | typeof ErrorCodePositionUnknown | typeof ErrorCodeOrganizationMismatch | typeof ErrorCodeIdentityBusy | typeof ErrorCodeDMMembersFixed | typeof ErrorCodeDMSelf | typeof ErrorCodeContactNotFound | typeof ErrorCodeNoRouteToPerson | typeof ErrorCodeHistoryOnly | typeof ErrorCodeCounterpartDisabled | typeof ErrorCodeChatsNotMembers | typeof ErrorCodeMembersRefused | typeof ErrorCodeOrganizationRequired | typeof ErrorCodeOrganizationNotEmpty | typeof ErrorCodePositionCycle | typeof ErrorCodeIdentityOnline;
+export type ErrorCode = typeof ErrorCodeInvalid | typeof ErrorCodeUnauthorized | typeof ErrorCodeForbidden | typeof ErrorCodeNotFound | typeof ErrorCodeConflict | typeof ErrorCodeGone | typeof ErrorCodeTooLarge | typeof ErrorCodeRateLimited | typeof ErrorCodeInternal | typeof ErrorCodeUnavailable | typeof ErrorCodeHandleTaken | typeof ErrorCodeAvatarInvalid | typeof ErrorCodeLastInstanceAdmin | typeof ErrorCodeLastAdmin | typeof ErrorCodeHomeOrganization | typeof ErrorCodeAlreadyMember | typeof ErrorCodeNotOperator | typeof ErrorCodeUnknownChat | typeof ErrorCodeUnsupported | typeof ErrorCodeFolderRequired | typeof ErrorCodeFolderInvalid | typeof ErrorCodePositionUnknown | typeof ErrorCodeOrganizationMismatch | typeof ErrorCodeIdentityBusy | typeof ErrorCodeDMMembersFixed | typeof ErrorCodeReactionLimit | typeof ErrorCodeDMSelf | typeof ErrorCodeContactNotFound | typeof ErrorCodeNoRouteToPerson | typeof ErrorCodeHistoryOnly | typeof ErrorCodeCounterpartDisabled | typeof ErrorCodeChatsNotMembers | typeof ErrorCodeMembersRefused | typeof ErrorCodeOrganizationRequired | typeof ErrorCodeOrganizationNotEmpty | typeof ErrorCodePositionCycle | typeof ErrorCodeIdentityOnline;
 /**
  * ErrorBody is the envelope of every error response.
  */
@@ -1636,6 +1641,10 @@ export interface UpdateProfileRequest {
  */
 export const LiveEventTypeHello = "hello";
 export const LiveEventTypeRoomMessage = "room.message";
+/**
+ * LiveEventTypeRoomReactions carries the reactions of a message that someone changed (RCT-06).
+ */
+export const LiveEventTypeRoomReactions = "room.reactions";
 export const LiveEventTypeRoomChanged = "room.changed";
 export const LiveEventTypeRoomDeleted = "room.deleted";
 export const LiveEventTypeRoomRead = "room.read";
@@ -1659,10 +1668,11 @@ export const LiveEventTypeInvitationReceived = "invitation_received";
 /**
  * Live event types.
  */
-export type LiveEventType = typeof LiveEventTypeHello | typeof LiveEventTypeRoomMessage | typeof LiveEventTypeRoomChanged | typeof LiveEventTypeRoomDeleted | typeof LiveEventTypeRoomRead | typeof LiveEventTypeMembersChanged | typeof LiveEventTypeAccessChanged | typeof LiveEventTypeAgentPresence | typeof LiveEventTypeConnectorStatus | typeof LiveEventTypeChatDiscovered | typeof LiveEventTypeIdentityLinked | typeof LiveEventTypeIntelligenceChanged | typeof LiveEventTypeLagged | typeof LiveEventTypeInvitationReceived;
+export type LiveEventType = typeof LiveEventTypeHello | typeof LiveEventTypeRoomMessage | typeof LiveEventTypeRoomReactions | typeof LiveEventTypeRoomChanged | typeof LiveEventTypeRoomDeleted | typeof LiveEventTypeRoomRead | typeof LiveEventTypeMembersChanged | typeof LiveEventTypeAccessChanged | typeof LiveEventTypeAgentPresence | typeof LiveEventTypeConnectorStatus | typeof LiveEventTypeChatDiscovered | typeof LiveEventTypeIdentityLinked | typeof LiveEventTypeIntelligenceChanged | typeof LiveEventTypeLagged | typeof LiveEventTypeInvitationReceived;
 export type LiveEvent =
   | LiveHello
   | LiveRoomMessage
+  | LiveRoomReactions
   | LiveRoomChanged
   | LiveRoomDeleted
   | LiveRoomRead
@@ -2051,6 +2061,53 @@ export interface Invitation {
 }
 
 //////////
+// source: reactions.go
+
+/**
+ * MaxMessageEmoji is the most different emoji one message carries; one more is refused with
+ * ErrorCodeReactionLimit (RCT-04).
+ */
+export const MaxMessageEmoji = 12;
+/**
+ * Reaction is one emoji on a message, with the intelligences that used it (RCT-05). A message
+ * lists its reactions in the order each emoji was first used.
+ */
+export interface Reaction {
+  emoji: string;
+  /**
+   * By are the ids of the intelligences that used the emoji (a user, an AI), in the order they
+   * reacted. The viewer's own reaction is the one whose id is theirs.
+   */
+  by: string[];
+}
+/**
+ * AddReactionRequest is the body of POST /rooms/{id}/messages/{mid}/reactions.
+ */
+export interface AddReactionRequest {
+  /**
+   * Emoji is exactly one emoji (validation.OneEmoji), else 422 invalid.
+   */
+  emoji: string;
+}
+/**
+ * ReactionsData is what a room.reactions frame carries: the reactions of one message as they are
+ * now, whole, so that a client replaces what it had and never has to add or subtract (RCT-06).
+ */
+export interface ReactionsData {
+  room_id: string;
+  message_id: string;
+  reactions: Reaction[];
+}
+/**
+ * LiveRoomReactions reports that someone reacted to a message of a room the user can view, or took
+ * a reaction back (RCT-06).
+ */
+export interface LiveRoomReactions {
+  type: typeof LiveEventTypeRoomReactions;
+  data: ReactionsData;
+}
+
+//////////
 // source: rooms.go
 
 /**
@@ -2304,6 +2361,11 @@ export interface Message {
    */
   chat?: ChatRef;
   attachments: Attachment[];
+  /**
+   * Reactions are the emoji people reacted with, in the order each was first used; always an array
+   * (RCT-05). A live frame carries them too.
+   */
+  reactions: Reaction[];
   created_at: string /* RFC 3339 */;
 }
 /**

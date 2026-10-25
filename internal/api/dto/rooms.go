@@ -198,7 +198,10 @@ type Message struct {
 	// Chat is the chat a chat-authored message came from; absent for other authors (CTX-01).
 	Chat        *ChatRef     `json:"chat,omitempty"`
 	Attachments []Attachment `json:"attachments"`
-	CreatedAt   time.Time    `json:"created_at"`
+	// Reactions are the emoji people reacted with, in the order each was first used; always an array
+	// (RCT-05). A live frame carries them too.
+	Reactions []Reaction `json:"reactions"`
+	CreatedAt time.Time  `json:"created_at"`
 }
 
 // PostMessageRequest is the body of POST /rooms/{id}/messages (JSON), or the JSON of the

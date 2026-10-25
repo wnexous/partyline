@@ -17,6 +17,13 @@ type MessageCreated struct {
 	Seq       int64
 }
 
+// ReactionsChanged reports that someone reacted to a message or took a reaction back (RCT-06).
+// Nothing is published for a call that changed nothing.
+type ReactionsChanged struct {
+	RoomID    string
+	MessageID string
+}
+
 // RoomChanged reports that a room was created, updated or deleted.
 type RoomChanged struct {
 	RoomID  string
@@ -117,6 +124,7 @@ func (e SessionsRevoked) Revokes(userID, sessionID, tokenID string) bool {
 type Lagged struct{}
 
 func (MessageCreated) isEvent()      {}
+func (ReactionsChanged) isEvent()    {}
 func (RoomChanged) isEvent()         {}
 func (MembersChanged) isEvent()      {}
 func (IntelligenceChanged) isEvent() {}

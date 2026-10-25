@@ -75,7 +75,7 @@ On 2026-10-24 the product owner, using partyline on an Android phone (Chrome), a
 | Voice recording | `MediaRecorder` on the microphone stream, 32 kbit/s, the first of `audio/webm;codecs=opus` and `audio/ogg;codecs=opus` the browser can record, else the browser's default (Safari records `audio/mp4`); at most 10 minutes. The file is `voice-message-<date>-<time>.<ext>` and goes through the message upload as the only attachment, with no text. The server's size limit is not published, so a recording it refuses (413) says so and stays in the composer to retry or discard | "In the format the browser records", through the existing upload | n |
 | Tap or hold | A tap on the microphone starts a recording that stays on until Send or Cancel; a hold longer than 0.5 s records while held, sends on release and cancels when the finger slides 80 px to the left | Both gestures the owner named | n |
 | Focus around a recording | The text box is hidden while a recording is on, so focus moves to the button that sends it; when the recording ends it goes back to the text box if that had focus as it began, else it stays on the microphone | Escape and screen readers need focus inside the composer, and a hold on a phone must not open the keyboard behind the conversation | n |
-| Where reactions live | A `message_reactions` table (message, intelligence, emoji) and two routes on a room's message: `POST /rooms/{id}/messages/{mid}/reactions` with `{"emoji"}` and `DELETE /rooms/{id}/messages/{mid}/reactions/{emoji}` (the emoji percent-encoded); `Message.reactions` lists, per emoji, the intelligences that used it, in the order they reacted. The agent `react` tool is for platform messages and stays as it is | The API had no user route (the agent route stores a message of kind `reaction` aimed at a chat, which AD-015 retired for rooms). Smallest change that every client can render | n |
+| Where reactions live | A `message_reactions` table (message, intelligence, emoji) and two routes on a room's message: `POST /rooms/{id}/messages/{mid}/reactions` with `{"emoji"}` and `DELETE /rooms/{id}/messages/{mid}/reactions/{emoji}` (the emoji percent-encoded); `Message.reactions` lists, per emoji, the intelligences that used it, in the order they reacted. A change is told to the room as `room.reactions` with the message's reactions whole, not as a difference, to whoever can see the room and to nobody else; a call that changes nothing is not told. Migration 0024 follows 0023 of the message edit work. The agent `react` tool is for platform messages and stays as it is | The API had no user route (the agent route stores a message of kind `reaction` aimed at a chat, which AD-015 retired for rooms). Smallest change that every client can render | n |
 | Who may react | Whoever may post in the room (`post` level); the author may react to their own message; one emoji per request (`validation.OneEmoji`); at most 12 different emoji on a message | Reacting is taking part | n |
 
 **Open questions:** none - all resolved or logged above.
@@ -335,11 +335,11 @@ On 2026-10-24 the product owner, using partyline on an Android phone (Chrome), a
 | SWP-04 | P2: Swipe to reply | Execute | Implemented |
 | RCT-01 | P2: Reactions | Execute | Implementing |
 | RCT-02 | P2: Reactions | Execute | Implementing |
-| RCT-03 | P2: Reactions | Execute | Implementing |
-| RCT-04 | P2: Reactions | Execute | Implementing |
-| RCT-05 | P2: Reactions | Execute | Implementing |
+| RCT-03 | P2: Reactions | Execute | Implemented |
+| RCT-04 | P2: Reactions | Execute | Implemented |
+| RCT-05 | P2: Reactions | Execute | Implemented |
 | RCT-06 | P2: Reactions | Execute | Implementing |
-| RCT-07 | P2: Reactions | Execute | Implementing |
+| RCT-07 | P2: Reactions | Execute | Implemented |
 | RCT-08 | P2: Reactions | Execute | Implementing |
 
 **Coverage:** 66 total

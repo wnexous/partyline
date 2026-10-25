@@ -337,6 +337,23 @@ func (c *conn) render(ctx context.Context, e events.Event) ([]frame, error) {
 		c.visible[e.RoomID] = true
 		return []frame{{Type: dto.LiveEventTypeRoomMessage, Data: convert.Message(m)}}, nil
 
+	case events.ReactionsChanged:
+		m, err := d.Rooms.GetMessage(ctx, c.p, e.RoomID, e.MessageID)
+		if errors.Is(err, access.ErrNotFound) {
+			// The user lost the room, or the message went away (retention): only the first is news.
+			if ok, err := c.canViewRoom(ctx, e.RoomID); err != nil || ok {
+				return nil, err
+			}
+			return c.lost(e.RoomID), nil
+		}
+		if err != nil {
+			return nil, err
+		}
+		c.visible[e.RoomID] = true
+		return []frame{{Type: dto.LiveEventTypeRoomReactions, Data: dto.ReactionsData{
+			RoomID: e.RoomID, MessageID: e.MessageID, Reactions: convert.Reactions(m.Reactions),
+		}}}, nil
+
 	case events.RoomChanged:
 		if e.Deleted {
 			return c.lost(e.RoomID), nil
