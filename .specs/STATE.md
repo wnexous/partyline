@@ -351,6 +351,20 @@
 - **Date**: 2026-10-25
 - **Status**: active (the three `Confirmed? n` defaults of the web-push spec still await the product owner)
 
+### AD-028
+- **Decision**: A connection that stops working sends one Web Push alert per device to the people responsible for it, from an app-layer consumer of the existing connector status event.
+  - **Trigger**: `events.ConnectorStatus`, which `connectors.Manager.persist` publishes after it stores `connectors.status`; no new event, no change to `connectors` and no migration.
+  - **Audience**: the admins of the connection's organization (`org_members.permission = 'admin'`) and the host user of the AI that operates it (`connectors.operator_iid` → `agents.owner_id`), every distinct user once, with disabled accounts and users without a device skipped. `users.push_groups` does not apply.
+  - **Rule**: one in-memory rule per connection, seeded at start from `connectors.status`. `connected` and `stopped` clear the outage, `connecting` never changes it, and `error` alerts only from a healthy connection and at most once per 30 minutes. A connection never seen healthy in this process is a silent baseline, so a restart cannot flood.
+  - **Payload**: the message notifier's `Payload` with `title` set to `Connection down: <name>`, an empty author, one of four fixed reasons (`The WhatsApp number was disconnected`, `Login expired`, `The connection has no AI operating it`, `Cannot reach the service`), the absolute connection URL and `tag` set to `conn:<id>`. The platform's own detail never leaves the server.
+  - **Logs**: `connector_id` and `status` only.
+  - **Layer**: `internal/webpush` in the app layer, next to the notifier (AD-027); the core never imports it (AD-025).
+- **Reason**: People only learn that an account stopped working by opening its page; the connector already stores and publishes every status change, and the push pipeline already exists, so the alert needs neither a new event nor a schema change.
+- **Trade-off**: The rule and its 30-minute stamp are memory only, so they are lost on restart; the seed from `connectors.status` keeps a boot burst silent and the worst case is one extra push after two genuine transitions. The alert shares `push_subscriptions` with message pushes, so a 404/410 removes the device from both.
+- **Scope**: webpush (`alerts.go`, `alertrule.go`), app (wiring), docs, tests. No API route, no web-app change and no schema change.
+- **Date**: 2026-10-25
+- **Status**: active
+
 ## Handoff
 
 - **Feature**: organizations

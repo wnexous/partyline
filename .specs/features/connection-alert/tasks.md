@@ -297,11 +297,11 @@ AD-028 in `.specs/STATE.md` with the decision the design records.
   its `unknown connector kind` error during `Start`; no `connection alert` line appears. Control: the
   same setup with the stored status `connected` shows the alert for that boot error.
 **Done when**:
-- [ ] `Seed` runs before `ConnectorManager.Start` (the `Restart` test proves it), and `DisablePush`
+- [x] `Seed` runs before `ConnectorManager.Start` (the `Restart` test proves it), and `DisablePush`
       covers the alerter
-- [ ] `app.Shutdown` closes the subscription even when `Run` never started
-- [ ] `README.md`, `docs/agents.md` and `.specs/STATE.md` are updated (AD-028 recorded)
-- [ ] Gate check passes: `make check`
+- [x] `app.Shutdown` closes the subscription even when `Run` never started
+- [x] `README.md`, `docs/agents.md` and `.specs/STATE.md` are updated (AD-028 recorded)
+- [x] Gate check passes: `make check`
 **Tests**: integration
 **Gate**: build
 **Commit**: `feat(app): run connection alerts and document them`

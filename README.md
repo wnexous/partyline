@@ -477,6 +477,17 @@ push service refuses a subject that is not `https`: with an `http` URL iPhones g
 while Android and desktop browsers keep working.
 - **iPhones need the installed app.** iOS 16.4 or later receives Web Push only for a web app added to
 the Home Screen; Settings says so when the browser cannot push.
+- **Connection alerts.** When a connection stops working, Partyline pushes `Connection down: <name>` to
+every device of the connection's organization admins and of the host of the AI that operates it —
+each person once, whatever their group setting. The body is one fixed sentence (`The WhatsApp number
+was disconnected`, `Login expired`, `The connection has no AI operating it` or `Cannot reach the
+service`), never the platform's own error, a token or chat content, and the notification opens the
+connection's page. One outage sends one alert per device: a connection that keeps failing stays
+quiet, a recovery sends nothing, a connection disabled on purpose sends nothing, and a new alert
+needs a recovery and then 30 minutes since the last one. A restart does not flood: the stored status
+seeds the state before the connections start, so a connection already in `error` stays silent. Logs
+carry `webpush: connection alert queued` (or `... queue full`) with the connection id and the status
+only.
 - **Logs.** A delivery is logged as `webpush: notification delivered`, `... failed` or `... dropped
 the subscription`, with the endpoint's hostname and the status code only: never the conversation,
 the preview, the endpoint path or a key.

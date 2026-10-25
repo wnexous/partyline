@@ -102,6 +102,9 @@ type App struct {
 	// Push notifies the browsers of the users of a room; it subscribes to the bus in New and
 	// runs in Start (PUSH-14).
 	Push *webpush.Notifier
+	// Alerts notifies the people responsible for a connection when it goes down; it subscribes to
+	// the bus in New, seeds its state and runs in Start (ALERT-01, ALERT-10).
+	Alerts *webpush.Alerter
 	// PushService serves the push routes: the key, the subscriptions and the test notification
 	// (PUSH-02, PUSH-03, PUSH-04, PUSH-05, PUSH-15).
 	PushService *webpush.Service
@@ -274,6 +277,9 @@ func New(cfg *config.Config, opts Options) (*App, error) {
 		Store: st, Bus: bus, Delivery: pushDelivery, PublicURL: cfg.PublicURL, Logger: opts.Logger,
 		QueueSize: opts.PushQueueSize,
 	})
+	a.Alerts = webpush.NewAlerter(webpush.AlertDeps{
+		Store: st, Bus: bus, Delivery: pushDelivery, PublicURL: cfg.PublicURL, Logger: opts.Logger, Now: opts.Now,
+	})
 	a.PushService = webpush.NewService(webpush.ServiceDeps{
 		Store: st, VAPID: vapid, Queue: a.Push, Now: opts.Now,
 	})
@@ -349,6 +355,10 @@ func (a *App) Start(ctx context.Context) error {
 	a.background(bg, "agent-dispatcher", dispatcher.Run)
 	if a.pushWorker {
 		a.background(bg, "webpush", a.Push.Run)
+		// Seed before the connections start below: a connection already stored in error must not
+		// alert for the outage it was already in (ALERT-10).
+		a.Alerts.Seed(bg)
+		a.background(bg, "webpush-alerts", a.Alerts.Run)
 	}
 	if a.sendWorker {
 		a.background(bg, "platform-sends", a.Sends.Run)
@@ -388,6 +398,9 @@ func (a *App) Shutdown(_ context.Context) error {
 	// stops with the canceled context above and bg.Wait below waits for it.
 	if a.Push != nil {
 		a.Push.Close()
+	}
+	if a.Alerts != nil {
+		a.Alerts.Close()
 	}
 	a.ConnectorManager.Close()
 	a.Gateway.Close()
