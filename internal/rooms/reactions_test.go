@@ -321,6 +321,34 @@ func TestManyPeopleManyEmojiKeepTheirOrder(t *testing.T) {
 	require.Equal(t, want, got[0].By)
 }
 
+// A system notice takes no new reactions (RCT-03): it is the platform's own record, not a message
+// people answer. Taking a reaction back stays allowed, so an old row can still go.
+func TestASystemNoticeTakesNoReactions(t *testing.T) {
+	f := newReactionFixture(t)
+	notice, err := f.svc.post(context.Background(), f.ops.ID, draft{
+		authorKind: dto.AuthorKindSystem, kind: dto.MessageKindSystem, text: PauseNotice,
+	})
+	require.NoError(t, err)
+	require.Equal(t, string(dto.AuthorKindSystem), notice.AuthorKind)
+
+	_, err = f.svc.React(context.Background(), f.bob, f.ops.ID, notice.ID, "👍")
+	var verr *validation.Error
+	require.ErrorAs(t, err, &verr)
+	require.Equal(t, "a system message takes no reactions", verr.Fields["message"])
+	require.Equal(t, 0, f.count(t, "SELECT COUNT(*) FROM message_reactions WHERE message_id = ?", notice.ID))
+
+	// Taking one back is not taking part: a reaction left on the notice before the rule still goes.
+	got, err := f.svc.Unreact(context.Background(), f.bob, f.ops.ID, notice.ID, "👍")
+	require.NoError(t, err)
+	require.Empty(t, got)
+	f.exec(t, "INSERT INTO message_reactions (message_id, intelligence_id, emoji, created_at) VALUES (?, ?, '👍', ?)",
+		notice.ID, f.bob.UserID, t0.UnixMilli())
+	got, err = f.svc.Unreact(context.Background(), f.bob, f.ops.ID, notice.ID, "👍")
+	require.NoError(t, err)
+	require.Empty(t, got)
+	require.Equal(t, 0, f.count(t, "SELECT COUNT(*) FROM message_reactions WHERE message_id = ?", notice.ID))
+}
+
 // A deleted message stays as a placeholder (DLT-01); it carries no reactions and takes no new ones
 // (RCT-07).
 

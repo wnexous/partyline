@@ -82,6 +82,13 @@ func (s *Service) react(ctx context.Context, p authn.Principal, roomID, messageI
 		if err != nil {
 			return err
 		}
+		// A system notice is the platform's own record, like a deleted message: it takes no new
+		// reactions. Taking an old reaction back is not taking part, so it stays allowed.
+		if add && m.AuthorKind == string(dto.AuthorKindSystem) {
+			check := validation.Check{}
+			check.Add("message", "a system message takes no reactions")
+			return check.Err()
+		}
 		if !add {
 			rows, err := q.RemoveMessageReaction(ctx, db.RemoveMessageReactionParams{MessageID: messageID, IntelligenceID: p.IID(), Emoji: emoji})
 			changed = rows > 0

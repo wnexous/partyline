@@ -682,13 +682,21 @@ export interface ReactionToggle {
 
 /**
  * Reacts to a message of the room, or takes the reaction back (RCT-03). The reaction shows at once and the answer
- * (the message's reactions as they are then) settles it; a request that fails puts back what it changed and nothing
- * else (RCT-08), so a toggle made meanwhile stays, and tells `onFailure` (a callback of `mutate` would be lost
- * when another toggle follows). While a later toggle of the same message is still on its way the answer of an
- * earlier one is not written: it knows nothing of that one and would take it off the screen.
+ * (the message's reactions as they are then) settles it. While another toggle of the same message is still on its
+ * way the answer of an earlier one is not written: it knows nothing of that one and would take it off the screen.
+ * A request that fails tells `onFailure` (a callback of `mutate` would be lost when another toggle follows) and,
+ * once no later toggle of the message is pending, puts back what it changed and refetches the room's messages so
+ * that the screen follows the server rather than a local opposite toggle (RCT-08). While one is still pending it
+ * leaves the screen alone: the last toggle to settle writes the server's list.
  */
 export function useToggleReaction(roomId: string, onFailure?: (error: unknown) => void) {
   const qc = useQueryClient();
+  const pendingFor = (messageId: string) =>
+    qc.isMutating({
+      predicate: (m) =>
+        m.options.mutationKey?.[0] === "reactions" &&
+        (m.state.variables as ReactionToggle | undefined)?.messageId === messageId,
+    });
   const change = ({ messageId, emoji, add, by }: ReactionToggle) => {
     const current = readReactions(qc, roomId, messageId);
     if (current) applyReactions(qc, roomId, messageId, withReaction(current, emoji, by, add));
@@ -707,17 +715,17 @@ export function useToggleReaction(roomId: string, onFailure?: (error: unknown) =
       ).then(items),
     onMutate: change,
     onError: (error, toggle) => {
-      change({ ...toggle, add: !toggle.add });
       onFailure?.(error);
+      // This one is still pending while its callbacks run: more than one is a later toggle on its way.
+      if (pendingFor(toggle.messageId) > 1) return;
+      change({ ...toggle, add: !toggle.add });
+      // Mark the timeline stale first: it is kept fresh by the live frames and may have no observer
+      // (and so no query function) of its own; fetching the room's messages query gives the truth.
+      qc.invalidateQueries({ queryKey: queryKeys.roomMessages(roomId), refetchType: "none" });
+      void qc.fetchInfiniteQuery(roomMessagesQuery(roomId)).catch(() => {});
     },
     onSuccess: (reactions, { messageId }) => {
-      const pending = qc.isMutating({
-        predicate: (m) =>
-          m.options.mutationKey?.[0] === "reactions" &&
-          (m.state.variables as ReactionToggle | undefined)?.messageId === messageId,
-      });
-      // This one is still pending while its callbacks run: more than one is a later toggle on its way.
-      if (pending <= 1) applyReactions(qc, roomId, messageId, reactions);
+      if (pendingFor(messageId) <= 1) applyReactions(qc, roomId, messageId, reactions);
     },
   });
 }
