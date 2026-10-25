@@ -24,3 +24,13 @@ other behaviour changes there.
 `dto.Me` now carries the required `push_groups`, so the regenerated TypeScript type makes
 `web/src/test/fixtures.ts`'s `makeMe` fail `tsc` without the field. The fixture gains the default
 `"mentions"`; the Settings UI itself stays for T8.
+
+## T12: the e2e gate runs the full Chromium, not the headless shell
+
+The desktop ACT-02 hover assertion in `web/e2e/mobile.spec.ts:927` fails under Playwright's default
+headless-shell build because the message row keeps the hover state after the context menu closes. The
+same assertion passes with the full Chrome for Testing build, which `web/playwright.config.ts` already
+supports through `PLAYWRIGHT_CHROMIUM_EXECUTABLE`; the failure also reproduces against a `v0.7.0` binary
+built before this feature, so it predates the push work and is not caused by `web/e2e/push.spec.ts`.
+`make e2e` (82 passed, 2 pre-existing phone-only skips) and the push spec on its own pass in both
+projects with that executable; under the headless shell the push spec passes in both projects as well.
