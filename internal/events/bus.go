@@ -17,6 +17,13 @@ type MessageCreated struct {
 	Seq       int64
 }
 
+// ReactionsChanged reports that someone reacted to a message or took a reaction back (RCT-06).
+// Nothing is published for a call that changed nothing.
+type ReactionsChanged struct {
+	RoomID    string
+	MessageID string
+}
+
 // MessageUpdated reports that the text of a message was edited or that the message was deleted (EDT-01,
 // DLT-01): Deleted tells which. The subscribers read the message as it is now. PrevText is the text the message
 // had before the change; the agent dispatcher needs it to tell the AIs that were sent the old text, and it
@@ -129,6 +136,7 @@ func (e SessionsRevoked) Revokes(userID, sessionID, tokenID string) bool {
 type Lagged struct{}
 
 func (MessageCreated) isEvent()      {}
+func (ReactionsChanged) isEvent()    {}
 func (MessageUpdated) isEvent()      {}
 func (RoomChanged) isEvent()         {}
 func (MembersChanged) isEvent()      {}

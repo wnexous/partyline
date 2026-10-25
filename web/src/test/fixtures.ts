@@ -89,6 +89,7 @@ export function makeMessage(over: Partial<Message> = {}): Message {
     kind: "text",
     text: `message ${seq}`,
     attachments: [],
+    reactions: [],
     created_at: "2026-10-19T12:00:00Z",
     ...over,
   };

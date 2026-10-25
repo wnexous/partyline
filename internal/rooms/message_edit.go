@@ -164,6 +164,9 @@ func (s *Service) DeleteMessage(ctx context.Context, p authn.Principal, roomID, 
 		if err := q.DeleteMessageAttachments(ctx, messageID); err != nil {
 			return err
 		}
+		if err := q.DeleteMessageReactions(ctx, messageID); err != nil { // RCT-07
+			return err
+		}
 		n, err := q.MarkMessageDeleted(ctx, db.MarkMessageDeletedParams{
 			DeletedAt: sql.NullInt64{Int64: s.now().UnixMilli(), Valid: true}, ID: messageID,
 		})

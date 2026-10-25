@@ -5,16 +5,23 @@ import {
   InfoIcon,
   type LucideIcon,
   MessageCircleIcon,
+  ReplyIcon,
   ShieldAlertIcon,
   ShieldCheckIcon,
   UserIcon,
 } from "lucide-react";
 import { lazy, memo, Suspense } from "react";
+import { AudioPlayer } from "@/components/audio-player";
 import { IntelligenceAvatar } from "@/components/intelligence/intelligence-avatar";
 import { IntelligenceName } from "@/components/intelligence/intelligence-name";
-import { MessageActions } from "@/components/message-actions";
+import type { MessageMenuTarget } from "@/components/message-menu";
 import { ProfileLink } from "@/components/profile-link";
+import { ReactionToolbar } from "@/components/reaction-bar";
+import { ReactionChips } from "@/components/reaction-chips";
+import { RowMenuButton } from "@/components/row-menu-button";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
+import { useLongPress } from "@/hooks/use-long-press";
+import { useSwipeReply } from "@/hooks/use-swipe-reply";
 import { attachmentUrl } from "@/lib/api/queries";
 import type {
   Attachment,
@@ -26,6 +33,7 @@ import type {
 import { type MessageKey, type Translate, useI18n } from "@/lib/i18n";
 import { formatAbsolute, formatClock } from "@/lib/time";
 import { cn } from "@/lib/utils";
+import { isAudio } from "@/lib/voice";
 
 const Markdown = lazy(() => import("@/components/markdown"));
 
@@ -159,13 +167,35 @@ export interface MessageItemProps {
   onJumpTo?: (messageId: string) => void;
   /** Opens an image attachment in the viewer (IMG-01). */
   onOpenImage: (attachmentId: string) => void;
-  /** The viewer manages this group: the menu lets them delete any message of it (DLT-02). */
-  canModerate?: boolean;
-  /** Starts editing a message in the composer (EDT-10); without it the menu has no Edit. */
-  onEdit?: (message: Message) => void;
-  /** The conversation is history (CID-21): nothing in it can be edited or deleted, so no menu. */
-  frozen?: boolean;
+  /**
+   * Opens the actions of this message (ACT-01, ACT-02, ACT-05). Absent when it has none: a system
+   * notice, or a message with nothing to answer or copy.
+   */
+  onMenu?: (message: Message, at: MessageMenuTarget["at"], opener: HTMLElement) => void;
+  /** A touch-first device opens them with a long press; a mouse has a "⋯" button and a right click. */
+  touch?: boolean;
+  /** The actions of this message are open. */
+  menuOpen?: boolean;
+  /**
+   * Answers this message when it is dragged to the right (SWP-01). Absent where there is nothing to
+   * answer in: a notice, a viewer who may not post. It only exists on a touch device.
+   */
+  onSwipeReply?: (message: Message) => void;
+  /**
+   * Reacts to this message with an emoji, or takes the viewer's reaction back (RCT-01, RCT-02). Absent
+   * where the viewer may not react: the chips are then only shown. With a mouse it also puts a toolbar
+   * of quick reactions on the row.
+   */
+  onReact?: (message: Message, emoji: string) => void;
 }
+
+/** Two handlers for one event: both gestures listen to the same finger, the long press first. */
+const both =
+  <E,>(first: (e: E) => void, second: (e: E) => void) =>
+  (e: E) => {
+    first(e);
+    second(e);
+  };
 
 export const MessageItem = memo(function MessageItem({
   message,
@@ -176,11 +206,20 @@ export const MessageItem = memo(function MessageItem({
   fresh = false,
   onJumpTo,
   onOpenImage,
-  canModerate = false,
-  onEdit,
-  frozen = false,
+  onMenu,
+  touch = false,
+  menuOpen = false,
+  onSwipeReply,
+  onReact,
 }: MessageItemProps) {
   const { t, locale } = useI18n();
+  const press = useLongPress<HTMLElement>(
+    (where) => onMenu?.(message, { x: where.x, y: where.y }, where.element),
+    { enabled: onMenu !== undefined },
+  );
+  const withButton = onMenu !== undefined && !touch;
+  const swipeable = onSwipeReply !== undefined && touch;
+  const swipe = useSwipeReply<HTMLElement>(() => onSwipeReply?.(message), { enabled: swipeable });
   const kind = AUTHOR_KIND[message.author_kind] ?? AUTHOR_KIND.system;
   // A deleted message is a placeholder (DLT-10): its author and time stay, nothing it said does.
   const deleted = message.deleted_at !== undefined;
@@ -236,23 +275,62 @@ export const MessageItem = memo(function MessageItem({
   return (
     <article
       data-testid={`message-${message.seq}`}
+      {...press}
+      onPointerDown={both(press.onPointerDown, swipe.onPointerDown)}
+      onPointerMove={both(press.onPointerMove, swipe.onPointerMove)}
+      onPointerUp={both(press.onPointerUp, swipe.onPointerUp)}
+      onPointerCancel={both(press.onPointerCancel, swipe.onPointerCancel)}
       className={cn(
         "group/message relative grid grid-cols-[2rem_minmax(0,1fr)] gap-x-3 px-4 transition-colors hover:bg-accent/35 md:px-6",
         grouped ? "py-0.5" : "pt-2.5 pb-1",
         fresh && "animate-tape-settle",
+        // A long press is the sheet's: it must not select the word under the finger or call up a
+        // link's own preview. Copy text takes the whole message.
+        onMenu && touch && "select-none [-webkit-touch-callout:none]",
+        // The page keeps its vertical scroll and zoom; a drag across is the swipe's.
+        swipeable && "touch-pan-y touch-pinch-zoom",
       )}
     >
-      {/* Top right: the menu of the message and, in a row that folds its header away, its time. */}
-      <div className="absolute top-1 right-4 flex items-center gap-1.5 empty:hidden md:right-6">
-        {grouped ? (
-          <span className="flex items-center gap-1.5 opacity-0 transition-opacity group-hover/message:opacity-100 group-focus-within/message:opacity-100 [@media(hover:none)]:opacity-100">
-            {stamp}
-          </span>
-        ) : null}
-        {frozen ? null : (
-          <MessageActions message={message} meId={meId} canModerate={canModerate} onEdit={onEdit} />
-        )}
-      </div>
+      {swipeable ? (
+        // Under the row, to its left: it shows as the row slides right, and takes the accent
+        // (what you act on) once letting go would answer.
+        <span
+          aria-hidden="true"
+          style={{
+            opacity: "var(--swipe-progress, 0)",
+            transform: "translateY(-50%) scale(calc(0.6 + 0.4 * var(--swipe-progress, 0)))",
+          }}
+          className="pointer-events-none absolute top-1/2 -left-11 grid size-9 place-items-center rounded-full bg-secondary text-muted-foreground transition-colors group-data-[armed=true]/message:bg-primary group-data-[armed=true]/message:text-primary-foreground"
+        >
+          <ReplyIcon className="size-4" />
+        </span>
+      ) : null}
+      {grouped || withButton ? (
+        <div className="absolute top-1 right-4 flex items-center gap-1.5 md:right-6">
+          {grouped ? (
+            <span className="flex items-center gap-1.5 opacity-0 transition-opacity group-focus-within/message:opacity-100 group-hover/message:opacity-100 [@media(hover:none)]:opacity-100">
+              {stamp}
+            </span>
+          ) : null}
+          {withButton && onReact ? (
+            // The row's own hover and focus reveal it, and it stays while its picker is open though the
+            // pointer has gone to the picker. Hidden, it must not catch the pointer over the text.
+            <ReactionToolbar
+              reacted={reactedBy(message, meId)}
+              onReact={(emoji) => onReact(message, emoji)}
+              className="pointer-events-none opacity-0 transition-opacity group-focus-within/message:pointer-events-auto group-focus-within/message:opacity-100 group-hover/message:pointer-events-auto group-hover/message:opacity-100 has-[[aria-expanded=true]]:pointer-events-auto has-[[aria-expanded=true]]:opacity-100"
+            />
+          ) : null}
+          {withButton ? (
+            <RowMenuButton
+              label={t("actions.message", { name: authorDisplayName(message) })}
+              expanded={menuOpen}
+              onOpen={(at, button) => onMenu?.(message, at, button)}
+              className="border bg-card opacity-0 shadow-xs group-focus-within/message:opacity-100 group-hover/message:opacity-100 hover:bg-accent aria-expanded:opacity-100"
+            />
+          ) : null}
+        </div>
+      ) : null}
       <div className="flex justify-center">
         {grouped ? null : profile ? (
           <ProfileLink
@@ -333,7 +411,14 @@ export const MessageItem = memo(function MessageItem({
         </div>
 
         {!deleted && message.attachments.length > 0 ? (
-          <ul className="mt-1.5 flex flex-wrap gap-2">
+          <ul
+            className={cn(
+              "mt-1.5 flex flex-wrap gap-2",
+              // The time of a grouped row shows at its top right on hover and focus: with no text
+              // above them, the attachments start below it, so a player's own time stays readable.
+              grouped && !message.text && !CONTENT_KIND[message.kind] && "mt-5",
+            )}
+          >
             {message.attachments.map((a) => (
               <li key={a.id} className="max-w-full">
                 <AttachmentView attachment={a} onOpenImage={onOpenImage} />
@@ -341,10 +426,22 @@ export const MessageItem = memo(function MessageItem({
             ))}
           </ul>
         ) : null}
+
+        {!deleted ? (
+          <ReactionChips
+            reactions={message.reactions}
+            meId={meId}
+            onToggle={onReact ? (emoji) => onReact(message, emoji) : undefined}
+          />
+        ) : null}
       </div>
     </article>
   );
 });
+
+/** The emoji the viewer reacted to a message with. */
+const reactedBy = (message: Message, meId: string) =>
+  message.reactions.filter((r) => r.by.includes(meId)).map((r) => r.emoji);
 
 /** What is left of a deleted message (DLT-10). */
 function DeletedPlaceholder() {
@@ -522,6 +619,8 @@ function AttachmentView({
       </button>
     );
   }
+  // A recording or any audio file plays in the row (VOI-07); the player falls back to a download.
+  if (isAudio(a.mime)) return <AudioPlayer attachment={a} />;
   return (
     <a
       href={url}

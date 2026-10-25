@@ -80,6 +80,14 @@ function RoomPage() {
   }
   const [panelTab, setPanelTab] = useState<PanelTab>("members");
   const [focus, setFocus] = useState<MessageFocus | null>(null);
+  // The message the next one answers (ACT-07). It belongs to the conversation it was chosen in:
+  // reaching another one starts with nothing to answer.
+  const [replyTo, setReplyTo] = useState<Message | null>(null);
+  const [replyRoom, setReplyRoom] = useState(roomId);
+  if (replyRoom !== roomId) {
+    setReplyRoom(roomId);
+    setReplyTo(null);
+  }
   // The message being edited in the composer (EDT-10) belongs to the conversation it was chosen in.
   const [edit, setEdit] = useState<{ roomId: string; message: Message } | null>(null);
   const editing = edit?.roomId === roomId ? edit.message : null;
@@ -96,9 +104,21 @@ function RoomPage() {
   const history = historyPlatform(r);
   const historyOnly = history !== null || refusedAsHistory;
   // Edit needs a composer to edit in; a conversation that is history changes no more (EDT-05, DLT-03).
+  // A message is answered or edited, one at a time: choosing either lets the other go.
   const onEdit =
     canPost(r.my_level) && !historyOnly
-      ? (message: Message) => setEdit({ roomId, message })
+      ? (message: Message) => {
+          setReplyTo(null);
+          setEdit({ roomId, message });
+        }
+      : undefined;
+  // Reply needs a composer to answer in (ACT-07).
+  const onReply =
+    canPost(r.my_level) && !historyOnly
+      ? (message: Message) => {
+          setEdit(null);
+          setReplyTo(message);
+        }
       : undefined;
   const memberList = members.data ?? [];
   const participantCount = isDM ? r.participants.length : memberList.length;
@@ -187,8 +207,10 @@ function RoomPage() {
           meId={me.id}
           members={memberList}
           focus={focus}
+          onReply={onReply}
           canModerate={canManage}
           onEdit={onEdit}
+          canReact={canPost(r.my_level) && !historyOnly}
           frozen={historyOnly}
         />
         {historyOnly ? (
@@ -200,6 +222,8 @@ function RoomPage() {
             roomName={title}
             level={r.my_level}
             members={memberList}
+            replyTo={replyTo}
+            onClearReply={() => setReplyTo(null)}
             editing={editing}
             onEditDone={() => setEdit(null)}
           />

@@ -151,6 +151,8 @@ dark, ink 0.37 / 0.06 and 0.9 / 0.045), so the set reads as one family and none 
 | Text selection | `primary` at 30 %; inside code blocks and fields it is inverted (a `primary` fill) |
 | Image viewer | a dialog over the whole screen: a `popover` strip on top (name, position, Download, Open original, Close) and the picture on a black stage at 80 %, so it is the one dark thing on the page; previous and next are `secondary` buttons on the stage's edges, and the whole stage is a swipe target |
 | Profile panel | a sheet from the right edge on a wide screen and from the bottom below 768 px, on the page's own surface: avatar, name and @handle ("You" beside one's own), bio, a Status / App list, then the actions. The first action that applies is the `primary` button (Message, or Edit profile on one's own profile), the link to the full page an outline button. Presence shows only for AIs, as everywhere else: dot and word |
+| Action sheet and menu | the actions of a conversation or a message: a sheet from the bottom on a touch device, a menu at the pointer with a mouse, on the `popover` surface. It is named after what it acts on, with a line of what that says; a message's leads with the six quick reactions (a `tape` fill marks the viewer's own); rows are at least 44 px high on a sheet, and the destructive one comes last, set apart by a rule, in `destructive` with its icon and its word |
+| Reaction chip | the emoji and its count in tabular figures, on `secondary`; the viewer's own is `tape` with a `tape-strong` border and says so to assistive technology (`aria-pressed`). 28 px high with a mouse, 36 px on a touch device |
 
 ## Typography and shape
 

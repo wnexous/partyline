@@ -3,7 +3,9 @@ import {
   EyeIcon,
   PaperclipIcon,
   PencilIcon,
+  ReplyIcon,
   SendHorizontalIcon,
+  Trash2Icon,
   XIcon,
 } from "lucide-react";
 import {
@@ -23,8 +25,11 @@ import {
   mentionCandidates,
   mentionOptionId,
 } from "@/components/mention-suggestions";
+import { authorDisplayName } from "@/components/message-item";
 import { Button } from "@/components/ui/button";
+import { type HoldState, MicButton, RecordingBar } from "@/components/voice-controls";
 import { useEnterSends } from "@/hooks/use-enter-sends";
+import { useVoiceRecorder } from "@/hooks/use-voice-recorder";
 import { isApiError } from "@/lib/api/client";
 import { useEditMessage, useMe, usePostMessage } from "@/lib/api/queries";
 import {
@@ -37,9 +42,11 @@ import {
   type Message,
   type RoomMember,
 } from "@/lib/api/types.gen";
-import { type Translate, useI18n } from "@/lib/i18n";
+import { type MessageKey, type Translate, useI18n } from "@/lib/i18n";
+import { messageExcerpt } from "@/lib/message-excerpt";
 import { textLength } from "@/lib/schemas";
 import { cn } from "@/lib/utils";
+import type { VoiceFailure } from "@/lib/voice";
 
 /*
  * Message composer (UI-07). Enter sends the trimmed text and Shift+Enter adds a line, with a mouse
@@ -48,6 +55,16 @@ import { cn } from "@/lib/utils";
  * intelligences: chats are not members and there is no recipient picker any more (CID-22,
  * ROUTE-06/DLV-03..05 and their listen-only mapping are retired). The body carries the text and
  * files only. `members` still feeds the mention list below.
+ *
+ * A microphone button records a voice message (VOI-01..VOI-06, hooks/use-voice-recorder.ts): a tap
+ * records until Send or Cancel, a hold records while held. It is sent as a message of its own, an
+ * audio attachment with no text, and the draft stays where it is. The recording bar takes the text
+ * box's place, so focus moves to the button that sends it and, when the recording ends, goes back
+ * to the text box if it was there and stays on the microphone otherwise (no keyboard pops up
+ * after a hold).
+ *
+ * A message chosen to answer (ACT-07) shows as a strip above the text box, with a way to take it
+ * back; the next message sent, text or voice, carries its id as `reply_to`.
  *
  * The same box edits a message of the viewer's (EDT-10): given `editing` it loads that message's text under an
  * "Editing message" bar, Enter (or Save) saves it and Escape (or Cancel) leaves, the attach button is gone (the
@@ -74,6 +91,17 @@ function postErrorText(t: Translate, err: unknown): string {
   return t("error.generic");
 }
 
+/** Cancels the press that would move focus off the text box; the click that follows still happens. */
+const keepFocus = (e: SyntheticEvent) => e.preventDefault();
+
+/** What each reason the microphone could not be had is called (VOI-06). */
+const MIC_FAILURES: Record<VoiceFailure, MessageKey> = {
+  denied: "composer.micDenied",
+  missing: "composer.micMissing",
+  busy: "composer.micBusy",
+  failed: "composer.micFailed",
+};
+
 /** Why a save of an edit failed (EDT-02..EDT-05): the message is gone, it is not the viewer's, the DM's other side is disabled, or the text is refused. */
 function editErrorText(t: Translate, err: unknown): string {
   if (!isApiError(err)) return t("error.generic");
@@ -91,13 +119,26 @@ export interface ComposerProps {
   roomName: string;
   level: Level;
   members?: RoomMember[];
+  /** The message the next one answers (ACT-07); the room page holds it. */
+  replyTo?: Message | null;
+  /** Takes the reply back, or says it was sent: the room page drops `replyTo`. */
+  onClearReply?: () => void;
   /** The message being edited in the box (EDT-10); null or absent while a new one is written. */
   editing?: Message | null;
   /** Leaves editing: after a save, on Escape and on Cancel. */
   onEditDone?: () => void;
 }
 
-export function Composer({ roomId, roomName, level, members, editing, onEditDone }: ComposerProps) {
+export function Composer({
+  roomId,
+  roomName,
+  level,
+  members,
+  replyTo,
+  onClearReply,
+  editing,
+  onEditDone,
+}: ComposerProps) {
   const { t } = useI18n();
   if (!canPost(level)) {
     return (
@@ -112,6 +153,8 @@ export function Composer({ roomId, roomName, level, members, editing, onEditDone
       roomId={roomId}
       roomName={roomName}
       members={members}
+      replyTo={replyTo ?? null}
+      onClearReply={onClearReply}
       editing={editing ?? null}
       onEditDone={onEditDone}
     />
@@ -122,12 +165,16 @@ function ComposerForm({
   roomId,
   roomName,
   members,
+  replyTo,
+  onClearReply,
   editing,
   onEditDone,
 }: {
   roomId: string;
   roomName: string;
   members?: RoomMember[];
+  replyTo: Message | null;
+  onClearReply?: () => void;
   editing: Message | null;
   onEditDone?: () => void;
 }) {
@@ -147,12 +194,29 @@ function ComposerForm({
   // Where the caret goes once a completion re-renders the controlled textarea.
   const pendingCaret = useRef<number | null>(null);
   const counterId = useId();
+  const replyStripId = useId();
   const errorId = useId();
   const barId = useId();
   const mentionListId = useId();
   const viewerId = useMe().data?.id;
   // False on a touch device, where Enter is a new line (ENT-01).
   const sendsOnEnter = useEnterSends();
+  const voice = useVoiceRecorder();
+  // A finger that is down on the microphone: a hold, and whether it has slid far enough to cancel.
+  const [hold, setHold] = useState<HoldState>("off");
+  const [announcement, setAnnouncement] = useState("");
+  // From the moment Send stops a recording until the answer: that stop is the user's own.
+  const sendingVoice = useRef(false);
+  const micRef = useRef<HTMLButtonElement>(null);
+  // Whether the text box had focus when the recording began. It gets focus back afterwards, and
+  // only then: a hold on the microphone must not open the on-screen keyboard (VOI-04).
+  const typing = useRef(false);
+  // What takes focus once the recording is over and its bar has gone.
+  const refocus = useRef<"text" | "mic" | null>(null);
+  const voiceOn = voice.phase === "recording" || voice.phase === "recorded";
+
+  const replyExcerpt = replyTo ? messageExcerpt(replyTo, t("player.voice")) : "";
+  const shownError = voice.failure ? t(MIC_FAILURES[voice.failure]) : error;
 
   // Editing a message (EDT-10): the box loads its text, and what was in it comes back when editing ends. This
   // follows the message by its id, so a refreshed copy of the same message does not reset what is being typed.
@@ -170,12 +234,17 @@ function ComposerForm({
     setError(null);
   }
   useEffect(() => {
-    // Entering (or switching) puts the caret at the end of the text, ready to type.
+    // Entering (or switching) puts the caret at the end of the text, ready to type. One tick later: the
+    // menu that was chosen from is still on screen for a moment, and its focus trap would take the
+    // cursor straight back.
     if (editId === null) return;
-    const box = textRef.current;
-    if (!box) return;
-    box.focus();
-    box.setSelectionRange(box.value.length, box.value.length);
+    const timer = window.setTimeout(() => {
+      const box = textRef.current;
+      if (!box) return;
+      box.focus();
+      box.setSelectionRange(box.value.length, box.value.length);
+    }, 0);
+    return () => window.clearTimeout(timer);
   }, [editId]);
 
   const length = textLength(text);
@@ -210,6 +279,16 @@ function ComposerForm({
   const activeCandidate = candidates[active];
   const mentionStart = mention?.start ?? null;
 
+  // Choosing a message to answer puts the cursor in the box (and opens the keyboard of a phone).
+  // One tick later: the menu that was chosen from is still on screen for a moment, and its focus
+  // trap would take the cursor straight back.
+  const replyId = replyTo?.id;
+  useEffect(() => {
+    if (replyId === undefined) return;
+    const timer = window.setTimeout(() => textRef.current?.focus(), 0);
+    return () => window.clearTimeout(timer);
+  }, [replyId]);
+
   // Leaving the `@word` (or sending) resets the Escape dismissal; the next mention opens again.
   useEffect(() => {
     if (mentionStart === null) setDismissedStart(null);
@@ -227,18 +306,91 @@ function ComposerForm({
     setCaret(position);
   }, [text]);
 
+  // What a screen reader hears of a recording: that it started, and that it stopped by itself.
+  useEffect(() => {
+    if (voice.phase === "recording") setAnnouncement(t("composer.announceRecording"));
+    else if (voice.phase === "recorded" && !sendingVoice.current) {
+      setAnnouncement(t("composer.announceReady"));
+    }
+  }, [voice.phase, t]);
+
+  // The text box is hidden for as long as a recording is on, and focus must not fall off the page
+  // with it: it moves to the button that sends the recording, which Escape and a screen reader
+  // then still reach (VOI-02, VOI-05).
+  useEffect(() => {
+    if (voice.phase !== "recording") return;
+    const active = document.activeElement;
+    if (!active || active === document.body || active === textRef.current) {
+      micRef.current?.focus({ preventScroll: true });
+    }
+  }, [voice.phase]);
+
+  // The bar is gone again: focus goes back to where it was before the recording.
+  useEffect(() => {
+    if (voice.phase !== "idle" || !refocus.current) return;
+    const target = refocus.current === "text" ? textRef : micRef;
+    refocus.current = null;
+    target.current?.focus({ preventScroll: true });
+  }, [voice.phase]);
+
+  const startVoice = () => {
+    typing.current = document.activeElement === textRef.current;
+    refocus.current = null;
+    void voice.start();
+  };
+
+  /** Stops the recording and posts it as a message of its own: one audio file, no text (VOI-04). */
+  const sendVoice = async () => {
+    if (post.isPending) return;
+    sendingVoice.current = true;
+    const recorded = await voice.stop();
+    if (!recorded) {
+      sendingVoice.current = false;
+      return;
+    }
+    setError(null);
+    post.mutate(
+      { text: "", files: [recorded.file], ...(replyTo ? { reply_to: replyTo.id } : {}) },
+      {
+        onSuccess: () => {
+          sendingVoice.current = false;
+          refocus.current = typing.current ? "text" : "mic";
+          setAnnouncement("");
+          if (replyTo) onClearReply?.();
+          voice.cancel();
+        },
+        // The recording stays, stopped, to send again or to discard.
+        onError: (err) => {
+          sendingVoice.current = false;
+          setError(postErrorText(t, err));
+        },
+      },
+    );
+  };
+
+  const cancelVoice = () => {
+    refocus.current = typing.current ? "text" : "mic";
+    voice.cancel();
+    setHold("off");
+    setError(null);
+    setAnnouncement(t("composer.announceDiscarded"));
+  };
+
   const send = () => {
     if (!canSend) return;
+    voice.clearFailure();
     setError(null);
     post.mutate(
       {
         text: trimmed,
         ...(files.length ? { files } : {}),
+        ...(replyTo ? { reply_to: replyTo.id } : {}),
       },
       {
         onSuccess: () => {
           setText("");
           setFiles([]);
+          if (replyTo) onClearReply?.();
           textRef.current?.focus();
         },
         onError: (err) => setError(postErrorText(t, err)),
@@ -311,6 +463,12 @@ function ComposerForm({
         return;
       }
     }
+    if (e.key === "Escape" && replyTo && onClearReply) {
+      // Take the reply back, keeping what was typed.
+      e.preventDefault();
+      onClearReply();
+      return;
+    }
     if (e.key !== "Enter" || e.shiftKey || !sendsOnEnter) return;
     e.preventDefault();
     submit();
@@ -323,7 +481,11 @@ function ComposerForm({
     if (fileInput.current) fileInput.current.value = "";
   };
 
-  const describedBy = [editing ? barId : null, length >= COUNTER_FROM ? counterId : null]
+  const describedBy = [
+    editing ? barId : null,
+    replyTo && !editing ? replyStripId : null,
+    length >= COUNTER_FROM ? counterId : null,
+  ]
     .filter(Boolean)
     .join(" ");
 
@@ -340,14 +502,23 @@ function ComposerForm({
         if (editing && e.key === "Escape" && !e.defaultPrevented) {
           e.preventDefault();
           onEditDone?.();
+          return;
+        }
+        // Escape drops a recording, wherever focus is in the composer (VOI-05).
+        if (e.key === "Escape" && voiceOn) {
+          e.preventDefault();
+          cancelVoice();
         }
       }}
     >
-      {error ? (
+      {shownError ? (
         <p id={errorId} role="alert" className="mb-2 text-sm text-destructive">
-          {error}
+          {shownError}
         </p>
       ) : null}
+      <p role="status" className="sr-only">
+        {announcement}
+      </p>
       <div
         className={cn(
           "relative rounded-lg border border-input bg-card shadow-xs transition-[border-color,box-shadow] focus-within:border-ring focus-within:ring-[3px] focus-within:ring-ring/25",
@@ -355,12 +526,49 @@ function ComposerForm({
             "border-destructive focus-within:border-destructive focus-within:ring-destructive/20",
         )}
       >
-        {open ? (
+        {open && !voiceOn ? (
           <MentionSuggestions
             id={mentionListId}
             candidates={candidates}
             activeIndex={active}
             onPick={completeMention}
+          />
+        ) : null}
+        {replyTo && !editing ? (
+          <div
+            id={replyStripId}
+            data-testid="reply-strip"
+            className="flex items-center gap-2.5 border-b px-3 py-2"
+          >
+            <ReplyIcon className="size-4 shrink-0 text-muted-foreground" aria-hidden="true" />
+            <div className="min-w-0 flex-1 text-xs leading-snug">
+              <p className="truncate font-medium">
+                {t("composer.replyingTo", { name: authorDisplayName(replyTo) })}
+              </p>
+              {replyExcerpt ? (
+                <p className="truncate text-muted-foreground">{replyExcerpt}</p>
+              ) : null}
+            </div>
+            <Button
+              type="button"
+              variant="ghost"
+              size="icon-xs"
+              aria-label={t("composer.cancelReply")}
+              // Taking it back must not close the keyboard of someone who is typing (KBD-03).
+              onPointerDown={keepFocus}
+              onMouseDown={keepFocus}
+              onClick={onClearReply}
+              className="text-muted-foreground pointer-coarse:size-11"
+            >
+              <XIcon aria-hidden="true" />
+            </Button>
+          </div>
+        ) : null}
+        {voiceOn ? (
+          <RecordingBar
+            phase={voice.phase as "recording" | "recorded"}
+            elapsedMs={voice.elapsedMs}
+            hold={hold}
           />
         ) : null}
         {editing ? (
@@ -395,7 +603,7 @@ function ComposerForm({
             ) : null}
           </>
         ) : null}
-        {!editing && files.length > 0 ? (
+        {!editing && files.length > 0 && !voiceOn ? (
           <ul className="flex flex-wrap gap-1.5 px-3 pt-2.5">
             {files.map((f) => (
               <li
@@ -427,6 +635,7 @@ function ComposerForm({
           onClick={syncCaret}
           onFocus={syncCaret}
           rows={1}
+          hidden={voiceOn}
           aria-label={t("composer.label", { room: roomName })}
           aria-invalid={tooLong || undefined}
           /* MEN-06: with the list open the box is the popup's combobox and names the active
@@ -443,15 +652,34 @@ function ComposerForm({
           // The on-screen Return key shows what it does (ENT-04).
           enterKeyHint={sendsOnEnter ? (editing ? "done" : "send") : "enter"}
           placeholder={t("composer.placeholder", { room: roomName })}
-          className="block max-h-56 min-h-11 w-full resize-none bg-transparent px-3 pt-2.5 pb-1 text-[0.9375rem] leading-relaxed outline-none [field-sizing:content] placeholder:text-muted-foreground"
+          className={cn(
+            "block max-h-[min(10rem,calc(var(--app-height,100dvh)*0.4))] min-h-11 w-full resize-none overflow-y-auto bg-transparent px-3 pt-2.5 pb-1 text-[0.9375rem] leading-relaxed outline-none [field-sizing:content] placeholder:text-muted-foreground",
+            voiceOn && "hidden",
+          )}
         />
         <div className="flex items-center gap-1 px-1.5 pb-1.5">
-          {/* The file input itself takes focus; the label draws it as an icon button. A message that is
-              edited keeps the files it has and takes no others (EDT-10). */}
-          {editing ? null : (
+          {voiceOn ? (
+            <Button
+              type="button"
+              variant="ghost"
+              size="sm"
+              className="text-muted-foreground pointer-coarse:h-11"
+              aria-label={t(
+                voice.phase === "recorded"
+                  ? "composer.discardRecording"
+                  : "composer.cancelRecording",
+              )}
+              onClick={cancelVoice}
+            >
+              <Trash2Icon aria-hidden="true" />
+              {t(voice.phase === "recorded" ? "composer.discard" : "common.cancel")}
+            </Button>
+          ) : editing ? null : (
+            /* The file input itself takes focus; the label draws it as an icon button. A message that
+               is edited keeps the files it has and takes no others (EDT-10). */
             <label
               title={t("composer.attach")}
-              className="relative inline-flex size-8 cursor-pointer items-center justify-center rounded-md text-muted-foreground transition-colors focus-within:ring-[3px] focus-within:ring-ring/70 hover:bg-accent hover:text-accent-foreground"
+              className="relative inline-flex size-8 cursor-pointer items-center justify-center rounded-md text-muted-foreground transition-colors focus-within:ring-[3px] focus-within:ring-ring/70 hover:bg-accent hover:text-accent-foreground pointer-coarse:size-11"
             >
               <input
                 ref={fileInput}
@@ -466,44 +694,70 @@ function ComposerForm({
           )}
           {/* A phone has no Shift key to remember, but it does need to be told Enter no longer
               sends: its hint shows at every width and gives way to the counter's room (ENT-03). */}
-          <span
-            className={cn(
-              "ml-auto text-[0.7rem] text-muted-foreground",
-              sendsOnEnter ? "hidden lg:inline" : "min-w-0 truncate",
-            )}
-          >
-            {t(
-              editing
-                ? sendsOnEnter
-                  ? "composer.editHint"
-                  : "composer.editHintTouch"
-                : sendsOnEnter
-                  ? "composer.hint"
-                  : "composer.hintTouch",
-            )}
-          </span>
-          {length >= COUNTER_FROM ? (
+          {voiceOn ? null : (
             <span
-              id={counterId}
-              data-testid="composer-counter"
               className={cn(
-                "font-mono text-[0.7rem] tabular",
-                sendsOnEnter ? "ml-auto lg:ml-2" : "ml-2 shrink-0",
-                tooLong ? "font-semibold text-destructive" : "text-muted-foreground",
+                "min-w-0 flex-1 text-balance text-right text-[0.7rem] leading-tight text-muted-foreground",
+                // Two lines keep the whole hint beside the three buttons of a 360 px phone.
+                sendsOnEnter ? "hidden truncate lg:block" : "line-clamp-2",
               )}
             >
-              {fmt(length)} / {fmt(MaxTextLength)}
+              {t(
+                editing
+                  ? sendsOnEnter
+                    ? "composer.editHint"
+                    : "composer.editHintTouch"
+                  : sendsOnEnter
+                    ? "composer.hint"
+                    : "composer.hintTouch",
+              )}
             </span>
-          ) : null}
-          <Button
-            type="submit"
-            size="icon-sm"
-            disabled={editing ? !canSave : !canSend}
-            aria-label={t(editing ? "composer.saveEdit" : "composer.send")}
-            className={cn(sendsOnEnter ? length < COUNTER_FROM && "ml-auto lg:ml-2" : "ml-2")}
-          >
-            {editing ? <CheckIcon aria-hidden="true" /> : <SendHorizontalIcon aria-hidden="true" />}
-          </Button>
+          )}
+          <div className="ml-auto flex items-center gap-1">
+            {!voiceOn && length >= COUNTER_FROM ? (
+              <span
+                id={counterId}
+                data-testid="composer-counter"
+                className={cn(
+                  "mr-1 shrink-0 font-mono text-[0.7rem] tabular",
+                  tooLong ? "font-semibold text-destructive" : "text-muted-foreground",
+                )}
+              >
+                {fmt(length)} / {fmt(MaxTextLength)}
+              </span>
+            ) : null}
+            {voice.supported && !editing ? (
+              <MicButton
+                ref={micRef}
+                phase={voice.phase}
+                sending={voiceOn && post.isPending}
+                onStart={startVoice}
+                onSend={() => void sendVoice()}
+                onCancel={cancelVoice}
+                onHold={setHold}
+                className="pointer-coarse:size-11"
+              />
+            ) : null}
+            {voiceOn ? null : (
+              <Button
+                type="submit"
+                size="icon-sm"
+                disabled={editing ? !canSave : !canSend}
+                aria-label={t(editing ? "composer.saveEdit" : "composer.send")}
+                // A press on Send must not take focus from the text box: that closes the on-screen
+                // keyboard, and the composer jumps while it does (KBD-03). The click still sends.
+                onPointerDown={keepFocus}
+                onMouseDown={keepFocus}
+                className="pointer-coarse:size-11"
+              >
+                {editing ? (
+                  <CheckIcon aria-hidden="true" />
+                ) : (
+                  <SendHorizontalIcon aria-hidden="true" />
+                )}
+              </Button>
+            )}
+          </div>
         </div>
       </div>
     </form>

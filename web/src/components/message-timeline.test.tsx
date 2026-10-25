@@ -561,6 +561,200 @@ describe("timeline (UI-04)", () => {
   });
 });
 
+/** Everything written to an element's `scrollTop`, to tell a timeline that moved from one that stayed. */
+function spyOnScrollTopWrites() {
+  const writes: { target: Element; value: number }[] = [];
+  const owner = Object.getOwnPropertyDescriptor(Element.prototype, "scrollTop");
+  if (!owner?.set || !owner.get) throw new Error("this DOM has no scrollTop accessor");
+  const { get, set } = owner;
+  Object.defineProperty(Element.prototype, "scrollTop", {
+    configurable: true,
+    get() {
+      return get.call(this);
+    },
+    set(value: number) {
+      writes.push({ target: this as Element, value });
+      set.call(this, value);
+    },
+  });
+  return {
+    writes,
+    restore: () => Object.defineProperty(Element.prototype, "scrollTop", owner),
+  };
+}
+
+/** The observers that watch one element, as a browser's ResizeObserver would call them. */
+const resizeObservers: { callback: ResizeObserverCallback; observed: Element[] }[] = [];
+class RecordingResizeObserver {
+  readonly entry: { callback: ResizeObserverCallback; observed: Element[] };
+  constructor(callback: ResizeObserverCallback) {
+    this.entry = { callback, observed: [] };
+    resizeObservers.push(this.entry);
+  }
+  observe(element: Element) {
+    this.entry.observed.push(element);
+  }
+  unobserve() {}
+  disconnect() {
+    this.entry.observed = [];
+  }
+}
+const resize = (el: HTMLElement, height: number) => {
+  Object.defineProperty(el, "clientHeight", { configurable: true, value: height });
+  act(() => {
+    for (const { callback, observed } of resizeObservers) {
+      if (observed.includes(el)) callback([], undefined as unknown as ResizeObserver);
+    }
+  });
+};
+
+describe("the timeline follows the visible area (KBD-02, KBD-06)", () => {
+  const twenty = () => page(Array.from({ length: 20 }, (_, i) => makeMessage({ seq: i + 1 })));
+  let spy: ReturnType<typeof spyOnScrollTopWrites>;
+
+  beforeEach(() => {
+    resizeObservers.length = 0;
+    vi.stubGlobal("ResizeObserver", RecordingResizeObserver);
+    spy = spyOnScrollTopWrites();
+  });
+  afterEach(() => spy.restore());
+
+  it("goes back to the newest message when the keyboard takes room from it", async () => {
+    mockApi({ "GET /rooms/r1/messages": twenty() });
+    renderTimeline();
+    const log = await screen.findByRole("log");
+    await screen.findByTestId("message-20");
+
+    spy.writes.length = 0;
+    resize(log, 318);
+    expect(spy.writes.filter((w) => w.target === log).length).toBeGreaterThan(0);
+  });
+
+  it("keeps a reader who scrolled up where they are when the box changes height", async () => {
+    mockApi({ "GET /rooms/r1/messages": twenty() });
+    renderTimeline();
+    const log = await screen.findByRole("log");
+    await screen.findByTestId("message-20");
+    // Far from the newest message: the box is 800 px tall and 5000 px of messages lie below.
+    Object.defineProperty(log, "scrollHeight", { configurable: true, value: 5000 });
+    log.scrollTop = 1000;
+    fireEvent.scroll(log);
+    await screen.findByRole("button", { name: "Jump to latest" });
+
+    spy.writes.length = 0;
+    resize(log, 318);
+    expect(spy.writes.filter((w) => w.target === log)).toEqual([]);
+  });
+
+  it("offers Jump to latest in a strip of its own, never over the messages or the composer", async () => {
+    mockApi({ "GET /rooms/r1/messages": twenty() });
+    renderTimeline();
+    const log = await screen.findByRole("log");
+    await screen.findByTestId("message-20");
+    expect(screen.queryByRole("button", { name: "Jump to latest" })).toBeNull();
+
+    Object.defineProperty(log, "scrollHeight", { configurable: true, value: 5000 });
+    log.scrollTop = 1000;
+    fireEvent.scroll(log);
+    const jump = await screen.findByRole("button", { name: "Jump to latest" });
+
+    // Outside the scrolling box, and in the flow after it: nothing is laid over a message.
+    expect(log.contains(jump)).toBe(false);
+    expect(jump.closest(".absolute, .fixed")).toBeNull();
+    expect(log.compareDocumentPosition(jump) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+  });
+
+  it("takes the strip away once the newest message is back in view", async () => {
+    mockApi({ "GET /rooms/r1/messages": twenty() });
+    renderTimeline();
+    const log = await screen.findByRole("log");
+    await screen.findByTestId("message-20");
+    Object.defineProperty(log, "scrollHeight", { configurable: true, value: 5000 });
+    log.scrollTop = 1000;
+    fireEvent.scroll(log);
+    const jump = await screen.findByRole("button", { name: "Jump to latest" });
+
+    fireEvent.click(jump);
+    await waitFor(() =>
+      expect(screen.queryByRole("button", { name: "Jump to latest" })).toBeNull(),
+    );
+  });
+});
+
+describe("audio attachments (VOI-07)", () => {
+  const recording = {
+    id: "v1",
+    name: "voice-message-2026-10-24-140509.webm",
+    mime: "audio/webm;codecs=opus",
+    size: 41_230,
+    status: "stored" as const,
+  };
+
+  it("plays a recording inline, in a player instead of a download link", async () => {
+    mockApi({
+      "GET /rooms/r1/messages": page([makeMessage({ seq: 1, text: "", attachments: [recording] })]),
+    });
+    renderTimeline();
+    const player = await screen.findByRole("group", { name: "Voice message" });
+    expect(within(player).getByRole("button", { name: "Play" })).toBeInTheDocument();
+    expect(within(player).getByRole("slider", { name: "Seek" })).toBeInTheDocument();
+    expect(player.closest("article")?.querySelector("audio")).toHaveAttribute(
+      "src",
+      "/api/v1/attachments/v1",
+    );
+    expect(screen.queryByRole("link", { name: /voice-message/ })).toBeNull();
+  });
+
+  it("leaves room above a grouped recording for the time that shows on hover, so the player's own time stays readable", async () => {
+    mockApi({
+      "GET /rooms/r1/messages": page([
+        makeMessage({ seq: 1, text: "listen to this" }),
+        makeMessage({ seq: 2, text: "", attachments: [recording] }),
+        makeMessage({ seq: 3, text: "and this", attachments: [{ ...recording, id: "v2" }] }),
+      ]),
+    });
+    renderTimeline();
+    const players = await screen.findAllByRole("group", { name: "Voice message" });
+    const list = (n: number) => players[n]?.closest("ul");
+    // Grouped under the first message and with no text of its own: the time sits above the player.
+    expect(list(0)).toHaveClass("mt-5");
+    // With text above it, the attachments follow the text as usual.
+    expect(list(1)).not.toHaveClass("mt-5");
+  });
+
+  it("plays any audio file, named by the file, and leaves other files as downloads", async () => {
+    mockApi({
+      "GET /rooms/r1/messages": page([
+        makeMessage({
+          seq: 1,
+          attachments: [
+            { id: "a1", name: "song.mp3", mime: "audio/mpeg", size: 3_000_000, status: "stored" },
+            { id: "a2", name: "notes.pdf", mime: "application/pdf", size: 9_000, status: "stored" },
+          ],
+        }),
+      ]),
+    });
+    renderTimeline();
+    expect(await screen.findByRole("group", { name: "song.mp3" })).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: /notes\.pdf/ })).toHaveAttribute("download");
+  });
+
+  it("shows audio that was not stored as the missing file it is, with no player", async () => {
+    mockApi({
+      "GET /rooms/r1/messages": page([
+        makeMessage({
+          seq: 1,
+          attachments: [{ ...recording, status: "too_large" as const }],
+        }),
+      ]),
+    });
+    renderTimeline();
+    await screen.findByText(/voice-message-2026-10-24-140509\.webm/);
+    expect(screen.queryByRole("group", { name: "Voice message" })).toBeNull();
+    expect(screen.queryByRole("slider")).toBeNull();
+  });
+});
+
 describe("edited and deleted messages (EDT-10, DLT-10)", () => {
   const bobRef = makeIntelligence({ id: "u2", display_name: "Bob Lima", handle: "bob" });
   const bob = (seq: number, over: Partial<Message> = {}) =>
@@ -573,19 +767,39 @@ describe("edited and deleted messages (EDT-10, DLT-10)", () => {
     });
   const deletedAt = "2026-10-19T14:00:00Z";
 
-  function renderWith(props: { canModerate?: boolean; onEdit?: (m: Message) => void } = {}) {
+  function renderWith(
+    props: {
+      canModerate?: boolean;
+      onEdit?: (m: Message) => void;
+      onReply?: (m: Message) => void;
+    } = {},
+  ) {
     return renderWithRouter(
       <MessageTimeline
         roomId="r1"
         meId={ME}
         members={[]}
         onEdit={props.onEdit}
+        onReply={props.onReply}
         canModerate={props.canModerate}
       />,
     );
   }
   const actionsOf = (seq: number) =>
-    within(row(seq)).queryByRole("button", { name: "Message actions" });
+    within(row(seq)).queryByRole("button", { name: /^Actions for the message from / });
+
+  /** What a row's menu offers, opened with its "⋯" and closed again; null where the row has no "⋯". */
+  async function itemsOf(user: ReturnType<typeof userEvent.setup>, seq: number) {
+    const more = actionsOf(seq);
+    if (!more) return null;
+    await user.click(more);
+    const items = within(await screen.findByRole("menu"))
+      .getAllByRole("menuitem")
+      .map((item) => item.textContent);
+    await user.keyboard("{Escape}");
+    await waitFor(() => expect(screen.queryByRole("menu")).toBeNull());
+    return items;
+  }
 
   it("marks an edited message 'edited' next to its time, and only that one", async () => {
     mockApi({
@@ -665,7 +879,7 @@ describe("edited and deleted messages (EDT-10, DLT-10)", () => {
     expect(quote).not.toHaveTextContent("gone");
   });
 
-  it("gives the actions to the viewer's own messages, not to others', and Delete to a manager for all but notices", async () => {
+  it("gives Edit and Delete to the viewer's own messages, Delete alone to a manager on others', and nothing on notices or deleted ones", async () => {
     mockApi({
       "GET /rooms/r1/messages": page([
         makeMessage({ seq: 1, text: "mine" }),
@@ -680,20 +894,41 @@ describe("edited and deleted messages (EDT-10, DLT-10)", () => {
         bob(4, { text: "bob's gone", deleted_at: deletedAt }),
       ]),
     });
-    const first = renderWith();
+    const user = userEvent.setup();
+    const onReply = vi.fn();
+    const onEdit = vi.fn();
+    const first = renderWith({ onReply, onEdit });
     await screen.findByText("bob's");
-    expect(actionsOf(1)).toBeInTheDocument();
-    expect(actionsOf(2)).toBeNull();
-    expect(actionsOf(3)).toBeNull();
-    expect(actionsOf(4)).toBeNull();
+    expect(await itemsOf(user, 1)).toEqual(["Reply", "Copy text", "Edit", "Delete"]);
+    expect(await itemsOf(user, 2)).toEqual(["Reply", "Copy text"]);
+    expect(await itemsOf(user, 3)).toBeNull();
+    expect(await itemsOf(user, 4)).toBeNull();
     first.unmount();
 
-    renderWith({ canModerate: true });
+    renderWith({ onReply, onEdit, canModerate: true });
     await screen.findByText("bob's");
-    expect(actionsOf(1)).toBeInTheDocument();
-    expect(actionsOf(2)).toBeInTheDocument();
-    expect(actionsOf(3)).toBeNull();
-    expect(actionsOf(4)).toBeNull();
+    expect(await itemsOf(user, 1)).toEqual(["Reply", "Copy text", "Edit", "Delete"]);
+    expect(await itemsOf(user, 2)).toEqual(["Reply", "Copy text", "Delete"]);
+    expect(await itemsOf(user, 3)).toBeNull();
+    expect(await itemsOf(user, 4)).toBeNull();
+  });
+
+  it("offers neither Edit nor Delete in a conversation that is history", async () => {
+    mockApi({ "GET /rooms/r1/messages": page([makeMessage({ seq: 1, text: "mine" })]) });
+    const user = userEvent.setup();
+    renderWithRouter(
+      <MessageTimeline
+        roomId="r1"
+        meId={ME}
+        members={[]}
+        onReply={vi.fn()}
+        onEdit={vi.fn()}
+        canModerate
+        frozen
+      />,
+    );
+    await screen.findByText("mine");
+    expect(await itemsOf(user, 1)).toEqual(["Copy text"]);
   });
 
   it("hands the message to the composer when Edit is chosen", async () => {
@@ -703,8 +938,11 @@ describe("edited and deleted messages (EDT-10, DLT-10)", () => {
     renderWith({ onEdit });
     await screen.findByText("helo");
     await user.click(actionsOf(1) as HTMLElement);
-    await user.click(screen.getByRole("menuitem", { name: "Edit" }));
-    expect(onEdit).toHaveBeenCalledWith(expect.objectContaining({ id: "m-r1-1", text: "helo" }));
+    await user.click(await screen.findByRole("menuitem", { name: "Edit" }));
+    await waitFor(() =>
+      expect(onEdit).toHaveBeenCalledWith(expect.objectContaining({ id: "m-r1-1", text: "helo" })),
+    );
+    expect(onEdit).toHaveBeenCalledTimes(1);
   });
 
   it("follows a live edit and a live delete in place (EDT-06, DLT-06)", async () => {

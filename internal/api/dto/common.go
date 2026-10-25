@@ -132,6 +132,9 @@ const (
 	// ErrorCodeDMMembersFixed is an attempt to add, change or remove a member of a direct
 	// message: it has exactly its two intelligences (422, DM-02).
 	ErrorCodeDMMembersFixed ErrorCode = "dm_members_fixed"
+	// ErrorCodeReactionLimit is a new emoji on a message that carries MaxMessageEmoji different ones
+	// already (422, RCT-04).
+	ErrorCodeReactionLimit ErrorCode = "reaction_limit"
 	// ErrorCodeDMSelf is a direct message opened with oneself (422, DM-01).
 	ErrorCodeDMSelf ErrorCode = "dm_self"
 	// ErrorCodeContactNotFound is a direct message with an intelligence that does not exist or

@@ -11,6 +11,7 @@ import { ProfilePanel } from "@/components/profile-panel";
 import { Button } from "@/components/ui/button";
 import { SidebarInset } from "@/components/ui/sidebar";
 import { useIsMobile } from "@/hooks/use-mobile";
+import { useVisualViewport } from "@/hooks/use-visual-viewport";
 import { isApiError } from "@/lib/api/client";
 import { meQuery, useMe } from "@/lib/api/queries";
 import { isLocale, useT } from "@/lib/i18n";
@@ -46,6 +47,8 @@ function AppLayout() {
   const isMobile = useIsMobile();
 
   useEffect(() => startLive(queryClient), [queryClient]);
+  // The conversation is as tall as what the user can see, keyboard included (KBD-01).
+  useVisualViewport();
 
   // A browser without its own language choice starts in the account's language.
   useEffect(() => {
@@ -64,11 +67,16 @@ function AppLayout() {
         {t("nav.skip")}
       </a>
       {isMobile ? null : <AppSidebar me={me} />}
-      {/* Full-height pages (a conversation, the phone's list) mark themselves with data-fill and scroll inside. */}
+      {/*
+        Full-height pages (a conversation, the phone's list) mark themselves with data-fill and scroll
+        inside. They are as tall as the visual viewport (`--app-height`, below the page's top by
+        `--app-top`), which the on-screen keyboard shrinks in every browser; `100dvh` stands in until
+        it is known (KBD-01, KBD-05).
+      */}
       <SidebarInset
         id="main"
         tabIndex={-1}
-        className="min-w-0 outline-none has-[[data-fill]]:h-svh has-[[data-fill]]:overflow-hidden"
+        className="min-w-0 outline-none has-[[data-fill]]:top-[var(--app-top,0px)] has-[[data-fill]]:h-[var(--app-height,100dvh)] has-[[data-fill]]:overflow-hidden"
       >
         <MobileBar />
         <LiveBanner />

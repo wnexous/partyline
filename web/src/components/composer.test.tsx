@@ -1,4 +1,4 @@
-import { render, screen, waitFor } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { AppProviders } from "@/components/app-providers";
@@ -214,6 +214,15 @@ describe("Enter on touch devices (ENT-01..ENT-05)", () => {
       expect(screen.queryByText(sendsOnEnter)).toBeNull();
     });
 
+    it("ENT-03: the hint wraps to a second line beside the three buttons, never cut with an ellipsis", () => {
+      touch();
+      mockApi({});
+      renderComposer();
+      const hint = screen.getByText(newLineOnEnter);
+      expect(hint).toHaveClass("line-clamp-2");
+      expect(hint).not.toHaveClass("truncate");
+    });
+
     it("ENT-03: the hint is in Portuguese when the app is", () => {
       touch();
       useLiveStore.setState({ locale: "pt-BR" });
@@ -295,6 +304,78 @@ describe("Enter on touch devices (ENT-01..ENT-05)", () => {
         "send",
       );
     });
+  });
+});
+
+describe("the keyboard stays open while writing (KBD-03)", () => {
+  it("keeps focus in the text box when Send is pressed", async () => {
+    // The answer is held back, so what is checked is the press itself, not the refocus after it.
+    let answer: (response: Response) => void = () => {};
+    mockApi({
+      "POST /rooms/r1/messages": () =>
+        new Promise<Response>((resolve) => {
+          answer = resolve;
+        }),
+    });
+    const user = userEvent.setup();
+    renderComposer();
+    const box = screen.getByRole("textbox", { name: "Message deploys" });
+    await user.type(box, "on my way");
+    expect(box).toHaveFocus();
+
+    await user.click(screen.getByRole("button", { name: "Send" }));
+    expect(box).toHaveFocus();
+
+    answer(json(201, makeMessage({ seq: 9 })));
+    await waitFor(() => expect(box).toHaveValue(""));
+    expect(box).toHaveFocus();
+  });
+
+  it("does not let a press on Send, with a finger or a mouse, take focus from the text box", async () => {
+    mockApi({});
+    const user = userEvent.setup();
+    renderComposer();
+    await user.type(screen.getByRole("textbox", { name: "Message deploys" }), "hi");
+    const send = screen.getByRole("button", { name: "Send" });
+    expect(send).toBeEnabled();
+    // A press that is cancelled moves no focus: the on-screen keyboard stays where it is.
+    expect(fireEvent.pointerDown(send, { pointerType: "touch" })).toBe(false);
+    expect(fireEvent.pointerDown(send, { pointerType: "mouse" })).toBe(false);
+    expect(fireEvent.mouseDown(send)).toBe(false);
+  });
+
+  it("still sends on a tap and on the keyboard: only the press is cancelled, not the click", async () => {
+    const { calls } = mockApi({ "POST /rooms/r1/messages": json(201, makeMessage({ seq: 9 })) });
+    const user = userEvent.setup();
+    renderComposer();
+    const box = screen.getByRole("textbox", { name: "Message deploys" });
+    await user.type(box, "first");
+    await user.click(screen.getByRole("button", { name: "Send" }));
+    await waitFor(() => expect(posts(calls)).toHaveLength(1));
+    await waitFor(() => expect(box).toHaveValue(""));
+
+    await user.type(box, "second");
+    screen.getByRole("button", { name: "Send" }).focus();
+    await user.keyboard("{Enter}");
+    await waitFor(() => expect(posts(calls)).toHaveLength(2));
+    // A message sent from the Send button itself still hands focus back to the text box.
+    await waitFor(() => expect(box).toHaveFocus());
+  });
+
+  it("keeps the files and the focus when a send fails: nothing is lost to retry", async () => {
+    mockApi({ "POST /rooms/r1/messages": apiError(413, "too_large") });
+    const user = userEvent.setup();
+    renderComposer();
+    const box = screen.getByRole("textbox", { name: "Message deploys" });
+    await user.type(box, "see attached");
+    await user.upload(
+      screen.getByLabelText("Attach files"),
+      new File(["x"], "big.log", { type: "text/plain" }),
+    );
+    await user.click(screen.getByRole("button", { name: "Send" }));
+    expect(await screen.findByRole("alert")).toHaveTextContent(/too large/i);
+    expect(screen.getByText("big.log")).toBeInTheDocument();
+    expect(box).toHaveValue("see attached");
   });
 });
 

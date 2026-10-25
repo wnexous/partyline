@@ -6,8 +6,18 @@ import { toast } from "sonner";
 import { EmptyState } from "@/components/empty-state";
 import { collectImages, ImageViewer } from "@/components/image-viewer";
 import { MessageItem } from "@/components/message-item";
+import {
+  hasMessageActions,
+  type MessageCapabilities,
+  MessageMenu,
+  type MessageMenuTarget,
+  messageActionSet,
+} from "@/components/message-menu";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
+import { useTouchFirst } from "@/hooks/use-enter-sends";
+import { useReact } from "@/hooks/use-react";
+import { useStickToEnd } from "@/hooks/use-stick-to-end";
 import { useRoomMessages } from "@/lib/api/queries";
 import type { Message, Page, RoomMember } from "@/lib/api/types.gen";
 import { type Translate, useI18n } from "@/lib/i18n";
@@ -75,11 +85,18 @@ export interface MessageTimelineProps {
   members?: RoomMember[];
   focus?: MessageFocus | null;
   className?: string;
+  /**
+   * Makes a message the one the next message answers (ACT-07). Absent where the viewer may not
+   * post: the actions of a message then offer no Reply.
+   */
+  onReply?: (message: Message) => void;
   /** The viewer manages this group: they delete any message of it (DLT-02). */
   canModerate?: boolean;
   /** Starts editing a message in the composer (EDT-10). */
   onEdit?: (message: Message) => void;
-  /** The conversation is history (CID-21): its messages have no menu. */
+  /** The viewer may react to the messages (RCT-03): they may post. Without it the chips are only shown. */
+  canReact?: boolean;
+  /** The conversation is history (CID-21): nothing in it is answered, edited, deleted or reacted to; Copy text stays. */
   frozen?: boolean;
 }
 
@@ -89,11 +106,36 @@ export function MessageTimeline({
   members,
   focus,
   className,
+  onReply,
   canModerate,
   onEdit,
+  canReact,
   frozen,
 }: MessageTimelineProps) {
   const { t, locale } = useI18n();
+  // The actions of a message (ACT-01, ACT-02, ACT-05): one menu for the whole timeline, opened by
+  // a long press on a touch device and by a right click or the "⋯" with a mouse.
+  const touch = useTouchFirst();
+  const [menu, setMenu] = useState<MessageMenuTarget | null>(null);
+  const openMenu = useCallback(
+    (message: Message, at: MessageMenuTarget["at"], opener: HTMLElement) =>
+      setMenu({ message, at, opener }),
+    [],
+  );
+  const closeMenu = useCallback(() => setMenu(null), []);
+  // What the viewer may do in this conversation decides what each message offers (ACT-05, EDT-10, DLT-09).
+  const capabilities = useMemo<MessageCapabilities>(
+    () => ({
+      meId,
+      canReply: onReply !== undefined,
+      canModerate: canModerate ?? false,
+      canEdit: onEdit !== undefined,
+      canReact: canReact ?? false,
+      frozen: frozen ?? false,
+    }),
+    [meId, onReply, canModerate, onEdit, canReact, frozen],
+  );
+  const react = useReact(roomId, meId);
   const query = useRoomMessages(roomId);
   const { hasNextPage, isFetchingNextPage, fetchNextPage } = query;
   const items = useMemo(() => flattenPages(query.data), [query.data]);
@@ -128,7 +170,14 @@ export function MessageTimeline({
     scrollEndThreshold: AT_END_PX,
   });
 
-  const [atEnd, setAtEnd] = useState(true);
+  // Where the reader is: at the newest message or not. The ref is what a resize of the box reads
+  // (the keyboard opening is no scroll, so the state it would read has not moved).
+  const [atEnd, setAtEndState] = useState(true);
+  const atEndRef = useRef(true);
+  const setAtEnd = useCallback((value: boolean) => {
+    atEndRef.current = value;
+    setAtEndState(value);
+  }, []);
   const initialized = useRef(false);
   useLayoutEffect(() => {
     if (initialized.current || items.length === 0) return;
@@ -143,7 +192,23 @@ export function MessageTimeline({
     if (el.scrollTop < LOAD_OLDER_PX && hasNextPage && !isFetchingNextPage) {
       void fetchNextPage();
     }
-  }, [hasNextPage, isFetchingNextPage, fetchNextPage]);
+  }, [hasNextPage, isFetchingNextPage, fetchNextPage, setAtEnd]);
+
+  // The box changes height when the on-screen keyboard opens or closes (KBD-02): a reader at the
+  // newest message stays at it, one higher up keeps their place.
+  const [scroller, setScroller] = useState<HTMLDivElement | null>(null);
+  const scrollerRef = useCallback((el: HTMLDivElement | null) => {
+    scrollRef.current = el;
+    setScroller(el);
+  }, []);
+  useStickToEnd(
+    scroller,
+    () => atEndRef.current,
+    () => {
+      const el = scrollRef.current;
+      if (el) el.scrollTop = el.scrollHeight;
+    },
+  );
 
   const jumpTo = useCallback(
     (id: string) => {
@@ -246,7 +311,7 @@ export function MessageTimeline({
   return (
     <div className={cn("relative flex min-h-0 flex-1 flex-col", className)}>
       <div
-        ref={scrollRef}
+        ref={scrollerRef}
         role="log"
         aria-label={t("timeline.label")}
         aria-busy={isFetchingNextPage}
@@ -302,9 +367,11 @@ export function MessageTimeline({
                     }
                     onJumpTo={jumpTo}
                     onOpenImage={openImage}
-                    canModerate={canModerate}
-                    onEdit={onEdit}
-                    frozen={frozen}
+                    onMenu={hasMessageActions(m, capabilities) ? openMenu : undefined}
+                    touch={touch}
+                    menuOpen={menu?.message.id === m.id}
+                    onSwipeReply={messageActionSet(m, capabilities).reply ? onReply : undefined}
+                    onReact={messageActionSet(m, capabilities).react ? react : undefined}
                   />
                 </div>
               );
@@ -313,6 +380,15 @@ export function MessageTimeline({
           <div className="h-3" />
         </div>
       </div>
+      <MessageMenu
+        target={menu}
+        onClose={closeMenu}
+        touch={touch}
+        capabilities={capabilities}
+        onReply={onReply}
+        onEdit={onEdit}
+        onReact={react}
+      />
       <ImageViewer
         images={images}
         currentId={viewing}
@@ -320,16 +396,14 @@ export function MessageTimeline({
         returnFocusTo={thumbnailOf}
         more={hasNextPage}
       />
+      {/* A strip of its own, between the messages and the composer: nothing is laid over a message (KBD-06). */}
       {!atEnd ? (
-        <Button
-          size="sm"
-          variant="secondary"
-          onClick={jumpToLatest}
-          className="absolute right-4 bottom-3 shadow-md md:right-6"
-        >
-          <ArrowDownIcon aria-hidden="true" />
-          {t("timeline.jumpLatest")}
-        </Button>
+        <div className="flex shrink-0 justify-center px-4 py-2 md:px-6">
+          <Button size="sm" variant="secondary" onClick={jumpToLatest} className="shadow-md">
+            <ArrowDownIcon aria-hidden="true" />
+            {t("timeline.jumpLatest")}
+          </Button>
+        </div>
       ) : null}
     </div>
   );

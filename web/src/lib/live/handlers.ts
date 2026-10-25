@@ -1,6 +1,7 @@
 import type { QueryClient } from "@tanstack/react-query";
 import {
   applyMessageUpdate,
+  applyReactions,
   type FileFilter,
   type FilePages,
   fetchMessages,
@@ -204,6 +205,11 @@ export function handleLiveEvent(qc: QueryClient, actions: LiveActions, event: Li
     case "room.message_updated":
       // An edit or a delete: the message as it is now replaces the one the cache holds (EDT-06, DLT-06).
       applyMessageUpdate(qc, event.data);
+      return;
+
+    case "room.reactions":
+      // The reactions of one message, whole: they replace the cache's, and nothing else moves (RCT-06).
+      applyReactions(qc, event.data.room_id, event.data.message_id, event.data.reactions);
       return;
 
     case "room.read":

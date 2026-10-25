@@ -201,12 +201,15 @@ type Message struct {
 	// Chat is the chat a chat-authored message came from; absent for other authors (CTX-01).
 	Chat        *ChatRef     `json:"chat,omitempty"`
 	Attachments []Attachment `json:"attachments"`
-	CreatedAt   time.Time    `json:"created_at"`
+	// Reactions are the emoji people reacted with, in the order each was first used; always an array
+	// (RCT-05). A live frame carries them too.
+	Reactions []Reaction `json:"reactions"`
+	CreatedAt time.Time  `json:"created_at"`
 	// EditedAt is when the author last changed the text; absent for a message that was never edited (EDT-01).
 	EditedAt *time.Time `json:"edited_at,omitempty"`
 	// DeletedAt is when the message was deleted; absent otherwise. A deleted message is a placeholder that
 	// stays in its place: its text is empty, it has no attachments and no EditedAt, and it keeps its id,
-	// sequence number, author, time and reply_to (DLT-01).
+	// sequence number, author, time and reply_to (DLT-01). It has no reactions either.
 	DeletedAt *time.Time `json:"deleted_at,omitempty"`
 }
 

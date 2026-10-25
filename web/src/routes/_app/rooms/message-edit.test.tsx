@@ -57,12 +57,35 @@ beforeEach(() => {
 });
 afterEach(() => vi.unstubAllGlobals());
 
-async function chooseEdit(user: ReturnType<typeof userEvent.setup>, seq: number) {
-  await user.click(
-    await within(await screen.findByTestId(`message-${seq}`)).findByRole("button", {
-      name: "Message actions",
-    }),
-  );
+type User = ReturnType<typeof userEvent.setup>;
+
+/** The "⋯" of a row, named after the author of its message. */
+const moreOf = (seq: number) =>
+  within(row(seq)).queryByRole("button", { name: /^Actions for the message from / });
+
+/**
+ * Opens the menu of a row with its "⋯" and says what it offers besides the quick reactions that lead it
+ * (RCT-02, tested in reactions.test.tsx). It is left open.
+ */
+async function openMenu(user: User, seq: number) {
+  const more = moreOf(seq);
+  if (!more) throw new Error(`message ${seq} has no ⋯`);
+  await user.click(more);
+  const menu = await screen.findByRole("menu");
+  return within(menu)
+    .getAllByRole("menuitem")
+    .filter((item) => !item.closest('[role="group"]'))
+    .map((item) => item.textContent);
+}
+
+async function closeMenu(user: User) {
+  await user.keyboard("{Escape}");
+  await waitFor(() => expect(screen.queryByRole("menu")).toBeNull());
+}
+
+async function chooseEdit(user: User, seq: number) {
+  await screen.findByTestId(`message-${seq}`);
+  await openMenu(user, seq);
   await user.click(screen.getByRole("menuitem", { name: "Edit" }));
 }
 
@@ -113,19 +136,18 @@ describe("editing from the menu (EDT-10)", () => {
     const user = userEvent.setup();
     const first = renderRoute("/rooms/r1");
     await screen.findByText("see you");
-    expect(within(row(2)).queryByRole("button", { name: "Message actions" })).toBeNull();
-    await user.click(within(row(1)).getByRole("button", { name: "Message actions" }));
-    expect(screen.getByRole("menuitem", { name: "Edit" })).toBeInTheDocument();
+    expect(await openMenu(user, 2)).toEqual(["Reply", "Copy text"]);
+    await closeMenu(user);
+    expect(await openMenu(user, 1)).toEqual(["Reply", "Copy text", "Edit", "Delete"]);
     first.unmount();
 
-    // A viewer who cannot post has no composer; what they wrote can still be deleted.
+    // A viewer who cannot post has no composer, so no Reply and no Edit; what they wrote can still
+    // be copied and deleted.
     roomApi({ my_level: "view" });
     renderRoute("/rooms/r1");
     await screen.findByText("see you");
     expect(screen.queryByRole("textbox")).toBeNull();
-    await user.click(within(row(1)).getByRole("button", { name: "Message actions" }));
-    expect(screen.getByRole("menuitem", { name: "Delete" })).toBeInTheDocument();
-    expect(screen.queryByRole("menuitem", { name: "Edit" })).toBeNull();
+    expect(await openMenu(user, 1)).toEqual(["Copy text", "Delete"]);
   });
 
   it("leaves editing when another conversation is opened", async () => {
@@ -154,11 +176,8 @@ describe("deleting from the menu (DLT-09, DLT-10)", () => {
     });
     const user = userEvent.setup();
     renderRoute("/rooms/r1");
-    await user.click(
-      await within(await screen.findByTestId("message-1")).findByRole("button", {
-        name: "Message actions",
-      }),
-    );
+    await screen.findByTestId("message-1");
+    await openMenu(user, 1);
     await user.click(screen.getByRole("menuitem", { name: "Delete" }));
     const dialog = await screen.findByRole("alertdialog", { name: "Delete this message?" });
     await user.click(within(dialog).getByRole("button", { name: "Delete" }));
@@ -166,7 +185,8 @@ describe("deleting from the menu (DLT-09, DLT-10)", () => {
     await waitFor(() => expect(within(row(1)).getByText("Message deleted")).toBeInTheDocument());
     expect(calls.filter((c) => c.method === "DELETE")).toHaveLength(1);
     expect(screen.queryByText("helo wrld")).toBeNull();
-    expect(within(row(1)).queryByRole("button", { name: "Message actions" })).toBeNull();
+    // A placeholder has nothing to reply to, copy or delete.
+    expect(moreOf(1)).toBeNull();
     expect(screen.getAllByTestId(/^message-\d+$/).map((el) => el.dataset.testid)).toEqual([
       "message-1",
       "message-2",
@@ -178,9 +198,7 @@ describe("deleting from the menu (DLT-09, DLT-10)", () => {
     const user = userEvent.setup();
     const group = renderRoute("/rooms/r1");
     await screen.findByText("see you");
-    await user.click(within(row(2)).getByRole("button", { name: "Message actions" }));
-    expect(screen.getByRole("menuitem", { name: "Delete" })).toBeInTheDocument();
-    expect(screen.queryByRole("menuitem", { name: "Edit" })).toBeNull();
+    expect(await openMenu(user, 2)).toEqual(["Reply", "Copy text", "Delete"]);
     group.unmount();
 
     // Nobody manages a DM: the level of a participant is post, and the other one's messages are theirs.
@@ -192,8 +210,9 @@ describe("deleting from the menu (DLT-09, DLT-10)", () => {
     });
     renderRoute("/rooms/r1");
     await screen.findByText("see you");
-    expect(within(row(2)).queryByRole("button", { name: "Message actions" })).toBeNull();
-    expect(within(row(1)).getByRole("button", { name: "Message actions" })).toBeInTheDocument();
+    expect(await openMenu(user, 2)).toEqual(["Reply", "Copy text"]);
+    await closeMenu(user);
+    expect(await openMenu(user, 1)).toEqual(["Reply", "Copy text", "Edit", "Delete"]);
   });
 
   it("shows a message another person deleted, live, as 'Message deleted'", async () => {

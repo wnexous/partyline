@@ -852,6 +852,53 @@ describe("the current organization (ORG-02)", () => {
   });
 });
 
+describe("a voice message in the list (VOI-04)", () => {
+  it("is named as one, not by the file the recording made", async () => {
+    api([
+      makeConversation({
+        id: "v1",
+        kind: "dm",
+        title: "Atlas",
+        counterpart: atlas,
+        activity_at: today(12, 30),
+        last_message: preview({
+          seq: 8,
+          author_id: "a1",
+          text: "[voice-message-2026-10-24-140509.webm]",
+        }),
+      }),
+      makeConversation({
+        id: "v2",
+        title: "deploys",
+        last_message: preview({ seq: 3, text: "[holiday.mp3]", author_name: "Bob Lima" }),
+      }),
+    ]);
+    renderRoute("/");
+    const rows = within(await sidebar()).getAllByRole("link");
+    expect(within(rows[0] as HTMLElement).getByText("Voice message")).toBeInTheDocument();
+    expect(rows[0]).not.toHaveTextContent("voice-message-2026");
+    // Any other file keeps the name the server gave it.
+    expect(within(rows[1] as HTMLElement).getByText(/\[holiday\.mp3\]/)).toBeInTheDocument();
+  });
+
+  it("keeps the sender's name in front of it in a group", async () => {
+    api([
+      makeConversation({
+        id: "v3",
+        title: "ops",
+        last_message: preview({
+          seq: 3,
+          author_name: "Bob Lima",
+          text: "[voice-message-2026-10-24-140509.ogg]",
+        }),
+      }),
+    ]);
+    renderRoute("/");
+    const row = within(await sidebar()).getAllByRole("link")[0] as HTMLElement;
+    expect(within(row).getByText("Bob Lima: Voice message")).toBeInTheDocument();
+  });
+});
+
 describe("a group's photo in the list (GAV-07)", () => {
   const PHOTO = "/api/v1/rooms/r1/avatar?v=abc";
   const NEXT = "/api/v1/rooms/r1/avatar?v=def";

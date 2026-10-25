@@ -58,7 +58,7 @@ func Message(m rooms.Message) dto.Message {
 		AuthorName: m.AuthorName, Author: messageAuthor(m), AuthorUserID: m.AuthorUserID, SenderID: m.SenderID, SenderAltID: m.SenderAltID,
 		SenderName: m.SenderName, Kind: dto.MessageKind(m.Kind), Text: m.Text, ReplyTo: m.ReplyTo,
 		Recipients: m.Recipients(), ExternalID: m.ExternalID.String,
-		Attachments: make([]dto.Attachment, len(m.Attachments)), CreatedAt: Time(m.CreatedAt),
+		Attachments: make([]dto.Attachment, len(m.Attachments)), Reactions: Reactions(m.Reactions), CreatedAt: Time(m.CreatedAt),
 		EditedAt: OptTime(m.EditedAt), DeletedAt: OptTime(m.DeletedAt),
 	}
 	for i, a := range m.Attachments {
@@ -66,6 +66,15 @@ func Message(m rooms.Message) dto.Message {
 	}
 	if m.Chat != nil {
 		out.Chat = &dto.ChatRef{ID: m.Chat.ID, Title: m.Chat.Title, Kind: dto.ChatKind(m.Chat.Kind), Platform: m.Chat.Platform}
+	}
+	return out
+}
+
+// Reactions renders the reactions of a message; always an array (RCT-05).
+func Reactions(list []rooms.Reaction) []dto.Reaction {
+	out := make([]dto.Reaction, len(list))
+	for i, r := range list {
+		out[i] = dto.Reaction{Emoji: r.Emoji, By: append([]string{}, r.By...)}
 	}
 	return out
 }

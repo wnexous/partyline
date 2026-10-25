@@ -1142,7 +1142,9 @@ test("a message is edited from its menu and deleted after a question; a second w
     member_id: agent.ai.id,
   });
   const rows = (on: Page) => on.locator('[data-testid^="message-"]');
-  const menuOf = (row: Locator) => row.getByRole("button", { name: "Message actions" });
+  // The "⋯" of the row opens the one menu of a message; this context has a mouse, at any width.
+  const menuOf = (row: Locator) =>
+    row.getByRole("button", { name: /^Actions for the message from / });
   const box = page.getByRole("textbox", { name: "Message e2e-edit" });
 
   // A second window of the same account follows everything live, without a reload.
