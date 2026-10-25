@@ -207,6 +207,9 @@ function ComposerForm({
   const [announcement, setAnnouncement] = useState("");
   // From the moment Send stops a recording until the answer: that stop is the user's own.
   const sendingVoice = useRef(false);
+  // Each recording that starts moves it on: an upload's late answer only clears the recording it
+  // was sent from, never one that started while the upload was in flight (VOI-04).
+  const voiceRun = useRef(0);
   const micRef = useRef<HTMLButtonElement>(null);
   // Whether the text box had focus when the recording began. It gets focus back afterwards, and
   // only then: a hold on the microphone must not open the on-screen keyboard (VOI-04).
@@ -334,6 +337,7 @@ function ComposerForm({
   }, [voice.phase]);
 
   const startVoice = () => {
+    voiceRun.current += 1;
     typing.current = document.activeElement === textRef.current;
     refocus.current = null;
     void voice.start();
@@ -348,6 +352,7 @@ function ComposerForm({
       sendingVoice.current = false;
       return;
     }
+    const run = voiceRun.current;
     setError(null);
     post.mutate(
       { text: "", files: [recorded.file], ...(replyTo ? { reply_to: replyTo.id } : {}) },
@@ -357,7 +362,8 @@ function ComposerForm({
           refocus.current = typing.current ? "text" : "mic";
           setAnnouncement("");
           if (replyTo) onClearReply?.();
-          voice.cancel();
+          // Only the recording that was sent: a newer one that started meanwhile stays where it is.
+          if (voiceRun.current === run) voice.cancel();
         },
         // The recording stays, stopped, to send again or to discard.
         onError: (err) => {

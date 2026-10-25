@@ -329,6 +329,30 @@ describe("when the microphone is not available (VOI-06)", () => {
     expect(mic.track.stop).toHaveBeenCalledTimes(1);
   });
 
+  it("says it failed, and lets go, when the recorder cannot start", async () => {
+    class ThrowingRecorder extends FakeRecorder {
+      override start(): never {
+        throw new DOMException("cannot start", "InvalidStateError");
+      }
+    }
+    vi.stubGlobal("MediaRecorder", ThrowingRecorder);
+    // More than one track: the microphone is only let go when every one of them is stopped.
+    const second = { stop: vi.fn() };
+    const stream = { getTracks: () => [mic.track, second] } as unknown as MediaStream;
+    mic.getUserMedia.mockImplementation(async () => stream);
+    const hook = render();
+    await start(hook);
+    expect(hook.result.current.failure).toBe("failed");
+    expect(hook.result.current.phase).toBe("idle");
+    expect(mic.track.stop).toHaveBeenCalledTimes(1);
+    expect(second.stop).toHaveBeenCalledTimes(1);
+    // Nothing the failed start left behind is still running: the clock stays where it was.
+    act(() => vi.advanceTimersByTime(MAX_RECORDING_MS));
+    expect(hook.result.current.elapsedMs).toBe(0);
+    expect(hook.result.current.phase).toBe("idle");
+    expect(hook.result.current.recording).toBeNull();
+  });
+
   it("drops a recording the recorder reports an error for", async () => {
     const hook = render();
     await start(hook);

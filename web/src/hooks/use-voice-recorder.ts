@@ -216,7 +216,16 @@ export function useVoiceRecorder(): VoiceRecorder {
       fail("failed");
     };
     session.current = s;
-    recorder.start();
+    try {
+      recorder.start();
+    } catch {
+      // The recorder would not start (an unsupported state or format): the microphone is let go
+      // and its timers stopped, as when the recorder cannot be made at all.
+      if (session.current === s) session.current = null;
+      teardown(s);
+      fail("failed");
+      return;
+    }
     setPhase("recording");
   }, [fail, finish, setPhase, stop]);
 

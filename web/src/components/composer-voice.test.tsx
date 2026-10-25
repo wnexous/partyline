@@ -1,7 +1,10 @@
 import { act, fireEvent, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
+import { useState } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { Composer } from "@/components/composer";
+import { MicButton } from "@/components/voice-controls";
+import type { VoicePhase } from "@/hooks/use-voice-recorder";
 import { useLiveStore } from "@/lib/live/store";
 import { apiError, json, mockApi } from "@/test/fetch";
 import { makeMessage } from "@/test/fixtures";
@@ -290,6 +293,42 @@ describe("sending (VOI-04)", () => {
     expect(posts(calls)).toHaveLength(1);
   });
 
+  it("keeps a newer recording when the upload of an older one answers late", async () => {
+    let answer: (response: Response) => void = () => {};
+    const { calls } = mockApi({
+      "POST /rooms/r1/messages": () =>
+        new Promise<Response>((resolve) => {
+          answer = resolve;
+        }),
+    });
+    const user = userEvent.setup();
+    renderComposer();
+    await user.click(record());
+    await screen.findByText("Recording");
+    await user.click(sendVoice());
+    await waitFor(() => expect(posts(calls)).toHaveLength(1));
+
+    // The sent recording is discarded and a new one starts while the upload is still in flight.
+    await user.click(screen.getByRole("button", { name: "Discard voice message" }));
+    await waitFor(() => expect(textbox()).toBeInTheDocument());
+    await user.click(record());
+    await screen.findByText("Recording");
+    expect(FakeRecorder.instances).toHaveLength(2);
+
+    // The answer to the first upload arrives now: the recording that followed it stays.
+    await act(async () => {
+      answer(json(201, makeMessage({ seq: 9 })));
+      await Promise.resolve();
+    });
+    await waitFor(() =>
+      expect(screen.getByRole("button", { name: "Send voice message" })).toBeEnabled(),
+    );
+    expect(screen.getByText("Recording")).toBeInTheDocument();
+    expect(FakeRecorder.instances[1]?.state).toBe("recording");
+    expect(mic.track.stop).toHaveBeenCalledTimes(1);
+    expect(posts(calls)).toHaveLength(1);
+  });
+
   it("shows a recording that ended by itself, to be sent or discarded", async () => {
     const { calls } = mockApi({ "POST /rooms/r1/messages": json(201, makeMessage({ seq: 9 })) });
     const user = userEvent.setup();
@@ -466,6 +505,84 @@ describe("a hold records while held (VOI-03)", () => {
     await waitFor(() => expect(textbox()).toBeInTheDocument());
     expect(posts(calls)).toHaveLength(0);
     expect(mic.track.stop).toHaveBeenCalledTimes(1);
+  });
+
+  /** The microphone while the browser is still asking for it: the press starts it and no answer is in. */
+  function PendingPermissionMic({
+    onStart,
+    onSend,
+    onCancel,
+  }: {
+    onStart?: () => void;
+    onSend: () => void;
+    onCancel: () => void;
+  }) {
+    const [phase, setPhase] = useState<VoicePhase>("idle");
+    return (
+      <MicButton
+        phase={phase}
+        sending={false}
+        onStart={() => {
+          setPhase("requesting");
+          onStart?.();
+        }}
+        onSend={onSend}
+        onCancel={onCancel}
+        onHold={vi.fn()}
+      />
+    );
+  }
+
+  it("honours a slide to cancel while the microphone permission is still being asked for", async () => {
+    const onStart = vi.fn();
+    const onSend = vi.fn();
+    const onCancel = vi.fn();
+    renderWithProviders(
+      <PendingPermissionMic onStart={onStart} onSend={onSend} onCancel={onCancel} />,
+    );
+    press({ x: 300 });
+    await act(() => wait(560));
+    move(200);
+    release(200);
+    expect(onStart).toHaveBeenCalledTimes(1);
+    expect(onCancel).toHaveBeenCalledTimes(1);
+    expect(onSend).not.toHaveBeenCalled();
+  });
+
+  it("keeps a hold released without a slide as it was while the permission is pending", async () => {
+    const onSend = vi.fn();
+    const onCancel = vi.fn();
+    renderWithProviders(<PendingPermissionMic onSend={onSend} onCancel={onCancel} />);
+    press({ x: 300 });
+    await act(() => wait(560));
+    release(300);
+    expect(onSend).not.toHaveBeenCalled();
+    expect(onCancel).not.toHaveBeenCalled();
+  });
+
+  it("lets go of a microphone granted after a slide-to-cancel while the permission was pending", async () => {
+    let allow: (stream: MediaStream) => void = () => {};
+    mic.getUserMedia.mockImplementationOnce(
+      () =>
+        new Promise<MediaStream>((resolve) => {
+          allow = resolve;
+        }),
+    );
+    const { calls } = mockApi({});
+    renderComposer();
+    press({ x: 300 });
+    await act(() => wait(560));
+    move(200);
+    release(200);
+    await waitFor(() => expect(textbox()).toBeInTheDocument());
+
+    // The answer to the prompt arrives after the person already cancelled: the microphone is let go.
+    await act(async () => {
+      allow(mic.stream);
+    });
+    await waitFor(() => expect(mic.track.stop).toHaveBeenCalledTimes(1));
+    expect(FakeRecorder.instances).toHaveLength(0);
+    expect(posts(calls)).toHaveLength(0);
   });
 
   it("sends when the finger came back from the edge before it let go", async () => {
