@@ -1,12 +1,12 @@
 package webpush_test
 
 import (
+	"context"
 	"crypto/ecdh"
 	"crypto/ecdsa"
 	"crypto/elliptic"
 	"crypto/rand"
 	"crypto/x509"
-	"database/sql"
 	"encoding/base64"
 	"os"
 	"path/filepath"
@@ -14,8 +14,6 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/require"
-
-	_ "modernc.org/sqlite"
 
 	"github.com/wnexous/partyline/internal/secrets"
 	"github.com/wnexous/partyline/internal/testkit"
@@ -55,8 +53,10 @@ func TestVAPIDKeyIsGeneratedOnceAndSealed(t *testing.T) {
 
 	first, err := webpush.LoadOrCreateVAPID(dir, box)
 	require.NoError(t, err)
+	require.True(t, first.New, "the first call generated the pair")
 	second, err := webpush.LoadOrCreateVAPID(dir, box)
 	require.NoError(t, err)
+	require.False(t, second.New, "the second call reuses the generated key")
 	require.Equal(t, first.Public, second.Public, "the second call reuses the generated key")
 
 	path := filepath.Join(dir, webpush.VAPIDKeyFile)
@@ -94,7 +94,7 @@ func TestVAPIDPublicKeyIsAnUncompressedPoint(t *testing.T) {
 	require.NoError(t, err)
 }
 
-func TestVAPIDReplacesACorruptFileAndDropsSubscriptions(t *testing.T) {
+func TestVAPIDReplacesACorruptFile(t *testing.T) {
 	corrupt := map[string]func(t *testing.T, box *secrets.Box) []byte{
 		"not base64": func(*testing.T, *secrets.Box) []byte {
 			return []byte("not-base64\n")
@@ -117,11 +117,10 @@ func TestVAPIDReplacesACorruptFileAndDropsSubscriptions(t *testing.T) {
 			path := filepath.Join(dir, webpush.VAPIDKeyFile)
 			before := content(t, box)
 			require.NoError(t, os.WriteFile(path, before, 0o600))
-			createPushSubscriptions(t, filepath.Join(dir, "partyline.db"))
 
 			v, err := webpush.LoadOrCreateVAPID(dir, box)
-			require.NoError(t, err, "a bad key file never stops the server")
-			require.True(t, v.Replaced)
+			require.NoError(t, err, "a bad key file is replaced")
+			require.True(t, v.New)
 			point, err := base64.RawURLEncoding.DecodeString(v.Public)
 			require.NoError(t, err)
 			require.Len(t, point, 65)
@@ -134,25 +133,23 @@ func TestVAPIDReplacesACorruptFileAndDropsSubscriptions(t *testing.T) {
 			pub, err := priv.PublicKey.ECDH()
 			require.NoError(t, err)
 			require.Equal(t, v.Public, base64.RawURLEncoding.EncodeToString(pub.Bytes()))
-			require.Equal(t, 0, countPushSubscriptions(t, filepath.Join(dir, "partyline.db")),
-				"subscriptions bound to the old key are dropped")
 		})
 	}
 }
 
-func TestVAPIDReplacesAnUnreadableFile(t *testing.T) {
+func TestVAPIDRefusesADirectoryAsTheKeyFile(t *testing.T) {
 	dir := t.TempDir()
 	box := testBox(t)
 	path := filepath.Join(dir, webpush.VAPIDKeyFile)
-	require.NoError(t, os.Mkdir(path, 0o700), "a directory where the key file should be is unreadable")
-	createPushSubscriptions(t, filepath.Join(dir, "partyline.db"))
+	require.NoError(t, os.Mkdir(path, 0o700), "a directory where the key file should be cannot be a key")
 
 	v, err := webpush.LoadOrCreateVAPID(dir, box)
-	require.NoError(t, err, "an unreadable key file never stops the server")
-	require.True(t, v.Replaced)
-	priv := openSealedVAPID(t, path, box)
-	require.Equal(t, elliptic.P256(), priv.Curve)
-	require.Equal(t, 0, countPushSubscriptions(t, filepath.Join(dir, "partyline.db")))
+	require.Error(t, err)
+	require.Nil(t, v)
+	require.NotContains(t, err.Error(), dir, "the error names the file, not the full path")
+	info, statErr := os.Stat(path)
+	require.NoError(t, statErr)
+	require.True(t, info.IsDir(), "the directory is not deleted")
 }
 
 func TestTheAppLoadsTheVAPIDKey(t *testing.T) {
@@ -171,45 +168,20 @@ func TestTheAppLoadsTheVAPIDKey(t *testing.T) {
 }
 
 func TestTheAppReplacesACorruptVAPIDKey(t *testing.T) {
-	env := testkit.New(t)
+	env := testkit.New(t, testkit.WithoutPush())
+	alice := env.NewUser("alice")
+	subscribe(t, env, alice.User.ID, "https://push.example.test/one")
 	before := env.App.VAPID.Public
 	path := filepath.Join(env.App.Config.DataDir, webpush.VAPIDKeyFile)
 	require.NoError(t, os.WriteFile(path, []byte("not-base64\n"), 0o600))
 
 	env.Restart()
 	require.NotEqual(t, before, env.App.VAPID.Public)
+	require.True(t, env.App.VAPID.New)
 	point, err := base64.RawURLEncoding.DecodeString(env.App.VAPID.Public)
 	require.NoError(t, err)
 	require.Len(t, point, 65)
-}
-
-func createPushSubscriptions(t *testing.T, path string) {
-	t.Helper()
-	raw, err := sql.Open("sqlite", "file:"+path)
+	rows, err := env.App.Store.R().ListPushSubscriptionsByUser(context.Background(), alice.User.ID)
 	require.NoError(t, err)
-	_, err = raw.Exec(`CREATE TABLE push_subscriptions (
-		id TEXT PRIMARY KEY,
-		user_id TEXT NOT NULL,
-		session_id TEXT NOT NULL,
-		endpoint TEXT NOT NULL UNIQUE,
-		p256dh TEXT NOT NULL,
-		auth TEXT NOT NULL,
-		created_at INTEGER NOT NULL,
-		last_ok_at INTEGER)`)
-	require.NoError(t, err)
-	_, err = raw.Exec(`INSERT INTO push_subscriptions
-		(id, user_id, session_id, endpoint, p256dh, auth, created_at)
-		VALUES ('s1', 'u1', 'sess1', 'https://push.example.com/subscription', 'p', 'a', 1)`)
-	require.NoError(t, err)
-	require.NoError(t, raw.Close())
-}
-
-func countPushSubscriptions(t *testing.T, path string) int {
-	t.Helper()
-	raw, err := sql.Open("sqlite", "file:"+path)
-	require.NoError(t, err)
-	defer func() { _ = raw.Close() }()
-	var n int
-	require.NoError(t, raw.QueryRow(`SELECT COUNT(*) FROM push_subscriptions`).Scan(&n))
-	return n
+	require.Empty(t, rows, "subscriptions bound to the old key are dropped")
 }

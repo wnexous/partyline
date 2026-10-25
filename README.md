@@ -470,7 +470,8 @@ first start, and published only as a public key (`GET /api/v1/push/key`).
 - **Back it up with `secret.key` and the database.** Without the file the server makes a new pair and
 deletes every stored subscription, because they were bound to the old key; browsers subscribe again
 on their next signed-in page load, without asking for permission again. A corrupt or unreadable
-`vapid.key` is replaced the same way, and the server always starts.
+`vapid.key` is replaced the same way, and the server always starts. If the file cannot be replaced
+at all (for example a directory at that path), the server still starts with push off until it is fixed.
 - **Use an https public URL.** `PARTYLINE_PUBLIC_URL` is the VAPID subject of every push, and Apple's
 push service refuses a subject that is not `https`: with an `http` URL iPhones get no notifications,
 while Android and desktop browsers keep working.

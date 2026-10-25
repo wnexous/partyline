@@ -2,21 +2,16 @@
 package webpush
 
 import (
-	"context"
 	"crypto/ecdsa"
 	"crypto/elliptic"
 	"crypto/rand"
 	"crypto/x509"
-	"database/sql"
 	"encoding/base64"
 	"errors"
 	"fmt"
-	"log/slog"
 	"os"
 	"path/filepath"
 	"strings"
-
-	_ "modernc.org/sqlite" // registers the "sqlite" driver for the subscription reset below
 
 	"github.com/wnexous/partyline/internal/secrets"
 )
@@ -24,29 +19,24 @@ import (
 // VAPIDKeyFile is the name of the sealed VAPID key file inside the data directory.
 const VAPIDKeyFile = "vapid.key"
 
-// databaseFile is the SQLite file inside the data directory. The loader drops the stored push
-// subscriptions when it has to replace a corrupt key, and the design gives it only the data dir
-// (not the store), so it opens the file itself.
-const databaseFile = "partyline.db"
-
 // VAPID is the instance's Web Push application server key (RFC 8292).
 type VAPID struct {
 	// Private signs the VAPID JWTs.
 	Private *ecdsa.PrivateKey
 	// Public is the 65-byte uncompressed P-256 point, base64url without padding.
 	Public string
-	// Replaced is true when the key file was invalid and a new pair was generated, so that the
-	// app can warn and the stored subscriptions are dropped.
-	Replaced bool
+	// New is true when this call generated a new pair because the file was missing or invalid,
+	// so that the app drops the stored subscriptions (they were bound to the old key).
+	New bool
 }
 
 // LoadOrCreateVAPID returns the instance's VAPID key, creating and sealing it on first start.
 //
 // The private key is PKCS#8 DER sealed with the instance box and written base64 with mode 0600.
 // An existing valid file is opened and reused. A corrupt, wrong-curve or unreadable file is
-// replaced with a new pair and every stored push subscription is deleted (they were bound to the
-// old key); the caller never fails startup on a bad file, only on an I/O error writing the new
-// one (PUSH-26).
+// replaced with a new pair; a missing file creates one. Both set VAPID.New, and the app drops
+// every stored push subscription at startup (PUSH-26). The loader fails only when the file can
+// neither be loaded nor replaced, and app.New keeps running with push off in that case.
 func LoadOrCreateVAPID(dataDir string, box *secrets.Box) (*VAPID, error) {
 	if box == nil {
 		return nil, errors.New("webpush: nil secrets box")
@@ -75,45 +65,46 @@ func createVAPID(path, dataDir string, box *secrets.Box) (*VAPID, error) {
 		return nil, err
 	}
 	if err := os.MkdirAll(dataDir, 0o700); err != nil {
-		return nil, fmt.Errorf("webpush: create data dir: %w", err)
+		return nil, fmt.Errorf("webpush: create data dir: %w", fileErrorKind(err))
 	}
 	f, err := os.OpenFile(path, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0o600) // #nosec G304 -- see LoadOrCreateVAPID
 	if errors.Is(err, os.ErrExist) {
 		existing, readErr := os.ReadFile(path) // #nosec G304 -- see LoadOrCreateVAPID
 		if readErr != nil {
-			return nil, fmt.Errorf("webpush: read %s: %w", VAPIDKeyFile, readErr)
+			return nil, fmt.Errorf("webpush: read %s: %w", VAPIDKeyFile, fileErrorKind(readErr))
 		}
 		return openVAPID(existing, box)
 	}
 	if err != nil {
-		return nil, fmt.Errorf("webpush: create %s: %w", VAPIDKeyFile, err)
+		return nil, fmt.Errorf("webpush: create %s: %w", VAPIDKeyFile, fileErrorKind(err))
 	}
 	if _, err := f.Write(data); err != nil {
 		_ = f.Close()
 		_ = os.Remove(path)
-		return nil, fmt.Errorf("webpush: write %s: %w", VAPIDKeyFile, err)
+		return nil, fmt.Errorf("webpush: write %s: %w", VAPIDKeyFile, fileErrorKind(err))
 	}
 	if err := f.Close(); err != nil {
 		_ = os.Remove(path)
-		return nil, fmt.Errorf("webpush: write %s: %w", VAPIDKeyFile, err)
+		return nil, fmt.Errorf("webpush: write %s: %w", VAPIDKeyFile, fileErrorKind(err))
 	}
+	v.New = true
 	return v, nil
 }
 
-// replaceVAPID removes an invalid key file, creates a new pair and drops the stored subscriptions.
+// replaceVAPID removes an invalid key file and creates a new pair. A directory at the path is not
+// a key file the server may delete: the caller runs with push off until an operator fixes it.
 func replaceVAPID(path, dataDir string, box *secrets.Box) (*VAPID, error) {
+	info, err := os.Stat(path)
+	switch {
+	case err == nil && info.IsDir():
+		return nil, fmt.Errorf("webpush: replace %s: is a directory", VAPIDKeyFile)
+	case err != nil && !errors.Is(err, os.ErrNotExist):
+		return nil, fmt.Errorf("webpush: replace %s: %w", VAPIDKeyFile, fileErrorKind(err))
+	}
 	if err := os.Remove(path); err != nil && !errors.Is(err, os.ErrNotExist) {
-		return nil, fmt.Errorf("webpush: replace %s: %w", VAPIDKeyFile, err)
+		return nil, fmt.Errorf("webpush: replace %s: %w", VAPIDKeyFile, fileErrorKind(err))
 	}
-	v, err := createVAPID(path, dataDir, box)
-	if err != nil {
-		return nil, err
-	}
-	v.Replaced = true
-	if err := dropSubscriptions(context.Background(), dataDir); err != nil {
-		slog.Default().Warn("webpush: replaced an invalid VAPID key but could not drop the stored subscriptions", "err", err)
-	}
-	return v, nil
+	return createVAPID(path, dataDir, box)
 }
 
 // newVAPID generates a P-256 key pair and its sealed file content.
@@ -171,30 +162,12 @@ func publicPoint(priv *ecdsa.PrivateKey) (string, error) {
 	return base64.RawURLEncoding.EncodeToString(point.Bytes()), nil
 }
 
-// dropSubscriptions deletes every push subscription of the database in dataDir. A database or
-// table that does not exist yet (a fresh install, or a schema older than migration 0025) has
-// nothing to drop.
-func dropSubscriptions(ctx context.Context, dataDir string) error {
-	path := filepath.Join(dataDir, databaseFile)
-	if _, err := os.Stat(path); err != nil {
-		if errors.Is(err, os.ErrNotExist) {
-			return nil
-		}
-		return err
+// fileErrorKind drops the path from an os error before it is wrapped, so a log line carries only
+// the key file's name and the error kind (permission, directory, and so on), never a full path.
+func fileErrorKind(err error) error {
+	var pathErr *os.PathError
+	if errors.As(err, &pathErr) {
+		return pathErr.Err
 	}
-	db, err := sql.Open("sqlite", "file:"+path+"?_pragma=busy_timeout(5000)") // #nosec G304 -- path is built from the configured data dir
-	if err != nil {
-		return err
-	}
-	defer func() { _ = db.Close() }()
-	var tables int
-	if err := db.QueryRowContext(ctx,
-		`SELECT COUNT(*) FROM sqlite_master WHERE type = 'table' AND name = 'push_subscriptions'`).Scan(&tables); err != nil {
-		return err
-	}
-	if tables == 0 {
-		return nil
-	}
-	_, err = db.ExecContext(ctx, `DELETE FROM push_subscriptions`)
 	return err
 }

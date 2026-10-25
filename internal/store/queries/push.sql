@@ -19,6 +19,28 @@ DELETE FROM push_subscriptions WHERE endpoint = ? AND user_id = ?;
 -- The push service answered 404 or 410: the row is gone for good (PUSH-12).
 DELETE FROM push_subscriptions WHERE id = ?;
 
+-- name: CountPushSubscriptionsByUser :one
+-- How many devices the account has stored, to keep it under the cap (PUSH-03).
+SELECT COUNT(*) FROM push_subscriptions WHERE user_id = ?;
+
+-- name: HasPushSubscriptionForUserEndpoint :one
+-- Whether the endpoint is already one of the account's rows: re-registering it updates the row
+-- and does not count against the cap (PUSH-03).
+SELECT EXISTS (
+    SELECT 1 FROM push_subscriptions WHERE user_id = ? AND endpoint = ?
+);
+
+-- name: DeleteOldestPushSubscriptionOfUser :execrows
+-- The account registered one device too many: its oldest row makes room (PUSH-03).
+DELETE FROM push_subscriptions
+WHERE id = (
+    SELECT s.id FROM push_subscriptions s WHERE s.user_id = ? ORDER BY s.created_at, s.id LIMIT 1
+);
+
+-- name: DeleteAllPushSubscriptions :execrows
+-- A new VAPID pair invalidates every stored subscription (PUSH-26).
+DELETE FROM push_subscriptions;
+
 -- name: ListPushSubscriptionsByUser :many
 -- Every device of the user, for the test notification (PUSH-15).
 SELECT * FROM push_subscriptions WHERE user_id = ? ORDER BY created_at, id;

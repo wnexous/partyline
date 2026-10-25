@@ -10,6 +10,47 @@ import (
 	"database/sql"
 )
 
+const countPushSubscriptionsByUser = `-- name: CountPushSubscriptionsByUser :one
+SELECT COUNT(*) FROM push_subscriptions WHERE user_id = ?
+`
+
+// How many devices the account has stored, to keep it under the cap (PUSH-03).
+func (q *Queries) CountPushSubscriptionsByUser(ctx context.Context, userID string) (int64, error) {
+	row := q.db.QueryRowContext(ctx, countPushSubscriptionsByUser, userID)
+	var count int64
+	err := row.Scan(&count)
+	return count, err
+}
+
+const deleteAllPushSubscriptions = `-- name: DeleteAllPushSubscriptions :execrows
+DELETE FROM push_subscriptions
+`
+
+// A new VAPID pair invalidates every stored subscription (PUSH-26).
+func (q *Queries) DeleteAllPushSubscriptions(ctx context.Context) (int64, error) {
+	result, err := q.db.ExecContext(ctx, deleteAllPushSubscriptions)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected()
+}
+
+const deleteOldestPushSubscriptionOfUser = `-- name: DeleteOldestPushSubscriptionOfUser :execrows
+DELETE FROM push_subscriptions
+WHERE id = (
+    SELECT s.id FROM push_subscriptions s WHERE s.user_id = ? ORDER BY s.created_at, s.id LIMIT 1
+)
+`
+
+// The account registered one device too many: its oldest row makes room (PUSH-03).
+func (q *Queries) DeleteOldestPushSubscriptionOfUser(ctx context.Context, userID string) (int64, error) {
+	result, err := q.db.ExecContext(ctx, deleteOldestPushSubscriptionOfUser, userID)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected()
+}
+
 const deletePushSubscription = `-- name: DeletePushSubscription :execrows
 DELETE FROM push_subscriptions WHERE endpoint = ? AND user_id = ?
 `
@@ -39,6 +80,26 @@ func (q *Queries) DeletePushSubscriptionByID(ctx context.Context, id string) (in
 		return 0, err
 	}
 	return result.RowsAffected()
+}
+
+const hasPushSubscriptionForUserEndpoint = `-- name: HasPushSubscriptionForUserEndpoint :one
+SELECT EXISTS (
+    SELECT 1 FROM push_subscriptions WHERE user_id = ? AND endpoint = ?
+)
+`
+
+type HasPushSubscriptionForUserEndpointParams struct {
+	UserID   string
+	Endpoint string
+}
+
+// Whether the endpoint is already one of the account's rows: re-registering it updates the row
+// and does not count against the cap (PUSH-03).
+func (q *Queries) HasPushSubscriptionForUserEndpoint(ctx context.Context, arg HasPushSubscriptionForUserEndpointParams) (bool, error) {
+	row := q.db.QueryRowContext(ctx, hasPushSubscriptionForUserEndpoint, arg.UserID, arg.Endpoint)
+	var exists bool
+	err := row.Scan(&exists)
+	return exists, err
 }
 
 const listDMPushTargets = `-- name: ListDMPushTargets :many
