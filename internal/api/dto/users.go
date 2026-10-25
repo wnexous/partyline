@@ -39,6 +39,8 @@ type Me struct {
 	Intelligence IntelligenceRef `json:"intelligence"`
 	Role         Role            `json:"role"`
 	Locale       string          `json:"locale"`
+	// PushGroups is how group messages notify this account: all, mentions or off (PUSH-06).
+	PushGroups string `json:"push_groups"`
 	// DefaultOrgID is the organization the user's new AIs join when they start without --org (ORG-04): the one
 	// they chose, while they still belong to it, else the organization they have administered the longest, else
 	// the one they have belonged to the longest. Absent when they belong to none.
@@ -55,6 +57,8 @@ type SetDefaultOrgRequest struct {
 type UpdateMeRequest struct {
 	DisplayName *string `json:"display_name,omitempty"`
 	Locale      *string `json:"locale,omitempty"`
+	// PushGroups is all, mentions or off (PUSH-06).
+	PushGroups *string `json:"push_groups,omitempty"`
 }
 
 // ChangePasswordRequest is the body of POST /me/password.

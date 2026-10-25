@@ -2115,6 +2115,56 @@ export interface Invitation {
 }
 
 //////////
+// source: push.go
+
+/**
+ * PushKey is the answer of GET /push/key: the instance's VAPID public key, base64url without
+ * padding (PUSH-02).
+ */
+export interface PushKey {
+  public_key: string;
+}
+/**
+ * PushSubscriptionRequest is the body of POST /push/subscriptions: the endpoint and the two
+ * keys a browser's PushSubscription carries (PUSH-03, PUSH-04).
+ */
+export interface PushSubscriptionRequest {
+  endpoint: string;
+  p256dh: string;
+  auth: string;
+}
+/**
+ * PushSubscription is one stored subscription of the caller. It never carries the auth secret
+ * back (PUSH-03, PUSH-22).
+ */
+export interface PushSubscription {
+  id: string;
+  endpoint: string;
+  /**
+   * CreatedAt is when the endpoint first registered; a later POST keeps it.
+   */
+  created_at: string /* RFC 3339 */;
+  /**
+   * LastOkAt is the last 2xx of the push service; absent until one (PUSH-12).
+   */
+  last_ok_at?: string /* RFC 3339 */;
+}
+/**
+ * PushUnsubscribeRequest is the body of DELETE /push/subscriptions: the endpoint travels in the
+ * body because it is a URL with slashes and a long capability token (PUSH-05).
+ */
+export interface PushUnsubscribeRequest {
+  endpoint: string;
+}
+/**
+ * PushTest is the answer of POST /push/test: how many test notifications the queue took
+ * (PUSH-15).
+ */
+export interface PushTest {
+  queued: number /* int */;
+}
+
+//////////
 // source: reactions.go
 
 /**
@@ -2555,6 +2605,10 @@ export interface Me {
   role: Role;
   locale: string;
   /**
+   * PushGroups is how group messages notify this account: all, mentions or off (PUSH-06).
+   */
+  push_groups: string;
+  /**
    * DefaultOrgID is the organization the user's new AIs join when they start without --org (ORG-04): the one
    * they chose, while they still belong to it, else the organization they have administered the longest, else
    * the one they have belonged to the longest. Absent when they belong to none.
@@ -2574,6 +2628,10 @@ export interface SetDefaultOrgRequest {
 export interface UpdateMeRequest {
   display_name?: string;
   locale?: string;
+  /**
+   * PushGroups is all, mentions or off (PUSH-06).
+   */
+  push_groups?: string;
 }
 /**
  * ChangePasswordRequest is the body of POST /me/password.

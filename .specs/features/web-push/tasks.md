@@ -422,10 +422,10 @@ queued test sends never leave the process):
 - `TestGroupPushSetting`: `GET /me` has `push_groups: "mentions"`; `PATCH /me {"push_groups":"off"}` →
   200 and the value persists; `"none"` → 422 on `push_groups`; an agent token PATCH → 403.
 **Done when**:
-- [ ] every route's success, 401, 403, 422/404/409/429/503 is asserted at its status and code
-- [ ] the DELETE body is used (not a path parameter) and only the caller's row is removed
-- [ ] `make generate` ran and the TypeScript types are committed
-- [ ] Gate check passes: `make check`
+- [x] every route's success, 401, 403, 422/404/409/429/503 is asserted at its status and code
+- [x] the DELETE body is used (not a path parameter) and only the caller's row is removed
+- [x] `make generate` ran and the TypeScript types are committed
+- [x] Gate check passes: `make check`
 **Tests**: e2e
 **Gate**: build
 **Commit**: `feat(api): serve the push routes and the group notification setting`

@@ -31,7 +31,7 @@ func msTime(v int64) time.Time { return convert.Time(v) }
 func toMe(u db.User, displayName string) dto.Me {
 	return dto.Me{
 		ID: u.ID, Username: u.Username, DisplayName: displayName,
-		Role: dto.Role(u.Role), Locale: u.Locale, CreatedAt: msTime(u.CreatedAt),
+		Role: dto.Role(u.Role), Locale: u.Locale, PushGroups: u.PushGroups, CreatedAt: msTime(u.CreatedAt),
 	}
 }
 
@@ -125,7 +125,9 @@ func (s *server) updateMe(w http.ResponseWriter, r *http.Request, p authn.Princi
 	if err := httpx.DecodeJSON(w, r, &req); err != nil {
 		return err
 	}
-	u, err := s.Users.UpdateProfile(r.Context(), p.UserID, users.ProfileUpdate{DisplayName: req.DisplayName, Locale: req.Locale})
+	u, err := s.Users.UpdateProfile(r.Context(), p.UserID, users.ProfileUpdate{
+		DisplayName: req.DisplayName, Locale: req.Locale, PushGroups: req.PushGroups,
+	})
 	if err != nil {
 		return err
 	}
