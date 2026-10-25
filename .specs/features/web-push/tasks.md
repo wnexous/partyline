@@ -541,10 +541,10 @@ fake `self` that captures the registered listeners; the test awaits the `waitUnt
 - the worker source contains no `localStorage`, `indexedDB` or `caches` write (PUSH-22: the payload lives
   in memory for `showNotification` only).
 **Done when**:
-- [ ] the worker is a plain script (no imports, no `export`, no inline HTML) and passes `bun run lint`;
+- [x] the worker is a plain script (no imports, no `export`, no inline HTML) and passes `bun run lint`;
       the test's `new Function` carries the `biome-ignore lint/security/noGlobalEval` comment
-- [ ] the suppression uses `client.focused` and the URL **path**, not the whole URL
-- [ ] Gate check passes: `make check`
+- [x] the suppression uses `client.focused` and the URL **path**, not the whole URL
+- [x] Gate check passes: `make check`
 **Tests**: web unit
 **Gate**: build
 **Commit**: `feat(web): show push notifications in the service worker`
