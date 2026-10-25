@@ -16,6 +16,9 @@ var testDist = fstest.MapFS{
 	"index.html":              {Data: []byte("<!doctype html><title>partyline</title>")},
 	"theme-init.js":           {Data: []byte("/* theme */")},
 	"favicon.svg":             {Data: []byte("<svg/>")},
+	"manifest.webmanifest":    {Data: []byte(`{"name":"partyline","start_url":"/"}`)},
+	"sw.js":                   {Data: []byte("self.addEventListener('push', () => {})")},
+	"icons/icon-192.png":      {Data: []byte("\x89PNG\r\n\x1a\n")},
 	"assets/index-Abc123.js":  {Data: []byte("console.log(1)")},
 	"assets/index-Abc123.css": {Data: []byte("body{}")},
 }
@@ -84,6 +87,29 @@ func TestStaticFilesAndCaching(t *testing.T) {
 	require.Equal(t, http.StatusOK, rec.Code)
 	body, _ := io.ReadAll(rec.Body)
 	require.Empty(t, body)
+}
+
+// PUSH-20: the manifest, the worker and the icons are served from the root with their own media
+// types, revalidated on every load.
+func TestManifestWorkerAndIconsAreServed(t *testing.T) {
+	h := newHandler(t)
+
+	rec := serve(t, h, http.MethodGet, "/manifest.webmanifest")
+	require.Equal(t, http.StatusOK, rec.Code)
+	require.Equal(t, "application/manifest+json", rec.Header().Get("Content-Type"))
+	require.Equal(t, "no-cache", rec.Header().Get("Cache-Control"))
+	require.JSONEq(t, `{"name":"partyline","start_url":"/"}`, rec.Body.String())
+
+	rec = serve(t, h, http.MethodGet, "/sw.js")
+	require.Equal(t, http.StatusOK, rec.Code)
+	require.Contains(t, rec.Header().Get("Content-Type"), "text/javascript")
+	require.Equal(t, "no-cache", rec.Header().Get("Cache-Control"))
+	require.Contains(t, rec.Body.String(), "addEventListener")
+
+	rec = serve(t, h, http.MethodGet, "/icons/icon-192.png")
+	require.Equal(t, http.StatusOK, rec.Code)
+	require.Equal(t, "image/png", rec.Header().Get("Content-Type"))
+	require.Equal(t, "no-cache", rec.Header().Get("Cache-Control"))
 }
 
 // Without a built web app the binary serves the committed placeholder page.

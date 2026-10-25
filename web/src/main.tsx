@@ -7,12 +7,17 @@ import { RouterProvider } from "@tanstack/react-router";
 import { StrictMode } from "react";
 import { createRoot } from "react-dom/client";
 import { AppProviders } from "./components/app-providers";
+import { registerServiceWorker } from "./lib/push/register";
 import { createAppRouter } from "./router";
 
 const queryClient = new QueryClient({
   defaultOptions: { queries: { staleTime: 30_000, retry: 1, refetchOnWindowFocus: false } },
 });
 const router = createAppRouter(queryClient);
+
+// The worker that shows push notifications is served from the root and registered on every load;
+// a browser that cannot register it keeps working (PUSH-19, PUSH-21).
+void registerServiceWorker();
 
 const root = document.getElementById("root");
 if (!root) throw new Error("missing #root element");

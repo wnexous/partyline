@@ -9,6 +9,7 @@ package webui
 import (
 	"embed"
 	"io/fs"
+	"mime"
 	"net/http"
 	"net/url"
 	"path"
@@ -23,6 +24,12 @@ var fallbackFS embed.FS
 
 // immutableCache is sent for content-hashed build assets.
 const immutableCache = "public, max-age=31536000, immutable"
+
+// init teaches Go's MIME table the manifest's media type (PUSH-20). Without it the file would be
+// sniffed and served as plain text, which a browser refuses to install.
+func init() {
+	_ = mime.AddExtensionType(".webmanifest", "application/manifest+json")
+}
 
 // CSP returns the policy for HTML pages served from origin (scheme://host). Scripts load
 // only from the instance (no inline scripts); the live WebSocket is allowed explicitly
