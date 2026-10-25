@@ -270,6 +270,7 @@ const viewer = (over: Partial<MessageCapabilities> = {}): MessageCapabilities =>
   canReply: true,
   canModerate: false,
   canEdit: true,
+  canReact: true,
   frozen: false,
   ...over,
 });
@@ -296,15 +297,20 @@ describe("which messages have actions (ACT-05, EDT-10, DLT-09)", () => {
     expect(hasMessageActions(gone, viewer({ canModerate: true }))).toBe(false);
   });
 
-  it("Reply for whoever may post, Copy text for whatever has text", () => {
+  it("Reply for whoever may post, Copy text for whatever has text, reactions for whoever may react", () => {
+    const reader = { canReply: false, canReact: false };
     expect(hasMessageActions(other, viewer())).toBe(true);
-    expect(hasMessageActions(other, viewer({ canReply: false }))).toBe(true);
+    expect(hasMessageActions(other, viewer(reader))).toBe(true);
     expect(hasMessageActions({ ...other, text: "" }, viewer())).toBe(true);
-    expect(hasMessageActions({ ...other, text: "  \n " }, viewer({ canReply: false }))).toBe(false);
+    expect(hasMessageActions({ ...other, text: "" }, viewer({ ...reader, canReact: true }))).toBe(
+      true,
+    );
+    expect(hasMessageActions({ ...other, text: "  \n " }, viewer(reader))).toBe(false);
   });
 
   it("the author's own text message offers all four", () => {
     expect(messageActionSet(own, viewer())).toEqual({
+      react: true,
       reply: true,
       copy: true,
       edit: true,
@@ -314,12 +320,14 @@ describe("which messages have actions (ACT-05, EDT-10, DLT-09)", () => {
 
   it("someone else's message offers Reply and Copy text, and Delete to the manager of the group alone", () => {
     expect(messageActionSet(other, viewer())).toEqual({
+      react: true,
       reply: true,
       copy: true,
       edit: false,
       remove: false,
     });
     expect(messageActionSet(other, viewer({ canModerate: true }))).toEqual({
+      react: true,
       reply: true,
       copy: true,
       edit: false,
@@ -335,10 +343,19 @@ describe("which messages have actions (ACT-05, EDT-10, DLT-09)", () => {
       attachments: [recording],
     });
     expect(messageActionSet(fileOnly, viewer())).toEqual({
+      react: true,
       reply: true,
       copy: false,
       edit: true,
       remove: true,
+    });
+  });
+
+  it("no reaction where the viewer may not react, though Reply and Copy text stay", () => {
+    expect(messageActionSet(other, viewer({ canReact: false }))).toMatchObject({
+      react: false,
+      reply: true,
+      copy: true,
     });
   });
 
@@ -351,6 +368,7 @@ describe("which messages have actions (ACT-05, EDT-10, DLT-09)", () => {
 
   it("a conversation that is history keeps Copy text and nothing else (CID-21)", () => {
     expect(messageActionSet(own, viewer({ frozen: true, canModerate: true }))).toEqual({
+      react: false,
       reply: false,
       copy: true,
       edit: false,

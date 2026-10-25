@@ -1,5 +1,5 @@
 import { type LucideIcon, XIcon } from "lucide-react";
-import { Fragment, type ReactNode } from "react";
+import { Fragment, type ReactNode, useRef } from "react";
 import { Button } from "@/components/ui/button";
 import {
   DropdownMenu,
@@ -81,6 +81,11 @@ function ActionSheet({
 }: ActionMenuProps) {
   const t = useT();
   const rule = firstDestructive(actions);
+  // Whether a press has begun inside the sheet. The finger that opened it is still down, and some
+  // browsers send its release as a click on whatever is under it by then: a button of the sheet.
+  // Only a click that follows a press here is a tap. A click with no `detail` is the keyboard's
+  // or a screen reader's, which press nothing, and is a choice too.
+  const pressed = useRef(false);
   return (
     <Sheet open={open} onOpenChange={(next) => (next ? null : onClose())}>
       <SheetContent
@@ -88,14 +93,27 @@ function ActionSheet({
         showCloseButton={false}
         // Without a line under the title the sheet has no description to point at.
         {...(description ? {} : { "aria-describedby": undefined })}
+        onPointerDownCapture={() => {
+          pressed.current = true;
+        }}
+        onClickCapture={(event) => {
+          if (event.detail === 0) return;
+          if (pressed.current) {
+            pressed.current = false;
+            return;
+          }
+          event.preventDefault();
+          event.stopPropagation();
+        }}
         // Focus is in the sheet, on no action: a row that opens with a ring on it looks chosen.
         // The first Tab reaches the first action.
         onOpenAutoFocus={(event) => {
           event.preventDefault();
+          pressed.current = false;
           (event.target as HTMLElement | null)?.focus({ preventScroll: true });
         }}
         onCloseAutoFocus={onCloseFocus}
-        className="gap-0 rounded-t-xl outline-none bg-popover pb-[max(0.5rem,env(safe-area-inset-bottom))] text-popover-foreground data-[state=closed]:duration-150 data-[state=open]:duration-200"
+        className="max-h-[85dvh] gap-0 overflow-y-auto rounded-t-xl outline-none bg-popover pb-[max(0.5rem,env(safe-area-inset-bottom))] text-popover-foreground data-[state=closed]:duration-150 data-[state=open]:duration-200"
       >
         <SheetHeader className="gap-0.5 py-3 pr-14 pl-4">
           <SheetTitle className="truncate">{title}</SheetTitle>

@@ -86,6 +86,10 @@ On 2026-10-24 the product owner asked to edit and delete messages in conversatio
 | Focus around a recording | The text box is hidden while a recording is on, so focus moves to the button that sends it; when the recording ends it goes back to the text box if that had focus as it began, else it stays on the microphone | Escape and screen readers need focus inside the composer, and a hold on a phone must not open the keyboard behind the conversation | n |
 | Where reactions live | A `message_reactions` table (message, intelligence, emoji) and two routes on a room's message: `POST /rooms/{id}/messages/{mid}/reactions` with `{"emoji"}` and `DELETE /rooms/{id}/messages/{mid}/reactions/{emoji}` (the emoji percent-encoded); `Message.reactions` lists, per emoji, the intelligences that used it, in the order they reacted. A change is told to the room as `room.reactions` with the message's reactions whole, not as a difference, to whoever can see the room and to nobody else; a call that changes nothing is not told. Migration 0024 follows 0023 of the message edit work. The agent `react` tool is for platform messages and stays as it is | The API had no user route (the agent route stores a message of kind `reaction` aimed at a chat, which AD-015 retired for rooms). Smallest change that every client can render | n |
 | Who may react | Whoever may post in the room (`post` level); the author may react to their own message; one emoji per request (`validation.OneEmoji`); at most 12 different emoji on a message | Reacting is taking part | n |
+| The six and the rest | Six emoji, 👍 ❤️ 😂 😮 😢 🙏, and a "More" button, in three places: at the top of the sheet (touch), as the first row of the menu (mouse), and as a toolbar on the message's row that shows on hover and keyboard focus (mouse). "More" opens 48 others in rows of eight, which do not repeat the six (they sit beside the button): in the sheet in place of the actions, with a mouse in a popover where the menu was or under the toolbar's button. All 54 are one emoji each of Unicode 13 or older, which the server accepts | The six cover most reactions and the rest is one step away; a font older than the newest emoji still draws them | n |
+| What a tap does | It adds the viewer's reaction, or takes it back when the emoji is already theirs. The chip shows at once and the server's answer settles it; a request that fails undoes only itself and says so, and so does a 13th different emoji (the client says it first); the answer of an earlier tap is not written while a later one on the same message is still on its way | Instant feedback on a phone's connection, with the server as the authority | n |
+| The chips | One per emoji under the text and the files, with the count. The viewer's own has the `tape` fill and `aria-pressed`, and the name says it ("👍 2 reactions, including yours"); 28 px high with a mouse and 36 px on a touch device. A viewer who may not react (reads only, or the conversation is history) sees them with nothing to press | DESIGN.md: tape is what you act on or where you are, and small chips are tape | n |
+| The finger that opened the sheet | A sheet takes a click as a tap only when a press began in it; the keyboard's and a screen reader's clicks have no press (`detail` 0) and count. Some browsers send the release of the finger that opened the sheet as a click on whatever is under it by then: with the bar the sheet reaches higher, and in the headless browser that click answered the message | Cheap to rule out, and a mistaken Reply or reaction is a surprise | n |
 | Group photo transport | The image is the raw request body (`Content-Type` image/png, image/jpeg or image/webp), like the photo of an intelligence or an organization; there is no multipart form | One way in, one processing path (`avatars.Process`, 256×256 PNG, blob store), and the web app reuses the code of the profile photo. A multipart form was considered and dropped on 2026-10-24 | y |
 | Who may change it | The manage level on the group (its creator and the admins of its organization, AD-016); who only posts gets 403, who cannot see the group 404 | The same rule as renaming or deleting the group | n |
 | DM | No avatar of its own: the routes answer like the other manage-only routes of a DM (403 to who sees it, 404 to the rest) and `avatar_url` is absent; the app shows the other party | A DM is not managed by anyone (DM-02) | n |
@@ -308,7 +312,7 @@ On 2026-10-24 the product owner asked to edit and delete messages in conversatio
 
 **Acceptance Criteria**:
 
-1. WHEN a finger or pen rests on a conversation of the list or on a message for 0.5 s, moving at most 10 px, THEN an action sheet SHALL open from the bottom. A tap, a scroll, a drag or a press released earlier SHALL NOT open it; a tap still opens the conversation; the click that ends a long press SHALL NOT open the conversation. (ACT-01)
+1. WHEN a finger or pen rests on a conversation of the list or on a message for 0.5 s, moving at most 10 px, THEN an action sheet SHALL open from the bottom. A tap, a scroll, a drag or a press released earlier SHALL NOT open it; a tap still opens the conversation; the click that ends a long press SHALL NOT open the conversation, and the release of the finger SHALL NOT choose an action of the sheet that is under it. (ACT-01)
 2. WHEN the user right-clicks a conversation or a message, or presses the context-menu key or Shift+F10 on it, THEN a menu SHALL open at the pointer; a "⋯" button on the row, shown on hover and on keyboard focus, SHALL open the same menu. The browser's own menu SHALL NOT open. (ACT-02)
 3. A conversation's menu SHALL offer, in this order and only where they apply: Mark as read (it has unread messages), View profile (a DM) and Delete group (the viewer manages the group; never a DM). They use the existing routes (`PUT /rooms/{id}/read`, `DELETE /rooms/{id}`). It SHALL NOT offer Leave group, which the rules of the server leave without effect. (ACT-03)
 4. Delete group SHALL ask first in an alert dialog that names the conversation, with Cancel focused; a failure SHALL leave the conversation where it is and say so; deleting the open conversation SHALL go back to the list. (ACT-04)
@@ -342,12 +346,12 @@ On 2026-10-24 the product owner asked to edit and delete messages in conversatio
 **Acceptance Criteria**:
 
 1. A message with reactions SHALL show them under its text, one chip per emoji with its count; the viewer's own SHALL be marked (tape fill, `aria-pressed`, a name that says so); activating a chip SHALL add or remove the viewer's reaction. (RCT-01)
-2. The message menu and sheet SHALL start with a bar of six quick emoji and a "More" button that opens a larger set; on a mouse the same bar SHALL appear on hover and keyboard focus of the row. Choosing one the viewer already used removes it. (RCT-02)
+2. The message menu and sheet SHALL start with a bar of six quick emoji and a "More" button that opens 48 others (in the sheet in place of the actions, with a mouse in a popover); on a mouse the same six and the button SHALL also appear as a toolbar on hover and keyboard focus of the row. Only a viewer who may post, in a conversation that is not history, is offered them. Choosing one the viewer already used removes it. (RCT-02)
 3. `POST /rooms/{id}/messages/{mid}/reactions` with `{"emoji"}` SHALL add the caller's reaction and `DELETE /rooms/{id}/messages/{mid}/reactions/{emoji}` SHALL remove it; both answer 200 with the message's reactions as they are afterwards, and repeating a call changes nothing. Both need `post` on the room; a message of another room or a room the caller cannot see is 404. (RCT-03)
 4. IF the emoji is not exactly one emoji, THEN the server SHALL answer 422 `invalid`; IF the message already has 12 different emoji and this is a new one, THEN 422 `reaction_limit`. (RCT-04)
 5. `Message.reactions` SHALL list, for each emoji, the ids of the intelligences that used it in the order they reacted, for every message the API returns, live frames included; the viewer's own is the one whose id matches theirs. (RCT-05)
 6. WHEN anyone reacts or takes a reaction back THEN every open client of the room SHALL update without a reload (`room.reactions` live event), and the message SHALL NOT move in the timeline. (RCT-06)
-7. A reaction SHALL be removed with its message and with its room, and an intelligence's reactions with the intelligence. (RCT-07)
+7. A reaction SHALL be removed with its message and with its room, and an intelligence's reactions with the intelligence. WHEN a message is deleted (DLT, the placeholder) THEN its reactions SHALL go with its text, a reaction on it SHALL be refused with 409 `conflict`, and taking one back SHALL be a 200 that changes nothing. (RCT-07)
 8. Chips and the bar SHALL be keyboard and screen-reader accessible (buttons with names such as "👍 2 reactions, including yours"); a failed toggle SHALL undo itself and say so. (RCT-08)
 
 **Independent Test**: React with 👍 from one session: the other open session shows "👍 1"; the first taps the chip again and it goes away on both.
@@ -443,14 +447,14 @@ On 2026-10-24 the product owner asked to edit and delete messages in conversatio
 | SWP-02 | P2: Swipe to reply | Execute | Implemented |
 | SWP-03 | P2: Swipe to reply | Execute | Implemented |
 | SWP-04 | P2: Swipe to reply | Execute | Implemented |
-| RCT-01 | P2: Reactions | Execute | Implementing |
-| RCT-02 | P2: Reactions | Execute | Implementing |
+| RCT-01 | P2: Reactions | Execute | Implemented |
+| RCT-02 | P2: Reactions | Execute | Implemented |
 | RCT-03 | P2: Reactions | Execute | Implemented |
 | RCT-04 | P2: Reactions | Execute | Implemented |
 | RCT-05 | P2: Reactions | Execute | Implemented |
-| RCT-06 | P2: Reactions | Execute | Implementing |
+| RCT-06 | P2: Reactions | Execute | Implemented |
 | RCT-07 | P2: Reactions | Execute | Implemented |
-| RCT-08 | P2: Reactions | Execute | Implementing |
+| RCT-08 | P2: Reactions | Execute | Implemented |
 
 **Coverage:** 93 total
 

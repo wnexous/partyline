@@ -16,6 +16,7 @@ import {
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useTouchFirst } from "@/hooks/use-enter-sends";
+import { useReact } from "@/hooks/use-react";
 import { useStickToEnd } from "@/hooks/use-stick-to-end";
 import { useRoomMessages } from "@/lib/api/queries";
 import type { Message, Page, RoomMember } from "@/lib/api/types.gen";
@@ -93,7 +94,9 @@ export interface MessageTimelineProps {
   canModerate?: boolean;
   /** Starts editing a message in the composer (EDT-10). */
   onEdit?: (message: Message) => void;
-  /** The conversation is history (CID-21): nothing in it is answered, edited or deleted; Copy text stays. */
+  /** The viewer may react to the messages (RCT-03): they may post. Without it the chips are only shown. */
+  canReact?: boolean;
+  /** The conversation is history (CID-21): nothing in it is answered, edited, deleted or reacted to; Copy text stays. */
   frozen?: boolean;
 }
 
@@ -106,6 +109,7 @@ export function MessageTimeline({
   onReply,
   canModerate,
   onEdit,
+  canReact,
   frozen,
 }: MessageTimelineProps) {
   const { t, locale } = useI18n();
@@ -126,10 +130,12 @@ export function MessageTimeline({
       canReply: onReply !== undefined,
       canModerate: canModerate ?? false,
       canEdit: onEdit !== undefined,
+      canReact: canReact ?? false,
       frozen: frozen ?? false,
     }),
-    [meId, onReply, canModerate, onEdit, frozen],
+    [meId, onReply, canModerate, onEdit, canReact, frozen],
   );
+  const react = useReact(roomId, meId);
   const query = useRoomMessages(roomId);
   const { hasNextPage, isFetchingNextPage, fetchNextPage } = query;
   const items = useMemo(() => flattenPages(query.data), [query.data]);
@@ -365,6 +371,7 @@ export function MessageTimeline({
                     touch={touch}
                     menuOpen={menu?.message.id === m.id}
                     onSwipeReply={messageActionSet(m, capabilities).reply ? onReply : undefined}
+                    onReact={messageActionSet(m, capabilities).react ? react : undefined}
                   />
                 </div>
               );
@@ -380,6 +387,7 @@ export function MessageTimeline({
         capabilities={capabilities}
         onReply={onReply}
         onEdit={onEdit}
+        onReact={react}
       />
       <ImageViewer
         images={images}

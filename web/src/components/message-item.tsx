@@ -16,6 +16,8 @@ import { IntelligenceAvatar } from "@/components/intelligence/intelligence-avata
 import { IntelligenceName } from "@/components/intelligence/intelligence-name";
 import type { MessageMenuTarget } from "@/components/message-menu";
 import { ProfileLink } from "@/components/profile-link";
+import { ReactionToolbar } from "@/components/reaction-bar";
+import { ReactionChips } from "@/components/reaction-chips";
 import { RowMenuButton } from "@/components/row-menu-button";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { useLongPress } from "@/hooks/use-long-press";
@@ -179,6 +181,12 @@ export interface MessageItemProps {
    * answer in: a notice, a viewer who may not post. It only exists on a touch device.
    */
   onSwipeReply?: (message: Message) => void;
+  /**
+   * Reacts to this message with an emoji, or takes the viewer's reaction back (RCT-01, RCT-02). Absent
+   * where the viewer may not react: the chips are then only shown. With a mouse it also puts a toolbar
+   * of quick reactions on the row.
+   */
+  onReact?: (message: Message, emoji: string) => void;
 }
 
 /** Two handlers for one event: both gestures listen to the same finger, the long press first. */
@@ -202,6 +210,7 @@ export const MessageItem = memo(function MessageItem({
   touch = false,
   menuOpen = false,
   onSwipeReply,
+  onReact,
 }: MessageItemProps) {
   const { t, locale } = useI18n();
   const press = useLongPress<HTMLElement>(
@@ -302,6 +311,15 @@ export const MessageItem = memo(function MessageItem({
             <span className="flex items-center gap-1.5 opacity-0 transition-opacity group-focus-within/message:opacity-100 group-hover/message:opacity-100 [@media(hover:none)]:opacity-100">
               {stamp}
             </span>
+          ) : null}
+          {withButton && onReact ? (
+            // The row's own hover and focus reveal it, and it stays while its picker is open though the
+            // pointer has gone to the picker. Hidden, it must not catch the pointer over the text.
+            <ReactionToolbar
+              reacted={reactedBy(message, meId)}
+              onReact={(emoji) => onReact(message, emoji)}
+              className="pointer-events-none opacity-0 transition-opacity group-focus-within/message:pointer-events-auto group-focus-within/message:opacity-100 group-hover/message:pointer-events-auto group-hover/message:opacity-100 has-[[aria-expanded=true]]:pointer-events-auto has-[[aria-expanded=true]]:opacity-100"
+            />
           ) : null}
           {withButton ? (
             <RowMenuButton
@@ -408,10 +426,22 @@ export const MessageItem = memo(function MessageItem({
             ))}
           </ul>
         ) : null}
+
+        {!deleted ? (
+          <ReactionChips
+            reactions={message.reactions}
+            meId={meId}
+            onToggle={onReact ? (emoji) => onReact(message, emoji) : undefined}
+          />
+        ) : null}
       </div>
     </article>
   );
 });
+
+/** The emoji the viewer reacted to a message with. */
+const reactedBy = (message: Message, meId: string) =>
+  message.reactions.filter((r) => r.by.includes(meId)).map((r) => r.emoji);
 
 /** What is left of a deleted message (DLT-10). */
 function DeletedPlaceholder() {

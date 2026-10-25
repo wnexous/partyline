@@ -1,16 +1,28 @@
 import type { Browser, BrowserContext, Locator, Page, TestInfo } from "@playwright/test";
 import type {
+  AddMemberRequest,
   Conversation,
+  CreatedInvite,
+  CreateInvitationRequest,
+  Invitation,
   List,
   Me,
   Message,
+  Organization,
   Page as Paged,
   Room,
   SetupRequest,
 } from "../src/lib/api/types.gen";
 import { makeWav, postVoice } from "./audio";
-import { apiCall, test as base, type Credentials, expect, settled } from "./fixtures";
-import { agentJSON, connectAI, expectNoSidewaysScroll, isMobile, loginAs } from "./helpers";
+import { apiCall, test as base, type Credentials, expect, MEMBER, settled } from "./fixtures";
+import {
+  agentJSON,
+  connectAI,
+  expectNoSidewaysScroll,
+  isMobile,
+  loginAs,
+  trackLive,
+} from "./helpers";
 import { type Instance, startInstance } from "./server";
 import { shoot } from "./shots";
 
@@ -1101,6 +1113,306 @@ test("a message is answered with a swipe to the right; a vertical drag is left t
     await finger.up();
     await expect.poll(transform).toBe("");
     await expect(strip).toHaveCount(0);
+  } finally {
+    await context.close();
+  }
+});
+
+/**
+ * A second person in the group, in a browser of their own: invited to the instance, to the group's
+ * organization and to the group (AD-016), so what they do reaches the owner's open page live.
+ */
+async function addPerson(owner: BrowserContext, browser: Browser, instance: Instance, room: Room) {
+  const invite = await apiCall<CreatedInvite>(owner.request, instance, "POST", "/admin/invites", {
+    role: "member",
+  });
+  const token = new URL(invite.url).pathname.split("/").pop();
+  const context = await browser.newContext();
+  const person = await apiCall<Me>(
+    context.request,
+    instance,
+    "POST",
+    `/invites/${token}/accept`,
+    MEMBER,
+  );
+  const invitation = await apiCall<Invitation>(
+    owner.request,
+    instance,
+    "POST",
+    `/orgs/${room.org_id}/invitations`,
+    { handle: person.intelligence.handle, permission: "member" } satisfies CreateInvitationRequest,
+  );
+  await apiCall<Organization>(
+    context.request,
+    instance,
+    "POST",
+    `/invitations/${invitation.id}/accept`,
+  );
+  await apiCall(owner.request, instance, "POST", `/rooms/${room.id}/members`, {
+    kind: "user",
+    member_id: person.id,
+  } satisfies AddMemberRequest);
+  return { context, person };
+}
+
+/** The reactions the server holds for the message with this text. */
+async function reactionsOn(context: BrowserContext, instance: Instance, room: Room, text: string) {
+  const sent = await apiCall<Paged<Message>>(
+    context.request,
+    instance,
+    "GET",
+    `/rooms/${room.id}/messages?limit=20`,
+  );
+  const message = sent.items.find((m) => m.text === text);
+  return { id: message?.id ?? "", reactions: message?.reactions ?? [] };
+}
+
+test("a message is reacted to from its sheet or menu; the chips follow every tap and every other person (RCT-01, RCT-02, RCT-06, RCT-08)", async ({
+  browser,
+  phone,
+}, testInfo) => {
+  const { context, page } = await openPage(browser, phone, testInfo);
+  let bob: Awaited<ReturnType<typeof addPerson>> | undefined;
+  try {
+    const said = "the build is green";
+    const { room, ai } = await groupWithUnread(
+      context,
+      phone,
+      "e2e-react",
+      "/work/e2e-react",
+      said,
+    );
+    bob = await addPerson(context, browser, phone, room);
+    const owner = await apiCall<Me>(context.request, phone, "GET", "/me");
+    const author = new RegExp(ai.ai.display_name);
+
+    await page.goto(`/rooms/${room.id}`);
+    const live = trackLive(page);
+    await expect.poll(() => live.ready).toBe(true);
+    const message = log(page).locator('[data-testid^="message-"]', { hasText: said });
+    await expect(message).toBeVisible();
+    const chips = message.getByRole("list", { name: "Reactions" });
+    await expect(chips).toHaveCount(0);
+
+    // RCT-02: the bar of six leads the sheet, the menu of a mouse leads with the same six.
+    const press = await openActions(page, context, testInfo, message, author);
+    const bar = surface(page, testInfo, author).getByRole("group", { name: "Quick reactions" });
+    await expect(bar).toBeVisible();
+    const emoji = ["👍", "❤️", "😂", "😮", "😢", "🙏"];
+    for (const e of emoji) {
+      await expect(
+        bar.getByRole(isMobile(testInfo) ? "button" : "menuitemcheckbox", {
+          name: `React with ${e}`,
+        }),
+      ).toBeVisible();
+    }
+    if (isMobile(testInfo)) {
+      // A finger's size, and the bar inside the sheet at 360 px.
+      for (const button of await bar.getByRole("button").all()) {
+        const box = await rect(button);
+        expect(box.height).toBeGreaterThanOrEqual(44);
+        expect(box.width).toBeGreaterThanOrEqual(40);
+      }
+      const sheet = await rect(page.getByRole("dialog", { name: author }));
+      const row = await rect(bar);
+      expect(row.left).toBeGreaterThanOrEqual(sheet.left);
+      expect(row.right).toBeLessThanOrEqual(sheet.right);
+    }
+    await shoot(page, "reactions-bar", testInfo);
+    await press.release();
+
+    // RCT-01: a tap on an emoji reacts; the chip is under the text, mine, and the server has it.
+    await bar
+      .getByRole(isMobile(testInfo) ? "button" : "menuitemcheckbox", { name: "React with 👍" })
+      .click();
+    const mine = message.getByRole("button", { name: "👍 1 reaction, yours" });
+    await expect(mine).toHaveAttribute("aria-pressed", "true");
+    await expect(page.getByRole("dialog")).toHaveCount(0);
+    await expect(page.getByRole("menu")).toHaveCount(0);
+    // The chip shows before the server has answered; the server has it a moment later.
+    await expect
+      .poll(async () => (await reactionsOn(context, phone, room, said)).reactions)
+      .toEqual([{ emoji: "👍", by: [owner.id] }]);
+    const stored = await reactionsOn(context, phone, room, said);
+    await shoot(page, "reactions-chip", testInfo);
+
+    // RCT-06: another person reacts: the count follows on the open page, in place, nobody reloads.
+    await apiCall(
+      bob.context.request,
+      phone,
+      "POST",
+      `/rooms/${room.id}/messages/${stored.id}/reactions`,
+      { emoji: "👍" },
+    );
+    await apiCall(
+      bob.context.request,
+      phone,
+      "POST",
+      `/rooms/${room.id}/messages/${stored.id}/reactions`,
+      { emoji: "🎉" },
+    );
+    await expect(
+      message.getByRole("button", { name: "👍 2 reactions, including yours" }),
+    ).toBeVisible();
+    await expect(message.getByRole("button", { name: "🎉 1 reaction" })).toHaveAttribute(
+      "aria-pressed",
+      "false",
+    );
+    await shoot(page, "reactions-chips", testInfo);
+
+    // RCT-01: a tap on a chip of someone else's emoji joins it; on my own it takes mine back.
+    await message.getByRole("button", { name: "🎉 1 reaction" }).click();
+    await expect(
+      message.getByRole("button", { name: "🎉 2 reactions, including yours" }),
+    ).toBeVisible();
+    await message.getByRole("button", { name: "👍 2 reactions, including yours" }).click();
+    await expect(message.getByRole("button", { name: "👍 1 reaction" })).toHaveAttribute(
+      "aria-pressed",
+      "false",
+    );
+    await expect
+      .poll(async () => (await reactionsOn(context, phone, room, said)).reactions)
+      .toEqual([
+        { emoji: "👍", by: [bob.person.id] },
+        { emoji: "🎉", by: [bob.person.id, owner.id] },
+      ]);
+
+    // RCT-02: "More" opens the rest of the emoji: in the sheet, in a picker where the menu was.
+    const again = await openActions(page, context, testInfo, message, author);
+    await again.release();
+    const more = surface(page, testInfo, author).getByRole(
+      isMobile(testInfo) ? "button" : "menuitem",
+      { name: "More reactions" },
+    );
+    await more.click();
+    const grid = page.getByRole("group", {
+      name: isMobile(testInfo) ? "Pick a reaction" : "More reactions",
+    });
+    await expect(grid).toBeVisible();
+    expect(await grid.getByRole("button").count()).toBe(48);
+    // Eight to a row, inside the sheet or the picker, once it has settled into place.
+    await settled(page);
+    const first = await rect(grid.getByRole("button").nth(0));
+    const eighth = await rect(grid.getByRole("button").nth(7));
+    const ninth = await rect(grid.getByRole("button").nth(8));
+    expect(eighth.top).toBeCloseTo(first.top, 0);
+    expect(ninth.top).toBeGreaterThan(first.top + 20);
+    if (isMobile(testInfo)) {
+      const sheet = await rect(page.getByRole("dialog", { name: author }));
+      expect(eighth.right).toBeLessThanOrEqual(sheet.right);
+      expect(first.left).toBeGreaterThanOrEqual(sheet.left);
+      expect(first.height).toBeGreaterThanOrEqual(44);
+    }
+    await shoot(page, "reactions-more", testInfo);
+    await grid.getByRole("button", { name: "React with 🚀" }).click();
+    await expect(message.getByRole("button", { name: "🚀 1 reaction, yours" })).toBeVisible();
+    await expect(page.getByRole("dialog")).toHaveCount(0);
+
+    // RCT-02: with a mouse the row carries the six too, on hover and on keyboard focus.
+    if (!isMobile(testInfo)) {
+      const toolbar = message.getByRole("toolbar", { name: "Quick reactions" });
+      await expect(toolbar).toHaveCSS("opacity", "0");
+      await message.hover();
+      await expect(toolbar).toHaveCSS("opacity", "1");
+      await shoot(page, "reactions-toolbar", testInfo);
+      await toolbar.getByRole("button", { name: "React with 😂" }).click();
+      await expect(message.getByRole("button", { name: "😂 1 reaction, yours" })).toBeVisible();
+      // The picker from the toolbar keeps the toolbar on screen while it is open.
+      await toolbar.getByRole("button", { name: "More reactions" }).click();
+      await page.mouse.move(5, 5);
+      await expect(toolbar).toHaveCSS("opacity", "1");
+      await page.keyboard.press("Escape");
+      await expect(page.getByRole("dialog")).toHaveCount(0);
+    }
+  } finally {
+    await bob?.context.close();
+    await context.close();
+  }
+});
+
+test("a message of the viewer's own is edited and deleted from the same sheet or menu as the others are answered (ACT-05, EDT-10, DLT-09)", async ({
+  browser,
+  phone,
+}, testInfo) => {
+  const { context, page } = await openPage(browser, phone, testInfo);
+  try {
+    const room = await newGroup(context, phone, "e2e-own", ["helo wrld"]);
+    await page.goto(`/rooms/${room.id}`);
+    const message = log(page).locator('[data-testid^="message-"]', { hasText: "helo wrld" });
+    await expect(message).toBeVisible();
+    const box = page.getByRole("textbox", { name: "Message e2e-own" });
+    const named = /Owner/;
+
+    // ACT-05: the actions of a message of one's own, in order: Reply, Copy text, Edit, then Delete, set apart.
+    const held = await openActions(page, context, testInfo, message, named);
+    await held.release();
+    const names = ["Reply", "Copy text", "Edit", "Delete"];
+    for (const name of names) await expect(action(page, testInfo, name)).toBeVisible();
+    const tops = await Promise.all(
+      names.map(async (name) => (await rect(action(page, testInfo, name))).top),
+    );
+    expect(tops).toEqual([...tops].sort((a, b) => a - b));
+    await expect(action(page, testInfo, "Delete")).toHaveClass(/text-destructive|destructive/);
+    if (isMobile(testInfo)) {
+      for (const name of ["Edit", "Delete"]) {
+        expect((await rect(action(page, testInfo, name))).height).toBeGreaterThanOrEqual(44);
+      }
+    }
+    await shoot(page, "actions-own-message", testInfo);
+
+    // EDT-10: Edit loads the text into the composer, with the cursor in it; Cancel leaves and sends nothing.
+    await action(page, testInfo, "Edit").click();
+    await expect(page.getByText("Editing message")).toBeVisible();
+    await expect(box).toHaveValue("helo wrld");
+    await expect(box).toBeFocused();
+    await shoot(page, "editing-message", testInfo);
+    await page.getByRole("button", { name: "Cancel editing" }).click();
+    await expect(page.getByText("Editing message")).toHaveCount(0);
+    await expect(message).toContainText("helo wrld");
+
+    // Saving puts the new text in the same place, "edited".
+    await (await openActions(page, context, testInfo, message, named)).release();
+    await action(page, testInfo, "Edit").click();
+    await expect(box).toBeFocused();
+    await box.fill("hello world");
+    await press(testInfo, page.getByRole("button", { name: "Save changes" }));
+    await expect(page.getByText("Editing message")).toHaveCount(0);
+    const edited = log(page).locator('[data-testid^="message-"]', { hasText: "hello world" });
+    await expect(edited.getByText("edited", { exact: true })).toBeVisible();
+
+    // DLT-09: Delete asks first; Cancel leaves the message; the question names what is lost.
+    await (await openActions(page, context, testInfo, edited, named)).release();
+    await action(page, testInfo, "Delete").click();
+    const question = page.getByRole("alertdialog", { name: "Delete this message?" });
+    await expect(question).toContainText("deleted for everyone");
+    await shoot(page, "delete-message-question", testInfo);
+    await question.getByRole("button", { name: "Cancel" }).click();
+    await expect(page.getByRole("alertdialog")).toHaveCount(0);
+    await expect(edited).toContainText("hello world");
+
+    // Confirming leaves the placeholder, which offers nothing: no sheet, no ⋯.
+    await (await openActions(page, context, testInfo, edited, named)).release();
+    await action(page, testInfo, "Delete").click();
+    await page
+      .getByRole("alertdialog", { name: "Delete this message?" })
+      .getByRole("button", { name: "Delete" })
+      .click();
+    await expect(page.getByRole("alertdialog")).toHaveCount(0);
+    const gone = log(page).locator('[data-testid^="message-"]', { hasText: "Message deleted" });
+    await expect(gone).toBeVisible();
+    await expect(gone).not.toContainText("hello world");
+    await expect(gone.getByRole("button", { name: /^Actions for the message/ })).toHaveCount(0);
+    const at = await centre(gone);
+    if (isMobile(testInfo)) {
+      const finger = await pointer(page, context, testInfo);
+      await finger.down(at.x, at.y);
+      await page.waitForTimeout(700);
+      await finger.up();
+    } else {
+      await page.mouse.click(at.x, at.y, { button: "right" });
+    }
+    await expect(page.getByRole("dialog")).toHaveCount(0);
+    await expect(page.getByRole("menu")).toHaveCount(0);
   } finally {
     await context.close();
   }

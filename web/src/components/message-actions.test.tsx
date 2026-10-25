@@ -45,6 +45,7 @@ const caps = (over: Partial<MessageCapabilities> = {}): MessageCapabilities => (
   canReply: true,
   canModerate: false,
   canEdit: true,
+  canReact: false,
   frozen: false,
   ...over,
 });

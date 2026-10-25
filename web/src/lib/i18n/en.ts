@@ -454,6 +454,18 @@ export const en = {
   "composer.replyingTo": "Replying to {name}",
   "composer.cancelReply": "Cancel reply",
 
+  "reactions.list": "Reactions",
+  "reactions.chipOne": "{emoji} 1 reaction",
+  "reactions.chipOneMine": "{emoji} 1 reaction, yours",
+  "reactions.chipMany": "{emoji} {count} reactions",
+  "reactions.chipManyMine": "{emoji} {count} reactions, including yours",
+  "reactions.react": "React with {emoji}",
+  "reactions.quick": "Quick reactions",
+  "reactions.more": "More reactions",
+  "reactions.pick": "Pick a reaction",
+  "reactions.failed": "Couldn’t save your reaction.",
+  "reactions.limit": "A message holds at most {max} different reactions.",
+
   "validation.retention": "Whole days, 0 or more",
   "presence.online": "Online",
   "presence.offline": "Offline",

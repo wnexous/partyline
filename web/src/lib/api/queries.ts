@@ -11,11 +11,13 @@ import {
 } from "@tanstack/react-query";
 import { withIntelligence, withoutAI } from "@/lib/contacts";
 import { type MeWithDefaultOrg, toMyOrgs } from "@/lib/orgs";
+import { withReaction } from "@/lib/reactions";
 import { api, isApiError } from "./client";
 import {
   type AcceptInviteRequest,
   type ActivityItem,
   type AddMemberRequest,
+  type AddReactionRequest,
   type AdminUser,
   type Agent,
   type AuditEntry,
@@ -70,6 +72,7 @@ import {
   type PairingRequest,
   type Position,
   type PostMessageRequest,
+  type Reaction,
   type ReadState,
   type Room,
   type RoomFile,
@@ -599,6 +602,99 @@ export function useDeleteMessage(roomId: string) {
   return useMutation({
     mutationFn: (id: string) => api<Message>("DELETE", `/rooms/${roomId}/messages/${id}`),
     onSuccess: (m) => applyMessageUpdate(qc, m),
+  });
+}
+
+/** The message with this id, in whichever page of the timeline holds it. */
+function findMessage(data: MessagePages | undefined, id: string): Message | undefined {
+  for (const page of data?.pages ?? []) {
+    const found = page.items.find((m) => m.id === id);
+    if (found) return found;
+  }
+  return undefined;
+}
+
+/** The reactions the timeline holds for a message; none when it does not hold the message. */
+export const readReactions = (
+  qc: QueryClient,
+  roomId: string,
+  messageId: string,
+): Reaction[] | undefined =>
+  findMessage(qc.getQueryData<MessagePages>(queryKeys.roomMessages(roomId)), messageId)?.reactions;
+
+/**
+ * The reactions of a message changed, by this client (a toggle, and the answer of the request) or by anyone (the
+ * live room.reactions frame): everywhere the cache shows the message, they become the list as it is now (RCT-06).
+ * The message keeps its place and is not counted as unread; a deleted message has none (RCT-07), so a frame that
+ * outran its delete finds it unchanged. Applying the same list twice changes nothing more.
+ */
+export function applyReactions(
+  qc: QueryClient,
+  roomId: string,
+  messageId: string,
+  reactions: Reaction[],
+) {
+  qc.setQueryData<MessagePages>(queryKeys.roomMessages(roomId), (old) => {
+    const m = findMessage(old, messageId);
+    return m && m.deleted_at === undefined ? replaceMessage(old, { ...m, reactions }) : old;
+  });
+  qc.setQueryData<ActivityItem[]>(queryKeys.activity, (old) =>
+    old?.map((a) =>
+      a.message.id === messageId && a.message.deleted_at === undefined
+        ? { ...a, message: { ...a.message, reactions } }
+        : a,
+    ),
+  );
+}
+
+/** One tap on a reaction: to react with an emoji (`add`) or to take that reaction back. */
+export interface ReactionToggle {
+  messageId: string;
+  emoji: string;
+  add: boolean;
+  /** The viewer's intelligence id: the reactions list who used an emoji by it (RCT-05). */
+  by: string;
+}
+
+/**
+ * Reacts to a message of the room, or takes the reaction back (RCT-03). The reaction shows at once and the answer
+ * (the message's reactions as they are then) settles it; a request that fails puts back what it changed and nothing
+ * else (RCT-08), so a toggle made meanwhile stays, and tells `onFailure` (a callback of `mutate` would be lost
+ * when another toggle follows). While a later toggle of the same message is still on its way the answer of an
+ * earlier one is not written: it knows nothing of that one and would take it off the screen.
+ */
+export function useToggleReaction(roomId: string, onFailure?: (error: unknown) => void) {
+  const qc = useQueryClient();
+  const change = ({ messageId, emoji, add, by }: ReactionToggle) => {
+    const current = readReactions(qc, roomId, messageId);
+    if (current) applyReactions(qc, roomId, messageId, withReaction(current, emoji, by, add));
+  };
+  return useMutation({
+    mutationKey: ["reactions", roomId],
+    mutationFn: ({ messageId, emoji, add }: ReactionToggle) =>
+      (add
+        ? api<List<Reaction>>("POST", `/rooms/${roomId}/messages/${messageId}/reactions`, {
+            emoji,
+          } satisfies AddReactionRequest)
+        : api<List<Reaction>>(
+            "DELETE",
+            `/rooms/${roomId}/messages/${messageId}/reactions/${encodeURIComponent(emoji)}`,
+          )
+      ).then(items),
+    onMutate: change,
+    onError: (error, toggle) => {
+      change({ ...toggle, add: !toggle.add });
+      onFailure?.(error);
+    },
+    onSuccess: (reactions, { messageId }) => {
+      const pending = qc.isMutating({
+        predicate: (m) =>
+          m.options.mutationKey?.[0] === "reactions" &&
+          (m.state.variables as ReactionToggle | undefined)?.messageId === messageId,
+      });
+      // This one is still pending while its callbacks run: more than one is a later toggle on its way.
+      if (pending <= 1) applyReactions(qc, roomId, messageId, reactions);
+    },
   });
 }
 

@@ -95,6 +95,93 @@ describe("the sheet of a touch device (ACT-01, ACT-06)", () => {
     expect(close).toHaveBeenCalledTimes(1);
   });
 
+  describe("the finger that opened it", () => {
+    // Some browsers send the release of a long press as a click on whatever is under the finger by
+    // then, and by then that is a button of the sheet. No press began there, so it is not a tap.
+    it("does not choose an action by a click that no press began on", async () => {
+      renderMenu();
+      const copyRow = await screen.findByRole("button", { name: "Copy text" });
+      fireEvent.click(copyRow, { detail: 1 });
+      expect(copy).not.toHaveBeenCalled();
+      expect(close).not.toHaveBeenCalled();
+    });
+
+    it("does not take it for the close button's tap either", async () => {
+      renderMenu();
+      fireEvent.click(await screen.findByRole("button", { name: "Close" }), { detail: 1 });
+      expect(close).not.toHaveBeenCalled();
+    });
+
+    it("does not let it reach the buttons of the header", async () => {
+      const picked = vi.fn();
+      renderMenu({
+        header: (
+          <button type="button" onClick={picked}>
+            quick
+          </button>
+        ),
+      });
+      fireEvent.click(await screen.findByRole("button", { name: "quick" }), { detail: 1 });
+      expect(picked).not.toHaveBeenCalled();
+    });
+
+    it("chooses on a tap, which begins with a press on the action", async () => {
+      const user = userEvent.setup();
+      renderMenu();
+      const copyRow = await screen.findByRole("button", { name: "Copy text" });
+      fireEvent.click(copyRow, { detail: 1 });
+      expect(copy).not.toHaveBeenCalled();
+      await user.click(copyRow);
+      expect(copy).toHaveBeenCalledTimes(1);
+      expect(close).toHaveBeenCalledTimes(1);
+    });
+
+    it("takes a click that is not a tap at all: the keyboard's, a screen reader's", async () => {
+      renderMenu();
+      fireEvent.click(await screen.findByRole("button", { name: "Copy text" }));
+      expect(copy).toHaveBeenCalledTimes(1);
+    });
+
+    it("takes one tap for one click: a second stray click after it is not a tap", async () => {
+      const user = userEvent.setup();
+      renderMenu();
+      const readRow = await screen.findByRole("button", { name: "Mark as read" });
+      await user.click(readRow);
+      expect(read).toHaveBeenCalledTimes(1);
+      fireEvent.click(readRow, { detail: 1 });
+      expect(read).toHaveBeenCalledTimes(1);
+    });
+
+    it("forgets a press that never became a click when it opens again", async () => {
+      const user = userEvent.setup();
+      const props = {
+        open: true,
+        onClose: close,
+        touch: true,
+        title: "Deploys",
+        at: { x: 120, y: 80 },
+        actions: actions(),
+      } satisfies ActionMenuProps;
+      const wrapper = (open: boolean) => (
+        <AppProviders queryClient={makeQueryClient()}>
+          <ActionMenu {...props} open={open} />
+        </AppProviders>
+      );
+      const { rerender } = render(wrapper(true));
+      const readRow = await screen.findByRole("button", { name: "Mark as read" });
+      // A press that slid away before it lifted: no click follows, the press stays unspent.
+      fireEvent.pointerDown(readRow);
+      rerender(wrapper(false));
+      await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+      rerender(wrapper(true));
+      const again = await screen.findByRole("button", { name: "Mark as read" });
+      fireEvent.click(again, { detail: 1 });
+      expect(read).not.toHaveBeenCalled();
+      await user.click(again);
+      expect(read).toHaveBeenCalledTimes(1);
+    });
+  });
+
   it("sets the destructive action apart: its colour, its icon, its word, and a rule above it", async () => {
     renderMenu();
     const row = await screen.findByRole("button", { name: "Delete group" });

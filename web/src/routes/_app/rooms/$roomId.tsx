@@ -210,6 +210,7 @@ function RoomPage() {
           onReply={onReply}
           canModerate={canManage}
           onEdit={onEdit}
+          canReact={canPost(r.my_level) && !historyOnly}
           frozen={historyOnly}
         />
         {historyOnly ? (

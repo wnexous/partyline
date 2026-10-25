@@ -21,6 +21,7 @@ import type {
   LiveEvent,
   Me,
   Message,
+  Reaction,
   Room,
   RoomMember,
 } from "@/lib/api/types.gen";
@@ -364,6 +365,140 @@ describe("live handlers", () => {
     expect(qc.getQueryData<{ id: string }[]>(queryKeys.rooms)).toEqual([{ id: "r2" }]);
     expect(qc.getQueryData(queryKeys.roomMessages("r1"))).toBeUndefined();
   });
+  describe("room.reactions (RCT-06)", () => {
+    const thumbs = (...by: string[]): Reaction[] => [{ emoji: "👍", by }];
+    const items = (room = "r1") =>
+      qc.getQueryData<MessagePages>(queryKeys.roomMessages(room))?.pages.flatMap((p) => p.items);
+    const react = (messageId: string, reactions: Reaction[], room = "r1") =>
+      handleLiveEvent(qc, actions(), {
+        type: "room.reactions",
+        data: { room_id: room, message_id: messageId, reactions },
+      });
+
+    it("puts the reactions on the message, in its place, and on no other", () => {
+      seedTimeline(qc, "r1", [1, 2, 3]);
+      react("m-r1-2", thumbs("u2", "u3"));
+      expect(items()?.map((m) => m.seq)).toEqual([1, 2, 3]);
+      expect(items()?.[1]?.reactions).toEqual(thumbs("u2", "u3"));
+      expect(items()?.[0]?.reactions).toEqual([]);
+      expect(items()?.[2]?.reactions).toEqual([]);
+    });
+
+    it("replaces what the message had, so a reaction taken back is gone", () => {
+      seedTimeline(qc, "r1", [1, 2]);
+      react("m-r1-2", [...thumbs("u2"), { emoji: "🎉", by: ["u3"] }]);
+      react("m-r1-2", [{ emoji: "🎉", by: ["u3"] }]);
+      expect(items()?.[1]?.reactions).toEqual([{ emoji: "🎉", by: ["u3"] }]);
+      react("m-r1-2", []);
+      expect(items()?.[1]?.reactions).toEqual([]);
+    });
+
+    it("changes nothing else of the message", () => {
+      qc.setQueryData<MessagePages>(queryKeys.roomMessages("r1"), {
+        pages: [
+          {
+            items: [
+              makeMessage({
+                room_id: "r1",
+                seq: 1,
+                text: "fixed",
+                edited_at: "2026-10-19T13:00:00Z",
+              }),
+            ],
+            has_more: false,
+          },
+        ],
+        pageParams: [undefined],
+      });
+      react("m-r1-1", thumbs("u2"));
+      expect(items()?.[0]).toMatchObject({
+        text: "fixed",
+        edited_at: "2026-10-19T13:00:00Z",
+        reactions: thumbs("u2"),
+      });
+    });
+
+    it("finds the message in an older page", () => {
+      qc.setQueryData<MessagePages>(queryKeys.roomMessages("r1"), {
+        pages: [
+          { items: [makeMessage({ room_id: "r1", seq: 3 })], has_more: true },
+          {
+            items: [makeMessage({ room_id: "r1", seq: 1 }), makeMessage({ room_id: "r1", seq: 2 })],
+            has_more: false,
+          },
+        ],
+        pageParams: [undefined, 3],
+      });
+      react("m-r1-1", thumbs("u2"));
+      const data = qc.getQueryData<MessagePages>(queryKeys.roomMessages("r1"));
+      expect(data?.pages[1]?.items[0]?.reactions).toEqual(thumbs("u2"));
+      expect(data?.pages[0]?.items[0]?.reactions).toEqual([]);
+    });
+
+    it("is the same whether it arrives once or twice", () => {
+      seedTimeline(qc, "r1", [1, 2]);
+      react("m-r1-2", thumbs("u2"));
+      const once = items();
+      react("m-r1-2", thumbs("u2"));
+      expect(items()).toEqual(once);
+    });
+
+    it("adds nothing the timeline does not hold, and ignores rooms that are not cached", () => {
+      seedTimeline(qc, "r1", [1, 2]);
+      react("m-r1-9", thumbs("u2"));
+      expect(items()?.map((m) => m.seq)).toEqual([1, 2]);
+      react("m-other-1", thumbs("u2"), "other");
+      expect(qc.getQueryData(queryKeys.roomMessages("other"))).toBeUndefined();
+    });
+
+    it("leaves a deleted message without reactions", () => {
+      qc.setQueryData<MessagePages>(queryKeys.roomMessages("r1"), {
+        pages: [
+          {
+            items: [
+              makeMessage({ room_id: "r1", seq: 1, text: "", deleted_at: "2026-10-19T14:00:00Z" }),
+            ],
+            has_more: false,
+          },
+        ],
+        pageParams: [undefined],
+      });
+      react("m-r1-1", thumbs("u2"));
+      expect(items()?.[0]?.reactions).toEqual([]);
+    });
+
+    it("moves nothing: the conversation keeps its place, its unread count and its preview", () => {
+      const at = "2026-10-19T12:00:00Z";
+      const before = makeConversation({
+        id: "r1",
+        unread: 2,
+        activity_at: at,
+        last_message: {
+          seq: 3,
+          author_id: "u1",
+          author_name: "Ana",
+          text: "message 3",
+          created_at: at,
+        },
+      });
+      qc.setQueryData<Conversation[]>(queryKeys.conversations, [before]);
+      seedTimeline(qc, "r1", [1, 2, 3]);
+      react("m-r1-3", thumbs("u2"));
+      expect(qc.getQueryData<Conversation[]>(queryKeys.conversations)).toEqual([before]);
+      expect(qc.getQueryState(queryKeys.conversations)?.isInvalidated).toBe(false);
+    });
+
+    it("puts them on the message of the dashboard feed too", () => {
+      qc.setQueryData<ActivityItem[]>(queryKeys.activity, [
+        { room: { id: "r1", name: "general" }, message: makeMessage({ room_id: "r1", seq: 2 }) },
+        { room: { id: "r2", name: "deploys" }, message: makeMessage({ room_id: "r2", seq: 5 }) },
+      ]);
+      react("m-r1-2", thumbs("u2"));
+      const feed = qc.getQueryData<ActivityItem[]>(queryKeys.activity);
+      expect(feed?.map((a) => a.message.reactions)).toEqual([thumbs("u2"), []]);
+    });
+  });
+
   describe("dashboard activity (UI-04 on the overview)", () => {
     const item = (over: Partial<Message> = {}, name = `room ${over.room_id ?? "r1"}`) => ({
       room: { id: over.room_id ?? "r1", name },

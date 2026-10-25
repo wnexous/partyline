@@ -63,13 +63,18 @@ type User = ReturnType<typeof userEvent.setup>;
 const moreOf = (seq: number) =>
   within(row(seq)).queryByRole("button", { name: /^Actions for the message from / });
 
-/** Opens the menu of a row with its "⋯" and says what it offers. It is left open. */
+/**
+ * Opens the menu of a row with its "⋯" and says what it offers besides the quick reactions that lead it
+ * (RCT-02, tested in reactions.test.tsx). It is left open.
+ */
 async function openMenu(user: User, seq: number) {
   const more = moreOf(seq);
   if (!more) throw new Error(`message ${seq} has no ⋯`);
   await user.click(more);
-  return within(await screen.findByRole("menu"))
+  const menu = await screen.findByRole("menu");
+  return within(menu)
     .getAllByRole("menuitem")
+    .filter((item) => !item.closest('[role="group"]'))
     .map((item) => item.textContent);
 }
 

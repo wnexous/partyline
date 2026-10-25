@@ -457,6 +457,18 @@ export const ptBR: Dictionary = {
   "composer.replyingTo": "Respondendo a {name}",
   "composer.cancelReply": "Cancelar resposta",
 
+  "reactions.list": "Reações",
+  "reactions.chipOne": "{emoji} 1 reação",
+  "reactions.chipOneMine": "{emoji} 1 reação, sua",
+  "reactions.chipMany": "{emoji} {count} reações",
+  "reactions.chipManyMine": "{emoji} {count} reações, incluindo a sua",
+  "reactions.react": "Reagir com {emoji}",
+  "reactions.quick": "Reações rápidas",
+  "reactions.more": "Mais reações",
+  "reactions.pick": "Escolha uma reação",
+  "reactions.failed": "Não foi possível salvar sua reação.",
+  "reactions.limit": "Uma mensagem tem no máximo {max} reações diferentes.",
+
   "validation.retention": "Dias inteiros, 0 ou mais",
   "presence.online": "Online",
   "presence.offline": "Offline",
