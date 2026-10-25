@@ -75,6 +75,7 @@ type options struct {
 	liveSessionCheck time.Duration
 	kinds            []connectors.Kind
 	outbox           bool
+	push             bool
 	version          string
 	database         string
 	inboundWait      func(ctx context.Context, d time.Duration) error
@@ -106,6 +107,10 @@ func WithClock(now func() time.Time) Option { return func(o *options) { o.now = 
 // WithOutbox runs the worker that retries the sends of AIs through their connections. Without it,
 // a send that failed stays pending so tests can inspect it.
 func WithOutbox() Option { return func(o *options) { o.outbox = true } }
+
+// WithoutPush keeps the app's Web Push notifier from running, so a test that constructs its own
+// notifier on App.Store/App.Bus does not get a second set of notifications (PUSH-14).
+func WithoutPush() Option { return func(o *options) { o.push = true } }
 
 // WithConnectorKinds makes the app support exactly kinds (e.g. a fake kind from
 // connectors/connectortest) instead of the built-in ones.
@@ -154,7 +159,7 @@ func New(t testing.TB, opts ...Option) *Env {
 
 	e := &Env{
 		T: t, Server: srv, URL: base, Origin: cfg.PublicURL.Scheme + "://" + cfg.PublicURL.Host, cfg: cfg,
-		appOpts: app.Options{Logger: o.logger, Now: o.now, LiveSessionCheck: o.liveSessionCheck, ConnectorKinds: o.kinds, DisableOutbox: !o.outbox, Version: o.version, InboundWait: o.inboundWait, ConnectorWait: o.connectorWait},
+		appOpts: app.Options{Logger: o.logger, Now: o.now, LiveSessionCheck: o.liveSessionCheck, ConnectorKinds: o.kinds, DisableOutbox: !o.outbox, DisablePush: o.push, Version: o.version, InboundWait: o.inboundWait, ConnectorWait: o.connectorWait},
 	}
 	e.startApp()
 	srv.Config.Handler = http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { (*e.handler.Load()).ServeHTTP(w, r) })

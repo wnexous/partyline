@@ -58,6 +58,10 @@ type Options struct {
 	// DisableOutbox keeps the worker that retries the sends of AIs through their connections
 	// from running, so a send that failed stays pending (tests that inspect them).
 	DisableOutbox bool
+	// DisablePush keeps the Web Push notifier from running, so a test that drives its own
+	// notifier does not get a second one (PUSH-14). The notifier is built either way; only
+	// Start skips it.
+	DisablePush bool
 	// ConnectorKinds are the supported connector kinds; nil means BuiltinKinds().
 	ConnectorKinds []connectors.Kind
 	// Version is the build version, sent by connectors as User-Agent "partyline/<version>".
