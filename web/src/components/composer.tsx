@@ -182,11 +182,12 @@ function ComposerForm({
   const tooLong = length > MaxTextLength;
   const trimmed = text.trim();
   const canSend = !tooLong && (trimmed.length > 0 || files.length > 0) && !post.isPending;
-  // Saving needs a change, and text unless the message has files that stay (EDT-04).
+  // Saving needs a change to the trimmed text (surrounding whitespace alone is no change), and text
+  // unless the message has files that stay (EDT-04).
   const canSave =
     editing !== null &&
     !tooLong &&
-    trimmed !== editing.text &&
+    trimmed !== editing.text.trim() &&
     (trimmed.length > 0 || editing.attachments.length > 0) &&
     !save.isPending;
   const fmt = (n: number) => new Intl.NumberFormat(locale).format(n);
