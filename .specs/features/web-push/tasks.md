@@ -332,12 +332,12 @@ payload)`):
   never appears in the log), `TestWorkerStopsOnCancel`, `TestLimiterSlidingWindow` (10 allowed, 11th
   false, 60 s later true; another key unaffected).
 **Done when**:
-- [ ] the bus is subscribed in the constructor, before `Run` (a message posted between the two is not
+- [x] the bus is subscribed in the constructor, before `Run` (a message posted between the two is not
       missed); `Close()` cancels it even when `Run` never starts
-- [ ] `Submit` never blocks the bus consumer; a full queue is counted and dropped without content
-- [ ] `app.Options.DisablePush` is wired through `testkit.WithoutPush()` (the app's own notifier starts
+- [x] `Submit` never blocks the bus consumer; a full queue is counted and dropped without content
+- [x] `app.Options.DisablePush` is wired through `testkit.WithoutPush()` (the app's own notifier starts
       only in T6)
-- [ ] Gate check passes: `make check`
+- [x] Gate check passes: `make check`
 **Tests**: integration
 **Gate**: build
 **Commit**: `feat(webpush): run the notifier on the message bus`
