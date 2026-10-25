@@ -240,3 +240,33 @@ func TestAMessagePostedLiveCarriesItsReactionsToo(t *testing.T) {
 	require.NotNil(t, got.Reactions)
 	require.Empty(t, got.Reactions)
 }
+
+// DLT-01, RCT-07: a deleted message is a placeholder that stays in its place; it has no reactions
+// and takes none.
+func TestAPlaceholderHasNoReactionsAndTakesNone(t *testing.T) {
+	f := newReactionFixture(t)
+	react(f.bob, f.room.ID, f.message.ID, "👍").RequireStatus(http.StatusOK)
+	placeholder := testkit.Decode[dto.Message](f.alice.Delete("/api/v1/rooms/" + f.room.ID + "/messages/" + f.message.ID).RequireStatus(http.StatusOK))
+	require.NotNil(t, placeholder.DeletedAt)
+	require.NotNil(t, placeholder.Reactions)
+	require.Empty(t, placeholder.Reactions)
+
+	react(f.bob, f.room.ID, f.message.ID, "🎉").RequireError(http.StatusConflict, dto.ErrorCodeConflict)
+	require.Empty(t, reactionList(unreact(f.bob, f.room.ID, f.message.ID, "👍")), "taking one back is a retry that finds nothing")
+	list := testkit.Decode[dto.Page[dto.Message]](f.alice.Get("/api/v1/rooms/" + f.room.ID + "/messages").RequireStatus(http.StatusOK)).Items
+	require.Empty(t, list[0].Reactions)
+}
+
+// The live frame of an edit carries the reactions the message has: the client replaces the whole
+// message with it.
+func TestAnEditedMessageKeepsItsReactions(t *testing.T) {
+	f := newReactionFixture(t)
+	react(f.bob, f.room.ID, f.message.ID, "👍").RequireStatus(http.StatusOK)
+	bobLive := dialLive(t, f.bob)
+	edited := testkit.Decode[dto.Message](f.alice.Patch("/api/v1/rooms/"+f.room.ID+"/messages/"+f.message.ID, dto.EditMessageRequest{Text: "deploy at 6"}).RequireStatus(http.StatusOK))
+	require.Equal(t, []dto.Reaction{{Emoji: "👍", By: []string{f.bob.User.ID}}}, edited.Reactions)
+	var got dto.Message
+	bobLive.Expect(dto.LiveEventTypeRoomMessageUpdated, &got, liveWait)
+	require.Equal(t, "deploy at 6", got.Text)
+	require.Equal(t, edited.Reactions, got.Reactions)
+}

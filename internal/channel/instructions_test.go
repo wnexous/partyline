@@ -22,7 +22,7 @@ const (
 	// framedPlatformSentence is the same for the harnesses that see <partyline …> frames.
 	framedPlatformSentence = `chat, platform, connection_id and chat_id appear only on messages from your own connections, the accounts you operate (platform="whatsapp|telegram|discord|webhook"): they come from your own number or bot, said to you and to no room (room reads "<Platform> · <chat title>"). Use them to know which conversation you are answering; messages from agents and users carry none of them. A notice from Partyline itself has no message_id.`
 	// answeringSentence is how to use the tools, in all three texts.
-	answeringSentence = `Reply with the reply tool (message_id). To a room message it answers in that room; to a message from one of your connections it answers in that chat through your own account, unsigned, quoting the message when the platform supports quotes. To write to a chat of a connection you operate without a message to answer, use send_message with connection and chat (the connection_id and chat_id of one of its messages); it goes out unsigned, as you. When the platform does not take a message at once the tool says "not sent yet" and Partyline sends it again by itself: do not send it twice. Post to a room with send_message and room. react (message_id, one emoji) reacts to a chat message of a room, and send_file shares a local file in a room: for a message from one of your connections both answer unsupported, so answer with reply or send_message. Use history for context, download_attachment for files, list_rooms to see members.`
+	answeringSentence = `Reply with the reply tool (message_id). To a room message it answers in that room; to a message from one of your connections it answers in that chat through your own account, unsigned, quoting the message when the platform supports quotes (quote: false sends to the same chat without quoting it). To write to a chat of a connection you operate without a message to answer, use send_message with connection and chat (the connection_id and chat_id of one of its messages, or, to start a conversation with someone who never wrote to you, their address on the platform as chat: a WhatsApp number with its country code or JID, a Telegram chat id, a Discord channel id; you can start 10 chats an hour); it goes out unsigned, as you. When the platform does not take a message at once the tool says "not sent yet" and Partyline sends it again by itself: do not send it twice. Post to a room with send_message and room. send_file (path, optional caption) shares a local file in a room (room) or sends it to a chat of a connection you operate (connection and chat, as for send_message): through a connection it is sent once and not kept, so when the platform does not take it the tool fails with the reason and you may send it again. react (message_id, one emoji) reacts to a message: one from your connections gets the reaction on its platform from your own account (Telegram takes only its own set of emoji, and a webhook connection answers unsupported, so answer with reply), a chat message of a room gets it in the room. Use history for context, download_attachment for files, list_rooms to see members.`
 )
 
 // What the instructions say about trust and contacts under organizations (POS-10, AD-018, design "CLI and channel"),
@@ -40,6 +40,9 @@ const (
 	groupsSentence = `Start a group with create_group (name, members as "@handle" or id, optional description, optional organization): the group belongs to an organization you are a member of, not a guest, named by its address in organization (your home organization when you leave it out); you are added automatically, everyone else only when listed, and each of them must belong to that organization; if any member cannot be added nothing is created and the refused ones are named.`
 	// identityNoticeSentence is what the full channel says the connect notice tells.
 	identityNoticeSentence = `When Partyline connects you get a notice that says who you are, which organization you belong to and who manages you (names and @handles).`
+	// changesSentence is what every text says about changing a message (EDT-08, EDT-09, DLT-08): the two tools, and what
+	// the event of a change is.
+	changesSentence = `edit_message (message_id, text) corrects a message you sent and delete_message (message_id) takes one back. When someone changes a message you were given, you get it again with the same message_id, saying that it was edited (its new text follows) or deleted: that is not a new message.`
 )
 
 // variantsOf is the text each of the three variants of the instructions gives the session: Claude Code's channel,
@@ -209,5 +212,14 @@ func TestOnlyTheChannelPromisesTheNoticeOfWhoManagesTheAI(t *testing.T) {
 	require.Contains(t, v["channel"], identityNoticeSentence)
 	for _, name := range []string{"tools-only", "omp"} {
 		require.NotContains(t, v[name], "which organization you belong to", name)
+	}
+}
+
+// EDT-08, EDT-09, DLT-08: each of the three texts names the tools that change a message the AI sent and says what
+// the event of a change is, so that the model neither answers it as a new message nor looks for it in the tools.
+func TestInstructionsNameTheEditAndDeleteToolsAndTheirEvents(t *testing.T) {
+	for name, got := range variantsOf(t) {
+		require.Contains(t, got, changesSentence, "%s instructions", name)
+		require.Equal(t, 1, strings.Count(got, changesSentence), "%s instructions say it once", name)
 	}
 }

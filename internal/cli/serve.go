@@ -6,11 +6,14 @@ import (
 	"fmt"
 	"net"
 	"net/http"
+	"runtime/debug"
 	"strings"
 	"time"
 
 	"github.com/wnexous/partyline/internal/app"
 	"github.com/wnexous/partyline/internal/config"
+	"github.com/wnexous/partyline/internal/datalock"
+	"github.com/wnexous/partyline/internal/memlimit"
 )
 
 // Log messages other tools (and tests) look for.
@@ -31,6 +34,18 @@ func serve(ctx context.Context, io stdio) int {
 		return 1
 	}
 	log := newLogger(cfg, io.stderr)
+	// GOMEMLIMIT is the runtime's own variable and was applied when the process started (OPS-06).
+	if limit := memlimit.Apply(cfg.MemoryLimit, io.getenv("GOMEMLIMIT"), "/", debug.SetMemoryLimit); limit.Bytes > 0 {
+		log.Info("memory limit", "bytes", limit.Bytes, "source", limit.Source)
+	}
+	// Before anything touches the data directory: a second server on it would run every connector
+	// twice (OPS-05). `partyline admin` does not take it, so it works against a running server.
+	lock, err := datalock.Acquire(cfg.DataDir)
+	if err != nil {
+		log.Error("start failed", "err", err)
+		return 1
+	}
+	defer func() { _ = lock.Release() }()
 	a, err := app.New(cfg, app.Options{Logger: log, Version: buildVersion()})
 	if err != nil {
 		log.Error("start failed", "err", err)

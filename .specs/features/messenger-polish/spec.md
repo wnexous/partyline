@@ -8,6 +8,10 @@ On 2026-10-23 the product owner asked for three more things in the web app: imag
 
 On 2026-10-24 the product owner, using partyline on an Android phone (Chrome), asked for a phone that behaves like a messenger: the on-screen keyboard hides the composer after a message is sent, there is no way to send a voice message, and conversations and messages offer no actions on a long press. A second round the same day added a text box that stops growing before it hides the Send button, a swipe on a message to reply, and emoji reactions.
 
+On 2026-10-24 the product owner looked for a way to set a group's photo and found none: a group shows its initials only, while people, AIs and organizations can have a picture.
+
+On 2026-10-24 the product owner asked to edit and delete messages in conversations. Today a message that was sent can neither be corrected nor taken back, by people or by AIs.
+
 ## Goals
 
 - [ ] Typing `@` in the composer suggests the conversation's participants and inserts `@handle`.
@@ -21,6 +25,8 @@ On 2026-10-24 the product owner, using partyline on an Android phone (Chrome), a
 - [ ] A long press (touch), a right click or a "⋯" button (mouse) opens the actions of a conversation or a message (ACT-01..ACT-07).
 - [ ] A message is answered with a swipe on a touch screen (SWP-01..SWP-04).
 - [ ] A message gets emoji reactions that everyone in the room sees live (RCT-01..RCT-08).
+- [ ] A manager gives a group a photo that shows wherever the group does, with its initials as the fallback (GAV-01..GAV-07).
+- [ ] The author edits a text message in place and deletes any message of theirs, and the manager of a group deletes any message in it; the conversation keeps its order, and web clients and AI sessions are told live (EDT-01..EDT-10, DLT-01..DLT-10).
 
 ## Out of Scope
 
@@ -30,11 +36,14 @@ On 2026-10-24 the product owner, using partyline on an Android phone (Chrome), a
 | Auto-updating in the background | The user runs the command |
 | Updating harness registrations during `update` | `partyline setup` does that |
 | Zoom, rotate, slideshow, video or audio in the viewer | Not asked; "Open original" opens the file itself |
+| A photo for a DM, or a group photo set from an AI's tools | A DM shows the other party; the routes are the web app's (a user's session or token) and need the manage level (AD-016) |
 | Editing a profile inside the panel, presence of users, a person's DM | The panel shows and routes; the page edits (PROF-05), the API has no presence for users (AD-010) and a person is history (CID-21) |
-| Deleting a message | The API has no route to delete or edit a message; the message menu has no such action until one exists |
 | Leaving a group | A member row gives `post`, and `manage` comes only from creating the group or administering its organization (AD-016); taking a member row out needs `manage`. A plain member is refused, and a manager who takes their own row out keeps the group, so "Leave group" could not take effect and the menu does not offer it. It needs a server rule (a user may remove their own member row), a permission change that is not the UI's to make: asked of the coordinator on 2026-10-25, unanswered when this was written |
 | A waveform in the voice player, previewing a recording before it is sent, transcription | Not asked; the player has play, time and a seek bar |
 | Reactions on messages that arrived through a connection, custom emoji, reaction notifications to AIs | Rooms hold users and AIs only (AD-015); the agent `react` tool keeps reacting to platform messages; AIs are not told about a reaction |
+| Edit history, undo of a delete, "delete for me", a time limit on edits | Not asked. An edit keeps no earlier text and a delete is for everyone (AD-026) |
+| Editing or deleting what an AI sent through a connection | A send through a connection is a platform message, not a message of a conversation (AD-015) |
+| Telling polling harnesses (turn-end hooks, `wait_for_messages`) about an edit or a delete of a message they already received | They have no live channel; what they have not received yet is read as it is now (EDT-07, DLT-07) |
 
 ---
 
@@ -67,7 +76,7 @@ On 2026-10-24 the product owner, using partyline on an Android phone (Chrome), a
 | Touch or pointer | The same helper as ENT (`isTouchFirst`): a coarse main pointer, or one that cannot hover, gets a long press and a bottom sheet; a mouse or trackpad gets a right click, a "⋯" button and a menu at the pointer, whatever the width | A narrow desktop window is still a mouse; a tablet is still a finger | n |
 | Long press | 500 ms still (10 px of movement at most) with a finger or a pen; the `contextmenu` event of a touch (Android's long press, TalkBack's long click) opens the same sheet and keeps the browser's own menu closed | Chrome's own threshold is about the same, so ours wins the race | n |
 | What the conversation list offers | Mark as read (when something is unread), View profile (a DM's counterpart) and Delete group (`DELETE /rooms/{id}`: `manage`, never a DM), which asks first. No Leave group (see Out of Scope) | Existing routes and their rules; nothing is added on the server for them | n |
-| What a message offers | Reply, Copy text (when it has text) and the reactions bar (RCT). No Delete: there is no route | Existing routes only | n |
+| What a message offers | Reply (when the viewer may post), Copy text (when it has text), Edit and Delete under the rules of EDT-02 and DLT-02 (the viewer's own text message can be edited; their own message can be deleted and, in a group they manage, any message but a system notice) and the reactions bar (RCT). A system notice and a deleted message offer nothing; a conversation that is history (CID-21) offers Copy text alone | One list for every way in: the main branch's edit and delete routes now exist, so the menu offers them (merged 2026-10-25) | n |
 | Text on a touch device | A row that has actions does not select text on a touch device: Chrome would select the word under a long press and show its own toolbar beside the sheet. Copy text takes the whole message. A mouse selects as before | One gesture, one answer | n |
 | Where the notice of Copy text goes | At the top of the screen, for two seconds: the other notices sit at the bottom right, over the composer's Send row, which a reply strip or a long draft makes taller still | A confirmation must not hide the control that is next | n |
 | Opening the sheet | Focus goes to the sheet itself, not to its first action: a row that opens with a ring on it looks chosen. The first Tab reaches the first action, and the menu of a mouse moves with the arrows | Nothing is pre-selected | n |
@@ -77,6 +86,26 @@ On 2026-10-24 the product owner, using partyline on an Android phone (Chrome), a
 | Focus around a recording | The text box is hidden while a recording is on, so focus moves to the button that sends it; when the recording ends it goes back to the text box if that had focus as it began, else it stays on the microphone | Escape and screen readers need focus inside the composer, and a hold on a phone must not open the keyboard behind the conversation | n |
 | Where reactions live | A `message_reactions` table (message, intelligence, emoji) and two routes on a room's message: `POST /rooms/{id}/messages/{mid}/reactions` with `{"emoji"}` and `DELETE /rooms/{id}/messages/{mid}/reactions/{emoji}` (the emoji percent-encoded); `Message.reactions` lists, per emoji, the intelligences that used it, in the order they reacted. A change is told to the room as `room.reactions` with the message's reactions whole, not as a difference, to whoever can see the room and to nobody else; a call that changes nothing is not told. Migration 0024 follows 0023 of the message edit work. The agent `react` tool is for platform messages and stays as it is | The API had no user route (the agent route stores a message of kind `reaction` aimed at a chat, which AD-015 retired for rooms). Smallest change that every client can render | n |
 | Who may react | Whoever may post in the room (`post` level); the author may react to their own message; one emoji per request (`validation.OneEmoji`); at most 12 different emoji on a message | Reacting is taking part | n |
+| Group photo transport | The image is the raw request body (`Content-Type` image/png, image/jpeg or image/webp), like the photo of an intelligence or an organization; there is no multipart form | One way in, one processing path (`avatars.Process`, 256×256 PNG, blob store), and the web app reuses the code of the profile photo. A multipart form was considered and dropped on 2026-10-24 | y |
+| Who may change it | The manage level on the group (its creator and the admins of its organization, AD-016); who only posts gets 403, who cannot see the group 404 | The same rule as renaming or deleting the group | n |
+| DM | No avatar of its own: the routes answer like the other manage-only routes of a DM (403 to who sees it, 404 to the rest) and `avatar_url` is absent; the app shows the other party | A DM is not managed by anyone (DM-02) | n |
+| Where the list gets it | `Conversation.avatar_url` next to `Room.avatar_url`: the sidebar list and the command menu read the conversation list, the header reads the room | The list does not fetch rooms | n |
+| The blob | The group row holds the sha256 of the stored PNG (`rooms.avatar_sha256`, '' for none); the sweep counts it, and a deleted group releases it with its files | Like `intelligences.avatar_sha256` and `organizations.avatar_sha256` | n |
+| Who edits | The author edits their own message, people and AIs alike, whatever the room (a group or a DM). Only text written by a user or an AI is editable: a system notice, a reaction and what a chat wrote before AD-015 are not. A message with files keeps them; only its text (the caption) changes | The product owner's default; files are content-addressed and shared, so replacing one is a new message | n |
+| Edit window | None: a message is editable for as long as it exists and is not deleted | The product owner's default | n |
+| What an edit leaves | The message keeps its id, sequence number, author, time and attachments; `edited_at` is set to the time of the last edit and the UI shows "edited". No earlier text is kept | Replies and the order stay intact (AD-026) | n |
+| An edit to the same text | Changes nothing: 200 with the message, no `edited_at`, no event | A no-op must not mark a message "edited" or wake AI sessions | n |
+| Who deletes | The author; in a group also whoever manages it (its creator and the admins of its organization); in a DM only the author. A system message is never deleted | The product owner's default. A manager moderates a group; nobody manages a DM (AD-016, AD-023); the pause notice is the platform's own record | n |
+| What a delete leaves | A soft delete. The text and the attachment rows are removed and `deleted_at` is set (`edited_at` is cleared); the row stays, with its id, sequence number, author, time and `reply_to`, as a "message deleted" placeholder. Blobs nothing references any more are released as a deleted room's are (`ReleaseBlobs`), with the retention sweep as the backstop | Replies and the order stay intact; the content is really gone | n |
+| Deleting twice | The second delete is 200 with the placeholder, no event | A retry after a lost answer must not fail | n |
+| History DMs and disabled counterparts | A DM that holds an external person is history: an edit or a delete is 422 `history_only` (CID-21). A DM whose other participant is a disabled user refuses an edit like a post (403 `counterpart_disabled`, DM-02) and still allows a delete | Taking something back is not posting something | n |
+| Authorization | Both routes follow the room access rules (ACL-03, ACL-04): someone who cannot view the room gets 404, someone who can view it and may not act 403. An AI acts as itself on the agent routes and only on rooms it is a member of | Same answers as posting | n |
+| Live update for the web | One live frame, `room.message_updated`, carries the message as it is now (edited or placeholder) to the clients that may view the room (LIVE-02); a client replaces the message by its id | One handler for both; a reconnecting client reloads what it missed as it does for messages | n |
+| Live update for AIs | Two new agent WebSocket frames, `message_edited` and `message_deleted`, each `{type, room, trusted, message}`, pushed to the online sessions of the other AI members of the room whose delivery mode (all, mentions, trusted) wants the message as it was or, for an edit, as it is now. A paused room (DLV-08) gets none. They are never acknowledged and never replayed. A client that does not know a frame type ignores it, which the channel does (`link.handle` ignores unknown frames) | A mention that an edit removes or adds, and a message a session already read, are what a session needs to hear; a mentions-only AI is not woken for chatter. Additive frame types are how the protocol evolves (AD-020) | n |
+| What the AI reads | The harness receives an edit as a channel notification (`type` `edited`) whose content is `This message was edited. New text:` and the new text, and a delete as one (`type` `deleted`) saying `This message was deleted.`, both with the original `message_id`. In history, backlog and pending a deleted message reads `[message deleted]` and carries `deleted`, an edited one carries `edited`. The instructions of every harness name `edit_message` and `delete_message` and say that the event of a change is the same `message_id` again and no new message | Content only, so the three TypeScript adapters frame them with no change (they set `type` apart only for `notice`); the model is told once what the event means | n |
+| AI tools | `edit_message(message_id, text)` and `delete_message(message_id)` act on the AI's own messages in rooms it belongs to, through `PATCH` and `DELETE /api/v1/agent/messages/{id}`, and use one of the 30 posts a minute (TOOL-08) | A runaway AI must not flood the sessions that hear its edits | n |
+| Where the web offers them | In the one menu of a message (`components/message-menu.tsx`), after Reply and Copy text: a long press opens it as a bottom sheet on a touch device; a right click or the "⋯" on the row (visible on hover and keyboard focus) opens it as a menu with a mouse. Delete is set apart, in the destructive colour, and asks first (DLT-09) | The long-press menu and the "⋯" menu were built in parallel and became one when the branches met, so a message has a single place for its actions | n |
+| Editing in the web | Inline in the composer: it loads the text, shows an "Editing message" bar with a Cancel button, Enter (mouse or trackpad) or the Save button saves, Escape or Cancel leaves; the attach button is hidden; the text typed before is restored on leaving | Familiar from messengers; no second editor to build | n |
 
 **Open questions:** none - all resolved or logged above.
 
@@ -183,6 +212,60 @@ On 2026-10-24 the product owner, using partyline on an Android phone (Chrome), a
 
 ---
 
+### P1: A photo for groups ⭐ MVP
+
+**User Story**: As a manager of a group, I want to give it a photo so that people tell it apart in the list and in the conversation at a glance, instead of by its initials.
+
+**Acceptance Criteria**:
+
+1. WHEN a user who manages a group sends `PUT /api/v1/rooms/{id}/avatar` with a PNG, JPEG or WebP image up to 2 MiB THEN the server SHALL store it centre-cropped as a 256×256 PNG, answer 200 with the `Room`, whose `avatar_url` is `/api/v1/rooms/{id}/avatar?v=<sha256>`, and serve that PNG at the URL to whoever can see the group, with the headers of the other avatars; `DELETE /api/v1/rooms/{id}/avatar` SHALL remove it (204, also when there is none). (GAV-01)
+2. Only a caller who manages the group SHALL change it: who can see it and only posts in it gets 403 forbidden, who cannot see it 404 not_found, an anonymous caller 401. A DM has no avatar of its own: nobody manages it, so its routes answer 403 to the people who see it and 404 to everybody else, and its `avatar_url` is absent. (GAV-02)
+3. IF the file is not a PNG, JPEG or WebP image, or cannot be decoded, THEN the server SHALL answer 422 avatar_invalid; IF the body is over 2 MiB THEN it SHALL answer 413 avatar_invalid before reading it; either way the old avatar SHALL stay. (GAV-03)
+4. `Room.avatar_url` and `Conversation.avatar_url` SHALL be absent for a DM and for a group without a photo; WHEN the photo changes THEN the people who can see the group SHALL receive a live `room.changed` with the new `Room`. (GAV-04)
+5. The retention sweep SHALL count a group's avatar as a reference to its blob, so the blob stays for as long as the group points at it; the blob of a replaced or removed avatar SHALL be swept after the grace period, and the one of a deleted group SHALL be released with the group's files. (GAV-05)
+6. The group settings sheet SHALL offer managers a photo editor: a chosen file SHALL be sent at once, a photo over 2 MiB or 1024 px SHALL be resized in the browser first, the server's refusal SHALL show next to the preview with the old photo kept, and "Remove photo" SHALL bring the initials back. (GAV-06)
+7. The photo SHALL show in the sidebar list (also while the list is searched), in the conversation header and in the command menu, with the group's initials as the fallback and DMs unchanged, and SHALL change there when a `room.changed` arrives. (GAV-07)
+
+**Independent Test**: As the creator of a group, open its settings, choose a PNG: the sidebar row, the header and the command menu show it without a reload; remove it and the initials are back.
+### P1: Edit a message ⭐ MVP
+
+**User Story**: As a person or an AI, I want to correct a message I sent, in place, so that the conversation reads right without a second message.
+
+**Acceptance Criteria**:
+
+1. WHEN the author of a text message sends new text (`PATCH /api/v1/rooms/{id}/messages/{mid}` with `{"text"}`; an AI: `PATCH /api/v1/agent/messages/{id}`) THEN the system SHALL store the text, set `edited_at` to the time of the edit, keep the message's id, sequence number, author, time and attachments, and answer 200 with the message. There SHALL be no time limit. (EDT-01)
+2. IF the caller is not the message's author THEN the system SHALL answer 403 when the caller can view the room and 404 when they cannot or the message is not in that room, whoever the caller is: another participant, a group's manager, an organization admin, the manager of the author's AI. (EDT-02)
+3. IF the message is not text written by a person or an AI (a system notice, a reaction, a message a chat wrote) THEN the system SHALL answer 422, and IF it was deleted THEN 409; neither SHALL change anything. (EDT-03)
+4. IF the new text is longer than 16,000 characters, or empty while the message has no attachments, THEN the system SHALL answer 422 (MSG-02) and change nothing; a message with files MAY have its text emptied. WHEN the new text equals the stored text THEN the system SHALL answer 200 with the message as it is, without setting `edited_at` or publishing an event. (EDT-04)
+5. IF the room is a DM that holds an external person THEN the system SHALL answer 422 `history_only` (CID-21), and IF its other participant is a disabled user THEN 403 `counterpart_disabled` (DM-02). (EDT-05)
+6. WHEN a message is edited THEN every live web client that may view the room SHALL receive a `room.message_updated` frame with the message, and a client that may not SHALL receive nothing about it. (EDT-06)
+7. WHEN a message is edited THEN every online session of an AI member of the room other than the author, whose delivery mode wants the message as it was or as it is now, SHALL receive a `message_edited` frame with the room, the trusted flag and the message with its new text; a paused room SHALL send none, and a client that does not know the frame type SHALL ignore it and stay connected. History, pending messages and the backlog SHALL return the current text with `edited_at`. (EDT-07)
+8. WHEN an AI calls the tool `edit_message` with a message id and text THEN the channel SHALL edit that message of the AI's through `PATCH /api/v1/agent/messages/{id}` and answer that it was edited; an edit SHALL use one of the AI's 30 posts a minute (TOOL-08), and a message that is not the AI's own, or not in a room it belongs to, SHALL be refused with the server's reason. (EDT-08)
+9. WHEN the channel receives a `message_edited` frame THEN it SHALL hand the harness a notification of `type` `edited` for the original `message_id`, whose content says that the message was edited and gives the new text, and SHALL NOT acknowledge it; the instructions the channel gives every harness SHALL name `edit_message` and `delete_message` and say that such an event is not a new message. (EDT-09)
+10. WHEN the viewer opens the menu of one of their own text messages THEN the app SHALL offer "Edit"; choosing it SHALL load the text into the composer under an "Editing message" bar with a Cancel button and without the attach button, Enter (with a mouse or trackpad) or Save SHALL send it and leave editing, and Escape or Cancel SHALL leave editing and restore what the box held before. (EDT-10)
+
+**Independent Test**: In a conversation, post "hello wrld", choose Edit on it, change the text to "hello world" and press Enter: the message keeps its place, reads "hello world" with "edited" next to its time, and an AI that is a member is sent a `message_edited` frame with the new text.
+
+---
+
+### P1: Delete a message ⭐ MVP
+
+**User Story**: As a person or an AI I want to take back a message I sent, and as the manager of a group I want to remove a message from it, so that its text and files are gone while the conversation keeps its order and its replies.
+
+**Acceptance Criteria**:
+
+1. WHEN an allowed caller deletes a message (`DELETE /api/v1/rooms/{id}/messages/{mid}`; an AI: `DELETE /api/v1/agent/messages/{id}`) THEN the system SHALL remove its text and its attachments, set `deleted_at`, clear `edited_at`, keep its id, sequence number, author, time and `reply_to`, and answer 200 with the placeholder. WHEN the message is already deleted THEN the system SHALL answer 200 with the placeholder again and publish nothing. (DLT-01)
+2. The system SHALL allow the author, and in a group also whoever manages it (its creator and the admins of its organization); in a DM only the author. Any other caller that can view the room SHALL get 403, and one that cannot, or whose message is not in that room, 404. (DLT-02)
+3. A system message SHALL NOT be deleted (422), and IF the room is a DM that holds an external person THEN the answer SHALL be 422 `history_only` (CID-21). (DLT-03)
+4. The attachment rows SHALL go in the same transaction as the text. The blobs they were the last reference to SHALL be released as a deleted room's are: removed at once when written more than a minute ago, else by the next retention sweep. A blob another message references SHALL stay. (DLT-04)
+5. The placeholder SHALL be what every read of the room shows in the message's place and order: history (`GET /api/v1/rooms/{id}/messages`, the AI's `history` tool), pending messages, the backlog of a reconnecting AI, the dashboard feed and the conversation list's last message (`deleted` set, no text); its text and files SHALL NOT be returned by any of them, and the files list SHALL not list its files. Messages that replied to it keep pointing to it. (DLT-05)
+6. WHEN a message is deleted THEN every live web client that may view the room SHALL receive a `room.message_updated` frame with the placeholder, and a client that may not SHALL receive nothing about it. (DLT-06)
+7. WHEN a message is deleted THEN every online session of an AI member of the room other than the author, whose delivery mode wanted the message, SHALL receive a `message_deleted` frame with the room, the trusted flag and the placeholder; a paused room SHALL send none, and a client that does not know the frame type SHALL ignore it and stay connected. A reconnecting AI SHALL receive a deleted message it has not received yet as the placeholder `[message deleted]`. (DLT-07)
+8. WHEN an AI calls the tool `delete_message` with a message id THEN the channel SHALL delete that message of the AI's own through `DELETE /api/v1/agent/messages/{id}` and answer that it was deleted; a deletion SHALL use one of the AI's 30 posts a minute (TOOL-08). WHEN the channel receives a `message_deleted` frame THEN it SHALL hand the harness a notification of `type` `deleted` for the original `message_id` saying that the message was deleted, and SHALL NOT acknowledge it. (DLT-08)
+9. WHEN the viewer opens the menu of a message they may delete (their own and, in a group they manage, any but a system notice) THEN the app SHALL offer "Delete"; choosing it SHALL ask for confirmation, saying that it is deleted for everyone and cannot be undone, and only confirming SHALL delete it; a failure SHALL be said and leave the message as it was. (DLT-09)
+10. A deleted message SHALL show in the timeline as "Message deleted" in the place of its text and files, with its author and time, no menu and no Markdown; the conversation list SHALL show "Message deleted" as the preview of a deleted last message, and the quote of a deleted message SHALL say it too. (DLT-10)
+
+**Independent Test**: Post a file with a caption in a group, choose Delete on it as its author and confirm: the row reads "Message deleted" in the same place, the file is gone from the files panel and, once nothing else references it, from disk; an AI member is sent a `message_deleted` frame; the group's creator, who did not write it, may delete another member's message the same way, and a plain member may not.
 ### P1: The composer stays above the keyboard ⭐ MVP
 
 **User Story**: As a phone user, I want the composer to stay in sight above the on-screen keyboard so that I keep writing and sending without closing the keyboard and tapping the field again.
@@ -229,7 +312,7 @@ On 2026-10-24 the product owner, using partyline on an Android phone (Chrome), a
 2. WHEN the user right-clicks a conversation or a message, or presses the context-menu key or Shift+F10 on it, THEN a menu SHALL open at the pointer; a "⋯" button on the row, shown on hover and on keyboard focus, SHALL open the same menu. The browser's own menu SHALL NOT open. (ACT-02)
 3. A conversation's menu SHALL offer, in this order and only where they apply: Mark as read (it has unread messages), View profile (a DM) and Delete group (the viewer manages the group; never a DM). They use the existing routes (`PUT /rooms/{id}/read`, `DELETE /rooms/{id}`). It SHALL NOT offer Leave group, which the rules of the server leave without effect. (ACT-03)
 4. Delete group SHALL ask first in an alert dialog that names the conversation, with Cancel focused; a failure SHALL leave the conversation where it is and say so; deleting the open conversation SHALL go back to the list. (ACT-04)
-5. A message's menu SHALL offer Reply and, when it has text, Copy text; Copy SHALL confirm with a notice. Nothing is offered for a system message. (ACT-05)
+5. A message's menu SHALL offer, in this order and only where they apply: Reply (the viewer may post), Copy text (the message has text; it SHALL confirm with a notice), Edit and Delete (EDT-10, DLT-09). Nothing is offered for a system message or for a deleted one, and a conversation that is history (CID-21) offers Copy text alone. (ACT-05)
 6. The sheet and the menu SHALL be named after what they act on, trap focus, close with Escape and give focus back to what opened them; a menu moves with the arrow keys; destructive actions carry the destructive colour, an icon and their word; every sheet row is at least 44 px. (ACT-06)
 7. WHEN the user chooses Reply THEN the composer SHALL show "Replying to <name>" with an excerpt and a Cancel button above the text box, with the cursor in the text box, and the next message sent (text or voice) SHALL carry `reply_to`; changing conversation or sending SHALL clear it, and so SHALL Cancel and Escape in the text box (what was typed stays). A failed send keeps it. (ACT-07)
 
@@ -308,6 +391,33 @@ On 2026-10-24 the product owner, using partyline on an Android phone (Chrome), a
 | PRF-04 | P1: Profile panel | Execute | Implementing |
 | PRF-05 | P1: Profile panel | Execute | Implementing |
 | PRF-06 | P1: Profile panel | Execute | Implementing |
+| GAV-01 | P1: A photo for groups | Execute | Implementing |
+| GAV-02 | P1: A photo for groups | Execute | Implementing |
+| GAV-03 | P1: A photo for groups | Execute | Implementing |
+| GAV-04 | P1: A photo for groups | Execute | Implementing |
+| GAV-05 | P1: A photo for groups | Execute | Implementing |
+| GAV-06 | P1: A photo for groups | Execute | Implementing |
+| GAV-07 | P1: A photo for groups | Execute | Implementing |
+| EDT-01 | P1: Edit a message | Execute | Implementing |
+| EDT-02 | P1: Edit a message | Execute | Implementing |
+| EDT-03 | P1: Edit a message | Execute | Implementing |
+| EDT-04 | P1: Edit a message | Execute | Implementing |
+| EDT-05 | P1: Edit a message | Execute | Implementing |
+| EDT-06 | P1: Edit a message | Execute | Implementing |
+| EDT-07 | P1: Edit a message | Execute | Implementing |
+| EDT-08 | P1: Edit a message | Execute | Implementing |
+| EDT-09 | P1: Edit a message | Execute | Implementing |
+| EDT-10 | P1: Edit a message | Execute | Implementing |
+| DLT-01 | P1: Delete a message | Execute | Implementing |
+| DLT-02 | P1: Delete a message | Execute | Implementing |
+| DLT-03 | P1: Delete a message | Execute | Implementing |
+| DLT-04 | P1: Delete a message | Execute | Implementing |
+| DLT-05 | P1: Delete a message | Execute | Implementing |
+| DLT-06 | P1: Delete a message | Execute | Implementing |
+| DLT-07 | P1: Delete a message | Execute | Implementing |
+| DLT-08 | P1: Delete a message | Execute | Implementing |
+| DLT-09 | P1: Delete a message | Execute | Implementing |
+| DLT-10 | P1: Delete a message | Execute | Implementing |
 | KBD-01 | P1: Composer above the keyboard | Execute | Implemented |
 | KBD-02 | P1: Composer above the keyboard | Execute | Implemented |
 | KBD-03 | P1: Composer above the keyboard | Execute | Implemented |
@@ -342,7 +452,7 @@ On 2026-10-24 the product owner, using partyline on an Android phone (Chrome), a
 | RCT-07 | P2: Reactions | Execute | Implemented |
 | RCT-08 | P2: Reactions | Execute | Implementing |
 
-**Coverage:** 66 total
+**Coverage:** 93 total
 
 ---
 
@@ -357,3 +467,5 @@ On 2026-10-24 the product owner, using partyline on an Android phone (Chrome), a
 - [ ] On his phone he sends several messages in a row with the keyboard open and never has to close it to see the composer.
 - [ ] He sends a voice message with one tap and plays one he received, without leaving the conversation.
 - [ ] He presses and holds a conversation to mark it read, and a message to answer or copy it; he swipes a message to answer it and reacts to one with a tap.
+- [ ] The product owner opens a group's settings, chooses a picture and sees it in the list, the header and the search at once; removing it brings the initials back.
+- [ ] The product owner fixes a typo in a message and takes back one sent by mistake; the manager of a group removes another member's message; the AIs in the conversation hear about both and the conversation keeps its order.

@@ -88,6 +88,9 @@ function RoomPage() {
     setReplyRoom(roomId);
     setReplyTo(null);
   }
+  // The message being edited in the composer (EDT-10) belongs to the conversation it was chosen in.
+  const [edit, setEdit] = useState<{ roomId: string; message: Message } | null>(null);
+  const editing = edit?.roomId === roomId ? edit.message : null;
 
   if (room.isError && isApiError(room.error) && room.error.status === 404) {
     return <RoomNotFound />;
@@ -100,6 +103,23 @@ function RoomPage() {
   const canManage = !isDM && r.my_level === LevelManage;
   const history = historyPlatform(r);
   const historyOnly = history !== null || refusedAsHistory;
+  // Edit needs a composer to edit in; a conversation that is history changes no more (EDT-05, DLT-03).
+  // A message is answered or edited, one at a time: choosing either lets the other go.
+  const onEdit =
+    canPost(r.my_level) && !historyOnly
+      ? (message: Message) => {
+          setReplyTo(null);
+          setEdit({ roomId, message });
+        }
+      : undefined;
+  // Reply needs a composer to answer in (ACT-07).
+  const onReply =
+    canPost(r.my_level) && !historyOnly
+      ? (message: Message) => {
+          setEdit(null);
+          setReplyTo(message);
+        }
+      : undefined;
   const memberList = members.data ?? [];
   const participantCount = isDM ? r.participants.length : memberList.length;
   const title = conversationTitle(r, me.id, t);
@@ -187,7 +207,10 @@ function RoomPage() {
           meId={me.id}
           members={memberList}
           focus={focus}
-          onReply={canPost(r.my_level) && !historyOnly ? setReplyTo : undefined}
+          onReply={onReply}
+          canModerate={canManage}
+          onEdit={onEdit}
+          frozen={historyOnly}
         />
         {historyOnly ? (
           <HistoryNotice platform={history ?? ""} />
@@ -200,6 +223,8 @@ function RoomPage() {
             members={memberList}
             replyTo={replyTo}
             onClearReply={() => setReplyTo(null)}
+            editing={editing}
+            onEditDone={() => setEdit(null)}
           />
         )}
       </div>

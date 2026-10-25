@@ -209,7 +209,7 @@ func (q *Queries) DeleteReadCursor(ctx context.Context, arg DeleteReadCursorPara
 }
 
 const getDMRoom = `-- name: GetDMRoom :one
-SELECT id, owner_id, name, description, retention_days, next_seq, agent_streak, agents_paused, created_at, updated_at, instructions, instructions_by, updated_by, kind, dm_a, dm_b, read_baseline, org_id, creator_iid FROM rooms WHERE kind = 'dm' AND dm_a = ? AND dm_b = ?
+SELECT id, owner_id, name, description, retention_days, next_seq, agent_streak, agents_paused, created_at, updated_at, instructions, instructions_by, updated_by, kind, dm_a, dm_b, read_baseline, org_id, creator_iid, avatar_sha256 FROM rooms WHERE kind = 'dm' AND dm_a = ? AND dm_b = ?
 `
 
 type GetDMRoomParams struct {
@@ -240,6 +240,7 @@ func (q *Queries) GetDMRoom(ctx context.Context, arg GetDMRoomParams) (Room, err
 		&i.ReadBaseline,
 		&i.OrgID,
 		&i.CreatorIid,
+		&i.AvatarSha256,
 	)
 	return i, err
 }
@@ -293,7 +294,7 @@ func (q *Queries) InsertDMRoom(ctx context.Context, arg InsertDMRoomParams) (int
 }
 
 const listAgentDMRooms = `-- name: ListAgentDMRooms :many
-SELECT id, owner_id, name, description, retention_days, next_seq, agent_streak, agents_paused, created_at, updated_at, instructions, instructions_by, updated_by, kind, dm_a, dm_b, read_baseline, org_id, creator_iid FROM rooms WHERE kind = 'dm' AND (dm_a = ?1 OR dm_b = ?1) ORDER BY id
+SELECT id, owner_id, name, description, retention_days, next_seq, agent_streak, agents_paused, created_at, updated_at, instructions, instructions_by, updated_by, kind, dm_a, dm_b, read_baseline, org_id, creator_iid, avatar_sha256 FROM rooms WHERE kind = 'dm' AND (dm_a = ?1 OR dm_b = ?1) ORDER BY id
 `
 
 // The DMs an AI takes part in (merge, MRG-01).
@@ -326,6 +327,7 @@ func (q *Queries) ListAgentDMRooms(ctx context.Context, id sql.NullString) ([]Ro
 			&i.ReadBaseline,
 			&i.OrgID,
 			&i.CreatorIid,
+			&i.AvatarSha256,
 		); err != nil {
 			return nil, err
 		}
@@ -372,7 +374,7 @@ func (q *Queries) ListChatDMRoomIDs(ctx context.Context, memberID string) ([]str
 }
 
 const listLastMessages = `-- name: ListLastMessages :many
-SELECT v.id, v.room_id, v.seq, v.author_kind, v.author_id, v.author_user_id, v.author_iid, v.sender_id, v.sender_alt_id, v.sender_name, v.kind, v.text, v.reply_to, v.recipients_json, v.external_id, v.created_at, v.author_name, v.author_handle, v.author_ikind, v.author_avatar FROM message_views v
+SELECT v.id, v.room_id, v.seq, v.author_kind, v.author_id, v.author_user_id, v.author_iid, v.sender_id, v.sender_alt_id, v.sender_name, v.kind, v.text, v.reply_to, v.recipients_json, v.external_id, v.created_at, v.edited_at, v.deleted_at, v.author_name, v.author_handle, v.author_ikind, v.author_avatar FROM message_views v
 JOIN (SELECT m.room_id, MAX(m.seq) AS seq FROM messages m
       WHERE m.room_id IN (/*SLICE:room_ids*/?) GROUP BY m.room_id) newest
   ON newest.room_id = v.room_id AND newest.seq = v.seq
@@ -415,6 +417,8 @@ func (q *Queries) ListLastMessages(ctx context.Context, roomIds []string) ([]Mes
 			&i.RecipientsJson,
 			&i.ExternalID,
 			&i.CreatedAt,
+			&i.EditedAt,
+			&i.DeletedAt,
 			&i.AuthorName,
 			&i.AuthorHandle,
 			&i.AuthorIkind,

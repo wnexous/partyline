@@ -8,6 +8,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/wnexous/partyline/internal/connectors/safehttp"
+	"github.com/wnexous/partyline/internal/memlimit"
 )
 
 func env(kv map[string]string) func(string) string {
@@ -28,6 +29,7 @@ func TestLoadDefaults(t *testing.T) {
 	require.False(t, cfg.SecureCookies())
 	require.False(t, cfg.AllowPrivateNetworks, "CON-13: connectors reach only public addresses by default")
 	require.Nil(t, cfg.PrivateNetworkAllowlist, "S6: no private destination is listed by default")
+	require.Nil(t, cfg.MemoryLimit, "OPS-06: without PARTYLINE_MEMORY_LIMIT the container's limit applies")
 }
 
 func TestLoadOverrides(t *testing.T) {
@@ -70,6 +72,7 @@ func TestLoadInvalidValuesNameTheVariable(t *testing.T) {
 		"PARTYLINE_LOG_FORMAT":                "xml",
 		"PARTYLINE_ALLOW_PRIVATE_NETWORKS":    "maybe",
 		"PARTYLINE_PRIVATE_NETWORK_ALLOWLIST": "10.0.0.0/8,not a host",
+		"PARTYLINE_MEMORY_LIMIT":              "512MB",
 	}
 	for name, value := range cases {
 		t.Run(name, func(t *testing.T) {
@@ -77,6 +80,22 @@ func TestLoadInvalidValuesNameTheVariable(t *testing.T) {
 			require.Error(t, err)
 			require.Contains(t, err.Error(), name)
 		})
+	}
+}
+
+// OPS-06: PARTYLINE_MEMORY_LIMIT is a size or off, and a wrong one fails the start with what is expected.
+func TestLoadMemoryLimit(t *testing.T) {
+	cfg, err := Load(env(map[string]string{"PARTYLINE_MEMORY_LIMIT": "300MiB"}))
+	require.NoError(t, err)
+	require.Equal(t, &memlimit.Limit{Bytes: 300 << 20}, cfg.MemoryLimit)
+
+	cfg, err = Load(env(map[string]string{"PARTYLINE_MEMORY_LIMIT": "off"}))
+	require.NoError(t, err)
+	require.Equal(t, &memlimit.Limit{Off: true}, cfg.MemoryLimit)
+
+	for _, value := range []string{"0", "1MiB", "-1", "auto"} {
+		_, err := Load(env(map[string]string{"PARTYLINE_MEMORY_LIMIT": value}))
+		require.ErrorContains(t, err, "PARTYLINE_MEMORY_LIMIT: invalid size", value)
 	}
 }
 

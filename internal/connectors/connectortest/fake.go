@@ -14,6 +14,7 @@ import (
 	"context"
 	"errors"
 	"strconv"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -65,7 +66,7 @@ func New() *Fake {
 // Kind returns the fake kind: a required secret "token", an optional "label" and chat listing.
 func (f *Fake) Kind() connectors.Kind {
 	return connectors.Kind{
-		Name: KindName, Label: "Fake", CanListChats: true,
+		Name: KindName, Label: "Fake", CanListChats: true, CanReact: true, CanSendFiles: true, Address: Address,
 		Fields: []connectors.Field{
 			{Name: "token", Label: "Token", Type: dto.FieldTypeSecret, Required: true},
 			{Name: "label", Label: "Label", Type: dto.FieldTypeString},
@@ -74,10 +75,21 @@ func (f *Fake) Kind() connectors.Kind {
 	}
 }
 
+// Address is the fake kind's Address (CID-31): a phone number of 8 to 15 digits is a direct chat
+// that the platform names by the same digits; anything else is no address. Chat ids of Partyline and
+// the ids the tests give their chats ("120363000000000001@g.us", "-1001234567890") are not.
+func Address(_ connectors.Config, raw string) (connectors.ChatInfo, bool) {
+	raw = strings.TrimSpace(raw)
+	if n := len(raw); n < 8 || n > 15 || strings.Trim(raw, "0123456789") != "" {
+		return connectors.ChatInfo{}, false
+	}
+	return connectors.ChatInfo{ID: raw, Kind: "dm"}, true
+}
+
 func (f *Fake) newInstance(cfg connectors.Config, d connectors.Deps) (connectors.Connector, error) {
 	inst := &Instance{
 		ID: d.ID, Config: cfg, Deps: d,
-		runs: make(chan struct{}, 64), stops: make(chan struct{}, 64), fail: make(chan error, 64),
+		runs: make(chan struct{}, 64), stops: make(chan struct{}, 64), fail: make(chan error, 64), crash: make(chan any, 64),
 		sends: make(chan connectors.Outbound, 64), sending: make(chan struct{}, 64), reacts: make(chan connectors.Reaction, 64),
 	}
 	f.mu.Lock()
@@ -140,10 +152,21 @@ type Instance struct {
 	parts int
 	// quiet makes sends skip Created (QuietSends).
 	quiet bool
+	// failAfter, when set, makes a send create its first message and then fail with it
+	// (SetSendErrorAfterFirst).
+	failAfter error
+	// reactErr fails reactions (SetReactError); nextReact numbers the messages they create and
+	// reacted records the ones that went out.
+	reactErr  error
+	nextReact int
+	reacted   []connectors.Reaction
+	// sendPanic, reactPanic and listPanic make the call panic with them (SetSendPanic and the like).
+	sendPanic, reactPanic, listPanic *panicValue
 
 	runs    chan struct{}
 	stops   chan struct{}
 	fail    chan error
+	crash   chan any
 	sends   chan connectors.Outbound
 	sending chan struct{}
 	reacts  chan connectors.Reaction
@@ -161,6 +184,8 @@ func (i *Instance) Run(ctx context.Context, h connectors.Handler) error {
 		return ctx.Err()
 	case err := <-i.fail:
 		return err
+	case v := <-i.crash:
+		panic(v)
 	}
 }
 
@@ -173,10 +198,19 @@ func (i *Instance) Send(ctx context.Context, m connectors.Outbound) (string, err
 	err := i.sendErr
 	i.nextID++
 	id := "ext-" + strconv.Itoa(i.nextID)
-	gate, parts, quiet := i.gate, i.parts, i.quiet
+	gate, parts, quiet, failAfter, crash := i.gate, i.parts, i.quiet, i.failAfter, i.sendPanic
 	i.mu.Unlock()
+	if crash != nil {
+		panic(crash.v)
+	}
 	if err != nil {
 		return "", err
+	}
+	if failAfter != nil {
+		if m.Created != nil {
+			m.Created(id)
+		}
+		return "", failAfter
 	}
 	if gate != nil {
 		i.sending <- struct{}{}
@@ -243,10 +277,52 @@ func (i *Instance) SetSendParts(n int) {
 	i.mu.Unlock()
 }
 
-// React implements connectors.Reactor; it records r (see WaitReact).
-func (i *Instance) React(_ context.Context, r connectors.Reaction) error {
+// React implements connectors.Reactor; it records r (see WaitReact) and tells r.Created the id of the
+// message the reaction created, "react-<n>", as a platform that reports the account's own messages does.
+// A reaction fails with SetReactError's error, and waits while HoldSends is on, like a send.
+func (i *Instance) React(ctx context.Context, r connectors.Reaction) error {
+	i.mu.Lock()
+	err := i.reactErr
+	i.nextReact++
+	id := "react-" + strconv.Itoa(i.nextReact)
+	gate, quiet, crash := i.gate, i.quiet, i.reactPanic
+	i.mu.Unlock()
+	if crash != nil {
+		panic(crash.v)
+	}
+	if err != nil {
+		return err
+	}
+	if gate != nil {
+		i.sending <- struct{}{}
+		select {
+		case <-gate:
+		case <-ctx.Done():
+			return ctx.Err()
+		}
+	}
+	if r.Created != nil && !quiet {
+		r.Created(id)
+	}
+	i.mu.Lock()
+	i.reacted = append(i.reacted, r)
+	i.mu.Unlock()
 	i.reacts <- r
 	return nil
+}
+
+// Reactions returns every reaction that went out so far.
+func (i *Instance) Reactions() []connectors.Reaction {
+	i.mu.Lock()
+	defer i.mu.Unlock()
+	return append([]connectors.Reaction(nil), i.reacted...)
+}
+
+// SetReactError makes later reactions fail with err (nil restores success).
+func (i *Instance) SetReactError(err error) {
+	i.mu.Lock()
+	i.reactErr = err
+	i.mu.Unlock()
 }
 
 // WaitReact waits for the next reaction and returns it.
@@ -266,6 +342,9 @@ func (i *Instance) WaitReact(t testing.TB) connectors.Reaction {
 func (i *Instance) ListChats(context.Context) ([]connectors.ChatInfo, error) {
 	i.mu.Lock()
 	defer i.mu.Unlock()
+	if i.listPanic != nil {
+		panic(i.listPanic.v)
+	}
 	if i.listErr != nil {
 		return nil, i.listErr
 	}
@@ -286,11 +365,51 @@ func (i *Instance) SetChats(chats ...connectors.ChatInfo) {
 	i.mu.Unlock()
 }
 
+// SetSendErrorAfterFirst makes later sends create their first message (telling Created its id, as a
+// platform that took the text of a send and refused its file does) and then fail with err (nil
+// restores success).
+func (i *Instance) SetSendErrorAfterFirst(err error) {
+	i.mu.Lock()
+	i.failAfter = err
+	i.mu.Unlock()
+}
+
 // SetSendError makes later sends fail with err (nil restores success).
 func (i *Instance) SetSendError(err error) {
 	i.mu.Lock()
 	i.sendErr = err
 	i.mu.Unlock()
+}
+
+// panicValue holds a value a call panics with, so that "no panic" is not a nil value.
+type panicValue struct{ v any }
+
+// SetSendPanic makes later sends panic with v, like a connector with a bug (nil restores success).
+func (i *Instance) SetSendPanic(v any) {
+	i.mu.Lock()
+	i.sendPanic = panicOf(v)
+	i.mu.Unlock()
+}
+
+// SetReactPanic makes later reactions panic with v (nil restores success).
+func (i *Instance) SetReactPanic(v any) {
+	i.mu.Lock()
+	i.reactPanic = panicOf(v)
+	i.mu.Unlock()
+}
+
+// SetListPanic makes ListChats panic with v (nil restores it).
+func (i *Instance) SetListPanic(v any) {
+	i.mu.Lock()
+	i.listPanic = panicOf(v)
+	i.mu.Unlock()
+}
+
+func panicOf(v any) *panicValue {
+	if v == nil {
+		return nil
+	}
+	return &panicValue{v}
 }
 
 // WaitRun waits until Run was called (once per call of WaitRun).
@@ -315,6 +434,9 @@ func (i *Instance) WaitStop(t testing.TB) {
 
 // Fail makes the running (or next) Run return err.
 func (i *Instance) Fail(err error) { i.fail <- err }
+
+// Panic makes the running (or next) Run panic with v, like a connector with a bug.
+func (i *Instance) Panic(v any) { i.crash <- v }
 
 // Connected reports StatusConnected through the handler of the current Run.
 func (i *Instance) Connected() { i.handler().Status(connectors.StatusConnected, "") }

@@ -5,6 +5,7 @@ import (
 	"log/slog"
 	"net/http"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -85,6 +86,40 @@ func TestRunFollowsTheNumberOfItsInstance(t *testing.T) {
 	check(t, checks)
 	check(t, checks)
 	require.True(t, rec.NoStatus(), "only the connection's own number counts")
+}
+
+// statusPanics is a Handler whose Status panics from its second call on, like a bug in the code behind it.
+type statusPanics struct {
+	*connectortest.Recorder
+	calls atomic.Int32
+}
+
+func (h *statusPanics) Status(s connectors.Status, detail string) {
+	if h.calls.Add(1) > 1 {
+		panic("status bug")
+	}
+	h.Recorder.Status(s, detail)
+}
+
+// CON-15: the check of the instance runs in a goroutine of its own, where a panic would end the whole
+// process. It is recovered and ends Run with it, for the supervisor to show the error and start the
+// connector again.
+func TestAPanicWhileCheckingTheInstanceEndsRun(t *testing.T) {
+	f := newFakeEvolution(t)
+	c := newConnector(t, f)
+	checks := checkOnDemand(c)
+	h := &statusPanics{Recorder: connectortest.NewRecorder()}
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	done := make(chan error, 1)
+	go func() { done <- c.Run(ctx, h) }()
+	f.socket()
+	require.Equal(t, connectors.StatusConnected, h.NextStatus(t))
+
+	f.setConnected("acme", false)
+	check(t, checks) // the check reports the new state, which panics
+
+	require.ErrorIs(t, ended(t, done), connectors.ErrPanic)
 }
 
 // WA-06: with the production pause the connector looks at its instance every 60 seconds and not in
@@ -276,5 +311,124 @@ func TestRunLogsTheStateOfTheNumberWithoutContent(t *testing.T) {
 	require.Contains(t, logs.String(), "status=error")
 	for _, secret := range []string{"PRIVATE-TEXT", globalKey, acmeToken} {
 		require.NotContains(t, logs.String(), secret)
+	}
+}
+
+// The status of a connection whose number is not connected says why. evolution-go reports it in the
+// disconnect_reason of the instance, so the detail names it, between the fact and what to do.
+const (
+	reconnecting = "the WhatsApp number is not connected (Reconnecting); reconnect it in evolution-go"
+	loggedOut    = "the WhatsApp number is not connected (logged out from another device); reconnect it in evolution-go"
+)
+
+// CID-28: the reason evolution-go gives for a number that is not connected is in the status detail,
+// as the real instance list reports it, and an open number has none. The two samples are what
+// GET /instance/all answered for an instance that was reconnecting and for one that was open.
+func TestRunSaysWhyTheNumberIsNotConnected(t *testing.T) {
+	f := newFakeEvolution(t)
+	f.useInstances(t, reconnectingInstance, openInstance)
+
+	rec := connectortest.NewRecorder()
+	begin(t, newConnector(t, f, "acme"), f, rec)
+	require.Equal(t, connectors.StatusError, rec.NextStatus(t))
+	require.Equal(t, reconnecting, rec.NextStatusDetail(t))
+
+	rec = connectortest.NewRecorder()
+	start(t, newConnector(t, f, "atlas"), f, rec)
+	require.Empty(t, rec.NextStatusDetail(t), "an open number has nothing to explain")
+}
+
+// CID-28: the reason follows the instance. A new reason of a number that stays disconnected is a
+// change and is reported; the same one is not; no reason says what it always said; and once the
+// number is open the detail is gone.
+func TestRunFollowsTheReasonOfTheNumber(t *testing.T) {
+	f := newFakeEvolution(t)
+	f.useInstances(t, reconnectingInstance)
+	c := newConnector(t, f)
+	checks := checkOnDemand(c)
+	rec := connectortest.NewRecorder()
+	begin(t, c, f, rec)
+	require.Equal(t, connectors.StatusError, rec.NextStatus(t))
+	require.Equal(t, reconnecting, rec.NextStatusDetail(t))
+
+	check(t, checks) // still reconnecting: nothing new to say
+	check(t, checks)
+	require.True(t, rec.NoStatus(), "an unchanged reason is not reported again")
+
+	f.setDisconnectReason("acme", "logged out from another device")
+	check(t, checks)
+	require.Equal(t, connectors.StatusError, rec.NextStatus(t))
+	require.Equal(t, loggedOut, rec.NextStatusDetail(t))
+
+	f.setDisconnectReason("acme", "")
+	check(t, checks)
+	require.Equal(t, connectors.StatusError, rec.NextStatus(t))
+	require.Equal(t, notConnected, rec.NextStatusDetail(t), "no reason: the detail of WA-06")
+
+	f.setDisconnectReason("acme", "Reconnecting")
+	check(t, checks)
+	require.Equal(t, reconnecting, nextError(t, rec))
+
+	f.setConnected("acme", true)
+	check(t, checks)
+	require.Equal(t, connectors.StatusConnected, rec.NextStatus(t))
+	require.Empty(t, rec.NextStatusDetail(t))
+}
+
+// nextError waits for the next status, requires it to be an error and returns its detail.
+func nextError(t *testing.T, rec *connectortest.Recorder) string {
+	t.Helper()
+	require.Equal(t, connectors.StatusError, rec.NextStatus(t))
+	return rec.NextStatusDetail(t)
+}
+
+// CID-28: the flag decides, not the reason. A number evolution-go calls connected is connected
+// whatever reason is left over from before, and a reason that is not text counts as none: the
+// instance list is still read and the connection still runs.
+func TestRunTrustsTheFlagOverTheReason(t *testing.T) {
+	f := newFakeEvolution(t)
+	f.useInstances(t, `{"name":"acme","connected":true,"disconnect_reason":"Reconnecting"}`)
+	rec := connectortest.NewRecorder()
+	start(t, newConnector(t, f), f, rec)
+	require.Empty(t, rec.NextStatusDetail(t), "connected: the reason is old news")
+
+	for name, reason := range map[string]string{"a number": `42`, "null": `null`, "an object": `{"why":"x"}`, "a list": `["x"]`} {
+		f := newFakeEvolution(t)
+		f.useInstances(t, `{"name":"acme","connected":false,"disconnect_reason":`+reason+`}`)
+		rec := connectortest.NewRecorder()
+		begin(t, newConnector(t, f), f, rec)
+		require.Equal(t, notConnected, nextError(t, rec), "%s counts as no reason", name)
+	}
+}
+
+// CID-28: the reason is text from the server the connection points at, so it is cleaned before it
+// is shown: white space and control characters become single spaces, a closing full stop goes (the
+// detail goes on with a semicolon), and a long one is cut at 120 characters with an ellipsis. A
+// reason with nothing left says nothing.
+func TestRunCleansTheReasonOfTheNumber(t *testing.T) {
+	long := strings.Repeat("x", 300)
+	for name, tc := range map[string]struct{ reason, want string }{
+		"white space":       {"  logged   out\tby \n the server  ", "(logged out by the server)"},
+		"control":           {"logged\x00 out\x1b[31m\u2028by\u200bthe\u0085server", "(logged out [31m by the server)"},
+		"closing full stop": {"Disconnected emitted because the websocket is closed by the server.", "(Disconnected emitted because the websocket is closed by the server)"},
+		"full stops":        {"closed by the server . ..", "(closed by the server)"},
+		"cut after a space": {strings.Repeat("abcdef ", 30), "(" + strings.TrimSpace(strings.Repeat("abcdef ", 17)) + "…)"}, // the 119th character is a space
+		"too long":          {long, "(" + strings.Repeat("x", 119) + "…)"},
+		"exactly the limit": {strings.Repeat("y", 120), "(" + strings.Repeat("y", 120) + ")"},
+		"multibyte":         {strings.Repeat("é", 121), "(" + strings.Repeat("é", 119) + "…)"},
+		"only blanks":       {" \n\t ", ""},
+		"only a full stop":  {" . ", ""},
+	} {
+		t.Run(name, func(t *testing.T) {
+			f := newFakeEvolution(t)
+			f.useInstances(t, `{"name":"acme","connected":false,"disconnect_reason":`+quote(tc.reason)+`}`)
+			rec := connectortest.NewRecorder()
+			begin(t, newConnector(t, f), f, rec)
+			want := notConnected
+			if tc.want != "" {
+				want = "the WhatsApp number is not connected " + tc.want + "; reconnect it in evolution-go"
+			}
+			require.Equal(t, want, nextError(t, rec))
+		})
 	}
 }

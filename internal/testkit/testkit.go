@@ -78,6 +78,7 @@ type options struct {
 	version          string
 	database         string
 	inboundWait      func(ctx context.Context, d time.Duration) error
+	connectorWait    func(ctx context.Context, d time.Duration) error
 }
 
 // Option customizes New.
@@ -122,6 +123,13 @@ func WithInboundWait(wait func(ctx context.Context, d time.Duration) error) Opti
 	return func(o *options) { o.inboundWait = wait }
 }
 
+// WithConnectorWait replaces the sleep with which the connectors' supervisor backs off before it
+// restarts a connector that failed (CON-06), so a test that makes a connector crash again and
+// again does not wait seconds for each restart.
+func WithConnectorWait(wait func(ctx context.Context, d time.Duration) error) Option {
+	return func(o *options) { o.connectorWait = wait }
+}
+
 // WithVersion sets the server build version (default "dev").
 func WithVersion(v string) Option { return func(o *options) { o.version = v } }
 
@@ -146,7 +154,7 @@ func New(t testing.TB, opts ...Option) *Env {
 
 	e := &Env{
 		T: t, Server: srv, URL: base, Origin: cfg.PublicURL.Scheme + "://" + cfg.PublicURL.Host, cfg: cfg,
-		appOpts: app.Options{Logger: o.logger, Now: o.now, LiveSessionCheck: o.liveSessionCheck, ConnectorKinds: o.kinds, DisableOutbox: !o.outbox, Version: o.version, InboundWait: o.inboundWait},
+		appOpts: app.Options{Logger: o.logger, Now: o.now, LiveSessionCheck: o.liveSessionCheck, ConnectorKinds: o.kinds, DisableOutbox: !o.outbox, Version: o.version, InboundWait: o.inboundWait, ConnectorWait: o.connectorWait},
 	}
 	e.startApp()
 	srv.Config.Handler = http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { (*e.handler.Load()).ServeHTTP(w, r) })

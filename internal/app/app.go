@@ -64,6 +64,10 @@ type Options struct {
 	// InboundWait sleeps while the inbound pipeline holds an own-account message back until a
 	// send to its chat finishes (ACC-05); nil sleeps for real. Tests advance their clock with it.
 	InboundWait func(ctx context.Context, d time.Duration) error
+	// ConnectorWait sleeps while the connectors' supervisor backs off before it restarts a failed
+	// connector (CON-06); nil sleeps for real. Tests that make a connector crash pass a wait that
+	// does not take seconds.
+	ConnectorWait func(ctx context.Context, d time.Duration) error
 }
 
 // BuiltinKinds returns the connector kinds shipped with Partyline. A new platform adds its
@@ -220,10 +224,11 @@ func New(cfg *config.Config, opts Options) (*App, error) {
 		Store: st, Bus: bus, Box: box, Kinds: registry, Logger: opts.Logger, UserAgent: "partyline/" + version,
 		FileURL: fileLinks.URL, AllowPrivateNetworks: cfg.AllowPrivateNetworks,
 		PrivateAllowlist: cfg.PrivateNetworkAllowlist, MaxMediaBytes: cfg.MaxUploadBytes, Replays: connectors.NewReplays(st),
-		Inbound: pipeline.Handle, MigrateChat: pipeline.MigrateChat,
+		Inbound: pipeline.Handle, MigrateChat: pipeline.MigrateChat, Wait: opts.ConnectorWait,
 	})
 	a.Sends = connectors.NewSends(connectors.SendsDeps{
 		Store: st, Transport: a.ConnectorManager, Sent: sentIDs, Now: opts.Now, Logger: opts.Logger,
+		Kinds: registry, Bus: bus, AllowNewChat: a.Agents.AllowNewChat,
 	})
 	a.sendWorker = !opts.DisableOutbox
 	a.Connectors = connectors.NewService(connectors.ServiceDeps{
@@ -246,6 +251,7 @@ func New(cfg *config.Config, opts Options) (*App, error) {
 		Identities:    a.Identities,
 		Devices:       a.Devices,
 		Hooks:         a.ConnectorManager,
+		Crashes:       a.ConnectorManager,
 		FileLinks:     fileLinks,
 		Blobs:         blobs,
 		Audit:         auditLog,

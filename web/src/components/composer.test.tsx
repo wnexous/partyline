@@ -1,13 +1,15 @@
-import { fireEvent, screen, waitFor } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { AppProviders } from "@/components/app-providers";
 import { Composer } from "@/components/composer";
-import { type Level, MaxTextLength, type RoomMember } from "@/lib/api/types.gen";
+import { type MessagePages, queryKeys } from "@/lib/api/queries";
+import { type Level, MaxTextLength, type Message, type RoomMember } from "@/lib/api/types.gen";
 import { useLiveStore } from "@/lib/live/store";
 import { apiError, json, mockApi } from "@/test/fetch";
 import { makeAI, makeMember, makeMessage } from "@/test/fixtures";
 import { stubMatchMedia, stubPointer } from "@/test/media";
-import { renderWithProviders } from "@/test/render";
+import { makeQueryClient, renderWithProviders } from "@/test/render";
 
 // A room may still carry chat members from before the upgrade; the composer ignores them.
 const chatMembers = [
@@ -374,5 +376,246 @@ describe("the keyboard stays open while writing (KBD-03)", () => {
     expect(await screen.findByRole("alert")).toHaveTextContent(/too large/i);
     expect(screen.getByText("big.log")).toBeInTheDocument();
     expect(box).toHaveValue("see attached");
+  });
+});
+
+describe("editing a message in the composer (EDT-10)", () => {
+  const original = makeMessage({ seq: 4, text: "helo wrld" });
+  const patchPath = "/rooms/r1/messages/m-r1-4";
+  const patches = <T extends { method: string; path: string }>(calls: T[]) =>
+    calls.filter((c) => c.method === "PATCH" && c.path === patchPath);
+  const saved = (over: Partial<Message> = {}) =>
+    json(200, { ...original, text: "hello world", edited_at: "2026-10-19T13:00:00Z", ...over });
+
+  function renderEditing(message: Message | null = original, members?: RoomMember[]) {
+    const onEditDone = vi.fn();
+    const queryClient = makeQueryClient();
+    const element = (editing: Message | null) => (
+      <AppProviders queryClient={queryClient}>
+        <Composer
+          roomId="r1"
+          roomName="deploys"
+          level="post"
+          members={members}
+          editing={editing}
+          onEditDone={onEditDone}
+        />
+      </AppProviders>
+    );
+    const utils = render(element(message));
+    return {
+      ...utils,
+      onEditDone,
+      queryClient,
+      editing: (m: Message | null) => utils.rerender(element(m)),
+    };
+  }
+
+  const box = () => screen.getByRole("textbox", { name: "Message deploys" });
+
+  it("loads the text under an 'Editing message' bar, without the attach button, and saves instead of sending", () => {
+    mockApi({});
+    renderEditing();
+    expect(box()).toHaveValue("helo wrld");
+    expect(screen.getByText("Editing message")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Cancel editing" })).toBeInTheDocument();
+    expect(screen.queryByLabelText("Attach files")).toBeNull();
+    expect(screen.queryByRole("button", { name: "Send" })).toBeNull();
+    expect(screen.getByRole("button", { name: "Save changes" })).toBeInTheDocument();
+    expect(screen.getByText("Enter to save · Esc to cancel")).toBeInTheDocument();
+  });
+
+  it("puts the caret at the end of the text, ready to type", async () => {
+    mockApi({});
+    renderEditing();
+    await waitFor(() => expect(box()).toHaveFocus());
+    expect((box() as HTMLTextAreaElement).selectionStart).toBe("helo wrld".length);
+  });
+
+  it("Enter saves the trimmed new text with PATCH and leaves editing; nothing is posted", async () => {
+    const { calls } = mockApi({ [`PATCH ${patchPath}`]: saved() });
+    const user = userEvent.setup();
+    const { onEditDone } = renderEditing();
+    await user.clear(box());
+    await user.type(box(), "  hello world  {Enter}");
+
+    await waitFor(() => expect(patches(calls)).toHaveLength(1));
+    expect(patches(calls)[0]?.body).toEqual({ text: "hello world" });
+    await waitFor(() => expect(onEditDone).toHaveBeenCalledTimes(1));
+    expect(posts(calls)).toHaveLength(0);
+  });
+
+  it("the Save button saves too, and the answer replaces the message in the timeline", async () => {
+    const { calls } = mockApi({ [`PATCH ${patchPath}`]: saved() });
+    const user = userEvent.setup();
+    const { onEditDone, queryClient } = renderEditing();
+    queryClient.setQueryData<MessagePages>(queryKeys.roomMessages("r1"), {
+      pages: [{ items: [original], has_more: false }],
+      pageParams: [undefined],
+    });
+    await user.type(box(), "!");
+    await user.click(screen.getByRole("button", { name: "Save changes" }));
+
+    await waitFor(() => expect(patches(calls)).toHaveLength(1));
+    await waitFor(() => expect(onEditDone).toHaveBeenCalled());
+    const items = queryClient.getQueryData<MessagePages>(queryKeys.roomMessages("r1"))?.pages[0]
+      ?.items;
+    expect(items?.[0]).toMatchObject({
+      seq: 4,
+      text: "hello world",
+      edited_at: "2026-10-19T13:00:00Z",
+    });
+  });
+
+  it("Escape leaves editing without sending anything and the Cancel button does the same", async () => {
+    const { calls } = mockApi({});
+    const user = userEvent.setup();
+    const { onEditDone } = renderEditing();
+    await user.type(box(), " and more");
+    await user.keyboard("{Escape}");
+    expect(onEditDone).toHaveBeenCalledTimes(1);
+
+    await user.click(screen.getByRole("button", { name: "Cancel editing" }));
+    expect(onEditDone).toHaveBeenCalledTimes(2);
+    expect(calls.filter((c) => c.method !== "GET")).toHaveLength(0);
+  });
+
+  it("Save waits for a change: the same text, and a blank one, cannot be saved", async () => {
+    const { calls } = mockApi({});
+    const user = userEvent.setup();
+    renderEditing();
+    const save = screen.getByRole("button", { name: "Save changes" });
+    expect(save).toBeDisabled();
+    await user.keyboard("{Enter}");
+    expect(patches(calls)).toHaveLength(0);
+
+    await user.type(box(), "x");
+    expect(save).toBeEnabled();
+    await user.keyboard("{Backspace}");
+    expect(save).toBeDisabled();
+
+    await user.clear(box());
+    expect(save).toBeDisabled();
+    await user.type(box(), "   ");
+    expect(save).toBeDisabled();
+  });
+
+  it("a message with files may lose its text: the files stay", async () => {
+    const withFile = makeMessage({
+      seq: 4,
+      text: "caption",
+      attachments: [{ id: "f1", name: "a.txt", mime: "text/plain", size: 3, status: "stored" }],
+    });
+    const { calls } = mockApi({ [`PATCH ${patchPath}`]: saved({ text: "" }) });
+    const user = userEvent.setup();
+    const { onEditDone } = renderEditing(withFile);
+    expect(screen.getByText("a.txt")).toBeInTheDocument();
+    await user.clear(box());
+    await user.click(screen.getByRole("button", { name: "Save changes" }));
+    await waitFor(() => expect(patches(calls)).toHaveLength(1));
+    expect(patches(calls)[0]?.body).toEqual({ text: "" });
+    await waitFor(() => expect(onEditDone).toHaveBeenCalled());
+  });
+
+  it("Shift+Enter adds a line; over MaxTextLength cannot be saved", async () => {
+    const { calls } = mockApi({});
+    const user = userEvent.setup();
+    renderEditing();
+    await user.type(box(), "{Shift>}{Enter}{/Shift}second line");
+    expect(box()).toHaveValue("helo wrld\nsecond line");
+    expect(patches(calls)).toHaveLength(0);
+
+    await user.clear(box());
+    await user.paste("x".repeat(MaxTextLength + 1));
+    expect(screen.getByRole("button", { name: "Save changes" })).toBeDisabled();
+    expect(screen.getByTestId("composer-counter")).toHaveTextContent("16,001 / 16,000");
+  });
+
+  it("on a touch device Enter adds a line and the Save button saves", async () => {
+    stubPointer("coarse");
+    const { calls } = mockApi({ [`PATCH ${patchPath}`]: saved() });
+    const user = userEvent.setup();
+    renderEditing();
+    expect(screen.getByText("Enter for a new line · tap Save to save")).toBeInTheDocument();
+    await user.type(box(), "{Enter}more");
+    expect(patches(calls)).toHaveLength(0);
+    expect(box()).toHaveValue("helo wrld\nmore");
+    await user.click(screen.getByRole("button", { name: "Save changes" }));
+    await waitFor(() => expect(patches(calls)).toHaveLength(1));
+  });
+
+  it.each([
+    [409, "conflict", "This message was deleted, so it can’t be edited."],
+    [403, "forbidden", "You can only edit your own messages."],
+    [
+      403,
+      "counterpart_disabled",
+      "The other participant of this conversation is disabled, so its messages can’t be edited.",
+    ],
+    [422, "invalid", "The message could not be saved."],
+    [500, "internal", "Something went wrong. Try again."],
+  ])("keeps the box and says why when the server answers %i", async (status, code, text) => {
+    mockApi({ [`PATCH ${patchPath}`]: apiError(status, code, "The message could not be saved.") });
+    const user = userEvent.setup();
+    const { onEditDone } = renderEditing();
+    await user.type(box(), "!");
+    await user.keyboard("{Enter}");
+    expect(await screen.findByRole("alert")).toHaveTextContent(text);
+    expect(box()).toHaveValue("helo wrld!");
+    expect(onEditDone).not.toHaveBeenCalled();
+  });
+
+  it("brings back what the box held before, when editing ends", async () => {
+    mockApi({});
+    const user = userEvent.setup();
+    const { editing } = renderEditing(null);
+    await user.type(box(), "my unfinished draft");
+
+    editing(original);
+    expect(box()).toHaveValue("helo wrld");
+    editing(null);
+    expect(box()).toHaveValue("my unfinished draft");
+    expect(screen.queryByText("Editing message")).toBeNull();
+    expect(screen.getByLabelText("Attach files")).toBeInTheDocument();
+  });
+
+  it("starts from another message's text when another one is chosen, and does not reset on a refreshed copy", async () => {
+    mockApi({});
+    const user = userEvent.setup();
+    const { editing } = renderEditing(original);
+    await user.type(box(), " and typed more");
+    // The same message, refreshed by a live update: the person's typing stays.
+    editing({ ...original, edited_at: "2026-10-19T13:00:00Z" });
+    expect(box()).toHaveValue("helo wrld and typed more");
+    editing(makeMessage({ seq: 6, text: "another one" }));
+    expect(box()).toHaveValue("another one");
+  });
+
+  it("closes the mention list first when Escape is pressed with it open", async () => {
+    mockApi({});
+    const user = userEvent.setup();
+    const atlas = makeMember({
+      kind: "agent",
+      member_id: "a1",
+      name: "Atlas",
+      intelligence: makeAI(),
+    });
+    const { onEditDone } = renderEditing(makeMessage({ seq: 4, text: "ping " }), [atlas]);
+    await user.type(box(), "@at");
+    expect(await screen.findByRole("listbox")).toBeInTheDocument();
+    await user.keyboard("{Escape}");
+    expect(screen.queryByRole("listbox")).toBeNull();
+    expect(onEditDone).not.toHaveBeenCalled();
+    await user.keyboard("{Escape}");
+    expect(onEditDone).toHaveBeenCalledTimes(1);
+  });
+
+  it("says 'Editando mensagem' in Portuguese", () => {
+    useLiveStore.setState({ locale: "pt-BR" });
+    mockApi({});
+    renderEditing();
+    expect(screen.getByText("Editando mensagem")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Cancelar edição" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Salvar alterações" })).toBeInTheDocument();
   });
 });

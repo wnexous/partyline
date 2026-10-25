@@ -520,7 +520,7 @@ func (s *Service) Update(ctx context.Context, p authn.Principal, roomID string, 
 }
 
 // Delete removes a room with its members, messages, attachments and cursors, then its blob
-// files no other attachment references (ROOM-02); requires manage.
+// files, its photo included, that nothing else references (ROOM-02, GAV-05); requires manage.
 func (s *Service) Delete(ctx context.Context, p authn.Principal, roomID string) error {
 	if _, err := s.authorize(ctx, p, roomID, dto.LevelManage); err != nil {
 		return err
@@ -529,6 +529,16 @@ func (s *Service) Delete(ctx context.Context, p authn.Principal, roomID string) 
 	err := s.store.WithTx(ctx, func(q *db.Queries) (err error) {
 		if shas, err = q.ListRoomAttachmentSHAs(ctx, roomID); err != nil {
 			return err
+		}
+		room, err := q.GetRoom(ctx, roomID)
+		if errors.Is(err, sql.ErrNoRows) {
+			return access.ErrNotFound // deleted by someone else since the caller was authorized
+		}
+		if err != nil {
+			return err
+		}
+		if room.AvatarSha256 != "" {
+			shas = append(shas, room.AvatarSha256)
 		}
 		// Members, messages, attachments and cursors cascade from the room.
 		return q.DeleteRoom(ctx, roomID)

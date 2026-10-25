@@ -1,5 +1,6 @@
 import type { QueryClient } from "@tanstack/react-query";
 import {
+  applyMessageUpdate,
   type FileFilter,
   type FilePages,
   fetchMessages,
@@ -200,6 +201,11 @@ export function handleLiveEvent(qc: QueryClient, actions: LiveActions, event: Li
       return;
     }
 
+    case "room.message_updated":
+      // An edit or a delete: the message as it is now replaces the one the cache holds (EDT-06, DLT-06).
+      applyMessageUpdate(qc, event.data);
+      return;
+
     case "room.read":
       markConversationRead(qc, event.data.room_id, event.data.seq);
       return;
@@ -226,6 +232,8 @@ export function handleLiveEvent(qc: QueryClient, actions: LiveActions, event: Li
         patchConversation(qc, room.id, (c) => ({
           ...c,
           title: c.kind === "group" ? room.name : c.title,
+          // A DM is drawn with its counterpart; only a group has a photo of its own (GAV-02).
+          avatar_url: c.kind === "group" ? room.avatar_url : c.avatar_url,
           my_level: room.my_level,
           org_ids: room.org_ids,
         }));

@@ -2,7 +2,6 @@ package api
 
 import (
 	"net/http"
-	"time"
 
 	"github.com/wnexous/partyline/internal/api/convert"
 	"github.com/wnexous/partyline/internal/api/dto"
@@ -146,11 +145,6 @@ func (s *server) getOrgAvatar(w http.ResponseWriter, r *http.Request, p authn.Pr
 	if err != nil {
 		return err
 	}
-	defer func() { _ = f.Close() }()
-	h := w.Header()
-	h.Set("Content-Type", "image/png")
-	h.Set("Cache-Control", "private, max-age=31536000, immutable")
-	h.Set("ETag", `"`+sha+`"`)
-	http.ServeContent(w, r, "", time.Time{}, f)
+	serveAvatar(w, r, f, sha)
 	return nil
 }

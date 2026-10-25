@@ -184,6 +184,8 @@ type Message struct {
 	ExternalID     sql.NullString
 	CreatedAt      int64
 	AuthorIid      string
+	EditedAt       sql.NullInt64
+	DeletedAt      sql.NullInt64
 }
 
 type MessageReaction struct {
@@ -211,6 +213,8 @@ type MessageView struct {
 	RecipientsJson string
 	ExternalID     sql.NullString
 	CreatedAt      int64
+	EditedAt       sql.NullInt64
+	DeletedAt      sql.NullInt64
 	AuthorName     string
 	AuthorHandle   string
 	AuthorIkind    string
@@ -306,6 +310,7 @@ type PlatformSend struct {
 	ExternalID        string
 	CreatedAt         int64
 	UpdatedAt         int64
+	Once              bool
 }
 
 type Position struct {
@@ -350,6 +355,7 @@ type Room struct {
 	ReadBaseline   int64
 	OrgID          sql.NullString
 	CreatorIid     sql.NullString
+	AvatarSha256   string
 }
 
 type RoomMember struct {

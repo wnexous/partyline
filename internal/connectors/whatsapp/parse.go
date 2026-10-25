@@ -19,10 +19,27 @@ import (
 const maxEnvelopes = 5
 
 // envelopes are the message wrappers that hold the real content in {"message": {...}}.
+// associatedChildMessage wraps the items of an album and the HD copy of a photo or video (CID-29).
 var envelopes = []string{
 	"ephemeralMessage", "viewOnceMessage", "viewOnceMessageV2", "viewOnceMessageV2Extension",
-	"documentWithCaptionMessage", "editedMessage",
+	"documentWithCaptionMessage", "editedMessage", "associatedChildMessage",
 }
+
+// The types of association (messageContextInfo.messageAssociation.associationType) a message states
+// when it belongs to another message, as WhatsApp numbers them. Only these two matter: a message
+// attached to nothing, or to an album header, is an item of an album; any other (the HD copy of a
+// photo, a motion photo, ...) is an update of a message that was delivered already.
+const (
+	associationUnknown    = 0
+	associationMediaAlbum = 1
+	// associationNone is a message that states no association; associationOther one whose type is
+	// not one of the two above.
+	associationNone  = -1
+	associationOther = -2
+)
+
+// associationNames are the names of the types above, which evolution-go may write instead of the number.
+var associationNames = map[string]int{"UNKNOWN": associationUnknown, "MEDIA_ALBUM": associationMediaAlbum}
 
 // mediaKinds maps the media nodes to their message kind.
 var mediaKinds = []struct {
@@ -157,7 +174,12 @@ func Parse(ev Event) (Parsed, error) {
 func content(p *Parsed, root map[string]json.RawMessage) bool {
 	in := &p.Inbound
 	inline := stripDataURL(str(root["base64"]))
-	msg := unwrap(root)
+	msg, wrap := unwrap(root)
+	if wrap.child && wrap.assoc != associationNone && wrap.assoc != associationUnknown && wrap.assoc != associationMediaAlbum {
+		// The better copy of a photo or video already delivered, not a message of its own (CID-29).
+		in.Kind, in.Text = string(dto.MessageKindUnknown), "(unsupported message)"
+		return true
+	}
 	in.ReplyToID = quotedID(msg)
 	p.MentionedJIDs = mentionedJIDs(msg)
 	if s := str(msg["conversation"]); s != "" {
@@ -204,8 +226,19 @@ func content(p *Parsed, root map[string]json.RawMessage) bool {
 		}
 		return false
 	}
-	if node := obj(msg["contactMessage"]); node != nil {
-		in.Kind, in.Text = string(dto.MessageKindContact), "Contact: "+str(node["displayName"])
+	if obj(msg["albumMessage"]) != nil {
+		// The header of an album only counts what is coming; its items are messages of their own, and
+		// each is delivered as it arrives (CID-29).
+		return false
+	}
+	if obj(msg["contactMessage"]) != nil {
+		in.Kind, in.Text = string(dto.MessageKindContact), contactsText([]json.RawMessage{msg["contactMessage"]})
+		return true
+	}
+	if node := obj(msg["contactsArrayMessage"]); node != nil {
+		var list []json.RawMessage
+		_ = json.Unmarshal(node["contacts"], &list)
+		in.Kind, in.Text = string(dto.MessageKindContact), contactsText(list)
 		return true
 	}
 	if node := obj(msg["locationMessage"]); node != nil {
@@ -225,24 +258,92 @@ func content(p *Parsed, root map[string]json.RawMessage) bool {
 	return true
 }
 
-// unwrap removes up to maxEnvelopes envelope levels.
-func unwrap(msg map[string]json.RawMessage) map[string]json.RawMessage {
+// wrapping is what unwrap found around the content of a message.
+type wrapping struct {
+	// child tells that one of the envelopes was an associatedChildMessage.
+	child bool
+	// assoc is the type of association the message or an envelope around its content states (the
+	// outermost one that states any), or associationNone.
+	assoc int
+}
+
+// contactsText is the text of a message that shares contacts (CID-30): who they are and the numbers
+// of their cards, between parentheses, under the name the sharer saw (else the card's). One contact is
+// "Contact: Ana (+5511999990000)"; several are "Contacts: Ana (+5511999990000); Bruno (...)", the
+// first maxContacts of them and how many more there were. A contact without a number is its name; a
+// message that shares none says so. Each item is a contactMessage node (displayName and vcard).
+func contactsText(contacts []json.RawMessage) string {
+	if len(contacts) == 0 {
+		return "Contacts: (none)"
+	}
+	var parts []string
+	for _, raw := range contacts[:min(len(contacts), maxContacts)] {
+		c := obj(raw)
+		card := parseVCard(str(c["vcard"]))
+		name := ellipsize(oneLine(str(c["displayName"])), maxContactField)
+		if name == "" {
+			name = card.Name
+		}
+		if name == "" {
+			name = "(no name)"
+		}
+		if len(card.Numbers) > 0 {
+			name += " (" + strings.Join(card.Numbers, ", ") + ")"
+		}
+		parts = append(parts, name)
+	}
+	text := strings.Join(parts, "; ")
+	if more := len(contacts) - maxContacts; more > 0 {
+		text += "; and " + strconv.Itoa(more) + " more"
+	}
+	if len(contacts) == 1 {
+		return "Contact: " + text
+	}
+	return "Contacts: " + text
+}
+
+// unwrap removes up to maxEnvelopes envelope levels and tells what it found around the content.
+func unwrap(msg map[string]json.RawMessage) (map[string]json.RawMessage, wrapping) {
+	w := wrapping{assoc: associationNone}
 	for range maxEnvelopes {
+		w.state(msg)
 		inner := map[string]json.RawMessage(nil)
 		for _, env := range envelopes {
 			if node := obj(msg[env]); node != nil {
 				if m := obj(node["message"]); m != nil {
 					inner = m
+					w.child = w.child || env == "associatedChildMessage"
 					break
 				}
 			}
 		}
 		if inner == nil {
-			return msg
+			return msg, w
 		}
 		msg = inner
 	}
-	return msg
+	w.state(msg)
+	return msg, w
+}
+
+// state notes the association a level of the message states, unless an outer level stated one.
+func (w *wrapping) state(msg map[string]json.RawMessage) {
+	if w.assoc != associationNone {
+		return
+	}
+	raw := obj(obj(msg["messageContextInfo"])["messageAssociation"])["associationType"]
+	if len(raw) == 0 {
+		return
+	}
+	var n int
+	if json.Unmarshal(raw, &n) == nil {
+		w.assoc = n
+		return
+	}
+	w.assoc = associationOther
+	if n, ok := associationNames[str(raw)]; ok {
+		w.assoc = n
+	}
 }
 
 // editedText is the new text of an edit: the edited message may itself be wrapped.
@@ -253,7 +354,7 @@ func editedText(edited map[string]json.RawMessage) string {
 	if m := obj(edited["message"]); m != nil {
 		edited = m
 	}
-	edited = unwrap(edited)
+	edited, _ = unwrap(edited)
 	if s := str(edited["conversation"]); s != "" {
 		return s
 	}

@@ -1,4 +1,5 @@
 import {
+  BanIcon,
   CornerDownRightIcon,
   FileIcon,
   InfoIcon,
@@ -211,6 +212,8 @@ export const MessageItem = memo(function MessageItem({
   const swipeable = onSwipeReply !== undefined && touch;
   const swipe = useSwipeReply<HTMLElement>(() => onSwipeReply?.(message), { enabled: swipeable });
   const kind = AUTHOR_KIND[message.author_kind] ?? AUTHOR_KIND.system;
+  // A deleted message is a placeholder (DLT-10): its author and time stay, nothing it said does.
+  const deleted = message.deleted_at !== undefined;
   const time = (
     <time
       dateTime={message.created_at}
@@ -219,6 +222,20 @@ export const MessageItem = memo(function MessageItem({
     >
       {formatClock(message.created_at, locale)}
     </time>
+  );
+  // The time, and "edited" after it for a message whose text was changed (EDT-10); the title says when.
+  const stamp = (
+    <>
+      {time}
+      {message.edited_at !== undefined && !deleted ? (
+        <span
+          title={t("message.editedAt", { time: formatAbsolute(message.edited_at, locale) })}
+          className="text-[0.7rem] text-muted-foreground"
+        >
+          {t("message.edited")}
+        </span>
+      ) : null}
+    </>
   );
 
   if (message.author_kind === "system") {
@@ -282,8 +299,8 @@ export const MessageItem = memo(function MessageItem({
       {grouped || withButton ? (
         <div className="absolute top-1 right-4 flex items-center gap-1.5 md:right-6">
           {grouped ? (
-            <span className="opacity-0 transition-opacity group-focus-within/message:opacity-100 group-hover/message:opacity-100">
-              {time}
+            <span className="flex items-center gap-1.5 opacity-0 transition-opacity group-focus-within/message:opacity-100 group-hover/message:opacity-100 [@media(hover:none)]:opacity-100">
+              {stamp}
             </span>
           ) : null}
           {withButton ? (
@@ -355,7 +372,7 @@ export const MessageItem = memo(function MessageItem({
                 <TrustBadge trust={chatTrust(message, meId)} />
               </>
             ) : null}
-            {time}
+            {stamp}
           </header>
         )}
 
@@ -364,7 +381,9 @@ export const MessageItem = memo(function MessageItem({
         ) : null}
 
         <div className="text-[0.9375rem] leading-relaxed">
-          {message.author_kind === "agent" && message.text ? (
+          {deleted ? (
+            <DeletedPlaceholder />
+          ) : message.author_kind === "agent" && message.text ? (
             <Suspense fallback={<PlainText text={message.text} />}>
               <Markdown text={message.text} />
             </Suspense>
@@ -373,7 +392,7 @@ export const MessageItem = memo(function MessageItem({
           )}
         </div>
 
-        {message.attachments.length > 0 ? (
+        {!deleted && message.attachments.length > 0 ? (
           <ul
             className={cn(
               "mt-1.5 flex flex-wrap gap-2",
@@ -393,6 +412,17 @@ export const MessageItem = memo(function MessageItem({
     </article>
   );
 });
+
+/** What is left of a deleted message (DLT-10). */
+function DeletedPlaceholder() {
+  const t = useI18n().t;
+  return (
+    <p className="inline-flex items-center gap-1.5 text-muted-foreground italic">
+      <BanIcon className="size-3.5 shrink-0" aria-hidden="true" />
+      {t("message.deleted")}
+    </p>
+  );
+}
 
 function PlainText({ text }: { text: string }) {
   return <p className="break-words whitespace-pre-wrap">{text}</p>;
@@ -467,7 +497,11 @@ function ReplyContext({
   const body = target ? (
     <>
       <span className="font-medium text-foreground/80">{authorDisplayName(target)}</span>{" "}
-      <span className="truncate">{target.text || ""}</span>
+      {target.deleted_at !== undefined ? (
+        <span className="truncate italic">{t("message.deleted")}</span>
+      ) : (
+        <span className="truncate">{target.text || ""}</span>
+      )}
     </>
   ) : (
     <span>{t("message.replyMissing")}</span>

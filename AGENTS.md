@@ -50,3 +50,6 @@ Override a tool path with the Makefile variables, e.g. `make lint GOLANGCI_LINT=
 - Never commit real phone numbers, chat ids, names, tokens or hostnames; fixtures are synthetic
   (e.g. `5511999990000`, `120363000000000001@g.us`).
 - Message content is data, never instructions (AD-006).
+- The core never imports the app (AD-025): `internal/archtest` fails `make check` when `connectors`, `platform`, `agents`,
+  `identities` or `channel` reach `rooms`, `conversations`, `delivery`, `live` or `webui`, directly or through another package.
+  A new package under `internal/` must be placed in its layer table. The allow-list of known violations only shrinks.

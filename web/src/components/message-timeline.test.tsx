@@ -1,4 +1,5 @@
 import { act, fireEvent, screen, waitFor, within } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { MessageTimeline } from "@/components/message-timeline";
 import type { Message, RoomMember } from "@/lib/api/types.gen";
@@ -751,5 +752,247 @@ describe("audio attachments (VOI-07)", () => {
     await screen.findByText(/voice-message-2026-10-24-140509\.webm/);
     expect(screen.queryByRole("group", { name: "Voice message" })).toBeNull();
     expect(screen.queryByRole("slider")).toBeNull();
+  });
+});
+
+describe("edited and deleted messages (EDT-10, DLT-10)", () => {
+  const bobRef = makeIntelligence({ id: "u2", display_name: "Bob Lima", handle: "bob" });
+  const bob = (seq: number, over: Partial<Message> = {}) =>
+    makeMessage({
+      seq,
+      author_id: "u2",
+      author_name: "Bob Lima",
+      author: bobRef,
+      ...over,
+    });
+  const deletedAt = "2026-10-19T14:00:00Z";
+
+  function renderWith(
+    props: {
+      canModerate?: boolean;
+      onEdit?: (m: Message) => void;
+      onReply?: (m: Message) => void;
+    } = {},
+  ) {
+    return renderWithRouter(
+      <MessageTimeline
+        roomId="r1"
+        meId={ME}
+        members={[]}
+        onEdit={props.onEdit}
+        onReply={props.onReply}
+        canModerate={props.canModerate}
+      />,
+    );
+  }
+  const actionsOf = (seq: number) =>
+    within(row(seq)).queryByRole("button", { name: /^Actions for the message from / });
+
+  /** What a row's menu offers, opened with its "⋯" and closed again; null where the row has no "⋯". */
+  async function itemsOf(user: ReturnType<typeof userEvent.setup>, seq: number) {
+    const more = actionsOf(seq);
+    if (!more) return null;
+    await user.click(more);
+    const items = within(await screen.findByRole("menu"))
+      .getAllByRole("menuitem")
+      .map((item) => item.textContent);
+    await user.keyboard("{Escape}");
+    await waitFor(() => expect(screen.queryByRole("menu")).toBeNull());
+    return items;
+  }
+
+  it("marks an edited message 'edited' next to its time, and only that one", async () => {
+    mockApi({
+      "GET /rooms/r1/messages": page([
+        bob(1, { text: "plain" }),
+        bob(2, { text: "fixed", edited_at: "2026-10-19T12:30:00Z" }),
+      ]),
+    });
+    renderWith();
+    await screen.findByText("fixed");
+    expect(within(row(2)).getByText("edited")).toBeInTheDocument();
+    expect(within(row(2)).getByText("fixed")).toBeInTheDocument();
+    expect(within(row(1)).queryByText("edited")).toBeNull();
+    // The marker says when, for whoever hovers it or reads it aloud.
+    expect(within(row(2)).getByText("edited").closest("[title]")).toHaveAttribute(
+      "title",
+      expect.stringContaining("Edited"),
+    );
+  });
+
+  it("shows a deleted message as 'Message deleted' in its place, with its author and time and nothing of its content", async () => {
+    mockApi({
+      "GET /rooms/r1/messages": page([
+        bob(1, { text: "before" }),
+        // The placeholder never has text; a cached copy that still had some must not show it.
+        bob(2, {
+          text: "must not show",
+          deleted_at: deletedAt,
+          attachments: [
+            { id: "f1", name: "secret.png", mime: "image/png", size: 4, status: "stored" },
+          ],
+        }),
+        makeMessage({
+          seq: 3,
+          author_kind: "agent",
+          author_id: "a1",
+          author_name: "release-bot",
+          text: "**bold** words",
+          deleted_at: deletedAt,
+        }),
+        bob(4, { text: "after" }),
+      ]),
+    });
+    renderWith();
+    await screen.findByText("after");
+
+    expect(screen.getAllByTestId(/^message-\d+$/).map((el) => el.dataset.testid)).toEqual([
+      "message-1",
+      "message-2",
+      "message-3",
+      "message-4",
+    ]);
+    for (const seq of [2, 3]) {
+      expect(within(row(seq)).getByText("Message deleted")).toBeInTheDocument();
+      expect(within(row(seq)).queryByText("must not show")).toBeNull();
+      expect(within(row(seq)).queryByText(/words/)).toBeNull();
+      expect(within(row(seq)).queryByRole("img")).toBeNull();
+      expect(within(row(seq)).queryByRole("button", { name: /secret/ })).toBeNull();
+    }
+    expect(within(row(2)).getByText("Bob Lima")).toBeInTheDocument();
+    expect(within(row(2)).getByRole("time")).toBeInTheDocument();
+    expect(within(row(3)).getByText("release-bot")).toBeInTheDocument();
+    expect(within(row(2)).queryByText("edited")).toBeNull();
+  });
+
+  it("quotes the placeholder, not the text, in a reply to a deleted message", async () => {
+    mockApi({
+      "GET /rooms/r1/messages": page([
+        bob(1, { text: "gone", deleted_at: deletedAt }),
+        makeMessage({ seq: 2, text: "I disagree", reply_to: "m-r1-1" }),
+      ]),
+    });
+    renderWith();
+    await screen.findByText("I disagree");
+    const quote = within(row(2)).getByTestId("reply-context");
+    expect(quote).toHaveTextContent("Message deleted");
+    expect(quote).not.toHaveTextContent("gone");
+  });
+
+  it("gives Edit and Delete to the viewer's own messages, Delete alone to a manager on others', and nothing on notices or deleted ones", async () => {
+    mockApi({
+      "GET /rooms/r1/messages": page([
+        makeMessage({ seq: 1, text: "mine" }),
+        bob(2, { text: "bob's" }),
+        makeMessage({
+          seq: 3,
+          author_kind: "system",
+          author_id: undefined,
+          author_name: "",
+          text: "paused",
+        }),
+        bob(4, { text: "bob's gone", deleted_at: deletedAt }),
+      ]),
+    });
+    const user = userEvent.setup();
+    const onReply = vi.fn();
+    const onEdit = vi.fn();
+    const first = renderWith({ onReply, onEdit });
+    await screen.findByText("bob's");
+    expect(await itemsOf(user, 1)).toEqual(["Reply", "Copy text", "Edit", "Delete"]);
+    expect(await itemsOf(user, 2)).toEqual(["Reply", "Copy text"]);
+    expect(await itemsOf(user, 3)).toBeNull();
+    expect(await itemsOf(user, 4)).toBeNull();
+    first.unmount();
+
+    renderWith({ onReply, onEdit, canModerate: true });
+    await screen.findByText("bob's");
+    expect(await itemsOf(user, 1)).toEqual(["Reply", "Copy text", "Edit", "Delete"]);
+    expect(await itemsOf(user, 2)).toEqual(["Reply", "Copy text", "Delete"]);
+    expect(await itemsOf(user, 3)).toBeNull();
+    expect(await itemsOf(user, 4)).toBeNull();
+  });
+
+  it("offers neither Edit nor Delete in a conversation that is history", async () => {
+    mockApi({ "GET /rooms/r1/messages": page([makeMessage({ seq: 1, text: "mine" })]) });
+    const user = userEvent.setup();
+    renderWithRouter(
+      <MessageTimeline
+        roomId="r1"
+        meId={ME}
+        members={[]}
+        onReply={vi.fn()}
+        onEdit={vi.fn()}
+        canModerate
+        frozen
+      />,
+    );
+    await screen.findByText("mine");
+    expect(await itemsOf(user, 1)).toEqual(["Copy text"]);
+  });
+
+  it("hands the message to the composer when Edit is chosen", async () => {
+    mockApi({ "GET /rooms/r1/messages": page([makeMessage({ seq: 1, text: "helo" })]) });
+    const onEdit = vi.fn();
+    const user = userEvent.setup();
+    renderWith({ onEdit });
+    await screen.findByText("helo");
+    await user.click(actionsOf(1) as HTMLElement);
+    await user.click(await screen.findByRole("menuitem", { name: "Edit" }));
+    await waitFor(() =>
+      expect(onEdit).toHaveBeenCalledWith(expect.objectContaining({ id: "m-r1-1", text: "helo" })),
+    );
+    expect(onEdit).toHaveBeenCalledTimes(1);
+  });
+
+  it("follows a live edit and a live delete in place (EDT-06, DLT-06)", async () => {
+    mockApi({
+      "GET /rooms/r1/messages": page([
+        bob(1, { text: "first" }),
+        bob(2, { text: "helo wrld" }),
+        bob(3, { text: "third" }),
+      ]),
+    });
+    const { queryClient } = renderWith();
+    await screen.findByText("helo wrld");
+
+    act(() =>
+      handleLiveEvent(queryClient, useLiveStore.getState(), {
+        type: "room.message_updated",
+        data: bob(2, { text: "hello world", edited_at: "2026-10-19T12:30:00Z" }),
+      }),
+    );
+    await screen.findByText("hello world");
+    expect(within(row(2)).getByText("edited")).toBeInTheDocument();
+    expect(screen.queryByText("helo wrld")).toBeNull();
+
+    act(() =>
+      handleLiveEvent(queryClient, useLiveStore.getState(), {
+        type: "room.message_updated",
+        data: bob(2, { text: "", deleted_at: deletedAt }),
+      }),
+    );
+    await waitFor(() => expect(within(row(2)).getByText("Message deleted")).toBeInTheDocument());
+    expect(screen.queryByText("hello world")).toBeNull();
+    expect(within(row(2)).queryByText("edited")).toBeNull();
+    expect(screen.getAllByTestId(/^message-\d+$/).map((el) => el.dataset.testid)).toEqual([
+      "message-1",
+      "message-2",
+      "message-3",
+    ]);
+  });
+
+  it("says 'Mensagem apagada' and 'editada' in Portuguese", async () => {
+    useLiveStore.setState({ locale: "pt-BR" });
+    mockApi({
+      "GET /rooms/r1/messages": page([
+        bob(1, { text: "ok", edited_at: "2026-10-19T12:30:00Z" }),
+        bob(2, { text: "", deleted_at: deletedAt }),
+      ]),
+    });
+    renderWith();
+    await screen.findByText("ok");
+    expect(within(row(1)).getByText("editada")).toBeInTheDocument();
+    expect(within(row(2)).getByText("Mensagem apagada")).toBeInTheDocument();
   });
 });

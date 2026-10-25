@@ -41,7 +41,13 @@ type Reaction struct {
 	// platform id (empty when Partyline sent that message).
 	TargetID       string
 	TargetSenderID string
-	Emoji          string
+	// TargetFromMe tells that the account itself wrote the target (typed on its device).
+	TargetFromMe bool
+	Emoji        string
+	// Created, when set, is called with the platform id of the message the reaction created, for a
+	// platform that reports the account's own messages: the echo of a reaction is then not mistaken
+	// for something typed on the account (CID-14, CID-33).
+	Created func(platformID string)
 	// MessageID, RoomID, AuthorName and CreatedAt describe the room's reaction message, for
 	// platforms that show them (the webhook payload).
 	MessageID  string

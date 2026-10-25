@@ -1,6 +1,8 @@
 import {
+  CheckIcon,
   EyeIcon,
   PaperclipIcon,
+  PencilIcon,
   ReplyIcon,
   SendHorizontalIcon,
   Trash2Icon,
@@ -29,8 +31,9 @@ import { type HoldState, MicButton, RecordingBar } from "@/components/voice-cont
 import { useEnterSends } from "@/hooks/use-enter-sends";
 import { useVoiceRecorder } from "@/hooks/use-voice-recorder";
 import { isApiError } from "@/lib/api/client";
-import { useMe, usePostMessage } from "@/lib/api/queries";
+import { useEditMessage, useMe, usePostMessage } from "@/lib/api/queries";
 import {
+  ErrorCodeCounterpartDisabled,
   type IntelligenceRef,
   type Level,
   LevelManage,
@@ -62,6 +65,10 @@ import type { VoiceFailure } from "@/lib/voice";
  *
  * A message chosen to answer (ACT-07) shows as a strip above the text box, with a way to take it
  * back; the next message sent, text or voice, carries its id as `reply_to`.
+ *
+ * The same box edits a message of the viewer's (EDT-10): given `editing` it loads that message's text under an
+ * "Editing message" bar, Enter (or Save) saves it and Escape (or Cancel) leaves, the attach button is gone (the
+ * files of a message stay, only its text changes), and what the box held before comes back afterwards.
  *
  * Typing `@` at the start of a word suggests the conversation's participants (MEN-01..MEN-06):
  * the filtered list opens above the box, Up/Down move, Enter, Tab or a tap complete `@handle `
@@ -95,6 +102,18 @@ const MIC_FAILURES: Record<VoiceFailure, MessageKey> = {
   failed: "composer.micFailed",
 };
 
+/** Why a save of an edit failed (EDT-02..EDT-05): the message is gone, it is not the viewer's, the DM's other side is disabled, or the text is refused. */
+function editErrorText(t: Translate, err: unknown): string {
+  if (!isApiError(err)) return t("error.generic");
+  if (err.status === 0) return t("error.network");
+  if (err.status === 409) return t("composer.editGone");
+  if (err.code === ErrorCodeCounterpartDisabled) return t("composer.editCounterpartDisabled");
+  if (err.status === 403) return t("composer.editForbidden");
+  if (err.status === 429) return t("composer.rateLimited");
+  if (err.status === 422) return err.message || t("error.generic");
+  return t("error.generic");
+}
+
 export interface ComposerProps {
   roomId: string;
   roomName: string;
@@ -104,6 +123,10 @@ export interface ComposerProps {
   replyTo?: Message | null;
   /** Takes the reply back, or says it was sent: the room page drops `replyTo`. */
   onClearReply?: () => void;
+  /** The message being edited in the box (EDT-10); null or absent while a new one is written. */
+  editing?: Message | null;
+  /** Leaves editing: after a save, on Escape and on Cancel. */
+  onEditDone?: () => void;
 }
 
 export function Composer({
@@ -113,6 +136,8 @@ export function Composer({
   members,
   replyTo,
   onClearReply,
+  editing,
+  onEditDone,
 }: ComposerProps) {
   const { t } = useI18n();
   if (!canPost(level)) {
@@ -130,6 +155,8 @@ export function Composer({
       members={members}
       replyTo={replyTo ?? null}
       onClearReply={onClearReply}
+      editing={editing ?? null}
+      onEditDone={onEditDone}
     />
   );
 }
@@ -140,15 +167,20 @@ function ComposerForm({
   members,
   replyTo,
   onClearReply,
+  editing,
+  onEditDone,
 }: {
   roomId: string;
   roomName: string;
   members?: RoomMember[];
   replyTo: Message | null;
   onClearReply?: () => void;
+  editing: Message | null;
+  onEditDone?: () => void;
 }) {
   const { t, locale } = useI18n();
   const post = usePostMessage(roomId);
+  const save = useEditMessage(roomId);
   const [text, setText] = useState("");
   const [files, setFiles] = useState<File[]>([]);
   const [error, setError] = useState<string | null>(null);
@@ -164,6 +196,7 @@ function ComposerForm({
   const counterId = useId();
   const replyStripId = useId();
   const errorId = useId();
+  const barId = useId();
   const mentionListId = useId();
   const viewerId = useMe().data?.id;
   // False on a touch device, where Enter is a new line (ENT-01).
@@ -184,10 +217,47 @@ function ComposerForm({
 
   const replyExcerpt = replyTo ? messageExcerpt(replyTo, t("player.voice")) : "";
   const shownError = voice.failure ? t(MIC_FAILURES[voice.failure]) : error;
+
+  // Editing a message (EDT-10): the box loads its text, and what was in it comes back when editing ends. This
+  // follows the message by its id, so a refreshed copy of the same message does not reset what is being typed.
+  const [shownEdit, setShownEdit] = useState<string | null>(null);
+  const [draft, setDraft] = useState("");
+  const editId = editing?.id ?? null;
+  if (editId !== shownEdit) {
+    const loaded = editing ? editing.text : draft;
+    setShownEdit(editId);
+    if (shownEdit === null) setDraft(text);
+    setText(loaded);
+    setCaret(loaded.length);
+    setActiveIndex(0);
+    setDismissedStart(null);
+    setError(null);
+  }
+  useEffect(() => {
+    // Entering (or switching) puts the caret at the end of the text, ready to type. One tick later: the
+    // menu that was chosen from is still on screen for a moment, and its focus trap would take the
+    // cursor straight back.
+    if (editId === null) return;
+    const timer = window.setTimeout(() => {
+      const box = textRef.current;
+      if (!box) return;
+      box.focus();
+      box.setSelectionRange(box.value.length, box.value.length);
+    }, 0);
+    return () => window.clearTimeout(timer);
+  }, [editId]);
+
   const length = textLength(text);
   const tooLong = length > MaxTextLength;
   const trimmed = text.trim();
   const canSend = !tooLong && (trimmed.length > 0 || files.length > 0) && !post.isPending;
+  // Saving needs a change, and text unless the message has files that stay (EDT-04).
+  const canSave =
+    editing !== null &&
+    !tooLong &&
+    trimmed !== editing.text &&
+    (trimmed.length > 0 || editing.attachments.length > 0) &&
+    !save.isPending;
   const fmt = (n: number) => new Intl.NumberFormat(locale).format(n);
 
   // The mention list follows the caret: it is open while the caret sits in an `@word` that has
@@ -327,6 +397,22 @@ function ComposerForm({
     );
   };
 
+  const saveEdit = () => {
+    if (!editing || !canSave) return;
+    setError(null);
+    save.mutate(
+      { id: editing.id, text: trimmed },
+      {
+        onSuccess: () => {
+          onEditDone?.();
+          textRef.current?.focus();
+        },
+        onError: (err) => setError(editErrorText(t, err)),
+      },
+    );
+  };
+  const submit = editing ? saveEdit : send;
+
   // Replaces the `@word` with `@handle ` (MEN-03); it never sends the message itself.
   const completeMention = (candidate: IntelligenceRef) => {
     if (!mention) return;
@@ -384,7 +470,7 @@ function ComposerForm({
     }
     if (e.key !== "Enter" || e.shiftKey || !sendsOnEnter) return;
     e.preventDefault();
-    send();
+    submit();
   };
 
   const addFiles = (list: FileList | null) => {
@@ -394,14 +480,29 @@ function ComposerForm({
     if (fileInput.current) fileInput.current.value = "";
   };
 
+  const describedBy = [
+    editing ? barId : null,
+    replyTo && !editing ? replyStripId : null,
+    length >= COUNTER_FROM ? counterId : null,
+  ]
+    .filter(Boolean)
+    .join(" ");
+
   return (
     <form
       className="border-t bg-background px-3 pt-2.5 pb-3 md:px-6"
       onSubmit={(e) => {
         e.preventDefault();
-        send();
+        submit();
       }}
       onKeyDown={(e) => {
+        // Escape leaves editing from anywhere in the composer, the Cancel button included. A mention list
+        // that is open closes first (it prevents the default of its Escape).
+        if (editing && e.key === "Escape" && !e.defaultPrevented) {
+          e.preventDefault();
+          onEditDone?.();
+          return;
+        }
         // Escape drops a recording, wherever focus is in the composer (VOI-05).
         if (e.key === "Escape" && voiceOn) {
           e.preventDefault();
@@ -432,7 +533,7 @@ function ComposerForm({
             onPick={completeMention}
           />
         ) : null}
-        {replyTo ? (
+        {replyTo && !editing ? (
           <div
             id={replyStripId}
             data-testid="reply-strip"
@@ -469,7 +570,39 @@ function ComposerForm({
             hold={hold}
           />
         ) : null}
-        {files.length > 0 && !voiceOn ? (
+        {editing ? (
+          <>
+            <div id={barId} className="flex items-center gap-2 border-b px-3 py-1.5 text-xs">
+              <PencilIcon className="size-3.5 shrink-0 text-muted-foreground" aria-hidden="true" />
+              <span className="shrink-0 font-medium">{t("composer.editing")}</span>
+              <span className="min-w-0 flex-1 truncate text-muted-foreground">{editing.text}</span>
+              <Button
+                type="button"
+                variant="ghost"
+                size="icon-xs"
+                aria-label={t("composer.cancelEdit")}
+                onClick={onEditDone}
+              >
+                <XIcon aria-hidden="true" />
+              </Button>
+            </div>
+            {editing.attachments.length > 0 ? (
+              // The files of the message stay as they are: only its text changes.
+              <ul className="flex flex-wrap gap-1.5 px-3 pt-2.5">
+                {editing.attachments.map((a) => (
+                  <li
+                    key={a.id}
+                    className="inline-flex max-w-full items-center gap-1 rounded-md border bg-muted px-2 py-0.5 text-xs"
+                  >
+                    <PaperclipIcon className="size-3 shrink-0" aria-hidden="true" />
+                    <span className="truncate">{a.name}</span>
+                  </li>
+                ))}
+              </ul>
+            ) : null}
+          </>
+        ) : null}
+        {!editing && files.length > 0 && !voiceOn ? (
           <ul className="flex flex-wrap gap-1.5 px-3 pt-2.5">
             {files.map((f) => (
               <li
@@ -514,13 +647,9 @@ function ComposerForm({
           aria-activedescendant={
             open && activeCandidate ? mentionOptionId(mentionListId, activeCandidate.id) : undefined
           }
-          aria-describedby={
-            [replyTo ? replyStripId : null, length >= COUNTER_FROM ? counterId : null]
-              .filter(Boolean)
-              .join(" ") || undefined
-          }
+          aria-describedby={describedBy || undefined}
           // The on-screen Return key shows what it does (ENT-04).
-          enterKeyHint={sendsOnEnter ? "send" : "enter"}
+          enterKeyHint={sendsOnEnter ? (editing ? "done" : "send") : "enter"}
           placeholder={t("composer.placeholder", { room: roomName })}
           className={cn(
             "block max-h-[min(10rem,calc(var(--app-height,100dvh)*0.4))] min-h-11 w-full resize-none overflow-y-auto bg-transparent px-3 pt-2.5 pb-1 text-[0.9375rem] leading-relaxed outline-none [field-sizing:content] placeholder:text-muted-foreground",
@@ -544,8 +673,9 @@ function ComposerForm({
               <Trash2Icon aria-hidden="true" />
               {t(voice.phase === "recorded" ? "composer.discard" : "common.cancel")}
             </Button>
-          ) : (
-            /* The file input itself takes focus; the label draws it as an icon button. */
+          ) : editing ? null : (
+            /* The file input itself takes focus; the label draws it as an icon button. A message that
+               is edited keeps the files it has and takes no others (EDT-10). */
             <label
               title={t("composer.attach")}
               className="relative inline-flex size-8 cursor-pointer items-center justify-center rounded-md text-muted-foreground transition-colors focus-within:ring-[3px] focus-within:ring-ring/70 hover:bg-accent hover:text-accent-foreground pointer-coarse:size-11"
@@ -571,7 +701,15 @@ function ComposerForm({
                 sendsOnEnter ? "hidden truncate lg:block" : "line-clamp-2",
               )}
             >
-              {t(sendsOnEnter ? "composer.hint" : "composer.hintTouch")}
+              {t(
+                editing
+                  ? sendsOnEnter
+                    ? "composer.editHint"
+                    : "composer.editHintTouch"
+                  : sendsOnEnter
+                    ? "composer.hint"
+                    : "composer.hintTouch",
+              )}
             </span>
           )}
           <div className="ml-auto flex items-center gap-1">
@@ -587,7 +725,7 @@ function ComposerForm({
                 {fmt(length)} / {fmt(MaxTextLength)}
               </span>
             ) : null}
-            {voice.supported ? (
+            {voice.supported && !editing ? (
               <MicButton
                 ref={micRef}
                 phase={voice.phase}
@@ -603,15 +741,19 @@ function ComposerForm({
               <Button
                 type="submit"
                 size="icon-sm"
-                disabled={!canSend}
-                aria-label={t("composer.send")}
+                disabled={editing ? !canSave : !canSend}
+                aria-label={t(editing ? "composer.saveEdit" : "composer.send")}
                 // A press on Send must not take focus from the text box: that closes the on-screen
                 // keyboard, and the composer jumps while it does (KBD-03). The click still sends.
                 onPointerDown={keepFocus}
                 onMouseDown={keepFocus}
                 className="pointer-coarse:size-11"
               >
-                <SendHorizontalIcon aria-hidden="true" />
+                {editing ? (
+                  <CheckIcon aria-hidden="true" />
+                ) : (
+                  <SendHorizontalIcon aria-hidden="true" />
+                )}
               </Button>
             )}
           </div>

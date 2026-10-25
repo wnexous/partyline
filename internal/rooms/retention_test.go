@@ -266,3 +266,74 @@ func TestSweepKeepsTheAvatarOfAnOrganization(t *testing.T) {
 	require.Equal(t, 1, res.Blobs)
 	require.False(t, blobExists(blobDir, logo.SHA256), "once the organization drops it, the sweep removes it")
 }
+
+// GAV-05: the avatar of a group is a blob like the avatar of an intelligence or of an organization: the
+// retention sweep keeps it while a group points at it and removes it once nothing does.
+func TestSweepKeepsTheAvatarOfARoom(t *testing.T) {
+	ctx := context.Background()
+	f := newFixture(t)
+	blobDir := filepath.Join(f.dir, "blobs")
+	blobs, err := attachments.Open(blobDir)
+	require.NoError(t, err)
+	f.svc = New(Deps{Store: f.st, Access: f.az, Bus: f.bus, Now: f.clock.Now, Blobs: blobs})
+	alice := f.user(t, "alice", dto.RoleMember)
+	launch := f.room(t, alice, "Launch")
+	old := t0.Add(-2 * time.Hour) // past the sweep's one-hour grace
+	photo := putBlob(t, blobs, blobDir, "the-photo", old)
+	stray := putBlob(t, blobs, blobDir, "a-stray-blob", old)
+	f.exec(t, "UPDATE rooms SET avatar_sha256 = ? WHERE id = ?", photo.SHA256, launch.ID)
+
+	res, err := f.svc.Cleanup(ctx)
+	require.NoError(t, err)
+	require.Equal(t, 1, res.Blobs)
+	require.True(t, blobExists(blobDir, photo.SHA256), "a blob a group's avatar uses stays")
+	require.False(t, blobExists(blobDir, stray.SHA256), "a blob nothing uses goes")
+
+	// Two groups may share one image: the blob stays while either points at it.
+	other := f.room(t, alice, "Other")
+	f.exec(t, "UPDATE rooms SET avatar_sha256 = ? WHERE id = ?", photo.SHA256, other.ID)
+	f.exec(t, "UPDATE rooms SET avatar_sha256 = '' WHERE id = ?", launch.ID)
+	res, err = f.svc.Cleanup(ctx)
+	require.NoError(t, err)
+	require.Zero(t, res.Blobs)
+	require.True(t, blobExists(blobDir, photo.SHA256), "the other group still uses it")
+
+	f.exec(t, "UPDATE rooms SET avatar_sha256 = '' WHERE id = ?", other.ID)
+	res, err = f.svc.Cleanup(ctx)
+	require.NoError(t, err)
+	require.Equal(t, 1, res.Blobs)
+	require.False(t, blobExists(blobDir, photo.SHA256), "once no group uses it, the sweep removes it")
+}
+
+// GAV-05: deleting a group releases its avatar with its files, except when another group still uses the same
+// blob and when the blob was written in the last minute (the sweep removes that later).
+func TestDeleteRoomReleasesItsAvatar(t *testing.T) {
+	ctx := context.Background()
+	f := newFixture(t)
+	blobDir := filepath.Join(f.dir, "blobs")
+	blobs, err := attachments.Open(blobDir)
+	require.NoError(t, err)
+	f.svc = New(Deps{Store: f.st, Access: f.az, Bus: f.bus, Now: f.clock.Now, Blobs: blobs})
+	alice := f.user(t, "alice", dto.RoleMember)
+	old := t0.Add(-time.Hour)
+	own := putBlob(t, blobs, blobDir, "only-this-group", old)
+	shared := putBlob(t, blobs, blobDir, "two-groups", old)
+	fresh := putBlob(t, blobs, blobDir, "fresh", t0.Add(-59*time.Second))
+	withPhoto := func(name string, photo File) Room {
+		room := f.room(t, alice, name)
+		f.exec(t, "UPDATE rooms SET avatar_sha256 = ? WHERE id = ?", photo.SHA256, room.ID)
+		return room
+	}
+	alone, first, second, recent := withPhoto("alone", own), withPhoto("first", shared), withPhoto("second", shared), withPhoto("recent", fresh)
+
+	require.NoError(t, f.svc.Delete(ctx, alice, alone.ID))
+	require.False(t, blobExists(blobDir, own.SHA256), "the avatar only the deleted group used is removed at once")
+
+	require.NoError(t, f.svc.Delete(ctx, alice, first.ID))
+	require.True(t, blobExists(blobDir, shared.SHA256), "a blob another group's avatar uses stays")
+	require.NoError(t, f.svc.Delete(ctx, alice, second.ID))
+	require.False(t, blobExists(blobDir, shared.SHA256), "the last group that used it is gone")
+
+	require.NoError(t, f.svc.Delete(ctx, alice, recent.ID))
+	require.True(t, blobExists(blobDir, fresh.SHA256), "a blob written 59 s ago is left to the sweep")
+}

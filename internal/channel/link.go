@@ -729,6 +729,15 @@ func (l *link) handle(ctx context.Context, ws *websocket.Conn, data []byte) erro
 		}
 		ack, _ := json.Marshal(dto.AgentAckFrame{Type: dto.AgentFrameTypeAck, MessageID: f.Message.ID})
 		return l.notifyThenAck(ctx, ws, f.Message.ID, func() Notification { return Format(f.AgentMessage) }, ack)
+	case dto.AgentFrameTypeMessageEdited, dto.AgentFrameTypeMessageDeleted:
+		// A message that was delivered before changed (EDT-07, DLT-07). It is told as it happened, in order with
+		// the messages around it, and neither acknowledged nor remembered: its id is the message's own, which the
+		// dedupe of notifyThenAck would take for a repeat.
+		var f dto.AgentMessage
+		if json.Unmarshal(data, &f) != nil || f.Message.ID == "" {
+			return nil
+		}
+		return l.notify.Notify(NotificationMethod, FormatUpdate(head.Type, f))
 	case dto.AgentFrameTypePlatform:
 		var f dto.AgentPlatformFrame
 		if json.Unmarshal(data, &f) != nil || f.Event.ID == "" {
@@ -749,7 +758,7 @@ func (l *link) handle(ctx context.Context, ws *websocket.Conn, data []byte) erro
 		}
 		return l.announceIdentity(f)
 	}
-	return nil // unknown frames need nothing
+	return nil // unknown frames need nothing: a client ignores the types a newer server adds
 }
 
 // notifyThenAck hands the frame with this id to the harness and then acknowledges it. Delivery is

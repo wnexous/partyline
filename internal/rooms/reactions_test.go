@@ -320,3 +320,40 @@ func TestManyPeopleManyEmojiKeepTheirOrder(t *testing.T) {
 	want = append(want, f.alice.UserID)
 	require.Equal(t, want, got[0].By)
 }
+
+// A deleted message stays as a placeholder (DLT-01); it carries no reactions and takes no new ones
+// (RCT-07).
+
+func TestADeletedMessageLosesItsReactionsAndTakesNoNewOnes(t *testing.T) {
+	f := newReactionFixture(t)
+	f.react(t, f.alice, "👍")
+	f.react(t, f.bob, "🎉")
+	other := f.post(t, f.alice, f.ops.ID, "stays")
+	_, err := f.svc.React(context.Background(), f.bob, f.ops.ID, other.ID, "👍")
+	require.NoError(t, err)
+
+	gone, err := f.svc.DeleteMessage(context.Background(), f.alice, f.ops.ID, f.message.ID)
+	require.NoError(t, err)
+	require.Empty(t, gone.Reactions, "the placeholder has none")
+	require.Equal(t, 0, f.count(t, "SELECT COUNT(*) FROM message_reactions WHERE message_id = ?", f.message.ID))
+	require.Equal(t, 1, f.count(t, "SELECT COUNT(*) FROM message_reactions WHERE message_id = ?", other.ID), "another message keeps its own")
+
+	_, err = f.svc.React(context.Background(), f.bob, f.ops.ID, f.message.ID, "👍")
+	require.ErrorIs(t, err, ErrMessageDeleted)
+	require.Equal(t, 0, f.count(t, "SELECT COUNT(*) FROM message_reactions WHERE message_id = ?", f.message.ID))
+	// Taking one back is a retry that finds nothing to take back, and fails no more than deleting twice does.
+	got, err := f.svc.Unreact(context.Background(), f.bob, f.ops.ID, f.message.ID, "👍")
+	require.NoError(t, err)
+	require.Empty(t, got)
+}
+
+func TestReactingToADeletedMessageIsNotTold(t *testing.T) {
+	f := newReactionFixture(t)
+	_, err := f.svc.DeleteMessage(context.Background(), f.alice, f.ops.ID, f.message.ID)
+	require.NoError(t, err)
+	sub, cancel := f.bus.Subscribe(8)
+	defer cancel()
+	_, err = f.svc.React(context.Background(), f.bob, f.ops.ID, f.message.ID, "👍")
+	require.ErrorIs(t, err, ErrMessageDeleted)
+	require.Empty(t, drain(sub))
+}

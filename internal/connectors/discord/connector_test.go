@@ -192,6 +192,46 @@ func userMessage(id, content string) *discordgo.Message {
 	}
 }
 
+// panickingHandler is a Handler whose message and account calls panic, like a bug in the code behind them.
+type panickingHandler struct{ *connectortest.Recorder }
+
+func (panickingHandler) Inbound(context.Context, connectors.Inbound) { panic("pipeline bug") }
+func (panickingHandler) Account(string)                              { panic("account bug") }
+
+// CON-15: discordgo runs each handler in a goroutine of its own and does not recover, so a panic in
+// one would end the whole process. The connector recovers it and ends Run with it instead, for the
+// supervisor to show the error and start the connector again.
+func TestAPanicInAGatewayHandlerEndsRun(t *testing.T) {
+	bot := &discordgo.User{ID: botID, Username: "atlas-bot", Discriminator: "0", Bot: true}
+	for name, trigger := range map[string]func(*fakeSession){
+		"message": func(f *fakeSession) { f.emit(userMessage("M1", "hello")) },
+		"ready":   func(f *fakeSession) { f.emitReady(bot) },
+	} {
+		t.Run(name, func(t *testing.T) {
+			f := newFakeSession()
+			c := newWithSession(f, connectors.Deps{AllowPrivateNetworks: true, ID: "c1", UserAgent: "partyline/test"})
+			h := panickingHandler{connectortest.NewRecorder()}
+			done := make(chan error, 1)
+			go func() { done <- c.Run(context.Background(), h) }()
+			require.Equal(t, connectors.StatusConnected, h.NextStatus(t))
+
+			trigger(f)
+
+			select {
+			case err := <-done:
+				require.ErrorIs(t, err, connectors.ErrPanic)
+			case <-time.After(wait):
+				t.Fatal("Run did not end")
+			}
+			select {
+			case <-f.closed:
+			case <-time.After(wait):
+				t.Error("the gateway was not closed")
+			}
+		})
+	}
+}
+
 // ACC-07: the gateway's READY event names the bot; its @username is the account label, a
 // READY after a reconnect reports it again, and a READY without a username reports nothing.
 func TestReadyReportsTheBotAccount(t *testing.T) {

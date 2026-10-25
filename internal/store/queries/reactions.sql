@@ -21,3 +21,7 @@ SELECT COUNT(*) FROM message_reactions WHERE message_id = ? AND emoji = ?;
 SELECT message_id, emoji, intelligence_id FROM message_reactions
 WHERE message_id IN (sqlc.slice(message_ids))
 ORDER BY id;
+
+-- name: DeleteMessageReactions :exec
+-- A deleted message stays as a placeholder with no reactions (RCT-07).
+DELETE FROM message_reactions WHERE message_id = ?;

@@ -5,14 +5,16 @@ import {
   SearchIcon,
   UsersRoundIcon,
 } from "lucide-react";
+
 import { memo, useCallback, useMemo, useRef, useState } from "react";
+import { ConversationAvatar } from "@/components/conversation-avatar";
 import {
   ConversationMenu,
   type ConversationMenuTarget,
   hasConversationActions,
 } from "@/components/conversation-menu";
+
 import { EmptyState } from "@/components/empty-state";
-import { IntelligenceAvatar } from "@/components/intelligence/intelligence-avatar";
 import { NewConversationDialog } from "@/components/new-conversation-dialog";
 import { NewGroupDialog } from "@/components/new-group-dialog";
 import { RowMenuButton } from "@/components/row-menu-button";
@@ -23,7 +25,7 @@ import { useTouchFirst } from "@/hooks/use-enter-sends";
 import { useLongPress } from "@/hooks/use-long-press";
 import { useConversations } from "@/lib/api/queries";
 import type { Conversation } from "@/lib/api/types.gen";
-import { conversationMatches, groupFace } from "@/lib/conversations";
+import { conversationMatches } from "@/lib/conversations";
 import { useI18n, useT } from "@/lib/i18n";
 import { inOrg } from "@/lib/orgs";
 import { formatAbsolute, formatListTime } from "@/lib/time";
@@ -244,9 +246,13 @@ const ConversationRow = memo(function ConversationRow({
   const { t, locale } = useI18n();
   const last = c.last_message;
   const sender = last?.author_name ?? "";
-  // A message that is only a recording is named as one, not by the file it made (VOI-04).
-  const text =
-    last && isVoicePreview(last.text) ? t("conversations.voiceMessage") : (last?.text ?? "");
+  // A deleted last message previews nothing of what it said (DLT-10); one that is only a recording is
+  // named as one, not by the file it made (VOI-04).
+  const text = last?.deleted
+    ? t("message.deleted")
+    : last && isVoicePreview(last.text)
+      ? t("conversations.voiceMessage")
+      : (last?.text ?? "");
   // A row with nothing to offer is a plain link: no press, no button, the browser's own menu.
   const actionable = hasConversationActions(c);
   const press = useLongPress<HTMLAnchorElement>(
@@ -275,13 +281,7 @@ const ConversationRow = memo(function ConversationRow({
             className="pointer-events-none absolute inset-0 -z-10 animate-tape-settle"
           />
         ) : null}
-        <IntelligenceAvatar
-          intelligence={c.counterpart ?? groupFace(c.id, c.title)}
-          size="lg"
-          decorative
-          // Groups are squares, people circles: the list reads at a glance.
-          className={c.counterpart ? undefined : "rounded-lg *:rounded-lg"}
-        />
+        <ConversationAvatar conversation={c} size="lg" />
         <div className="min-w-0">
           <div className="flex items-baseline gap-2">
             <span className="min-w-0 flex-1 truncate font-semibold tracking-[-0.01em]">

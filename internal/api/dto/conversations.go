@@ -87,6 +87,9 @@ type Conversation struct {
 	// for a DM the organizations both participants are members of, else the default organization of
 	// the caller; empty when there is none.
 	OrgIDs []string `json:"org_ids"`
+	// AvatarURL is the photo of a group, as Room.AvatarURL (GAV-04); absent without one and for a DM, which is
+	// drawn with its Counterpart.
+	AvatarURL string `json:"avatar_url,omitempty"`
 }
 
 // MaxConversationMemberNames bounds Conversation.MemberNames.
@@ -108,6 +111,9 @@ type MessagePreview struct {
 	// message that is only an attachment.
 	Text      string    `json:"text"`
 	CreatedAt time.Time `json:"created_at"`
+	// Deleted is set when the last message was deleted: it has no text, and the list says "message
+	// deleted" in its place (DLT-05).
+	Deleted bool `json:"deleted,omitempty"`
 }
 
 // MarkReadRequest is the body of PUT /rooms/{id}/read: the newest message the caller has seen. An

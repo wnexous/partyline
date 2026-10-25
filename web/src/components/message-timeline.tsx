@@ -6,7 +6,13 @@ import { toast } from "sonner";
 import { EmptyState } from "@/components/empty-state";
 import { collectImages, ImageViewer } from "@/components/image-viewer";
 import { MessageItem } from "@/components/message-item";
-import { hasMessageActions, MessageMenu, type MessageMenuTarget } from "@/components/message-menu";
+import {
+  hasMessageActions,
+  type MessageCapabilities,
+  MessageMenu,
+  type MessageMenuTarget,
+  messageActionSet,
+} from "@/components/message-menu";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useTouchFirst } from "@/hooks/use-enter-sends";
@@ -83,6 +89,12 @@ export interface MessageTimelineProps {
    * post: the actions of a message then offer no Reply.
    */
   onReply?: (message: Message) => void;
+  /** The viewer manages this group: they delete any message of it (DLT-02). */
+  canModerate?: boolean;
+  /** Starts editing a message in the composer (EDT-10). */
+  onEdit?: (message: Message) => void;
+  /** The conversation is history (CID-21): nothing in it is answered, edited or deleted; Copy text stays. */
+  frozen?: boolean;
 }
 
 export function MessageTimeline({
@@ -92,6 +104,9 @@ export function MessageTimeline({
   focus,
   className,
   onReply,
+  canModerate,
+  onEdit,
+  frozen,
 }: MessageTimelineProps) {
   const { t, locale } = useI18n();
   // The actions of a message (ACT-01, ACT-02, ACT-05): one menu for the whole timeline, opened by
@@ -104,6 +119,17 @@ export function MessageTimeline({
     [],
   );
   const closeMenu = useCallback(() => setMenu(null), []);
+  // What the viewer may do in this conversation decides what each message offers (ACT-05, EDT-10, DLT-09).
+  const capabilities = useMemo<MessageCapabilities>(
+    () => ({
+      meId,
+      canReply: onReply !== undefined,
+      canModerate: canModerate ?? false,
+      canEdit: onEdit !== undefined,
+      frozen: frozen ?? false,
+    }),
+    [meId, onReply, canModerate, onEdit, frozen],
+  );
   const query = useRoomMessages(roomId);
   const { hasNextPage, isFetchingNextPage, fetchNextPage } = query;
   const items = useMemo(() => flattenPages(query.data), [query.data]);
@@ -335,10 +361,10 @@ export function MessageTimeline({
                     }
                     onJumpTo={jumpTo}
                     onOpenImage={openImage}
-                    onMenu={hasMessageActions(m, onReply !== undefined) ? openMenu : undefined}
+                    onMenu={hasMessageActions(m, capabilities) ? openMenu : undefined}
                     touch={touch}
                     menuOpen={menu?.message.id === m.id}
-                    onSwipeReply={m.author_kind !== "system" ? onReply : undefined}
+                    onSwipeReply={messageActionSet(m, capabilities).reply ? onReply : undefined}
                   />
                 </div>
               );
@@ -347,7 +373,14 @@ export function MessageTimeline({
           <div className="h-3" />
         </div>
       </div>
-      <MessageMenu target={menu} onClose={closeMenu} touch={touch} onReply={onReply} />
+      <MessageMenu
+        target={menu}
+        onClose={closeMenu}
+        touch={touch}
+        capabilities={capabilities}
+        onReply={onReply}
+        onEdit={onEdit}
+      />
       <ImageViewer
         images={images}
         currentId={viewing}

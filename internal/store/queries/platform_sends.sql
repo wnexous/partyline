@@ -2,9 +2,9 @@
 -- CID-15, CID-16: an AI's answer to a chat of its connection. The row is created already claimed
 -- (status sending) by the synchronous attempt that follows, so the retry worker never sends it a
 -- second time; next_attempt_at is when it is due if the process dies in between.
-INSERT INTO platform_sends (id, connector_id, chat_id, agent_id, text, reply_to_external_id, status,
+INSERT INTO platform_sends (id, connector_id, chat_id, agent_id, text, reply_to_external_id, once, status,
                             attempts, next_attempt_at, created_at, updated_at)
-VALUES (?, ?, ?, ?, ?, ?, 'sending', 0, ?, ?, ?);
+VALUES (?, ?, ?, ?, ?, ?, ?, 'sending', 0, ?, ?, ?);
 
 -- name: GetPlatformSend :one
 SELECT * FROM platform_sends WHERE id = ?;
@@ -54,8 +54,16 @@ SET status = 'failed', attempts = ?, last_error = ?, text = '', updated_at = ?
 WHERE id = ?;
 
 -- name: RequeueSendingPlatformSends :many
--- Sends a previous process left in flight are due again.
-UPDATE platform_sends SET status = 'pending', updated_at = ? WHERE status = 'sending'
+-- Sends a previous process left in flight are due again, except those that are attempted once (a
+-- file is not kept, CID-32): those are failed by FailSendingOncePlatformSends.
+UPDATE platform_sends SET status = 'pending', updated_at = ? WHERE status = 'sending' AND once = 0
+RETURNING id;
+
+-- name: FailSendingOncePlatformSends :many
+-- A send of a file that a previous process left in flight cannot be repeated: its file is gone.
+UPDATE platform_sends
+SET status = 'failed', attempts = 1, last_error = ?, text = '', updated_at = ?
+WHERE status = 'sending' AND once = 1
 RETURNING id;
 
 -- name: CountSendingPlatformSendsForChat :one

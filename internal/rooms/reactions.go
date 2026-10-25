@@ -2,6 +2,7 @@ package rooms
 
 import (
 	"context"
+	"database/sql"
 	"errors"
 
 	"github.com/wnexous/partyline/internal/access"
@@ -69,22 +70,25 @@ func (s *Service) react(ctx context.Context, p authn.Principal, roomID, messageI
 		return nil, check.Err()
 	}
 	// A reaction is taking part, like a message: not in a DM that is history, not with a disabled user.
-	if err := s.checkCounterpart(ctx, roomID, p.UserID); err != nil {
+	if err := s.checkCounterpart(ctx, roomID, p.IID()); err != nil {
 		return nil, err
 	}
 	changed := false
 	err := s.store.WithTx(ctx, func(q *db.Queries) error {
-		n, err := q.CountRoomMessage(ctx, db.CountRoomMessageParams{ID: messageID, RoomID: roomID})
+		m, err := q.GetMessageView(ctx, messageID)
+		if errors.Is(err, sql.ErrNoRows) || (err == nil && m.RoomID != roomID) {
+			return access.ErrNotFound // an id says nothing about the rooms the caller cannot see
+		}
 		if err != nil {
 			return err
 		}
-		if n == 0 {
-			return access.ErrNotFound
-		}
 		if !add {
-			rows, err := q.RemoveMessageReaction(ctx, db.RemoveMessageReactionParams{MessageID: messageID, IntelligenceID: p.UserID, Emoji: emoji})
+			rows, err := q.RemoveMessageReaction(ctx, db.RemoveMessageReactionParams{MessageID: messageID, IntelligenceID: p.IID(), Emoji: emoji})
 			changed = rows > 0
 			return err
+		}
+		if m.DeletedAt.Valid { // a placeholder has no reactions and takes none
+			return ErrMessageDeleted
 		}
 		uses, err := q.CountMessageEmojiUses(ctx, db.CountMessageEmojiUsesParams{MessageID: messageID, Emoji: emoji})
 		if err != nil {
@@ -100,7 +104,7 @@ func (s *Service) react(ctx context.Context, p authn.Principal, roomID, messageI
 			}
 		}
 		rows, err := q.AddMessageReaction(ctx, db.AddMessageReactionParams{
-			MessageID: messageID, IntelligenceID: p.UserID, Emoji: emoji, CreatedAt: s.now().UnixMilli(),
+			MessageID: messageID, IntelligenceID: p.IID(), Emoji: emoji, CreatedAt: s.now().UnixMilli(),
 		})
 		changed = rows > 0
 		return err

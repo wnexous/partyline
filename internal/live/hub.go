@@ -337,6 +337,18 @@ func (c *conn) render(ctx context.Context, e events.Event) ([]frame, error) {
 		c.visible[e.RoomID] = true
 		return []frame{{Type: dto.LiveEventTypeRoomMessage, Data: convert.Message(m)}}, nil
 
+	case events.MessageUpdated:
+		// The message as it is now, under the same view rule as a new one (EDT-06, DLT-06).
+		m, err := d.Rooms.GetMessage(ctx, c.p, e.RoomID, e.MessageID)
+		if errors.Is(err, access.ErrNotFound) {
+			return c.lost(e.RoomID), nil
+		}
+		if err != nil {
+			return nil, err
+		}
+		c.visible[e.RoomID] = true
+		return []frame{{Type: dto.LiveEventTypeRoomMessageUpdated, Data: convert.Message(m)}}, nil
+
 	case events.ReactionsChanged:
 		m, err := d.Rooms.GetMessage(ctx, c.p, e.RoomID, e.MessageID)
 		if errors.Is(err, access.ErrNotFound) {

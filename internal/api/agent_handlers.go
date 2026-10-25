@@ -3,8 +3,12 @@ package api
 import (
 	"context"
 	"database/sql"
+	"encoding/json"
 	"errors"
+	"io"
+	"mime"
 	"net/http"
+	"path/filepath"
 	"slices"
 	"strconv"
 	"strings"
@@ -35,12 +39,10 @@ var (
 	errAmbiguousRoom    = httpx.NewError(http.StatusConflict, dto.ErrorCodeConflict, "ambiguous room name")
 	errMessageNotFound  = httpx.NewError(http.StatusNotFound, dto.ErrorCodeNotFound, "message not found")
 	errReactNotChat     = httpx.NewError(http.StatusUnprocessableEntity, dto.ErrorCodeInvalid, "can only react to chat messages")
-	// Reactions and files work in rooms only (CID-22): the two answers for a message that arrived on
-	// one of the AI's connections, which say how to answer it.
-	errUnsupportedReaction = httpx.NewError(http.StatusUnprocessableEntity, dto.ErrorCodeUnsupported,
-		"reactions work on room messages only; a message from a connection cannot get one, answer it with reply")
+	// A message that arrived on one of the AI's connections is no message of a room (CID-22): it cannot be
+	// quoted in one, and the answer says how to answer it.
 	errUnsupportedQuote = httpx.NewError(http.StatusUnprocessableEntity, dto.ErrorCodeUnsupported,
-		"a message from a connection cannot be quoted in a room (files go to rooms only); answer it with reply, or with send_message naming the connection and the chat")
+		"a message from a connection cannot be quoted in a room; answer it with reply, or with send_message or send_file naming the connection and the chat")
 )
 
 // errNotMember answers a room reference the agent is not a member of (TOOL-04).
@@ -55,6 +57,8 @@ func (s *server) agentAPIRoutes(mux *http.ServeMux) {
 	s.handle(mux, "GET /api/v1/agent/rooms/{room}/messages", s.agentOnly(s.agentHistory))
 	s.handle(mux, "POST /api/v1/agent/rooms/{room}/messages", s.agentOnly(s.agentPost))
 	s.handle(mux, "POST /api/v1/agent/messages/{id}/reply", s.agentOnly(s.agentReply))
+	s.handle(mux, "PATCH /api/v1/agent/messages/{id}", s.agentOnly(s.agentEdit))
+	s.handle(mux, "DELETE /api/v1/agent/messages/{id}", s.agentOnly(s.agentDelete))
 	s.handle(mux, "POST /api/v1/agent/connections/{id}/chats/{chat}/messages", s.agentOnly(s.agentConnectionSend))
 	s.handle(mux, "POST /api/v1/agent/messages/{id}/react", s.agentOnly(s.agentReact))
 	s.handle(mux, "GET /api/v1/agent/attachments/{id}", s.agentOnly(s.agentAttachment))
@@ -612,6 +616,47 @@ func (s *server) agentTarget(ctx context.Context, p authn.Principal, id string) 
 	return orig, nil
 }
 
+// agentEdit replaces the text of a message the AI wrote in one of its rooms (EDT-08). A message that is no message
+// of one of its rooms is unknown (404); one it did not write is 403. It uses one of the AI's 30 posts a minute
+// (TOOL-08).
+func (s *server) agentEdit(w http.ResponseWriter, r *http.Request, p authn.Principal) error {
+	var req dto.EditMessageRequest
+	if err := httpx.DecodeJSON(w, r, &req); err != nil {
+		return err
+	}
+	orig, err := s.agentTarget(r.Context(), p, r.PathValue("id"))
+	if err != nil {
+		return err
+	}
+	if !s.Agents.AllowPost(p.AgentID) {
+		return errAgentRateLimited
+	}
+	m, err := s.Rooms.EditMessage(r.Context(), p, orig.RoomID, orig.ID, req.Text)
+	if err != nil {
+		return err
+	}
+	httpx.WriteJSON(w, http.StatusOK, convert.Message(m))
+	return nil
+}
+
+// agentDelete deletes a message the AI wrote in one of its rooms and answers with the placeholder (DLT-08). An AI
+// never manages a group, so it deletes its own messages only. It uses one of the AI's 30 posts a minute.
+func (s *server) agentDelete(w http.ResponseWriter, r *http.Request, p authn.Principal) error {
+	orig, err := s.agentTarget(r.Context(), p, r.PathValue("id"))
+	if err != nil {
+		return err
+	}
+	if !s.Agents.AllowPost(p.AgentID) {
+		return errAgentRateLimited
+	}
+	m, err := s.Rooms.DeleteMessage(r.Context(), p, orig.RoomID, orig.ID)
+	if err != nil {
+		return err
+	}
+	httpx.WriteJSON(w, http.StatusOK, convert.Message(m))
+	return nil
+}
+
 // agentReply answers a message in its room with reply_to set; a reply to a chat message
 // goes to that chat only (TOOL-02). A message that is no message of one of its rooms may be one
 // that arrived on a connection the AI operates: the answer then goes to that message's chat through
@@ -624,7 +669,7 @@ func (s *server) agentReply(w http.ResponseWriter, r *http.Request, p authn.Prin
 	id := r.PathValue("id")
 	orig, err := s.agentTarget(r.Context(), p, id)
 	if errors.Is(err, errMessageNotFound) {
-		return s.replyOnConnection(w, r, p, id, req.Text)
+		return s.replyOnConnection(w, r, p, id, req)
 	}
 	if err != nil {
 		return err
@@ -644,8 +689,9 @@ func (s *server) agentReply(w http.ResponseWriter, r *http.Request, p authn.Prin
 // record is purged: the text goes to the message's chat through the connection, unsigned, quoting the
 // message (CID-15). A message that is not in the AI's own queue, another AI's included, is unknown
 // (404). The answer is 201 with the state of the send when the platform took the text, and 202 when it
-// did not yet: the state is pending, carries the reason and Partyline retries (CID-18).
-func (s *server) replyOnConnection(w http.ResponseWriter, r *http.Request, p authn.Principal, id, text string) error {
+// did not yet: the state is pending, carries the reason and Partyline retries (CID-18). With quote false
+// the text goes to the same chat without quoting the message (CID-34).
+func (s *server) replyOnConnection(w http.ResponseWriter, r *http.Request, p authn.Principal, id string, req dto.ReplyRequest) error {
 	if s.Platform == nil || s.Sends == nil {
 		return errMessageNotFound
 	}
@@ -656,15 +702,18 @@ func (s *server) replyOnConnection(w http.ResponseWriter, r *http.Request, p aut
 	if err != nil {
 		return err
 	}
-	return s.sendOnConnection(w, r, p, connectors.SendInput{
-		AgentID: p.AgentID, ConnectorID: ev.ConnectionID, ChatID: ev.ChatID, Text: text, ReplyTo: ev.ExternalID,
-	})
+	in := connectors.SendInput{AgentID: p.AgentID, ConnectorID: ev.ConnectionID, ChatID: ev.ChatID, Text: req.Text, ReplyTo: ev.ExternalID}
+	if req.Quote != nil && !*req.Quote {
+		in.ReplyTo = ""
+	}
+	return s.sendOnConnection(w, r, p, in)
 }
 
 // sendOnConnection sends what the AI wrote through its connection and answers with the state of the send
 // (CID-15, CID-16). A request that is refused (not the operator, not a chat of the connection, unusable
 // text) is refused before the AI's posting limit is looked at, so that it does not use it up and the AI
-// keeps seeing why it was refused; a valid one counts like every other post (TOOL-08).
+// keeps seeing why it was refused; a valid one counts like every other post (TOOL-08). A file is sent
+// once: a platform that refuses it is 502 with the reason, since nothing will send it again (CID-32).
 func (s *server) sendOnConnection(w http.ResponseWriter, r *http.Request, p authn.Principal, in connectors.SendInput) error {
 	if err := s.Sends.Check(r.Context(), in); err != nil {
 		return err
@@ -676,20 +725,61 @@ func (s *server) sendOnConnection(w http.ResponseWriter, r *http.Request, p auth
 	if err != nil {
 		return err
 	}
+	if res.Status == dto.PlatformSendStatusFailed {
+		what := "message" // only a file fails at the first attempt; say it right of anything that does
+		if in.File != nil {
+			what = "file"
+		}
+		return httpx.NewError(http.StatusBadGateway, dto.ErrorCodeUnavailable, "the platform did not take the "+what+": "+res.Error)
+	}
+	writePlatformSend(w, res)
+	return nil
+}
+
+// reactOnConnection reacts to a message of the AI's platform queue through its connection (CID-33). A
+// request that is refused (not the operator, a platform without reactions, a message without a platform
+// id, not one emoji) is refused before the AI's posting limit is looked at; a valid one counts like every
+// other post (TOOL-08). A reaction is attempted once: a platform that refuses it is 502 with the reason.
+func (s *server) reactOnConnection(w http.ResponseWriter, r *http.Request, p authn.Principal, ev platform.Event, emoji string) error {
+	if s.Sends == nil {
+		return errMessageNotFound
+	}
+	in := connectors.ReactInput{
+		AgentID: p.AgentID, ConnectorID: ev.ConnectionID, ChatID: ev.ChatID,
+		TargetID: ev.ExternalID, TargetSenderID: ev.SenderID, TargetFromSelf: ev.FromSelf, Emoji: emoji,
+	}
+	if err := s.Sends.CheckReaction(r.Context(), in); err != nil {
+		return err
+	}
+	if !s.Agents.AllowPost(p.AgentID) {
+		return errAgentRateLimited
+	}
+	res, err := s.Sends.React(r.Context(), in)
+	if err != nil {
+		return err
+	}
+	if res.Status == dto.PlatformSendStatusFailed {
+		return httpx.NewError(http.StatusBadGateway, dto.ErrorCodeUnavailable, "the platform did not take the reaction: "+res.Error)
+	}
 	writePlatformSend(w, res)
 	return nil
 }
 
 // agentConnectionSend writes to a chat of a connection the AI operates: the connection and the chat
-// are Partyline's ids, as a platform event carries them (CID-16). An AI that is a member of the
+// are Partyline's ids, as a platform event carries them (CID-16), or the address of a chat the connection
+// has not heard from (CID-31). The body is JSON with the text, or multipart with a caption and one file
+// (CID-32). An AI that is a member of the
 // connection's organization and is not its operator is refused with 403 not_operator (CID-03); an AI that
 // is no member of it gets 404, as for a connection that does not exist, so the answer reveals nothing about
 // it (AD-016: the AI acts as itself, not through its host). A chat of another connection is 404
 // unknown_chat (CID-17).
 func (s *server) agentConnectionSend(w http.ResponseWriter, r *http.Request, p authn.Principal) error {
+	upload := isMultipart(r)
 	var req dto.SendToChatRequest
-	if err := httpx.DecodeJSON(w, r, &req); err != nil {
-		return err
+	if !upload {
+		if err := httpx.DecodeJSON(w, r, &req); err != nil {
+			return err
+		}
 	}
 	if s.Sends == nil {
 		return access.ErrNotFound
@@ -698,9 +788,75 @@ func (s *server) agentConnectionSend(w http.ResponseWriter, r *http.Request, p a
 	if err := s.Connectors.Require(r.Context(), p, connectionID, dto.LevelUse); err != nil {
 		return err // access.ErrNotFound: the AI is no member of its organization (or it does not exist)
 	}
-	return s.sendOnConnection(w, r, p, connectors.SendInput{
-		AgentID: p.AgentID, ConnectorID: connectionID, ChatID: r.PathValue("chat"), Text: req.Text,
-	})
+	in := connectors.SendInput{AgentID: p.AgentID, ConnectorID: connectionID, ChatID: r.PathValue("chat"), Text: req.Text}
+	if upload {
+		// A caption and a file, read after the AI is known to belong to the connection's organization (CID-32).
+		var err error
+		if in.Text, in.File, err = s.readConnectionUpload(r); err != nil {
+			return err
+		}
+	}
+	return s.sendOnConnection(w, r, p, in)
+}
+
+// isMultipart tells whether the request is a form upload.
+func isMultipart(r *http.Request) bool {
+	mt, _, _ := mime.ParseMediaType(r.Header.Get("Content-Type"))
+	return mt == "multipart/form-data"
+}
+
+// readConnectionUpload reads the multipart body of a send through a connection: the caption in the
+// message part (a dto.SendToChatRequest) and at most one file in a file part, held in memory because
+// the send keeps no file (CID-32). The file is bounded by the upload limit (413 over it) and gets the
+// type its sender gave, else a binary one, and its name without any path.
+func (s *server) readConnectionUpload(r *http.Request) (string, *connectors.SendFile, error) {
+	var req dto.SendToChatRequest
+	var file *connectors.SendFile
+	mr, err := r.MultipartReader()
+	if err != nil {
+		return "", nil, httpx.NewError(http.StatusBadRequest, dto.ErrorCodeInvalid, "malformed multipart body")
+	}
+	for {
+		part, err := mr.NextPart()
+		if errors.Is(err, io.EOF) {
+			return req.Text, file, nil
+		}
+		if err != nil {
+			return "", nil, multipartError(err)
+		}
+		switch part.FormName() {
+		case dto.MultipartMessageField:
+			data, err := io.ReadAll(io.LimitReader(part, httpx.MaxJSONBody+1))
+			if err != nil {
+				return "", nil, multipartError(err)
+			}
+			if len(data) > httpx.MaxJSONBody {
+				return "", nil, httpx.NewError(http.StatusRequestEntityTooLarge, dto.ErrorCodeTooLarge, "message part too large")
+			}
+			if err := json.Unmarshal(data, &req); err != nil {
+				return "", nil, httpx.NewError(http.StatusBadRequest, dto.ErrorCodeInvalid, "malformed message part")
+			}
+		case dto.MultipartFileField:
+			if file != nil {
+				return "", nil, httpx.Invalid(map[string]string{"file": "send one file at a time"})
+			}
+			data, err := io.ReadAll(io.LimitReader(part, s.Config.MaxUploadBytes+1))
+			if err != nil {
+				return "", nil, multipartError(err)
+			}
+			if int64(len(data)) > s.Config.MaxUploadBytes {
+				return "", nil, errUploadTooLarge
+			}
+			file = &connectors.SendFile{Name: filepath.Base(part.FileName()), Mime: part.Header.Get("Content-Type"), Data: data}
+			if file.Name == "." || file.Name == "/" {
+				file.Name = "file"
+			}
+			if file.Mime == "" {
+				file.Mime = "application/octet-stream"
+			}
+		}
+		_ = part.Close()
+	}
 }
 
 // writePlatformSend answers an AI's send through a connection: 201 when the platform took it, 202
@@ -713,24 +869,30 @@ func writePlatformSend(w http.ResponseWriter, res dto.PlatformSendResult) {
 	httpx.WriteJSON(w, status, res)
 }
 
-// isPlatformMessage tells whether id is a message of the AI's own platform queue, one that arrived on
-// a connection it operates, acknowledged or not. Another AI's messages are not: nothing is revealed
+// platformMessage returns the message id of the AI's own platform queue, one that arrived on a
+// connection it operates, acknowledged or not. Another AI's messages are not found: nothing is revealed
 // about queues that are not the caller's.
-func (s *server) isPlatformMessage(ctx context.Context, agentID, id string) (bool, error) {
+func (s *server) platformMessage(ctx context.Context, agentID, id string) (platform.Event, bool, error) {
 	if s.Platform == nil {
-		return false, nil
+		return platform.Event{}, false, nil
 	}
-	_, err := s.Platform.Get(ctx, agentID, id)
+	ev, err := s.Platform.Get(ctx, agentID, id)
 	if errors.Is(err, platform.ErrNotFound) {
-		return false, nil
+		return platform.Event{}, false, nil
 	}
-	return err == nil, err
+	return ev, err == nil, err
 }
 
-// agentReact reacts to a chat message with one emoji (REACT-01): the reaction is stored as a
-// message of kind reaction (text = emoji, reply_to = target) whose only recipient is the
-// target's chat; the connectors' sender turns it into a platform reaction. Non-chat targets
-// answer 422 "can only react to chat messages" (REACT-02).
+// isPlatformMessage tells whether id is a message of the AI's own platform queue.
+func (s *server) isPlatformMessage(ctx context.Context, agentID, id string) (bool, error) {
+	_, found, err := s.platformMessage(ctx, agentID, id)
+	return found, err
+}
+
+// agentReact reacts to a message with one emoji (REACT-01). A message of the AI's own platform queue, one
+// that arrived on a connection it operates, is reacted to on its platform, from the account (CID-33).
+// Otherwise the reaction is stored as a message of kind reaction (text = emoji, reply_to = target) of the
+// target's room; non-chat targets answer 422 "can only react to chat messages" (REACT-02).
 func (s *server) agentReact(w http.ResponseWriter, r *http.Request, p authn.Principal) error {
 	var req dto.ReactRequest
 	if err := httpx.DecodeJSON(w, r, &req); err != nil {
@@ -739,11 +901,10 @@ func (s *server) agentReact(w http.ResponseWriter, r *http.Request, p authn.Prin
 	id := r.PathValue("id")
 	orig, err := s.agentTarget(r.Context(), p, id)
 	if errors.Is(err, errMessageNotFound) {
-		// A message of the AI's own platform queue is no room message: it cannot get a reaction (CID-22).
-		if mine, perr := s.isPlatformMessage(r.Context(), p.AgentID, id); perr != nil {
+		if ev, mine, perr := s.platformMessage(r.Context(), p.AgentID, id); perr != nil {
 			return perr
 		} else if mine {
-			return errUnsupportedReaction
+			return s.reactOnConnection(w, r, p, ev, req.Emoji)
 		}
 	}
 	if err != nil {

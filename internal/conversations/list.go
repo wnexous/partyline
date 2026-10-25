@@ -73,8 +73,11 @@ func (s *Service) List(ctx context.Context, p authn.Principal) ([]dto.Conversati
 					c.MemberNames = []string{memberName(part.DisplayName, part.Handle)}
 				}
 			}
-		} else if n := namesBy[r.ID]; n != nil {
-			c.MemberNames = n
+		} else {
+			c.AvatarURL = convert.RoomAvatarURL(r.ID, r.AvatarSha256)
+			if n := namesBy[r.ID]; n != nil {
+				c.MemberNames = n
+			}
 		}
 		if m, ok := last[r.ID]; ok {
 			if c.Kind == dto.ConversationKindDM {
@@ -126,7 +129,7 @@ func (s *Service) lastMessages(ctx context.Context, q *db.Queries, roomIDs []str
 	for _, v := range views {
 		out[v.RoomID] = dto.MessagePreview{
 			Seq: v.Seq, AuthorID: authorOf(v), AuthorName: v.AuthorName, Text: previewText(v.Text, files[v.ID]),
-			CreatedAt: time.UnixMilli(v.CreatedAt).UTC(),
+			CreatedAt: time.UnixMilli(v.CreatedAt).UTC(), Deleted: v.DeletedAt.Valid,
 		}
 	}
 	return out, nil

@@ -56,3 +56,17 @@ LIMIT ?;
 
 -- name: SetMessageAuthorIID :exec
 UPDATE messages SET author_iid = ? WHERE id = ?;
+
+-- name: EditMessageText :execrows
+-- Replaces the text of a message that is not deleted (EDT-01); 0 rows when it is deleted.
+UPDATE messages SET text = sqlc.arg(text), edited_at = sqlc.arg(edited_at)
+WHERE id = sqlc.arg(id) AND deleted_at IS NULL;
+
+-- name: MarkMessageDeleted :execrows
+-- Turns a message that is not deleted into its placeholder (DLT-01): no text, no edit mark, deleted_at set.
+-- The caller deletes its attachment rows in the same transaction. 0 rows when it is deleted already.
+UPDATE messages SET text = '', edited_at = NULL, deleted_at = sqlc.arg(deleted_at)
+WHERE id = sqlc.arg(id) AND deleted_at IS NULL;
+
+-- name: DeleteMessageAttachments :exec
+DELETE FROM attachments WHERE message_id = ?;

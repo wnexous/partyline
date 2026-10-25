@@ -96,7 +96,8 @@ type managerFixture struct {
 	statusC <-chan events.Event
 }
 
-func newManagerFixture(t *testing.T) *managerFixture {
+// newManagerFixture builds a manager over a migrated store and the fake kind; opts change its deps.
+func newManagerFixture(t *testing.T, opts ...func(*connectors.ManagerDeps)) *managerFixture {
 	t.Helper()
 	path := filepath.Join(t.TempDir(), "partyline.db")
 	st, err := store.Open(path)
@@ -113,10 +114,14 @@ func newManagerFixture(t *testing.T) *managerFixture {
 	require.NoError(t, st.WithTx(context.Background(), func(q *db.Queries) error {
 		return q.CreateUser(context.Background(), db.CreateUserParams{ID: f.owner, Username: "alice", PasswordHash: "x", Role: "member"})
 	}))
-	f.m = connectors.NewManager(connectors.ManagerDeps{
+	deps := connectors.ManagerDeps{
 		Store: st, Bus: f.bus, Box: box, Kinds: connectors.NewRegistry(f.kind),
 		Logger: slog.New(slog.NewTextHandler(io.Discard, nil)), Wait: f.waits.Wait,
-	})
+	}
+	for _, opt := range opts {
+		opt(&deps)
+	}
+	f.m = connectors.NewManager(deps)
 	t.Cleanup(f.m.Close)
 	return f
 }

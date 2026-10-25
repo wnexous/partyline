@@ -24,6 +24,18 @@ type ReactionsChanged struct {
 	MessageID string
 }
 
+// MessageUpdated reports that the text of a message was edited or that the message was deleted (EDT-01,
+// DLT-01): Deleted tells which. The subscribers read the message as it is now. PrevText is the text the message
+// had before the change; the agent dispatcher needs it to tell the AIs that were sent the old text, and it
+// never leaves the process.
+type MessageUpdated struct {
+	RoomID    string
+	MessageID string
+	Seq       int64
+	Deleted   bool
+	PrevText  string
+}
+
 // RoomChanged reports that a room was created, updated or deleted.
 type RoomChanged struct {
 	RoomID  string
@@ -125,6 +137,7 @@ type Lagged struct{}
 
 func (MessageCreated) isEvent()      {}
 func (ReactionsChanged) isEvent()    {}
+func (MessageUpdated) isEvent()      {}
 func (RoomChanged) isEvent()         {}
 func (MembersChanged) isEvent()      {}
 func (IntelligenceChanged) isEvent() {}

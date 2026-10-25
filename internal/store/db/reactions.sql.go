@@ -66,6 +66,16 @@ func (q *Queries) CountMessageEmojiUses(ctx context.Context, arg CountMessageEmo
 	return count, err
 }
 
+const deleteMessageReactions = `-- name: DeleteMessageReactions :exec
+DELETE FROM message_reactions WHERE message_id = ?
+`
+
+// A deleted message stays as a placeholder with no reactions (RCT-07).
+func (q *Queries) DeleteMessageReactions(ctx context.Context, messageID string) error {
+	_, err := q.db.ExecContext(ctx, deleteMessageReactions, messageID)
+	return err
+}
+
 const listReactionsByMessages = `-- name: ListReactionsByMessages :many
 SELECT message_id, emoji, intelligence_id FROM message_reactions
 WHERE message_id IN (/*SLICE:message_ids*/?)

@@ -50,6 +50,14 @@ type Kind struct {
 	Fields []Field
 	// CanListChats tells whether its connectors implement ChatLister (CON-09).
 	CanListChats bool
+	// CanReact tells whether an AI may react to a message that arrived on a connection of the kind:
+	// its platform has reactions (CID-33). The webhook's connector can post a reaction to its
+	// outbound URL, but a webhook has no message to react to.
+	CanReact bool
+	// CanSendFiles tells whether an AI may send a file through a connection of the kind: its
+	// platform has a media send (CID-32). The webhook has none: its attachments are links to files
+	// that Partyline keeps, and a file sent through a connection is not kept.
+	CanSendFiles bool
 	// InboundHook tells whether its connectors receive messages at POST /api/v1/hooks/{id};
 	// the API then reports that URL as the connector's inbound_url.
 	InboundHook bool
@@ -58,6 +66,13 @@ type Kind struct {
 	// the connection's organization (IDN-05, AD-008 as amended by AD-016), and only they are given
 	// such a code, so nobody else's identity can be claimed through it.
 	LinkAdminsOnly bool
+	// Address, when set, lets the AI that operates a connection of the kind write to a chat the
+	// connection has not heard from yet (CID-31): it turns what the operator names (a phone number
+	// or JID, a Telegram chat id, a Discord channel id) into the chat to create, or reports false
+	// for something the platform could not address. cfg holds the public fields of the connector's
+	// config (never a secret) and the function touches nothing else, so it works whether or not the
+	// connection runs. A kind without it only sends to chats it has seen.
+	Address func(cfg Config, raw string) (ChatInfo, bool)
 	// New builds a connector from a validated config.
 	New func(cfg Config, d Deps) (Connector, error)
 	// Prepare, when set, completes the config of a new connector before validation (e.g.

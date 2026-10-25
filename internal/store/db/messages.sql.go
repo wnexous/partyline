@@ -104,6 +104,35 @@ func (q *Queries) CreateMessage(ctx context.Context, arg CreateMessageParams) er
 	return err
 }
 
+const deleteMessageAttachments = `-- name: DeleteMessageAttachments :exec
+DELETE FROM attachments WHERE message_id = ?
+`
+
+func (q *Queries) DeleteMessageAttachments(ctx context.Context, messageID string) error {
+	_, err := q.db.ExecContext(ctx, deleteMessageAttachments, messageID)
+	return err
+}
+
+const editMessageText = `-- name: EditMessageText :execrows
+UPDATE messages SET text = ?1, edited_at = ?2
+WHERE id = ?3 AND deleted_at IS NULL
+`
+
+type EditMessageTextParams struct {
+	Text     string
+	EditedAt sql.NullInt64
+	ID       string
+}
+
+// Replaces the text of a message that is not deleted (EDT-01); 0 rows when it is deleted.
+func (q *Queries) EditMessageText(ctx context.Context, arg EditMessageTextParams) (int64, error) {
+	result, err := q.db.ExecContext(ctx, editMessageText, arg.Text, arg.EditedAt, arg.ID)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected()
+}
+
 const getAttachmentRoom = `-- name: GetAttachmentRoom :one
 SELECT a.id, a.message_id, a.sha256, a.mime, a.name, a.size, a.status, a.created_at, m.room_id
 FROM attachments a JOIN messages m ON m.id = a.message_id
@@ -157,7 +186,7 @@ func (q *Queries) GetMessageIDByExternalID(ctx context.Context, arg GetMessageID
 }
 
 const getMessageView = `-- name: GetMessageView :one
-SELECT id, room_id, seq, author_kind, author_id, author_user_id, author_iid, sender_id, sender_alt_id, sender_name, kind, text, reply_to, recipients_json, external_id, created_at, author_name, author_handle, author_ikind, author_avatar FROM message_views WHERE id = ?
+SELECT id, room_id, seq, author_kind, author_id, author_user_id, author_iid, sender_id, sender_alt_id, sender_name, kind, text, reply_to, recipients_json, external_id, created_at, edited_at, deleted_at, author_name, author_handle, author_ikind, author_avatar FROM message_views WHERE id = ?
 `
 
 func (q *Queries) GetMessageView(ctx context.Context, id string) (MessageView, error) {
@@ -180,6 +209,8 @@ func (q *Queries) GetMessageView(ctx context.Context, id string) (MessageView, e
 		&i.RecipientsJson,
 		&i.ExternalID,
 		&i.CreatedAt,
+		&i.EditedAt,
+		&i.DeletedAt,
 		&i.AuthorName,
 		&i.AuthorHandle,
 		&i.AuthorIkind,
@@ -235,7 +266,7 @@ func (q *Queries) ListAttachmentsByMessages(ctx context.Context, messageIds []st
 }
 
 const listLatestMessagesInRooms = `-- name: ListLatestMessagesInRooms :many
-SELECT id, room_id, seq, author_kind, author_id, author_user_id, author_iid, sender_id, sender_alt_id, sender_name, kind, text, reply_to, recipients_json, external_id, created_at, author_name, author_handle, author_ikind, author_avatar FROM message_views
+SELECT id, room_id, seq, author_kind, author_id, author_user_id, author_iid, sender_id, sender_alt_id, sender_name, kind, text, reply_to, recipients_json, external_id, created_at, edited_at, deleted_at, author_name, author_handle, author_ikind, author_avatar FROM message_views
 WHERE room_id IN (/*SLICE:room_ids*/?)
 ORDER BY created_at DESC, id DESC
 LIMIT ?
@@ -284,6 +315,8 @@ func (q *Queries) ListLatestMessagesInRooms(ctx context.Context, arg ListLatestM
 			&i.RecipientsJson,
 			&i.ExternalID,
 			&i.CreatedAt,
+			&i.EditedAt,
+			&i.DeletedAt,
 			&i.AuthorName,
 			&i.AuthorHandle,
 			&i.AuthorIkind,
@@ -303,7 +336,7 @@ func (q *Queries) ListLatestMessagesInRooms(ctx context.Context, arg ListLatestM
 }
 
 const listMessagesAfter = `-- name: ListMessagesAfter :many
-SELECT id, room_id, seq, author_kind, author_id, author_user_id, author_iid, sender_id, sender_alt_id, sender_name, kind, text, reply_to, recipients_json, external_id, created_at, author_name, author_handle, author_ikind, author_avatar FROM message_views
+SELECT id, room_id, seq, author_kind, author_id, author_user_id, author_iid, sender_id, sender_alt_id, sender_name, kind, text, reply_to, recipients_json, external_id, created_at, edited_at, deleted_at, author_name, author_handle, author_ikind, author_avatar FROM message_views
 WHERE room_id = ?1 AND seq > ?2 AND seq < ?3
 ORDER BY seq ASC
 LIMIT ?4
@@ -347,6 +380,8 @@ func (q *Queries) ListMessagesAfter(ctx context.Context, arg ListMessagesAfterPa
 			&i.RecipientsJson,
 			&i.ExternalID,
 			&i.CreatedAt,
+			&i.EditedAt,
+			&i.DeletedAt,
 			&i.AuthorName,
 			&i.AuthorHandle,
 			&i.AuthorIkind,
@@ -366,7 +401,7 @@ func (q *Queries) ListMessagesAfter(ctx context.Context, arg ListMessagesAfterPa
 }
 
 const listMessagesBefore = `-- name: ListMessagesBefore :many
-SELECT id, room_id, seq, author_kind, author_id, author_user_id, author_iid, sender_id, sender_alt_id, sender_name, kind, text, reply_to, recipients_json, external_id, created_at, author_name, author_handle, author_ikind, author_avatar FROM message_views
+SELECT id, room_id, seq, author_kind, author_id, author_user_id, author_iid, sender_id, sender_alt_id, sender_name, kind, text, reply_to, recipients_json, external_id, created_at, edited_at, deleted_at, author_name, author_handle, author_ikind, author_avatar FROM message_views
 WHERE room_id = ?1 AND seq < ?2
 ORDER BY seq DESC
 LIMIT ?3
@@ -404,6 +439,8 @@ func (q *Queries) ListMessagesBefore(ctx context.Context, arg ListMessagesBefore
 			&i.RecipientsJson,
 			&i.ExternalID,
 			&i.CreatedAt,
+			&i.EditedAt,
+			&i.DeletedAt,
 			&i.AuthorName,
 			&i.AuthorHandle,
 			&i.AuthorIkind,
@@ -422,9 +459,29 @@ func (q *Queries) ListMessagesBefore(ctx context.Context, arg ListMessagesBefore
 	return items, nil
 }
 
+const markMessageDeleted = `-- name: MarkMessageDeleted :execrows
+UPDATE messages SET text = '', edited_at = NULL, deleted_at = ?1
+WHERE id = ?2 AND deleted_at IS NULL
+`
+
+type MarkMessageDeletedParams struct {
+	DeletedAt sql.NullInt64
+	ID        string
+}
+
+// Turns a message that is not deleted into its placeholder (DLT-01): no text, no edit mark, deleted_at set.
+// The caller deletes its attachment rows in the same transaction. 0 rows when it is deleted already.
+func (q *Queries) MarkMessageDeleted(ctx context.Context, arg MarkMessageDeletedParams) (int64, error) {
+	result, err := q.db.ExecContext(ctx, markMessageDeleted, arg.DeletedAt, arg.ID)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected()
+}
+
 const nextRoomSeq = `-- name: NextRoomSeq :one
 UPDATE rooms SET next_seq = next_seq + 1, updated_at = ? WHERE id = ?
-RETURNING id, owner_id, name, description, retention_days, next_seq, agent_streak, agents_paused, created_at, updated_at, instructions, instructions_by, updated_by, kind, dm_a, dm_b, read_baseline, org_id, creator_iid
+RETURNING id, owner_id, name, description, retention_days, next_seq, agent_streak, agents_paused, created_at, updated_at, instructions, instructions_by, updated_by, kind, dm_a, dm_b, read_baseline, org_id, creator_iid, avatar_sha256
 `
 
 type NextRoomSeqParams struct {
@@ -455,6 +512,7 @@ func (q *Queries) NextRoomSeq(ctx context.Context, arg NextRoomSeqParams) (Room,
 		&i.ReadBaseline,
 		&i.OrgID,
 		&i.CreatorIid,
+		&i.AvatarSha256,
 	)
 	return i, err
 }

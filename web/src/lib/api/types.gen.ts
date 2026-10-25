@@ -122,10 +122,14 @@ export interface ReactRequest {
   emoji: string;
 }
 /**
- * ReplyRequest is the body of POST /agent/messages/{id}/reply (TOOL-02).
+ * ReplyRequest is the body of POST /agent/messages/{id}/reply (TOOL-02). Quote, when false, answers a
+ * message that arrived on a connection in its chat without quoting it (CID-34); absent or true quotes it
+ * where the platform supports quotes. A reply to a room message is not changed by it: it always answers
+ * that message.
  */
 export interface ReplyRequest {
   text: string;
+  quote?: boolean;
 }
 /**
  * AgentFrameType is the type of an agent WebSocket frame (GET /agent/ws).
@@ -137,9 +141,15 @@ export const AgentFrameTypeAck = "ack"; // channel → server
 export const AgentFrameTypePlatform = "platform"; // server → channel, sessions that opted in (FeaturePlatform)
 export const AgentFrameTypePlatformAck = "platform_ack"; // channel → server
 /**
+ * AgentFrameTypeMessageEdited and AgentFrameTypeMessageDeleted tell a session that a message it may have been
+ * given changed (EDT-07, DLT-07). Clients that do not know a frame type ignore it; neither is acknowledged.
+ */
+export const AgentFrameTypeMessageEdited = "message_edited"; // server → channel
+export const AgentFrameTypeMessageDeleted = "message_deleted"; // server → channel
+/**
  * Agent WebSocket frame types.
  */
-export type AgentFrameType = typeof AgentFrameTypeWelcome | typeof AgentFrameTypeMessage | typeof AgentFrameTypeNotice | typeof AgentFrameTypeAck | typeof AgentFrameTypePlatform | typeof AgentFrameTypePlatformAck;
+export type AgentFrameType = typeof AgentFrameTypeWelcome | typeof AgentFrameTypeMessage | typeof AgentFrameTypeNotice | typeof AgentFrameTypeAck | typeof AgentFrameTypePlatform | typeof AgentFrameTypePlatformAck | typeof AgentFrameTypeMessageEdited | typeof AgentFrameTypeMessageDeleted;
 /**
  * AgentInfo identifies the connected agent in the welcome frame.
  */
@@ -299,6 +309,23 @@ export interface SessionState {
  */
 export interface AgentMessageFrame extends AgentMessage {
   type: typeof AgentFrameTypeMessage;
+}
+/**
+ * AgentMessageEditedFrame tells a live session that a message was edited: the message carries its new text and
+ * EditedAt, and Trusted is the trust of its author for the receiving AI, as in AgentMessageFrame. It is sent to
+ * the online sessions of the other AI members of the room whose delivery mode wants the message as it was or as it
+ * is now, never in a room paused by the loop guard, and is neither acknowledged nor replayed (EDT-07).
+ */
+export interface AgentMessageEditedFrame extends AgentMessage {
+  type: typeof AgentFrameTypeMessageEdited;
+}
+/**
+ * AgentMessageDeletedFrame tells a live session that a message was deleted: the message is the placeholder (no
+ * text, no attachments, DeletedAt). It is sent like AgentMessageEditedFrame to the sessions whose delivery mode
+ * wanted the message as it was (DLT-07).
+ */
+export interface AgentMessageDeletedFrame extends AgentMessage {
+  type: typeof AgentFrameTypeMessageDeleted;
 }
 /**
  * AgentNoticeFrame tells the agent about skipped backlog (AGT-09) and similar events.
@@ -569,8 +596,10 @@ export const ErrorCodeAlreadyMember = "already_member";
 export const ErrorCodeNotOperator = "not_operator";
 export const ErrorCodeUnknownChat = "unknown_chat";
 /**
- * ErrorCodeUnsupported is a reaction to, or a quote of, a message that arrived on one of the AI's
- * connections: reactions and files work in rooms only (422, CID-22).
+ * ErrorCodeUnsupported is something the AI asked for that cannot be done (422): a file or a reaction
+ * for a platform without a media send or reactions (the webhook), a reaction to a message the
+ * platform gave no id, or a quote in a room of a message that arrived on one of its connections
+ * (CID-22, CID-32, CID-33).
  */
 export const ErrorCodeUnsupported = "unsupported";
 /**
@@ -1257,6 +1286,11 @@ export interface Conversation {
    * the caller; empty when there is none.
    */
   org_ids: string[];
+  /**
+   * AvatarURL is the photo of a group, as Room.AvatarURL (GAV-04); absent without one and for a DM, which is
+   * drawn with its Counterpart.
+   */
+  avatar_url?: string;
 }
 /**
  * MaxConversationMemberNames bounds Conversation.MemberNames.
@@ -1287,6 +1321,11 @@ export interface MessagePreview {
    */
   text: string;
   created_at: string /* RFC 3339 */;
+  /**
+   * Deleted is set when the last message was deleted: it has no text, and the list says "message
+   * deleted" in its place (DLT-05).
+   */
+  deleted?: boolean;
 }
 /**
  * MarkReadRequest is the body of PUT /rooms/{id}/read: the newest message the caller has seen. An
@@ -1666,12 +1705,18 @@ export const LiveEventTypeLagged = "lagged";
  */
 export const LiveEventTypeInvitationReceived = "invitation_received";
 /**
+ * LiveEventTypeRoomMessageUpdated carries a message that was edited or deleted, as it is now (EDT-06,
+ * DLT-06): the client replaces the message it has with the same id.
+ */
+export const LiveEventTypeRoomMessageUpdated = "room.message_updated";
+/**
  * Live event types.
  */
-export type LiveEventType = typeof LiveEventTypeHello | typeof LiveEventTypeRoomMessage | typeof LiveEventTypeRoomReactions | typeof LiveEventTypeRoomChanged | typeof LiveEventTypeRoomDeleted | typeof LiveEventTypeRoomRead | typeof LiveEventTypeMembersChanged | typeof LiveEventTypeAccessChanged | typeof LiveEventTypeAgentPresence | typeof LiveEventTypeConnectorStatus | typeof LiveEventTypeChatDiscovered | typeof LiveEventTypeIdentityLinked | typeof LiveEventTypeIntelligenceChanged | typeof LiveEventTypeLagged | typeof LiveEventTypeInvitationReceived;
+export type LiveEventType = typeof LiveEventTypeHello | typeof LiveEventTypeRoomMessage | typeof LiveEventTypeRoomReactions | typeof LiveEventTypeRoomChanged | typeof LiveEventTypeRoomDeleted | typeof LiveEventTypeRoomRead | typeof LiveEventTypeMembersChanged | typeof LiveEventTypeAccessChanged | typeof LiveEventTypeAgentPresence | typeof LiveEventTypeConnectorStatus | typeof LiveEventTypeChatDiscovered | typeof LiveEventTypeIdentityLinked | typeof LiveEventTypeIntelligenceChanged | typeof LiveEventTypeLagged | typeof LiveEventTypeInvitationReceived | typeof LiveEventTypeRoomMessageUpdated;
 export type LiveEvent =
   | LiveHello
   | LiveRoomMessage
+  | LiveRoomMessageUpdated
   | LiveRoomReactions
   | LiveRoomChanged
   | LiveRoomDeleted
@@ -1704,6 +1749,15 @@ export interface HelloData {
  */
 export interface LiveRoomMessage {
   type: typeof LiveEventTypeRoomMessage;
+  data: Message;
+}
+/**
+ * LiveRoomMessageUpdated reports that a message of a room the user can view was edited or deleted (EDT-06,
+ * DLT-06). Data is the message as it is now: with EditedAt when it was edited, as a placeholder with DeletedAt
+ * when it was deleted. It keeps its id and sequence number, so the client puts it where the old one was.
+ */
+export interface LiveRoomMessageUpdated {
+  type: typeof LiveEventTypeRoomMessageUpdated;
   data: Message;
 }
 /**
@@ -2126,6 +2180,11 @@ export interface Room {
   name: string;
   description: string;
   /**
+   * AvatarURL is /api/v1/rooms/{id}/avatar?v=<sha>, the photo a manager gave a group (GAV-01); absent
+   * without one and for a DM, which shows the other party. The hash is a cache key: a new photo has a new URL.
+   */
+  avatar_url?: string;
+  /**
    * Instructions is free text for the room's agents (INS-01), up to MaxRoomInstructions
    * characters; agents read it with the room_info tool.
    */
@@ -2367,6 +2426,24 @@ export interface Message {
    */
   reactions: Reaction[];
   created_at: string /* RFC 3339 */;
+  /**
+   * EditedAt is when the author last changed the text; absent for a message that was never edited (EDT-01).
+   */
+  edited_at?: string /* RFC 3339 */;
+  /**
+   * DeletedAt is when the message was deleted; absent otherwise. A deleted message is a placeholder that
+   * stays in its place: its text is empty, it has no attachments and no EditedAt, and it keeps its id,
+   * sequence number, author, time and reply_to (DLT-01). It has no reactions either.
+   */
+  deleted_at?: string /* RFC 3339 */;
+}
+/**
+ * EditMessageRequest is the body of PATCH /rooms/{id}/messages/{mid} and of PATCH /agent/messages/{id}: the new
+ * text of a message its author wrote. The answer is the message (EDT-01). The same rules as a post apply to the
+ * text (MSG-02), except that a message with attachments may have none (EDT-04).
+ */
+export interface EditMessageRequest {
+  text: string;
 }
 /**
  * PostMessageRequest is the body of POST /rooms/{id}/messages (JSON), or the JSON of the

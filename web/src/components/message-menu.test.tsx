@@ -3,7 +3,11 @@ import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { axe } from "vitest-axe";
 import * as matchers from "vitest-axe/matchers";
-import { hasMessageActions } from "@/components/message-menu";
+import {
+  hasMessageActions,
+  type MessageCapabilities,
+  messageActionSet,
+} from "@/components/message-menu";
 import { MessageTimeline } from "@/components/message-timeline";
 import type { Message } from "@/lib/api/types.gen";
 import { useLiveStore } from "@/lib/live/store";
@@ -56,8 +60,15 @@ function renderTimeline(items: Message[], props: { reply?: boolean } = {}) {
   );
 }
 
+// Ana is not the viewer (u1): of her messages the viewer may Reply and Copy text, not Edit or Delete.
 const ana = (seq: number, over: Partial<Message> = {}) =>
-  makeMessage({ seq, text: `ana says ${seq}`, ...over });
+  makeMessage({
+    seq,
+    text: `ana says ${seq}`,
+    author_id: "u2",
+    author: { id: "u2", kind: "human", role: "user", display_name: "Ana", handle: "ana" },
+    ...over,
+  });
 
 stubLayout();
 beforeEach(() => {
@@ -254,18 +265,97 @@ describe("what offers nothing (ACT-05)", () => {
   });
 });
 
-describe("which messages have actions (ACT-05)", () => {
+const viewer = (over: Partial<MessageCapabilities> = {}): MessageCapabilities => ({
+  meId: "u1",
+  canReply: true,
+  canModerate: false,
+  canEdit: true,
+  frozen: false,
+  ...over,
+});
+
+describe("which messages have actions (ACT-05, EDT-10, DLT-09)", () => {
+  const own = makeMessage({ author_kind: "user", author_id: "u1", text: "hi" });
+  const other = makeMessage({ author_kind: "user", author_id: "u2", text: "hi" });
+
   it("none for a system notice, whoever looks", () => {
     const notice = makeMessage({ author_kind: "system", text: "Ana joined" });
-    expect(hasMessageActions(notice, true)).toBe(false);
-    expect(hasMessageActions(notice, false)).toBe(false);
+    expect(hasMessageActions(notice, viewer())).toBe(false);
+    expect(hasMessageActions(notice, viewer({ canReply: false }))).toBe(false);
+    expect(hasMessageActions(notice, viewer({ canModerate: true }))).toBe(false);
+  });
+
+  it("none for a deleted message, whoever looks: a placeholder is no one's to answer, copy or delete", () => {
+    const gone = makeMessage({
+      author_kind: "user",
+      author_id: "u1",
+      text: "",
+      deleted_at: "2026-10-19T14:00:00Z",
+    });
+    expect(hasMessageActions(gone, viewer())).toBe(false);
+    expect(hasMessageActions(gone, viewer({ canModerate: true }))).toBe(false);
   });
 
   it("Reply for whoever may post, Copy text for whatever has text", () => {
-    expect(hasMessageActions(makeMessage({ text: "hi" }), true)).toBe(true);
-    expect(hasMessageActions(makeMessage({ text: "hi" }), false)).toBe(true);
-    expect(hasMessageActions(makeMessage({ text: "" }), true)).toBe(true);
-    expect(hasMessageActions(makeMessage({ text: "  \n " }), false)).toBe(false);
+    expect(hasMessageActions(other, viewer())).toBe(true);
+    expect(hasMessageActions(other, viewer({ canReply: false }))).toBe(true);
+    expect(hasMessageActions({ ...other, text: "" }, viewer())).toBe(true);
+    expect(hasMessageActions({ ...other, text: "  \n " }, viewer({ canReply: false }))).toBe(false);
+  });
+
+  it("the author's own text message offers all four", () => {
+    expect(messageActionSet(own, viewer())).toEqual({
+      reply: true,
+      copy: true,
+      edit: true,
+      remove: true,
+    });
+  });
+
+  it("someone else's message offers Reply and Copy text, and Delete to the manager of the group alone", () => {
+    expect(messageActionSet(other, viewer())).toEqual({
+      reply: true,
+      copy: true,
+      edit: false,
+      remove: false,
+    });
+    expect(messageActionSet(other, viewer({ canModerate: true }))).toEqual({
+      reply: true,
+      copy: true,
+      edit: false,
+      remove: true,
+    });
+  });
+
+  it("a file with no caption: its author replies, edits (to add one) and deletes it, and there is no text to copy", () => {
+    const fileOnly = makeMessage({
+      author_kind: "user",
+      author_id: "u1",
+      text: "",
+      attachments: [recording],
+    });
+    expect(messageActionSet(fileOnly, viewer())).toEqual({
+      reply: true,
+      copy: false,
+      edit: true,
+      remove: true,
+    });
+  });
+
+  it("no Edit where there is no composer to edit in", () => {
+    expect(messageActionSet(own, viewer({ canEdit: false }))).toMatchObject({
+      edit: false,
+      remove: true,
+    });
+  });
+
+  it("a conversation that is history keeps Copy text and nothing else (CID-21)", () => {
+    expect(messageActionSet(own, viewer({ frozen: true, canModerate: true }))).toEqual({
+      reply: false,
+      copy: true,
+      edit: false,
+      remove: false,
+    });
   });
 });
 

@@ -3,6 +3,7 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import {
   ACTIVITY_PER_ROOM,
   ACTIVITY_SIZE,
+  type FilePages,
   type MessagePages,
   type PeoplePages,
   queryKeys,
@@ -102,6 +103,172 @@ describe("live handlers", () => {
         data: makeMessage({ room_id: "elsewhere", seq: 9 }),
       });
       expect(qc.getQueryData(queryKeys.roomMessages("elsewhere"))).toBeUndefined();
+    });
+  });
+
+  describe("room.message_updated (EDT-06, DLT-06)", () => {
+    const at = "2026-10-19T12:00:00Z";
+    const edited = (seq: number, text: string, room = "r1"): Message =>
+      makeMessage({ room_id: room, seq, text, edited_at: "2026-10-19T13:00:00Z" });
+    const deleted = (seq: number, room = "r1"): Message =>
+      makeMessage({ room_id: room, seq, text: "", deleted_at: "2026-10-19T14:00:00Z" });
+    const items = (room = "r1") =>
+      qc.getQueryData<MessagePages>(queryKeys.roomMessages(room))?.pages.flatMap((p) => p.items);
+    const update = (data: Message) =>
+      handleLiveEvent(qc, actions(), { type: "room.message_updated", data });
+
+    it("replaces the message in place, keeping the order and the others", () => {
+      seedTimeline(qc, "r1", [1, 2, 3]);
+      const m = edited(2, "message two, fixed");
+      update(m);
+      expect(items()?.map((x) => x.seq)).toEqual([1, 2, 3]);
+      expect(items()?.[1]).toEqual(m);
+      expect(items()?.[0]?.text).toBe("message 1");
+      expect(items()?.[2]?.text).toBe("message 3");
+    });
+
+    it("finds the message in an older page", () => {
+      qc.setQueryData<MessagePages>(queryKeys.roomMessages("r1"), {
+        pages: [
+          { items: [makeMessage({ room_id: "r1", seq: 3 })], has_more: true },
+          {
+            items: [makeMessage({ room_id: "r1", seq: 1 }), makeMessage({ room_id: "r1", seq: 2 })],
+            has_more: false,
+          },
+        ],
+        pageParams: [undefined, 3],
+      });
+      update(deleted(2));
+      const data = qc.getQueryData<MessagePages>(queryKeys.roomMessages("r1"));
+      expect(data?.pages[1]?.items[1]).toMatchObject({
+        seq: 2,
+        text: "",
+        deleted_at: "2026-10-19T14:00:00Z",
+      });
+      expect(data?.pages[0]?.items).toHaveLength(1);
+    });
+
+    it("turns a deleted message into its placeholder where it was", () => {
+      seedTimeline(qc, "r1", [1, 2, 3]);
+      update(edited(2, "typo fixed"));
+      update(deleted(2));
+      expect(items()?.map((x) => x.seq)).toEqual([1, 2, 3]);
+      expect(items()?.[1]).toMatchObject({
+        text: "",
+        attachments: [],
+        deleted_at: "2026-10-19T14:00:00Z",
+      });
+      expect(items()?.[1]?.edited_at).toBeUndefined();
+    });
+
+    it("adds nothing the timeline does not hold, and ignores rooms that are not cached", () => {
+      seedTimeline(qc, "r1", [1, 2]);
+      update(edited(7, "never loaded"));
+      expect(items()?.map((x) => x.seq)).toEqual([1, 2]);
+      update(edited(1, "elsewhere", "other"));
+      expect(qc.getQueryData(queryKeys.roomMessages("other"))).toBeUndefined();
+    });
+
+    it("is the same whether it arrives once or twice", () => {
+      seedTimeline(qc, "r1", [1, 2]);
+      update(edited(2, "twice"));
+      const once = items();
+      update(edited(2, "twice"));
+      expect(items()).toEqual(once);
+    });
+
+    describe("the conversation list", () => {
+      const preview = (seq: number, text: string) => ({
+        seq,
+        author_id: "u1",
+        author_name: "Ana",
+        text,
+        created_at: at,
+      });
+      const row = () => qc.getQueryData<Conversation[]>(queryKeys.conversations)?.[0];
+      function seed(last: number) {
+        qc.setQueryData<Conversation[]>(queryKeys.conversations, [
+          makeConversation({
+            id: "r1",
+            unread: 2,
+            activity_at: at,
+            last_message: preview(last, `message ${last}`),
+          }),
+        ]);
+      }
+
+      it("previews the new text of the last message", () => {
+        seed(3);
+        update(edited(3, "message three, fixed"));
+        expect(row()?.last_message).toEqual(preview(3, "message three, fixed"));
+        expect(row()?.unread).toBe(2);
+        expect(row()?.activity_at).toBe(at);
+      });
+
+      it("previews a deleted last message as deleted, with no text", () => {
+        seed(3);
+        update(deleted(3));
+        expect(row()?.last_message).toEqual({ ...preview(3, ""), deleted: true });
+        expect(row()?.unread).toBe(2);
+      });
+
+      it("leaves the preview alone when the message is not the last one", () => {
+        seed(3);
+        update(edited(2, "an older message"));
+        update(deleted(1));
+        expect(row()?.last_message).toEqual(preview(3, "message 3"));
+      });
+
+      it("does not fetch the list for a room it does not list", () => {
+        seed(3);
+        update(edited(3, "x", "r9"));
+        expect(qc.getQueryState(queryKeys.conversations)?.isInvalidated).toBe(false);
+      });
+    });
+
+    it("replaces the message on the dashboard feed", () => {
+      qc.setQueryData<ActivityItem[]>(queryKeys.activity, [
+        { room: { id: "r1", name: "general" }, message: makeMessage({ room_id: "r1", seq: 2 }) },
+        { room: { id: "r2", name: "deploys" }, message: makeMessage({ room_id: "r2", seq: 5 }) },
+      ]);
+      update(edited(2, "fixed on the feed"));
+      const feed = qc.getQueryData<ActivityItem[]>(queryKeys.activity);
+      expect(feed?.map((a) => a.message.text)).toEqual(["fixed on the feed", "message 5"]);
+      update(deleted(2));
+      expect(qc.getQueryData<ActivityItem[]>(queryKeys.activity)?.[0]?.message.deleted_at).toBe(
+        "2026-10-19T14:00:00Z",
+      );
+    });
+
+    it("takes the files of a deleted message out of the files lists, and keeps them for an edit", () => {
+      const file = (id: string, messageId: string) => ({
+        id,
+        name: `${id}.txt`,
+        mime: "text/plain",
+        size: 3,
+        status: "stored" as const,
+        kind: "document" as const,
+        message_id: messageId,
+        message_seq: 1,
+        author_kind: "user" as const,
+        author_name: "Ana",
+        author: makeIntelligence(),
+        created_at: at,
+      });
+      const seedFiles = () =>
+        qc.setQueryData<FilePages>(queryKeys.roomFiles("r1", "all"), {
+          pages: [{ items: [file("f1", "m-r1-2"), file("f2", "m-r1-3")], has_more: false }],
+          pageParams: [undefined],
+        });
+      const ids = () =>
+        qc
+          .getQueryData<FilePages>(queryKeys.roomFiles("r1", "all"))
+          ?.pages.flatMap((p) => p.items.map((f) => f.id));
+      seedFiles();
+      update(edited(2, "caption fixed"));
+      expect(ids()).toEqual(["f1", "f2"]);
+      update(deleted(2));
+      expect(ids()).toEqual(["f2"]);
     });
   });
 
@@ -565,6 +732,32 @@ describe("live handlers", () => {
         data: makeRoom({ id: "r2", kind: "dm", name: "", org_ids: [] }),
       });
       expect(row("r2")?.org_ids).toEqual([]);
+    });
+
+    it("room.changed puts a group's new photo on its row, and takes it off when the photo is removed (GAV-07)", () => {
+      const photo = "/api/v1/rooms/r3/avatar?v=abc";
+      expect(row("r3")?.avatar_url).toBeUndefined();
+      handleLiveEvent(qc, actions(), {
+        type: "room.changed",
+        data: makeRoom({ id: "r3", avatar_url: photo }),
+      });
+      expect(row("r3")?.avatar_url).toBe(photo);
+      handleLiveEvent(qc, actions(), { type: "room.changed", data: makeRoom({ id: "r3" }) });
+      expect(row("r3")?.avatar_url).toBeUndefined();
+      expect(stale()).toBe(false);
+    });
+
+    it("room.changed leaves a DM without a photo of its own: it is drawn with its counterpart (GAV-02)", () => {
+      handleLiveEvent(qc, actions(), {
+        type: "room.changed",
+        data: makeRoom({
+          id: "r2",
+          kind: "dm",
+          name: "",
+          avatar_url: "/api/v1/rooms/r2/avatar?v=x",
+        }),
+      });
+      expect(row("r2")?.avatar_url).toBeUndefined();
     });
 
     it("room.changed for a conversation the list does not have refetches it, every time", () => {

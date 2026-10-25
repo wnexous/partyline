@@ -10,8 +10,19 @@ services:
       PARTYLINE_PUBLIC_URL: http://localhost:8080
       # PARTYLINE_TRUSTED_PROXIES: 172.16.0.0/12   # when behind a reverse proxy
       # PARTYLINE_SECRET_KEY: <base64 32 bytes>   # else generated into /data/secret.key
+      # PARTYLINE_MEMORY_LIMIT: 400MiB   # soft limit of the Go heap (or GOMEMLIMIT); default: 90% of the container limit below
     volumes:
       - partyline-data:/data
+    # One process per data directory: a second server on /data exits at once (the lock file
+    # /data/partyline.lock). So: a single replica, and on Docker Swarm or Dokploy an update stops
+    # the old container before it starts the new one.
+    deploy:
+      replicas: 1
+      update_config:
+        order: stop-first
+      resources:
+        limits:
+          memory: 512M   # hard limit: a leak or a burst stays in this container; the server idles at about 20 MiB
 
 volumes:
   partyline-data:

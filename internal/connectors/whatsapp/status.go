@@ -2,6 +2,7 @@ package whatsapp
 
 import (
 	"context"
+	"strings"
 	"time"
 
 	"github.com/wnexous/partyline/internal/connectors"
@@ -9,8 +10,13 @@ import (
 
 // notConnectedDetail is the status detail of a connection whose number evolution-go reports as not
 // connected (reconnecting, closed, logged out): the API and the WebSocket work, but no message can
-// arrive until the number is back (WA-06).
+// arrive until the number is back (WA-06). When evolution-go says why, the reason goes in
+// parentheses after the fact (CID-28).
 const notConnectedDetail = "the WhatsApp number is not connected; reconnect it in evolution-go"
+
+// maxReason is the longest reason shown, in characters: evolution-go's own reasons are a sentence at
+// most, and the detail is stored and shown on the connection's page.
+const maxReason = 120
 
 // report is a status with its detail, as Handler.Status takes them.
 type report struct {
@@ -19,16 +25,35 @@ type report struct {
 }
 
 // state is what the connection reports for the instance list insts (WA-06): an error while
-// evolution-go says its number is not connected, otherwise connected, with the idle warning when
-// evolution-go does not have the instance. An instance that does not say whether it is connected
-// counts as connected: nothing is known, so nothing is claimed.
+// evolution-go says its number is not connected, with the reason it gives (CID-28), otherwise
+// connected, with the idle warning when evolution-go does not have the instance. An instance that
+// does not say whether it is connected counts as connected: nothing is known, so nothing is
+// claimed; and the flag decides, so a reason left over from before is not shown for a number that is
+// connected.
 func (c *Connector) state(insts []instance) report {
 	for _, inst := range insts {
 		if inst.Name == c.instance && inst.Connected != nil && !*inst.Connected {
-			return report{connectors.StatusError, notConnectedDetail}
+			return report{connectors.StatusError, disconnectedDetail(string(inst.DisconnectReason))}
 		}
 	}
 	return report{connectors.StatusConnected, c.idleWarning(insts)}
+}
+
+// disconnectedDetail is the status detail for a number that is not connected, with the reason
+// evolution-go gave for it when it gave one that says something.
+func disconnectedDetail(why string) string {
+	why = cleanReason(why)
+	if why == "" {
+		return notConnectedDetail
+	}
+	return "the WhatsApp number is not connected (" + why + "); reconnect it in evolution-go"
+}
+
+// cleanReason makes the reason fit in a status detail. It comes from the server the connection
+// points at, so it is data: it becomes one line (oneLine), the full stop that ends a sentence goes
+// because the detail goes on, and more than maxReason characters are cut with an ellipsis.
+func cleanReason(s string) string {
+	return ellipsize(strings.TrimRight(oneLine(s), ". "), maxReason)
 }
 
 // watch looks at the instance every statusInterval and tells h when what the connection reports
