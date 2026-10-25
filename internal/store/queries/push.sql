@@ -80,3 +80,28 @@ JOIN push_subscriptions s ON s.user_id = u.id
 LEFT JOIN read_cursors c ON c.room_id = r.id AND c.user_id = u.id
 WHERE r.id = sqlc.arg(room_id) AND r.kind = 'dm'
 ORDER BY s.user_id, s.id;
+
+-- name: ListConnectorAlertTargets :many
+-- The accounts responsible for a connection and their devices (ALERT-02): the admins of the owning
+-- organization and the host of the AI that operates it, each distinct account once (UNION), skipping
+-- a disabled account. users.push_groups is not read: an alert follows the devices (ALERT-13).
+WITH responsible AS (
+    SELECT m.iid AS user_id
+    FROM connectors c
+    JOIN org_members m ON m.org_id = c.org_id AND m.permission = 'admin'
+    WHERE c.id = sqlc.arg(connector_id)
+    UNION
+    SELECT a.owner_id AS user_id
+    FROM connectors c
+    JOIN agents a ON a.id = c.operator_iid
+    WHERE c.id = sqlc.arg(connector_id)
+)
+SELECT r.user_id, s.id AS subscription_id, s.endpoint, s.p256dh, s.auth
+FROM responsible r
+JOIN users u ON u.id = r.user_id AND u.disabled_at IS NULL
+JOIN push_subscriptions s ON s.user_id = r.user_id
+ORDER BY r.user_id, s.created_at, s.id;
+
+-- name: ListConnectorStatuses :many
+-- The stored status of every connection, the alert consumer's start state (ALERT-10).
+SELECT id, status FROM connectors ORDER BY id;
