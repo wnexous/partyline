@@ -612,7 +612,7 @@ stateDiagram-v2
 
 | Server answer | Link state | Tool calls | Retry |
 | --- | --- | --- | --- |
-| 409 `identity_busy` / close 4003 | `Busy` | every tool answers the busy text (SES-04) | 3 attempts at 2 s, 4 s, 4 s (the previous session may be ending, SES-06), then none |
+| 409 `identity_busy` / close 4003 | `Busy` | every tool answers the busy text (SES-04) | 6 attempts at 2, 4, 4, 10, 10, 15 s (45 s, more than the 35 s SES-06 takes to drop a silent session), then the channel polls every 30 s and tells its harness once when busy and once when connected again; listen ends after the 6 attempts |
 | close 4002 `taken_over` | `TakenOver` | every tool answers the taken-over text | none; one notice to the harness (SES-05) |
 | 422 `folder_required`/`folder_invalid` | `Invalid` | error text with the reason | none |
 
