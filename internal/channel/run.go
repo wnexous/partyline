@@ -18,6 +18,9 @@ import (
 // ServerName is the MCP server name; Claude Code shows events as <channel source="partyline">.
 const ServerName = "partyline"
 
+// busyKeepsTrying is what the busy notice adds for a channel: it never gives up on the AI (SES-04).
+const busyKeepsTrying = "Partyline keeps trying and connects by itself when that session ends."
+
 // Options configure Run.
 type Options struct {
 	// URL is the Partyline instance base URL (http or https).
@@ -119,12 +122,15 @@ func Run(ctx context.Context, o Options) error {
 	}
 	l := newLink(base, o.Token, id, o.HTTPClient, srv, o.Stderr, o.timing)
 	l.takeover, l.zone, l.announce = o.Takeover, o.zone, true
+	l.keepTryingWhenBusy = true // a channel reconnects by itself, it never gives up (SES-04)
 	l.onLost = func(reason lostReason, text string) {
 		fmt.Fprintf(o.Stderr, "partyline: %s\n", text)
-		if reason == lostTakenOver {
-			// Tell the harness once; the tools answer the same sentence from now on (SES-05).
-			_ = srv.Notify(NotificationMethod, connectionNotice(reason, text))
+		if reason == lostBusy {
+			// The other session may end at any time and Partyline will connect by itself: say so.
+			text += " " + busyKeepsTrying
 		}
+		// Tell the harness once; the tools answer the same sentence from now on (SES-04, SES-05).
+		_ = srv.Notify(NotificationMethod, connectionNotice(reason, text))
 	}
 	t.link = l
 	t.register(srv)

@@ -45,6 +45,9 @@ type timing struct {
 	// live in another session: that session may be ending (SES-06). Empty means no retry; nil
 	// means the default.
 	busyRetries []time.Duration
+	// busyPoll is the wait between connection attempts once the busy retries are used up: a
+	// channel keeps trying at this pace until the session that holds the AI ends (SES-04).
+	busyPoll time.Duration
 }
 
 var defaultTiming = timing{
@@ -52,7 +55,10 @@ var defaultTiming = timing{
 	maxBackoff:   30 * time.Second,
 	invalidRetry: 60 * time.Second,
 	limitPause:   5 * time.Minute,
-	busyRetries:  []time.Duration{2 * time.Second, 4 * time.Second, 4 * time.Second},
+	// The retries add up to 45 s, more than the 35 s SES-06 takes to drop a session that went
+	// silent: the old session of a restarted AI is gone before the last retry.
+	busyRetries: []time.Duration{2 * time.Second, 4 * time.Second, 4 * time.Second, 10 * time.Second, 10 * time.Second, 15 * time.Second},
+	busyPoll:    30 * time.Second,
 }
 
 func (t timing) withDefaults() timing {
@@ -70,6 +76,9 @@ func (t timing) withDefaults() timing {
 	}
 	if t.busyRetries == nil {
 		t.busyRetries = defaultTiming.busyRetries
+	}
+	if t.busyPoll <= 0 {
+		t.busyPoll = defaultTiming.busyPoll
 	}
 	return t
 }
@@ -138,10 +147,14 @@ type link struct {
 	// announce makes the first welcome of the process a notice that says who the AI is and who
 	// its owner is (the full channel; listen prints message lines only).
 	announce bool
-	// onLost is called once, from run, when the link gives up because another session holds the
-	// AI: after the retries when it is busy, at once when it was taken over. The text is what
-	// the person is told (SES-04, SES-05). The channel then keeps answering its tools; listen
-	// prints it and ends. Nil does nothing.
+	// keepTryingWhenBusy keeps the link dialing every busyPoll once the busy retries are used up
+	// instead of giving up: a channel connects by itself when the session that holds the AI ends
+	// (SES-04). listen leaves it false and ends after the retries, as it always did.
+	keepTryingWhenBusy bool
+	// onLost is called once, from run, when another session holds the AI or took it over. Busy: once,
+	// after the retries, whether or not the link keeps trying. The text is what the person is told
+	// (SES-04, SES-05). The channel keeps answering its tools; listen prints it and ends. Nil does
+	// nothing.
 	onLost func(reason lostReason, text string)
 
 	mu     sync.Mutex
@@ -154,6 +167,9 @@ type link struct {
 	seen    *idRing
 	// announced is set once the identity notice was sent: a reconnect is the same session.
 	announced bool
+	// expectReconnect is set once a channel told onLost that it keeps trying while busy: the welcome of
+	// the connection that follows then tells the harness that Partyline is back (SES-04).
+	expectReconnect bool
 }
 
 // lostReason says why a link gave up on its connection.
@@ -223,6 +239,10 @@ var errAgentLimit = errors.New("partyline: agent limit reached for this account;
 // takenOverText is what the harness is told, once, when another session takes the AI over, and
 // what every tool answers from then on (SES-05).
 const takenOverText = "This intelligence was opened in another session; Partyline is disconnected here."
+
+// reconnectText is what a channel that found the AI open elsewhere tells its harness, once, when it
+// connects by itself; the messages that queued meanwhile come with the backlog (SES-04).
+const reconnectText = "Partyline is connected again; messages reach this session."
 
 // endedByReason is the close reason of a session that someone who manages the AI ended (POS-04): the
 // server closes it with the code of a takeover, which v0.5 channels already obey, and says who in the
@@ -295,6 +315,10 @@ func connectionNotice(reason lostReason, text string) Notification {
 // reasonIdentity is the reason of the notice that says who the AI is and who its owner is.
 const reasonIdentity = "identity"
 
+// reasonConnected is the reason of the notice that says Partyline is connected again after a busy
+// session (SES-04).
+const reasonConnected = "connected"
+
 // systemNotice is a notification from Partyline itself, outside any room: its meta says type
 // "notice" and why. The adapters of pi, OpenCode and omp show such a notice to the person and
 // never hand it to the model; Claude Code gives every channel event to the model.
@@ -358,6 +382,33 @@ func orgLabel(o dto.ContactOrg) string {
 	return o.Name + " (" + o.Slug + ")"
 }
 
+// expectReconnectAfterBusy records that onLost was told about a busy session and that the link keeps
+// trying: the welcome of the connection that follows says that Partyline is back (SES-04).
+func (l *link) expectReconnectAfterBusy() {
+	l.mu.Lock()
+	l.expectReconnect = true
+	l.mu.Unlock()
+}
+
+// announceReconnect sends the notice that says Partyline is connected again, once, when a channel that
+// told its harness the AI was open elsewhere connects by itself: the messages that queued meanwhile
+// arrive with the backlog (SES-04).
+func (l *link) announceReconnect() error {
+	l.mu.Lock()
+	waiting := l.expectReconnect
+	l.mu.Unlock()
+	if !waiting {
+		return nil
+	}
+	if err := l.notify.Notify(NotificationMethod, systemNotice(reasonConnected, reconnectText)); err != nil {
+		return err
+	}
+	l.mu.Lock()
+	l.expectReconnect = false
+	l.mu.Unlock()
+	return nil
+}
+
 // announceIdentity sends the notice that says who the AI is, once per process: the welcome of a
 // reconnect, which follows a dropped connection of the same session, says nothing.
 func (l *link) announceIdentity(w dto.AgentWelcomeFrame) error {
@@ -406,7 +457,8 @@ const (
 // run connects and reconnects until ctx ends (nil) or writing a notification fails.
 func (l *link) run(ctx context.Context) error {
 	backoff := l.t.minBackoff
-	busyTries := 0 // consecutive refusals because the AI is live elsewhere
+	busyTries := 0    // consecutive refusals because the AI is live elsewhere
+	busyTold := false // onLost was told about this busy episode
 	for {
 		out, err := l.session(ctx)
 		if err != nil {
@@ -427,20 +479,33 @@ func (l *link) run(ctx context.Context) error {
 			wait = l.t.invalidRetry
 		case outDropped:
 			l.setState(stateConnecting)
-			wait, backoff, busyTries = l.t.minBackoff, nextBackoff(l.t.minBackoff, l.t.maxBackoff), 0
+			wait, backoff, busyTries, busyTold = l.t.minBackoff, nextBackoff(l.t.minBackoff, l.t.maxBackoff), 0, false
 		case outLagged:
 			l.setState(stateConnecting)
-			wait, backoff, busyTries = 0, l.t.minBackoff, 0
+			wait, backoff, busyTries, busyTold = 0, l.t.minBackoff, 0, false
 		case outBusy:
 			l.setState(stateBusy)
-			if busyTries >= len(l.t.busyRetries) {
-				// The session that holds the AI did not end: stop trying.
+			switch {
+			case busyTries < len(l.t.busyRetries):
+				// The session that holds the AI may be ending (SES-06): retry soon.
+				wait, backoff = l.t.busyRetries[busyTries], l.t.minBackoff
+				busyTries++
+			case !l.keepTryingWhenBusy:
+				// The session that holds the AI did not end: say so and stop trying.
 				l.lost(lostBusy, l.busyText())
 				<-ctx.Done()
 				return nil
+			default:
+				// A channel never gives up, because the old session may have died without closing its
+				// socket and so lingers until the server's ping drops it (SES-04, SES-06): tell the
+				// harness once, then keep dialing until it connects or ctx ends.
+				if !busyTold {
+					l.lost(lostBusy, l.busyText())
+					l.expectReconnectAfterBusy()
+					busyTold = true
+				}
+				wait, backoff = l.t.busyPoll, l.t.minBackoff
 			}
-			wait, backoff = l.t.busyRetries[busyTries], l.t.minBackoff
-			busyTries++
 		case outTakenOver:
 			l.setState(stateTakenOver)
 			l.lost(lostTakenOver, l.takenOverText())
@@ -756,7 +821,10 @@ func (l *link) handle(ctx context.Context, ws *websocket.Conn, data []byte) erro
 		if json.Unmarshal(data, &f) != nil {
 			return nil
 		}
-		return l.announceIdentity(f)
+		if err := l.announceIdentity(f); err != nil {
+			return err
+		}
+		return l.announceReconnect()
 	}
 	return nil // unknown frames need nothing: a client ignores the types a newer server adds
 }
