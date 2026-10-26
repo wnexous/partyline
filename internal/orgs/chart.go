@@ -51,6 +51,22 @@ func (c *Chart) Member(iid string) (Member, bool) {
 	return m, ok
 }
 
+// WithPosition returns a copy of the chart in which iid holds positionID ("" for none); the chart
+// itself is untouched. An identity that is not a member leaves the copy unchanged. The positions are
+// shared: a move changes a membership, never the chart's positions.
+func (c *Chart) WithPosition(iid, positionID string) *Chart {
+	out := *c
+	out.Members = make(map[string]Member, len(c.Members))
+	for id, m := range c.Members {
+		out.Members[id] = m
+	}
+	if m, ok := out.Members[iid]; ok {
+		m.PositionID = positionID
+		out.Members[iid] = m
+	}
+	return &out
+}
+
 // IsAdmin reports whether iid is a member with the admin permission.
 func (c *Chart) IsAdmin(iid string) bool {
 	m, ok := c.Members[iid]

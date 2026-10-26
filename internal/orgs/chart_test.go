@@ -349,6 +349,33 @@ func TestManagedByListsExactlyTheTargetsOfManages(t *testing.T) {
 	require.Empty(t, c.ManagedBy("ghost"), "a stranger manages nobody")
 }
 
+// WithPosition answers what the chart would say after moving one member, without changing the chart.
+func TestWithPositionMovesOneMemberInACopy(t *testing.T) {
+	c := chartOf(admin("root", "admin"), created("ai", "", "root"))
+	original := map[string]Member{}
+	for id, m := range c.Members {
+		original[id] = m
+	}
+
+	moved := c.WithPosition("ai", "worktrees")
+	require.Equal(t, original, c.Members, "the original is untouched")
+	require.Equal(t, "worktrees", moved.Members["ai"].PositionID, "only the member's position changes")
+	require.Equal(t, original["root"], moved.Members["root"])
+	require.Equal(t, c.Positions, moved.Positions, "the positions are shared: a move changes no position")
+	require.Equal(t, "", c.WithPosition("ai", "").Members["ai"].PositionID, "no position")
+
+	// The copy is independent of the chart it came from.
+	moved.Members["root"] = user("root", "sentinel")
+	require.Equal(t, original["root"], c.Members["root"])
+
+	// An identity that is not a member changes nothing, and still gets a copy.
+	ghost := c.WithPosition("ghost", "admin")
+	require.Equal(t, original, ghost.Members)
+	require.NotSame(t, c, ghost)
+	require.Equal(t, []string{"root"}, c.ManagersOf("ai"), "the incident: the creator manages the positionless AI")
+	require.Empty(t, c.WithPosition("ai", "admin").ManagersOf("ai"), "and stops managing it at its own level")
+}
+
 // Manages, ManagersOf and ManagedBy are three views of one rule: for every pair they agree.
 func TestManagesManagersOfAndManagedByAgree(t *testing.T) {
 	c := chartOf(
