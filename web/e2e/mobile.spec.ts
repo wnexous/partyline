@@ -977,7 +977,16 @@ test("a message opens its actions: Copy text copies it, Reply answers it (ACT-01
       };
     } else {
       const more = message.getByRole("button", { name: `Actions for the message from ${author}` });
-      await expect(more).toHaveCSS("opacity", "0");
+      // Closing the menu gives the focus back to the row's "⋯" (a focused control shows) and the
+      // pointer may still rest on the row: start from neither.
+      // The menu hands the focus back a moment after it closes, so let go of it until it stays away.
+      await page.mouse.move(0, 0);
+      await expect
+        .poll(async () => {
+          await page.evaluate(() => (document.activeElement as HTMLElement | null)?.blur());
+          return more.evaluate((el) => getComputedStyle(el).opacity);
+        })
+        .toBe("0");
       await message.hover();
       await expect(more).toHaveCSS("opacity", "1");
       await shoot(page, "actions-message-hover", testInfo);
