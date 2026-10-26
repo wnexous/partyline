@@ -31,6 +31,9 @@ const (
 	// wantBusyUnknown is what a channel can say when the server only closed its socket with
 	// identity_busy and so told nothing about the session that holds the AI.
 	wantBusyUnknown = `This intelligence is open in another session. Partyline is not connected here. To take over, restart with "partyline claude --take-over" or set PARTYLINE_TAKEOVER=1.`
+	// wantBusyChannel is wantBusy plus what a channel adds to it for its harness: it never gives up
+	// on the AI, so it will come back on its own (SES-04).
+	wantBusyChannel = wantBusy + " Partyline keeps trying and connects by itself when that session ends."
 )
 
 // allTools are the tools of the channel with arguments that need no server answer.
@@ -70,7 +73,7 @@ func (e *chanEnv) takeOver() *testkit.AgentConn {
 
 // SES-04: while another session holds the AI, every tool answers that it is open elsewhere, in
 // which app and since when (local HH:MM), and how to take over; none of them reaches the server
-// and the channel pushes no notification.
+// and the channel tells its harness once, not once per poll, that it keeps trying.
 func TestEveryToolAnswersTheBusyText(t *testing.T) {
 	e, holder := busyEnv(t)
 	o := e.options()
@@ -89,6 +92,10 @@ func TestEveryToolAnswersTheBusyText(t *testing.T) {
 		require.Equal(t, wantBusy, text, tool)
 	}
 	require.Empty(t, e.messages(e.room.ID), "the busy channel posted nothing as the AI")
+	n := s.notification()
+	require.Equal(t, "busy", n.Meta["reason"])
+	require.Equal(t, "notice", n.Meta["type"])
+	require.Equal(t, wantBusyChannel, n.Content)
 	s.expectNoNotification(200 * time.Millisecond)
 	require.NoError(t, holder.Closed(50*time.Millisecond), "the holder keeps the AI")
 }

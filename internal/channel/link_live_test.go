@@ -51,9 +51,18 @@ func runLink(t *testing.T, base string, tm timing, takeover bool) (*link, *syncB
 // runLinkAs is runLink for a session with the identity id.
 func runLinkAs(t *testing.T, base string, id Identity, tm timing, takeover bool) (*link, *syncBuffer, func() []time.Duration) {
 	t.Helper()
+	return runLinkWith(t, base, id, tm, takeover, nil)
+}
+
+// runLinkWith is runLinkAs with a chance to set the link's fields before it starts connecting.
+func runLinkWith(t *testing.T, base string, id Identity, tm timing, takeover bool, setup func(*link)) (*link, *syncBuffer, func() []time.Duration) {
+	t.Helper()
 	stderr := &syncBuffer{}
 	l := newLink(mustURL(t, base), "pl_agent_x", id, http.DefaultClient, discard{}, stderr, tm)
 	l.takeover = takeover
+	if setup != nil {
+		setup(l)
+	}
 	var mu sync.Mutex
 	var waits []time.Duration
 	l.sleep = func(ctx context.Context, d time.Duration) bool {
@@ -86,18 +95,70 @@ func refuseWith(t *testing.T, log *dialLog, status int, code dto.ErrorCode, mess
 	return srv.URL
 }
 
-// SES-04, SES-06: a connection refused because the AI is live in another session is retried 3
-// times, after 2 s, 4 s and 4 s (that session may be ending), and then not any more; the tools
-// report the session as busy meanwhile.
-func TestLinkRetriesABusyAIThreeTimesThenStops(t *testing.T) {
-	var log dialLog
-	base := refuseWith(t, &log, http.StatusConflict, dto.ErrorCodeIdentityBusy, "this intelligence is open in another session")
+// SES-04, SES-06: the retries of a connection refused because the AI is live in another session,
+// after 2 s, 4 s, 4 s, 10 s, 10 s and 15 s, add up to 45 s: more than the 35 s it takes the server's
+// ping to drop a session that went silent. listen stops after the last retry; a channel keeps polling
+// every 30 s and never gives up.
+func TestLinkBusyRetriesOutlastThePing(t *testing.T) {
+	var stopped dialLog
+	base := refuseWith(t, &stopped, http.StatusConflict, dto.ErrorCodeIdentityBusy, "this intelligence is open in another session")
 	l, _, waits := runLink(t, base, defaultTiming, false)
 
-	require.Eventually(t, func() bool { return log.count() == 4 }, wait, 5*time.Millisecond, "the first dial and three retries")
-	require.Equal(t, []time.Duration{2 * time.Second, 4 * time.Second, 4 * time.Second}, waits())
-	require.Never(t, func() bool { return log.count() > 4 }, 200*time.Millisecond, 10*time.Millisecond, "no retry after the third")
+	retries := []time.Duration{2 * time.Second, 4 * time.Second, 4 * time.Second, 10 * time.Second, 10 * time.Second, 15 * time.Second}
+	require.Eventually(t, func() bool { return len(waits()) >= len(retries) }, wait, 5*time.Millisecond)
+	require.Equal(t, retries, waits(), "six retries, no poll: listen gives up after them")
+	require.GreaterOrEqual(t, sumWaits(retries), 35*time.Second, "the retries outlast the 35 s of SES-06")
+	require.Eventually(t, func() bool { return stopped.count() == 1+len(retries) }, wait, 5*time.Millisecond, "the first dial and six retries")
+	require.Never(t, func() bool { return stopped.count() > 1+len(retries) }, 200*time.Millisecond, 10*time.Millisecond, "no retry after the sixth")
 	require.Error(t, l.Err())
+
+	// The channel keeps trying: the same six retries, then a poll every 30 s.
+	var polling dialLog
+	pollBase := refuseWith(t, &polling, http.StatusConflict, dto.ErrorCodeIdentityBusy, "this intelligence is open in another session")
+	kept, _, keptWaits := runLinkWith(t, pollBase, builderIdentity, defaultTiming, false, func(l *link) { l.keepTryingWhenBusy = true })
+	require.Eventually(t, func() bool { return len(keptWaits()) >= len(retries)+3 }, wait, 5*time.Millisecond)
+	require.Equal(t, append(retries, 30*time.Second, 30*time.Second, 30*time.Second), keptWaits()[:len(retries)+3])
+	require.Error(t, kept.Err())
+}
+
+// sumWaits adds up waits.
+func sumWaits(waits []time.Duration) time.Duration {
+	var sum time.Duration
+	for _, d := range waits {
+		sum += d
+	}
+	return sum
+}
+
+// SES-04: a channel that finds the AI open in another session tells its harness once, with the busy
+// text and the promise that Partyline connects by itself, keeps polling while the holder is live, and
+// when the holder ends it connects, tells the harness that it is back, and delivers again.
+func TestChannelKeepsTryingAfterBusyAndSaysSo(t *testing.T) {
+	e, holder := busyEnv(t)
+
+	o := e.options()
+	o.timing.busyRetries = []time.Duration{20 * time.Millisecond, 20 * time.Millisecond}
+	o.timing.busyPoll = 50 * time.Millisecond
+	s := startSession(t, o)
+	s.handshake()
+
+	n := s.notification()
+	require.Equal(t, "notice", n.Meta["type"])
+	require.Equal(t, "busy", n.Meta["reason"])
+	require.Contains(t, n.Content, "is open in another session")
+	require.Contains(t, n.Content, "connects by itself", "the harness is told that Partyline comes back on its own")
+	s.expectNoNotification(200 * time.Millisecond) // one notice, not one per poll
+
+	holder.Close()
+	back := s.notification()
+	require.Equal(t, reconnectText, back.Content)
+	require.Equal(t, "notice", back.Meta["type"])
+	require.Equal(t, "connected", back.Meta["reason"])
+	require.True(t, e.online(), "the channel is the AI's live session")
+
+	m := e.post("after the reconnect")
+	require.Equal(t, m.ID, s.notification().Meta["message_id"], "messages reach the session again")
+	s.expectNoNotification(200 * time.Millisecond)
 }
 
 // SES-06: while the AI is busy the channel keeps trying; once the session that holds it ends the
