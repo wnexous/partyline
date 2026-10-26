@@ -61,6 +61,7 @@ import {
   type MergeAgentRequest,
   type Message,
   type MessagePreview,
+  type MovePreview,
   MultipartFileField,
   MultipartMessageField,
   type OpenDMRequest,
@@ -122,6 +123,9 @@ export const queryKeys = {
   orgs: ["orgs"] as const,
   org: (id: string) => ["orgs", id] as const,
   orgMembers: (id: string) => ["orgs", id, "members"] as const,
+  /** What moving a member to one position would change about who manages it (POS-04). */
+  orgMovePreview: (id: string, iid: string, positionId: string) =>
+    ["orgs", id, "members", iid, "move-preview", positionId] as const,
   orgChart: (id: string) => ["orgs", id, "chart"] as const,
   orgInvitations: (id: string) => ["orgs", id, "invitations"] as const,
   /** The invitations waiting for the viewer, or for an AI they manage. */
@@ -1124,6 +1128,23 @@ export const orgMembersQuery = (id: string) =>
 
 export const useOrgMembers = (id: string, enabled = true) =>
   useQuery({ ...orgMembersQuery(id), enabled });
+
+/**
+ * Who would stop managing a member if it moved to `positionId` (POS-04; `""` is no position),
+ * asked before the move and shown in the dialog. It changes nothing, and the move's own errors
+ * are still the move's. `enabled` keeps the dialog from asking for the position the member
+ * already holds.
+ */
+export const useOrgMovePreview = (orgId: string, iid: string, positionId: string, enabled = true) =>
+  useQuery({
+    queryKey: queryKeys.orgMovePreview(orgId, iid, positionId),
+    queryFn: () =>
+      api<MovePreview>(
+        "GET",
+        `/orgs/${encodeURIComponent(orgId)}/members/${encodeURIComponent(iid)}/move-preview?position_id=${encodeURIComponent(positionId)}`,
+      ),
+    enabled,
+  });
 
 export const orgChartQuery = (id: string) =>
   queryOptions({

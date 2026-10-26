@@ -1,6 +1,7 @@
 import { useId, useState } from "react";
 import { toast } from "sonner";
 import { NativeSelect } from "@/components/native-select";
+import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -12,9 +13,9 @@ import {
 } from "@/components/ui/dialog";
 import { Label } from "@/components/ui/label";
 import { isApiError } from "@/lib/api/client";
-import { useUpdateOrgMember } from "@/lib/api/queries";
+import { useOrgMovePreview, useUpdateOrgMember } from "@/lib/api/queries";
 import type { Position } from "@/lib/api/types.gen";
-import { useT } from "@/lib/i18n";
+import { useI18n, useT } from "@/lib/i18n";
 import { movablePositions, type PositionOption } from "@/lib/org-chart";
 
 /** Who is being moved, and where they sit now (`""` for no position). */
@@ -28,8 +29,10 @@ export interface MoveTarget {
  * Moves a member to another position of the organization (POS-04). An admin picks any position, or
  * none; anyone else only a position strictly below their own, so those are the only ones offered.
  * Where the member is now is the starting choice (and is shown even when the viewer could not pick
- * it), and nothing is sent until another one is. The server decides in the end: a refusal is told
- * inside the dialog, which stays open.
+ * it), and nothing is sent until another one is. A chosen position asks the server who would stop
+ * managing the member and says it before the move, never blocking it; a preview that is loading or
+ * failing shows nothing. The server decides in the end: a refusal is told inside the dialog, which
+ * stays open.
  */
 export function MoveMemberDialog({
   orgId,
@@ -85,10 +88,21 @@ function MoveForm({
   onClose: () => void;
 }) {
   const t = useT();
+  const { locale } = useI18n();
   const id = useId();
   const update = useUpdateOrgMember(orgId);
   const [value, setValue] = useState(target.positionId);
   const [error, setError] = useState<string | null>(null);
+
+  const moving = value !== target.positionId;
+  const preview = useOrgMovePreview(orgId, target.id, value, moving);
+  const losing = moving ? (preview.data?.lose_management ?? []) : [];
+  const losingNames =
+    losing.length > 0
+      ? new Intl.ListFormat(locale, { style: "long", type: "conjunction" }).format(
+          losing.map((who) => who.display_name),
+        )
+      : null;
 
   // What the viewer may pick, with where the member is now first when it is not among it.
   const choices: (PositionOption & { disabled?: boolean })[] = viewer.admin
@@ -151,6 +165,13 @@ function MoveForm({
           ))}
         </NativeSelect>
       </div>
+      {losingNames ? (
+        <Alert role="status" aria-live="polite">
+          <AlertDescription>
+            {t("orgs.moveLoses", { names: losingNames, member: target.name })}
+          </AlertDescription>
+        </Alert>
+      ) : null}
       {error ? (
         <p role="alert" className="text-sm text-destructive">
           {error}

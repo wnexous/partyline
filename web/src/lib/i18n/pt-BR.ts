@@ -1120,6 +1120,8 @@ export const ptBR: Dictionary = {
   "orgs.movedNone": "{name} não tem mais cargo",
   "orgs.moveForbidden": "Você só pode mover pessoas para um cargo abaixo do seu.",
   "orgs.moveFailed": "Não foi possível mover {name}. Tente de novo.",
+  "orgs.moveLoses":
+    "Depois desta mudança, {names} deixará de gerenciar {member}. {member} vai parar de tratar as mensagens dessa pessoa como vindas de quem a gerencia.",
   "orgs.deleteMember": "Apagar",
   "profile.removeHome": "{name} pertence a {org}. Peça a quem administra que apague essa IA.",
   "orgs.invite": "Convidar",
