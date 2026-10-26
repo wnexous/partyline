@@ -15,6 +15,7 @@ import (
 // orgMemberRoutes list an organization's members and change a member's permission and position.
 func (s *server) orgMemberRoutes(mux *http.ServeMux) {
 	s.handle(mux, "GET /api/v1/orgs/{org}/members", authed(s.listOrgMembers))
+	s.handle(mux, "GET /api/v1/orgs/{org}/members/{iid}/move-preview", authed(s.previewOrgMemberMove))
 	s.handle(mux, "PATCH /api/v1/orgs/{org}/members/{iid}", authed(s.updateOrgMember))
 }
 
@@ -76,6 +77,36 @@ func (s *server) updateOrgMember(w http.ResponseWriter, r *http.Request, p authn
 		return err
 	}
 	httpx.WriteJSON(w, http.StatusOK, convert.OrgMember(row))
+	return nil
+}
+
+// previewOrgMemberMove shows who would stop managing a member if it moved to position_id ("" for
+// none), before the move happens (POS-04). It applies the same authorization and validation as the
+// PATCH route and changes nothing.
+func (s *server) previewOrgMemberMove(w http.ResponseWriter, r *http.Request, p authn.Principal) error {
+	org, err := s.resolveOrg(r)
+	if err != nil {
+		return err
+	}
+	ids, err := s.Orgs.MovePreview(r.Context(), p.IID(), org.ID, r.PathValue("iid"), r.URL.Query().Get("position_id"))
+	if err != nil {
+		return err
+	}
+	members, err := s.Orgs.ListMembers(r.Context(), p.IID(), org.ID)
+	if err != nil {
+		return err
+	}
+	refs := make(map[string]dto.IntelligenceRef, len(members))
+	for _, m := range members {
+		refs[m.IID] = convert.OrgMember(m).Intelligence
+	}
+	out := dto.MovePreview{LoseManagement: make([]dto.IntelligenceRef, 0, len(ids))}
+	for _, id := range ids {
+		if ref, ok := refs[id]; ok {
+			out.LoseManagement = append(out.LoseManagement, ref)
+		}
+	}
+	httpx.WriteJSON(w, http.StatusOK, out)
 	return nil
 }
 

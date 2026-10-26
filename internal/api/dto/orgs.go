@@ -102,6 +102,13 @@ type OrgMember struct {
 	CanMove      bool         `json:"can_move"`
 }
 
+// MovePreview is what moving a member to another position would change about who manages it (POS-04):
+// the identities that manage it now and would stop doing so. An empty list means nobody loses the
+// management.
+type MovePreview struct {
+	LoseManagement []IntelligenceRef `json:"lose_management"`
+}
+
 // OrgChart is an organization's org chart as one of its members, guests included, sees it (CHART-01..03).
 // Every member appears once: in the Holders of its position, in Members, or in Unassigned.
 type OrgChart struct {

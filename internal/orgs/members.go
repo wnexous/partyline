@@ -217,14 +217,7 @@ func (s *Service) SetPosition(ctx context.Context, actorIID, orgID, targetIID, p
 // still make the move. A request that changes nothing is nothing; asking for nothing needs only that
 // the actor is a member. It returns the membership afterwards.
 func (s *Service) UpdateMember(ctx context.Context, actorIID, orgID, targetIID string, u MemberUpdate) (Member, error) {
-	if u.Permission != nil {
-		if err := s.z.RequireAdmin(ctx, orgID, actorIID); err != nil {
-			return Member{}, err
-		}
-		if !u.Permission.Valid() {
-			return Member{}, &validation.Error{Fields: map[string]string{"permission": "must be admin, member or guest"}}
-		}
-	} else if err := s.z.RequireMember(ctx, orgID, actorIID); err != nil {
+	if err := s.prepareUpdate(ctx, actorIID, orgID, u); err != nil {
 		return Member{}, err
 	}
 	var out Member
@@ -235,21 +228,9 @@ func (s *Service) UpdateMember(ctx context.Context, actorIID, orgID, targetIID s
 		if err != nil {
 			return err
 		}
-		actor, ok := chart.Member(actorIID)
-		if !ok {
-			return ErrNotFound
-		}
-		if u.Permission != nil && actor.Permission != PermissionAdmin {
-			return ErrForbidden
-		}
-		cur, ok := chart.Member(targetIID)
-		if !ok {
-			return ErrNotFound
-		}
-		if u.PositionID != nil {
-			if err := checkPosition(chart, actor, targetIID, *u.PositionID); err != nil {
-				return err
-			}
+		cur, err := checkUpdate(chart, actorIID, targetIID, u)
+		if err != nil {
+			return err
 		}
 		out = cur
 		if u.Permission != nil {
@@ -275,6 +256,84 @@ func (s *Service) UpdateMember(ctx context.Context, actorIID, orgID, targetIID s
 		s.changed(orgID)
 	}
 	return out, nil
+}
+
+// MovePreview lists the identities that manage target now but would not after moving it to positionID
+// (POS-04), in the order ManagersOf has them. It applies the same authorization and validation as
+// UpdateMember would to that move and changes nothing: a move the actor may not make answers the move's
+// error (ErrForbidden, ErrNotFound or a validation error on position_id).
+func (s *Service) MovePreview(ctx context.Context, actorIID, orgID, targetIID, positionID string) ([]string, error) {
+	u := MemberUpdate{PositionID: &positionID}
+	if err := s.prepareUpdate(ctx, actorIID, orgID, u); err != nil {
+		return nil, err
+	}
+	var lose []string
+	err := s.store.ReadTx(ctx, func(q *db.Queries) error {
+		lose = nil
+		chart, err := Load(ctx, q, orgID)
+		if err != nil {
+			return err
+		}
+		if _, err := checkUpdate(chart, actorIID, targetIID, u); err != nil {
+			return err
+		}
+		after := chart.WithPosition(targetIID, positionID).ManagersOf(targetIID)
+		still := make(map[string]bool, len(after))
+		for _, iid := range after {
+			still[iid] = true
+		}
+		before := chart.ManagersOf(targetIID)
+		lose = make([]string, 0, len(before))
+		for _, iid := range before {
+			if !still[iid] {
+				lose = append(lose, iid)
+			}
+		}
+		return nil
+	})
+	if err != nil {
+		return nil, err
+	}
+	return lose, nil
+}
+
+// prepareUpdate runs the checks of an update that need no chart: a permission change is for an admin
+// and must name a permission; anything else needs only the actor to be a member. UpdateMember and
+// MovePreview ask the same questions.
+func (s *Service) prepareUpdate(ctx context.Context, actorIID, orgID string, u MemberUpdate) error {
+	if u.Permission != nil {
+		if err := s.z.RequireAdmin(ctx, orgID, actorIID); err != nil {
+			return err
+		}
+		if !u.Permission.Valid() {
+			return &validation.Error{Fields: map[string]string{"permission": "must be admin, member or guest"}}
+		}
+		return nil
+	}
+	return s.z.RequireMember(ctx, orgID, actorIID)
+}
+
+// checkUpdate applies the rules of the update to the chart: the actor must still be a member (and an
+// admin when it changes a permission), the target must be one, and a position must be one the actor may
+// give it (POS-04). It returns the target as it is now.
+func checkUpdate(chart *Chart, actorIID, targetIID string, u MemberUpdate) (Member, error) {
+	actor, ok := chart.Member(actorIID)
+	if !ok {
+		return Member{}, ErrNotFound
+	}
+	if u.Permission != nil && actor.Permission != PermissionAdmin {
+		return Member{}, ErrForbidden
+	}
+	cur, ok := chart.Member(targetIID)
+	if !ok {
+		return Member{}, ErrNotFound
+	}
+	if u.PositionID != nil {
+		if err := checkPosition(chart, actor, targetIID, *u.PositionID); err != nil {
+			return Member{}, err
+		}
+	}
+	return cur, nil
 }
 
 // checkPosition decides whether actor may put the target in the position (POS-04): an admin may use

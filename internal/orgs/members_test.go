@@ -755,6 +755,81 @@ func TestListMembersShowsTheProfileThePermissionThePositionAndTheInviter(t *test
 
 // MemberView is one row of the list as the same viewer sees it (the flags are the viewer's); an outsider or a
 // target that is not a member is not found.
+// POS-04: MovePreview names the managers a move would take away, in the order of the current
+// ManagersOf, and changes nothing. The incident: an AI moved to its creator's own position stops
+// being managed by its creator.
+func TestMovePreviewNamesWhoStopsManagingTheTarget(t *testing.T) {
+	ctx := context.Background()
+	f := newFixture(t)
+	org := f.org("preview")
+	adminPosition := f.position(org, "Admin", "")
+	staff := f.position(org, "Staff", adminPosition)
+	u := f.user("u")
+	f.join(org, u, PermissionAdmin, adminPosition, "")
+	a := f.ai("a", u)
+	f.home(a, org, u, PermissionMember, "")
+	next := f.events()
+
+	preview := func(actor, target, position string) ([]string, error) {
+		return f.svc.MovePreview(ctx, actor, org, target, position)
+	}
+
+	// The incident: a moves to the same position as its creator u, so u stops managing it.
+	lose, err := preview(u, a, adminPosition)
+	require.NoError(t, err)
+	require.Equal(t, []string{u}, lose)
+	require.Equal(t, Member{IID: a, Permission: PermissionMember, CreatorIID: u}, memberOfOrg(t, f, org, a), "the preview did not move it")
+
+	// Below u's position, u still manages it, so nobody loses management.
+	lose, err = preview(u, a, staff)
+	require.NoError(t, err)
+	require.NotNil(t, lose)
+	require.Empty(t, lose)
+
+	// Already positionless and moved to no position: nothing changes.
+	lose, err = preview(u, a, "")
+	require.NoError(t, err)
+	require.NotNil(t, lose)
+	require.Empty(t, lose)
+	audited := f.audited()
+	require.Empty(t, audited, "no preview wrote an audit entry")
+	require.Empty(t, next(), "no preview announced a change")
+
+	// From u's own position back to none, u regains the management instead of losing it.
+	_, err = f.svc.SetPosition(ctx, u, org, a, adminPosition)
+	require.NoError(t, err)
+	require.Len(t, f.audited(), 1, "the move itself is recorded")
+	require.Len(t, next(), 1, "and announced")
+	audited = f.audited()
+	lose, err = preview(u, a, "")
+	require.NoError(t, err)
+	require.NotNil(t, lose)
+	require.Empty(t, lose)
+
+	// A plain member may not move it, and the preview answers what the move would.
+	v := f.user("v")
+	f.join(org, v, PermissionMember, "", "")
+	_, moveErr := f.svc.UpdateMember(ctx, v, org, a, MemberUpdate{PositionID: ptr(staff)})
+	_, previewErr := preview(v, a, staff)
+	require.ErrorIs(t, moveErr, ErrForbidden)
+	require.ErrorIs(t, previewErr, moveErr)
+
+	// An admin can ask about a position that does not exist, and gets the move's validation error.
+	_, err = preview(u, a, "p-nothing")
+	invalid(t, err, "position_id")
+
+	// A stranger does not find the organization; a target that is not a member is not found.
+	out := f.user("out")
+	_, err = preview(out, a, staff)
+	require.ErrorIs(t, err, ErrNotFound)
+	_, err = preview(u, out, staff)
+	require.ErrorIs(t, err, ErrNotFound)
+
+	require.Equal(t, adminPosition, memberOfOrg(t, f, org, a).PositionID, "no preview changed the membership")
+	require.Equal(t, audited, f.audited(), "no preview wrote an audit entry")
+	require.Empty(t, next(), "no preview announced a change")
+}
+
 func TestMemberViewIsOneRowOfTheList(t *testing.T) {
 	ctx := context.Background()
 	f := newFixture(t)

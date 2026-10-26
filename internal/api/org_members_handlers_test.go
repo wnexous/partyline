@@ -16,6 +16,8 @@ import (
 
 func membersPath(org string) string { return "/api/v1/orgs/" + org + "/members" }
 
+func movePreviewPath(org, iid string) string { return memberPath(org, iid) + "/move-preview" }
+
 // listMembers is what c sees at GET /orgs/{org}/members, by identity id.
 func listMembers(t *testing.T, c *testkit.Client, org string) map[string]dto.OrgMember {
 	t.Helper()
@@ -465,6 +467,39 @@ func TestPatchOrgMemberAppliesPermissionAndPositionTogether(t *testing.T) {
 	got = testkit.Decode[dto.OrgMember](r.Admin.Patch(memberPath(r.Org.ID, r.Admin.User.ID), both(dto.PermissionMember, intern)).RequireStatus(http.StatusOK))
 	require.Equal(t, dto.PermissionMember, got.Permission)
 	require.Equal(t, intern, got.PositionID)
+}
+
+// POS-04: the move preview names, before the move, the managers that would stop managing the member;
+// it answers the move's own refusals and changes nothing.
+func TestMovePreviewShowsWhoStopsManagingTheMember(t *testing.T) {
+	env := testkit.New(t)
+	r := env.OrgRoles("acme")
+	ai := env.NewAIIn(r.Admin, r.Org.ID, "acme-own-ai")
+	before := listMembers(t, r.Admin, r.Org.ID)
+
+	got := testkit.Decode[dto.MovePreview](r.Admin.Get(movePreviewPath(r.Org.ID, ai) + "?position_id=" + r.AdminPosition).RequireStatus(http.StatusOK))
+	require.Len(t, got.LoseManagement, 1)
+	require.Equal(t, before[r.Admin.User.ID].Intelligence, got.LoseManagement[0], "the incident: its creator stops managing it")
+	require.Equal(t, r.Admin.User.ID, got.LoseManagement[0].ID)
+	require.Equal(t, before[r.Admin.User.ID].Intelligence.Handle, got.LoseManagement[0].Handle)
+
+	// Below its creator's position, nobody loses the management.
+	got = testkit.Decode[dto.MovePreview](r.Admin.Get(movePreviewPath(r.Org.ID, ai) + "?position_id=" + r.WorkerPosition).RequireStatus(http.StatusOK))
+	require.NotNil(t, got.LoseManagement)
+	require.Empty(t, got.LoseManagement)
+
+	// The move's refusals are the preview's refusals.
+	r.Manager.Get(movePreviewPath(r.Org.ID, r.TargetAI)+"?position_id="+r.ManagerPosition).
+		RequireError(http.StatusForbidden, dto.ErrorCodeForbidden)
+
+	// Neither preview changed the members table.
+	require.Equal(t, before, listMembers(t, r.Admin, r.Org.ID))
+
+	// An organization the caller cannot see is not found.
+	r.Outsider.Get(movePreviewPath(r.Org.ID, ai)+"?position_id="+r.AdminPosition).
+		RequireError(http.StatusNotFound, dto.ErrorCodeNotFound)
+	r.Admin.Get(movePreviewPath("no-such-org", ai)+"?position_id="+r.AdminPosition).
+		RequireError(http.StatusNotFound, dto.ErrorCodeNotFound)
 }
 
 // The routes are for people: an agent token never reaches an organization route.
