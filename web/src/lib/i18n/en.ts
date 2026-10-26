@@ -1111,6 +1111,8 @@ export const en = {
   "orgs.movedNone": "{name} no longer holds a position",
   "orgs.moveForbidden": "You can only move people to a position below yours.",
   "orgs.moveFailed": "Couldn’t move {name}. Try again.",
+  "orgs.moveLoses":
+    "After this move, {names} will no longer manage {member}. {member} will stop treating their messages as coming from someone who manages it.",
   "orgs.deleteMember": "Delete",
   "profile.removeHome": "{name} belongs to {org}. Ask an admin to delete it.",
   "orgs.invite": "Invite",
