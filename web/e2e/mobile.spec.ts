@@ -1320,7 +1320,15 @@ test("a message is reacted to from its sheet or menu; the chips follow every tap
     // RCT-02: with a mouse the row carries the six too, on hover and on keyboard focus.
     if (!isMobile(testInfo)) {
       const toolbar = message.getByRole("toolbar", { name: "Quick reactions" });
-      await expect(toolbar).toHaveCSS("opacity", "0");
+      // The closed grid hands the focus back to the row a moment later, and the pointer may rest
+      // on it: let go of both until the row is at rest.
+      await page.mouse.move(0, 0);
+      await expect
+        .poll(async () => {
+          await page.evaluate(() => (document.activeElement as HTMLElement | null)?.blur());
+          return toolbar.evaluate((el) => getComputedStyle(el).opacity);
+        })
+        .toBe("0");
       await message.hover();
       await expect(toolbar).toHaveCSS("opacity", "1");
       await shoot(page, "reactions-toolbar", testInfo);
