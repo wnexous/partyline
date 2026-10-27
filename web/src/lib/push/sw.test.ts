@@ -66,8 +66,9 @@ function data(value: unknown): PushData {
 }
 
 // harness runs the real worker source against a fake `self` that records the listeners it
-// registers and the notifications it shows.
-function harness(): Harness {
+// registers and the notifications it shows. The worker reads the browser language from `navigator`,
+// so the fake one makes the fallback text deterministic.
+function harness(language = "en-US"): Harness {
   const listeners = new Map<string, (event: Record<string, unknown>) => void>();
   const shown: Shown[] = [];
   const windows: FakeClient[] = [];
@@ -107,8 +108,7 @@ function harness(): Harness {
     },
   };
 
-  // biome-ignore lint/security/noGlobalEval: the worker is a classic script, so the test runs the real source against a fake self
-  new Function("self", source)(self);
+  new Function("self", "navigator", source)(self, { language });
 
   async function dispatch(type: string, event: Record<string, unknown>) {
     const listener = listeners.get(type);
@@ -208,6 +208,24 @@ describe("opening the conversation (PUSH-16)", () => {
 
     expect(notification.close).toHaveBeenCalledTimes(1);
     expect(worker.openWindow).toHaveBeenCalledWith(ROOM_R1);
+  });
+});
+
+describe("the fallback body (PUSH-16)", () => {
+  it("reads the browser language: Portuguese for pt-BR", async () => {
+    const worker = harness("pt-BR");
+    await worker.push(data({ ...PAYLOAD, author: "", preview: "" }));
+
+    expect(worker.shown).toHaveLength(1);
+    expect(worker.shown[0]?.options.body).toBe("Nova mensagem");
+  });
+
+  it("keeps English for every other language", async () => {
+    const worker = harness("en-US");
+    await worker.push(data({ ...PAYLOAD, author: "", preview: "" }));
+
+    expect(worker.shown).toHaveLength(1);
+    expect(worker.shown[0]?.options.body).toBe("New message");
   });
 });
 

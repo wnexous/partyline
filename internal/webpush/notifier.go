@@ -155,19 +155,28 @@ func (n *Notifier) Close() {
 	})
 }
 
-// EnqueueTest queues the fixed test payload for every subscription and returns how many jobs it
-// queued: 0 means the queue was full (PUSH-15, PUSH-27).
-func (n *Notifier) EnqueueTest(_ context.Context, subs []db.PushSubscription) int {
-	payload, err := json.Marshal(Payload{
-		V: payloadVersion, Title: "partyline", Preview: "Notifications are on",
-		URL: n.publicURL.String(), Tag: "test",
-	})
-	if err != nil {
-		n.logger.Error("webpush: cannot build the test payload")
-		return 0
-	}
+// EnqueueTest queues the fixed test payload, in each recipient's language, for every subscription
+// and returns how many jobs it queued: 0 means the queue was full (PUSH-15, PUSH-27).
+func (n *Notifier) EnqueueTest(ctx context.Context, subs []db.PushSubscription) int {
+	locales := map[string]string{}
+	payloads := map[string][]byte{}
 	queued := 0
 	for _, row := range subs {
+		locale, known := locales[row.UserID]
+		if !known {
+			locale = n.recipientLocale(ctx, row.UserID)
+			locales[row.UserID] = locale
+		}
+		payload, built := payloads[locale]
+		if !built {
+			var err error
+			payload, err = n.testPayload(locale)
+			if err != nil {
+				n.logger.Error("webpush: cannot build the test payload")
+				return queued
+			}
+			payloads[locale] = payload
+		}
 		sub := Subscription{ID: row.ID, Endpoint: row.Endpoint, P256dh: row.P256dh, Auth: row.Auth}
 		if !n.submit(sub, payload) {
 			continue
@@ -175,6 +184,32 @@ func (n *Notifier) EnqueueTest(_ context.Context, subs []db.PushSubscription) in
 		queued++
 	}
 	return queued
+}
+
+// testPayload builds the fixed test notification in the recipient's language (PUSH-15).
+func (n *Notifier) testPayload(locale string) ([]byte, error) {
+	return json.Marshal(Payload{
+		V:       payloadVersion,
+		Title:   testTitle,
+		Preview: textsFor(locale).testBody,
+		URL:     n.publicURL.String(),
+		Tag:     "test",
+	})
+}
+
+// recipientLocale returns the account's language, which picks the language of the server-written
+// texts; an account that is gone or whose row cannot be read gets English, like an account that
+// never chose a locale.
+func (n *Notifier) recipientLocale(ctx context.Context, userID string) string {
+	locale, err := n.store.R().GetPushRecipientLocale(ctx, userID)
+	if errors.Is(err, sql.ErrNoRows) {
+		return ""
+	}
+	if err != nil {
+		n.logger.Warn("webpush: cannot read the notification recipient's language",
+			"user_id", userID, "err", err)
+	}
+	return locale
 }
 
 // submit queues one delivery, logging a full queue with a count only: never an id, an endpoint or

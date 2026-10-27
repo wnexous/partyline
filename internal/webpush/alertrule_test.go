@@ -32,24 +32,46 @@ func TestAlertReason(t *testing.T) {
 		detail string
 		want   string
 	}{
-		{"WhatsApp number disconnected with the platform's reason", "whatsapp", whatsappDetail, reasonWhatsAppDisconnected},
-		{"WhatsApp number disconnected without a reason", "whatsapp", "the WhatsApp number is not connected; reconnect it in evolution-go", reasonWhatsAppDisconnected},
-		{"Telegram unauthorized", "telegram", "unauthorized", reasonLoginExpired},
-		{"Discord invalid bot token", "discord", "invalid bot token", reasonLoginExpired},
-		{"Discord authentication failed", "discord", "websocket: close 4004: Authentication failed", reasonLoginExpired},
-		{"Telegram connection refused", "telegram", "dial tcp: connection refused", reasonServiceUnreachable},
-		{"connection with no operator", "whatsapp", dto.ConnectorNoOperator, reasonNoOperator},
-		{"an unknown kind with no detail", "webhook", "", reasonServiceUnreachable},
-		{"a detail that carries a token", "telegram", "401 token abc123", reasonServiceUnreachable},
+		{"WhatsApp number disconnected with the platform's reason", "whatsapp", whatsappDetail, englishTexts.reasonWhatsAppDisconnected},
+		{"WhatsApp number disconnected without a reason", "whatsapp", "the WhatsApp number is not connected; reconnect it in evolution-go", englishTexts.reasonWhatsAppDisconnected},
+		{"Telegram unauthorized", "telegram", "unauthorized", englishTexts.reasonLoginExpired},
+		{"Discord invalid bot token", "discord", "invalid bot token", englishTexts.reasonLoginExpired},
+		{"Discord authentication failed", "discord", "websocket: close 4004: Authentication failed", englishTexts.reasonLoginExpired},
+		{"Telegram connection refused", "telegram", "dial tcp: connection refused", englishTexts.reasonServiceUnreachable},
+		{"connection with no operator", "whatsapp", dto.ConnectorNoOperator, englishTexts.reasonNoOperator},
+		{"an unknown kind with no detail", "webhook", "", englishTexts.reasonServiceUnreachable},
+		{"a detail that carries a token", "telegram", "401 token abc123", englishTexts.reasonServiceUnreachable},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got := alertReason(tt.kind, tt.detail)
+			got := alertReason(tt.kind, tt.detail, englishTexts)
 			require.Equal(t, tt.want, got)
 			require.NotContains(t, got, "abc123", "the platform's detail never reaches the reason")
 			if tt.detail != "" {
 				require.NotContains(t, got, tt.detail, "the reason is a fixed sentence, not the detail")
 			}
+		})
+	}
+}
+
+// ALERT-08: every branch reads its fixed Portuguese sentence for a Portuguese recipient.
+func TestAlertReasonInPortuguese(t *testing.T) {
+	tests := []struct {
+		name   string
+		kind   string
+		detail string
+		want   string
+	}{
+		{"WhatsApp number disconnected", "whatsapp", whatsappDetail, "O número do WhatsApp foi desconectado"},
+		{"a connection without an operator", "telegram", dto.ConnectorNoOperator, "A conexão não tem uma IA operando"},
+		{"a revoked bot token", "telegram", "unauthorized", "O login expirou"},
+		{"an unreachable service", "telegram", "dial tcp: connection refused", "Não foi possível falar com o serviço"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := alertReason(tt.kind, tt.detail, portugueseTexts)
+			require.Equal(t, tt.want, got)
+			require.NotContains(t, got, tt.detail, "the platform's detail never reaches the reason")
 		})
 	}
 }
@@ -60,7 +82,7 @@ func TestAlertReason(t *testing.T) {
 func TestAlertPayload(t *testing.T) {
 	base := public(t, "https://partyline.example.test/base")
 
-	raw, err := alertPayload(base, "k1", "ops", "whatsapp", whatsappDetail)
+	raw, err := alertPayload(base, "k1", "ops", "whatsapp", whatsappDetail, "en")
 	require.NoError(t, err)
 
 	var got Payload
@@ -82,11 +104,31 @@ func TestAlertPayload(t *testing.T) {
 	}
 	require.NotContains(t, string(raw), "Reconnecting", "the platform's detail never reaches the wire")
 
-	raw, err = alertPayload(base, "k2", "web", "telegram", "dial tcp: connection refused")
+	raw, err = alertPayload(base, "k2", "web", "telegram", "dial tcp: connection refused", "")
 	require.NoError(t, err)
 	require.NoError(t, json.Unmarshal(raw, &got))
 	require.Equal(t, "Cannot reach the service", got.Preview, "a generic detail maps to the generic reason")
 	require.Equal(t, "https://partyline.example.test/base/connectors/k2", got.URL)
+}
+
+// ALERT-07, ALERT-08: a pt-BR recipient reads the alert's title and reason in Portuguese.
+func TestAlertPayloadInPortuguese(t *testing.T) {
+	base := public(t, "https://partyline.example.test/base")
+
+	raw, err := alertPayload(base, "k1", "ops", "whatsapp", whatsappDetail, "pt-BR")
+	require.NoError(t, err)
+
+	var got Payload
+	require.NoError(t, json.Unmarshal(raw, &got))
+	require.Equal(t, Payload{
+		V:       1,
+		Title:   "Conexão caiu: ops",
+		Author:  "",
+		Preview: "O número do WhatsApp foi desconectado",
+		URL:     "https://partyline.example.test/base/connectors/k1",
+		Tag:     "conn:k1",
+	}, got)
+	require.NotContains(t, string(raw), "Reconnecting", "the platform's detail never reaches the wire")
 }
 
 // ALERT-01, ALERT-03, ALERT-04, ALERT-05, ALERT-06, ALERT-11: every row of the design's

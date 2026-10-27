@@ -209,15 +209,10 @@ func (a *Alerter) observe(id, status string) bool {
 	return rule.observe(status, now)
 }
 
-// send builds the fixed payload once, resolves the responsible devices and submits one job per
-// device. The log lines carry the connection id and the status only, never the name, the reason,
-// the platform detail, the URL or a device (ALERT-14).
+// send resolves the responsible devices, builds one fixed payload per language among them and
+// submits one job per device. The log lines carry the connection id and the status only, never the
+// name, the reason, the platform detail, the URL or a device (ALERT-07, ALERT-08, ALERT-14).
 func (a *Alerter) send(ctx context.Context, c db.Connector, e events.ConnectorStatus) {
-	payload, err := alertPayload(a.publicURL, c.ID, c.Name, c.Kind, e.Detail)
-	if err != nil {
-		a.logger.Warn("webpush: cannot build a connection alert", "connector_id", c.ID)
-		return
-	}
 	targets, err := a.store.R().ListConnectorAlertTargets(ctx, c.ID)
 	if err != nil {
 		a.logger.Error("webpush: cannot resolve the connection alert targets",
@@ -228,10 +223,24 @@ func (a *Alerter) send(ctx context.Context, c db.Connector, e events.ConnectorSt
 		a.logger.Debug("webpush: connection alert has no recipients", "connector_id", c.ID, "status", e.Status)
 		return
 	}
+	// The title and the reason follow each recipient's account language, so every distinct locale
+	// among the targets gets its own payload; a language shared by several devices is built once.
+	payloads := map[string][]byte{}
+	for _, row := range targets {
+		if _, built := payloads[row.Locale]; built {
+			continue
+		}
+		payload, err := alertPayload(a.publicURL, c.ID, c.Name, c.Kind, e.Detail, row.Locale)
+		if err != nil {
+			a.logger.Warn("webpush: cannot build a connection alert", "connector_id", c.ID)
+			return
+		}
+		payloads[row.Locale] = payload
+	}
 	queued := 0
 	for _, row := range targets {
 		sub := Subscription{ID: row.SubscriptionID, Endpoint: row.Endpoint, P256dh: row.P256dh, Auth: row.Auth}
-		if a.submit(sub, payload, e) {
+		if a.submit(sub, payloads[row.Locale], e) {
 			queued++
 		}
 	}

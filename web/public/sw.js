@@ -4,7 +4,9 @@
 
 const GENERIC_TITLE = "partyline";
 const GENERIC_URL = "/";
-const GENERIC_BODY = "New message";
+// The fallback body follows the browser's language, like the account language the server uses for
+// its own push texts.
+const GENERIC_BODY = navigator.language?.startsWith("pt") ? "Nova mensagem" : "New message";
 const ICON = "/icons/icon-192.png";
 
 self.addEventListener("install", (event) => {

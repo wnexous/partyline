@@ -9,60 +9,53 @@ import (
 	"github.com/wnexous/partyline/internal/api/dto"
 )
 
-// The connection alert's fixed values (ALERT-05, ALERT-07, ALERT-08).
+// The connection alert's fixed values (ALERT-05, ALERT-07).
 const (
 	// alertGap is the shortest interval between two alerts for one connection: one alert per
 	// outage, and a flapping connection stays quiet (ALERT-05).
 	alertGap = 30 * time.Minute
-	// alertTitlePrefix starts the alert's title; the connection's name completes it (ALERT-07).
-	alertTitlePrefix = "Connection down: "
 	// alertTagPrefix starts the collapse tag, "conn:<id>" (ALERT-07).
 	alertTagPrefix = "conn:"
 	// kindWhatsApp is the connector kind whose "not connected" detail has its own reason.
 	kindWhatsApp = "whatsapp"
-
-	// The four fixed reason sentences; the platform's own detail is never sent (ALERT-08).
-	reasonWhatsAppDisconnected = "The WhatsApp number was disconnected"
-	reasonLoginExpired         = "Login expired"
-	reasonNoOperator           = "The connection has no AI operating it"
-	reasonServiceUnreachable   = "Cannot reach the service"
 )
 
-// alertReason maps the stored, already-redacted status detail to one of the four fixed sentences
-// (ALERT-08). Matching is a lower-case substring test, in this order: the WhatsApp number
-// disconnected, a connection without an operator, a credential failure, and the generic reason for
-// everything else. The detail itself is never copied: it can carry a phone number or a server
-// message.
-func alertReason(kind, detail string) string {
+// alertReason maps the stored, already-redacted status detail to one of the four fixed sentences of
+// the recipient's language (ALERT-08). Matching is a lower-case substring test, in this order: the
+// WhatsApp number disconnected, a connection without an operator, a credential failure, and the
+// generic reason for everything else. The detail itself is never copied: it can carry a phone
+// number or a server message.
+func alertReason(kind, detail string, tx texts) string {
 	lower := strings.ToLower(detail)
 	switch {
 	case kind == kindWhatsApp && strings.Contains(lower, "not connected"):
-		return reasonWhatsAppDisconnected
+		return tx.reasonWhatsAppDisconnected
 	case strings.Contains(lower, strings.ToLower(dto.ConnectorNoOperator)):
-		return reasonNoOperator
+		return tx.reasonNoOperator
 	case strings.Contains(lower, "unauthorized"),
 		strings.Contains(lower, "invalid bot token"),
 		strings.Contains(lower, "authentication failed"):
-		return reasonLoginExpired
+		return tx.reasonLoginExpired
 	default:
-		return reasonServiceUnreachable
+		return tx.reasonServiceUnreachable
 	}
 }
 
 // alertPayload builds the service worker payload of a connection that went down (ALERT-07): the
-// shared message payload with the connection's title, an empty author, the fixed reason as the
-// preview, the absolute connection page and a per-connection collapse tag. It carries no
-// configuration, platform error, token or chat content.
-func alertPayload(public *url.URL, id, name, kind, detail string) ([]byte, error) {
+// shared message payload with the connection's title and fixed reason in the recipient's language
+// (ALERT-08), an empty author, the absolute connection page and a per-connection collapse tag. It
+// carries no configuration, platform error, token or chat content.
+func alertPayload(public *url.URL, id, name, kind, detail, locale string) ([]byte, error) {
+	tx := textsFor(locale)
 	page := ""
 	if public != nil {
 		page = public.JoinPath("connectors", id).String()
 	}
 	return json.Marshal(Payload{
 		V:       payloadVersion,
-		Title:   alertTitlePrefix + name,
+		Title:   tx.alertTitle + name,
 		Author:  "",
-		Preview: alertReason(kind, detail),
+		Preview: alertReason(kind, detail, tx),
 		URL:     page,
 		Tag:     alertTagPrefix + id,
 	})
