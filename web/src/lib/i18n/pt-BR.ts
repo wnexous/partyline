@@ -474,6 +474,15 @@ export const ptBR: Dictionary = {
   "reactions.failed": "Não foi possível salvar sua reação.",
   "reactions.limit": "Uma mensagem tem no máximo {max} reações diferentes.",
 
+  "qr.group": "Respostas rápidas",
+  "qr.sending": "Enviando sua resposta…",
+  "qr.answered": "Resposta enviada: {label}",
+  "qr.ownQuestion": "Sua pergunta",
+  "qr.noPermission": "Você precisa de permissão para publicar nesta conversa",
+  "qr.frozen": "Esta conversa está no histórico",
+  "qr.failed": "Não foi possível enviar sua resposta. Tente novamente.",
+  "qr.alreadyAnswered": "Você já respondeu esta pergunta",
+
   "validation.retention": "Dias inteiros, 0 ou mais",
   "presence.online": "Online",
   "presence.offline": "Offline",

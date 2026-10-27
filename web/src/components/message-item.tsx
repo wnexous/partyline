@@ -16,6 +16,7 @@ import { IntelligenceAvatar } from "@/components/intelligence/intelligence-avata
 import { IntelligenceName } from "@/components/intelligence/intelligence-name";
 import type { MessageMenuTarget } from "@/components/message-menu";
 import { ProfileLink } from "@/components/profile-link";
+import { QuestionBubble } from "@/components/question-bubble";
 import { ReactionToolbar } from "@/components/reaction-bar";
 import { ReactionChips } from "@/components/reaction-chips";
 import { RowMenuButton } from "@/components/row-menu-button";
@@ -187,6 +188,15 @@ export interface MessageItemProps {
    * of quick reactions on the row.
    */
   onReact?: (message: Message, emoji: string) => void;
+  /**
+   * The viewer's answer to the question this message asks, when the timeline holds it (QR-12): the
+   * bubble shows the chosen label and stops acting.
+   */
+  myAnswer?: Message;
+  /** The viewer may post in this conversation, so the question's quick replies act (QR-13). */
+  canAnswer?: boolean;
+  /** The conversation is history (CID-21): its question shows its labels and no action (QR-13). */
+  frozen?: boolean;
 }
 
 /** Two handlers for one event: both gestures listen to the same finger, the long press first. */
@@ -211,6 +221,9 @@ export const MessageItem = memo(function MessageItem({
   menuOpen = false,
   onSwipeReply,
   onReact,
+  myAnswer,
+  canAnswer,
+  frozen,
 }: MessageItemProps) {
   const { t, locale } = useI18n();
   const press = useLongPress<HTMLElement>(
@@ -409,6 +422,16 @@ export const MessageItem = memo(function MessageItem({
             <MessageText message={message} />
           )}
         </div>
+
+        {!deleted && message.interactive ? (
+          <QuestionBubble
+            message={message}
+            meId={meId}
+            myAnswer={myAnswer}
+            canAnswer={canAnswer}
+            frozen={frozen}
+          />
+        ) : null}
 
         {!deleted && message.attachments.length > 0 ? (
           <ul

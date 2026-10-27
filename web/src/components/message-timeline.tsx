@@ -76,6 +76,8 @@ function dayLabel(iso: string, t: Translate, locale: string): string {
 
 function isGrouped(prev: Message | undefined, m: Message): boolean {
   if (!prev || m.reply_to) return false;
+  // A question and an answer always show their author and time (QR-10, QR-12).
+  if (m.interactive || m.answers) return false;
   if (m.author_kind === "chat" || m.author_kind === "system") return false;
   if (prev.author_kind !== m.author_kind || prev.author_id !== m.author_id) return false;
   if (dayKey(prev.created_at) !== dayKey(m.created_at)) return false;
@@ -157,6 +159,18 @@ export function MessageTimeline({
   const items = useMemo(() => flattenPages(query.data), [query.data]);
   const byId = useMemo(() => new Map(items.map((m) => [m.id, m])), [items]);
   const memberMap = useMemo(() => new Map((members ?? []).map((m) => [m.member_id, m])), [members]);
+  // The answers the timeline holds, by the question they reply to and their author (QR-12). The
+  // viewer's own answer is what makes a question read as answered, on this device and after a reload.
+  const answersByQuestion = useMemo(() => {
+    const out = new Map<string, Map<string, Message>>();
+    for (const m of items) {
+      if (!m.answers || !m.reply_to || !m.author_id) continue;
+      const byAuthor = out.get(m.reply_to) ?? new Map<string, Message>();
+      byAuthor.set(m.author_id, m);
+      out.set(m.reply_to, byAuthor);
+    }
+    return out;
+  }, [items]);
 
   // Messages newer than everything seen before get the tape-settle highlight once.
   const firstSeen = useRef(new Map<string, number>());
@@ -388,6 +402,10 @@ export function MessageTimeline({
                     menuOpen={menu?.message.id === m.id}
                     onSwipeReply={messageActionSet(m, capabilities).reply ? onReply : undefined}
                     onReact={messageActionSet(m, capabilities).react ? react : undefined}
+                    myAnswer={answersByQuestion.get(m.id)?.get(meId)}
+                    // Reacting is offered to whoever may post (RCT-03): the same permission answers.
+                    canAnswer={canReact}
+                    frozen={frozen}
                   />
                 </div>
               );
