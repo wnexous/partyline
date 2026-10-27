@@ -144,7 +144,7 @@ describe("header menu (LAY-06)", () => {
       ["Identities", "/identities"],
       ["Devices", "/devices"],
       ["API tokens", "/tokens"],
-      ["Settings", "/settings"],
+      ["My account", "/account"],
     ]);
   });
 

@@ -19,6 +19,7 @@ import { Route as AppIdentitiesRouteImport } from './routes/_app/identities'
 import { Route as AppSettingsRouteImport } from './routes/_app/settings'
 import { Route as AppTokensRouteImport } from './routes/_app/tokens'
 import { Route as InviteTokenRouteImport } from './routes/invite.$token'
+import { Route as AppAccountIndexRouteImport } from './routes/_app/account/index'
 import { Route as AppAdminAuditRouteImport } from './routes/_app/admin/audit'
 import { Route as AppAdminInvitesRouteImport } from './routes/_app/admin/invites'
 import { Route as AppAdminUsersRouteImport } from './routes/_app/admin/users'
@@ -86,6 +87,11 @@ const InviteTokenRoute = InviteTokenRouteImport.update({
   id: '/invite/$token',
   path: '/invite/$token',
   getParentRoute: () => rootRouteImport,
+} as any)
+const AppAccountIndexRoute = AppAccountIndexRouteImport.update({
+  id: '/account/',
+  path: '/account/',
+  getParentRoute: () => AppRoute,
 } as any)
 const AppAdminAuditRoute = AppAdminAuditRouteImport.update({
   id: '/audit',
@@ -197,6 +203,7 @@ export interface FileRoutesByFullPath {
   '/contacts/$id': typeof AppContactsIdRoute
   '/devices/$code': typeof AppDevicesCodeRoute
   '/rooms/$roomId': typeof AppRoomsRoomIdRoute
+  '/account/': typeof AppAccountIndexRoute
   '/connectors/': typeof AppConnectorsIndexRoute
   '/contacts/': typeof AppContactsIndexRoute
   '/devices/': typeof AppDevicesIndexRoute
@@ -225,6 +232,7 @@ export interface FileRoutesByTo {
   '/contacts/$id': typeof AppContactsIdRoute
   '/devices/$code': typeof AppDevicesCodeRoute
   '/rooms/$roomId': typeof AppRoomsRoomIdRoute
+  '/account': typeof AppAccountIndexRoute
   '/connectors': typeof AppConnectorsIndexRoute
   '/contacts': typeof AppContactsIndexRoute
   '/devices': typeof AppDevicesIndexRoute
@@ -256,6 +264,7 @@ export interface FileRoutesById {
   '/_app/contacts/$id': typeof AppContactsIdRoute
   '/_app/devices/$code': typeof AppDevicesCodeRoute
   '/_app/rooms/$roomId': typeof AppRoomsRoomIdRoute
+  '/_app/account/': typeof AppAccountIndexRoute
   '/_app/connectors/': typeof AppConnectorsIndexRoute
   '/_app/contacts/': typeof AppContactsIndexRoute
   '/_app/devices/': typeof AppDevicesIndexRoute
@@ -287,6 +296,7 @@ export interface FileRouteTypes {
     | '/contacts/$id'
     | '/devices/$code'
     | '/rooms/$roomId'
+    | '/account/'
     | '/connectors/'
     | '/contacts/'
     | '/devices/'
@@ -315,6 +325,7 @@ export interface FileRouteTypes {
     | '/contacts/$id'
     | '/devices/$code'
     | '/rooms/$roomId'
+    | '/account'
     | '/connectors'
     | '/contacts'
     | '/devices'
@@ -345,6 +356,7 @@ export interface FileRouteTypes {
     | '/_app/contacts/$id'
     | '/_app/devices/$code'
     | '/_app/rooms/$roomId'
+    | '/_app/account/'
     | '/_app/connectors/'
     | '/_app/contacts/'
     | '/_app/devices/'
@@ -435,6 +447,13 @@ declare module '@tanstack/react-router' {
       fullPath: '/invite/$token'
       preLoaderRoute: typeof InviteTokenRouteImport
       parentRoute: typeof rootRouteImport
+    }
+    '/_app/account/': {
+      id: '/_app/account/'
+      path: '/account'
+      fullPath: '/account/'
+      preLoaderRoute: typeof AppAccountIndexRouteImport
+      parentRoute: typeof AppRoute
     }
     '/_app/admin/audit': {
       id: '/_app/admin/audit'
@@ -612,6 +631,7 @@ interface AppRouteChildren {
   AppContactsIdRoute: typeof AppContactsIdRoute
   AppDevicesCodeRoute: typeof AppDevicesCodeRoute
   AppRoomsRoomIdRoute: typeof AppRoomsRoomIdRoute
+  AppAccountIndexRoute: typeof AppAccountIndexRoute
   AppConnectorsIndexRoute: typeof AppConnectorsIndexRoute
   AppContactsIndexRoute: typeof AppContactsIndexRoute
   AppDevicesIndexRoute: typeof AppDevicesIndexRoute
@@ -631,6 +651,7 @@ const AppRouteChildren: AppRouteChildren = {
   AppContactsIdRoute: AppContactsIdRoute,
   AppDevicesCodeRoute: AppDevicesCodeRoute,
   AppRoomsRoomIdRoute: AppRoomsRoomIdRoute,
+  AppAccountIndexRoute: AppAccountIndexRoute,
   AppConnectorsIndexRoute: AppConnectorsIndexRoute,
   AppContactsIndexRoute: AppContactsIndexRoute,
   AppDevicesIndexRoute: AppDevicesIndexRoute,

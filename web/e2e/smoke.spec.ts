@@ -51,7 +51,7 @@ test("first run: setup, log out, log back in to a protected route (UI-01, UI-02)
   page,
   instance,
 }, testInfo) => {
-  await page.goto("/settings");
+  await page.goto("/account");
   await expect(page).toHaveURL(`${instance.url}/setup`);
   await expect(page.getByRole("heading", { name: "Set up partyline" })).toBeVisible();
 
@@ -67,13 +67,13 @@ test("first run: setup, log out, log back in to a protected route (UI-01, UI-02)
   await expect(page).toHaveURL(`${instance.url}/login`);
 
   // The session is gone: a protected route goes back to login and remembers where it was.
-  await page.goto("/settings");
-  await expect(page).toHaveURL(`${instance.url}/login?redirect=%2Fsettings`);
+  await page.goto("/account");
+  await expect(page).toHaveURL(`${instance.url}/login?redirect=%2Faccount`);
   await page.getByLabel("Username", { exact: true }).fill(ADMIN.username);
   await page.getByLabel("Password", { exact: true }).fill(ADMIN.password);
   await page.getByRole("button", { name: "Log in" }).click();
-  await expect(page).toHaveURL(`${instance.url}/settings`);
-  await expect(page.getByRole("heading", { name: "Settings", level: 1 })).toBeVisible();
+  await expect(page).toHaveURL(`${instance.url}/account`);
+  await expect(page.getByRole("heading", { name: "My account", level: 1 })).toBeVisible();
 });
 
 test("a message posted in a room reaches another user's open room live (UI-04)", async ({
@@ -793,7 +793,7 @@ test("main pages fit the viewport with no horizontal page scroll (UI-24, LAY-05)
     ["/contacts", "Contacts"],
     [`/contacts/${me.intelligence.id}`, me.intelligence.display_name],
     ["/connectors", "Connectors"],
-    ["/settings", "Settings"],
+    ["/account", "My account"],
   ];
   for (const [path, heading] of pages) {
     await page.goto(path);

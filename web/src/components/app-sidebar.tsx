@@ -58,7 +58,7 @@ interface NavItem {
     | "/identities"
     | "/devices"
     | "/tokens"
-    | "/settings"
+    | "/account"
     | "/admin/users"
     | "/admin/invites"
     | "/admin/audit";
@@ -95,7 +95,7 @@ export const NAV_GROUPS: NavGroup[] = [
     label: "nav.groupAccount",
     items: [
       { to: "/tokens", label: "nav.tokens", icon: KeyRoundIcon },
-      { to: "/settings", label: "nav.settings", icon: SettingsIcon },
+      { to: "/account", label: "nav.account", icon: SettingsIcon },
     ],
   },
   {

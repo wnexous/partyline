@@ -51,11 +51,56 @@ afterEach(() => {
   vi.restoreAllMocks();
 });
 
-describe("settings page", () => {
+describe("the account page at /account (SET-01)", () => {
+  it("shows the account page at /account", async () => {
+    mockApi(base);
+    renderRoute("/account");
+    expect(
+      await screen.findByRole("heading", { level: 1, name: "My account" }),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByText(
+        "Your profile, theme and language, the notifications of this device, your password and your sessions.",
+      ),
+    ).toBeInTheDocument();
+    for (const name of [
+      "Profile",
+      "Appearance",
+      "Default organization",
+      "Notifications on this device",
+      "Password",
+      "Sessions",
+      "Delete account",
+    ]) {
+      expect(screen.getByRole("heading", { name }), name).toBeInTheDocument();
+    }
+  });
+
+  it("speaks Portuguese", async () => {
+    useLiveStore.setState({ locale: "pt-BR" });
+    mockApi({ ...base, "GET /me": json(200, { ...me, locale: "pt-BR" }) });
+    renderRoute("/account");
+    expect(
+      await screen.findByRole("heading", { level: 1, name: "Minha conta" }),
+    ).toBeInTheDocument();
+  });
+
+  it("sends /settings to /account without growing the history (SET-02)", async () => {
+    mockApi(base);
+    const { router, history } = renderRoute("/settings");
+    await waitFor(() => expect(router.state.location.pathname).toBe("/account"));
+    expect(
+      await screen.findByRole("heading", { level: 1, name: "My account" }),
+    ).toBeInTheDocument();
+    expect(history.length).toBe(1);
+  });
+});
+
+describe("account page", () => {
   it("persists the theme choice in localStorage (UI-23)", async () => {
     mockApi(base);
     const user = userEvent.setup();
-    renderRoute("/settings");
+    renderRoute("/account");
     await user.click(await screen.findByRole("radio", { name: "Dark" }));
     expect(window.localStorage.getItem(THEME_KEY)).toBe("dark");
     expect(useLiveStore.getState().theme).toBe("dark");
@@ -66,11 +111,11 @@ describe("settings page", () => {
   it("persists the language in localStorage and on the account (UI-25)", async () => {
     const { calls } = mockApi({ ...base, "PATCH /me": json(200, { ...me, locale: "pt-BR" }) });
     const user = userEvent.setup();
-    renderRoute("/settings");
+    renderRoute("/account");
     await user.click(await screen.findByRole("radio", { name: "Português (Brasil)" }));
     expect(window.localStorage.getItem(LOCALE_KEY)).toBe("pt-BR");
     expect(
-      await screen.findByRole("heading", { level: 1, name: "Configurações" }),
+      await screen.findByRole("heading", { level: 1, name: "Minha conta" }),
     ).toBeInTheDocument();
     await waitFor(() =>
       expect(calls.find((c) => c.method === "PATCH" && c.path === "/me")?.body).toEqual({
@@ -81,24 +126,26 @@ describe("settings page", () => {
 
   it("adopts the account language on a browser without a stored choice", async () => {
     mockApi({ ...base, "GET /me": json(200, { ...me, locale: "pt-BR" }) });
-    renderRoute("/settings");
+    renderRoute("/account");
     expect(
-      await screen.findByRole("heading", { level: 1, name: "Configurações" }),
+      await screen.findByRole("heading", { level: 1, name: "Minha conta" }),
     ).toBeInTheDocument();
   });
 
   it("keeps the browser's stored language over the account's", async () => {
     window.localStorage.setItem(LOCALE_KEY, "en");
     mockApi({ ...base, "GET /me": json(200, { ...me, locale: "pt-BR" }) });
-    renderRoute("/settings");
-    expect(await screen.findByRole("heading", { level: 1, name: "Settings" })).toBeInTheDocument();
+    renderRoute("/account");
+    expect(
+      await screen.findByRole("heading", { level: 1, name: "My account" }),
+    ).toBeInTheDocument();
   });
 
   it("saves the profile and shows the new name in the sidebar right away (PROF-03)", async () => {
     const saved = { ...profile, display_name: "Ana S.", bio: "On call this week." };
     const { calls } = mockApi({ ...base, "PATCH /intelligences/u1": json(200, saved) });
     const user = userEvent.setup();
-    renderRoute("/settings");
+    renderRoute("/account");
     const name = await screen.findByLabelText(/Display name/);
     expect(name).toHaveValue("Ana Souza");
     await user.clear(name);
@@ -122,7 +169,7 @@ describe("settings page", () => {
       "PATCH /intelligences/u1": json(200, { ...profile, handle: "ana-souza" }),
     });
     const user = userEvent.setup();
-    renderRoute("/settings");
+    renderRoute("/account");
     const handle = await screen.findByLabelText(/Handle/);
     expect(handle).toHaveValue("ana");
     await user.clear(handle);
@@ -134,8 +181,8 @@ describe("settings page", () => {
 
   it("offers no app-notification choice and asks for none (CID-22)", async () => {
     const { calls } = mockApi(base);
-    renderRoute("/settings");
-    await screen.findByRole("heading", { level: 1, name: "Settings" });
+    renderRoute("/account");
+    await screen.findByRole("heading", { level: 1, name: "My account" });
     await screen.findByLabelText(/Display name/);
     expect(screen.queryByText("Notifications")).toBeNull();
     expect(screen.queryByRole("combobox", { name: "Send them to" })).toBeNull();
@@ -154,7 +201,7 @@ describe("settings page", () => {
       },
     });
     const user = userEvent.setup();
-    renderRoute("/settings");
+    renderRoute("/account");
     const form = await screen.findByRole("form", { name: "Password" });
     await user.type(within(form).getByLabelText("Current password"), "old-password-1");
     await user.type(within(form).getByLabelText("New password"), "new-password-22");
@@ -182,7 +229,7 @@ describe("settings page", () => {
       "DELETE /me/sessions/s2": new Response(null, { status: 204 }),
     });
     const user = userEvent.setup();
-    renderRoute("/settings");
+    renderRoute("/account");
     const list = await screen.findByRole("list", { name: "Sessions" });
     const items = within(list).getAllByRole("listitem");
     expect(items).toHaveLength(2);
@@ -215,7 +262,7 @@ describe("notifications on this device (PUSH-18)", () => {
   it("shows this device's state and the group setting without asking for permission", async () => {
     const push = stubPush();
     const { calls } = mockApi(pushBase);
-    renderRoute("/settings");
+    renderRoute("/account");
     expect(await screen.findByRole("radio", { name: "Mentions only" })).toBeChecked();
     expect(screen.getByRole("button", { name: "Enable notifications" })).toBeEnabled();
     // A test notification can only fail while this device is not on (PUSH-21).
@@ -236,7 +283,7 @@ describe("notifications on this device (PUSH-18)", () => {
       }),
     });
     const user = userEvent.setup();
-    renderRoute("/settings");
+    renderRoute("/account");
     await user.click(await screen.findByRole("button", { name: "Enable notifications" }));
     expect(push.requestPermission).toHaveBeenCalledTimes(1);
     expect(push.subscribe).toHaveBeenCalledTimes(1);
@@ -261,7 +308,7 @@ describe("notifications on this device (PUSH-18)", () => {
     const push = stubPush({ answer: "granted", ready: new Promise(() => {}) });
     vi.spyOn(console, "warn").mockImplementation(() => {});
     const { calls } = mockApi(pushBase);
-    renderRoute("/settings");
+    renderRoute("/account");
     const enable = await screen.findByRole("button", { name: "Enable notifications" });
 
     // Only the app's own wait runs on the fake clock, which starts once the page is up.
@@ -311,7 +358,7 @@ describe("notifications on this device (PUSH-18)", () => {
     const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
     const { calls } = mockApi(pushBase);
     const user = userEvent.setup();
-    renderRoute("/settings");
+    renderRoute("/account");
     await user.click(await screen.findByRole("button", { name: "Enable notifications" }));
     expect(
       await screen.findByText("Couldn’t turn notifications on for this device. Try again."),
@@ -334,7 +381,7 @@ describe("notifications on this device (PUSH-18)", () => {
     });
     vi.spyOn(console, "warn").mockImplementation(() => {});
     const user = userEvent.setup();
-    renderRoute("/settings");
+    renderRoute("/account");
     await user.click(await screen.findByRole("button", { name: "Enable notifications" }));
     expect(await screen.findByText("Step: server — 422 invalid")).toBeInTheDocument();
     expect(posts(calls, "/push/subscriptions")).toHaveLength(1);
@@ -348,7 +395,7 @@ describe("notifications on this device (PUSH-18)", () => {
     });
     vi.spyOn(console, "warn").mockImplementation(() => {});
     const user = userEvent.setup();
-    renderRoute("/settings");
+    renderRoute("/account");
     await user.click(await screen.findByRole("button", { name: "Enable notifications" }));
     expect(await screen.findByText("Step: server key — 503")).toBeInTheDocument();
     expect(push.subscribe).not.toHaveBeenCalled();
@@ -359,7 +406,7 @@ describe("notifications on this device (PUSH-18)", () => {
     const push = stubPush({ answer: "denied" });
     const { calls } = mockApi(pushBase);
     const user = userEvent.setup();
-    renderRoute("/settings");
+    renderRoute("/account");
     await user.click(await screen.findByRole("button", { name: "Enable notifications" }));
     expect(push.requestPermission).toHaveBeenCalledTimes(1);
     expect(await screen.findByText(/Notifications are blocked for partyline/)).toBeInTheDocument();
@@ -371,7 +418,7 @@ describe("notifications on this device (PUSH-18)", () => {
   it("says notifications are blocked on mount and asks for nothing", async () => {
     const push = stubPush({ permission: "denied" });
     mockApi(pushBase);
-    renderRoute("/settings");
+    renderRoute("/account");
     expect(await screen.findByText(/Notifications are blocked for partyline/)).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Enable notifications" })).toBeDisabled();
     expect(push.requestPermission).not.toHaveBeenCalled();
@@ -381,7 +428,7 @@ describe("notifications on this device (PUSH-18)", () => {
     stubPush({ permission: "granted", subscribed: true });
     const { calls } = mockApi({ ...pushBase, "POST /push/test": json(202, { queued: 1 }) });
     const user = userEvent.setup();
-    renderRoute("/settings");
+    renderRoute("/account");
     await user.click(await screen.findByRole("button", { name: "Send test" }));
     await waitFor(() => expect(posts(calls, "/push/test")).toHaveLength(1));
     expect(await screen.findByText("Test notification queued")).toBeInTheDocument();
@@ -394,7 +441,7 @@ describe("notifications on this device (PUSH-18)", () => {
       "POST /push/test": apiError(409, "conflict", "no subscription"),
     });
     const user = userEvent.setup();
-    renderRoute("/settings");
+    renderRoute("/account");
     await user.click(await screen.findByRole("button", { name: "Send test" }));
     expect(await screen.findByText("Enable notifications first")).toBeInTheDocument();
   });
@@ -406,7 +453,7 @@ describe("notifications on this device (PUSH-18)", () => {
       "POST /push/subscriptions": apiError(500, "internal", "boom"),
     });
     const user = userEvent.setup();
-    renderRoute("/settings");
+    renderRoute("/account");
     await user.click(await screen.findByRole("button", { name: "Enable notifications" }));
     await waitFor(() => expect(push.subscribe).toHaveBeenCalledTimes(1));
     expect(
@@ -424,7 +471,7 @@ describe("notifications on this device (PUSH-18)", () => {
       "DELETE /push/subscriptions": new Response(null, { status: 204 }),
     });
     const user = userEvent.setup();
-    renderRoute("/settings");
+    renderRoute("/account");
     expect(await screen.findByText("On for this device")).toBeInTheDocument();
     await user.click(screen.getByRole("button", { name: "Disable notifications" }));
     await waitFor(() =>
@@ -444,7 +491,7 @@ describe("notifications on this device (PUSH-18)", () => {
       "PATCH /me": json(200, { ...me, push_groups: "off" }),
     });
     const user = userEvent.setup();
-    renderRoute("/settings");
+    renderRoute("/account");
     await user.click(await screen.findByRole("radio", { name: "Off" }));
     await waitFor(() =>
       expect(calls.some((c) => c.method === "PATCH" && c.path === "/me")).toBe(true),
@@ -457,7 +504,7 @@ describe("notifications on this device (PUSH-18)", () => {
     stubPush();
     mockApi({ ...pushBase, "PATCH /me": apiError(500, "internal", "boom") });
     const user = userEvent.setup();
-    renderRoute("/settings");
+    renderRoute("/account");
     const off = await screen.findByRole("radio", { name: "Off" });
     await user.click(off);
     expect(
@@ -470,7 +517,7 @@ describe("notifications on this device (PUSH-18)", () => {
   it("explains an unsupported browser and leaves the rest of Settings usable", async () => {
     const push = stubPush({ supported: false });
     mockApi(base);
-    renderRoute("/settings");
+    renderRoute("/account");
     expect(await screen.findByText(/This browser cannot show notifications/)).toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "Enable notifications" })).toBeNull();
     expect(push.requestPermission).not.toHaveBeenCalled();
@@ -499,7 +546,7 @@ describe("default organization (ORG-04)", () => {
 
   it("lists every organization the viewer belongs to, guest ones too, and shows the current default", async () => {
     mockApi(withOrgs("o2"));
-    renderRoute("/settings");
+    renderRoute("/account");
     const field = await select();
     expect(optionsOf(field)).toEqual(["Acme", "Globex", "Initech"]);
     expect(field).toHaveValue("o2");
@@ -507,7 +554,7 @@ describe("default organization (ORG-04)", () => {
 
   it("says what the default is for", async () => {
     mockApi(withOrgs("o1"));
-    renderRoute("/settings");
+    renderRoute("/account");
     await select();
     expect(
       screen.getByText("New AIs you start join it, unless you start them with --org."),
@@ -519,7 +566,7 @@ describe("default organization (ORG-04)", () => {
       withOrgs("o2", { "PUT /me/default-org": json(200, { ...me, default_org_id: "o1" }) }),
     );
     const user = userEvent.setup();
-    renderRoute("/settings");
+    renderRoute("/account");
     const field = await select();
     await user.selectOptions(field, "o1");
     await waitFor(() => expect(calls.filter((c) => c.method === "PUT")).toHaveLength(1));
@@ -532,7 +579,7 @@ describe("default organization (ORG-04)", () => {
   it("remembers the new default for the rest of the app", async () => {
     mockApi(withOrgs("o2", { "PUT /me/default-org": json(200, {}) }));
     const user = userEvent.setup();
-    const { queryClient } = renderRoute("/settings");
+    const { queryClient } = renderRoute("/account");
     await user.selectOptions(await select(), "o1");
     await screen.findByText("New AIs now join Acme");
     expect(queryClient.getQueryData<{ default_org_id?: string }>(["me"])?.default_org_id).toBe(
@@ -545,7 +592,7 @@ describe("default organization (ORG-04)", () => {
       withOrgs("o2", { "PUT /me/default-org": apiError(403, "forbidden", "forbidden") }),
     );
     const user = userEvent.setup();
-    renderRoute("/settings");
+    renderRoute("/account");
     const field = await select();
     await user.selectOptions(field, "o3");
     expect(
@@ -558,7 +605,7 @@ describe("default organization (ORG-04)", () => {
   it("says so when the default could not be changed for another reason", async () => {
     mockApi(withOrgs("o2", { "PUT /me/default-org": apiError(500, "internal", "boom") }));
     const user = userEvent.setup();
-    renderRoute("/settings");
+    renderRoute("/account");
     const field = await select();
     await user.selectOptions(field, "o1");
     expect(
@@ -570,14 +617,14 @@ describe("default organization (ORG-04)", () => {
   it("does not send the choice again when it is the one already made", async () => {
     const { calls } = mockApi(withOrgs("o2", { "PUT /me/default-org": json(200, {}) }));
     const user = userEvent.setup();
-    renderRoute("/settings");
+    renderRoute("/account");
     await user.selectOptions(await select(), "o2");
     expect(calls.some((c) => c.method === "PUT")).toBe(false);
   });
 
   it("asks to choose one when the account has none yet, and picks none for the viewer", async () => {
     mockApi(withOrgs(undefined));
-    renderRoute("/settings");
+    renderRoute("/account");
     const field = await select();
     expect(field).toHaveValue("");
     expect(optionsOf(field)[0]).toBe("Choose an organization");
@@ -586,14 +633,14 @@ describe("default organization (ORG-04)", () => {
 
   it("ignores a default the viewer no longer belongs to", async () => {
     mockApi(withOrgs("o9"));
-    renderRoute("/settings");
+    renderRoute("/account");
     expect(await select()).toHaveValue("");
   });
 
   it("is not there for someone who belongs to no organization, or while that is unknown", async () => {
     mockApi({ ...base });
-    renderRoute("/settings");
-    await screen.findByRole("heading", { level: 1, name: "Settings" });
+    renderRoute("/account");
+    await screen.findByRole("heading", { level: 1, name: "My account" });
     await screen.findByLabelText(/Display name/);
     expect(screen.queryByRole("combobox", { name: "Default organization for new AIs" })).toBeNull();
     expect(screen.queryByRole("heading", { level: 2, name: "Default organization" })).toBeNull();
@@ -604,7 +651,7 @@ describe("default organization (ORG-04)", () => {
     mockApi(
       withOrgs("o2", { "GET /me": json(200, { ...me, locale: "pt-BR", default_org_id: "o2" }) }),
     );
-    renderRoute("/settings");
+    renderRoute("/account");
     const field = await screen.findByRole("combobox", {
       name: "Organização padrão para novas IAs",
     });
@@ -619,7 +666,7 @@ describe("deleting the account (POS-06)", () => {
   const open = async (extra: Parameters<typeof mockApi>[0] = {}) => {
     const api = mockApi({ ...base, ...extra });
     const user = userEvent.setup();
-    const view = renderRoute("/settings");
+    const view = renderRoute("/account");
     await user.click(await screen.findByRole("button", { name: "Delete my account" }));
     const dialog = await screen.findByRole("dialog", { name: "Delete your account?" });
     return { ...api, ...view, user, dialog };
@@ -632,7 +679,7 @@ describe("deleting the account (POS-06)", () => {
 
   it("is a section of its own, with the way in", async () => {
     mockApi(base);
-    renderRoute("/settings");
+    renderRoute("/account");
     const section = await screen.findByRole("region", { name: "Delete account" });
     expect(within(section).getByRole("button", { name: "Delete my account" })).toBeInTheDocument();
   });
@@ -755,7 +802,7 @@ describe("deleting the account (POS-06)", () => {
     useLiveStore.setState({ locale: "pt-BR" });
     mockApi({ ...base, "GET /me": json(200, { ...me, locale: "pt-BR" }) });
     const user = userEvent.setup();
-    renderRoute("/settings");
+    renderRoute("/account");
     await user.click(await screen.findByRole("button", { name: "Excluir minha conta" }));
     const dialog = await screen.findByRole("dialog", { name: "Excluir sua conta?" });
     expect(dialog).toHaveTextContent(

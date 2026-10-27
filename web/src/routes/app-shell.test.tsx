@@ -32,10 +32,10 @@ describe("authenticated shell", () => {
       "GET /conversations": json(200, { items: [] }),
     });
     const user = userEvent.setup();
-    renderRoute("/settings");
+    renderRoute("/account");
     await user.click(await screen.findByRole("button", { name: "Account menu" }));
     const menu = await screen.findByRole("menu");
-    expect(within(menu).getByRole("menuitem", { name: "Settings" })).toHaveAttribute(
+    expect(within(menu).getByRole("menuitem", { name: "My account" })).toHaveAttribute(
       "aria-current",
       "page",
     );
@@ -45,10 +45,11 @@ describe("authenticated shell", () => {
       "Connectors",
       "Identities",
       "API tokens",
-      "Settings",
+      "My account",
     ]) {
       expect(within(menu).getByRole("menuitem", { name })).toBeInTheDocument();
     }
+    expect(within(menu).queryByRole("menuitem", { name: "Settings" })).toBeNull();
     expect(within(menu).queryByRole("menuitem", { name: "Users" })).toBeNull();
     expect(within(menu).queryByText("Admin")).toBeNull();
   });
