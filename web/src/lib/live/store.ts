@@ -51,6 +51,8 @@ export interface LiveState {
   currentOrgId: string | null;
 
   setStatus: (status: SocketStatus) => void;
+  /** Restarts the offline grace after the page was hidden, unless the socket is open. */
+  markVisible: () => void;
   setPresence: (agentId: string, presence: Presence) => void;
   setConnectorState: (connectorId: string, state: ConnectorState) => void;
   setLastLinkedIdentity: (identity: Identity | null) => void;
@@ -86,6 +88,14 @@ export const useLiveStore = create<LiveState>()((set) => ({
       if (status === "open") return { status, offlineSince: null };
       // Retries flip between connecting and closed; the outage started at the first drop.
       return { status, offlineSince: s.offlineSince ?? Date.now() };
+    }),
+  markVisible: () =>
+    set((s) => {
+      // The grace counts while the page is showing: a tab that comes back gets a fresh 2 s before
+      // the banner (UI-06), since the outage timestamp it carries was set while nobody was looking.
+      // An idle store (nothing started, no outage) has no grace to restart.
+      if (s.status === "open" || s.offlineSince === null) return s;
+      return { offlineSince: Date.now() };
     }),
   setPresence: (agentId, presence) =>
     set((s) => ({ presence: { ...s.presence, [agentId]: presence } })),

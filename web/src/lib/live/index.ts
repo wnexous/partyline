@@ -17,6 +17,9 @@ export function startLive(
     ...options,
     onEvent: (event) => handleLiveEvent(qc, useLiveStore.getState(), event),
     onStatus: (status) => store.setStatus(status),
+    // Back on screen: the banner measures its grace from the return, not from the drop the hidden
+    // tab saw (UI-06). The socket wakes itself in the same visibility handler.
+    onVisible: () => store.markVisible(),
     onReconnect: () => {
       void catchUp(qc);
     },

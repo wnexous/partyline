@@ -6,6 +6,10 @@ import type { SocketStatus } from "./store";
  * backoff from 1 s to 30 s; the delay resets once a connection opens. The one exception is
  * close code 1008 (`session revoked`): the session is over, so reconnecting would only fail.
  * 1013 (`session check failed`, the server could not re-check the session) is a normal retry.
+ *
+ * A hidden tab is throttled and its dials fail, so the backoff it builds up can be 30 s when the
+ * user comes back. `wake()` dials at once instead (on `visibilitychange` to visible and on
+ * `online`), so returning to the app never waits out a delay earned while it was away.
  */
 
 /** Close code the server sends when the socket's session or token was revoked. */
@@ -30,12 +34,16 @@ export interface LiveSocketOptions {
   onReconnect?: () => void;
   /** Called once when the server ends the session (close 1008); the socket stays closed. */
   onSessionEnded?: () => void;
+  /** Called when the page becomes visible again, before the socket wakes up. */
+  onVisible?: () => void;
   createSocket?: (url: string) => WebSocket;
 }
 
 export interface LiveSocket {
   start: () => void;
   stop: () => void;
+  /** Dials now instead of waiting out the backoff, unless stopped or already connected. */
+  wake: () => void;
 }
 
 function isLiveEvent(value: unknown): value is LiveEvent {
@@ -97,14 +105,40 @@ export function createLiveSocket(options: LiveSocketOptions): LiveSocket {
     };
   };
 
+  const wake = () => {
+    // A socket is open or dialing: there is nothing to wake. A stopped one (close 1008 included)
+    // must stay down.
+    if (stopped || socket !== null) return;
+    if (timer) clearTimeout(timer);
+    timer = null;
+    attempt = 0;
+    connect();
+  };
+
+  const onVisibilityChange = () => {
+    if (typeof document === "undefined" || document.visibilityState !== "visible") return;
+    options.onVisible?.();
+    wake();
+  };
+
+  const onOnline = () => wake();
+
   return {
     start() {
       if (!stopped) return;
       stopped = false;
+      if (typeof document !== "undefined") {
+        document.addEventListener("visibilitychange", onVisibilityChange);
+      }
+      if (typeof window !== "undefined") window.addEventListener("online", onOnline);
       connect();
     },
     stop() {
       stopped = true;
+      if (typeof document !== "undefined") {
+        document.removeEventListener("visibilitychange", onVisibilityChange);
+      }
+      if (typeof window !== "undefined") window.removeEventListener("online", onOnline);
       if (timer) clearTimeout(timer);
       timer = null;
       const ws = socket;
@@ -112,5 +146,6 @@ export function createLiveSocket(options: LiveSocketOptions): LiveSocket {
       ws?.close();
       setStatus("closed");
     },
+    wake,
   };
 }
