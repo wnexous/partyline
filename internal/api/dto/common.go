@@ -40,6 +40,11 @@ const (
 	// the token's owner it identifies the AI; the agent WebSocket and every agent route that acts
 	// as an AI take it (AID-07).
 	HeaderFolder = "X-Partyline-Folder"
+	// HeaderMainFolder is the canonical folder of the main worktree when the session runs in a linked
+	// git worktree, percent-encoded like HeaderFolder and sent only when there is one: the server
+	// resolves the AI of the repository from it, and HeaderFolder stays the session's own folder
+	// (SESS-01, SESS-03).
+	HeaderMainFolder = "X-Partyline-MainFolder"
 	// HeaderHome is the canonical home folder of the session's user, percent-encoded like
 	// HeaderFolder; the machine tree shows folders under it as "~" (TREE-02).
 	HeaderHome = "X-Partyline-Home"

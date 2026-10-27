@@ -26,6 +26,10 @@ import (
 // execLookPath finds programs on PATH; tests use stdio.lookPath instead.
 var execLookPath = exec.LookPath
 
+// worktreeMainFolder finds the main worktree of a linked worktree (channel.MainWorktreeFolder); tests
+// replace it so a launch needs no git.
+var worktreeMainFolder = channel.MainWorktreeFolder
+
 // claudeChannelArgs are the arguments `partyline claude` puts before the user's (HAR-03).
 var claudeChannelArgs = []string{"--dangerously-load-development-channels", "server:partyline"}
 
@@ -160,10 +164,12 @@ const (
 // launch runs `partyline <harness> [--take-over] [--as <identity>] [--org <slug>] [--position <name>]
 // [--parent <@handle>] [args…]`: it replaces this process with the harness binary found on PATH, the
 // launcher's own arguments and then args unchanged, in this environment with PARTYLINE_FOLDER set to
-// the canonical folder it runs in and PARTYLINE_HARNESS to the harness id, which the session's
-// partyline processes read so that the channel, listen, the tools-only server and the hooks of one
-// session act as the same AI (HAR-03, AID-07), and PARTYLINE_AGENT set from --as to adopt that identity
-// (MIG-02). What the AI asks for - --org, --position and --parent, else PARTYLINE_ORG,
+// the canonical folder it runs in, PARTYLINE_MAIN_FOLDER to the main worktree of a linked one (the
+// session resolves the AI of the repository from it, SESS-01; a --parent launch sets none, SESS-09) and
+// PARTYLINE_HARNESS to the harness id, which the session's partyline processes read so that the channel,
+// listen, the tools-only server and the hooks of one session act as the same AI (HAR-03, AID-07), and
+// PARTYLINE_AGENT set from --as to adopt that identity (MIG-02). What the AI asks for - --org,
+// --position and --parent, else PARTYLINE_ORG,
 // PARTYLINE_POSITION and PARTYLINE_PARENT - is consumed: those variables are removed from the harness's
 // environment and the values are handed on as PARTYLINE_LAUNCH_ORG, _POSITION and _PARENT, which the
 // session's processes send to the server as headers (ORG-04, POS-07, POS-08, AD-020). Placement
@@ -228,7 +234,14 @@ func launch(ctx context.Context, l launcher, args []string, io stdio) int {
 	}
 	set := map[string]string{"PARTYLINE_HARNESS": l.id}
 	if folder := launchFolder(io); folder != "" {
-		set["PARTYLINE_FOLDER"] = folder
+		set[folderEnvVar] = folder
+		// The main worktree travels beside the session's own folder, so the server resolves the AI of the
+		// repository (SESS-01). A launch that asked for a parent keeps its own AI (SESS-09).
+		if place.parent == "" {
+			if main := worktreeMainFolder(folder); main != "" && main != folder {
+				set[mainFolderVar] = main
+			}
+		}
 	}
 	if opts.as != "" {
 		set["PARTYLINE_AGENT"] = opts.as
@@ -250,7 +263,7 @@ func launch(ctx context.Context, l launcher, args []string, io stdio) int {
 		env = append(env, kv)
 	}
 	for _, k := range []string{
-		"PARTYLINE_FOLDER", "PARTYLINE_HARNESS", "PARTYLINE_TAKEOVER", "PARTYLINE_AGENT",
+		folderEnvVar, mainFolderVar, "PARTYLINE_HARNESS", "PARTYLINE_TAKEOVER", "PARTYLINE_AGENT",
 		launchOrgVar, launchPositionVar, launchParentVar,
 	} {
 		if v, ok := set[k]; ok {
@@ -272,11 +285,12 @@ func launch(ctx context.Context, l launcher, args []string, io stdio) int {
 }
 
 // consumedVars are the variables a launch takes out of the harness's environment: the consent to take a live
-// session over, which only this launch may give; the placement variables it consumed (PARTYLINE_ORG,
-// PARTYLINE_POSITION, PARTYLINE_PARENT); and those of the session it may itself run in (PARTYLINE_LAUNCH_*),
-// which this launch replaces with its own.
+// session over, which only this launch may give; the main worktree folder of the session it may itself run in
+// (this launch computes its own); the placement variables it consumed (PARTYLINE_ORG, PARTYLINE_POSITION,
+// PARTYLINE_PARENT); and those of the session it may itself run in (PARTYLINE_LAUNCH_*), which this launch
+// replaces with its own.
 var consumedVars = []string{
-	"PARTYLINE_TAKEOVER", orgEnvVar, positionEnvVar, parentEnvVar, launchOrgVar, launchPositionVar, launchParentVar,
+	"PARTYLINE_TAKEOVER", mainFolderVar, orgEnvVar, positionEnvVar, parentEnvVar, launchOrgVar, launchPositionVar, launchParentVar,
 }
 
 // launchFolder is the canonical folder of the session being started: the launcher's working
@@ -402,6 +416,9 @@ func lookupSession(ctx context.Context, l launcher, as string, place launchPlace
 	identity.Folder, identity.Harness = launchFolder(io), l.id
 	// This launch's own placement, never the one of a session it may run in (sessionIdentity reads that one).
 	identity.Org, identity.Position, identity.Parent = place.org, place.position, place.parent
+	if place.parent != "" {
+		identity.MainFolder = "" // a child launch is another AI, which its own folder identifies (SESS-09)
+	}
 	setIdentityHeaders(req.Header, identity)
 	resp, err := client.Do(req)
 	if err != nil {
@@ -436,6 +453,9 @@ func setIdentityHeaders(h http.Header, id channel.Identity) {
 	}
 	h.Set(dto.HeaderMachine, machine)
 	h.Set(dto.HeaderFolder, url.PathEscape(id.Folder))
+	if id.MainFolder != "" {
+		h.Set(dto.HeaderMainFolder, url.PathEscape(id.MainFolder))
+	}
 	if id.Home != "" {
 		h.Set(dto.HeaderHome, url.PathEscape(id.Home))
 	}

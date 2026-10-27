@@ -27,13 +27,15 @@ type Options struct {
 	URL string
 	// Token is an agent token (pl_agent_...).
 	Token string
-	// Machine, Folder, Home and Adopt identify the session's AI (Identity): the hostname, the
-	// canonical folder (CanonicalFolder), the canonical home folder and the handle or v0.3 name
-	// of an unlinked AI to adopt. They are sent on every connection and call.
-	Machine string
-	Folder  string
-	Home    string
-	Adopt   string
+	// Machine, Folder, MainFolder, Home and Adopt identify the session's AI (Identity): the hostname,
+	// the canonical folder (CanonicalFolder), the main worktree folder of a linked worktree (SESS-01,
+	// empty outside one), the canonical home folder and the handle or v0.3 name of an unlinked AI to
+	// adopt. They are sent on every connection and call.
+	Machine    string
+	Folder     string
+	MainFolder string
+	Home       string
+	Adopt      string
 	// Org, Position and Parent are what the session asked for when it started (Identity): sent on every
 	// connection and call, only when set.
 	Org, Position, Parent string
@@ -85,7 +87,7 @@ func Run(ctx context.Context, o Options) error {
 		o.HTTPClient = &http.Client{}
 	}
 	id := Identity{
-		Machine: o.Machine, Folder: o.Folder, Home: o.Home, Harness: o.Harness, Adopt: o.Adopt,
+		Machine: o.Machine, Folder: o.Folder, MainFolder: o.MainFolder, Home: o.Home, Harness: o.Harness, Adopt: o.Adopt,
 		Org: o.Org, Position: o.Position, Parent: o.Parent,
 	}
 	if id.Harness == "" && !o.ToolsOnly {

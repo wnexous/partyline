@@ -40,3 +40,35 @@ that follow, the same way the other features' contract notes do.
   `FallBackSessionDeliveries ... RETURNING` is needed in production; the by-label list exists for tests
   (T8's assertions on which rows the sweep left), so it selects `*` ordered by `created_at, message_id`
   rather than just the ids.
+
+# Contract Notes (from ai-sessions T4: one AI for the repository's worktrees)
+
+The rest of the design stands. Three lines of T4 are corrected here, because its own file list cannot
+carry the behaviour it requires.
+
+## The main folder reaches the channel through `Options` and `ListenOptions`
+
+T4's **What** line requires `channel.Identity.MainFolder`, `X-Partyline-MainFolder` and
+`PARTYLINE_MAIN_FOLDER` in `sessionIdentity`, and its test "`partyline listen` in a worktree sends the
+header" needs the value to travel from the CLI to the connection. `internal/channel/run.go` builds the
+`Identity` from `channel.Options` and `internal/channel/listen.go` from `channel.ListenOptions`, so
+both gain a `MainFolder string` field (one field and one struct literal each). T4's **Also** line does
+not name those files.
+
+## The start check keys the AI by the main folder too
+
+`Registry.CheckStart` (`internal/agents/placement.go`) looked the AI up by `FolderID.Folder` before it
+judged `--org`/`--position`. For a worktree session that folder is the worktree, so the check would
+have judged a creation instead of the repository's AI. It now uses the same `FolderID.key()` as
+`ResolveFolder`/`LookupFolder`/`linkOrCreate`/`adoptionCandidate`. That is one line in a file T4's
+**Also** line does not name, and it is what the design means by "everything that used `id.Folder` for
+identity keeps using `key`".
+
+## The label of a tools-only post is not T4's
+
+T4's **Done when** line says a tools-only process in a linked worktree "resolves the repository's AI
+and posts with the worktree label". T4 resolves the AI (tested through `Registry.RegisterFolder` and
+`partyline listen`), but the label a post carries is `messages.author_label`, which T9 owns together
+with the `X-Partyline-Live` rule (SESS-28..SESS-31); T4's file list does not include `rooms` or the
+message DTO. Nothing derives an author label from the folder here; SESS-06's label arrives with T9 on
+top of this resolution.

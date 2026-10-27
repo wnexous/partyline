@@ -36,6 +36,10 @@ type FolderID struct {
 	Machine string
 	// Folder is the canonical folder: absolute, symlinks resolved, no trailing separator.
 	Folder string
+	// MainFolder is the canonical folder of the main worktree when the session runs in a linked git
+	// worktree: it identifies the AI, while Folder stays the session's own folder (SESS-01). Empty
+	// outside a linked worktree, and a main folder equal to Folder counts as absent.
+	MainFolder string
 	// Home is the canonical home folder of the machine's user; the tree shows "~" for it
 	// (TREE-02). Optional: an unusable one is ignored.
 	Home string
@@ -67,6 +71,10 @@ func FolderIDFromHeader(h http.Header) (FolderID, error) {
 	if err != nil {
 		return FolderID{}, folderError(dto.ErrorCodeFolderInvalid, "folder", "the folder is not valid percent-encoding")
 	}
+	mainFolder, err := url.PathUnescape(h.Get(dto.HeaderMainFolder))
+	if err != nil {
+		return FolderID{}, folderError(dto.ErrorCodeFolderInvalid, "main_folder", "the main folder is not valid percent-encoding")
+	}
 	home, err := url.PathUnescape(h.Get(dto.HeaderHome))
 	if err != nil {
 		home = ""
@@ -76,7 +84,7 @@ func FolderIDFromHeader(h http.Header) (FolderID, error) {
 		return FolderID{}, folderError(dto.ErrorCodePositionUnknown, "position", "the position is not valid percent-encoding")
 	}
 	return FolderID{
-		Machine: h.Get(dto.HeaderMachine), Folder: folder, Home: home,
+		Machine: h.Get(dto.HeaderMachine), Folder: folder, MainFolder: mainFolder, Home: home,
 		Harness: h.Get(dto.HeaderHarness), Adopt: h.Get(dto.HeaderAdopt),
 		Org: strings.TrimSpace(h.Get(dto.HeaderOrg)), Position: strings.TrimSpace(position),
 		Parent: strings.TrimSpace(h.Get(dto.HeaderParent)),
@@ -100,7 +108,23 @@ func ValidateFolder(machine, folder string) error {
 	if folder == "" {
 		return folderError(dto.ErrorCodeFolderRequired, "folder", "the session did not say which folder it works in: update partyline")
 	}
-	invalid := func(why string) error { return folderError(dto.ErrorCodeFolderInvalid, "folder", "the folder "+why) }
+	return checkFolder(folder, "folder", "the folder")
+}
+
+// ValidateMainFolder checks the main worktree folder a session sent (SESS-04) with the rules of the
+// folder, naming main_folder in the 422. An empty one is fine: the session is not in a linked
+// worktree, or it is an old CLI that sends none.
+func ValidateMainFolder(mainFolder string) error {
+	if mainFolder == "" {
+		return nil
+	}
+	return checkFolder(mainFolder, "main_folder", "the main folder")
+}
+
+// checkFolder reports whether folder can identify an AI (AID-05, SESS-04); field and noun name it
+// in the 422 folder_invalid.
+func checkFolder(folder, field, noun string) error {
+	invalid := func(why string) error { return folderError(dto.ErrorCodeFolderInvalid, field, noun+" "+why) }
 	switch {
 	case !utf8.ValidString(folder):
 		return invalid("must be valid UTF-8")
@@ -126,6 +150,15 @@ func ValidateFolder(machine, folder string) error {
 		}
 	}
 	return nil
+}
+
+// key is the folder that identifies the AI of a session (SESS-01): the main worktree's folder when
+// the session runs in a linked worktree, else its own. A main folder equal to the folder is absent.
+func (id FolderID) key() string {
+	if id.MainFolder != "" && id.MainFolder != id.Folder {
+		return id.MainFolder
+	}
+	return id.Folder
 }
 
 // folderRoot splits the root off an absolute folder: "/" for Unix paths ("/" is the only
@@ -197,10 +230,11 @@ func (r *Registry) touchMachine(ctx context.Context, ownerID, hostname, home str
 }
 
 // ResolveFolder returns the owner's AI for the machine and folder a session sent, creating it
-// on first sight with the folder's name (AID-01, AID-02, AID-03). Any harness opened in that
-// folder resolves the same identity, and its app follows the harness: always for a live
-// session (live), and for a tools-only call (Codex, the tools half of pi and OpenCode) only
-// while nobody is connected, so a tool call never relabels a live session (AID-04).
+// on first sight with the folder's name (AID-01, AID-02, AID-03). A session in a linked git
+// worktree resolves the AI of the main worktree instead (FolderID.MainFolder, SESS-01, SESS-06).
+// Any harness opened in that folder resolves the same identity, and its app follows the harness:
+// always for a live session (live), and for a tools-only call (Codex, the tools half of pi and
+// OpenCode) only while nobody is connected, so a tool call never relabels a live session (AID-04).
 //
 // When the folder has no identity yet, the owner's unlinked identity (one of v0.3, without a
 // folder) is linked to it instead of creating one: the one named by FolderID.Adopt, else the
@@ -216,12 +250,15 @@ func (r *Registry) ResolveFolder(ctx context.Context, ownerID string, id FolderI
 	if err := ValidateFolder(id.Machine, id.Folder); err != nil {
 		return db.Agent{}, err
 	}
+	if err := ValidateMainFolder(id.MainFolder); err != nil {
+		return db.Agent{}, err
+	}
 	id.Harness = cleanHarness(id.Harness)
 	id.Adopt = strings.ToLower(strings.TrimSpace(id.Adopt))
 	if err := r.touchMachine(ctx, ownerID, id.Machine, id.Home); err != nil {
 		return db.Agent{}, err
 	}
-	a, err := r.store.R().GetAgentByFolder(ctx, db.GetAgentByFolderParams{OwnerID: ownerID, Machine: id.Machine, Folder: id.Folder})
+	a, err := r.store.R().GetAgentByFolder(ctx, db.GetAgentByFolderParams{OwnerID: ownerID, Machine: id.Machine, Folder: id.key()})
 	switch {
 	case errors.Is(err, sql.ErrNoRows):
 		if r.afterFolderMiss != nil {
@@ -248,15 +285,19 @@ func (r *Registry) RegisterFolder(ctx context.Context, ownerID string, id Folder
 	return r.store.R().GetAgentWithOwner(ctx, a.ID)
 }
 
-// LookupFolder returns the owner's AI of the machine and folder, if there is one, and changes
-// nothing: no identity is created, no unlinked one adopted, no machine recorded and no app
-// relabeled (SES-01). An invalid machine or folder is a 422 like for ResolveFolder.
+// LookupFolder returns the owner's AI of the machine and folder (of the main worktree, for a
+// session in a linked worktree), if there is one, and changes nothing: no identity is created, no
+// unlinked one adopted, no machine recorded and no app relabeled (SES-01). An invalid machine or
+// folder is a 422 like for ResolveFolder.
 func (r *Registry) LookupFolder(ctx context.Context, ownerID string, id FolderID) (db.Agent, bool, error) {
 	machine := cleanText(id.Machine, MaxMachineLength)
 	if err := ValidateFolder(machine, id.Folder); err != nil {
 		return db.Agent{}, false, err
 	}
-	a, err := r.store.R().GetAgentByFolder(ctx, db.GetAgentByFolderParams{OwnerID: ownerID, Machine: machine, Folder: id.Folder})
+	if err := ValidateMainFolder(id.MainFolder); err != nil {
+		return db.Agent{}, false, err
+	}
+	a, err := r.store.R().GetAgentByFolder(ctx, db.GetAgentByFolderParams{OwnerID: ownerID, Machine: machine, Folder: id.key()})
 	if errors.Is(err, sql.ErrNoRows) {
 		return db.Agent{}, false, nil
 	}
@@ -274,7 +315,7 @@ func (r *Registry) linkOrCreate(ctx context.Context, ownerID string, id FolderID
 	var changed string // the organization whose chart this call changed
 	err := r.store.WithTx(ctx, func(q *db.Queries) error {
 		changed = ""
-		a, err := q.GetAgentByFolder(ctx, db.GetAgentByFolderParams{OwnerID: ownerID, Machine: id.Machine, Folder: id.Folder})
+		a, err := q.GetAgentByFolder(ctx, db.GetAgentByFolderParams{OwnerID: ownerID, Machine: id.Machine, Folder: id.key()})
 		if !errors.Is(err, sql.ErrNoRows) { // found (created while this call waited), or a failure
 			out = a
 			if err == nil {
@@ -329,25 +370,26 @@ func adoptionCandidate(ctx context.Context, q *db.Queries, ownerID string, id Fo
 			}
 		}
 	}
-	a, found, err = byHandle(handles.Default(handles.AI, folderBase(id.Folder)))
+	a, found, err = byHandle(handles.Default(handles.AI, folderBase(id.key())))
 	return a, "folder", found, err
 }
 
-// adopt links the unlinked identity to the session's machine and folder; it keeps its id,
-// history, groups and profile. The link is audited.
+// adopt links the unlinked identity to the session's machine and folder (the main worktree's folder
+// for a session in a linked worktree); it keeps its id, history, groups and profile. The link is
+// audited.
 func (r *Registry) adopt(ctx context.Context, q *db.Queries, a db.Agent, by string, id FolderID) (db.Agent, error) {
 	harness := id.Harness
 	if harness == "" {
 		harness = a.Harness
 	}
-	n, err := q.AdoptAgent(ctx, db.AdoptAgentParams{Machine: id.Machine, Folder: id.Folder, Harness: harness, ID: a.ID})
+	n, err := q.AdoptAgent(ctx, db.AdoptAgentParams{Machine: id.Machine, Folder: id.key(), Harness: harness, ID: a.ID})
 	if err != nil {
 		return db.Agent{}, err
 	}
 	if n != 1 { // linked meanwhile: impossible inside this write transaction
 		return db.Agent{}, errors.New("agent is already linked to a folder")
 	}
-	a.Machine, a.Folder, a.Harness = id.Machine, id.Folder, harness
+	a.Machine, a.Folder, a.Harness = id.Machine, id.key(), harness
 	if r.audit != nil {
 		err = r.audit.Record(ctx, q, audit.Entry{
 			ActorID: a.OwnerID, Action: audit.ActionAgentAdopt, TargetKind: audit.TargetAgent, TargetID: a.ID,
@@ -378,12 +420,12 @@ func (r *Registry) createFolderAgent(ctx context.Context, q *db.Queries, ownerID
 	now := r.now()
 	if err := q.InsertFolderAgent(ctx, db.InsertFolderAgentParams{
 		ID: agentID, OwnerID: ownerID, Name: agentID, CreatedAt: now.UnixMilli(),
-		Harness: HarnessID(id.Harness), Machine: id.Machine, Folder: id.Folder,
+		Harness: HarnessID(id.Harness), Machine: id.Machine, Folder: id.key(),
 		OrgID: sql.NullString{String: where.orgID, Valid: true}, CreatorIid: sql.NullString{String: where.creatorIID, Valid: true},
 	}); err != nil {
 		return db.Agent{}, err
 	}
-	base := folderBase(id.Folder)
+	base := folderBase(id.key())
 	if _, err := intelligences.Create(ctx, q, intelligences.NewParams{
 		ID: agentID, Kind: handles.AI, DisplayName: handles.DisplayName(base), HandleBase: base, Now: now,
 	}); err != nil {

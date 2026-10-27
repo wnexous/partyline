@@ -657,9 +657,13 @@ func TestFolderIDFromHeader(t *testing.T) {
 	id, err := FolderIDFromHeader(header(
 		dto.HeaderMachine, "dev box", dto.HeaderFolder, url.PathEscape("/home/alice/my project/Café"),
 		dto.HeaderHome, url.PathEscape("/home/alice"), dto.HeaderHarness, "opencode", dto.HeaderAdopt, "Old-Helper",
+		dto.HeaderMainFolder, url.PathEscape("/home/alice/my project"),
 	))
 	require.NoError(t, err)
-	require.Equal(t, FolderID{Machine: "dev box", Folder: "/home/alice/my project/Café", Home: "/home/alice", Harness: "opencode", Adopt: "Old-Helper"}, id)
+	require.Equal(t, FolderID{
+		Machine: "dev box", Folder: "/home/alice/my project/Café", MainFolder: "/home/alice/my project",
+		Home: "/home/alice", Harness: "opencode", Adopt: "Old-Helper",
+	}, id, "the main worktree folder is percent-encoded like the folder (SESS-01)")
 
 	id, err = FolderIDFromHeader(header(dto.HeaderMachine, "devbox", dto.HeaderFolder, "/work/plain"))
 	require.NoError(t, err)
@@ -671,6 +675,12 @@ func TestFolderIDFromHeader(t *testing.T) {
 
 	_, err = FolderIDFromHeader(header(dto.HeaderMachine, "devbox", dto.HeaderFolder, "%zz"))
 	requireAPIError(t, err, http.StatusUnprocessableEntity, dto.ErrorCodeFolderInvalid)
+
+	_, err = FolderIDFromHeader(header(
+		dto.HeaderMachine, "devbox", dto.HeaderFolder, "/work/wt", dto.HeaderMainFolder, "%zz",
+	))
+	fields := requireAPIError(t, err, http.StatusUnprocessableEntity, dto.ErrorCodeFolderInvalid)
+	require.Contains(t, fields, "main_folder", "a main folder that is not valid percent-encoding names its field")
 
 	id, err = FolderIDFromHeader(header(dto.HeaderMachine, "devbox"))
 	require.NoError(t, err)
@@ -711,4 +721,83 @@ func TestLookupFolderChangesNothing(t *testing.T) {
 	requireAPIError(t, err, http.StatusUnprocessableEntity, dto.ErrorCodeFolderInvalid)
 	_, _, err = f.reg.LookupFolder(ctx, alice.UserID, FolderID{Folder: "/work/acme"})
 	requireAPIError(t, err, http.StatusUnprocessableEntity, dto.ErrorCodeFolderRequired)
+}
+
+// SESS-01, SESS-05, SESS-06: a session in a linked worktree resolves the AI of the main worktree,
+// created on first sight with `agents.folder` = the main folder and named from its base name. Every
+// worktree of the repository is the same AI, whether the session is live or a tools-only call.
+func TestResolveFolderUsesTheMainWorktreeFolder(t *testing.T) {
+	f := newFixture(t)
+	ctx := context.Background()
+	alice := f.user(t, "alice")
+	wt := FolderID{Machine: "devbox", Folder: "/repo/wt", MainFolder: "/repo", Harness: "claude"}
+
+	a, err := f.reg.ResolveFolder(ctx, alice.UserID, wt, true)
+	require.NoError(t, err)
+	require.Equal(t, "/repo", a.Folder, "the AI lives in the main worktree")
+	i := f.intelligence(t, a.ID)
+	require.Equal(t, "Repo", i.DisplayName, "the name derives from the main folder")
+	require.Equal(t, "repo", i.Handle, "and so does the handle")
+	require.Equal(t, 1, f.count(t, "SELECT COUNT(*) FROM agents"))
+
+	other := FolderID{Machine: "devbox", Folder: "/repo/other-wt", MainFolder: "/repo", Harness: "claude"}
+	same, err := f.reg.ResolveFolder(ctx, alice.UserID, other, true)
+	require.NoError(t, err)
+	require.Equal(t, a.ID, same.ID, "every worktree of the repository is the same AI")
+
+	// A main folder equal to the folder is absent: the session is not in a linked worktree.
+	same, err = f.reg.ResolveFolder(ctx, alice.UserID, FolderID{Machine: "devbox", Folder: "/repo", MainFolder: "/repo", Harness: "claude"}, true)
+	require.NoError(t, err)
+	require.Equal(t, a.ID, same.ID)
+
+	// A tools-only process in a worktree resolves the same AI (SESS-06).
+	tools, err := f.reg.RegisterFolder(ctx, alice.UserID, other)
+	require.NoError(t, err)
+	require.Equal(t, a.ID, tools.Agent.ID)
+	require.Equal(t, "claude", f.storedAgent(t, a.ID).Harness, "no relabel: the harness is the same")
+	require.Equal(t, 1, f.count(t, "SELECT COUNT(*) FROM agents"), "one AI for the repository")
+}
+
+// SESS-04: a main folder that cannot be an identity is refused with 422 on main_folder, and neither
+// a session nor a lookup creates anything.
+func TestResolveFolderRefusesAMainFolderThatIsNotCanonical(t *testing.T) {
+	f := newFixture(t)
+	ctx := context.Background()
+	alice := f.user(t, "alice")
+	rejected := []string{
+		"/repo/wt/", // a trailing separator
+		"repo",      // relative
+		"./repo",    // relative with a dot
+		"/repo/../repo",
+		"/repo/./wt",
+		"/" + strings.Repeat("a", 1024), // more than 1024 bytes
+	}
+	for _, main := range rejected {
+		id := FolderID{Machine: "devbox", Folder: "/repo/wt", MainFolder: main}
+		_, err := f.reg.ResolveFolder(ctx, alice.UserID, id, true)
+		fields := requireAPIError(t, err, http.StatusUnprocessableEntity, dto.ErrorCodeFolderInvalid)
+		require.Contains(t, fields, "main_folder", main)
+		_, _, err = f.reg.LookupFolder(ctx, alice.UserID, id)
+		fields = requireAPIError(t, err, http.StatusUnprocessableEntity, dto.ErrorCodeFolderInvalid)
+		require.Contains(t, fields, "main_folder", main)
+	}
+	require.Equal(t, 0, f.count(t, "SELECT COUNT(*) FROM agents"), "a refused main folder creates nothing")
+	require.Equal(t, 0, f.count(t, "SELECT COUNT(*) FROM machines"), "and records no machine")
+
+	// An empty main folder is what a session outside a linked worktree (or an old CLI) sends.
+	_, err := f.reg.ResolveFolder(ctx, alice.UserID, FolderID{Machine: "devbox", Folder: "/repo", MainFolder: ""}, true)
+	require.NoError(t, err)
+}
+
+// SESS-01, MIG-02: an unlinked identity the first worktree session adopts is linked to the main
+// worktree, not to the worktree, so every later session of the repository finds it.
+func TestResolveFolderAdoptsForTheMainWorktree(t *testing.T) {
+	f := newFixture(t)
+	alice := f.user(t, "alice")
+	old := f.legacy(t, alice, "old", "repo")
+	a, err := f.reg.ResolveFolder(context.Background(), alice.UserID, FolderID{Machine: "devbox", Folder: "/repo/wt", MainFolder: "/repo"}, true)
+	require.NoError(t, err)
+	require.Equal(t, old, a.ID, "the handle of the main folder's base names the identity")
+	require.Equal(t, "/repo", f.storedAgent(t, old).Folder, "the identity is linked to the main worktree")
+	require.Equal(t, 1, f.adoptions(t, old))
 }
