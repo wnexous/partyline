@@ -51,25 +51,23 @@ func profileUpdate(req dto.UpdateProfileRequest) intelligences.ProfileUpdate {
 // writeProfile answers with the profile as the caller reads it.
 func (s *server) writeProfile(w http.ResponseWriter, r *http.Request, p authn.Principal, prof intelligences.Profile) error {
 	out := s.toProfile(prof)
-	if prof.Role == intelligences.RolePerson {
-		convs, err := s.Intelligences.Conversations(r.Context(), p, prof)
-		if err != nil {
-			return err
+	convs, err := s.Intelligences.Conversations(r.Context(), p, prof)
+	if err != nil {
+		return err
+	}
+	for _, c := range convs {
+		ref := dto.RoomRef{ID: c.ID, Name: c.Name}
+		if c.Kind == dto.ConversationKindDM {
+			ref.Kind = c.Kind
 		}
-		for _, c := range convs {
-			ref := dto.RoomRef{ID: c.ID, Name: c.Name}
-			if c.Kind == dto.ConversationKindDM {
-				ref.Kind = c.Kind
-			}
-			out.Conversations = append(out.Conversations, ref)
-		}
+		out.Conversations = append(out.Conversations, ref)
 	}
 	httpx.WriteJSON(w, http.StatusOK, out)
 	return nil
 }
 
 // toProfile renders a profile: the summary, the bio, what the caller may do and the details
-// of the kind of intelligence. The conversations of a person are added by writeProfile.
+// of the kind of intelligence. The conversations of a person or an AI are added by writeProfile.
 func (s *server) toProfile(prof intelligences.Profile) dto.IntelligenceProfile {
 	out := dto.IntelligenceProfile{
 		IntelligenceRef: convert.ProfileRef(prof), Bio: prof.Bio, CanEdit: prof.CanEdit, CanEndSession: prof.CanEndSession,

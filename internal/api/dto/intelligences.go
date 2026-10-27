@@ -66,8 +66,8 @@ type IntelligenceProfile struct {
 	// for AIs, the platform account for a person.
 	Apps []App `json:"apps"`
 	// Conversations lists the conversations the caller can view that involve a person (the
-	// rooms with a chat where it was seen, or where it wrote), the most recently active first
-	// (PEOP-03); empty for the other kinds.
+	// rooms with a chat where it was seen, or where it wrote) or an AI (the rooms it is a member
+	// of and its DMs), the most recently active first (PEOP-03); empty for users.
 	Conversations []RoomRef `json:"conversations"`
 	// Memberships lists, by organization name, the organizations the caller shares with a user or an AI
 	// (all of its own when the caller is the profile), with its permission and position in each and what

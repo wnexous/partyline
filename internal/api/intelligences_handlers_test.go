@@ -447,3 +447,38 @@ func TestAIProfileTellsWhoMayEndItsSession(t *testing.T) {
 		require.False(t, profileOf(t, role.Client, roles.Target.User.ID).CanEndSession, "%s: a user has no session", role.Name)
 	}
 }
+
+// PEOP-03, AD-016: an AI's profile lists the conversations the viewer can see it in - the rooms it
+// is a member of and its DMs - the most recently active first; a user's profile still lists none.
+// A viewer of the AI who is in none of its rooms sees no conversation, and one who joined a room
+// sees that room alone.
+func TestAIProfileListsTheConversationsTheCallerViewstheAIIn(t *testing.T) {
+	clock := testkit.NewClock(time.Date(2026, 10, 21, 9, 0, 0, 0, time.UTC))
+	env := testkit.New(t, testkit.WithClock(clock.Now))
+	alice, bob := env.NewUser("alice"), env.NewUser("bob")
+	id := env.NewAI(alice, "atlas")
+	room := func(name string) dto.Room {
+		clock.Advance(time.Second)
+		r := testkit.Decode[dto.Room](alice.Post("/api/v1/rooms", dto.CreateRoomRequest{Name: name}).RequireStatus(http.StatusCreated))
+		alice.Post("/api/v1/rooms/"+r.ID+"/members", dto.AddMemberRequest{Kind: dto.MemberKindAgent, MemberID: id}).RequireStatus(http.StatusCreated)
+		return r
+	}
+	roomA, roomB := room("Support"), room("Billing")
+	clock.Advance(time.Second)
+	dm := dmWith(alice, id, http.StatusCreated)
+
+	require.Equal(t, []dto.RoomRef{
+		{ID: dm.ID, Kind: dto.ConversationKindDM},
+		{ID: roomB.ID, Name: "Billing"},
+		{ID: roomA.ID, Name: "Support"},
+	}, profileOf(t, alice, id).Conversations, "the manager views the AI's rooms and DMs, the most recently active first")
+
+	// Bob sees the AI as a member of its home organization, but none of its conversations.
+	shareAI(alice, id, bob)
+	require.NotNil(t, profileOf(t, bob, id).Conversations, "a list, not null")
+	require.Empty(t, profileOf(t, bob, id).Conversations, "no room he cannot view")
+	alice.Post("/api/v1/rooms/"+roomA.ID+"/members", dto.AddMemberRequest{Kind: dto.MemberKindUser, MemberID: bob.User.ID}).RequireStatus(http.StatusCreated)
+	require.Equal(t, []dto.RoomRef{{ID: roomA.ID, Name: "Support"}}, profileOf(t, bob, id).Conversations, "the room he is in")
+
+	require.Empty(t, profileOf(t, alice, alice.User.ID).Conversations, "a user's profile lists none, as before")
+}

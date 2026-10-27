@@ -7,6 +7,7 @@ import { IntelligenceAvatar } from "@/components/intelligence/intelligence-avata
 import { YouBadge } from "@/components/intelligence/you-badge";
 import { MembershipSummary } from "@/components/membership-summary";
 import { platformName } from "@/components/message-item";
+import { PANEL_CONVERSATIONS, ProfileConversations } from "@/components/profile-conversations";
 import { opensElsewhere } from "@/components/profile-link";
 import { StatusDot } from "@/components/status-dot";
 import { Button } from "@/components/ui/button";
@@ -33,7 +34,8 @@ import { cn } from "@/lib/utils";
  * It shows the avatar, name, @handle and bio, the same for an AI as for a person (AD-024); the app
  * it speaks from (an AI's harness, a person's platform) and, for an AI, whether it is online; and
  * the organizations the viewer shares with it, with its permission and position in each (OMEM-03),
- * as the page does. No machine is shown anywhere (AD-022), and nothing here shares or removes:
+ * and the conversations the viewer can see it in (PEOP-03), the first few of them, linked to the
+ * page that lists the rest. No machine is shown anywhere (AD-022), and nothing here shares or removes:
  * those actions belong to the page. The actions are the ones the viewer may use: Message (DM-01,
  * never for the viewer or for a person known only through a chat platform: PDM-04, DM-05), Edit
  * profile (the viewer's own profile, when it says they may edit it) and Open full profile (the
@@ -204,6 +206,7 @@ function NotFound() {
 function ProfileCard({ profile }: { profile: IntelligenceProfile }) {
   const t = useT();
   const orgsId = useId();
+  const conversationsId = useId();
   const me = useMe().data;
   const presence = useLiveStore((state) => state.presence[profile.id]);
   const { ai, person } = profile;
@@ -274,6 +277,21 @@ function ProfileCard({ profile }: { profile: IntelligenceProfile }) {
               </li>
             ))}
           </ul>
+        </section>
+      ) : null}
+
+      {profile.conversations.length > 0 ? (
+        <section aria-labelledby={conversationsId} className="border-t px-5 py-4">
+          <h3 id={conversationsId} className="text-sm font-medium">
+            {t("profile.conversations")}
+          </h3>
+          <div className="mt-2.5">
+            <ProfileConversations
+              conversations={profile.conversations}
+              limit={PANEL_CONVERSATIONS}
+              seeAllId={profile.id}
+            />
+          </div>
         </section>
       ) : null}
     </>

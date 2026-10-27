@@ -5,7 +5,12 @@ import { MemberPicker } from "@/components/member-picker";
 import { ProfilePanel } from "@/components/profile-panel";
 import { RoomFiles } from "@/components/room-files";
 import { useProfilePanel, useProfilePanelStore } from "@/hooks/use-profile-panel";
-import type { IntelligenceProfile, ProfileMembership, RoomMember } from "@/lib/api/types.gen";
+import type {
+  IntelligenceProfile,
+  ProfileMembership,
+  RoomMember,
+  RoomRef,
+} from "@/lib/api/types.gen";
 import { useLiveStore } from "@/lib/live/store";
 import { apiError, json, mockApi } from "@/test/fetch";
 import {
@@ -680,6 +685,81 @@ describe("what the panel shows (PRF-03)", () => {
     const panel = await screen.findByRole("dialog", { name: "Profile" });
     expect(await within(panel).findByText("This contact is not on your line")).toBeInTheDocument();
     expect(within(panel).queryByRole("button", { name: "Message" })).toBeNull();
+  });
+});
+
+/*
+ * The conversations of a person and of an AI (PEOP-03): the panel lists the ones the server says
+ * the viewer can see, the first few of them, and sends the rest to the page.
+ */
+describe("the conversations it lists (PEOP-03)", () => {
+  const many = (n: number): RoomRef[] =>
+    Array.from({ length: n }, (_, i) => ({ id: `c${i + 1}`, name: `Room ${i + 1}` }));
+
+  async function openProfile(profile: IntelligenceProfile) {
+    mockApi({
+      "GET /me": json(200, me),
+      "GET /conversations": json(200, { items: [] }),
+      [`GET /intelligences/${profile.id}`]: json(200, profile),
+    });
+    function Somewhere() {
+      const profilePanel = useProfilePanel();
+      return (
+        <button type="button" onClick={() => profilePanel.open(profile.id)}>
+          Who is that?
+        </button>
+      );
+    }
+    const user = userEvent.setup();
+    renderWithRouter(
+      <>
+        <Somewhere />
+        <ProfilePanel />
+      </>,
+    );
+    await user.click(await screen.findByRole("button", { name: "Who is that?" }));
+    return { user, panel: await panelOf(profile.display_name) };
+  }
+
+  it("shows the ones the viewer can see, each opening its room", async () => {
+    const { panel } = await openProfile(
+      makeProfile({
+        ...atlas,
+        conversations: [
+          { id: "r1", name: "deploys" },
+          { id: "d1", name: "", kind: "dm" },
+        ],
+      }),
+    );
+    const list = within(panel).getByRole("list", { name: "Conversations" });
+    const links = within(list).getAllByRole("link");
+    expect(links.map((a) => a.getAttribute("href"))).toEqual(["/rooms/r1", "/rooms/d1"]);
+    expect(links[0]).toHaveTextContent("deploys");
+    // A direct message has no name of its own.
+    expect(links[1]).toHaveTextContent("Direct message");
+    expect(within(panel).queryByRole("link", { name: "See all" })).toBeNull();
+  });
+
+  it("shows the first five and a link to the page that lists them all", async () => {
+    const { panel } = await openProfile(makeProfile({ ...atlas, conversations: many(7) }));
+    const list = within(panel).getByRole("list", { name: "Conversations" });
+    expect(
+      within(list)
+        .getAllByRole("link")
+        .map((a) => a.getAttribute("href")),
+    ).toEqual(["/rooms/c1", "/rooms/c2", "/rooms/c3", "/rooms/c4", "/rooms/c5"]);
+    expect(within(panel).queryByText("Room 6")).toBeNull();
+    expect(within(panel).getByRole("link", { name: "See all" })).toHaveAttribute(
+      "href",
+      "/contacts/a1",
+    );
+  });
+
+  it("has no section when the viewer can see no conversation", async () => {
+    const { panel } = await openProfile(makeProfile({ ...atlas }));
+    expect(within(panel).queryByRole("list", { name: "Conversations" })).toBeNull();
+    expect(within(panel).queryByRole("heading", { name: "Conversations" })).toBeNull();
+    expect(within(panel).queryByText("No conversation you can see yet.")).toBeNull();
   });
 });
 
