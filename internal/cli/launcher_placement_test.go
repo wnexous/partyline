@@ -317,8 +317,8 @@ func TestLauncherStopsWhenTheServerRefusesThePlacement(t *testing.T) {
 	}
 }
 
-// A refusal only counts when the launch asked for a placement: the session lookup of a plain launch ignores
-// whatever an older or odd server answers (SES-01), as it always did.
+// A refusal only counts when the launch asked for a placement: a plain launch asks the server nothing, so
+// whatever an older or odd server would answer changes nothing.
 func TestLauncherIgnoresARefusalOfALaunchThatAskedForNoPlacement(t *testing.T) {
 	m := claudeLaunch(t)
 	m.terminals = map[int]bool{0: true, 2: true}
@@ -329,7 +329,7 @@ func TestLauncherIgnoresARefusalOfALaunchThatAskedForNoPlacement(t *testing.T) {
 	require.Empty(t, r.stderr)
 }
 
-// The check is best effort, like the takeover question: an answer that is not a refusal of the placement - a
+// The check is best effort: an answer that is not a refusal of the placement - a
 // server that does not answer, a token it rejects, a route it does not have, an error without a message, a
 // server error - never stops a launch. Each is the only thing different (L-018).
 func TestLauncherStartsWhenTheCheckCannotTellAboutThePlacement(t *testing.T) {
@@ -367,9 +367,9 @@ func TestLauncherStartsWhenTheCheckCannotTellAboutThePlacement(t *testing.T) {
 	}
 }
 
-// SES-01 with a placement: one request answers both questions. An accepted placement and a live session still
-// ask whether to take over, and the answer starts the harness with the takeover and the placement.
-func TestLauncherAsksOnceForThePlacementAndTheTakeover(t *testing.T) {
+// ORG-05, SESS-16: one request answers the placement question. A live session no longer asks whether
+// to take over, so the launch starts with the placement and without a takeover.
+func TestLauncherChecksThePlacementOnceWithoutAskingAboutTheLiveSession(t *testing.T) {
 	m := claudeLaunch(t)
 	m.terminals = map[int]bool{0: true, 2: true}
 	m.input = "y\n"
@@ -378,14 +378,13 @@ func TestLauncherAsksOnceForThePlacementAndTheTakeover(t *testing.T) {
 		asked.Add(1)
 		require.NoError(t, json.NewEncoder(w).Encode(sessionState("Atlas", "claude", fixedSince)))
 	})
-	m.now = func() time.Time { return fixedSince }
 
 	r := m.run(t, "claude", "--org", "acme")
 	require.Equal(t, 7, r.code, r.stderr)
-	require.Contains(t, r.stderr, "Atlas is open in another session")
-	require.Contains(t, r.env, "PARTYLINE_TAKEOVER=1")
+	require.Empty(t, r.stderr, "no takeover prompt")
+	require.NotContains(t, r.env, "PARTYLINE_TAKEOVER=1")
 	require.Contains(t, r.env, "PARTYLINE_LAUNCH_ORG=acme")
-	require.EqualValues(t, 1, asked.Load(), "one lookup serves both")
+	require.EqualValues(t, 1, asked.Load(), "one lookup answers the placement")
 }
 
 // ORG-04: --help tells how to start an AI in an organization, with a position and under a parent AI, and that the

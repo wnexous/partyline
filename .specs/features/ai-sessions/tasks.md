@@ -469,10 +469,10 @@ loop is kept but is never entered against a new server.
 - `internal/channel/identity_test.go`: `mainFolder` is sent percent-encoded only when non-empty (the T4
   test owns the header; this task only asserts the notice/identity text).
 **Done when**:
-- [ ] the launcher never reads stdin for a takeover answer
-- [ ] a second `partyline claude` in one folder starts (no exit code 1)
-- [ ] the old-channel busy path still compiles and is covered by one test
-- [ ] Gate check passes: `make check`
+- [x] the launcher never reads stdin for a takeover answer
+- [x] a second `partyline claude` in one folder starts (no exit code 1)
+- [x] the old-channel busy path still compiles and is covered by one test
+- [x] Gate check passes: `make check`
 **Tests**: unit + integration
 **Gate**: build
 **Commit**: `feat(channel): announce a parallel session instead of asking`

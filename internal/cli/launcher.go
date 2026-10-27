@@ -1,7 +1,6 @@
 package cli
 
 import (
-	"bufio"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -13,8 +12,6 @@ import (
 	"slices"
 	"strings"
 	"time"
-
-	"golang.org/x/term"
 
 	"github.com/wnexous/partyline/internal/agents"
 	"github.com/wnexous/partyline/internal/api/dto"
@@ -39,8 +36,8 @@ const launcherSessionTimeout = 2 * time.Second
 
 // launcher is one `partyline <harness>` command (HAR-03): the harness binary (named like the
 // registrar id) and the arguments put before the user's. live is whether the harness opens a
-// live session; the takeover prompt applies to those (claude, opencode, pi, omp). Codex and
-// Gemini use the tools only (design Spec issue 6).
+// live session; those can take the AI over (claude, opencode, pi, omp). Codex and Gemini use the tools
+// only (design Spec issue 6).
 type launcher struct {
 	id    string
 	extra []string
@@ -149,18 +146,6 @@ func placementOf(opts launcherOptions, io stdio) launchPlacement {
 	}
 }
 
-// takeoverChoice is what a launch does about an AI whose live session is in another process.
-type takeoverChoice int
-
-const (
-	// keepTheirs starts the harness without takeover.
-	keepTheirs takeoverChoice = iota
-	// takeOver starts the harness with PARTYLINE_TAKEOVER=1 (SES-02).
-	takeOver
-	// cancelLaunch starts nothing (SES-03).
-	cancelLaunch
-)
-
 // launch runs `partyline <harness> [--take-over] [--as <identity>] [--org <slug>] [--position <name>]
 // [--parent <@handle>] [args…]`: it replaces this process with the harness binary found on PATH, the
 // launcher's own arguments and then args unchanged, in this environment with PARTYLINE_FOLDER set to
@@ -176,9 +161,9 @@ const (
 // variables the launcher itself inherited from a session it runs in are replaced, never read: a nested
 // launch is another AI. When a placement is asked for the server is asked first whether the start would
 // be refused, and a refusal is printed and exits 1 without starting anything. A harness that opens a
-// live session (claude, opencode, pi, omp) asks first when the AI already has one elsewhere (SES-01):
-// yes takes it over with PARTYLINE_TAKEOVER=1 (SES-02), anything else exits 1 without starting
-// (SES-03); without a terminal it starts without asking (SES-07). Codex and Gemini use the tools only
+// live session (claude, opencode, pi, omp) never asks anything: it starts as another session of the AI,
+// which the channel announces (SESS-15, SESS-16), or takes the AI over with PARTYLINE_TAKEOVER=1 when
+// --take-over or PARTYLINE_TAKEOVER=1 gave the consent (SESS-13). Codex and Gemini use the tools only
 // and only announce the live session. Without the binary it exits 127; when Partyline is not
 // registered in the harness it warns once and starts anyway.
 func launch(ctx context.Context, l launcher, args []string, io stdio) int {
@@ -215,15 +200,8 @@ func launch(ctx context.Context, l launcher, args []string, io stdio) int {
 
 	takingOver := false
 	if l.live {
+		// Without --take-over the harness connects as another session: there is nothing to ask (SESS-16).
 		takingOver = opts.takeOver || strings.TrimSpace(io.getenv("PARTYLINE_TAKEOVER")) == "1"
-		if !takingOver {
-			switch askTakeover(lookup, io) {
-			case cancelLaunch:
-				return 1
-			case takeOver:
-				takingOver = true
-			}
-		}
 	} else {
 		announceToolsOnly(lookup, io)
 	}
@@ -299,28 +277,6 @@ func launchFolder(io stdio) string {
 	return sessionFolder(stdio{getenv: func(string) string { return "" }, getwd: io.getwd})
 }
 
-// askTakeover asks a person on a terminal whether to take the live session of the folder's AI
-// over (SES-01..03, SES-07): without a terminal, with no live session or when the server cannot
-// answer it starts without asking.
-func askTakeover(lookup func() sessionLookup, io stdio) takeoverChoice {
-	if !onTerminal(0, io) || !onTerminal(2, io) {
-		return keepTheirs
-	}
-	res := lookup()
-	state := res.state
-	if !res.ok || !state.Online {
-		return keepTheirs
-	}
-	fmt.Fprint(io.stderr, takeoverPrompt(state, io))
-	line, _ := bufio.NewReader(io.stdin).ReadString('\n')
-	switch answer := strings.TrimSpace(line); {
-	case strings.EqualFold(answer, "y"), strings.EqualFold(answer, "yes"):
-		return takeOver
-	default:
-		return cancelLaunch
-	}
-}
-
 // announceToolsOnly prints the one informational line of Codex and Gemini when the folder's AI
 // has a live session elsewhere (design Spec issue 6): those harnesses use the tools only, so
 // there is nothing to take over.
@@ -334,12 +290,7 @@ func announceToolsOnly(lookup func() sessionLookup, io stdio) {
 		sessionName(state), openWhere(state, io))
 }
 
-// takeoverPrompt is the SES-01 question: who is open where and since when, then the answer.
-func takeoverPrompt(state dto.SessionState, io stdio) string {
-	return fmt.Sprintf("%s is open in another session (%s). Take over? [y/N] ", sessionName(state), openWhere(state, io))
-}
-
-// openWhere describes the live session in the prompt's parentheses: its readable app and the
+// openWhere describes the live session in the tools-only line's parentheses: its readable app and the
 // start in the person's local time.
 func openWhere(state dto.SessionState, io stdio) string {
 	since := time.Now()
@@ -353,7 +304,7 @@ func openWhere(state dto.SessionState, io stdio) string {
 	return fmt.Sprintf("%s, since %s", agents.HarnessLabel(state.App), since.In(loc).Format("15:04"))
 }
 
-// sessionName is the AI's display name for the takeover lines.
+// sessionName is the AI's display name for the tools-only line.
 func sessionName(state dto.SessionState) string {
 	if state.Intelligence != nil && strings.TrimSpace(state.Intelligence.DisplayName) != "" {
 		return state.Intelligence.DisplayName
@@ -361,18 +312,8 @@ func sessionName(state dto.SessionState) string {
 	return "This intelligence"
 }
 
-// onTerminal reports whether fd is a terminal (stdio.isTerminal; golang.org/x/term for real
-// runs).
-func onTerminal(fd int, io stdio) bool {
-	isTerminal := io.isTerminal
-	if isTerminal == nil {
-		isTerminal = term.IsTerminal
-	}
-	return isTerminal(fd)
-}
-
 // sessionLookup is what GET /agent/session told the launcher. ok is false when the launcher has no
-// credentials or the server could not answer, which starts the harness without asking. refusal is the
+// credentials or the server could not answer, which starts the harness anyway. refusal is the
 // server's message when it refused the placement the launch asked for (403, 409 or 422), empty for any other
 // answer.
 type sessionLookup struct {
@@ -381,8 +322,8 @@ type sessionLookup struct {
 	refusal string
 }
 
-// newSessionLookup returns the launch's one question to the server (SES-01, ORG-05): the first call asks, the
-// others repeat the answer, so a placement check and a takeover prompt share one request.
+// newSessionLookup returns the launch's one question to the server (ORG-05, SESS-06): the first call asks,
+// the others repeat the answer, so a placement check and the tools-only line share one request.
 func newSessionLookup(ctx context.Context, l launcher, as string, place launchPlacement, io stdio) func() sessionLookup {
 	var res sessionLookup
 	asked := false

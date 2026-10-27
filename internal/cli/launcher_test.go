@@ -37,10 +37,12 @@ type launchMachine struct {
 	codex    bool // `codex mcp get partyline` finds the server
 	environ  []string
 	getenv   map[string]string
-	// input is what the person types at the takeover prompt; terminals lists the file
+	// input is an answer a launch must never read any more (SESS-16); terminals lists the file
 	// descriptors that are terminals (stdin is 0, stderr is 2).
 	input     string
 	terminals map[int]bool
+	// harnessExit is the exit code the fake harness returns (nil: 7).
+	harnessExit *int
 	// now is the launcher's clock (nil: time.Now); its location formats the session's time.
 	now func() time.Time
 	// sessionHTTP reaches GET /agent/session (nil: the launcher's own client).
@@ -181,6 +183,9 @@ func (m *launchMachine) run(t *testing.T, args ...string) launchRun {
 			r.execed, r.path, r.argv, r.env = true, path, argv, env
 			if m.afterExec != nil {
 				m.afterExec(env)
+			}
+			if m.harnessExit != nil {
+				return *m.harnessExit, nil
 			}
 			return 7, nil
 		},
@@ -368,62 +373,69 @@ func TestHelpListsTheLaunchers(t *testing.T) {
 	}
 }
 
-// SES-01, SES-02: a live AI and a terminal make the launcher print the exact prompt (display
-// name, app and the session's start in local time); yes starts the harness with
-// PARTYLINE_TAKEOVER=1 and sends the folder headers the channel sends.
-func TestLauncherAsksBeforeTakingOverALiveSession(t *testing.T) {
+// SESS-16: a live AI no longer makes the launcher ask. Whatever is ready on stdin and whichever file
+// descriptors are terminals, the harness starts as another session with no takeover; the channel
+// announces the session it became (SESS-15).
+func TestLauncherStartsWithoutAskingOnATerminal(t *testing.T) {
 	since := time.Date(2026, 10, 21, 12, 30, 0, 0, time.UTC)
-	for _, answer := range []string{"y\n", "Y\n", "yes\n", "YES\n"} {
-		t.Run(strings.TrimSpace(answer), func(t *testing.T) {
+	for name, answer := range map[string]string{
+		"yes": "y\n", "no": "n\n", "no word": "no\n", "enter": "\n", "eof": "", "other": "sure\n",
+	} {
+		t.Run(name, func(t *testing.T) {
 			m := newLaunchMachine(t)
 			m.onPath["claude"] = true
 			m.register(t, "claude")
 			m.input = answer
 			m.terminals = map[int]bool{0: true, 2: true}
-			m.now = func() time.Time { return since.In(time.FixedZone("-03", -3*3600)) }
-			m.answerSession(t, sessionState("Atlas", "claude", since), func(req *http.Request) {
-				require.Equal(t, []any{"testbox", "%2Fwork%2Facme", "claude", ""},
-					[]any{req.Header.Get(dto.HeaderMachine), req.Header.Get(dto.HeaderFolder), req.Header.Get(dto.HeaderHarness), req.Header.Get(dto.HeaderAdopt)})
+			m.answerSession(t, sessionState("Atlas", "claude", since), func(_ *http.Request) {
+				t.Error("a plain launch asks the server nothing")
 			})
 
 			r := m.run(t, "claude")
-			require.Equal(t, 7, r.code)
-			require.Equal(t, "Atlas is open in another session (Claude Code, since 09:30). Take over? [y/N] ", r.stderr)
-			require.True(t, r.execed, "the harness starts after yes")
-			require.Contains(t, r.env, "PARTYLINE_TAKEOVER=1")
-			require.Contains(t, r.env, "PARTYLINE_FOLDER=/work/acme")
-			require.NotContains(t, r.env, "PARTYLINE_FOLDER=/inherited/folder")
+			require.Equal(t, 7, r.code, r.stderr)
+			require.True(t, r.execed, "stdin is never read for a takeover answer")
+			require.Empty(t, r.stderr, "the launcher neither prompts nor reports the live session")
+			require.NotContains(t, r.env, "PARTYLINE_TAKEOVER=1")
 		})
 	}
 }
 
-// SES-03: no, enter, EOF and any other answer exit 1 without starting the harness (each cancel
-// input is its own case).
-func TestLauncherStopsWhenThePersonDeclines(t *testing.T) {
-	since := time.Date(2026, 10, 21, 12, 30, 0, 0, time.UTC)
-	cases := map[string]string{
-		"no": "n\n", "no word": "no\n", "enter": "\n", "eof": "", "other": "sure\n",
-	}
-	for name, input := range cases {
-		t.Run(name, func(t *testing.T) {
-			m := newLaunchMachine(t)
-			m.onPath["claude"] = true
-			m.register(t, "claude")
-			m.input = input
-			m.terminals = map[int]bool{0: true, 2: true}
-			m.answerSession(t, sessionState("Atlas", "claude", since), nil)
+// SESS-16: the second `partyline claude` in the folder of a live AI starts, with no takeover and no
+// prompt, and the AI keeps both sessions (the channel announces the label it got, SESS-15).
+func TestLauncherStartsASecondSessionInOneFolder(t *testing.T) {
+	start := time.Date(2026, 10, 21, 12, 30, 0, 0, time.UTC)
+	env := testkit.New(t, testkit.WithClock(func() time.Time { return start }))
+	alice := env.NewUser("alice")
+	_, secret, err := env.App.Users.CreateToken(context.Background(), alice.User.ID, users.TokenInput{Kind: dto.TokenKindAgent, Name: "laptop"})
+	require.NoError(t, err)
+	folder := testkit.Folder{Machine: "testbox", Path: "/work/acme", Harness: "claude"}
+	holder, resp := alice.WithBearer(secret).DialFolder(folder)
+	require.NotNil(t, holder, "upgrade refused: %d %s", resp.Status, resp.Body)
+	holder.Welcome(chanWait)
 
-			r := m.run(t, "claude")
-			require.Equal(t, 1, r.code)
-			require.False(t, r.execed, "the harness is not started")
-			require.Equal(t, "Atlas is open in another session (Claude Code, since "+
-				since.In(time.Local).Format("15:04")+"). Take over? [y/N] ", r.stderr)
-		})
-	}
+	m := newLaunchMachine(t)
+	m.onPath["claude"] = true
+	m.register(t, "claude")
+	m.input = "n\n"
+	m.terminals = map[int]bool{0: true, 2: true}
+	m.saveConfig(t, env.URL, secret)
+	code := 0
+	m.harnessExit = &code
+
+	r := m.run(t, "claude")
+	require.Equal(t, 0, r.code, r.stderr)
+	require.True(t, r.execed, "a second launch in the same folder starts")
+	require.Empty(t, r.stderr, "no prompt and no exit 1")
+	require.NotContains(t, r.env, "PARTYLINE_TAKEOVER=1")
+
+	second, resp := alice.WithBearer(secret).DialFolder(folder)
+	require.NotNil(t, second, "upgrade refused: %d %s", resp.Status, resp.Body)
+	require.Equal(t, "claude-2", second.Welcome(chanWait).Session.Label, "the second session is parallel")
+	require.NoError(t, holder.Closed(100*time.Millisecond), "the principal session is left alone")
 }
 
-// SES-07: without a terminal on stdin and stderr the launcher does not prompt and starts
-// without takeover; the channel reports busy.
+// SESS-16: without a terminal on stdin and stderr there is nothing to skip either: the harness starts
+// with no takeover, exactly as on a terminal.
 func TestLauncherDoesNotAskWithoutATerminal(t *testing.T) {
 	since := time.Date(2026, 10, 21, 12, 30, 0, 0, time.UTC)
 	for name, terminals := range map[string]map[int]bool{
@@ -447,7 +459,7 @@ func TestLauncherDoesNotAskWithoutATerminal(t *testing.T) {
 	}
 }
 
-// SES-01: an identity without a live session starts without a prompt, even on a terminal.
+// SESS-16: an identity without a live session starts without a prompt, even on a terminal.
 func TestLauncherDoesNotAskWhenTheIdentityIsFree(t *testing.T) {
 	m := newLaunchMachine(t)
 	m.onPath["claude"] = true
@@ -462,9 +474,9 @@ func TestLauncherDoesNotAskWhenTheIdentityIsFree(t *testing.T) {
 	require.NotContains(t, r.env, "PARTYLINE_TAKEOVER=1")
 }
 
-// SES-07, SES-02: --take-over (anywhere among the leading flags) and PARTYLINE_TAKEOVER=1 are
-// consent: the launcher takes over without asking or contacting the server and strips the flag
-// from the harness's arguments.
+// SESS-13, SESS-16: --take-over (anywhere among the leading flags) and PARTYLINE_TAKEOVER=1 are
+// the whole consent: the launcher takes over without asking and strips the flag from the harness's
+// arguments.
 func TestLauncherTakesOverWithoutAsking(t *testing.T) {
 	since := time.Date(2026, 10, 21, 12, 30, 0, 0, time.UTC)
 	for name, setup := range map[string]func(m *launchMachine){
@@ -494,7 +506,7 @@ func TestLauncherTakesOverWithoutAsking(t *testing.T) {
 	}
 }
 
-// SES-01: an unreachable server makes the launcher start the harness without asking.
+// SESS-16: a plain launch asks the server nothing, so an unreachable one changes nothing.
 func TestLauncherStartsWithoutAskingWhenTheServerIsUnreachable(t *testing.T) {
 	m := newLaunchMachine(t)
 	m.onPath["claude"] = true
@@ -510,8 +522,8 @@ func TestLauncherStartsWithoutAskingWhenTheServerIsUnreachable(t *testing.T) {
 	require.NotContains(t, r.env, "PARTYLINE_TAKEOVER=1")
 }
 
-// SES-01: a server that does not answer within 2 seconds makes the launcher start the harness
-// without asking.
+// ORG-05: a placement check that does not answer within 2 seconds never holds the person up: the
+// harness starts and the session reports the problem itself.
 func TestLauncherGivesUpOnASlowServer(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(_ http.ResponseWriter, r *http.Request) {
 		<-r.Context().Done() // the launcher gave up
@@ -525,7 +537,7 @@ func TestLauncherGivesUpOnASlowServer(t *testing.T) {
 	m.saveConfig(t, srv.URL, launchToken)
 
 	started := time.Now()
-	r := m.run(t, "claude")
+	r := m.run(t, "claude", "--org", "acme")
 	elapsed := time.Since(started)
 	require.Equal(t, 7, r.code, r.stderr)
 	require.Empty(t, r.stderr)
@@ -567,9 +579,9 @@ func TestToolsOnlyLaunchersAnnounceTheLiveSession(t *testing.T) {
 	}
 }
 
-// SES-02: the launcher's yes sets PARTYLINE_TAKEOVER=1, and the harness's channel (simulated
-// here) then takes the AI over: the old session is closed 4002 taken_over and the new one holds
-// the identity.
+// SESS-13, SESS-16: --take-over is the whole consent: the launcher starts the harness with
+// PARTYLINE_TAKEOVER=1 and asks nothing, and the harness's channel (simulated here) then takes the AI
+// over: the old session is closed 4002 taken_over and the new one holds the identity.
 func TestLauncherTakesOverTheLiveSessionEndToEnd(t *testing.T) {
 	start := time.Date(2026, 10, 21, 12, 30, 0, 0, time.UTC)
 	env := testkit.New(t, testkit.WithClock(func() time.Time { return start }))
@@ -584,9 +596,7 @@ func TestLauncherTakesOverTheLiveSessionEndToEnd(t *testing.T) {
 	m := newLaunchMachine(t)
 	m.onPath["claude"] = true
 	m.register(t, "claude")
-	m.input = "y\n"
 	m.terminals = map[int]bool{0: true, 2: true}
-	m.now = func() time.Time { return start.In(time.FixedZone("-03", -3*3600)) }
 	m.saveConfig(t, env.URL, secret)
 	var taker *testkit.AgentConn
 	m.afterExec = func(environ []string) {
@@ -597,9 +607,9 @@ func TestLauncherTakesOverTheLiveSessionEndToEnd(t *testing.T) {
 		taker = conn
 	}
 
-	r := m.run(t, "claude")
+	r := m.run(t, "claude", "--take-over")
 	require.Equal(t, 7, r.code, r.stderr)
-	require.Equal(t, "Acme is open in another session (Claude Code, since 09:30). Take over? [y/N] ", r.stderr)
+	require.Empty(t, r.stderr, "no prompt: --take-over is the consent")
 	require.NotNil(t, taker)
 	require.Equal(t, websocket.StatusCode(4002), websocket.CloseStatus(holder.Closed(chanWait)), "the old session is closed taken_over")
 	require.NoError(t, taker.Closed(100*time.Millisecond), "the new session is left alone")
