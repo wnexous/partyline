@@ -140,6 +140,16 @@ func subscribe(t *testing.T, env *testkit.Env, userID, endpoint string) db.PushS
 	return sub
 }
 
+// setLocale writes the account's language, which picks the language of the server-written push
+// texts.
+func setLocale(t *testing.T, env *testkit.Env, userID, locale string) {
+	t.Helper()
+	ctx := context.Background()
+	require.NoError(t, env.App.Store.WithTx(ctx, func(q *db.Queries) error {
+		return q.SetUserLocale(ctx, db.SetUserLocaleParams{Locale: locale, ID: userID})
+	}))
+}
+
 // setPushGroups writes the account's group notification setting.
 func setPushGroups(t *testing.T, env *testkit.Env, userID, mode string) {
 	t.Helper()
@@ -397,6 +407,42 @@ func TestEnqueueTest(t *testing.T) {
 	}
 	require.ElementsMatch(t, []string{phone.Endpoint, desktop.Endpoint}, endpoints)
 	require.Equal(t, 0, n.EnqueueTest(context.Background(), nil), "no subscription queues nothing")
+}
+
+// PUSH-15: the test notification follows the account's language; an empty or unsupported locale
+// reads English.
+func TestEnqueueTestFollowsTheRecipientsLanguage(t *testing.T) {
+	tests := []struct {
+		name   string
+		locale string
+		want   string
+	}{
+		{"pt-BR", "pt-BR", "As notificações estão ligadas"},
+		{"en", "en", "Notifications are on"},
+		{"an empty locale reads English", "", "Notifications are on"},
+		{"an unsupported locale reads English", "fr-FR", "Notifications are on"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			env := testkit.New(t, testkit.WithoutPush())
+			bob := account(t, env, "bob", "Bob")
+			if tt.locale != "" {
+				setLocale(t, env, bob.User.ID, tt.locale)
+			}
+			sub := subscribe(t, env, bob.User.ID, "https://push.example.com/send/phone")
+			r := &recorder{}
+			n := newNotifier(t, env, r)
+			startNotifier(t, n)
+
+			require.Equal(t, 1, n.EnqueueTest(context.Background(), []db.PushSubscription{sub}))
+			jobs := r.await(t, 1)
+			require.Len(t, jobs, 1)
+			require.Equal(t, tt.want, jobs[0].payload.Preview)
+			require.Equal(t, "partyline", jobs[0].payload.Title)
+			require.Equal(t, "test", jobs[0].payload.Tag)
+			noMore(t, r, 1)
+		})
+	}
 }
 
 // A Lagged marker never panics the notifier and never produces a notification (PUSH-14).
