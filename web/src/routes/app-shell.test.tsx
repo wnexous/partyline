@@ -40,16 +40,18 @@ describe("authenticated shell", () => {
       "page",
     );
     for (const name of [
-      "Conversations",
-      "Contacts",
-      "Connectors",
+      "My account",
       "Identities",
       "API tokens",
-      "My account",
+      "Devices",
+      "Conversations",
+      "Contacts",
+      "Organizations",
     ]) {
       expect(within(menu).getByRole("menuitem", { name })).toBeInTheDocument();
     }
     expect(within(menu).queryByRole("menuitem", { name: "Settings" })).toBeNull();
+    expect(within(menu).queryByRole("menuitem", { name: "Connectors" })).toBeNull();
     expect(within(menu).queryByRole("menuitem", { name: "Users" })).toBeNull();
     expect(within(menu).queryByText("Admin")).toBeNull();
   });

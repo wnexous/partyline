@@ -107,6 +107,48 @@ describe("command palette (UI-22)", () => {
     expect(await palette()).toBeInTheDocument();
   });
 
+  it("lists the pages from lib/nav and opens a connection under its organization (SET-03, SET-11)", async () => {
+    api();
+    const user = userEvent.setup();
+    const { router } = renderRoute("/");
+    await screen.findByRole("list", { name: "Conversations" });
+
+    const jump = async (query: string) => {
+      await user.keyboard("{Control>}k{/Control}");
+      const dialog = await palette();
+      await within(dialog).findByRole("option", { name: /general/ });
+      await user.type(within(dialog).getByRole("combobox"), query);
+      await waitFor(() => expect(options(dialog)).toHaveLength(1));
+      await user.keyboard("{Enter}");
+      await waitFor(() => expect(screen.queryByRole("dialog", { name: "Go to" })).toBeNull());
+    };
+
+    await user.keyboard("{Control>}k{/Control}");
+    const dialog = await palette();
+    await within(dialog).findByRole("option", { name: /general/ });
+    const all = options(dialog);
+    for (const name of [
+      "My account",
+      "Identities",
+      "API tokens",
+      "Devices",
+      "Conversations",
+      "Contacts",
+      "Organizations",
+    ]) {
+      expect(all).toContain(name);
+    }
+    // The old top-level destinations are pages of the account or of an organization now.
+    expect(all).not.toContain("Connectors");
+    await user.keyboard("{Escape}");
+    await waitFor(() => expect(screen.queryByRole("dialog", { name: "Go to" })).toBeNull());
+
+    await jump("contacts");
+    await waitFor(() => expect(router.state.location.pathname).toBe("/contacts"));
+    await jump("ops-bot");
+    await waitFor(() => expect(router.state.location.pathname).toBe("/orgs/o1/connections/k1"));
+  });
+
   it("draws each conversation with its face: a group's photo or initials, a DM's counterpart (GAV-07)", async () => {
     vi.stubGlobal("Image", LoadedImage);
     const photo = "/api/v1/rooms/r1/avatar?v=abc";

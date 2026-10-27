@@ -34,9 +34,8 @@ export const ptBR: Dictionary = {
   "nav.orgMenu": "Páginas de {org}",
   "nav.admin": "Administração",
   "nav.adminUsers": "Usuários",
-  "nav.groupWork": "Trabalho",
-  "nav.groupConnections": "Conexões",
   "nav.groupAccount": "Conta",
+  "nav.groupGoTo": "Ir para",
   "nav.toggleSidebar": "Mostrar ou ocultar a barra lateral",
 
   "shell.userMenu": "Menu da conta",

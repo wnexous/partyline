@@ -60,3 +60,25 @@ and drops no assertion:
 The switcher's existing cases (picker, counts, roles, storage, "New organization") are unchanged
 and still pass; a new case asserts the full switchboard no longer lists the pages, and another
 that the gear is absent from a phone's top bar.
+
+## T4: the account menu's groups
+
+Regrouping `NAV_GROUPS` changes what the avatar's menu lists, so one test file outside the task's
+**Also** line had to follow SET-03. Its change replaces expectations the acceptance criterion
+retires and drops no assertion:
+
+- `web/src/routes/messenger-shell.test.tsx` — the header menu's exact destination list now reads the
+  two groups in the design's order (My account, Identities, API tokens, Devices, Conversations,
+  Contacts, Organizations), with no "Connectors" row; "opens the page of the chosen entry" clicks
+  "My account" and still asserts the path, because the old destination is no longer in the menu.
+
+`web/src/components/command-menu.test.tsx` is named by the task's tests-first list but not by its
+**Also** line; it gains the palette case that the page list is the seven new destinations and a
+connection opens under its own organization.
+
+The `nav.connectors` string stays in both dictionaries although no row uses it: the task removes
+only the two group keys, and the palette's own heading (`palette.connectors`) keeps the product's
+word. The parity test covers both dictionaries.
+
+The `Done when` boxes of T4 were already checked in `tasks.md` at the base, as T1's were, so the
+commit carries no change to that file.

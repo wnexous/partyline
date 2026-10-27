@@ -135,19 +135,18 @@ describe("header menu (LAY-06)", () => {
       .filter((item) => item.hasAttribute("href"))
       .map((item) => [item.textContent, item.getAttribute("href")]);
 
-  it("reaches organizations, contacts, connectors, linked accounts, devices, tokens and settings, and no admin page for a member", async () => {
+  it("reaches the account's pages, conversations, contacts and organizations, and no admin page for a member", async () => {
     api("member");
     renderRoute("/");
     const menu = await openMenu();
     expect(destinations(menu)).toEqual([
-      ["Conversations", "/"],
-      ["Organizations", "/orgs"],
-      ["Contacts", "/contacts"],
-      ["Connectors", "/connectors"],
-      ["Identities", "/identities"],
-      ["Devices", "/devices"],
-      ["API tokens", "/tokens"],
       ["My account", "/account"],
+      ["Identities", "/identities"],
+      ["API tokens", "/tokens"],
+      ["Devices", "/devices"],
+      ["Conversations", "/"],
+      ["Contacts", "/contacts"],
+      ["Organizations", "/orgs"],
     ]);
   });
 
@@ -167,9 +166,9 @@ describe("header menu (LAY-06)", () => {
     const user = userEvent.setup();
     const { router } = renderRoute("/");
     const menu = await openMenu();
-    await user.click(within(menu).getByRole("menuitem", { name: "Connectors" }));
-    // The old address still resolves to the current organization's connections (SET-06).
-    await waitFor(() => expect(router.state.location.pathname).toBe("/orgs/o1/connections"));
+    await user.click(within(menu).getByRole("menuitem", { name: "My account" }));
+    // The account's own page is one click from the menu (SET-03).
+    await waitFor(() => expect(router.state.location.pathname).toBe("/account"));
   });
 
   it("shows the person's name and handle at the top of the menu", async () => {

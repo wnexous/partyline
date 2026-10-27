@@ -35,9 +35,8 @@ export const en = {
   "nav.orgMenu": "Pages of {org}",
   "nav.admin": "Admin",
   "nav.adminUsers": "Users",
-  "nav.groupWork": "Work",
-  "nav.groupConnections": "Connections",
   "nav.groupAccount": "Account",
+  "nav.groupGoTo": "Go to",
   "nav.toggleSidebar": "Toggle sidebar",
 
   "shell.userMenu": "Account menu",
