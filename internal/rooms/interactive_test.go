@@ -146,6 +146,23 @@ func TestQuestionWizard(t *testing.T) {
 	requireInvalidField(t, err, "quick_replies")
 }
 
+// QR-01, QR-02, QR-05: a post carries at most one of the question and answer shapes; a second
+// shape names answers, or the first question field when both question shapes are set.
+func TestOnePostCarriesOneShape(t *testing.T) {
+	wizard := &dto.WizardRequest{Questions: []dto.WizardQuestionRequest{{Title: "Quando?", Options: []string{"Sim"}}}}
+	answers := &dto.AnswerSubmission{QuickReply: "r1"}
+
+	requireInvalidField(t, checkPostShapes([]string{"Sim"}, nil, answers), "answers")
+	requireInvalidField(t, checkPostShapes(nil, wizard, answers), "answers")
+	requireInvalidField(t, checkPostShapes([]string{"Sim"}, wizard, nil), "quick_replies")
+	requireInvalidField(t, checkPostShapes([]string{"Sim"}, wizard, answers), "answers")
+
+	require.NoError(t, checkPostShapes([]string{"Sim"}, nil, nil))
+	require.NoError(t, checkPostShapes(nil, wizard, nil))
+	require.NoError(t, checkPostShapes(nil, nil, answers))
+	require.NoError(t, checkPostShapes(nil, nil, nil))
+}
+
 // QR-06: a quick reply answer stores the chosen label, not its id, and refuses an id the question
 // does not offer or an answer of the other shape.
 func TestAnswersQuickReply(t *testing.T) {
@@ -240,6 +257,13 @@ func TestAnswersWizard(t *testing.T) {
 	require.Equal(t, []string{"Na sexta"}, a.Answers[0].Values)
 	require.Equal(t, "depois das 10h", a.Answers[0].Text)
 	require.Equal(t, "Quando?: Na sexta (depois das 10h)", answerText(a))
+
+	// A text note is one line, like a label or a title; a space is not a line break.
+	requireRefusedWizardAnswer(t, textQuestion, dto.AnswerItem{QuestionID: "q1", Text: "a\nb"})
+	requireRefusedWizardAnswer(t, textQuestion, dto.AnswerItem{QuestionID: "q1", Text: "a\rb"})
+	a, err = answersFor(textQuestion, &dto.AnswerSubmission{Items: []dto.AnswerItem{{QuestionID: "q1", Text: "a b"}}})
+	require.NoError(t, err)
+	require.Equal(t, "a b", a.Answers[0].Text)
 
 	// A multi question needs at least one option, even with a text.
 	requireRefusedWizardAnswer(t, q,

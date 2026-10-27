@@ -63,6 +63,81 @@ func TestPostAQuestionStoresTheCanonicalDocument(t *testing.T) {
 	require.Equal(t, 1, created, "one MessageCreated")
 }
 
+// QR-01, QR-02, QR-05: a post that carries more than one shape is refused on answers (or the first
+// question field when both question shapes are set) and writes nothing.
+func TestOneShapePerPost(t *testing.T) {
+	ctx := context.Background()
+	f := newFixture(t)
+	alice := f.user(t, "alice", dto.RoleMember)
+	r := f.room(t, alice, "ops")
+	q, err := f.svc.Post(ctx, alice, r.ID, PostInput{Text: "Deploy?", QuickReplies: []string{"Sim", "Não"}})
+	require.NoError(t, err)
+	before := f.count(t, "SELECT COUNT(*) FROM messages")
+
+	_, err = f.svc.Post(ctx, alice, r.ID, PostInput{
+		ReplyTo: q.ID, QuickReplies: []string{"Sim"},
+		Answers: &dto.AnswerSubmission{QuickReply: "r1"},
+	})
+	requireInvalidField(t, err, "answers")
+	require.Equal(t, before, f.count(t, "SELECT COUNT(*) FROM messages"), "nothing is stored")
+
+	_, err = f.svc.Post(ctx, alice, r.ID, PostInput{
+		Text: "Planning", QuickReplies: []string{"Sim"},
+		Wizard: &dto.WizardRequest{Questions: []dto.WizardQuestionRequest{{Title: "Quando?", Options: []string{"Amanhã"}}}},
+	})
+	requireInvalidField(t, err, "quick_replies")
+	require.Equal(t, before, f.count(t, "SELECT COUNT(*) FROM messages"), "nothing is stored")
+}
+
+// QR-05: an answer checks that reply_to names a message of the room before it reads the question,
+// so a message of another room is the same reply_to error a plain reply gets, never a shape error.
+func TestAnAnswerChecksTheRoomFirst(t *testing.T) {
+	ctx := context.Background()
+	f := newFixture(t)
+	alice := f.user(t, "alice", dto.RoleMember)
+	bob := f.colleague(t, f.orgOf(t, alice), "bob", orgs.PermissionMember)
+	ops := f.room(t, alice, "ops")
+	other := f.room(t, alice, "other")
+	f.addMember(t, alice, ops.ID, dto.MemberKindUser, bob.UserID)
+	foreign, err := f.svc.Post(ctx, alice, other.ID, PostInput{Text: "Deploy?", QuickReplies: []string{"Sim"}})
+	require.NoError(t, err)
+
+	_, plainErr := f.svc.Post(ctx, bob, ops.ID, PostInput{ReplyTo: foreign.ID, Text: "quoted"})
+	_, answerErr := f.svc.Post(ctx, bob, ops.ID, PostInput{
+		ReplyTo: foreign.ID, Answers: &dto.AnswerSubmission{QuickReply: "r1"},
+	})
+	requireInvalidField(t, plainErr, "reply_to")
+	requireInvalidField(t, answerErr, "reply_to")
+	require.Equal(t, plainErr.Error(), answerErr.Error(), "the same room error as a plain reply")
+}
+
+// QR-05, QR-09: the asker comes before deletion, so the asker cannot answer their own deleted
+// question; a deleted target answered by anyone else stays a conflict. A deleted target keeps no
+// interactive document (QR-04), so a deleted question and a deleted non-question are identical;
+// both stay 409 (see the feature's contract notes).
+func TestAnAnswerChecksTheAskerBeforeDeletion(t *testing.T) {
+	ctx := context.Background()
+	f := newFixture(t)
+	alice := f.user(t, "alice", dto.RoleMember)
+	bob := f.colleague(t, f.orgOf(t, alice), "bob", orgs.PermissionMember)
+	r := f.room(t, alice, "ops")
+	f.addMember(t, alice, r.ID, dto.MemberKindUser, bob.UserID)
+
+	question, err := f.svc.Post(ctx, alice, r.ID, PostInput{Text: "Deploy?", QuickReplies: []string{"Sim", "Não"}})
+	require.NoError(t, err)
+	_, err = f.svc.DeleteMessage(ctx, alice, r.ID, question.ID)
+	require.NoError(t, err)
+	_, err = f.svc.Post(ctx, alice, r.ID, PostInput{ReplyTo: question.ID, Answers: &dto.AnswerSubmission{QuickReply: "r1"}})
+	require.ErrorIs(t, err, access.ErrForbidden, "the asker's own deleted question is 403")
+
+	plain, err := f.svc.Post(ctx, alice, r.ID, PostInput{Text: "plain"})
+	require.NoError(t, err)
+	_, err = f.svc.DeleteMessage(ctx, alice, r.ID, plain.ID)
+	require.NoError(t, err)
+	_, err = f.svc.Post(ctx, bob, r.ID, PostInput{ReplyTo: plain.ID, Answers: &dto.AnswerSubmission{QuickReply: "r1"}})
+	require.ErrorIs(t, err, ErrMessageDeleted, "a deleted non-question stays 409")
+}
+
 // QR-05: an answer is a reply that carries the structured answer and its rendered text.
 func TestAnswerAQuickReply(t *testing.T) {
 	ctx := context.Background()

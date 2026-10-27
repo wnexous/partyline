@@ -12,12 +12,12 @@ import (
 )
 
 // checkAnswer applies the rules that need the stored message before an answer is inserted (QR-05,
-// QR-08, QR-09): the reply_to is set, the request carries no text and no files, the target carries a
-// question, the caller is not its author, the question is not deleted and the caller has no live
-// answer to it. It is called inside the post transaction, so the checks and the insert see the same
-// rows. A message that does not carry an answer passes untouched.
+// QR-08, QR-09): the reply_to is set, the request carries no text and no files, the target is a
+// message of the room, the caller is not its author, it is not deleted, it carries a question and
+// the caller has no live answer to it. It is called inside the post transaction, so the checks and
+// the insert see the same rows. A message that does not carry an answer passes untouched.
 func (s *Service) checkAnswer(ctx context.Context, q *db.Queries, roomID string, d draft) error {
-	if d.answers == "" {
+	if !d.answering {
 		return nil
 	}
 	check := validation.Check{}
@@ -45,6 +45,13 @@ func (s *Service) checkAnswer(ctx context.Context, q *db.Queries, roomID string,
 		check.Add("answers", "must answer a message of the room")
 		return check.Err()
 	}
+	// The author check comes before deletion, so the asker may not answer their own question even
+	// after deleting it; a deleted target is then refused before its shape is read. Deleting
+	// clears interactive_json, so a deleted question and a deleted non-question cannot be told
+	// apart (QR-05, QR-09; see the feature's contract notes).
+	if msg.AuthorIid == d.authorIID {
+		return access.ErrForbidden
+	}
 	if msg.DeletedAt.Valid {
 		return ErrMessageDeleted
 	}
@@ -52,9 +59,6 @@ func (s *Service) checkAnswer(ctx context.Context, q *db.Queries, roomID string,
 	if question == nil {
 		check.Add("answers", "must answer a message that asks a question")
 		return check.Err()
-	}
-	if msg.AuthorIid == d.authorIID {
-		return access.ErrForbidden
 	}
 	n, err := q.CountAnswersByAuthor(ctx, db.CountAnswersByAuthorParams{
 		QuestionID: d.replyTo, AuthorIid: d.authorIID,
