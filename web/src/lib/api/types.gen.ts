@@ -457,6 +457,15 @@ export const UsernamePattern = "^[a-z0-9_-]{3,32}$";
  */
 export const AgentNamePattern = "^[a-z0-9][a-z0-9._-]{0,47}$";
 /**
+ * SessionLabelPattern is the regular expression every session label matches: the slug of a
+ * worktree folder or a numbered parallel session, so a hyphen never starts it (SESS-11).
+ */
+export const SessionLabelPattern = "^[a-z0-9][a-z0-9-]{0,39}$";
+/**
+ * MaxSessionLabel is the longest session label, in characters (SESS-11).
+ */
+export const MaxSessionLabel = 40;
+/**
  * PasswordMinLength is the minimum password length in characters.
  */
 export const PasswordMinLength = 10;
