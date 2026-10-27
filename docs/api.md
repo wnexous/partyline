@@ -65,11 +65,12 @@ organization ignoring case, and at most one parent). A member holds at most one 
 **A manages B in organization X** exactly when both are members of X and one of these holds:
 
 1. A's position is strictly above B's.
-2. B holds no position, and A created B or manages B's creator.
+2. A created B or manages B's creator, whatever positions A and B hold.
 3. B is a guest, and A invited B or manages B's inviter.
 
 Whoever manages B may edit B's profile and settings, end B's live session and move B between
-positions below A's own. Nobody manages an identity at the same level or above.
+positions below A's own. Nobody manages an identity at the same level or above, except that a
+creator always manages what it created (AD-029): a position only adds managers.
 
 ### Deleting an identity
 

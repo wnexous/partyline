@@ -100,12 +100,13 @@ func (c *Chart) HasCycle(positionID, newParentID string) bool {
 	return positionID == newParentID || c.Above(positionID, newParentID)
 }
 
-// answersTo lists the members that m is the responsibility of, other than through positions: the
-// creator of a member without a position and the inviter of a guest. An identity that is not a member
-// is not listed, which breaks the chain there.
+// answersTo lists the members that m is the responsibility of, other than through positions: its
+// creator and, for a guest, its inviter. The creator link holds whether or not m holds a position
+// (AD-029): a position only adds managers, it never removes the creator. An identity that is not a
+// member is not listed, which breaks the chain there.
 func (c *Chart) answersTo(m Member) []string {
 	var out []string
-	if m.PositionID == "" && m.CreatorIID != "" {
+	if m.CreatorIID != "" {
 		if _, ok := c.Members[m.CreatorIID]; ok {
 			out = append(out, m.CreatorIID)
 		}
@@ -145,11 +146,11 @@ func (c *Chart) walk(b string, visit func(m Member, steps int) bool) {
 	}
 }
 
-// Manages reports whether a manages b in this organization (POS-03, AD-017). Both must be members and
-// differ. Then a manages b when any of these holds:
+// Manages reports whether a manages b in this organization (POS-03, AD-017, AD-029). Both must be
+// members and differ. Then a manages b when any of these holds:
 //   - a's position is strictly above b's;
-//   - b holds no position and a is b's creator or manages b's creator, following the creators
-//     upward (a positionless creator is itself managed by its creator);
+//   - a is b's creator or manages b's creator, following the creators upward, whatever positions
+//     either holds (a creator always manages what it created; its own managers do too);
 //   - b is a guest and a is b's inviter or manages b's inviter, following the inviters upward.
 //
 // The chain stops at an identity that is not a member, and a cycle ends it. The admin permission

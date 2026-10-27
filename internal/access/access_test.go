@@ -708,10 +708,10 @@ func newDMCast(t *testing.T, f *fixture) dmCast {
 }
 
 // DM-08, AD-016, POS-03: a DM is posted to by its two participants and viewed by whoever manages one of
-// its AI participants in that AI's home organization. Everybody else has none: not the AI's host, not the
-// creator of an AI that holds a position, not a peer, not an admin without a position, not a manager in an
-// organization that is not the AI's home, not a plain member of the organization, not an admin of the
-// instance. Nobody manages a DM.
+// its AI participants in that AI's home organization. Everybody else has none: not the AI's host, not a
+// peer, not an admin without a position, not a manager in an organization that is not the AI's home, not a
+// plain member of the organization, not an admin of the instance. A creator manages the AI it created even
+// when it holds a position (AD-029). Nobody manages a DM.
 func TestDMRoomLevel(t *testing.T) {
 	f := newFixture(t)
 	c := newDMCast(t, f)
@@ -731,7 +731,7 @@ func TestDMRoomLevel(t *testing.T) {
 		{withAtlas, c.lead, "the holder of the position above the AI's", dto.LevelView},
 		{withAtlas, c.boss, "the holder of a position two levels above", dto.LevelView},
 		{withAtlas, c.peer, "a holder of the AI's own position", None},
-		{withAtlas, c.bob, "the creator of an AI that holds a position", None},
+		{withAtlas, c.bob, "the creator of an AI that holds a position", dto.LevelView},
 		{withAtlas, c.host, "the user that hosts the AI", None},
 		{withAtlas, c.admin, "an admin of the organization without a position", None},
 		{withAtlas, c.plain, "a member of the organization with no relation to the AI", None},
@@ -768,7 +768,7 @@ func TestDMRoomLevel(t *testing.T) {
 
 // DLV-09, DM-08, POS-03: a group is resumed by whoever manages it. Nobody manages a DM, so a DM is resumed by
 // the people who can see it: its human participants and whoever manages one of its AI participants in that AI's
-// home organization - the creator of an AI that holds no position, the holders of the positions above it.
+// home organization - its creator, whatever position either holds, and the holders of the positions above it.
 // Whoever cannot see the DM does not, the AI's host and the admins of the organization and of the instance
 // included, and neither does a member of a group who only posts.
 func TestCanResume(t *testing.T) {
@@ -791,7 +791,7 @@ func TestCanResume(t *testing.T) {
 		{withAtlas, c.lead, "the holder of the position above the AI's", true},
 		{withAtlas, c.boss, "the holder of a position two levels above", true},
 		{withAtlas, c.peer, "a holder of the AI's own position", false},
-		{withAtlas, c.bob, "the creator of an AI that holds a position", false},
+		{withAtlas, c.bob, "the creator of an AI that holds a position", true},
 		{withAtlas, c.host, "the user that hosts the AI", false},
 		{withAtlas, c.admin, "an admin of the organization without a position", false},
 		{withAtlas, c.plain, "a member of the organization with no relation to the AI", false},
