@@ -50,6 +50,7 @@ const atlasProfile: IntelligenceProfile = {
     folder_label: "~/atlas",
     app: "claude",
     online: true,
+    sessions: [],
     my_level: "manage",
   },
 };

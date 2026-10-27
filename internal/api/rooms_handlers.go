@@ -11,6 +11,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/wnexous/partyline/internal/agents"
 	"github.com/wnexous/partyline/internal/api/convert"
 	"github.com/wnexous/partyline/internal/api/dto"
 	"github.com/wnexous/partyline/internal/api/httpx"
@@ -39,7 +40,17 @@ func (s *server) roomRoutes(mux *http.ServeMux) {
 	s.handle(mux, "GET /api/v1/attachments/{id}", authed(s.downloadAttachment))
 }
 
-// toMember renders a member; agent members carry their online state.
+// liveSessions renders an AI's live sessions for the profile and the members list; the result is
+// never nil, so an offline AI answers an empty array and never null (SESS-32, SESS-33).
+func liveSessions(lives []agents.Live) []dto.SessionInfo {
+	out := make([]dto.SessionInfo, 0, len(lives))
+	for _, live := range lives {
+		out = append(out, dto.SessionInfo{Label: live.Label, Harness: live.Harness, ConnectedAt: live.Since.UTC()})
+	}
+	return out
+}
+
+// toMember renders a member; agent members carry their online state and live sessions.
 func (s *server) toMember(m rooms.Member) dto.RoomMember {
 	out := dto.RoomMember{
 		ID: m.ID, Kind: dto.MemberKind(m.Kind), MemberID: m.MemberID, Name: m.Name,
@@ -50,6 +61,7 @@ func (s *server) toMember(m rooms.Member) dto.RoomMember {
 	if out.Kind == dto.MemberKindAgent && s.Agents != nil {
 		online := s.Agents.Online(m.MemberID)
 		out.Online = &online
+		out.Sessions = liveSessions(s.Agents.Sessions(m.MemberID))
 	}
 	if m.Intelligence.ID != "" && (out.Kind == dto.MemberKindAgent || out.Kind == dto.MemberKindUser) {
 		role := dto.IntelligenceRoleUser

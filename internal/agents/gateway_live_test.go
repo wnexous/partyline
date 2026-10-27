@@ -83,7 +83,11 @@ drain:
 			break drain
 		}
 	}
-	require.Equal(t, []events.AgentPresence{{AgentID: id, OwnerID: alice.User.ID, Online: true}}, announced, "the AI was announced once")
+	require.Equal(t, []events.AgentPresence{
+		{AgentID: id, OwnerID: alice.User.ID, Online: true},
+		{AgentID: id, OwnerID: alice.User.ID, Online: true},
+		{AgentID: id, OwnerID: alice.User.ID, Online: true},
+	}, announced, "both attaches and the parallel session's detach are announced; the principal never goes offline")
 }
 
 // SESS-10, SESS-15: two dials of one folder with different process ids are two live sessions of

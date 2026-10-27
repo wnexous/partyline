@@ -614,10 +614,10 @@ live) so an open profile and an open autocomplete refresh. No new route.
 - `internal/agents/presence_test.go`: two attaches publish two `events.AgentPresence` with `Online:true`
   and the offline event only when the last detaches (the transition test moves here from T5).
 **Done when**:
-- [ ] the principal is always first and the list is never nil on the wire (an empty array, not `null`)
-- [ ] no new route and no new permission: whoever sees the AI or the room sees its sessions
-- [ ] `make generate` ran if a DTO changed the TypeScript (committed)
-- [ ] Gate check passes: `make check`
+- [x] the principal is always first and the list is never nil on the wire (an empty array, not `null`)
+- [x] no new route and no new permission: whoever sees the AI or the room sees its sessions
+- [x] `make generate` ran if a DTO changed the TypeScript (committed)
+- [x] Gate check passes: `make check`
 **Tests**: e2e
 **Gate**: build
 **Commit**: `feat(api): list an AI's live sessions in its profile and rooms`

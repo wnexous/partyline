@@ -302,6 +302,58 @@ func TestRoomMembersEndpoint(t *testing.T) {
 	alice.Post("/api/v1/rooms/"+r.ID+"/messages", dto.PostMessageRequest{Text: "after"}).RequireStatus(http.StatusCreated)
 }
 
+// SESS-33: an agent member of a room carries every live session of its AI (the principal first),
+// while a human and a chat member carry none; the route's authorization is unchanged.
+func TestRoomMembersCarryTheAgentLiveSessions(t *testing.T) {
+	l := newLiveEnv(t)
+	principalFolder := acme
+	principalFolder.Live = testkit.NewLiveID()
+	_, principalWelcome := dialAs(t, l, principalFolder)
+	id := principalWelcome.Agent.ID
+	l.addMember(t, id)
+
+	l.clock.Advance(time.Hour)
+	parallelFolder := acme
+	parallelFolder.Path = acme.Path + "/claude-2"
+	parallelFolder.MainFolder = acme.Path
+	parallelFolder.Harness = "pi"
+	parallelFolder.Live = testkit.NewLiveID()
+	dialAs(t, l, parallelFolder)
+
+	bob := l.env.NewUser("bob")
+	addToRoom(t, l.env, l.alice, l.room.ID, bob)
+	_, chat := storeChat(t, l.env, l.alice.User.ID, "family")
+	l.alice.SeedChatMember(l.room.ID, chat)
+
+	path := "/api/v1/rooms/" + l.room.ID + "/members"
+	list := testkit.Decode[dto.List[dto.RoomMember]](l.alice.Get(path).RequireStatus(http.StatusOK))
+	var agent, human, chatMember *dto.RoomMember
+	for i := range list.Items {
+		switch list.Items[i].Kind {
+		case dto.MemberKindAgent:
+			agent = &list.Items[i]
+		case dto.MemberKindUser:
+			human = &list.Items[i]
+		case dto.MemberKindChat:
+			chatMember = &list.Items[i]
+		}
+	}
+	require.NotNil(t, agent, "the AI is a member")
+	require.NotNil(t, human, "the user is a member")
+	require.NotNil(t, chatMember, "the chat is a member")
+	require.NotNil(t, agent.Online)
+	require.True(t, *agent.Online)
+	require.Equal(t, []dto.SessionInfo{
+		{Label: "", Harness: "claude", ConnectedAt: l.start},
+		{Label: "claude-2", Harness: "pi", ConnectedAt: l.start.Add(time.Hour)},
+	}, agent.Sessions, "the principal first, then the parallel session")
+	require.Empty(t, human.Sessions, "a human has no sessions")
+	require.Empty(t, chatMember.Sessions, "a chat has no sessions")
+
+	l.env.Anon().Get(path).RequireError(http.StatusUnauthorized, dto.ErrorCodeUnauthorized)
+	l.env.NewUser("carol").Get(path).RequireError(http.StatusNotFound, dto.ErrorCodeNotFound)
+}
+
 // MSG-01, MSG-02 and pagination over HTTP.
 func TestRoomMessagesEndpoint(t *testing.T) {
 	env := testkit.New(t)

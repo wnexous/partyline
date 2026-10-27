@@ -75,8 +75,10 @@ type Live struct {
 
 // Presence tracks which agents are connected. One AI has any number of labelled live sessions, at most
 // one per label; the principal session's label is "" (SESS-10, SESS-11). Allocation and the insert happen
-// under one lock, so labels are unique among an AI's live sessions (SESS-12). Transitions between offline
-// and online publish AgentPresence and stamp the agent's last_seen_at.
+// under one lock, so labels are unique among an AI's live sessions (SESS-12). Every session change (a new
+// session attaching or an existing one detaching) publishes AgentPresence with Online = any live session,
+// so a profile or an autocomplete refreshes while the AI stays online (SESS-32, SESS-33); the agent's
+// last_seen_at is stamped as before.
 type Presence struct {
 	store *store.Store
 	bus   *events.Bus
@@ -139,7 +141,6 @@ func (p *Presence) AttachLabeled(ctx context.Context, agent db.Agent, s Session,
 	if held == nil {
 		held = map[string]presenceEntry{}
 	}
-	online := len(held) == 0
 	entry := presenceEntry{ownerID: agent.OwnerID, session: s, harness: harness, liveID: liveID, since: now}
 	var closed Session
 	if takeover && preferred == "" && mainLive {
@@ -164,9 +165,8 @@ func (p *Presence) AttachLabeled(ctx context.Context, agent db.Agent, s Session,
 		closed.Close(CloseTakenOver, ReasonTakenOver)
 	}
 	_ = p.touch(ctx, agent.ID) // best effort, like Detach: last_seen_at is informational
-	if online {
-		p.bus.Publish(events.AgentPresence{AgentID: agent.ID, OwnerID: agent.OwnerID, Online: true})
-	}
+	// A fresh session is a change of the AI's sessions even when it was already online (SESS-32).
+	p.bus.Publish(events.AgentPresence{AgentID: agent.ID, OwnerID: agent.OwnerID, Online: true})
 	return entry.live(), true
 }
 
@@ -274,9 +274,8 @@ func (p *Presence) detach(ctx context.Context, agentID string, s Session, stamp 
 	if stamp {
 		_ = p.touch(ctx, agentID) // best effort: the agent row may be gone already
 	}
-	if offline {
-		p.bus.Publish(events.AgentPresence{AgentID: agentID, OwnerID: cur.ownerID, Online: false})
-	}
+	// Every detach is a session change; Online stays true while another session remains (SESS-32).
+	p.bus.Publish(events.AgentPresence{AgentID: agentID, OwnerID: cur.ownerID, Online: !offline})
 	return true
 }
 

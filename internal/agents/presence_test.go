@@ -64,9 +64,10 @@ func TestPresenceAttachesASecondProcess(t *testing.T) {
 	require.True(t, fresh, "a second process starts a session")
 	_, _, closed := first.state()
 	require.Zero(t, closed, "the principal is untouched")
-	require.Empty(t, drain(p.events), "the AI stays online")
+	require.Equal(t, []events.Event{p.online()}, drain(p.events), "a second session is a presence change")
 	require.True(t, p.presence.Detach(context.Background(), p.agent.ID, second))
 	require.True(t, p.presence.Online(p.agent.ID), "the principal keeps the AI online")
+	require.Equal(t, []events.Event{p.online()}, drain(p.events), "the AI stays online while the principal remains")
 	require.False(t, p.presence.Detach(context.Background(), p.agent.ID, second), "the parallel session already ended")
 	require.Equal(t, []string{""}, labelsOf(p.presence.Sessions(p.agent.ID)))
 }
@@ -115,7 +116,7 @@ func TestPresenceTakeoverClosesTheOldSession(t *testing.T) {
 	require.Equal(t, websocket.StatusCode(4002), CloseTakenOver)
 	_, _, closed = second.state()
 	require.Zero(t, closed)
-	require.Empty(t, drain(p.events), "taking over keeps the AI online")
+	require.Equal(t, []events.Event{p.online()}, drain(p.events), "the new session is announced and the AI stays online")
 	live, _ := p.presence.Live(p.agent.ID)
 	require.Equal(t, t0.Add(time.Hour), live.Since, "the new session's time")
 
@@ -186,7 +187,11 @@ func TestPresenceConcurrentTakeoversLeaveExactlyOneSession(t *testing.T) {
 	require.True(t, ok)
 	require.Same(t, open[0], live, "and it is the live session")
 	require.True(t, p.presence.Online(p.agent.ID))
-	require.Equal(t, []events.Event{p.online()}, drain(p.events), "one online event, no flapping")
+	announced := drain(p.events)
+	require.Len(t, announced, len(sessions), "every new session is a presence change")
+	for _, e := range announced {
+		require.Equal(t, p.online(), e, "announced online, never offline: no flapping")
+	}
 }
 
 // SES-06: the live session ending marks the AI offline at once and the next process attaches
@@ -206,6 +211,24 @@ func TestPresenceNextProcessAttachesAfterTheLiveSessionEnds(t *testing.T) {
 	_, err = attach(&fakeSession{}, "process-two", false)
 	require.NoError(t, err)
 	require.Equal(t, []events.Event{p.online()}, drain(p.events))
+}
+
+// SESS-32: every session change publishes AgentPresence, so a profile and an autocomplete refresh
+// while the AI stays online: the second attach, a detach that leaves the principal, and the offline
+// transition only when the last session ends.
+func TestPresencePublishesEverySessionChange(t *testing.T) {
+	p, _ := newPresenceFixture(t)
+	first, second := &fakeSession{}, &fakeSession{}
+
+	_, _ = p.attachLabeled(t, first, "claude", "process-one", "", false)
+	require.Equal(t, []events.Event{p.online()}, drain(p.events))
+	_, _ = p.attachLabeled(t, second, "claude", "process-two", "", false)
+	require.Equal(t, []events.Event{p.online()}, drain(p.events), "the second session is announced while the AI stays online")
+
+	require.True(t, p.presence.Detach(context.Background(), p.agent.ID, second))
+	require.Equal(t, []events.Event{p.online()}, drain(p.events), "a detach that leaves a session announces the AI is still online")
+	require.True(t, p.presence.Detach(context.Background(), p.agent.ID, first))
+	require.Equal(t, []events.Event{p.offline()}, drain(p.events), "the offline event waits for the last session")
 }
 
 // attachLabeled makes s a session of the AI with the harness it reports and the label it prefers,
@@ -278,7 +301,11 @@ func TestTwoConnectionsRaceForThePrincipal(t *testing.T) {
 
 	_, ok := p.presence.Main(p.agent.ID)
 	require.True(t, ok, "exactly one session holds the principal label")
-	require.Equal(t, []events.Event{p.online()}, drain(p.events), "one online event, no flapping")
+	announced := drain(p.events)
+	require.Len(t, announced, len(sessions), "both attaches are presence changes")
+	for _, e := range announced {
+		require.Equal(t, p.online(), e, "announced online, never offline: no flapping")
+	}
 }
 
 // SESS-13: takeover replaces the principal session only; a parallel or worktree label ignores it.
@@ -344,7 +371,7 @@ func TestKickClosesEverySession(t *testing.T) {
 	first, second := &fakeSession{}, &fakeSession{}
 	_, _ = p.attachLabeled(t, first, "claude", "process-one", "", false)
 	_, _ = p.attachLabeled(t, second, "pi", "process-two", "claude-2", false)
-	require.Equal(t, []events.Event{p.online()}, drain(p.events))
+	require.Equal(t, []events.Event{p.online(), p.online()}, drain(p.events))
 
 	p.presence.Kick(context.Background(), p.agent.ID, CloseTakenOver, "ended by @lead")
 	for _, s := range []*fakeSession{first, second} {

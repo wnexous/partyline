@@ -52,6 +52,7 @@ const profiles: Record<string, IntelligenceProfile> = {
       folder_label: "~/atlas",
       app: "claude",
       online: true,
+      sessions: [],
     },
     apps: [{ kind: "claude", label: "Claude Code" }],
   }),

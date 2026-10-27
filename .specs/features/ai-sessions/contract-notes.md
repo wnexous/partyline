@@ -165,3 +165,23 @@ the AI's own (an empty folder header names none), else `""`.
 `TestEveryConnectionAndCallSendsTheIdentity` now requires the tool call to carry the same live id the
 connection sent (the tools-only process still sends none). It is a stronger assertion, not a weaker
 one.
+
+# Contract Notes (from ai-sessions T10: the live sessions in the profile and in rooms)
+
+The rest of the design stands. The required `sessions` list updates tests outside T10's file list.
+
+## The profile's `sessions` is a required TypeScript field
+
+`dto.AIDetail.Sessions` has no `omitempty`, because the profile must answer `[]` and never `null`
+(SESS-32), so tygo emits it as a required `sessions: SessionInfo[]`. Six fixture objects across four
+existing web tests that build an `AIDetail` by hand gain `sessions: []`
+(`web/src/components/profile-panel.test.tsx`, `web/src/routes/_app/profile.test.tsx` twice,
+`web/src/routes/_app/rooms/conversation.test.tsx`, `web/src/routes/a11y.test.tsx` twice); T12 is the
+task that renders the list.
+
+## The presence change also reaches an existing event count
+
+The AI's presence event now fires on every session change (SESS-32), so
+`TestGatewayAttachesAConnectionThatLostTheRaceAsAParallelSession` sees three online announcements
+(the winner's attach, the gateway's attach and the gateway's detach) instead of one. That file is
+outside T10's **Also** line; the assertion is updated to the new rule, not weakened.

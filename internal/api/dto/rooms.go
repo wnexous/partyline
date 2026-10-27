@@ -105,6 +105,9 @@ type RoomMember struct {
 	People []IntelligenceRef `json:"people,omitempty"`
 	// Online is set for agent members: whether the AI has a live session.
 	Online *bool `json:"online,omitempty"`
+	// Sessions are set for agent members: the AI's live sessions, the principal (label "") first
+	// (SESS-33). Absent for other members and for an AI with no live session.
+	Sessions []SessionInfo `json:"sessions,omitempty"`
 	// Owner is set for agent members: the username of the agent's owner.
 	Owner string `json:"owner,omitempty"`
 	// ConnectorKind and ChatKind are set for chat members.
