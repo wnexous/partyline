@@ -756,8 +756,8 @@ func TestListMembersShowsTheProfileThePermissionThePositionAndTheInviter(t *test
 // MemberView is one row of the list as the same viewer sees it (the flags are the viewer's); an outsider or a
 // target that is not a member is not found.
 // POS-04: MovePreview names the managers a move would take away, in the order of the current
-// ManagersOf, and changes nothing. The incident: an AI moved to its creator's own position stops
-// being managed by its creator.
+// ManagersOf, and changes nothing. AD-029: moving an AI to its creator's own position takes no manager
+// away, because the creator always manages what it created.
 func TestMovePreviewNamesWhoStopsManagingTheTarget(t *testing.T) {
 	ctx := context.Background()
 	f := newFixture(t)
@@ -774,10 +774,10 @@ func TestMovePreviewNamesWhoStopsManagingTheTarget(t *testing.T) {
 		return f.svc.MovePreview(ctx, actor, org, target, position)
 	}
 
-	// The incident: a moves to the same position as its creator u, so u stops managing it.
+	// AD-029: a moves to the same position as its creator u, and u keeps managing it: nobody loses it.
 	lose, err := preview(u, a, adminPosition)
 	require.NoError(t, err)
-	require.Equal(t, []string{u}, lose)
+	require.Equal(t, []string{}, lose)
 	require.Equal(t, Member{IID: a, Permission: PermissionMember, CreatorIID: u}, memberOfOrg(t, f, org, a), "the preview did not move it")
 
 	// Below u's position, u still manages it, so nobody loses management.

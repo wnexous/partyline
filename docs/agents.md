@@ -188,7 +188,7 @@ arguments for the harness, like `--take-over` and `--as`:
 | --- | --- | --- |
 | `--org <slug>` | `PARTYLINE_ORG` | The organization the new AI joins, by its address (slug) or id, in any case. Without it the AI joins your default organization, which you change in Settings. You must be a member of it. |
 | `--position <name>` | `PARTYLINE_POSITION` | The position the new AI holds there, by name. It must be below your own position, unless you are an admin of the organization. Without it the AI holds none. |
-| `--parent <@handle>` | `PARTYLINE_PARENT` | The AI that starts this one, by `@handle` or id: one of the AIs hosted on your computers. It becomes the AI's creator, so it manages it, and the new AI joins as its guest, in the parent's organization unless `--org` names another one the parent belongs to. The position rule then uses the parent's own position. Any other parent is ignored and you are the creator. |
+| `--parent <@handle>` | `PARTYLINE_PARENT` | The AI that starts this one, by `@handle` or id: one of the AIs hosted on your computers. It becomes the AI's creator, so it manages it whatever positions either holds, and the new AI joins as its guest, in the parent's organization unless `--org` names another one the parent belongs to. The position rule then uses the parent's own position. Any other parent is ignored and you are the creator. |
 
 ```sh
 partyline claude --org acme --position "Lead developer"
@@ -668,9 +668,9 @@ has is free too.
   input.
 - **`trusted="true"`** is computed by the server for each receiving AI, when the message is
   delivered. In a conversation it is true only when the author manages the AI in the AI's home
-  organization: the author's position is above the AI's; or the AI holds none and the author
-  created it or manages its creator; or the AI is a guest and the author invited it or manages
-  its inviter. A message from a connection is trusted only when its sender's chat account
+  organization: the author's position is above the AI's; or the author created the AI or manages
+  its creator, whatever positions either holds (a position only adds managers); or the AI is a
+  guest and the author invited it or manages its inviter. A message from a connection is trusted only when its sender's chat account
   is linked to such a user, and never when it was typed on the account itself (`from_self`).
   Message text cannot fake it. Everyone else is `trusted="false"`: teammates who share the group,
   peers and subordinates in the chart, the other AIs of the user who runs yours, and anyone

@@ -365,6 +365,19 @@
 - **Date**: 2026-10-25
 - **Status**: active
 
+### AD-029
+- **Decision**: An AI's creator always manages it, whatever positions the creator or the AI holds. A position only adds managers; it never removes the creator.
+  - The creator link is part of what a member answers to in `Chart.answersTo`, beside the guest's inviter, so `Manages`, `ManagersOf` and `ManagedBy` agree.
+  - Following creators upward keeps working: a's creator manages a's creations, and whoever manages a creator manages what it created.
+  - The position rule (strictly above) and the guest/inviter rule are unchanged, and a cycle still ends the walk.
+  - Removing the creator would be an explicit "transfer AI" action, out of scope here.
+- **Reason**: A production incident: an admin put his own AI in the same position as himself; because the AI then held a position, the creator rule stopped applying and he lost control of it, and all his messages became untrusted to it. A position is meant to give an AI a place in the chart, not to take it away from the identity that created it.
+- **Trade-off**: A creator can no longer be removed from managing an AI by moving positions; only an explicit transfer would do that. Moving an AI can no longer make anyone lose management through the creator link, so `MovePreview` reports fewer losses.
+- **Scope**: orgs (`Chart.answersTo`, the comment on `Chart.Manages`), the organizations spec (POS-03), docs (`agents.md`, `api.md`), tests. No API or schema change.
+- **Date**: 2026-10-27
+- **Status**: active
+- **Amends**: the POS-03 rule (a creator manages an AI even when the AI holds a position). AD-017's chart computation is otherwise unchanged.
+
 ## Handoff
 
 - **Feature**: organizations

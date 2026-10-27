@@ -303,9 +303,10 @@ func TestChartFlagsForTheLeadDeveloper(t *testing.T) {
 	require.Equal(t, flagSet{false, dto.DeleteEffectDelete, true}, flagsOf(ix.byID[w.notes]), "lee created notes, a member: it can be moved, not deleted")
 	require.Equal(t, flagSet{false, dto.DeleteEffectDelete, false}, flagsOf(ix.byID[w.sentinel]), "Sentinel is a member, and beside lee")
 	require.Equal(t, flagSet{false, dto.DeleteEffectRemove, false}, flagsOf(ix.byID[w.sam.User.ID]))
-	// lead holds lee's own position, so lee manages neither lead nor what lead started without a position.
-	require.Equal(t, flagSet{false, dto.DeleteEffectDelete, false}, flagsOf(ix.byID[w.lead]))
-	require.Equal(t, flagSet{false, dto.DeleteEffectDelete, false}, flagsOf(ix.byID[w.loose]))
+	// lead holds lee's own position, but lee still manages it as its creator: lee moves lead, and deletes the
+	// guest lead started without a position as the inviter's manager.
+	require.Equal(t, flagSet{false, dto.DeleteEffectDelete, true}, flagsOf(ix.byID[w.lead]))
+	require.Equal(t, flagSet{true, dto.DeleteEffectDelete, true}, flagsOf(ix.byID[w.loose]))
 	// Nothing above lee, nobody else's guest.
 	for _, id := range []string{w.alice.User.ID, w.dora.User.ID, w.mia.User.ID, w.lee.User.ID, w.bob.User.ID, w.erin.User.ID, w.gus.User.ID, w.visitor} {
 		require.False(t, ix.byID[id].CanDelete, ix.byID[id].Intelligence.Handle)

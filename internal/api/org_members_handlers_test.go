@@ -478,10 +478,8 @@ func TestMovePreviewShowsWhoStopsManagingTheMember(t *testing.T) {
 	before := listMembers(t, r.Admin, r.Org.ID)
 
 	got := testkit.Decode[dto.MovePreview](r.Admin.Get(movePreviewPath(r.Org.ID, ai) + "?position_id=" + r.AdminPosition).RequireStatus(http.StatusOK))
-	require.Len(t, got.LoseManagement, 1)
-	require.Equal(t, before[r.Admin.User.ID].Intelligence, got.LoseManagement[0], "the incident: its creator stops managing it")
-	require.Equal(t, r.Admin.User.ID, got.LoseManagement[0].ID)
-	require.Equal(t, before[r.Admin.User.ID].Intelligence.Handle, got.LoseManagement[0].Handle)
+	require.NotNil(t, got.LoseManagement)
+	require.Empty(t, got.LoseManagement, "AD-029: its creator keeps managing it at its own position")
 
 	// Below its creator's position, nobody loses the management.
 	got = testkit.Decode[dto.MovePreview](r.Admin.Get(movePreviewPath(r.Org.ID, ai) + "?position_id=" + r.WorkerPosition).RequireStatus(http.StatusOK))

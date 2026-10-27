@@ -102,9 +102,9 @@ func TestAdminPermissionDoesNotImplyManagement(t *testing.T) {
 	require.True(t, c.Manages("lead", "lowadmin"), "an admin is managed like anyone else")
 }
 
-// POS-03: B without a position is managed by its creator and by whoever manages the creator,
-// following the creator chain upward.
-func TestManagesAPositionlessMemberThroughItsCreator(t *testing.T) {
+// POS-03: A manages B through its creator whatever position B holds, and through whoever manages the
+// creator, following the creator chain upward.
+func TestManagesAMemberThroughItsCreator(t *testing.T) {
 	cases := []struct {
 		name    string
 		members []Member
@@ -129,8 +129,8 @@ func TestManagesAPositionlessMemberThroughItsCreator(t *testing.T) {
 			[]Member{user("lead", "lead"), user("manager", "manager"), created("mid", "", "lead"), created("w", "", "mid")}, "manager", "w", true},
 		{"the chain breaks at a creator who is not a member",
 			[]Member{user("lead", "lead"), created("mid", "", "gone"), created("w", "", "mid")}, "lead", "w", false},
-		{"B holds a position, so the creator rule does not apply",
-			[]Member{user("designer", "designer"), created("w", "worktrees", "designer")}, "designer", "w", false},
+		{"B holds a position in another branch, and its creator still manages it",
+			[]Member{user("designer", "designer"), created("w", "worktrees", "designer")}, "designer", "w", true},
 		{"B holds a position and its creator is above it",
 			[]Member{user("lead", "lead"), created("w", "worktrees", "lead")}, "lead", "w", true},
 		{"B is created by itself", []Member{created("w", "", "w"), user("lead", "lead")}, "lead", "w", false},
@@ -373,7 +373,32 @@ func TestWithPositionMovesOneMemberInACopy(t *testing.T) {
 	require.Equal(t, original, ghost.Members)
 	require.NotSame(t, c, ghost)
 	require.Equal(t, []string{"root"}, c.ManagersOf("ai"), "the incident: the creator manages the positionless AI")
-	require.Empty(t, c.WithPosition("ai", "admin").ManagersOf("ai"), "and stops managing it at its own level")
+	require.Equal(t, []string{"root"}, c.WithPosition("ai", "admin").ManagersOf("ai"),
+		"AD-029: a move never takes the creator away")
+}
+
+// POS-03, AD-029: an AI's creator always manages it, whatever positions either holds. Positions only add
+// managers; moving the AI never removes the creator.
+func TestACreatorAlwaysManagesTheAICreated(t *testing.T) {
+	t.Run("the creator and the AI hold the same position", func(t *testing.T) {
+		c := chartOf(user("u", "admin"), created("a", "admin", "u"), user("peer", "admin"))
+		require.True(t, c.Manages("u", "a"), "the incident: the creator lost control after the AI held its position")
+		require.Equal(t, []string{"u"}, c.ManagersOf("a"), "the creator is its manager")
+		require.False(t, c.Manages("peer", "a"), "a non-creator holding the same position does not manage it")
+	})
+
+	t.Run("the AI holds a position above its creator's", func(t *testing.T) {
+		c := chartOf(user("u", "lead"), created("a", "manager", "u"), user("boss", "director"))
+		require.True(t, c.Manages("u", "a"), "the creator still manages the AI above it")
+		require.True(t, c.Manages("boss", "a"), "the holder of the higher position manages it too")
+		require.Equal(t, []string{"boss", "u"}, c.ManagersOf("a"), "the creator and the position above it, nearest first then by id")
+	})
+
+	t.Run("a creator chain whose AIs hold positions", func(t *testing.T) {
+		c := chartOf(user("u", "lead"), created("a", "lead", "u"), created("b", "director", "a"))
+		require.True(t, c.Manages("u", "b"), "u manages what its creator chain reaches, though its position is below b's")
+		require.Equal(t, []string{"a", "u"}, c.ManagersOf("b"), "the creator first, then its creator")
+	})
 }
 
 // Manages, ManagersOf and ManagedBy are three views of one rule: for every pair they agree.

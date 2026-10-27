@@ -62,7 +62,7 @@ func TestWelcomeTellsTheOrganizationPositionAndManagers(t *testing.T) {
 
 	require.Equal(t, &dto.ContactOrg{ID: w.acme.ID, Name: "Acme", Slug: "acme"}, welcome.Organization)
 	require.Equal(t, "Worktrees", welcome.Position)
-	require.Equal(t, []string{"lead", "bob", "alice"}, handlesOf(welcome.Managers), "nearest first: Lead, the Director above Lead, the Admin")
+	require.Equal(t, []string{"lead", "alice", "bob"}, handlesOf(welcome.Managers), "nearest first: Lead, then its creator Alice and the Director Bob one step further, by id")
 	kinds := func(refs []dto.IntelligenceRef) []string {
 		out := make([]string, len(refs))
 		for i, r := range refs {
@@ -71,7 +71,7 @@ func TestWelcomeTellsTheOrganizationPositionAndManagers(t *testing.T) {
 		return out
 	}
 	require.Equal(t, []string{"ai/ai", "human/user", "human/user"}, kinds(welcome.Managers), "a manager is an AI or a person, as its role says")
-	require.Equal(t, []string{w.lead, w.bob.User.ID, w.alice.User.ID}, []string{welcome.Managers[0].ID, welcome.Managers[1].ID, welcome.Managers[2].ID})
+	require.Equal(t, []string{w.lead, w.alice.User.ID, w.bob.User.ID}, []string{welcome.Managers[0].ID, welcome.Managers[1].ID, welcome.Managers[2].ID})
 
 	t.Run("a v0.5 client still reads the host user as the owner", func(t *testing.T) {
 		var old welcomeV05
@@ -87,18 +87,19 @@ func TestWelcomeTellsTheOrganizationPositionAndManagers(t *testing.T) {
 	})
 }
 
-// POS-10: an AI that nobody manages gets an empty list, never null; one that holds no position says so;
-// and a creator with no position is its manager, followed by whoever manages the creator.
+// POS-10: an AI's creator manages it even when it holds the root position, and the list is never null;
+// one that holds no position says so; and a creator is its manager, followed by whoever manages the
+// creator.
 func TestWelcomeOfAnAIWithoutManagersOrWithoutAPosition(t *testing.T) {
-	t.Run("the root position has nobody above it", func(t *testing.T) {
+	t.Run("the root position: its creator manages it, and nobody is above it", func(t *testing.T) {
 		w := newPlacementWorld(t)
 		f := placementFolder("root-holder")
 		f.Org, f.Position = "acme", "Admin" // alice is an admin of Acme, so she may place it anywhere
 		welcome, raw := welcomeOf(t, w.agentToken(w.alice), f)
 		require.Equal(t, "Admin", welcome.Position)
-		require.NotNil(t, welcome.Managers, "present and empty")
-		require.Empty(t, welcome.Managers)
-		require.Contains(t, raw, `"managers":[]`)
+		require.NotNil(t, welcome.Managers, "present")
+		require.Equal(t, []string{"alice"}, handlesOf(welcome.Managers), "AD-029: its creator manages it at its own level")
+		require.Contains(t, raw, `"managers":[{"id":"`+w.alice.User.ID+`"`)
 		require.Equal(t, w.acme.ID, welcome.Organization.ID)
 	})
 
@@ -121,7 +122,7 @@ func TestWelcomeManagersAreTheHomeOrganizationsOnly(t *testing.T) {
 	f := placementFolder("worker-two-orgs")
 	f.Parent, f.Position = "@lead", "Worktrees"
 	first, _ := welcomeOf(t, w.agentToken(w.alice), f)
-	require.Equal(t, []string{"lead", "bob", "alice"}, handlesOf(first.Managers))
+	require.Equal(t, []string{"lead", "alice", "bob"}, handlesOf(first.Managers))
 
 	// In Globex carol is a boss above the worker. She is nobody in Acme.
 	globex, err := w.env.App.Authz.Chart(ctx, w.globex.ID)
@@ -137,7 +138,7 @@ func TestWelcomeManagersAreTheHomeOrganizationsOnly(t *testing.T) {
 	second, _ := welcomeOf(t, w.agentToken(w.alice), f)
 	require.Equal(t, w.acme.ID, second.Organization.ID, "the home organization stays Acme")
 	require.Equal(t, "Worktrees", second.Position, "and the position is the one held there")
-	require.Equal(t, []string{"lead", "bob", "alice"}, handlesOf(second.Managers), "carol manages it only in Globex")
+	require.Equal(t, []string{"lead", "alice", "bob"}, handlesOf(second.Managers), "carol manages it only in Globex")
 }
 
 // The welcome lists at most ten managers, the nearest ten.
@@ -161,12 +162,13 @@ func TestWelcomeListsAtMostTenManagersTheNearestOnes(t *testing.T) {
 	chain = append(chain, "boss") // the root holder is the 12th and farthest
 	require.Len(t, chain, 12)
 
-	// The admin starts the worker in Deep at the bottom of the chart.
+	// The admin starts the worker in Deep at the bottom of the chart; as its creator it is its nearest manager.
 	f := testkit.FolderOf("bottom")
 	f.Org, f.Position = "deep", "Workers"
 	welcome, _ := welcomeOf(t, admin.Token(dto.TokenKindAgent, "laptop"), f)
 	require.Equal(t, "Workers", welcome.Position)
-	require.Equal(t, chain[:10], handlesOf(welcome.Managers), "the ten nearest, nearest first; the farthest two are left out")
+	near := append([]string{"boss"}, chain[:9]...)
+	require.Equal(t, near, handlesOf(welcome.Managers), "the ten nearest: its creator and the nine nearest positions; the farthest two are left out")
 }
 
 // An AI no upgrade placed (only a fixture is one) has no home organization: the frame names none and
