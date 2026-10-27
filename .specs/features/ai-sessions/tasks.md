@@ -726,11 +726,11 @@ a paused room → no self push; a plain AI message → none (T8's case stays).
 `@atlas:wt` → `:wt` receives `message_edited` once, and deleting it reaches `:wt` with
 `message_deleted` while the principal receives neither.
 **Done when**:
-- [ ] the author label is `message_views.author_label`, never derived from the socket on this path
-- [ ] a message the AI wrote reaches neither the writing session's own label nor the principal as a
+- [x] the author label is `message_views.author_label`, never derived from the socket on this path
+- [x] a message the AI wrote reaches neither the writing session's own label nor the principal as a
       fallback
-- [ ] the loop guard suppresses every session in a paused room, including a self target
-- [ ] Gate check passes: `make check`
+- [x] the loop guard suppresses every session in a paused room, including a self target
+- [x] Gate check passes: `make check`
 **Tests**: integration
 **Gate**: build
 **Commit**: `feat(delivery): let sessions address each other`

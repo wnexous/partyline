@@ -215,3 +215,136 @@ func TestAFallenBackMessageIsNeverTheLabelsAgain(t *testing.T) {
 	again.ExpectNone(500 * time.Millisecond)
 	require.Len(t, f.rows(t, "claude-2"), 1, "the row stays the principal's")
 }
+
+// worktreeFolder is the fixture AI's session in a linked worktree of its own folder: the AI of the
+// repository, labelled after the worktree (SESS-01, SESS-11).
+func worktreeFolder() testkit.Folder {
+	main := testkit.FolderOf("atlas")
+	return testkit.Folder{Machine: main.Machine, Path: "/work/wt", MainFolder: main.Path, Harness: main.Harness}
+}
+
+// dialWorktree opens the AI's :wt session and returns the identity it dialed with, live id
+// included, so a post from it carries its real author_label (SESS-29).
+func (f *sessionFixture) dialWorktree(t *testing.T) (testkit.Folder, *testkit.AgentConn) {
+	t.Helper()
+	folder := worktreeFolder()
+	folder.Live = testkit.NewLiveID()
+	conn, resp := f.token.DialFolder(folder)
+	require.NotNil(t, conn, "upgrade refused: %d %s", resp.Status, resp.Body)
+	conn.Welcome(time.Minute)
+	t.Cleanup(conn.Close)
+	return folder, conn
+}
+
+// postFrom posts in the room as the session of folder; the live id it carries makes the stored
+// author_label the one the server resolved.
+func (f *sessionFixture) postFrom(t *testing.T, folder testkit.Folder, text string) dto.Message {
+	t.Helper()
+	return testkit.Decode[dto.Message](f.token.AsFolder(folder).
+		Post("/api/v1/agent/rooms/"+f.room.ID+"/messages", dto.PostMessageRequest{Text: text}).RequireStatus(http.StatusCreated))
+}
+
+// editFrom edits one of the AI's messages as the session of folder.
+func (f *sessionFixture) editFrom(t *testing.T, folder testkit.Folder, messageID, text string) dto.Message {
+	t.Helper()
+	return testkit.Decode[dto.Message](f.token.AsFolder(folder).
+		Patch("/api/v1/agent/messages/"+messageID, dto.EditMessageRequest{Text: text}).RequireStatus(http.StatusOK))
+}
+
+// deleteFrom deletes one of the AI's messages as the session of folder.
+func (f *sessionFixture) deleteFrom(t *testing.T, folder testkit.Folder, messageID string) {
+	t.Helper()
+	f.token.AsFolder(folder).Delete("/api/v1/agent/messages/" + messageID).RequireStatus(http.StatusOK)
+}
+
+// SESS-37: the AI's principal writes to a live sibling of its own AI: the sibling receives the
+// message once with trusted: true and owns a pending delivery row, and the principal receives
+// nothing.
+func TestASessionsMessageReachesItsLiveSibling(t *testing.T) {
+	f := newSessionFixture(t)
+	principal := f.dial(t)
+	f.settle(t, principal)
+	_, sibling := f.dialWorktree(t)
+	f.settle(t, sibling)
+
+	m := f.postFrom(t, testkit.FolderOf("atlas"), "@atlas:wt do X")
+	require.Empty(t, m.AuthorLabel, "the principal writes without a label")
+	frame := sibling.Message(time.Minute)
+	require.Equal(t, m.ID, frame.Message.ID)
+	require.True(t, frame.Trusted, "the AI wrote it: the sibling trusts it")
+	require.Empty(t, frame.ForLabel, "a message the AI wrote never carries the note")
+	principal.ExpectNone(400 * time.Millisecond)
+
+	row := f.waitRow(t, "wt", m.ID)
+	require.False(t, row.FellBackAt.Valid, "the live sibling owns the message")
+}
+
+// SESS-38: a delivery row of the AI's own message is deleted when its session ends before
+// acknowledging it, and the principal never receives it as a fallback.
+func TestASelfDeliveryIsDeletedWhenItsSessionEnds(t *testing.T) {
+	f := newSessionFixture(t)
+	principal := f.dial(t)
+	f.settle(t, principal)
+	_, sibling := f.dialWorktree(t)
+	f.settle(t, sibling)
+
+	m := f.postFrom(t, testkit.FolderOf("atlas"), "@atlas:wt do X")
+	require.Equal(t, m.ID, sibling.Message(time.Minute).Message.ID)
+	require.False(t, f.waitRow(t, "wt", m.ID).FellBackAt.Valid)
+
+	sibling.Close()
+	require.Eventually(t, func() bool { return len(f.rows(t, "wt")) == 0 }, 5*time.Second, 10*time.Millisecond,
+		"the row of the AI's own message is dropped, not fallen back")
+	principal.ExpectNone(400 * time.Millisecond)
+}
+
+// SESS-38: a message the AI's session writes reaches no session of that AI when it names no label,
+// the writing session's own label, or a label with no live session; no frame and no row either.
+func TestASessionsMessageDoesNotComeBackToItsOwnSessions(t *testing.T) {
+	cases := []struct{ name, text string }{
+		{"no label", "@atlas do Y"},
+		{"its own label", "@atlas:wt do Z"},
+		{"a label with no live session", "@atlas:gone do W"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			f := newSessionFixture(t)
+			principal := f.dial(t)
+			f.settle(t, principal)
+			folder, sibling := f.dialWorktree(t)
+			f.settle(t, sibling)
+
+			m := f.postFrom(t, folder, tc.text)
+			require.Equal(t, "wt", m.AuthorLabel, "the stored label names the writing session")
+			sibling.ExpectNone(400 * time.Millisecond)
+			principal.ExpectNone(400 * time.Millisecond)
+			require.Empty(t, f.rows(t, "wt"))
+		})
+	}
+}
+
+// SESS-39: an edit that adds a label to a message the AI wrote reaches the newly addressed live
+// sibling once, a delete of it reaches that sibling, and the principal receives neither.
+func TestAnEditAndADeleteOfASessionsMessageReachItsLiveSibling(t *testing.T) {
+	f := newSessionFixture(t)
+	principal := f.dial(t)
+	f.settle(t, principal)
+	_, sibling := f.dialWorktree(t)
+	f.settle(t, sibling)
+	asPrincipal := testkit.FolderOf("atlas")
+
+	m := f.postFrom(t, asPrincipal, "hello")
+	sibling.ExpectNone(400 * time.Millisecond)
+	principal.ExpectNone(400 * time.Millisecond)
+
+	f.editFrom(t, asPrincipal, m.ID, "@atlas:wt updated")
+	frame := sibling.Edited(time.Minute)
+	require.Equal(t, m.ID, frame.Message.ID)
+	require.Equal(t, "@atlas:wt updated", frame.Message.Text)
+	principal.ExpectNone(400 * time.Millisecond)
+
+	f.deleteFrom(t, asPrincipal, m.ID)
+	deleted := sibling.Deleted(time.Minute)
+	require.Equal(t, m.ID, deleted.Message.ID)
+	principal.ExpectNone(400 * time.Millisecond)
+}
