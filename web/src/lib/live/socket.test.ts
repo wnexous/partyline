@@ -8,6 +8,17 @@ import { startLive } from "./index";
 import { backoffDelay, createLiveSocket, liveUrl } from "./socket";
 import { useLiveStore } from "./store";
 
+/** Makes the document report `state` and fires the event the browser fires when it changes. */
+function setTabState(state: "visible" | "hidden") {
+  Object.defineProperty(document, "visibilityState", { configurable: true, get: () => state });
+  document.dispatchEvent(new Event("visibilitychange"));
+}
+
+function dropTabStateShadow() {
+  // Drops the shadowing property so the prototype's getter answers again.
+  delete (document as unknown as Record<string, unknown>).visibilityState;
+}
+
 describe("live socket (UI-06)", () => {
   beforeEach(() => {
     vi.useFakeTimers();
@@ -15,6 +26,7 @@ describe("live socket (UI-06)", () => {
   });
   afterEach(() => {
     vi.useRealTimers();
+    dropTabStateShadow();
   });
 
   it("backs off from 1 s doubling up to 30 s", () => {
@@ -163,6 +175,112 @@ describe("live socket (UI-06)", () => {
     vi.advanceTimersByTime(60_000);
     expect(FakeSocket.instances).toHaveLength(1);
     expect(FakeSocket.latest().closed).toBe(true);
+  });
+
+  it("dials at once when the tab comes back, then backs off from 1 s again", () => {
+    const onVisible = vi.fn();
+    const live = createLiveSocket({
+      url: "ws://t",
+      createSocket: FakeSocket.create,
+      onEvent: () => {},
+      onVisible,
+    });
+    live.start();
+    FakeSocket.latest().open();
+
+    // Backgrounded, the browser closes the socket and the retries keep failing: each drop doubles
+    // the wait, until the next dial is 30 s away.
+    setTabState("hidden");
+    FakeSocket.latest().drop();
+    for (const wait of [1_000, 2_000, 4_000, 8_000, 16_000]) {
+      vi.advanceTimersByTime(wait);
+      FakeSocket.latest().drop();
+    }
+    expect(FakeSocket.instances).toHaveLength(6);
+    // A tab that is still hidden wakes nothing.
+    setTabState("hidden");
+    vi.advanceTimersByTime(29_000);
+    expect(FakeSocket.instances).toHaveLength(6);
+
+    // Back on screen: the stale 30 s wait is dropped and a socket is dialed now.
+    setTabState("visible");
+    expect(onVisible).toHaveBeenCalledTimes(1);
+    expect(FakeSocket.instances).toHaveLength(7);
+
+    // The dial fails too, and the next wait is 1 s again, not where it left off.
+    FakeSocket.latest().drop();
+    vi.advanceTimersByTime(999);
+    expect(FakeSocket.instances).toHaveLength(7);
+    vi.advanceTimersByTime(1);
+    expect(FakeSocket.instances).toHaveLength(8);
+    live.stop();
+  });
+
+  it("dials at once when the browser comes back online", () => {
+    const live = createLiveSocket({
+      url: "ws://t",
+      createSocket: FakeSocket.create,
+      onEvent: () => {},
+    });
+    live.start();
+    FakeSocket.latest().open();
+    FakeSocket.latest().drop();
+
+    window.dispatchEvent(new Event("online"));
+    expect(FakeSocket.instances).toHaveLength(2);
+    // The pending retry was cancelled: no second socket when its delay elapses.
+    vi.advanceTimersByTime(1_000);
+    expect(FakeSocket.instances).toHaveLength(2);
+    live.stop();
+  });
+
+  it("opens no second socket when woken while connecting, open or stopped", () => {
+    const live = createLiveSocket({
+      url: "ws://t",
+      createSocket: FakeSocket.create,
+      onEvent: () => {},
+    });
+    live.start();
+    live.wake();
+    expect(FakeSocket.instances).toHaveLength(1);
+    FakeSocket.latest().open();
+    live.wake();
+    expect(FakeSocket.instances).toHaveLength(1);
+    live.stop();
+    live.wake();
+    expect(FakeSocket.instances).toHaveLength(1);
+  });
+
+  it("stops listening for wake-ups after stop", () => {
+    const live = createLiveSocket({
+      url: "ws://t",
+      createSocket: FakeSocket.create,
+      onEvent: () => {},
+    });
+    live.start();
+    FakeSocket.latest().open();
+    live.stop();
+    setTabState("visible");
+    window.dispatchEvent(new Event("online"));
+    vi.advanceTimersByTime(60_000);
+    expect(FakeSocket.instances).toHaveLength(1);
+  });
+
+  it("does not wake a socket the server ended (close 1008)", () => {
+    const live = createLiveSocket({
+      url: "ws://t",
+      createSocket: FakeSocket.create,
+      onEvent: () => {},
+      onSessionEnded: () => {},
+    });
+    live.start();
+    FakeSocket.latest().open();
+    FakeSocket.latest().drop(1008, "session revoked");
+    setTabState("visible");
+    window.dispatchEvent(new Event("online"));
+    live.wake();
+    expect(FakeSocket.instances).toHaveLength(1);
+    live.stop();
   });
 });
 
