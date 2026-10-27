@@ -15,7 +15,7 @@ import type {
 } from "../src/lib/api/types.gen";
 import { postVoice } from "./audio";
 import { apiCall, test as base, type Credentials, expect, settled } from "./fixtures";
-import { agentJSON, connectAI, expectFits, loginAs, MACHINE } from "./helpers";
+import { agentJSON, connectAI, expectFits, loginAs, MACHINE, openSession } from "./helpers";
 import { postPictures } from "./images";
 import { type Instance, startInstance } from "./server";
 
@@ -55,6 +55,15 @@ const CONNECTOR_NAME = "Mobile fit webhook averylongunbrokenconnectorname";
  * them a 45-character word that cannot wrap, so the menu's group label has something to cut.
  */
 const ORG_NAME = "Mobile fit org organizationnamethatcannotbreakonaphonescreen";
+/**
+ * The AI's second live session (SESS-34): it runs in a linked worktree whose folder base is exactly
+ * the 40-character label limit, so the profile row and the `via` chip carry one unbroken word that
+ * must wrap inside them instead of widening the page.
+ */
+const SECOND_LABEL = "worktreeparallelsessionlonglabelnobreaks";
+const SECOND_FOLDER = `/work/${SECOND_LABEL}`;
+const SECOND_LIVE = "e2e-fit-live-session-0002";
+const SECOND_TEXT = "The parallel session answers from its worktree.";
 const CONNECTOR_SECRET = "synthetic-e2e-webhook-secret-not-real";
 const LONG_TEXT = `See ${"averylongunbrokenwordthatmustwrapinsidemessagesandnotpushthepage".repeat(2)} for the release notes`;
 const BIO = `Keeps the release train moving through every phone size. ${"averylongunbrokenbiowordthatmustwrapinsidetheprofilepanelwithoutwideninganything".repeat(2)}`;
@@ -114,9 +123,11 @@ const FIT_QUESTIONS: WizardQuestionRequest[] = [
 
 let owner: Me;
 let orgId = "";
+let agentId = "";
 let room: Room;
 let questionAt: Message;
 let wizardAt: Message;
+let sessions: { close: () => void }[] = [];
 
 /** A root font size enlarged the way the phone's system setting enlarges it. */
 const enlarge = (page: Page) =>
@@ -189,7 +200,27 @@ async function checkConversation(page: Page, where: string, enlarged: boolean) {
   await expect(page.getByRole("heading", { name: ROOM_NAME, level: 1 })).toBeVisible();
   await expect(log.getByRole("button", { name: "Open mobilefit-landscape.png" })).toBeVisible();
   await expect(log.getByRole("group", { name: "Voice message" })).toBeVisible();
+  // The message a parallel session posted carries its label beside the AI's name (SESS-30).
+  await expect(log.getByText(SECOND_TEXT, { exact: true })).toBeVisible();
+  await expect(log.getByText(`via :${SECOND_LABEL}`, { exact: true })).toBeVisible();
   await checkQuestions(page);
+  await settled(page);
+  await scrollThrough(page);
+  await settled(page);
+  await expectFits(page, where);
+}
+
+/**
+ * The full profile page of the seeded AI: its live sessions list the principal and the second
+ * session, whose 40-character label must wrap inside its row (SESS-32, SESS-34).
+ */
+async function checkFullProfile(page: Page, where: string, enlarged: boolean) {
+  await page.goto(`/contacts/${agentId}`);
+  if (enlarged) await enlarge(page);
+  await expect(page.getByRole("heading", { name: AI_NAME, level: 1 })).toBeVisible();
+  const live = page.getByRole("region", { name: "Live sessions" });
+  await expect(live).toBeVisible();
+  await expect(live.getByTestId("session-label")).toHaveText(["principal", `:${SECOND_LABEL}`]);
   await settled(page);
   await scrollThrough(page);
   await settled(page);
@@ -314,6 +345,7 @@ async function checkEveryPage(page: Page, where: string, enlarged: boolean) {
     enlarged,
   );
   await checkProfilePanel(page, `${where}: the profile panel`, enlarged);
+  await checkFullProfile(page, `${where}: the full profile`, enlarged);
   await checkOpenMenu(
     page,
     `${where}: the account menu`,
@@ -347,6 +379,7 @@ test.beforeAll(async ({ browser, fit }) => {
 
     // An AI with a long name and a long bio: the panel and the chart must carry both.
     const agent = await connectAI(context, fit, "/work/mobilefit", MACHINE);
+    agentId = agent.ai.id;
     await apiCall(context.request, fit, "PATCH", `/intelligences/${agent.ai.id}`, {
       display_name: AI_NAME,
       bio: BIO,
@@ -389,6 +422,30 @@ test.beforeAll(async ({ browser, fit }) => {
         text: "Plan the release",
         wizard: { questions: FIT_QUESTIONS },
       } satisfies PostMessageRequest,
+    );
+    // The AI's two live sessions, the principal first; the second is the worktree whose 40-character
+    // label the profile and the conversation must carry. A person's message between the AI's own
+    // stops the parallel message from being grouped under it, so its `via` chip shows.
+    sessions.push(await openSession(fit, agent));
+    sessions.push(
+      await openSession(fit, agent, {
+        live: SECOND_LIVE,
+        harness: "claude",
+        folder: SECOND_FOLDER,
+        mainFolder: "/work/mobilefit",
+      }),
+    );
+    await apiCall(context.request, fit, "POST", `/rooms/${room.id}/messages`, {
+      text: "One last look from the release manager before the parallel session answers.",
+    });
+    await agentJSON<Message>(
+      context,
+      fit,
+      agent,
+      "POST",
+      `/agent/rooms/${room.id}/messages`,
+      { text: SECOND_TEXT },
+      SECOND_LIVE,
     );
 
     // A connection with a long name, and one verified identity linked through it, so both lists
@@ -442,6 +499,11 @@ test.beforeAll(async ({ browser, fit }) => {
   } finally {
     await context.close();
   }
+});
+
+test.afterAll(() => {
+  for (const session of sessions) session.close();
+  sessions = [];
 });
 
 test("every page fits the window of this project", async ({ context, page, fit }, testInfo) => {

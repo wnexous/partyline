@@ -157,37 +157,114 @@ export async function connectAI(
   };
 }
 
+/** One WebSocket frame of the raw socket, once all of it has arrived. */
+interface RawFrame {
+  size: number;
+  opcode: number;
+  payload: Buffer;
+}
+
+/** Reads the first frame off `buffer`, or null while it is still incomplete (RFC 6455 §5.2). */
+function takeFrame(buffer: Buffer): RawFrame | null {
+  if (buffer.length < 2) return null;
+  const opcode = buffer.readUInt8(0) & 0x0f;
+  const masked = (buffer.readUInt8(1) & 0x80) !== 0;
+  let length = buffer.readUInt8(1) & 0x7f;
+  let offset = 2;
+  if (length === 126) {
+    if (buffer.length < 4) return null;
+    length = buffer.readUInt16BE(2);
+    offset = 4;
+  } else if (length === 127) {
+    if (buffer.length < 10) return null;
+    length = Number(buffer.readBigUInt64BE(2));
+    offset = 10;
+  }
+  const maskOffset = offset;
+  if (masked) offset += 4;
+  if (buffer.length < offset + length) return null;
+  let payload = buffer.subarray(offset, offset + length);
+  if (masked) {
+    const mask = buffer.subarray(maskOffset, maskOffset + 4);
+    payload = Buffer.from(payload.map((byte, i) => byte ^ mask.readUInt8(i % 4)));
+  }
+  return { size: offset + length, opcode, payload };
+}
+
+/** A masked pong for a ping the server sent, so an idle session stays live (RFC 6455 §5.5.2). */
+function pongFrame(payload: Buffer): Buffer {
+  const mask = randomBytes(4);
+  // A ping payload is small enough not to need the 126/127 extended-length forms.
+  const header = Buffer.from([0x8a, 0x80 | payload.length]);
+  return Buffer.concat([header, mask, payload.map((byte, i) => byte ^ mask.readUInt8(i % 4))]);
+}
+
+/** What a live session says about itself besides the AI's machine and folder (SESS-10..SESS-14). */
+export interface SessionOptions {
+  /** The process id the socket sends as `X-Partyline-Live`; absent sends none. */
+  live?: string;
+  /** The harness id the session reports (`X-Partyline-Harness`); absent sends none. */
+  harness?: string;
+  /** The folder of a linked worktree session (a raw path, percent-encoded here); absent is the AI's. */
+  folder?: string;
+  /** The main worktree folder that identifies the AI (`X-Partyline-MainFolder`, a raw path). */
+  mainFolder?: string;
+}
+
 /**
  * An AI's live session, opened the way the channel opens it: the agent WebSocket with the machine and
  * folder headers. It resolves once the server's welcome frame arrives, which is when the AI is online;
- * `close()` takes it offline again. It is a plain HTTP upgrade and reads nothing of the frames: the
- * WebSocket of Node takes no request headers before Node 22, and the runner's Node is not pinned.
+ * `close()` takes it offline again, and `live` is the process id the socket sent (`""` when none). It
+ * is a plain HTTP upgrade, because the WebSocket of Node takes no request headers before Node 22 and
+ * the runner's Node is not pinned; its frames are read only to answer the server's pings, so a session
+ * kept open for a whole spec does not time out.
  */
-export function openSession(instance: Instance, agent: AgentClient) {
-  return new Promise<{ close: () => void }>((done, fail) => {
-    const req = request(`${instance.url}/api/v1/agent/ws`, {
-      headers: {
-        Connection: "Upgrade",
-        Upgrade: "websocket",
-        "Sec-WebSocket-Version": "13",
-        "Sec-WebSocket-Key": randomBytes(16).toString("base64"),
-        Authorization: `Bearer ${agent.secret}`,
-        "X-Partyline-Machine": agent.machine,
-        "X-Partyline-Folder": agent.folder,
-      },
-    });
+export function openSession(instance: Instance, agent: AgentClient, options: SessionOptions = {}) {
+  return new Promise<{ close: () => void; live: string }>((done, fail) => {
+    const live = options.live ?? "";
+    const headers: Record<string, string> = {
+      Connection: "Upgrade",
+      Upgrade: "websocket",
+      "Sec-WebSocket-Version": "13",
+      "Sec-WebSocket-Key": randomBytes(16).toString("base64"),
+      Authorization: `Bearer ${agent.secret}`,
+      "X-Partyline-Machine": agent.machine,
+      "X-Partyline-Folder": options.folder ? encodeURIComponent(options.folder) : agent.folder,
+    };
+    if (live) headers["X-Partyline-Live"] = live;
+    if (options.harness) headers["X-Partyline-Harness"] = options.harness;
+    if (options.mainFolder) {
+      headers["X-Partyline-MainFolder"] = encodeURIComponent(options.mainFolder);
+    }
+    const req = request(`${instance.url}/api/v1/agent/ws`, { headers });
     const giveUp = setTimeout(() => {
       req.destroy();
       fail(new Error("the AI's session did not open in time"));
     }, 10_000);
     req.on("upgrade", (_res, socket, head) => {
-      const opened = () => {
+      let opened = false;
+      const welcome = () => {
+        if (opened) return;
+        opened = true;
         clearTimeout(giveUp);
-        done({ close: () => socket.destroy() });
+        done({ close: () => socket.destroy(), live });
       };
-      // The welcome frame is the first thing the server writes, once the AI is attached.
-      if (head.length > 0) opened();
-      else socket.once("data", opened);
+      // The welcome frame is the first text frame the server writes, once the AI is attached; the
+      // pings that follow are answered so the session lasts as long as the test needs it.
+      let buffered = head;
+      const read = (chunk: Buffer) => {
+        buffered = Buffer.concat([buffered, chunk]);
+        for (;;) {
+          const frame = takeFrame(buffered);
+          if (!frame) return;
+          buffered = buffered.subarray(frame.size);
+          if (frame.opcode === 0x9) socket.write(pongFrame(frame.payload));
+          else if (frame.opcode === 0x8) socket.destroy();
+          else if (frame.opcode === 0x1) welcome();
+        }
+      };
+      socket.on("data", read);
+      read(Buffer.alloc(0));
     });
     req.on("response", (res) => {
       clearTimeout(giveUp);
@@ -201,7 +278,11 @@ export function openSession(instance: Instance, agent: AgentClient) {
   });
 }
 
-/** One call of the fake AI client, as its folder and machine (never as a client-supplied id). */
+/**
+ * One call of the fake AI client, as its folder and machine (never as a client-supplied id). `live` is
+ * the process id of the session the call acts for (`X-Partyline-Live`, SESS-29); absent sends none, as
+ * a tools-only process does.
+ */
 export function agentCall(
   context: BrowserContext,
   instance: Instance,
@@ -209,6 +290,7 @@ export function agentCall(
   method: "GET" | "POST" | "PATCH" | "DELETE",
   path: string,
   data?: unknown,
+  live?: string,
 ) {
   return context.request.fetch(`${instance.url}/api/v1${path}`, {
     method,
@@ -216,6 +298,7 @@ export function agentCall(
       Authorization: `Bearer ${agent.secret}`,
       "X-Partyline-Machine": agent.machine,
       "X-Partyline-Folder": agent.folder,
+      ...(live ? { "X-Partyline-Live": live } : {}),
     },
     data,
   });
@@ -228,8 +311,9 @@ export async function agentJSON<T>(
   method: "GET" | "POST" | "PATCH" | "DELETE",
   path: string,
   data?: unknown,
+  live?: string,
 ): Promise<T> {
-  const res = await agentCall(context, instance, agent, method, path, data);
+  const res = await agentCall(context, instance, agent, method, path, data, live);
   expect(res.ok(), `${method} ${path} → ${res.status()}`).toBe(true);
   return (await res.json()) as T;
 }
