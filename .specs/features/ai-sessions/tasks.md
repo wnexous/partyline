@@ -301,9 +301,9 @@ parser](../ai-sessions/design.md#the-parser), reusing the word-boundary idea of
 - `TestWantsStillCountsALabelledMention`: `Wants` with the `mentions` mode and `@atlas:wt` → true (the
   colon ends the handle); no change to `wants.go` is asserted by the existing suite.
 **Done when**:
-- [ ] the parser is case-insensitive on the handle and case-sensitive on the label (lowercase only)
-- [ ] the file has no I/O and no import of `store`, `events`, `api` or `net/http`
-- [ ] Gate check passes: `make check`
+- [x] the parser is case-insensitive on the handle and case-sensitive on the label (lowercase only)
+- [x] the file has no I/O and no import of `store`, `events`, `api` or `net/http`
+- [x] Gate check passes: `make check`
 **Tests**: unit
 **Gate**: build
 **Commit**: `feat(delivery): parse the session a message addresses`
