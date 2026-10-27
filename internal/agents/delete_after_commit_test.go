@@ -66,8 +66,7 @@ func newWorldOfAHostedAI(t *testing.T, f *fixture) *worldOfAHostedAI {
 		store.NewID(), w.dm, bob.UserID, bob.UserID, t0.UnixMilli())
 
 	w.session = &hookedSession{}
-	_, err := f.presence.Attach(ctx, mustAgent(t, f, w.ai).Agent, w.session, "process-one", false)
-	require.NoError(t, err)
+	f.presence.AttachLabeled(ctx, mustAgent(t, f, w.ai).Agent, w.session, "claude", "process-one", "", false)
 	var cancel func()
 	w.events, cancel = f.bus.Subscribe(32)
 	t.Cleanup(cancel)

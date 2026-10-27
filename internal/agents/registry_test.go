@@ -241,8 +241,7 @@ func TestDeleteRemovesMembershipsAndCursors(t *testing.T) {
 	require.ErrorIs(t, f.reg.Delete(ctx, stranger, agent), access.ErrForbidden, "a colleague who sees the AI and does not manage it")
 
 	session := &fakeSession{}
-	_, err := f.presence.Attach(ctx, mustAgent(t, f, agent).Agent, session, "process-one", false)
-	require.NoError(t, err)
+	f.presence.AttachLabeled(ctx, mustAgent(t, f, agent).Agent, session, "claude", "process-one", "", false)
 	ch, cancel := f.bus.Subscribe(16)
 	defer cancel()
 

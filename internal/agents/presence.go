@@ -2,7 +2,6 @@ package agents
 
 import (
 	"context"
-	"errors"
 	"sort"
 	"sync"
 	"time"
@@ -18,19 +17,15 @@ import (
 const (
 	// CloseDeleted ends a connection because its agent was deleted.
 	CloseDeleted websocket.StatusCode = 4001
-	// CloseTakenOver ends a connection because another process took the AI's live session over
-	// (SES-02).
+	// CloseTakenOver ends a connection because another process took the AI's session over, or
+	// because the AI's session was ended (SES-02, POS-04).
 	CloseTakenOver websocket.StatusCode = 4002
-	// CloseBusy ends a new connection that lost a race: another process attached between the
-	// pre-upgrade check and the attach (SES-04).
-	CloseBusy websocket.StatusCode = 4003
 )
 
 // Close reasons sent with the close codes.
 const (
 	ReasonDeleted   = "deleted"
 	ReasonTakenOver = "taken_over"
-	ReasonBusy      = "identity_busy"
 	// ReasonReconnected closes the old socket of a process that connected again (code 1000).
 	ReasonReconnected = "reconnected"
 )
@@ -38,10 +33,6 @@ const (
 // retiredTTL is how long a process keeps the label of a session that ended, so that a reconnect within
 // it keeps the label a person is addressing (SESS-14).
 const retiredTTL = 10 * time.Minute
-
-// ErrBusy means another process holds the AI's live session and the connection did not ask to
-// take it over (SES-04).
-var ErrBusy = errors.New("the agent has a live session in another process")
 
 // Session is one live agent connection held by Presence.
 type Session interface {
@@ -110,17 +101,6 @@ func NewPresence(st *store.Store, bus *events.Bus, now func() time.Time) *Presen
 	}
 }
 
-// Attach makes s the agent's principal session, as AttachLabeled with the preferred label "" does, and
-// keeps today's refusal: another process's live principal session is ErrBusy unless takeover is set
-// (SES-02, SES-04). The gateway attaches every connection with AttachLabeled, which never refuses one.
-func (p *Presence) Attach(ctx context.Context, agent db.Agent, s Session, liveID string, takeover bool) (fresh bool, err error) {
-	_, fresh, busy := p.attach(ctx, agent, s, "", liveID, "", takeover, true)
-	if busy {
-		return false, ErrBusy
-	}
-	return fresh, nil
-}
-
 // AttachLabeled makes s a live session of the agent (SESS-10) and returns the session it became:
 //   - the same process (liveID is not empty and live) replaces its own socket silently, which is closed
 //     normally, and keeps its label, harness and start time (SESS-14);
@@ -135,13 +115,6 @@ func (p *Presence) Attach(ctx context.Context, agent db.Agent, s Session, liveID
 // label end with two different labels (SESS-12). fresh reports whether a new session started (everything
 // but a process reconnecting).
 func (p *Presence) AttachLabeled(ctx context.Context, agent db.Agent, s Session, harness, liveID, preferred string, takeover bool) (live Live, fresh bool) {
-	live, fresh, _ = p.attach(ctx, agent, s, harness, liveID, preferred, takeover, false)
-	return live, fresh
-}
-
-// attach is Attach and AttachLabeled. refuseBusy is Attach's pre-upgrade refusal of a principal session
-// held by another process; busy reports that it refused, and nothing changed then.
-func (p *Presence) attach(ctx context.Context, agent db.Agent, s Session, harness, liveID, preferred string, takeover, refuseBusy bool) (live Live, fresh bool, busy bool) {
 	p.mu.Lock()
 	now := p.now()
 	p.pruneLocked(agent.ID, now)
@@ -159,14 +132,10 @@ func (p *Presence) attach(ctx context.Context, agent db.Agent, s Session, harnes
 			p.mu.Unlock()
 			prev.session.Close(websocket.StatusNormalClosure, ReasonReconnected)
 			_ = p.touch(ctx, agent.ID) // best effort, like Detach: last_seen_at is informational
-			return next.live(), false, false
+			return next.live(), false
 		}
 	}
 	main, mainLive := held[""]
-	if refuseBusy && mainLive && !takeover {
-		p.mu.Unlock()
-		return Live{}, false, true
-	}
 	if held == nil {
 		held = map[string]presenceEntry{}
 	}
@@ -198,20 +167,7 @@ func (p *Presence) attach(ctx context.Context, agent db.Agent, s Session, harnes
 	if online {
 		p.bus.Publish(events.AgentPresence{AgentID: agent.ID, OwnerID: agent.OwnerID, Online: true})
 	}
-	return entry.live(), true, false
-}
-
-// Busy reports the live principal session that stops a connection of the process liveID from attaching
-// without taking over: the agent is held by another process (SES-04). A connection that names no process
-// is another process.
-func (p *Presence) Busy(agentID, liveID string) (Live, bool) {
-	p.mu.Lock()
-	defer p.mu.Unlock()
-	e, ok := p.sessions[agentID][""]
-	if !ok || (liveID != "" && e.liveID == liveID) {
-		return Live{}, false
-	}
-	return e.live(), true
+	return entry.live(), true
 }
 
 // Live returns the agent's principal session, if any.

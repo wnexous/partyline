@@ -31,7 +31,8 @@ func newPresenceFixture(t *testing.T) (*presenceFixture, func(s Session, liveID 
 	p := &presenceFixture{fixture: f, owner: alice.UserID, events: ch}
 	p.agent.ID = agent.ID
 	attach := func(s Session, liveID string, takeover bool) (bool, error) {
-		return f.presence.Attach(context.Background(), agent.Agent, s, liveID, takeover)
+		_, fresh := f.presence.AttachLabeled(context.Background(), agent.Agent, s, "claude", liveID, "", takeover)
+		return fresh, nil
 	}
 	return p, attach
 }
@@ -44,9 +45,9 @@ func (p *presenceFixture) offline() events.Event {
 	return events.AgentPresence{AgentID: p.agent.ID, OwnerID: p.owner, Online: false}
 }
 
-// SES-04: an AI has one live session. A connection from another process is refused while it is
-// held, the held session is not touched, and the refused one never counts as attached.
-func TestPresenceRefusesASecondProcess(t *testing.T) {
+// SESS-10: a connection from another process is a parallel session, not a refusal: the principal
+// is untouched, both are live and the second gets the next free label.
+func TestPresenceAttachesASecondProcess(t *testing.T) {
 	p, attach := newPresenceFixture(t)
 	first, second := &fakeSession{}, &fakeSession{}
 
@@ -59,51 +60,41 @@ func TestPresenceRefusesASecondProcess(t *testing.T) {
 	require.Equal(t, t0, live.Since)
 
 	fresh, err = attach(second, "process-two", false)
-	require.ErrorIs(t, err, ErrBusy)
-	require.False(t, fresh)
+	require.NoError(t, err)
+	require.True(t, fresh, "a second process starts a session")
 	_, _, closed := first.state()
-	require.Zero(t, closed, "the live session is untouched")
-	require.Empty(t, drain(p.events), "a refusal changes nothing")
-	require.False(t, p.presence.Detach(context.Background(), p.agent.ID, second), "the refused session was never attached")
-	require.True(t, p.presence.Online(p.agent.ID))
-
-	busy, ok := p.presence.Busy(p.agent.ID, "process-two")
-	require.True(t, ok, "another process is blocked")
-	require.Equal(t, t0, busy.Since)
-	_, ok = p.presence.Busy(p.agent.ID, "process-one")
-	require.False(t, ok, "the holder itself is not blocked")
-	_, ok = p.presence.Busy("someone-else", "process-two")
-	require.False(t, ok, "an AI nobody holds blocks nobody")
-	_, ok = p.presence.Busy(p.agent.ID, "")
-	require.True(t, ok, "a connection that tells no process is another process")
+	require.Zero(t, closed, "the principal is untouched")
+	require.Empty(t, drain(p.events), "the AI stays online")
+	require.True(t, p.presence.Detach(context.Background(), p.agent.ID, second))
+	require.True(t, p.presence.Online(p.agent.ID), "the principal keeps the AI online")
+	require.False(t, p.presence.Detach(context.Background(), p.agent.ID, second), "the parallel session already ended")
+	require.Equal(t, []string{""}, labelsOf(p.presence.Sessions(p.agent.ID)))
 }
 
-// SES-04 (L-042): a connection that sends no process id is a process of its own, also when the
-// session that holds the AI sent none either. Two such connections are two processes: the second
-// is refused, and even with takeover it replaces the first as a takeover (taken_over), never as the
-// silent reconnect of one process.
-func TestPresenceTreatsTwoConnectionsWithoutAProcessIDAsTwoProcesses(t *testing.T) {
+// SESS-11, SESS-13: a connection that sends no process id is a process of its own, also when the
+// principal sent none either: two such connections are two sessions, and a takeover replaces the
+// principal (taken_over), never the silent reconnect of one process.
+func TestPresenceTreatsTwoConnectionsWithoutAProcessIDAsTwoSessions(t *testing.T) {
 	p, attach := newPresenceFixture(t)
-	first, second := &fakeSession{}, &fakeSession{}
+	first, second, third := &fakeSession{}, &fakeSession{}, &fakeSession{}
 	fresh, err := attach(first, "", false)
 	require.NoError(t, err)
 	require.True(t, fresh)
 	drain(p.events)
 
 	fresh, err = attach(second, "", false)
-	require.ErrorIs(t, err, ErrBusy)
-	require.False(t, fresh)
+	require.NoError(t, err)
+	require.True(t, fresh, "a connection that tells no process is a session of its own")
 	_, _, closed := first.state()
-	require.Zero(t, closed, "the holder is untouched")
-	busy, ok := p.presence.Busy(p.agent.ID, "")
-	require.True(t, ok, "a second connection that tells no process is blocked by a holder that told none")
-	require.Equal(t, t0, busy.Since)
+	require.Zero(t, closed, "the principal is untouched")
+	require.Equal(t, []string{"", "claude-2"}, labelsOf(p.presence.Sessions(p.agent.ID)))
 
-	fresh, err = attach(second, "", true)
+	fresh, err = attach(third, "", true)
 	require.NoError(t, err)
 	require.True(t, fresh, "a takeover starts a new session")
 	code, reason, closed := first.state()
 	require.Equal(t, []any{1, CloseTakenOver, "taken_over"}, []any{closed, code, reason}, "closed as taken over, not as a reconnect")
+	require.Equal(t, []string{"", "claude-2"}, labelsOf(p.presence.Sessions(p.agent.ID)), "the parallel session stays")
 }
 
 // SES-02: a session that takes over closes the old one with taken_over and becomes the live

@@ -220,6 +220,11 @@ export interface AgentWelcomeFrame {
    * operates none (CID-01).
    */
   connections: AgentConnection[];
+  /**
+   * Session is the live session this connection became (SESS-15): its label ("" for the
+   * principal), the app it runs in and when it started. A process that reconnects keeps them.
+   */
+  session: SessionInfo;
 }
 /**
  * AgentWhoAmI is GET /agent/whoami: the intelligence of the user the agent token belongs to - the
@@ -284,9 +289,20 @@ export interface AgentOrgPosition {
   parent_id?: string;
 }
 /**
+ * SessionInfo is one live session of an AI (SESS-15, SESS-32): its label, the app it runs in and
+ * when it started. Label is "" for the principal session and the session's own label otherwise
+ * (SESS-11); a process that reconnects keeps its start time (SESS-14).
+ */
+export interface SessionInfo {
+  label: string;
+  harness: string;
+  connected_at: string /* RFC 3339 */;
+}
+/**
  * SessionState is GET /agent/session: what the server knows about the AI of the machine and
  * folder named in the headers, without creating anything (SES-01). Online tells whether the AI
- * has a live session; the launcher asks before taking it over.
+ * has a live session, ConnectedAt is its principal session's start and Sessions lists every live
+ * session, the principal first (SESS-19).
  */
 export interface SessionState {
   exists: boolean;
@@ -300,9 +316,14 @@ export interface SessionState {
    */
   app: string;
   /**
-   * ConnectedAt is when the live session connected; absent while the AI is offline.
+   * ConnectedAt is when the principal session connected; absent while the AI is offline.
    */
   connected_at?: string /* RFC 3339 */;
+  /**
+   * Sessions are the AI's live sessions, the principal ("") first and the labelled ones in the
+   * lexical order of their label; empty when the AI is offline.
+   */
+  sessions: SessionInfo[];
 }
 /**
  * AgentMessageFrame pushes one room message (backlog first, then live).

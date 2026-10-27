@@ -430,11 +430,11 @@ the server no longer needs; keep the DTO constant. Update the tests that asserte
 - `internal/agents/gateway_test.go`: a session with `FeaturePlatform` and a second without → only the
   principal receives a queued platform event (the feed is built for the principal only).
 **Done when**:
-- [ ] no code path answers 409 `identity_busy`; `grep -rn identity_busy internal` shows only the DTO
+- [x] no code path answers 409 `identity_busy`; `grep -rn identity_busy internal` shows only the DTO
       constant and its detail keys and the channel's compatibility branch
-- [ ] the welcome of every connection carries a session; the principal's label is `""`
-- [ ] a labelled connection never writes `agents.harness` or `agents.connected_at`
-- [ ] Gate check passes: `make check`
+- [x] the welcome of every connection carries a session; the principal's label is `""`
+- [x] a labelled connection never writes `agents.harness` or `agents.connected_at`
+- [x] Gate check passes: `make check`
 **Tests**: integration
 **Gate**: build
 **Commit**: `feat(agents): connect a second session instead of refusing it`

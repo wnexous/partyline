@@ -26,7 +26,7 @@ type welcomeV05 struct {
 
 // welcomeOf starts the session of folder f with the token and returns its welcome frame, decoded and
 // raw, then closes the session. Every call is the same process (one live id), so dialing an AI again is a
-// reconnect and never identity_busy.
+// reconnect, never a second session.
 func welcomeOf(t *testing.T, tok *testkit.Client, f testkit.Folder) (dto.AgentWelcomeFrame, string) {
 	t.Helper()
 	if f.Live == "" {

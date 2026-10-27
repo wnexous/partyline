@@ -456,14 +456,14 @@ func TestToolsReportTakenOver(t *testing.T) {
 	require.Empty(t, e.messages(e.room.ID), "the taken-over channel posted nothing as the AI")
 }
 
-// SES-04: while another session holds the AI, tools report that this channel is not connected
-// and nothing is posted as the AI.
+// SES-04: against a server of the previous release that still refuses a session while another
+// one holds the AI, tools report that this channel is not connected and nothing is posted as the
+// AI (the compatibility branch; this release's server attaches a parallel session, SESS-10).
 func TestToolsReportBusy(t *testing.T) {
 	e := newChanEnv(t)
-	holder, resp := e.alice.WithBearer(e.secret).DialFolder(testkit.Folder{Machine: "testbox", Path: "/work/builder", Harness: "opencode"})
-	require.NotNil(t, holder, "upgrade refused: %d %s", resp.Status, resp.Body)
-	holder.Welcome(wait)
+	held := holdAI(t, e)
 	o := e.options()
+	o.URL = held.url
 	o.timing.busyRetries = []time.Duration{} // no retry: the state stays busy
 	s := startSession(t, o)
 	s.handshake()

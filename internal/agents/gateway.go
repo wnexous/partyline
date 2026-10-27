@@ -218,15 +218,6 @@ func (g *Gateway) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		httpx.WriteError(w, err)
 		return
 	}
-	// A live session of another process keeps the AI unless this connection takes it over
-	// (SES-02, SES-04); the refusal is told before the upgrade, with who holds it.
-	if !hs.takeover {
-		if live, busy := g.d.Presence.Busy(row.Agent.ID, hs.liveID); busy {
-			g.d.Logger.DebugContext(r.Context(), "agent: connection refused", "code", dto.ErrorCodeIdentityBusy, "agent_id", row.Agent.ID, "request_id", httpx.RequestID(r.Context()))
-			httpx.WriteError(w, busyError(row, live))
-			return
-		}
-	}
 	ws, err := websocket.Accept(w, r, nil)
 	if err != nil {
 		return // Accept already wrote the response
@@ -238,31 +229,27 @@ func (g *Gateway) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	defer stopReq()
 
 	c := &conn{ws: ws, queue: make(chan outbound, QueueSize), cancel: cancel}
-	if hs.platform && g.d.Platform != nil {
-		c.feed = newPlatformFeed(g.d.Platform, row.Agent.ID)
-	}
 	if g.beforeAttach != nil {
 		g.beforeAttach()
 	}
-	err = g.d.Registry.Attach(ctx, row.Agent, c, hs.harness, hs.liveID, hs.takeover)
-	defer g.d.Presence.Detach(ctx, row.Agent.ID, c) // does nothing for a connection that never attached
-	switch {
-	case errors.Is(err, ErrBusy):
-		// Another process attached between the check above and now: the new socket loses.
-		g.d.Logger.DebugContext(ctx, "agent: connection refused", "code", dto.ErrorCodeIdentityBusy, "agent_id", row.Agent.ID)
-		_ = ws.Close(CloseBusy, ReasonBusy)
-		return
-	case err != nil:
+	defer g.d.Presence.Detach(ctx, row.Agent.ID, c) // frees the label; nothing for a connection that never attached
+	live, err := g.d.Registry.Attach(ctx, row.Agent, c, hs.harness, hs.liveID, hs.label, hs.takeover)
+	if err != nil {
 		g.d.Logger.ErrorContext(ctx, "agent: attach failed", "agent_id", row.Agent.ID, "err", err)
 		_ = ws.Close(websocket.StatusInternalError, "attach failed")
 		return
+	}
+	c.label = live.Label
+	// Only the principal session receives the platform events of the AI it operates (SESS-18).
+	if hs.platform && g.d.Platform != nil && live.Label == "" {
+		c.feed = newPlatformFeed(g.d.Platform, row.Agent.ID)
 	}
 	go g.readAcks(ctx, c, row.Agent.ID)
 	if revocations != nil {
 		go g.watchBus(ctx, c, p, revocations)
 	}
 
-	err = g.run(ctx, c, row)
+	err = g.run(ctx, c, row, live)
 	if err != nil && ctx.Err() == nil {
 		g.d.Logger.Debug("agent connection ended", "agent_id", row.Agent.ID, "err", err)
 	}
@@ -336,7 +323,10 @@ type handshake struct {
 	harness string
 	// liveID is the id of the process that holds the connection (SES-02); empty when it sent none.
 	liveID string
-	// takeover asks to take the AI's live session over (SES-02).
+	// label is the session label the connection prefers (SESS-11): "" when the session runs in the
+	// AI's own folder and the folder's slug when it runs in a linked worktree.
+	label string
+	// takeover asks to take the AI's session over (SES-02).
 	takeover bool
 	// platform is set when the client understands platform events (dto.FeaturePlatform, CID-06).
 	platform bool
@@ -347,8 +337,8 @@ var liveIDPattern = regexp.MustCompile(`^[A-Za-z0-9_-]{16,64}$`)
 
 // register resolves the AI of the machine and folder the session sent (AID-02), creating it on
 // first sight, and reads the rest of what the connection says. The AI's app is not touched
-// here: it follows the session once the session is live (Registry.Attach), so a refused
-// connection changes nothing (SES-04).
+// here: it follows the principal session once the session is live (Registry.Attach, SESS-17), so
+// a connection that fails to attach changes nothing.
 func (g *Gateway) register(ctx context.Context, p authn.Principal, h http.Header) (db.GetAgentWithOwnerRow, handshake, error) {
 	id, err := FolderIDFromHeader(h)
 	if err != nil {
@@ -364,23 +354,15 @@ func (g *Gateway) register(ctx context.Context, p authn.Principal, h http.Header
 		return db.GetAgentWithOwnerRow{}, handshake{}, err
 	}
 	row, err := g.d.Store.R().GetAgentWithOwner(ctx, a.ID)
-	return row, d, err
-}
-
-// busyError is the refusal of a connection for an AI whose live session is in another process
-// (SES-04): it says who, in which app and since when, so the channel can tell the person how to
-// take over.
-func busyError(row db.GetAgentWithOwnerRow, live Live) *httpx.Error {
-	app := row.Agent.Harness
-	return &httpx.Error{
-		Status: http.StatusConflict, Code: dto.ErrorCodeIdentityBusy, Message: "this intelligence is open in another session",
-		Details: map[string]string{
-			dto.BusyDetailDisplayName: row.ProfileName,
-			dto.BusyDetailApp:         app,
-			dto.BusyDetailAppLabel:    HarnessLabel(app),
-			dto.BusyDetailConnectedAt: live.Since.UTC().Format(time.RFC3339),
-		},
+	if err != nil {
+		return row, d, err
 	}
+	// The AI's folder is the main worktree's one (SESS-01): a session in another folder asks for
+	// that folder's label, and a session in the AI's own folder is the principal (SESS-11).
+	if id.Folder != row.Agent.Folder {
+		d.label = LabelForFolder(id.Folder)
+	}
+	return row, d, nil
 }
 
 // welcomeRefs loads the AI's and its owner's profiles for the welcome frame. A row without an
@@ -453,7 +435,10 @@ type conn struct {
 	ws     *websocket.Conn
 	queue  chan outbound
 	cancel context.CancelFunc
-	// feed sends the AI's platform items; nil for a client that did not opt in to them.
+	// label is the label of the live session the connection became (SESS-11): "" for the principal.
+	label string
+	// feed sends the AI's platform items; nil for a client that did not opt in to them and for every
+	// labelled session, which receives none (SESS-18).
 	feed *platformFeed
 
 	mu     sync.Mutex
@@ -516,8 +501,9 @@ func (c *conn) write(ctx context.Context, v any) error {
 	return c.ws.Write(wctx, websocket.MessageText, data)
 }
 
-// run sends the welcome frame and the backlog, then live pushes and pings until ctx ends.
-func (g *Gateway) run(ctx context.Context, c *conn, row db.GetAgentWithOwnerRow) error {
+// run sends the welcome frame and the backlog, then live pushes and pings until ctx ends. live is the
+// session the connection became; the welcome names it (SESS-15).
+func (g *Gateway) run(ctx context.Context, c *conn, row db.GetAgentWithOwnerRow, live Live) error {
 	a := row.Agent
 	ai, owner, err := g.welcomeRefs(ctx, row)
 	if err != nil {
@@ -537,6 +523,7 @@ func (g *Gateway) run(ctx context.Context, c *conn, row db.GetAgentWithOwnerRow)
 		Intelligence: ai, Owner: owner,
 		Organization: where.org, Position: where.position, Managers: where.managers,
 		Connections: connections,
+		Session:     dto.SessionInfo{Label: live.Label, Harness: live.Harness, ConnectedAt: live.Since.UTC()},
 	}); err != nil {
 		return err
 	}
@@ -731,6 +718,9 @@ func (g *Gateway) readAcks(ctx context.Context, c *conn, agentID string) {
 		}
 		switch {
 		case head.Type == dto.AgentFrameTypeAck && head.MessageID != "":
+			if c.label != "" {
+				continue // the AI's cursor follows its principal session (SESS-17)
+			}
 			if err := g.ack(ctx, agentID, head.MessageID); err != nil && ctx.Err() == nil {
 				g.d.Logger.Error("agent: ack failed", "agent_id", agentID, "err", err)
 			}

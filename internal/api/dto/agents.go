@@ -168,6 +168,9 @@ type AgentWelcomeFrame struct {
 	// Connections are the connections the AI operates, by name; always present, empty when it
 	// operates none (CID-01).
 	Connections []AgentConnection `json:"connections"`
+	// Session is the live session this connection became (SESS-15): its label ("" for the
+	// principal), the app it runs in and when it started. A process that reconnects keeps them.
+	Session SessionInfo `json:"session"`
 }
 
 // AgentWhoAmI is GET /agent/whoami: the intelligence of the user the agent token belongs to - the
@@ -212,9 +215,19 @@ type AgentOrgPosition struct {
 	ParentID string `json:"parent_id,omitempty"`
 }
 
+// SessionInfo is one live session of an AI (SESS-15, SESS-32): its label, the app it runs in and
+// when it started. Label is "" for the principal session and the session's own label otherwise
+// (SESS-11); a process that reconnects keeps its start time (SESS-14).
+type SessionInfo struct {
+	Label       string    `json:"label"`
+	Harness     string    `json:"harness"`
+	ConnectedAt time.Time `json:"connected_at"`
+}
+
 // SessionState is GET /agent/session: what the server knows about the AI of the machine and
 // folder named in the headers, without creating anything (SES-01). Online tells whether the AI
-// has a live session; the launcher asks before taking it over.
+// has a live session, ConnectedAt is its principal session's start and Sessions lists every live
+// session, the principal first (SESS-19).
 type SessionState struct {
 	Exists bool `json:"exists"`
 	Online bool `json:"online"`
@@ -222,8 +235,11 @@ type SessionState struct {
 	Intelligence *IntelligenceRef `json:"intelligence,omitempty"`
 	// App is the id of the harness the AI currently runs in; empty when Exists is false.
 	App string `json:"app"`
-	// ConnectedAt is when the live session connected; absent while the AI is offline.
+	// ConnectedAt is when the principal session connected; absent while the AI is offline.
 	ConnectedAt *time.Time `json:"connected_at,omitempty"`
+	// Sessions are the AI's live sessions, the principal ("") first and the labelled ones in the
+	// lexical order of their label; empty when the AI is offline.
+	Sessions []SessionInfo `json:"sessions"`
 }
 
 // AgentMessageFrame pushes one room message (backlog first, then live).

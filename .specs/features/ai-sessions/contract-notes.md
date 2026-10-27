@@ -72,3 +72,47 @@ and posts with the worktree label". T4 resolves the AI (tested through `Registry
 with the `X-Partyline-Live` rule (SESS-28..SESS-31); T4's file list does not include `rooms` or the
 message DTO. Nothing derives an author label from the folder here; SESS-06's label arrives with T9 on
 top of this resolution.
+
+# Contract Notes (from ai-sessions T6: a parallel session on the wire)
+
+The rest of the design stands. Removing the refusal touches a few files T6's **Also** line does not
+name, and one label detail is settled by T5's merged contract.
+
+## `Registry.Sessions` is the read `GET /agent/session` needs
+
+The route's dependencies (`internal/api.Deps`) hold the `agents.Registry`, not the `Presence`, so the
+handler cannot call `Presence.Sessions` directly. `internal/agents/folder.go` (T6's **Also** line) gains
+the one-line `func (r *Registry) Sessions(agentID string) []Live { return r.presence.Sessions(agentID) }`,
+which is the method T10's profile and members use too. No other registry change.
+
+## The tests that asserted the refusal moved to the old-server compatibility path
+
+SESS-10 supersedes SES-04: the server never refuses a second connection, so the tests that produced a
+refusal by opening two real sessions cannot stay as they were. They now assert the new rule or drive the
+channel's compatibility branch from a server of the previous release (409 `identity_busy` with the
+`BusyDetail` details in front of the app, `internal/channel/session_lost_test.go`'s `heldAI`):
+
+- `internal/agents/presence_test.go`: the two SES-04 tests become SESS-10/SESS-11 tests (a second
+  process becomes a parallel session; two connections without a process id are two sessions and a
+  takeover still replaces the principal).
+- `internal/agents/folder_test.go`, `internal/agents/delete_test.go`,
+  `internal/agents/delete_after_commit_test.go`, `internal/agents/registry_test.go`,
+  `internal/api/agent_delete_after_commit_test.go`: `Presence.Attach` and the old
+  `Registry.Attach` signature were removed, so these fixtures attach with `AttachLabeled`; the folder
+  test asserts a parallel session instead of `ErrBusy`.
+- `internal/api/agent_placement_test.go`, `internal/api/agent_welcome_org_test.go`: two comments named
+  `identity_busy`; they now describe a reconnect only.
+- `internal/channel/session_lost_test.go`, `internal/channel/tools_test.go`,
+  `internal/channel/link_live_test.go`, `internal/cli/channel_live_test.go`: the busy texts and the
+  SES-04 retry loop are the compatibility branch for an older server, so their setup simulates that
+  server instead of relying on the new one to refuse; the CLI live test asserts that a channel without
+  takeover attaches as a parallel session (SESS-10, SESS-16's client half is T7).
+
+## A same-folder parallel label names the session's harness, not the AI's
+
+T5's merged contract (`TestTwoConnectionsRaceForThePrincipal`, an AI stored as `agent` and sessions
+reporting `claude` → `claude-2`) fixes `AllocateLabel`'s base to the harness the attaching session
+reports. So a `pi` session joining a Claude AI in the same folder is `pi-2`, and T10's expected
+`{label:"claude-2",harness:"pi"}` needs a preferred label (a worktree folder named `claude-2`, for
+example) or the `pi-2` value. T6's tests attach the second session with the AI's harness when they assert
+`claude-2`.

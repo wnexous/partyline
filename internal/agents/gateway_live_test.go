@@ -2,6 +2,7 @@ package agents_test
 
 import (
 	"context"
+	"database/sql"
 	"net/http"
 	"sync"
 	"testing"
@@ -35,10 +36,10 @@ func (h *holder) closes() int {
 	return h.closed
 }
 
-// SES-04: a connection that passed the check before the upgrade but lost the race to another
-// process is closed with 4003 identity_busy. The session that won stays live and keeps its app,
-// and nothing is announced.
-func TestGatewayClosesAConnectionThatLostTheRace(t *testing.T) {
+// SESS-10: a connection that attaches while another process already holds the AI is a parallel
+// session, not a refusal: it gets the next label, nobody is closed and the AI's app stays the
+// principal's.
+func TestGatewayAttachesAConnectionThatLostTheRaceAsAParallelSession(t *testing.T) {
 	env := testkit.New(t)
 	alice := env.NewUser("alice")
 	id := env.NewAI(alice, "builder")
@@ -49,8 +50,7 @@ func TestGatewayClosesAConnectionThatLostTheRace(t *testing.T) {
 	var once sync.Once
 	agents.SetBeforeAttach(env.App.Gateway, func() {
 		once.Do(func() {
-			_, err := env.App.Presence.Attach(ctx, agent, winner, "winning-process-id", false)
-			require.NoError(t, err)
+			env.App.Presence.AttachLabeled(ctx, agent, winner, "claude", "winning-process-id", "", false)
 		})
 	})
 	sub, cancel := env.App.Bus.Subscribe(64)
@@ -59,20 +59,17 @@ func TestGatewayClosesAConnectionThatLostTheRace(t *testing.T) {
 	f := testkit.FolderOf("builder")
 	f.Harness = "opencode"
 	conn, resp := alice.Token(dto.TokenKindAgent, "laptop").DialFolder(f)
-	require.NotNil(t, conn, "the check before the upgrade passed: %d %s", resp.Status, resp.Body)
+	require.NotNil(t, conn, "the race is no refusal: %d %s", resp.Status, resp.Body)
+	welcome := conn.Welcome(30 * time.Second)
+	require.Equal(t, "opencode-2", welcome.Session.Label, "the parallel label: its harness names it (SESS-11)")
+	require.Equal(t, id, welcome.Agent.ID)
 
-	err = conn.Closed(30 * time.Second)
-	var closeErr websocket.CloseError
-	require.ErrorAs(t, err, &closeErr)
-	require.Equal(t, []any{agents.CloseBusy, "identity_busy"}, []any{closeErr.Code, closeErr.Reason})
-	require.Equal(t, websocket.StatusCode(4003), agents.CloseBusy)
-
-	env.App.Gateway.Close() // waits for the loser's handler to finish
-	require.True(t, env.App.Presence.Online(id), "the winner stays live")
-	require.Zero(t, winner.closes())
+	env.App.Gateway.Close() // waits for the connection's handler to finish
+	require.True(t, env.App.Presence.Online(id), "the principal stays live")
+	require.Zero(t, winner.closes(), "nobody is closed")
 	after, err := env.App.Agents.ByID(ctx, id)
 	require.NoError(t, err)
-	require.Equal(t, "claude", after.Harness, "the loser did not relabel the AI")
+	require.Equal(t, "claude", after.Harness, "the parallel session did not relabel the AI")
 
 	var announced []events.AgentPresence
 drain:
@@ -86,7 +83,145 @@ drain:
 			break drain
 		}
 	}
-	require.Equal(t, []events.AgentPresence{{AgentID: id, OwnerID: alice.User.ID, Online: true}}, announced, "only the winner was announced")
+	require.Equal(t, []events.AgentPresence{{AgentID: id, OwnerID: alice.User.ID, Online: true}}, announced, "the AI was announced once")
+}
+
+// SESS-10, SESS-15: two dials of one folder with different process ids are two live sessions of
+// the same AI, and every welcome names the session it became: the principal is "" and the second
+// one is labelled.
+func TestTwoSessionsOfOneFolderShareTheAI(t *testing.T) {
+	env := testkit.New(t)
+	alice := env.NewUser("alice")
+	id := env.NewAI(alice, "builder")
+	tok := alice.Token(dto.TokenKindAgent, "laptop")
+
+	principal, resp := tok.DialFolder(testkit.FolderOf("builder"))
+	require.NotNil(t, principal, "upgrade refused: %d %s", resp.Status, resp.Body)
+	first := principal.Welcome(time.Minute)
+	require.Equal(t, "", first.Session.Label, "the principal's label")
+	require.Equal(t, id, first.Agent.ID)
+
+	second, resp := tok.DialFolder(testkit.FolderOf("builder"))
+	require.NotNil(t, second, "upgrade refused: %d %s", resp.Status, resp.Body)
+	parallel := second.Welcome(time.Minute)
+	require.Equal(t, "claude-2", parallel.Session.Label)
+	require.Equal(t, id, parallel.Agent.ID, "one AI for both sessions")
+	require.Equal(t, "claude", parallel.Session.Harness)
+	require.Equal(t, "claude", first.Session.Harness)
+
+	require.NoError(t, principal.Closed(200*time.Millisecond), "the principal stays open")
+	require.NoError(t, second.Closed(200*time.Millisecond), "the parallel session stays open")
+	require.True(t, env.App.Presence.Online(id))
+}
+
+// SESS-11: a session in a linked worktree is a parallel session of the repository's AI and its
+// label is the worktree folder's slug.
+func TestAWorktreeSessionGetsTheWorktreesLabel(t *testing.T) {
+	env := testkit.New(t)
+	alice := env.NewUser("alice")
+	tok := alice.Token(dto.TokenKindAgent, "laptop")
+	main := testkit.Folder{Machine: testkit.Machine, Path: "/repo", Harness: "claude"}
+	principal, resp := tok.DialFolder(main)
+	require.NotNil(t, principal, "upgrade refused: %d %s", resp.Status, resp.Body)
+	first := principal.Welcome(time.Minute)
+	require.Equal(t, "", first.Session.Label)
+
+	worktree := testkit.Folder{Machine: testkit.Machine, Path: "/repo/wt", MainFolder: "/repo", Harness: "pi"}
+	session, resp := tok.DialFolder(worktree)
+	require.NotNil(t, session, "upgrade refused: %d %s", resp.Status, resp.Body)
+	welcome := session.Welcome(time.Minute)
+	require.Equal(t, "wt", welcome.Session.Label)
+	require.Equal(t, first.Agent.ID, welcome.Agent.ID, "the worktree session is the repository's AI")
+	require.Equal(t, "pi", welcome.Session.Harness)
+	require.NoError(t, principal.Closed(200*time.Millisecond))
+}
+
+// SESS-13, SESS-15: a takeover dial replaces the principal, closes the old socket with 4002 and
+// its welcome names the principal session.
+func TestATakeoverDialBecomesThePrincipal(t *testing.T) {
+	env := testkit.New(t)
+	alice := env.NewUser("alice")
+	id := env.NewAI(alice, "builder")
+	tok := alice.Token(dto.TokenKindAgent, "laptop")
+	first, resp := tok.DialFolder(testkit.FolderOf("builder"))
+	require.NotNil(t, first, "upgrade refused: %d %s", resp.Status, resp.Body)
+	first.Welcome(time.Minute)
+
+	takeover := testkit.FolderOf("builder")
+	takeover.Takeover = true
+	second, resp := tok.DialFolder(takeover)
+	require.NotNil(t, second, "upgrade refused: %d %s", resp.Status, resp.Body)
+	welcome := second.Welcome(time.Minute)
+	require.Equal(t, "", welcome.Session.Label, "a takeover is the principal")
+	require.Equal(t, id, welcome.Agent.ID)
+
+	var closeErr websocket.CloseError
+	require.ErrorAs(t, first.Closed(time.Minute), &closeErr)
+	require.Equal(t, agents.CloseTakenOver, closeErr.Code)
+	require.Equal(t, "taken_over", closeErr.Reason)
+	require.True(t, env.App.Presence.Online(id))
+}
+
+// SESS-17: a parallel session shares the AI without relabeling it: its harness and connect time
+// stay the principal's.
+func TestAParallelSessionDoesNotRelabelTheAI(t *testing.T) {
+	env := testkit.New(t)
+	alice := env.NewUser("alice")
+	id := env.NewAI(alice, "builder")
+	ctx := context.Background()
+	tok := alice.Token(dto.TokenKindAgent, "laptop")
+	principal, resp := tok.DialFolder(testkit.FolderOf("builder"))
+	require.NotNil(t, principal, "upgrade refused: %d %s", resp.Status, resp.Body)
+	principal.Welcome(time.Minute)
+	before, err := env.App.Agents.ByID(ctx, id)
+	require.NoError(t, err)
+	require.Equal(t, "claude", before.Harness)
+
+	parallel := testkit.FolderOf("builder")
+	parallel.Harness = "pi"
+	second, resp := tok.DialFolder(parallel)
+	require.NotNil(t, second, "upgrade refused: %d %s", resp.Status, resp.Body)
+	welcome := second.Welcome(time.Minute)
+	require.Equal(t, "pi-2", welcome.Session.Label, "the session's harness names a parallel label (SESS-11)")
+	require.Equal(t, "pi", welcome.Session.Harness)
+
+	after, err := env.App.Agents.ByID(ctx, id)
+	require.NoError(t, err)
+	require.Equal(t, "claude", after.Harness, "a labelled session never writes agents.harness")
+	require.Equal(t, before.ConnectedAt, after.ConnectedAt, "nor agents.connected_at")
+}
+
+// SESS-17: the AI's cursor follows its principal session: a labelled session's acknowledgement
+// of a message moves nothing.
+func TestALabelledSessionAckDoesNotMoveTheAICursor(t *testing.T) {
+	env := testkit.New(t)
+	alice := env.NewUser("alice")
+	id := env.NewAI(alice, "builder")
+	ctx := context.Background()
+	room := testkit.Decode[dto.Room](alice.Post("/api/v1/rooms", dto.CreateRoomRequest{Name: "Support"}).RequireStatus(http.StatusCreated))
+	alice.Post("/api/v1/rooms/"+room.ID+"/members", dto.AddMemberRequest{Kind: dto.MemberKindAgent, MemberID: id}).RequireStatus(http.StatusCreated)
+	tok := alice.Token(dto.TokenKindAgent, "laptop")
+	principal, resp := tok.DialFolder(testkit.FolderOf("builder"))
+	require.NotNil(t, principal, "upgrade refused: %d %s", resp.Status, resp.Body)
+	principal.Welcome(time.Minute)
+	m := testkit.Decode[dto.Message](alice.Post("/api/v1/rooms/"+room.ID+"/messages", dto.PostMessageRequest{Text: "for the principal"}).RequireStatus(http.StatusCreated))
+	require.Equal(t, m.ID, principal.Message(time.Minute).Message.ID, "the dispatcher pushes it to the principal")
+
+	// The labelled session reads the same message from its backlog and acknowledges it.
+	second, resp := tok.DialFolder(testkit.FolderOf("builder"))
+	require.NotNil(t, second, "upgrade refused: %d %s", resp.Status, resp.Body)
+	require.Equal(t, "claude-2", second.Welcome(time.Minute).Session.Label)
+	require.Equal(t, m.ID, second.Message(time.Minute).Message.ID)
+	second.Ack(m.ID)
+	second.ExpectNone(300 * time.Millisecond)
+	_, err := env.App.Store.R().GetAgentCursor(ctx, db.GetAgentCursorParams{AgentID: id, RoomID: room.ID})
+	require.ErrorIs(t, err, sql.ErrNoRows, "a labelled ack leaves no cursor row")
+
+	principal.Ack(m.ID)
+	require.Eventually(t, func() bool {
+		seq, err := env.App.Store.R().GetAgentCursor(ctx, db.GetAgentCursorParams{AgentID: id, RoomID: room.ID})
+		return err == nil && seq == m.Seq
+	}, time.Minute, 10*time.Millisecond, "the principal's ack moves the cursor")
 }
 
 // SES-05 (L-050): a message the old session already acknowledged does not reach the session that
