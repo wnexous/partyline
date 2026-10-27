@@ -21,9 +21,10 @@ var (
 
 // Frame renders a message record (the channel notification's meta fields plus "content", as
 // `partyline listen` prints it) the way the omp, pi and OpenCode adapters do (PUSH-06):
-// <partyline room=… conversation=… chat=… platform=… from=… trusted=… message_id=… connection_id=… chat_id=…>text</partyline>
+// <partyline room=… conversation=… chat=… platform=… from=… trusted=… message_id=… interactive=… answers=… connection_id=… chat_id=…>text</partyline>
 // and the trust line (TrustedLine or DataLine). Absent fields are left out; markup in the text
-// is escaped. connection_id and chat_id are what send_message takes to write to a chat of a
+// is escaped. interactive and answers are the stored question and answer documents as JSON
+// (QR-21). connection_id and chat_id are what send_message takes to write to a chat of a
 // connection (CID-16): a harness fed by listen or the hooks sees the message, and so the connection
 // and the chat, only through this frame.
 func Frame(r map[string]string) string {
@@ -47,6 +48,8 @@ func Frame(r map[string]string) string {
 		{"from", first("sender_name", "author")},
 		{"trusted", trusted},
 		{"message_id", r["message_id"]},
+		{"interactive", r["interactive"]},
+		{"answers", r["answers"]},
 		{"connection_id", r["connection_id"]},
 		{"chat_id", r["chat_id"]},
 	}

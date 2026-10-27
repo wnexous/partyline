@@ -4,6 +4,7 @@
 package channel
 
 import (
+	"encoding/json"
 	"strconv"
 	"strings"
 
@@ -28,7 +29,9 @@ type Notification struct {
 // the other participant) and "group" otherwise (DM-03, GRP-04); author_id and author_handle name
 // the author's intelligence when it is known. A chat-authored message also names its chat
 // (CTX-01): chat_id (usable as a send_message recipient), chat_title, chat_kind, platform and
-// sender_id; other authors carry none of them (CTX-02).
+// sender_id; other authors carry none of them (CTX-02). A message that asks a question or answers
+// one also names its stored document in interactive or answers, as the compact JSON the server
+// keeps (QR-21); the content stays the human text.
 func Format(m dto.AgentMessage) Notification {
 	msg := m.Message
 	conversation := dto.ConversationKindGroup
@@ -54,6 +57,14 @@ func Format(m dto.AgentMessage) Notification {
 	}
 	if msg.ReplyTo != "" {
 		meta["reply_to"] = msg.ReplyTo
+	}
+	if q := msg.Interactive; q != nil {
+		data, _ := json.Marshal(q)
+		meta["interactive"] = string(data)
+	}
+	if a := msg.Answers; a != nil {
+		data, _ := json.Marshal(a)
+		meta["answers"] = string(data)
 	}
 	switch {
 	case msg.DeletedAt != nil:
