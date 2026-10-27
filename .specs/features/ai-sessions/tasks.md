@@ -342,13 +342,14 @@ what it reads is T16's rule.
   worktree launch and not for a `--parent` launch; `sessionIdentity` reads it and does not run the helper
   when it is set; `partyline listen` in a worktree sends the header (the fake API records it).
 **Done when**:
-- [ ] no server code runs git; the only new `os/exec` use is in `internal/channel/worktree.go` (the
+- [x] no server code runs git; the only new `os/exec` use is in `internal/channel/worktree.go` (the
       launcher already runs the harness, `internal/cli/launcher.go:21`)
-- [ ] the worktree command has a one-second bound and never fails the launch
-- [ ] the AI's `agents.folder` is the main folder and its default name/handle derive from it
-- [ ] a tools-only process in a linked worktree resolves the repository's AI and posts with the worktree
-      label (its empty pending list is T16)
-- [ ] Gate check passes: `make check`
+- [x] the worktree command has a one-second bound and never fails the launch
+- [x] the AI's `agents.folder` is the main folder and its default name/handle derive from it
+- [x] a tools-only process in a linked worktree resolves the repository's AI and posts with the worktree
+      label (its empty pending list is T16) - the resolution is here, the label on the post is T9's
+      `author_label` (contract-notes)
+- [x] Gate check passes: `make check`
 **Tests**: unit + integration
 **Gate**: build
 **Commit**: `feat(identity): one AI for the repository's worktrees`

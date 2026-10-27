@@ -12,15 +12,16 @@ import (
 
 // ListenOptions configure Listen.
 type ListenOptions struct {
-	// URL, Token, Machine, Folder, Home, Harness and Adopt mean what they mean for Run; an empty
-	// Harness is sent as unknown ("agent").
-	URL     string
-	Token   string
-	Machine string
-	Folder  string
-	Home    string
-	Harness string
-	Adopt   string
+	// URL, Token, Machine, Folder, MainFolder, Home, Harness and Adopt mean what they mean for Run; an
+	// empty Harness is sent as unknown ("agent").
+	URL        string
+	Token      string
+	Machine    string
+	Folder     string
+	MainFolder string
+	Home       string
+	Harness    string
+	Adopt      string
 	// Org, Position and Parent mean what they mean for Run.
 	Org, Position, Parent string
 	// Takeover means what it means for Run.
@@ -67,7 +68,7 @@ func Listen(ctx context.Context, o ListenOptions) error {
 	}
 
 	id := Identity{
-		Machine: o.Machine, Folder: o.Folder, Home: o.Home, Harness: o.Harness, Adopt: o.Adopt,
+		Machine: o.Machine, Folder: o.Folder, MainFolder: o.MainFolder, Home: o.Home, Harness: o.Harness, Adopt: o.Adopt,
 		Org: o.Org, Position: o.Position, Parent: o.Parent,
 	}
 	out := &lineWriter{w: o.Stdout}

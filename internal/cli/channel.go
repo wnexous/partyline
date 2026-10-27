@@ -83,7 +83,8 @@ func homeFolder(io stdio) string {
 }
 
 // sessionIdentity gathers what a process tells the server about itself (AID-07): the
-// hostname, the canonical folder (sessionFolder), the canonical home folder, the harness
+// hostname, the canonical folder (sessionFolder), the main worktree folder of a linked worktree
+// (PARTYLINE_MAIN_FOLDER, else computed once, SESS-01), the canonical home folder, the harness
 // (PARTYLINE_HARNESS, set by the launchers), the identity to adopt (adopt, else
 // PARTYLINE_AGENT) (MIG-02) and what the session asked for when it was launched: the organization,
 // the position and the parent AI the launcher handed on as PARTYLINE_LAUNCH_ORG, _POSITION and _PARENT
@@ -98,6 +99,14 @@ func sessionIdentity(adopt string, io stdio) channel.Identity {
 	}
 	if id.Adopt == "" {
 		id.Adopt = strings.TrimSpace(io.getenv("PARTYLINE_AGENT"))
+	}
+	switch main := strings.TrimSpace(io.getenv(mainFolderVar)); {
+	case main != "":
+		id.MainFolder = main // the launcher computed it once for the whole session
+	case id.Parent == "" && id.Folder != "":
+		// A session started by hand computes it once; a child session never does, so --parent keeps its own AI
+		// (SESS-09). A session whose folder is unknown sends no main folder either.
+		id.MainFolder = worktreeMainFolder(id.Folder)
 	}
 	hostname := io.hostname
 	if hostname == nil {
@@ -189,7 +198,8 @@ func channelCmd(ctx context.Context, args []string, io stdio) int {
 		c.id.Harness = *harness
 	}
 	err := channel.Run(ctx, channel.Options{
-		URL: c.url, Token: c.token, Machine: c.id.Machine, Folder: c.id.Folder, Home: c.id.Home, Adopt: c.id.Adopt,
+		URL: c.url, Token: c.token, Machine: c.id.Machine, Folder: c.id.Folder, MainFolder: c.id.MainFolder,
+		Home: c.id.Home, Adopt: c.id.Adopt,
 		Org: c.id.Org, Position: c.id.Position, Parent: c.id.Parent,
 		Harness: c.id.Harness, Version: buildVersion(), ToolsOnly: *toolsOnly, Takeover: c.takeover,
 		Stdin: io.stdin, Stdout: io.stdout, Stderr: io.stderr,
@@ -219,7 +229,8 @@ func listenCmd(ctx context.Context, args []string, io stdio) int {
 		return code
 	}
 	err := channel.Listen(ctx, channel.ListenOptions{
-		URL: c.url, Token: c.token, Machine: c.id.Machine, Folder: c.id.Folder, Home: c.id.Home, Harness: c.id.Harness, Adopt: c.id.Adopt,
+		URL: c.url, Token: c.token, Machine: c.id.Machine, Folder: c.id.Folder, MainFolder: c.id.MainFolder,
+		Home: c.id.Home, Harness: c.id.Harness, Adopt: c.id.Adopt,
 		Org: c.id.Org, Position: c.id.Position, Parent: c.id.Parent,
 		Takeover: c.takeover, Stdin: io.stdin, Stdout: io.stdout, Stderr: io.stderr,
 	})

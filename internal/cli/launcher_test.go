@@ -18,6 +18,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/wnexous/partyline/internal/api/dto"
+	"github.com/wnexous/partyline/internal/channel"
 	"github.com/wnexous/partyline/internal/cliconfig"
 	"github.com/wnexous/partyline/internal/harness"
 	"github.com/wnexous/partyline/internal/testkit"
@@ -602,4 +603,105 @@ func TestLauncherTakesOverTheLiveSessionEndToEnd(t *testing.T) {
 	require.NotNil(t, taker)
 	require.Equal(t, websocket.StatusCode(4002), websocket.CloseStatus(holder.Closed(chanWait)), "the old session is closed taken_over")
 	require.NoError(t, taker.Closed(100*time.Millisecond), "the new session is left alone")
+}
+
+// fakeWorktree makes this test see folder as a linked worktree of main: the launcher and the
+// sessions of one test read the helper through worktreeMainFolder, and calls counts its runs.
+func fakeWorktree(t *testing.T, folder, main string, calls *int) {
+	t.Helper()
+	previous := worktreeMainFolder
+	t.Cleanup(func() { worktreeMainFolder = previous })
+	worktreeMainFolder = func(dir string) string {
+		if calls != nil {
+			*calls++
+		}
+		if dir != folder {
+			return ""
+		}
+		return main
+	}
+}
+
+// envValues returns the values of the variable name in a child environment, in order.
+func envValues(env []string, name string) []string {
+	var out []string
+	for _, kv := range env {
+		if k, v, ok := strings.Cut(kv, "="); ok && k == name {
+			out = append(out, v)
+		}
+	}
+	return out
+}
+
+// SESS-01, SESS-09: a launch in a linked worktree hands the main worktree's folder to the session as
+// PARTYLINE_MAIN_FOLDER next to its own folder, and replaces one it inherited; a --parent launch
+// hands none, so the child is another AI.
+func TestLauncherPassesTheMainWorktreeFolder(t *testing.T) {
+	m := newLaunchMachine(t)
+	m.onPath["claude"] = true
+	m.register(t, "claude")
+	m.cwd = "/repo/wt"
+	m.environ = append(m.environ, "PARTYLINE_MAIN_FOLDER=/inherited/repo")
+	fakeWorktree(t, "/repo/wt", "/repo", nil)
+
+	r := m.run(t, "claude")
+	require.Equal(t, 7, r.code, r.stderr)
+	require.Equal(t, []string{"/repo/wt"}, envValues(r.env, "PARTYLINE_FOLDER"), "the session keeps its own folder")
+	require.Equal(t, []string{"/repo"}, envValues(r.env, "PARTYLINE_MAIN_FOLDER"))
+
+	withParent := m.run(t, "claude", "--parent", "@lead")
+	require.Equal(t, 7, withParent.code, withParent.stderr)
+	require.Empty(t, envValues(withParent.env, "PARTYLINE_MAIN_FOLDER"), "a child session keeps its own AI")
+	require.Equal(t, []string{"@lead"}, envValues(withParent.env, "PARTYLINE_LAUNCH_PARENT"))
+
+	// Outside a linked worktree there is no main folder, and an inherited one is never handed on.
+	m.cwd = "/work/plain"
+	plain := m.run(t, "claude")
+	require.Equal(t, 7, plain.code, plain.stderr)
+	require.Empty(t, envValues(plain.env, "PARTYLINE_MAIN_FOLDER"))
+	require.Equal(t, []string{"/work/plain"}, envValues(plain.env, "PARTYLINE_FOLDER"))
+}
+
+// SESS-01, SESS-09: a session reads the main folder the launcher handed it and runs no git; a session
+// started by hand computes it once; a child session never does, so --parent keeps its own AI.
+func TestSessionIdentityReadsTheMainFolder(t *testing.T) {
+	folder := canonicalDir(t, "repo", "wt")
+	calls := 0
+	fakeWorktree(t, folder, "/repo", &calls)
+	std := func(env map[string]string) stdio {
+		return stdio{
+			getenv:   func(k string) string { return env[k] },
+			getwd:    func() (string, error) { return folder, nil },
+			hostname: func() (string, error) { return "devbox", nil },
+		}
+	}
+
+	id := sessionIdentity("", std(map[string]string{"PARTYLINE_FOLDER": folder, "PARTYLINE_MAIN_FOLDER": "/repo"}))
+	require.Equal(t, channel.Identity{Machine: "devbox", Folder: folder, MainFolder: "/repo"}, id)
+	require.Equal(t, 0, calls, "a session the launcher started runs no git")
+
+	id = sessionIdentity("", std(map[string]string{"PARTYLINE_FOLDER": folder}))
+	require.Equal(t, channel.Identity{Machine: "devbox", Folder: folder, MainFolder: "/repo"}, id)
+	require.Equal(t, 1, calls, "a hand-started session computes the main folder once")
+
+	id = sessionIdentity("", std(map[string]string{"PARTYLINE_FOLDER": folder, "PARTYLINE_LAUNCH_PARENT": "@lead"}))
+	require.Equal(t, channel.Identity{Machine: "devbox", Folder: folder, Parent: "@lead"}, id)
+	require.Equal(t, 1, calls, "a child session computes nothing")
+
+	id = sessionIdentity("", std(map[string]string{"PARTYLINE_FOLDER": "/work/plain"}))
+	require.Equal(t, "", id.MainFolder, "outside a linked worktree there is none")
+	require.Equal(t, 2, calls)
+}
+
+// SESS-01, SESS-03: `partyline listen` in a linked worktree sends the main worktree's folder with its
+// connection (percent-encoded like the folder, so a path with a space travels), and the server
+// resolves the repository's AI while the session keeps its own folder.
+func TestListenSendsTheMainWorktreeFolder(t *testing.T) {
+	e := newChannelEnv(t)
+	startListen(t, e.vars(
+		"PARTYLINE_HARNESS", "claude", "PARTYLINE_FOLDER", "/repo/wt", "PARTYLINE_MAIN_FOLDER", "/repo/the repo",
+	), "/repo/wt", nil)
+
+	e.ai(t, "/repo/the repo")
+	require.Equal(t, []string{"/repo/the repo"}, e.folders(t))
 }

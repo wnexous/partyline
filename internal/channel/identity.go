@@ -23,6 +23,9 @@ type Identity struct {
 	// Folder is the canonical folder (CanonicalFolder): absolute, symlinks resolved, no trailing
 	// separator.
 	Folder string
+	// MainFolder is the canonical folder of the main worktree when the session runs in a linked git
+	// worktree; the server resolves the AI of the repository from it (SESS-01). Empty outside one.
+	MainFolder string
 	// Home is the canonical home folder of the user; the tree shows folders under it as "~".
 	Home string
 	// Harness is the harness id (claude, opencode, pi, omp, codex, gemini); empty is unknown.
@@ -38,10 +41,10 @@ type Identity struct {
 	Org, Position, Parent string
 }
 
-// setHeaders sets the identity headers. The folder, the home folder and the position are
-// percent-encoded (spaces, non-ASCII characters and separators), so a header carries any path or
-// name; the folder header is always sent, so a process that could not tell its folder is refused
-// with folder_required instead of being taken for a client from before folders.
+// setHeaders sets the identity headers. The folder, the main worktree folder, the home folder and
+// the position are percent-encoded (spaces, non-ASCII characters and separators), so a header
+// carries any path or name; the folder header is always sent, so a process that could not tell its
+// folder is refused with folder_required instead of being taken for a client from before folders.
 func (id Identity) setHeaders(h http.Header) {
 	machine := id.Machine
 	if machine == "" {
@@ -51,7 +54,8 @@ func (id Identity) setHeaders(h http.Header) {
 	h.Set(dto.HeaderFolder, url.PathEscape(id.Folder))
 	for k, v := range map[string]string{
 		dto.HeaderHarness: id.Harness, dto.HeaderAdopt: id.Adopt,
-		dto.HeaderOrg: id.Org, dto.HeaderPosition: escapeHeader(id.Position), dto.HeaderParent: id.Parent,
+		dto.HeaderMainFolder: escapeHeader(id.MainFolder),
+		dto.HeaderOrg:        id.Org, dto.HeaderPosition: escapeHeader(id.Position), dto.HeaderParent: id.Parent,
 	} {
 		if v != "" {
 			h.Set(k, v)

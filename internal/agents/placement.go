@@ -241,7 +241,7 @@ func (r *Registry) CheckStart(ctx context.Context, ownerID string, id FolderID) 
 	}
 	id.Machine = cleanText(id.Machine, MaxMachineLength)
 	q := r.store.R()
-	a, err := q.GetAgentByFolder(ctx, db.GetAgentByFolderParams{OwnerID: ownerID, Machine: id.Machine, Folder: id.Folder})
+	a, err := q.GetAgentByFolder(ctx, db.GetAgentByFolderParams{OwnerID: ownerID, Machine: id.Machine, Folder: id.key()})
 	switch {
 	case err == nil:
 	case errors.Is(err, sql.ErrNoRows):

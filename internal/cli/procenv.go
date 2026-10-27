@@ -12,6 +12,11 @@ import (
 // process whose environment has it was launched by `partyline <harness>`.
 const folderEnvVar = "PARTYLINE_FOLDER"
 
+// mainFolderVar is the canonical folder of the main worktree when the launch runs in a linked git
+// worktree: the session reads it and sends it beside its own folder, so the server resolves the AI of
+// the repository (SESS-01, SESS-09). Empty outside a linked worktree and for a --parent launch.
+const mainFolderVar = "PARTYLINE_MAIN_FOLDER"
+
 // What a session asked for when it was launched (--org, --position, --parent; ORG-04, POS-07, POS-08). The
 // launcher reads PARTYLINE_ORG, PARTYLINE_POSITION and PARTYLINE_PARENT when the flag is absent, and hands the
 // values to the session's own processes as PARTYLINE_LAUNCH_ORG, PARTYLINE_LAUNCH_POSITION and
@@ -31,7 +36,7 @@ const (
 // PARTYLINE_TAKEOVER is the one a launcher sets when the user agreed to take the AI's live
 // session over; the PARTYLINE_LAUNCH_* ones carry what the session asked for.
 var launcherVars = []string{
-	folderEnvVar, "PARTYLINE_HARNESS", "PARTYLINE_TAKEOVER", "PARTYLINE_AGENT",
+	folderEnvVar, mainFolderVar, "PARTYLINE_HARNESS", "PARTYLINE_TAKEOVER", "PARTYLINE_AGENT",
 	launchOrgVar, launchPositionVar, launchParentVar,
 }
 

@@ -194,8 +194,9 @@ func (c *Client) DialAgentHeaders(h http.Header) (*AgentConn, *Response) {
 }
 
 // Folder is the identity an AI session sends with every connection and tool call: the machine
-// and canonical folder it works in and, optionally, the home folder, the harness and the
-// handle or v0.3 name of an unlinked AI to adopt (AID-07, MIG-02). Live is the id of the
+// and canonical folder it works in and, optionally, the main worktree folder of a linked worktree
+// (SESS-01), the home folder, the harness and the handle or v0.3 name of an unlinked AI to adopt
+// (AID-07, MIG-02). Live is the id of the
 // process that holds the WebSocket (DialFolder gives every dial its own when it is empty, as
 // every process has its own: pass one to reconnect as the same process) and Takeover asks to
 // take over the AI's live session (SES-02). Features are the optional features the client
@@ -204,17 +205,20 @@ func (c *Client) DialAgentHeaders(h http.Header) (*AgentConn, *Response) {
 // organization (slug or id), the name of the position, and the @handle or id of the AI that starts this
 // one; empty fields send no header, as a v0.5 CLI does.
 type Folder struct {
-	Machine  string
-	Path     string
-	Home     string
-	Harness  string
-	Adopt    string
-	Live     string
-	Features []string
-	Takeover bool
-	Org      string
-	Position string
-	Parent   string
+	Machine string
+	Path    string
+	// MainFolder is the main worktree folder a session in a linked worktree sends (SESS-01); empty is
+	// a session outside one, or an old CLI.
+	MainFolder string
+	Home       string
+	Harness    string
+	Adopt      string
+	Live       string
+	Features   []string
+	Takeover   bool
+	Org        string
+	Position   string
+	Parent     string
 }
 
 // WithPlatform returns the folder of a client that understands platform events (CID-06).
@@ -236,7 +240,8 @@ func (f Folder) Headers() http.Header {
 	h := http.Header{}
 	for k, v := range map[string]string{
 		dto.HeaderMachine: f.Machine, dto.HeaderHarness: f.Harness, dto.HeaderAdopt: f.Adopt,
-		dto.HeaderFolder: escapePath(f.Path), dto.HeaderHome: escapePath(f.Home), dto.HeaderLive: f.Live,
+		dto.HeaderFolder: escapePath(f.Path), dto.HeaderMainFolder: escapePath(f.MainFolder),
+		dto.HeaderHome: escapePath(f.Home), dto.HeaderLive: f.Live,
 		dto.HeaderFeatures: strings.Join(f.Features, ","),
 		dto.HeaderOrg:      f.Org, dto.HeaderPosition: escapePath(f.Position), dto.HeaderParent: f.Parent,
 	} {

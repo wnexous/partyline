@@ -501,6 +501,13 @@ export const HeaderMachine = "X-Partyline-Machine";
  */
 export const HeaderFolder = "X-Partyline-Folder";
 /**
+ * HeaderMainFolder is the canonical folder of the main worktree when the session runs in a linked
+ * git worktree, percent-encoded like HeaderFolder and sent only when there is one: the server
+ * resolves the AI of the repository from it, and HeaderFolder stays the session's own folder
+ * (SESS-01, SESS-03).
+ */
+export const HeaderMainFolder = "X-Partyline-MainFolder";
+/**
  * HeaderHome is the canonical home folder of the session's user, percent-encoded like
  * HeaderFolder; the machine tree shows folders under it as "~" (TREE-02).
  */
