@@ -4,7 +4,11 @@
 // sends nothing to a platform (CID-22).
 package delivery
 
-import "github.com/wnexous/partyline/internal/api/dto"
+import (
+	"time"
+
+	"github.com/wnexous/partyline/internal/api/dto"
+)
 
 // Member is a room member as the delivery rules see it.
 type Member struct {
@@ -40,6 +44,9 @@ func Plan(members []Member, msg Draft) []string {
 // DefaultLoopLimit is the number of consecutive agent messages that pauses agent delivery.
 const DefaultLoopLimit = 25
 
+// DefaultQuietGap is the gap that ends a burst and restarts the streak; 10 minutes.
+const DefaultQuietGap = 10 * time.Minute
+
 // LoopState is a room's loop guard state.
 type LoopState struct {
 	// Streak counts consecutive agent-authored messages.
@@ -53,19 +60,32 @@ type LoopState struct {
 type LoopGuard struct {
 	// Limit is the streak that pauses agent delivery; DefaultLoopLimit when zero.
 	Limit int
+	// QuietGap is the gap that ends a burst: an agent message posted more than this long after
+	// the room's previous message starts the streak again from 0; DefaultQuietGap when zero.
+	QuietGap time.Duration
 }
 
-// Next returns the state after a message by author. An agent message extends the streak and
-// pauses the room when it reaches the limit, reporting pausedNow once (DLV-08); a user or chat
-// message resets the streak (DLV-10) but does not resume a paused room. System messages leave
-// the state unchanged.
-func (g LoopGuard) Next(s LoopState, author dto.AuthorKind) (next LoopState, pausedNow bool) {
+// Next returns the state after a message by author posted at now, whose previous message in the
+// room was posted at previous (zero for the first message). An agent message posted more than
+// QuietGap after the previous one starts the streak again from 0 before counting this message
+// (DLV-08), so a slow conversation never pauses; a burst of agent messages within QuietGap
+// pauses the room when it reaches the limit, reporting pausedNow once. A user or chat message
+// resets the streak (DLV-10) but does not resume a paused room. System messages leave the state
+// unchanged.
+func (g LoopGuard) Next(s LoopState, author dto.AuthorKind, previous, now time.Time) (next LoopState, pausedNow bool) {
 	limit := g.Limit
 	if limit <= 0 {
 		limit = DefaultLoopLimit
 	}
+	gap := g.QuietGap
+	if gap <= 0 {
+		gap = DefaultQuietGap
+	}
 	switch author {
 	case dto.AuthorKindAgent:
+		if !previous.IsZero() && now.Sub(previous) > gap {
+			s.Streak = 0
+		}
 		s.Streak++
 		if s.Streak >= limit && !s.Paused {
 			s.Paused = true

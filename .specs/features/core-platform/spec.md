@@ -31,7 +31,7 @@ People run many Claude Code sessions (some in loops) and want them reachable fro
 | Untrusted content | Delivered in full, flagged `trusted=false` | User picked "Tudo, marcado" | y |
 | Login | Local accounts, first user via setup token, others via invites | User picked "Contas locais + convite" | y |
 | Admin visibility | Admins manage accounts only, no implicit access to resources | "Privado total" must hold inside companies | y |
-| Agent loop guard limit | 25 consecutive agent-authored messages pause agent delivery in that room | Stops runaway agent ping-pong while allowing real collaboration | n |
+| Agent loop guard limit | 25 consecutive agent-authored messages with no gap longer than 10 minutes between them pause agent delivery in that room | Stops runaway agent ping-pong while allowing real collaboration | n |
 | Message retention | 90 days per room by default, 0 = keep forever | Bounded disk use; configurable per room | n |
 | Text limit | 16,000 characters per message | Larger than any chat platform limit; bounds abuse | n |
 | Attachment limit | 25 MiB per file (env `PARTYLINE_MAX_UPLOAD_MB`) | Matches common chat platform limits | n |
@@ -124,9 +124,9 @@ People run many Claude Code sessions (some in loops) and want them reachable fro
 7. WHERE the room setting `bridge_chats` is on the system SHALL also queue chat-authored messages for the other chat members whose `outbound` flag is on; otherwise it SHALL NOT. (DLV-05)
 8. WHEN a message is delivered to an agent THEN the system SHALL set `trusted=true` only if the author resolves to the recipient agent's owner (as user, as one of the owner's agents, or as one of the owner's verified identities). (DLV-06)
 9. IF a queued outbound send fails THEN the system SHALL retry with exponential backoff starting at 2 seconds for at most 5 attempts and then mark it `failed`. (DLV-07)
-10. WHEN the room's consecutive agent-authored messages reach 25 THEN the system SHALL pause delivery to agents in that room and post a system message. (DLV-08)
+10. WHEN the room's consecutive agent-authored messages reach 25 with no gap longer than 10 minutes between them THEN the system SHALL pause delivery to agents in that room and post a system message. (DLV-08)
 11. WHEN a user who may resume a paused room resumes it THEN the system SHALL reset the counter and resume agent delivery. A group is resumed by a user with `manage`; a DM, which nobody manages, by any user who can view it (a human participant, or whoever manages an AI participant, AD-023). An AI never resumes. (DLV-09)
-12. WHEN a user or chat message arrives THEN the system SHALL reset the room's consecutive agent counter to 0. (DLV-10)
+12. WHEN a user or chat message arrives, or an agent message follows a gap longer than 10 minutes, THEN the system SHALL reset the room's consecutive agent counter to 0. (DLV-10)
 
 **Independent Test**: Room with two agents, one chat with outbound on and one off; post from each author type and assert the delivery set.
 
