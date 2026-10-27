@@ -66,6 +66,11 @@ func (s *Service) EditMessage(ctx context.Context, p authn.Principal, roomID, me
 		check.Add("message", "only a text message can be edited")
 		return Message{}, check.Err()
 	}
+	if m.AnswersJson != "" {
+		check := validation.Check{}
+		check.Add("text", "an answer is deleted and posted again, never edited")
+		return Message{}, check.Err()
+	}
 	if err := s.checkCounterpart(ctx, roomID, p.IID()); err != nil {
 		return Message{}, err
 	}
