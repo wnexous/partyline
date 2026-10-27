@@ -1,7 +1,6 @@
 import { useNavigate } from "@tanstack/react-router";
 import { ContactRoundIcon, PlugZapIcon } from "lucide-react";
 import { type ReactNode, type RefObject, useEffect, useLayoutEffect, useRef } from "react";
-import { NAV_GROUPS } from "@/components/app-sidebar";
 import { ConnectorStatusBadge, useConnectorState } from "@/components/connector-status";
 import { ConversationAvatar } from "@/components/conversation-avatar";
 import { platformLabel } from "@/components/message-item";
@@ -20,6 +19,7 @@ import { useAgents, useConnectors, useConversations } from "@/lib/api/queries";
 import { type Connector, type Me, RoleAdmin } from "@/lib/api/types.gen";
 import { useT } from "@/lib/i18n";
 import { useLiveStore } from "@/lib/live/store";
+import { NAV_GROUPS } from "@/lib/nav";
 import { cn } from "@/lib/utils";
 
 /*
