@@ -6,6 +6,7 @@ import (
 	"strings"
 	"sync"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/require"
 
@@ -347,6 +348,56 @@ func TestLoopGuardPauseAndResume(t *testing.T) {
 	require.True(t, got.AgentsPaused)
 
 	got, err = f.svc.Resume(ctx, alice, r.ID)
+	require.NoError(t, err)
+	require.False(t, got.AgentsPaused)
+	require.Equal(t, 0, streak())
+}
+
+// DLV-08/10: the loop guard counts a burst, not a lifetime. Agent messages 11 minutes apart never
+// pause a slow conversation, a fast burst still does, and a quiet gap does not resume a paused room.
+func TestLoopGuardQuietGapKeepsASlowConversationFlowing(t *testing.T) {
+	ctx := context.Background()
+	f := newFixture(t)
+	alice := f.user(t, "alice", dto.RoleMember)
+	a1, a2 := f.agent(t, alice, "a1"), f.agent(t, alice, "a2")
+	r := f.room(t, alice, "ops")
+	f.addMember(t, alice, r.ID, dto.MemberKindAgent, a1)
+	f.addMember(t, alice, r.ID, dto.MemberKindAgent, a2)
+	agents := []authn.Principal{agentPrincipal(alice, a1), agentPrincipal(alice, a2)}
+	streak := func() int { return f.count(t, "SELECT agent_streak FROM rooms WHERE id = ?", r.ID) }
+	paused := func() bool { return f.count(t, "SELECT agents_paused FROM rooms WHERE id = ?", r.ID) == 1 }
+	notices := func() int {
+		return f.count(t, "SELECT COUNT(*) FROM messages WHERE room_id = ? AND author_kind = 'system'", r.ID)
+	}
+
+	// 25 messages, each 11 minutes after the previous one: every one starts its own burst.
+	for i := 0; i < 25; i++ {
+		f.post(t, agents[i%2], r.ID, "slow")
+		require.False(t, paused())
+		require.Equal(t, 1, streak(), "message %d starts a burst", i+1)
+		f.clock.now = f.clock.now.Add(11 * time.Minute)
+	}
+
+	// A quiet gap later, 25 messages inside one minute still pause the room at the 25th, once.
+	f.clock.now = f.clock.now.Add(15 * time.Minute)
+	for i := 0; i < 24; i++ {
+		f.post(t, agents[i%2], r.ID, "ping")
+	}
+	require.False(t, paused())
+	require.Equal(t, 24, streak())
+	f.post(t, agents[0], r.ID, "25th")
+	require.True(t, paused())
+	require.Equal(t, 1, notices())
+	require.Equal(t, 25, streak())
+
+	// A quiet gap only restarts the counter: the room stays paused until someone resumes it.
+	f.clock.now = f.clock.now.Add(15 * time.Minute)
+	f.post(t, agents[1], r.ID, "later")
+	require.True(t, paused(), "a quiet gap does not resume a paused room")
+	require.Equal(t, 1, notices(), "and posts no second notice")
+	require.Equal(t, 1, streak())
+
+	got, err := f.svc.Resume(ctx, alice, r.ID)
 	require.NoError(t, err)
 	require.False(t, got.AgentsPaused)
 	require.Equal(t, 0, streak())

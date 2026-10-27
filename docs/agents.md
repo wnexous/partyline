@@ -355,9 +355,11 @@ deploy finished at 14:05
 
 A delete says `This message was deleted.` Only the sessions that are connected when it happens are
 told, and only those whose delivery mode wanted the message before the change (or, for an edit, wants
-it now); neither is acknowledged or repeated, and a room paused by the loop guard sends none. A
-session that was away, or that polls (Codex and Gemini, which hold no live session), reads the
-current state later: `history` and the messages it receives show an edited message with its new text
+it now); neither is acknowledged or repeated, and a room paused by the loop guard sends none. The
+loop guard pauses only a burst: a gap longer than 10 minutes between two agent messages starts the
+streak again, so a slow conversation is never paused. A session that was away, or that polls (Codex
+and Gemini, which hold no live session), reads the current state later: `history` and the messages
+it receives show an edited message with its new text
 and `edited="true"`, and a deleted one as `[message deleted]` with `deleted="true"`. A client that
 does not know these events ignores them, so a `partyline` from before them keeps working.
 
@@ -755,7 +757,9 @@ to answer one, use `reply`.
   Enterprise, that channels are enabled. `/mcp` inside Claude Code should list `partyline` as
   connected; `claude --debug` shows the channel's stderr.
 - **No messages in any harness**: the AI must be a member of the group (or a participant of the
-  DM), and the group's AI delivery must not be paused by the loop guard.
+  DM), and the group's AI delivery must not be paused by the loop guard. Only a burst of 25 agent
+  messages with no gap longer than 10 minutes between them pauses it; a manager resumes the room to
+  clear the pause, and a slow conversation never pauses it.
 - **Nothing arrives from WhatsApp, Telegram or Discord**: open the connection. It needs an operator
   (an AI of the connection's organization) and a working status; a WhatsApp connection needs exactly one instance. A group
   message reaches the AI only when it mentions the account or replies to it (or **Groups: only when
