@@ -1,10 +1,11 @@
-import { useEffect, useId, useRef, useState } from "react";
+import { type RefObject, useEffect, useId, useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { useAnswerQuestion } from "@/hooks/use-answer-question";
 import {
   MaxAnswerText,
   type Message,
   type MessageAnswerItem,
+  type MessageAnswers,
   type QuickReply,
   type WizardQuestion,
 } from "@/lib/api/types.gen";
@@ -29,6 +30,9 @@ const CHIP =
 /** The focus ring of the wizard's own controls, as the app draws it elsewhere. */
 const FOCUS = "focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring";
 
+/** A control that is busy stays focusable: aria-disabled and a guard, not a real disabled. */
+const BUSY = "aria-disabled:cursor-default aria-disabled:opacity-50";
+
 export interface QuestionBubbleProps {
   message: Message;
   /** The viewer's intelligence id: their own question is not theirs to answer (QR-13). */
@@ -49,6 +53,23 @@ export function QuestionBubble(props: QuestionBubbleProps) {
   return null;
 }
 
+/**
+ * The viewer's answer the bubble shows (QR-12): the timeline's when it has one, and this bubble's
+ * own post only while the timeline catches up. Dropping the post's reply as soon as the timeline
+ * carries the answer is what lets a deleted answer make the question answerable again without a
+ * reload: only the timeline says whether the answer still exists.
+ */
+function useShownAnswer(
+  myAnswer: Message | undefined,
+  answer: ReturnType<typeof useAnswerQuestion>,
+): MessageAnswers | undefined {
+  const { data, reset } = answer;
+  useEffect(() => {
+    if (myAnswer && data) reset();
+  }, [myAnswer, data, reset]);
+  return myAnswer ? myAnswer.answers : data?.answers;
+}
+
 function QuickReplies({
   message,
   meId,
@@ -63,7 +84,7 @@ function QuickReplies({
   const own = message.author_id === meId;
   // The stored answer is the authority: the live event or a reload brings it, the reply of this tap
   // fills the gap while the timeline catches up (QR-11, QR-12).
-  const sent = myAnswer?.answers?.quick_reply ?? answer.data?.answers?.quick_reply;
+  const sent = useShownAnswer(myAnswer, answer)?.quick_reply;
   const pending = answer.isPending;
   const disabled = pending || sent !== undefined;
   const acts = !own && canAnswer && !frozen;
@@ -141,7 +162,10 @@ function QuestionWizard({
   const textId = `${headingId}-text`;
   const hintId = `${headingId}-hint`;
   const heading = useRef<HTMLHeadingElement>(null);
+  const summaryHeading = useRef<HTMLHeadingElement>(null);
   const firstStep = useRef(true);
+  // Set by this bubble's own Send, so a loaded answer never takes the reader's focus on mount (QR-16).
+  const sentHere = useRef(false);
   const own = message.author_id === meId;
   const acts = !own && canAnswer && !frozen;
   const reason = own
@@ -153,7 +177,7 @@ function QuestionWizard({
         : t("qr.noPermission");
   // The stored answer is the authority, from the timeline (QR-16). The mutation's reply fills the
   // gap between Send and the live room.message event, exactly as the quick reply does (QR-12).
-  const stored = myAnswer?.answers?.answers ?? answer.data?.answers?.answers;
+  const stored = useShownAnswer(myAnswer, answer)?.answers;
   const sent = stored && stored.length > 0 ? stored : undefined;
   const question = questions[step];
   const draft = question ? (drafts[question.id] ?? emptyDraft()) : undefined;
@@ -170,7 +194,17 @@ function QuestionWizard({
     heading.current?.focus();
   }, [step]);
 
-  if (sent) return <WizardSummary answers={sent} canAnswer={acts} />;
+  useEffect(() => {
+    // The summary takes focus after this bubble's own successful Send, and only then: an old
+    // answered wizard that loads with the room leaves the composer's focus alone (QR-16).
+    if (!sent || !sentHere.current) return;
+    sentHere.current = false;
+    summaryHeading.current?.focus();
+  }, [sent]);
+
+  if (sent) {
+    return <WizardSummary answers={sent} canAnswer={acts} headingRef={summaryHeading} />;
+  }
 
   if (!acts) {
     return (
@@ -220,22 +254,29 @@ function QuestionWizard({
 
   const submit = () => {
     if (!valid || pending) return;
-    answer.mutate({ replyTo: message.id, answers: { items: submissionOf(questions, drafts) } });
+    sentHere.current = true;
+    answer.mutate(
+      { replyTo: message.id, answers: { items: submissionOf(questions, drafts) } },
+      // A failed send leaves no summary to focus; a later answer from the timeline is not ours.
+      { onError: () => (sentHere.current = false) },
+    );
   };
 
   if (!question) return null;
+
+  // A single question that allows text may be answered by the text alone, so the note is the
+  // answer there, not an optional extra (QR-15).
+  const textLabel =
+    question.kind === "single" && question.allow_text
+      ? t("qr.textLabelOrOption")
+      : t("qr.textLabel");
 
   return (
     <div className="mt-1.5 min-w-0">
       <p role="status" className="text-xs text-muted-foreground">
         {t("qr.step", { current: step + 1, total: questions.length })}
       </p>
-      {/* biome-ignore lint/a11y/useAriaPropsSupportedByRole: a group and a radiogroup take their accessible name from the step heading */}
-      <div
-        role={question.kind === "multi" ? "group" : "radiogroup"}
-        aria-labelledby={headingId}
-        className="mt-1 min-w-0"
-      >
+      <div className="mt-1 min-w-0">
         <h4
           ref={heading}
           id={headingId}
@@ -244,32 +285,45 @@ function QuestionWizard({
         >
           {question.title}
         </h4>
-        <div className="mt-1.5 space-y-1.5">
-          {question.options.map((option) => (
-            <label
-              key={option.id}
-              className={cn(
-                "flex min-h-11 cursor-pointer items-center gap-2 rounded-md border border-input bg-card px-3 py-2 text-sm transition-colors hover:bg-accent has-[:focus-visible]:outline-2 has-[:focus-visible]:outline-offset-2 has-[:focus-visible]:outline-ring",
-                pending && "cursor-default opacity-60",
-              )}
-            >
-              <input
-                type={question.kind === "multi" ? "checkbox" : "radio"}
-                name={question.id}
-                value={option.id}
-                checked={draft?.optionIds.includes(option.id) ?? false}
-                disabled={pending}
-                onChange={() => choose(option.id)}
-                className="size-4 shrink-0 accent-primary"
-              />
-              <span className="min-w-0 break-words">{option.label}</span>
-            </label>
-          ))}
+        {/* The group holds the radios alone: the note after it is not part of the choice (QR-16). */}
+        {/* biome-ignore lint/a11y/useAriaPropsSupportedByRole: a group and a radiogroup take their accessible name from the step heading */}
+        <div
+          role={question.kind === "multi" ? "group" : "radiogroup"}
+          aria-labelledby={headingId}
+          className="mt-1.5 min-w-0"
+        >
+          <div className="space-y-1.5">
+            {question.options.map((option) => (
+              <label
+                key={option.id}
+                className={cn(
+                  "flex min-h-11 cursor-pointer items-center gap-2 rounded-md border border-input bg-card px-3 py-2 text-sm transition-colors hover:bg-accent has-[:focus-visible]:outline-2 has-[:focus-visible]:outline-offset-2 has-[:focus-visible]:outline-ring",
+                  pending && "cursor-default opacity-60",
+                )}
+              >
+                <input
+                  type={question.kind === "multi" ? "checkbox" : "radio"}
+                  // The question ids repeat in every message, so the group name carries the message
+                  // too; otherwise two wizards on one page share one radio group (QR-16).
+                  name={`${message.id}-${question.id}`}
+                  value={option.id}
+                  checked={draft?.optionIds.includes(option.id) ?? false}
+                  aria-disabled={pending ? "true" : undefined}
+                  onChange={() => {
+                    if (pending) return;
+                    choose(option.id);
+                  }}
+                  className="size-4 shrink-0 accent-primary"
+                />
+                <span className="min-w-0 break-words">{option.label}</span>
+              </label>
+            ))}
+          </div>
         </div>
         {question.allow_text ? (
           <div className="mt-2 min-w-0">
             <label htmlFor={textId} className="text-xs font-medium">
-              {t("qr.textLabel")}
+              {textLabel}
             </label>
             <textarea
               id={textId}
@@ -277,7 +331,11 @@ function QuestionWizard({
               maxLength={MaxAnswerText}
               value={draft?.text ?? ""}
               readOnly={pending}
-              onChange={(event) => note(event.target.value)}
+              aria-disabled={pending ? "true" : undefined}
+              onChange={(event) => {
+                if (pending) return;
+                note(event.target.value);
+              }}
               aria-describedby={hintId}
               className={cn(
                 "mt-1 w-full rounded-md border border-input bg-card px-3 py-2 text-sm break-words",
@@ -295,9 +353,13 @@ function QuestionWizard({
           <Button
             type="button"
             variant="outline"
-            className="h-11 flex-1"
-            disabled={pending}
-            onClick={() => setStep((current) => current - 1)}
+            className={cn("h-11 flex-1", BUSY)}
+            aria-disabled={pending ? "true" : undefined}
+            onClick={() => {
+              // aria-disabled keeps the pressed control focusable; the guard is what stops it.
+              if (pending) return;
+              setStep((current) => current - 1);
+            }}
           >
             {t("qr.back")}
           </Button>
@@ -305,17 +367,22 @@ function QuestionWizard({
         {step < questions.length - 1 ? (
           <Button
             type="button"
-            className="h-11 flex-1"
-            disabled={!valid || pending}
-            onClick={() => setStep((current) => current + 1)}
+            className={cn("h-11 flex-1", BUSY)}
+            disabled={!valid}
+            aria-disabled={pending ? "true" : undefined}
+            onClick={() => {
+              if (!valid || pending) return;
+              setStep((current) => current + 1);
+            }}
           >
             {t("qr.next")}
           </Button>
         ) : (
           <Button
             type="button"
-            className="h-11 flex-1"
-            disabled={!valid || pending}
+            className={cn("h-11 flex-1", BUSY)}
+            disabled={!valid}
+            aria-disabled={pending ? "true" : undefined}
             onClick={submit}
           >
             {pending ? t("qr.sending") : t("qr.send")}
@@ -330,16 +397,14 @@ function QuestionWizard({
 function WizardSummary({
   answers,
   canAnswer,
+  headingRef,
 }: {
   answers: MessageAnswerItem[];
   canAnswer: boolean;
+  /** Focused by the wizard only after its own Send, never when a loaded answer mounts it. */
+  headingRef: RefObject<HTMLHeadingElement | null>;
 }) {
   const { t } = useI18n();
-  const heading = useRef<HTMLHeadingElement>(null);
-
-  useEffect(() => {
-    heading.current?.focus();
-  }, []);
 
   const value = (item: MessageAnswerItem) => {
     const labels = item.values.join(", ");
@@ -349,7 +414,7 @@ function WizardSummary({
 
   return (
     <div className="mt-1.5 min-w-0">
-      <h4 ref={heading} tabIndex={-1} className={cn("text-sm font-semibold break-words", FOCUS)}>
+      <h4 ref={headingRef} tabIndex={-1} className={cn("text-sm font-semibold break-words", FOCUS)}>
         {t("qr.yourAnswer")}
       </h4>
       <dl className="mt-1 space-y-1 text-sm">

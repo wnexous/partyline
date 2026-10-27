@@ -484,6 +484,7 @@ export const en = {
   "qr.next": "Next",
   "qr.send": "Send",
   "qr.textLabel": "Note (optional)",
+  "qr.textLabelOrOption": "Your answer (or pick an option)",
   "qr.textHint": "Up to {max} characters",
   "qr.yourAnswer": "Your answer",
   "qr.noOption": "No option chosen",

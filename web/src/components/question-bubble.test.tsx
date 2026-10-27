@@ -2,6 +2,7 @@ import { act, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { Message, MessageAnswerItem, Room, WizardQuestion } from "@/lib/api/types.gen";
+import { handleLiveEvent } from "@/lib/live/handlers";
 import { useLiveStore } from "@/lib/live/store";
 import { apiError, json, mockApi } from "@/test/fetch";
 import { makeIntelligence, makeMe, makeMessage, makeRoom } from "@/test/fixtures";
@@ -157,6 +158,43 @@ describe("TestALoadedAnswerIsChosen", () => {
 
     await user.click(button("Não"));
     expect(posts(calls)).toHaveLength(0);
+  });
+});
+
+describe("TestADeletedAnswerIsAnswerableAgain", () => {
+  it("lets the quick replies act again when the answer is deleted live", async () => {
+    const stored = answer();
+    const { calls } = roomApi({ my_level: "post" }, [question()], {
+      "POST /rooms/r1/messages": json(201, stored),
+    });
+    const user = userEvent.setup();
+    const { queryClient } = renderRoute("/rooms/r1");
+    await screen.findByText("Vens hoje?");
+
+    await user.click(button("Sim"));
+    await waitFor(() => expect(status()).toHaveTextContent("Answer sent: Sim"));
+
+    // The stored answer arrives live: the timeline now holds it.
+    act(() =>
+      handleLiveEvent(queryClient, useLiveStore.getState(), {
+        type: "room.message",
+        data: stored,
+      }),
+    );
+    await waitFor(() => expect(button("Sim")).toHaveAttribute("aria-pressed", "true"));
+
+    // Its author deletes it: the delete arrives live and the question must be answerable again.
+    act(() =>
+      handleLiveEvent(queryClient, useLiveStore.getState(), {
+        type: "room.message_updated",
+        data: { ...stored, text: "", answers: undefined, deleted_at: "2026-10-19T14:00:00Z" },
+      }),
+    );
+
+    await waitFor(() => expect(button("Sim")).not.toHaveAttribute("aria-disabled", "true"));
+    expect(status()).toBeNull();
+    await user.click(button("Não"));
+    await waitFor(() => expect(posts(calls)).toHaveLength(2));
   });
 });
 
@@ -353,6 +391,46 @@ const send = () => row().getByRole("button", { name: "Send" });
 const step = (current: number, total: number) =>
   expect(row().getByText(`Step ${current} of ${total}`)).toBeInTheDocument();
 
+const deletedAt = "2026-10-19T14:00:00Z";
+
+describe("TestTwoWizardsKeepTheirOwnChoices", () => {
+  it("keeps the first wizard's choice and answer when the second one is picked", async () => {
+    const asked = [single("q1", "Quando?", ["Amanhã", "Na sexta"])];
+    const first = wizardMessage(asked, { seq: 1 });
+    const second = wizardMessage(asked, { seq: 2 });
+    const { calls } = roomApi({ my_level: "post" }, [first, second]);
+    const user = userEvent.setup();
+    renderRoute("/rooms/r1");
+    await screen.findAllByText(WIZARD_TEXT);
+
+    const firstRow = within(screen.getByTestId("message-1"));
+    const secondRow = within(screen.getByTestId("message-2"));
+    // A radio group is the inputs that share a name: the same question id in two messages may not
+    // put both wizards in one group.
+    const names = (scope: ReturnType<typeof within>) =>
+      new Set(scope.getAllByRole("radio").map((radio: HTMLElement) => radio.getAttribute("name")));
+    const firstNames = names(firstRow);
+    for (const name of names(secondRow)) expect(firstNames.has(name)).toBe(false);
+
+    await user.click(firstRow.getByRole("radio", { name: "Amanhã" }));
+    await user.click(secondRow.getByRole("radio", { name: "Na sexta" }));
+
+    // The two wizards are separate radio groups: the second pick leaves the first choice alone.
+    expect(firstRow.getByRole("radio", { name: "Amanhã" })).toBeChecked();
+    expect(firstRow.getByRole("radio", { name: "Na sexta" })).not.toBeChecked();
+    expect(secondRow.getByRole("radio", { name: "Na sexta" })).toBeChecked();
+    expect(secondRow.getByRole("radio", { name: "Amanhã" })).not.toBeChecked();
+
+    await user.click(firstRow.getByRole("button", { name: "Send" }));
+    await waitFor(() => expect(posts(calls)).toHaveLength(1));
+    expect(posts(calls)[0]?.body).toEqual({
+      text: "",
+      reply_to: "m-r1-1",
+      answers: { items: [{ question_id: "q1", option_ids: ["q1o1"] }] },
+    });
+  });
+});
+
 describe("TestStepsAndValidity", () => {
   it("keeps Next and Send disabled until the step is valid, and shows Send on the last step", async () => {
     roomApi({ my_level: "post" }, [
@@ -461,7 +539,10 @@ describe("TestATextOnlySingleAnswerIsValid", () => {
     await screen.findByText(WIZARD_TEXT);
 
     expect(send()).toBeDisabled();
-    await user.type(row().getByRole("textbox", { name: "Note (optional)" }), "depois das 10h");
+    await user.type(
+      row().getByRole("textbox", { name: "Your answer (or pick an option)" }),
+      "depois das 10h",
+    );
     expect(send()).toBeEnabled();
     await user.click(send());
 
@@ -515,6 +596,127 @@ describe("TestAnAnsweredWizardIsReadOnly", () => {
     expect(row().queryByRole("button", { name: "Send" })).toBeNull();
     expect(row().queryByRole("radio")).toBeNull();
     expect(row().queryByRole("checkbox")).toBeNull();
+  });
+});
+
+describe("TestADeletedWizardAnswerIsAnswerableAgain", () => {
+  it("returns the step controls when the stored answer is deleted live", async () => {
+    const stored = wizardAnswer([{ question: "Quando?", values: ["Na sexta"], text: "" }]);
+    roomApi({ my_level: "post" }, [wizardMessage([QUANDO])], {
+      "POST /rooms/r1/messages": json(201, stored),
+    });
+    const user = userEvent.setup();
+    const { queryClient } = renderRoute("/rooms/r1");
+    await screen.findByText(WIZARD_TEXT);
+
+    await user.click(row().getByRole("radio", { name: "Na sexta" }));
+    await user.click(send());
+    await waitFor(() =>
+      expect(row().getByRole("heading", { name: "Your answer" })).toBeInTheDocument(),
+    );
+
+    act(() =>
+      handleLiveEvent(queryClient, useLiveStore.getState(), {
+        type: "room.message",
+        data: stored,
+      }),
+    );
+    await waitFor(() =>
+      expect(row().getByRole("heading", { name: "Your answer" })).toBeInTheDocument(),
+    );
+
+    act(() =>
+      handleLiveEvent(queryClient, useLiveStore.getState(), {
+        type: "room.message_updated",
+        data: { ...stored, text: "", answers: undefined, deleted_at: deletedAt },
+      }),
+    );
+
+    await waitFor(() => expect(row().getByRole("radio", { name: "Na sexta" })).toBeInTheDocument());
+    expect(row().queryByRole("heading", { name: "Your answer" })).toBeNull();
+    expect(row().getByRole("heading", { name: "Quando?" })).toBeInTheDocument();
+    expect(send()).toBeEnabled();
+  });
+});
+
+describe("TestSendKeepsFocus", () => {
+  it("keeps focus on Send while the answer is sent and after it fails", async () => {
+    let resolve!: (response: Response) => void;
+    const pending = new Promise<Response>((r) => {
+      resolve = r;
+    });
+    const { calls } = roomApi({ my_level: "post" }, [wizardMessage([QUANDO])], {
+      "POST /rooms/r1/messages": () => pending,
+    });
+    const user = userEvent.setup();
+    renderRoute("/rooms/r1");
+    await screen.findByText(WIZARD_TEXT);
+    await user.click(row().getByRole("radio", { name: "Na sexta" }));
+
+    const control = send();
+    control.focus();
+    await user.keyboard("{Enter}");
+
+    expect(posts(calls)).toHaveLength(1);
+    // A real disabled control loses focus to the body; aria-disabled keeps the pressed control
+    // focusable and the guard is what stops a second send.
+    await waitFor(() => expect(control).toHaveAttribute("aria-disabled", "true"));
+    expect(control).not.toBeDisabled();
+    expect(control).toHaveFocus();
+
+    await act(async () => {
+      resolve(apiError(500, "internal"));
+    });
+    await waitFor(() =>
+      expect(toast.error).toHaveBeenCalledWith("Could not send your answer. Try again."),
+    );
+    expect(control).toHaveFocus();
+  });
+});
+
+describe("TestAnAnsweredWizardDoesNotTakeFocus", () => {
+  it("leaves focus alone when the room loads an old answered wizard", async () => {
+    const stored = wizardAnswer([{ question: "Quando?", values: ["Na sexta"], text: "" }]);
+    roomApi({ my_level: "post" }, [wizardMessage([QUANDO]), stored]);
+    renderRoute("/rooms/r1");
+
+    const heading = await screen.findByRole("heading", { name: "Your answer" });
+    expect(heading).not.toHaveFocus();
+    expect(document.activeElement).toBe(document.body);
+  });
+});
+
+describe("TestTheNoteIsOutsideTheRadioGroup", () => {
+  it("keeps the radios alone in the group and the note after it", async () => {
+    roomApi({ my_level: "post" }, [
+      wizardMessage([single("q1", "Quando?", ["Amanhã", "Na sexta"], true)]),
+    ]);
+    renderRoute("/rooms/r1");
+    await screen.findByText(WIZARD_TEXT);
+
+    const radios = row().getByRole("radiogroup");
+    expect(within(radios).getAllByRole("radio")).toHaveLength(2);
+    expect(within(radios).queryByRole("textbox")).toBeNull();
+    expect(
+      row().getByRole("textbox", { name: "Your answer (or pick an option)" }),
+    ).toBeInTheDocument();
+  });
+});
+
+describe("TestTheNoteLabelSaysItCanBeTheAnswer", () => {
+  it("labels the field of a single question with allow_text as the answer in Portuguese", async () => {
+    roomApi(
+      { my_level: "post" },
+      [wizardMessage([single("q1", "Quando?", ["Amanhã", "Na sexta"], true)])],
+      { "GET /me": json(200, makeMe({ locale: "pt-BR" })) },
+    );
+    renderRoute("/rooms/r1");
+    await screen.findByText(WIZARD_TEXT);
+
+    expect(
+      row().getByRole("textbox", { name: "Sua resposta (ou escolha uma opção)" }),
+    ).toBeInTheDocument();
+    expect(row().queryByRole("textbox", { name: "Observação (opcional)" })).toBeNull();
   });
 });
 
