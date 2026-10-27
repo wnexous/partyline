@@ -167,6 +167,9 @@ type link struct {
 	seen    *idRing
 	// announced is set once the identity notice was sent: a reconnect is the same session.
 	announced bool
+	// announcedSession is set once the process said which parallel session it became: a reconnect of the
+	// same process says it again neither on stderr nor in the identity notice (SESS-15).
+	announcedSession bool
 	// expectReconnect is set once a channel told onLost that it keeps trying while busy: the welcome of
 	// the connection that follows then tells the harness that Partyline is back (SES-04).
 	expectReconnect bool
@@ -371,6 +374,9 @@ func identityText(w dto.AgentWelcomeFrame) string {
 		}
 		text += " You operate: " + strings.Join(operated, ", ") + "."
 	}
+	if w.Session.Label != "" {
+		text += " This session is :" + w.Session.Label + "."
+	}
 	return text
 }
 
@@ -409,9 +415,27 @@ func (l *link) announceReconnect() error {
 	return nil
 }
 
+// announceSession tells the person which parallel session this connection became, once per process
+// (SESS-15): the line the SES-01 takeover question used to ask about. The principal says nothing.
+func (l *link) announceSession(w dto.AgentWelcomeFrame) {
+	label := w.Session.Label
+	if label == "" {
+		return
+	}
+	l.mu.Lock()
+	said := l.announcedSession
+	l.announcedSession = true
+	l.mu.Unlock()
+	if said {
+		return
+	}
+	fmt.Fprintf(l.stderr, "partyline: opened as parallel session %s\n", label)
+}
+
 // announceIdentity sends the notice that says who the AI is, once per process: the welcome of a
 // reconnect, which follows a dropped connection of the same session, says nothing.
 func (l *link) announceIdentity(w dto.AgentWelcomeFrame) error {
+	l.announceSession(w)
 	text := identityText(w)
 	l.mu.Lock()
 	skip := !l.announce || l.announced || text == ""

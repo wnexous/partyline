@@ -2,9 +2,11 @@ package channel
 
 import (
 	"context"
+	"encoding/json"
 	"net/http"
 	"net/http/httptest"
 	"regexp"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -312,4 +314,112 @@ func TestLinkReportsAnUnusableFolderWithoutRetrying(t *testing.T) {
 	time.Sleep(4 * fastTiming.maxBackoff)
 	require.Equal(t, 1, log.count(), "no retry")
 	require.Contains(t, stderr.String(), "the folder must be an absolute path")
+}
+
+// noticeLog records the notifications a link sends, as a harness would receive them.
+type noticeLog struct {
+	mu    sync.Mutex
+	notes []Notification
+}
+
+func (n *noticeLog) Notify(_ string, params any) error {
+	n.mu.Lock()
+	defer n.mu.Unlock()
+	if note, ok := params.(Notification); ok {
+		n.notes = append(n.notes, note)
+	}
+	return nil
+}
+
+func (n *noticeLog) Initialized() <-chan struct{} { return closedChan }
+
+func (n *noticeLog) all() []Notification {
+	n.mu.Lock()
+	defer n.mu.Unlock()
+	return append([]Notification(nil), n.notes...)
+}
+
+// welcomeSessionServer answers the agent WebSocket with a welcome that carries session and drops the
+// first connection, so the link reconnects with the same process; it reports how many dials it saw.
+func welcomeSessionServer(t *testing.T, session dto.SessionInfo) (string, func() int) {
+	t.Helper()
+	var mu sync.Mutex
+	dials := 0
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/api/v1/agent/ws" {
+			http.NotFound(w, r)
+			return
+		}
+		ws, err := websocket.Accept(w, r, nil)
+		if err != nil {
+			return
+		}
+		mu.Lock()
+		dials++
+		dial := dials
+		mu.Unlock()
+		hello, _ := json.Marshal(dto.AgentWelcomeFrame{
+			Type:         dto.AgentFrameTypeWelcome,
+			Intelligence: dto.IntelligenceRef{Kind: dto.IntelligenceKindAI, DisplayName: "Builder", Handle: "builder"},
+			Session:      session,
+		})
+		_ = ws.Write(r.Context(), websocket.MessageText, hello)
+		if dial == 1 {
+			_ = ws.Close(websocket.StatusInternalError, "drop") // the channel reconnects
+			return
+		}
+		defer func() { _ = ws.CloseNow() }()
+		for {
+			if _, _, err := ws.Read(r.Context()); err != nil {
+				return
+			}
+		}
+	}))
+	t.Cleanup(srv.Close)
+	return srv.URL, func() int {
+		mu.Lock()
+		defer mu.Unlock()
+		return dials
+	}
+}
+
+// SESS-15: a welcome with a label makes the channel say which parallel session it became, once in the
+// identity notice and once on stderr, and a reconnect of the same process says neither again. The
+// principal prints neither.
+func TestChannelAnnouncesItsParallelSessionOnce(t *testing.T) {
+	const line = "partyline: opened as parallel session claude-2\n"
+	cases := map[string]struct {
+		label, notice string
+		announced     bool
+	}{
+		"principal": {label: "", notice: "You are Builder (@builder)."},
+		"parallel":  {label: "claude-2", notice: "You are Builder (@builder). This session is :claude-2.", announced: true},
+	}
+	for name, c := range cases {
+		t.Run(name, func(t *testing.T) {
+			base, dials := welcomeSessionServer(t, dto.SessionInfo{Label: c.label, Harness: "claude"})
+			notes, stderr := &noticeLog{}, &syncBuffer{}
+			l := newLink(mustURL(t, base), "pl_agent_x", builderIdentity, http.DefaultClient, notes, stderr, fastTiming)
+			l.announce = true
+			ctx, cancel := context.WithCancel(context.Background())
+			done := make(chan struct{})
+			go func() { _ = l.run(ctx); close(done) }()
+			t.Cleanup(func() { cancel(); <-done })
+
+			require.Eventually(t, func() bool { return dials() >= 2 }, wait, 5*time.Millisecond, "the channel reconnects")
+			require.Eventually(t, func() bool { return len(notes.all()) >= 1 }, wait, 5*time.Millisecond, "the identity notice")
+			require.Never(t, func() bool { return len(notes.all()) > 1 }, 200*time.Millisecond, 10*time.Millisecond,
+				"a reconnect of the same process says nothing again")
+			require.Len(t, notes.all(), 1)
+			require.Equal(t, c.notice, notes.all()[0].Content)
+
+			if !c.announced {
+				require.Empty(t, stderr.String(), "the principal prints no session line")
+				return
+			}
+			require.Eventually(t, func() bool { return strings.Count(stderr.String(), line) == 1 }, wait, 5*time.Millisecond)
+			require.Never(t, func() bool { return strings.Count(stderr.String(), line) > 1 }, 200*time.Millisecond, 10*time.Millisecond,
+				"the line is printed once across two connections")
+		})
+	}
 }

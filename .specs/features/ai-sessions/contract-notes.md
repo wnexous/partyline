@@ -185,3 +185,28 @@ The AI's presence event now fires on every session change (SESS-32), so
 `TestGatewayAttachesAConnectionThatLostTheRaceAsAParallelSession` sees three online announcements
 (the winner's attach, the gateway's attach and the gateway's detach) instead of one. That file is
 outside T10's **Also** line; the assertion is updated to the new rule, not weakened.
+# Contract Notes (from ai-sessions T7: the clients present a session)
+
+The rest of the design stands. One test T7's **Also** line does not name asserts the prompt that SESS-16
+removes, so it moved with the behaviour; the main-folder assertion its **Tests first** bullet mentions
+stays T4's, as that bullet itself says.
+
+## The placement test that shared the prompt moved to the parallel session
+
+`internal/cli/launcher_placement_test.go` had `TestLauncherAsksOnceForThePlacementAndTheTakeover`: it
+proved one session lookup answered both the placement check and the takeover prompt (old SES-01/SES-02),
+and that the answer started the harness with `PARTYLINE_TAKEOVER=1`. SESS-16 removes the prompt, and T7's
+file list does not name that file, but leaving the test would fail the gate on behaviour the spec
+supersedes. It is now `TestLauncherChecksThePlacementOnceWithoutAskingAboutTheLiveSession`: still one
+lookup for the placement, with the launch starting with `PARTYLINE_LAUNCH_ORG` and without
+`PARTYLINE_TAKEOVER=1`. No assertion was weakened; the old one is replaced, as T6 did with the tests that
+asserted `identity_busy`.
+
+## The main-folder header stays T4's test
+
+T7's **Tests first** bullet also names `internal/channel/identity_test.go` for "`mainFolder` is sent
+percent-encoded only when non-empty", then says the T4 test owns the header and this task asserts only the
+notice and identity text. `internal/channel/identity.go` is read-only here, as T7's **Also** line says,
+and T4's `Identity.setHeaders` is the rule that sends the header; T7's notice, the sentence and the
+stderr line are tested in `internal/channel/link_live_test.go`
+(`TestChannelAnnouncesItsParallelSessionOnce`).
