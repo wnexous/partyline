@@ -230,6 +230,28 @@ func TestParseUnknown(t *testing.T) {
 	require.NotEmpty(t, p.Inbound.Text)
 }
 
+// WA-02: a message of a kind the connector does not know names the protocol types it carries, so
+// the operator can see which shape arrived without seeing the content. messageContextInfo is
+// metadata, not a content type; the names are sorted and at most maxUnknownKeys.
+func TestParseUnknownNamesItsKinds(t *testing.T) {
+	p := parse(t, frame(t, testInstance, groupInfo("MSGUNK1"),
+		`{"messageContextInfo":{"messageAssociation":{"associationType":1}},"someNewMessage":{"x":1}}`))
+	require.Equal(t, string(dto.MessageKindUnknown), p.Inbound.Kind)
+	require.Equal(t, "(unsupported message: someNewMessage)", p.Inbound.Text)
+	require.Equal(t, []string{"someNewMessage"}, p.UnknownKeys)
+
+	p = parse(t, frame(t, testInstance, groupInfo("MSGUNK2"),
+		`{"zMessage":{"x":1},"aMessage":{"x":1},"bMessage":{"x":1},"cMessage":{"x":1}}`))
+	require.Equal(t, string(dto.MessageKindUnknown), p.Inbound.Kind)
+	require.Equal(t, "(unsupported message: aMessage, bMessage, cMessage)", p.Inbound.Text)
+	require.Equal(t, []string{"aMessage", "bMessage", "cMessage"}, p.UnknownKeys)
+
+	p = parse(t, frame(t, testInstance, groupInfo("MSGUNK3"), `{"someNewMessage":"text"}`))
+	require.Equal(t, string(dto.MessageKindUnknown), p.Inbound.Kind)
+	require.Equal(t, "(unsupported message)", p.Inbound.Text)
+	require.Empty(t, p.UnknownKeys)
+}
+
 // WA-01: only Message events are chat messages; status broadcasts are not chats.
 func TestParseIgnoresOtherEventsAndStatusBroadcasts(t *testing.T) {
 	ev, err := DecodeFrame(frame(t, testInstance, groupInfo("MSG19"), `{"conversation":"x"}`))

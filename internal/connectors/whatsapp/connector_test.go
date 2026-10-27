@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"io"
+	"log/slog"
 	"maps"
 	"net/http"
 	"net/http/httptest"
@@ -953,6 +954,23 @@ func TestGroupSubjectFromListAndFailure(t *testing.T) {
 	push(t, sock, frame(t, testInstance, groupInfo("G2"), `{"conversation":"after the refresh"}`))
 	require.Equal(t, "Acme Team", rec.NextInbound(t).ChatTitle)
 	require.Equal(t, 1, f.count("/group/info"), "the list filled the cache")
+}
+
+// An unsupported message is logged at info with its protocol types and the connector id of the
+// scoped logger, never its chat, sender or content.
+func TestHandleLogsUnsupportedMessageKeysWithoutContent(t *testing.T) {
+	var logs strings.Builder
+	log := slog.New(slog.NewTextHandler(&logs, nil)).With("connector_id", "c1")
+	c := &Connector{instance: testInstance, log: log}
+	rec := connectortest.NewRecorder()
+	c.handle(context.Background(), rec, frame(t, testInstance, dmInfo("UNK1"), `{"someNewMessage":{"caption":"PRIVATE-TEXT"}}`))
+	require.Equal(t, "UNK1", rec.NextInbound(t).MessageID)
+	require.Contains(t, logs.String(), "whatsapp: unsupported message")
+	require.Contains(t, logs.String(), "connector_id=c1")
+	require.Contains(t, logs.String(), "someNewMessage")
+	for _, secret := range []string{"PRIVATE-TEXT", peerJID, peerLID, "Test Person"} {
+		require.NotContains(t, logs.String(), secret)
+	}
 }
 
 // A connector that can never receive a message says why next to its connected status: evolution-go
