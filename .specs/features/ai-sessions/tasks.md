@@ -12,17 +12,18 @@ Implement these tasks with the `tlc-spec-driven` skill: **activate it by name an
 **Design**: `.specs/features/ai-sessions/design.md`
 **Status**: Draft, awaiting approval
 
-The product owner's brief fixes the behaviour (D1..D10 in the spec's Problem Statement). The design
+The product owner's brief fixes the behaviour (D1..D11 in the spec's Problem Statement). The design
 settles the rest: the CLI worktree detection and the server key, the label rules, the presence model, the
-delivery rows and the fallback, the author label, the tokenizer of `@handle:label`, migration `0027`, and
-the web surfaces.
+delivery rows and the fallback, the author label, the tokenizer of `@handle:label`, the sibling routing
+(D11), the worktree tools-only reader, migration `0027`, and the web surfaces.
 
 Each task is one commit, about 300 changed lines and about 5 hand-written files, under an hour, and is
 independently testable. T4, T6 and T8 are the largest: T4 is the CLI/server vertical slice of D1, T6
 replaces the tests that assert the old refusal, and T8 is a labelled push, its acknowledgement and the
 principal's fallback queue, which must land together or a labelled message would be stranded when its
-session ends; the line hint is a target, not a cap, and each stays one behaviour. Tests are written first
-and derive from the spec's acceptance criteria. Generated files (`internal/store/db/*`,
+session ends. D11's sibling target (T15) and the worktree tools-only reader (T16) are split out of T8 so
+each stays one commit; the line hint is a target, not a cap, and each task stays one behaviour. Tests are
+written first and derive from the spec's acceptance criteria. Generated files (`internal/store/db/*`,
 `web/src/lib/api/types.gen.ts`) are never hand-edited.
 
 ## Test Coverage Matrix
@@ -43,6 +44,8 @@ and derive from the spec's acceptance criteria. Generated files (`internal/store
 | Presence (labels, races, takeover, reconnect) | unit (in-package) | Two labels from two connects; the race has one principal; takeover closes only the principal; the 10-minute memory | `internal/agents/presence_test.go` | `go test -count=1 ./internal/agents/...` |
 | Gateway (parallel session, welcome, ack, feed, end) | integration (real SQLite + WebSocket) | No `identity_busy`; welcome labels; principal-only app/feed/cursor; a labelled ack never moves the AI cursor | `internal/agents/gateway_live_test.go`, `internal/api/agent_sessions_test.go` | `make test` |
 | Routing and the fallback | integration (testkit, a fake or real session) | One session per message; the fallback row; no double consumption; the note; edits and deletes; paused rooms | `internal/delivery/dispatcher_test.go`, `internal/agents/session_delivery_test.go` | `make test` |
+| Sessions addressing each other (D11) | integration (testkit, two real sockets) | The three examples (principal → sibling, session → principal refused, session → own label refused); `trusted` true; no fallback; edits and deletes; paused rooms | `internal/delivery/dispatcher_test.go`, `internal/agents/session_delivery_test.go` | `make test` |
+| Worktree tools-only reader | integration + unit (fake API server) | The empty pending page consumes nothing and answers at once; the tool answer says the sentence once and never asks the server | `internal/api/agent_pending_test.go`, `internal/channel/pending_note_test.go` | `make test` |
 | Author label | integration (testkit) | The live label, the worktree label, the principal, a user, an edit | `internal/api/agent_sessions_test.go` | `make test` |
 | Profile, members, `GET /agent/session` | e2e (testkit, real app on `httptest`) | Two sessions listed; a human member has none; the auth of the routes is unchanged | `internal/api/intelligences_test.go`, `internal/api/rooms_handlers_test.go` | `make test` |
 | CLI worktree detection and launcher | unit + e2e (fake git runner, fake stdio) | The two rev-parse outputs, the first worktree, a timeout; the header; no prompt; the notice | `internal/channel/worktree_test.go`, `internal/cli/launcher_test.go` | `go test -count=1 ./internal/cli/... ./internal/channel/...` |
@@ -82,17 +85,20 @@ hand-merge generated files (`internal/store/db/*`, `web/src/lib/api/types.gen.ts
 | G7 | Phase 8 (T10) | G6 merged |
 | G8 | Phase 9 (T11) | G7 merged |
 | G9 | Phase 10 (T12) | G8 merged |
-| G10 | Phase 11 (T13 and T14 in parallel) | G9 merged |
+| G10 | Phase 11 (T15 and T16 in parallel) | G9 merged |
+| G11 | Phase 12 (T13 and T14 in parallel) | G10 merged |
 
 Dependency graph (every arrow is a `Depends on` of the task it points to):
 
 ```
 T2 -> T3
 T1 -> T8
+T1 -> T9
 T2 -> T5
 T3 -> T8
 T4 -> T6
 T4 -> T9
+T4 -> T16
 T5 -> T6
 T6 -> T7
 T6 -> T8
@@ -100,12 +106,18 @@ T6 -> T9
 T6 -> T10
 T7 -> T13
 T8 -> T13
+T8 -> T15
+T8 -> T16
 T9 -> T11
 T9 -> T13
+T9 -> T15
+T9 -> T16
 T10 -> T12
 T10 -> T13
 T11 -> T14
 T12 -> T14
+T15 -> T13
+T16 -> T13
 ```
 
 ### Phase 1: Store and rules
@@ -140,7 +152,8 @@ sentence. It is the first commit a person can see from a terminal.
 
 T8 is the largest task: the dispatcher computes the target, the gateway pushes to the label or to the
 principal with the note, the delivery rows and the fallback exist, and backlog/pending merge the
-fallback. Its tests are the integration of T1, T3 and T6.
+fallback. Its tests are the integration of T1, T3 and T6. D11's sibling target and the worktree
+tools-only reader are split into T15 and T16 so this task stays one commit.
 
 ### Phase 7: Authorship
 
@@ -161,12 +174,20 @@ T11 is the `via :label` chip and its i18n/test.
 T12 adds the profile section, the autocomplete candidates and the inserted `@handle:label `, and
 invalidates the cached profile on the presence event.
 
-### Phase 11: Docs and end-to-end
+### Phase 11: Coordination and the tools-only reader
 
-T13 documents the headers, the routing, the author label and the manual merge, records AD-029 and amends
-SES-01..SES-08. T14 drives the real binary with Playwright: two real sessions, the labelled routing, the
-`via` chip, the profile and the autocomplete, and the 320/412 px fit at 125% font. They touch disjoint
-files and run in parallel.
+T15 is D11: the dispatcher adds the one target `Plan` excludes (the author AI's live sibling), the stored
+`author_label` decides who wrote the message, and the gateway never hands the AI's own message back to
+it. T16 is the worktree tools-only reader: its pending page is empty and consumes nothing, and its tool
+answer says why once. The two touch disjoint files and run in parallel; both need T8's delivery rows and
+T9's author label.
+
+### Phase 12: Docs and end-to-end
+
+T13 documents the headers, the routing, the author label, the sibling rule, the worktree tools-only
+reader and the manual merge, records AD-029 and amends SES-01..SES-08. T14 drives the real binary with
+Playwright: two real sessions, the labelled routing, the `via` chip, the profile and the autocomplete,
+and the 320/412 px fit at 125% font. They touch disjoint files and run in parallel.
 
 ---
 
@@ -180,16 +201,16 @@ files and run in parallel.
 `messages.author_label` (`ADD COLUMN`, default `''`), the `agent_session_deliveries` table with its two
 indexes and the label CHECK, and the `message_views` recreation that exposes `author_label`. The sqlc
 queries in `internal/store/queries/session.sql` (`CreateSessionDelivery`, `DeleteSessionDelivery`,
-`AckSessionDelivery`, `FallBackSessionDeliveries`, `ListSessionFallbacks`,
-`ListSessionDeliveriesByLabel`) and the `NOT EXISTS` clause added to `CountAgentBacklog`,
-`ListAgentBacklog` and `ListAgentPending` in `internal/store/queries/agents.sql`. Regenerate the sqlc
-output.
+`AckSessionDelivery`, `FallBackSessionDeliveries` with its `NOT EXISTS` clause for a message the AI
+wrote, `DeleteSelfSessionDeliveries`, `ListSessionFallbacks`, `ListSessionDeliveriesByLabel`) and the
+`NOT EXISTS` clause added to `CountAgentBacklog`, `ListAgentBacklog` and `ListAgentPending` in
+`internal/store/queries/agents.sql`. Regenerate the sqlc output.
 
 **Where**: `internal/store/migrations/0027_ai_sessions.sql`
 **Also**: `internal/store/queries/session.sql`, `internal/store/queries/agents.sql`,
 `internal/store/session_migration_test.go`, `internal/store/db/*` (generated)
 **Depends on**: None
-**Requirement**: SESS-24, SESS-28, SESS-30
+**Requirement**: SESS-24, SESS-28, SESS-30, SESS-37, SESS-38
 **Tests first** (`internal/store/session_migration_test.go`):
 - `TestMigration0027AddsTheSessionLabelAndTheDeliveryRows`: open a database migrated to `0026`
   (`openMigratedBefore(t, "0027")`), insert a user, an AI, a group, a message and a member; apply
@@ -204,6 +225,12 @@ output.
   `FallBackSessionDeliveries(agent, "claude-2", 100)` returns `[message_id]` with `fell_back_at = 100`; a
   second call returns none; `AckSessionDelivery` now deletes 0 rows; a second message inserted with
   `fell_back_at = 50` has that value and `DeleteSessionDelivery` deletes it.
+- `TestAnAIMsOwnMessageNeverFallsBack`: a message the AI itself wrote (`author_kind 'agent'`,
+  `author_id` the AI, `author_label 'claude-2'`) with a pending row for `claude-2`;
+  `FallBackSessionDeliveries(ai, "claude-2", 100)` returns none and `fell_back_at` stays NULL;
+  `DeleteSelfSessionDeliveries(ai, "claude-2")` deletes 1 and a second call deletes 0; a user-authored
+  message of the same label still falls back; a row of the label `wt` is untouched by a delete of
+  `claude-2`.
 - `TestFallbacksArePerRoomAndOrdered`: one AI, two rooms, rows for `:wt` in each (one fallen back), a new
   message without a row; `ListSessionFallbacks(agent, room1)` returns only the fallen-back message of
   `room1`, by `seq`; the new message is in `ListAgentBacklog` and the fallen-back one is not; a message
@@ -211,6 +238,8 @@ output.
 **Done when**:
 - [ ] the migration passes on a database that existed before `0027` and on a fresh one
 - [ ] the three backlog/pending queries exclude every delivery row for the AI (pending and fallen back)
+- [ ] a row of a message the AI wrote is deleted by `DeleteSelfSessionDeliveries`, never marked
+      `fell_back_at`
 - [ ] `make generate` ran and the sqlc output is committed
 - [ ] no Go hook is added (pure SQL)
 - [ ] Gate check passes: `make check`
@@ -289,7 +318,8 @@ repository](../ai-sessions/design.md#identity-the-repository-d1): the `internal/
 when absent, never when `PARTYLINE_LAUNCH_PARENT` is set), and the server's `FolderID.MainFolder` +
 `ValidateFolder` + the `key` in `ResolveFolder`/`LookupFolder`/`RegisterFolder`/`linkOrCreate`/
 `adoptionCandidate`. A main folder equal to the folder is absent; a bad one is 422 `folder_invalid` on
-`main_folder`.
+`main_folder`. The tools-only process resolves the same AI and posts with its folder's label (SESS-06);
+what it reads is T16's rule.
 
 **Where**: `internal/channel/worktree.go`
 **Also**: `internal/channel/worktree_test.go`, `internal/channel/identity.go`,
@@ -316,6 +346,8 @@ when absent, never when `PARTYLINE_LAUNCH_PARENT` is set), and the server's `Fol
       launcher already runs the harness, `internal/cli/launcher.go:21`)
 - [ ] the worktree command has a one-second bound and never fails the launch
 - [ ] the AI's `agents.folder` is the main folder and its default name/handle derive from it
+- [ ] a tools-only process in a linked worktree resolves the repository's AI and posts with the worktree
+      label (its empty pending list is T16)
 - [ ] Gate check passes: `make check`
 **Tests**: unit + integration
 **Gate**: build
@@ -478,8 +510,8 @@ not use the real gateway):
 - `internal/delivery/dispatcher_test.go`: a group with an AI whose handle is `atlas` and a user author;
   `"hello"` → 0 pushes to `:claude-2` and 1 to the principal; `"@atlas:claude-2 hi"` → 1 to
   `:claude-2` and 0 to the principal; `"@atlas:claude-2 and @atlas:wt"` → the first label only; a DM with
-  `"@atlas:claude-2 hi"` → `:claude-2`; a paused room → 0 for both; a message authored by the AI → 0 for
-  its own sessions and 1 for the other AI member.
+  `"@atlas:claude-2 hi"` → `:claude-2`; a paused room → 0 for both; a plain message authored by the AI →
+  0 for its own sessions and 1 for the other AI member (D11's labelled sibling case is T15).
 - `internal/agents/session_delivery_test.go` (real app, real store, two sockets):
   `@atlas:claude-2 hello` → the `:claude-2` socket got one message frame and a row exists; the principal
   got none; the `:claude-2` socket closes without ack → the row's `fell_back_at` is set and the principal
@@ -502,6 +534,8 @@ not use the real gateway):
 - [ ] a message is owned by exactly one of (a live labelled session, the principal's queue) at any time
 - [ ] the fallback and the ack are race-safe (T1's `RETURNING` + conditional delete) and covered by a
       test that acks after the sweep
+- [ ] a plain message the AI wrote is not delivered to any of its own sessions (T15 adds the labelled
+      exception)
 - [ ] the delivery mode, the loop guard and the echo rule are unchanged for the principal
 - [ ] Gate check passes: `make check`
 **Tests**: integration
@@ -657,23 +691,111 @@ query on `agent.presence`; the i18n keys.
 **Gate**: build
 **Commit**: `feat(web): list sessions in the profile and mention them`
 
-### Phase 11: Docs and end-to-end
+### Phase 11: Coordination and the tools-only reader
+
+#### T15: Sessions address each other [delivery]
+
+**What**: D11 exactly as the design's [Sessions addressing
+sessions](../ai-sessions/design.md#sessions-addressing-sessions): `audienceOf` reads the stored
+`message_views.author_label` and the author AI's handle, parses `SessionLabel(text, handle)` and adds one
+`audience.self` target when the text names a label that is not the author's own; `dispatch` pushes it
+after the plan with `trusted: true`, outside `Plan`'s author exclusion and outside the delivery mode,
+while the loop guard still applies; `dispatchUpdate` adds the before/after sibling targets deduped;
+`Gateway.Push` recognizes a message the AI wrote (`m.Message.AuthorKind`/`AuthorID`), never creates a
+born-fallen-back row for it and never pushes it to the principal, and `PushUpdate` does the same; the
+end-of-session sweep calls `DeleteSelfSessionDeliveries` next to the fallback. No DTO or wire change.
+
+**Where**: `internal/delivery/dispatcher.go`
+**Also**: `internal/agents/gateway.go`, `internal/agents/session_delivery.go`,
+`internal/delivery/dispatcher_test.go`, `internal/agents/session_delivery_test.go`
+**Depends on**: T8, T9
+**Requirement**: SESS-37, SESS-38, SESS-39
+**Tests first** (`testkit`, an AI live as `principal` and `:wt`, messages posted through a session's live
+id so the stored `author_label` is real):
+- `internal/delivery/dispatcher_test.go`: `@atlas:wt do X` posted by the principal → one push to the
+author AI with target `wt` and `trusted: true`, and none to the principal; `@atlas do Y` posted by `:wt`
+→ no push to any session of `atlas`; `@atlas:wt do Z` posted by `:wt` → none; `@atlas:gone do W` posted
+by `:wt` → none; the same texts posted by a user → D3's normal path and the delivery mode still applies;
+a paused room → no self push; a plain AI message → none (T8's case stays).
+- `internal/agents/session_delivery_test.go`: two real sockets; the principal's `@atlas:wt do X` → the
+`:wt` socket gets one frame with `trusted: true` and a pending row; `:wt` closes before ack →
+`fell_back_at` stays NULL, the row is gone (deleted by the sweep) and the principal receives nothing;
+`:wt` posts `@atlas do Y` → no frame on either socket; `:wt` posts `@atlas:wt do Z` → none; `:wt` posts
+`@atlas:gone do W` → no row and no frame; the principal writes a plain message, edits it to add
+`@atlas:wt` → `:wt` receives `message_edited` once, and deleting it reaches `:wt` with
+`message_deleted` while the principal receives neither.
+**Done when**:
+- [ ] the author label is `message_views.author_label`, never derived from the socket on this path
+- [ ] a message the AI wrote reaches neither the writing session's own label nor the principal as a
+      fallback
+- [ ] the loop guard suppresses every session in a paused room, including a self target
+- [ ] Gate check passes: `make check`
+**Tests**: integration
+**Gate**: build
+**Commit**: `feat(delivery): let sessions address each other`
+
+#### T16: Read no queue in a worktree tools-only process [agents]
+
+**What**: a process whose folder resolves to a non-empty label has no live session, so it reads no queue,
+exactly as the design's [The principal's queue and the tools-only
+reader](../ai-sessions/design.md#the-principals-queue-and-the-tools-only-reader) says. `agentPending`
+resolves the request's session label with `SessionLabelOf(ctx, a.ID, liveID, folder)` (T9's helper) and
+passes it to `Gateway.Pending`, which, when it is non-empty, returns an empty page — items, platform
+events and dropped count — at once (no `wait`), without advancing a cursor or deleting a delivery row;
+the principal-folder case is unchanged. The tools-only channel never asks the server from a linked worktree:
+`wait_for_messages` answers `no new messages: This worktree session has no live channel: it only writes
+and reads history.` the first time and `no new messages` after, and `ToolsOnlyInstructions` carries the
+same sentence for that identity only.
+
+**Where**: `internal/agents/pending.go`
+**Also**: `internal/api/agent_handlers.go`, `internal/api/agent_pending_test.go`,
+`internal/channel/pending.go`, `internal/channel/instructions.go`, `internal/channel/run.go`,
+`internal/channel/pending_note_test.go`
+**Depends on**: T4, T8, T9
+**Requirement**: SESS-06
+**Tests first**:
+- `internal/api/agent_pending_test.go`: an AI with a live principal, a message of the principal's and a
+  fallen-back row; a tools-only pending call with folder `/repo/wt` and main folder `/repo` → `items: []`,
+  `platform: []`, `dropped: 0`, `agent_cursors` unchanged, the delivery row still there, and the answer
+  immediate even with `wait=60`; the principal's next pending call returns the message once; a pending
+  call with the AI's own folder → the message as today; `?platform=1` from the worktree takes no platform
+  event.
+- `internal/channel/pending_note_test.go`: a fake API server that records every call; a tools-only server
+  whose identity has `Folder /repo/wt` and `MainFolder /repo` → `wait_for_messages` makes no request, its
+  first answer contains `This worktree session has no live channel: it only writes and reads history.`
+  and its second does not; an identity with `Folder /repo` and no main folder → asks the server and gets
+  the items, without the sentence; an identity whose `MainFolder` equals its `Folder` → the same.
+- `internal/channel/instructions_test.go`: a linked-worktree tools-only session receives
+  `ToolsOnlyInstructions` plus the note, a principal-folder one receives `ToolsOnlyInstructions` alone.
+**Done when**:
+- [ ] a tools-only process in a worktree consumes nothing: no cursor moved, no delivery row deleted, no
+      platform item or dropped count taken
+- [ ] the principal's queue is unchanged for every other reader
+- [ ] the note appears once per process and never for a principal-folder tools-only process
+- [ ] Gate check passes: `make check`
+**Tests**: integration + unit
+**Gate**: build
+**Commit**: `feat(agents): read no queue in a worktree tools-only process`
+
+### Phase 12: Docs and end-to-end
 
 #### T13: Document the labels, the routing and the manual merge [docs]
 
 **What**: the operator and API documentation of the feature, and the decision record: the main-worktree
-rule and the `X-Partyline-MainFolder` header, the labels and `@handle:label`, the `X-Partyline-Live`
-author label, `author_label` and `for_label`, the welcome `session`, the removed takeover prompt and
-`identity_busy`, and the manual merge of old worktree AIs (end the old AI's sessions, then
-`POST /agents/{id}/merge`). Remove the prompt/`identity_busy` instructions from `docs/agents.md:216-236,
-641, 719`, `docs/claude-code.md:17` and `README.md:172-174`. Record AD-029 in `.specs/STATE.md` and amend
+rule and the `X-Partyline-MainFolder` header, the labels and `@handle:label`, sessions addressing each
+other (D11: a session reaches a live sibling, never itself, never a fallback), the worktree tools-only
+reader (an empty pending list and the one-time note), the `X-Partyline-Live` author label, `author_label`
+and `for_label`, the welcome `session`, the removed takeover prompt and `identity_busy`, and the manual
+merge of old worktree AIs (end the old AI's sessions, then `POST /agents/{id}/merge`). Remove the
+prompt/`identity_busy` instructions from `docs/agents.md:216-236, 641, 719`, `docs/claude-code.md:17` and
+`README.md:172-174`. Record AD-029 in `.specs/STATE.md` and amend
 `.specs/features/intelligences/spec.md` SES-01..SES-08 with the superseding SESS requirements (the
 design's table). No behaviour change.
 
 **Where**: `docs/agents.md`
 **Also**: `docs/api.md`, `README.md`, `docs/claude-code.md`, `.specs/STATE.md`,
 `.specs/features/intelligences/spec.md`
-**Depends on**: T7, T8, T9, T10
+**Depends on**: T7, T8, T9, T10, T15, T16
 **Requirement**: SESS-08, SESS-35, SESS-36
 **Tests first**: none (documentation; `make check` is the gate). Verify by hand that every header, field,
 close code and limit in `internal/api/dto` and the welcome frame of T6 appears in `docs/api.md`, that no
@@ -684,6 +806,8 @@ README.md` returns nothing user-facing), and that AD-029's text matches the desi
       merge each one
 - [ ] `docs/api.md` documents `X-Partyline-MainFolder`, `X-Partyline-Live`, `author_label`, `for_label`,
       the welcome `session`, the sessions in the profile/members and the close codes
+- [ ] the docs state that a session may address a live sibling with `@handle:label` (never itself, never
+      a fallback), and that a worktree tools-only process reads no queue and says so once
 - [ ] `.specs/STATE.md` gains AD-029 without changing any other decision (it amends AD-010)
 - [ ] the intelligences spec's SES-01..SES-08 point at SESS-* and no longer describe the prompt
 - [ ] Gate check passes: `make check`
