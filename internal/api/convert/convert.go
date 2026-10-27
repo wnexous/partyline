@@ -60,6 +60,7 @@ func Message(m rooms.Message) dto.Message {
 		Recipients: m.Recipients(), ExternalID: m.ExternalID.String,
 		Attachments: make([]dto.Attachment, len(m.Attachments)), Reactions: Reactions(m.Reactions), CreatedAt: Time(m.CreatedAt),
 		EditedAt: OptTime(m.EditedAt), DeletedAt: OptTime(m.DeletedAt),
+		Interactive: dto.ParseMessageInteractive(m.InteractiveJson), Answers: dto.ParseMessageAnswers(m.AnswersJson),
 	}
 	for i, a := range m.Attachments {
 		out.Attachments[i] = dto.Attachment{ID: a.ID, Name: a.Name, Mime: a.Mime, Size: a.Size, Status: dto.AttachmentStatus(a.Status)}

@@ -690,9 +690,14 @@ export const ErrorCodePositionCycle = "position_cycle";
  */
 export const ErrorCodeIdentityOnline = "identity_online";
 /**
+ * ErrorCodeAlreadyAnswered is a second structured answer by the same author to the same question
+ * (409, QR-08): the member answers once, and deletes the answer to answer again.
+ */
+export const ErrorCodeAlreadyAnswered = "already_answered";
+/**
  * Error codes and the HTTP status they come with.
  */
-export type ErrorCode = typeof ErrorCodeInvalid | typeof ErrorCodeUnauthorized | typeof ErrorCodeForbidden | typeof ErrorCodeNotFound | typeof ErrorCodeConflict | typeof ErrorCodeGone | typeof ErrorCodeTooLarge | typeof ErrorCodeRateLimited | typeof ErrorCodeInternal | typeof ErrorCodeUnavailable | typeof ErrorCodeHandleTaken | typeof ErrorCodeAvatarInvalid | typeof ErrorCodeLastInstanceAdmin | typeof ErrorCodeLastAdmin | typeof ErrorCodeHomeOrganization | typeof ErrorCodeAlreadyMember | typeof ErrorCodeNotOperator | typeof ErrorCodeUnknownChat | typeof ErrorCodeUnsupported | typeof ErrorCodeFolderRequired | typeof ErrorCodeFolderInvalid | typeof ErrorCodePositionUnknown | typeof ErrorCodeOrganizationMismatch | typeof ErrorCodeIdentityBusy | typeof ErrorCodeDMMembersFixed | typeof ErrorCodeReactionLimit | typeof ErrorCodeDMSelf | typeof ErrorCodeContactNotFound | typeof ErrorCodeNoRouteToPerson | typeof ErrorCodeHistoryOnly | typeof ErrorCodeCounterpartDisabled | typeof ErrorCodeChatsNotMembers | typeof ErrorCodeMembersRefused | typeof ErrorCodeOrganizationRequired | typeof ErrorCodeOrganizationNotEmpty | typeof ErrorCodePositionCycle | typeof ErrorCodeIdentityOnline;
+export type ErrorCode = typeof ErrorCodeInvalid | typeof ErrorCodeUnauthorized | typeof ErrorCodeForbidden | typeof ErrorCodeNotFound | typeof ErrorCodeConflict | typeof ErrorCodeGone | typeof ErrorCodeTooLarge | typeof ErrorCodeRateLimited | typeof ErrorCodeInternal | typeof ErrorCodeUnavailable | typeof ErrorCodeHandleTaken | typeof ErrorCodeAvatarInvalid | typeof ErrorCodeLastInstanceAdmin | typeof ErrorCodeLastAdmin | typeof ErrorCodeHomeOrganization | typeof ErrorCodeAlreadyMember | typeof ErrorCodeNotOperator | typeof ErrorCodeUnknownChat | typeof ErrorCodeUnsupported | typeof ErrorCodeFolderRequired | typeof ErrorCodeFolderInvalid | typeof ErrorCodePositionUnknown | typeof ErrorCodeOrganizationMismatch | typeof ErrorCodeIdentityBusy | typeof ErrorCodeDMMembersFixed | typeof ErrorCodeReactionLimit | typeof ErrorCodeDMSelf | typeof ErrorCodeContactNotFound | typeof ErrorCodeNoRouteToPerson | typeof ErrorCodeHistoryOnly | typeof ErrorCodeCounterpartDisabled | typeof ErrorCodeChatsNotMembers | typeof ErrorCodeMembersRefused | typeof ErrorCodeOrganizationRequired | typeof ErrorCodeOrganizationNotEmpty | typeof ErrorCodePositionCycle | typeof ErrorCodeIdentityOnline | typeof ErrorCodeAlreadyAnswered;
 /**
  * ErrorBody is the envelope of every error response.
  */
@@ -2622,6 +2627,16 @@ export interface Message {
    * (RCT-05). A live frame carries them too.
    */
   reactions: Reaction[];
+  /**
+   * Interactive is the question the message asks (QR-01, QR-02): at most 4 quick replies or one
+   * wizard, with the ids the server assigned. Absent for every other message.
+   */
+  interactive?: MessageInteractive;
+  /**
+   * Answers is the structured answer a reply carries (QR-06, QR-07): the chosen labels of the
+   * question, in the question's order. Absent for every other message.
+   */
+  answers?: MessageAnswers;
   created_at: string /* RFC 3339 */;
   /**
    * EditedAt is when the author last changed the text; absent for a message that was never edited (EDT-01).
@@ -2653,6 +2668,13 @@ export interface PostMessageRequest {
    * Recipients, sent by v0.4 CLIs, is accepted and ignored: a room sends to no chat (CID-22).
    */
   recipients?: string[];
+  /**
+   * QuickReplies and Wizard ask a question and Answers answers one; at most one of the three shapes
+   * is set (QR-01, QR-02, QR-05). An answer's text is rendered by the server, so it is empty.
+   */
+  quick_replies?: string[];
+  wizard?: WizardRequest;
+  answers?: AnswerSubmission;
 }
 /**
  * AttachmentStatus is the storage state of an attachment.

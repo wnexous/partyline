@@ -234,7 +234,10 @@ func (s *server) postTo(w http.ResponseWriter, r *http.Request, p authn.Principa
 			return errUnsupportedQuote
 		}
 	}
-	m, err := s.Rooms.Post(r.Context(), p, roomID, rooms.PostInput{Text: req.Text, ReplyTo: req.ReplyTo, Files: files})
+	m, err := s.Rooms.Post(r.Context(), p, roomID, rooms.PostInput{
+		Text: req.Text, ReplyTo: req.ReplyTo, Files: files,
+		QuickReplies: req.QuickReplies, Wizard: req.Wizard, Answers: req.Answers,
+	})
 	if err != nil {
 		return err
 	}
