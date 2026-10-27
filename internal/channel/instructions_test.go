@@ -223,3 +223,22 @@ func TestInstructionsNameTheEditAndDeleteToolsAndTheirEvents(t *testing.T) {
 		require.Equal(t, 1, strings.Count(got, changesSentence), "%s instructions say it once", name)
 	}
 }
+
+// SESS-06: a tools-only session in a linked worktree is told once, in its instructions, that it has
+// no live channel and only writes and reads history; a tools-only session in the AI's own folder
+// gets the tools-only text alone.
+func TestToolsOnlyInstructionsNameTheWorktreeReaderOnly(t *testing.T) {
+	e := newChanEnv(t)
+	worktree := e.options()
+	worktree.ToolsOnly, worktree.Folder, worktree.MainFolder = true, builderFolder.Folder+"/wt", builderFolder.Folder
+	got := instructionsOf(t, worktree)
+	require.Contains(t, got, ToolsOnlyInstructions)
+	require.Contains(t, got, "This worktree session has no live channel: it only writes and reads history.")
+	require.Equal(t, 1, strings.Count(got, "This worktree session has no live channel: it only writes and reads history."))
+
+	principal := e.options()
+	principal.ToolsOnly = true
+	plain := instructionsOf(t, principal)
+	require.Equal(t, ToolsOnlyInstructions, plain, "the principal-folder tools-only process is told nothing new")
+	require.NotContains(t, plain, "This worktree session has no live channel")
+}

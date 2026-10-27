@@ -769,11 +769,11 @@ same sentence for that identity only.
 - `internal/channel/instructions_test.go`: a linked-worktree tools-only session receives
   `ToolsOnlyInstructions` plus the note, a principal-folder one receives `ToolsOnlyInstructions` alone.
 **Done when**:
-- [ ] a tools-only process in a worktree consumes nothing: no cursor moved, no delivery row deleted, no
+- [x] a tools-only process in a worktree consumes nothing: no cursor moved, no delivery row deleted, no
       platform item or dropped count taken
-- [ ] the principal's queue is unchanged for every other reader
-- [ ] the note appears once per process and never for a principal-folder tools-only process
-- [ ] Gate check passes: `make check`
+- [x] the principal's queue is unchanged for every other reader
+- [x] the note appears once per process and never for a principal-folder tools-only process
+- [x] Gate check passes: `make check`
 **Tests**: integration + unit
 **Gate**: build
 **Commit**: `feat(agents): read no queue in a worktree tools-only process`

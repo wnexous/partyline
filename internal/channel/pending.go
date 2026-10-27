@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"net/url"
 	"strconv"
+	"sync"
 	"time"
 
 	"github.com/wnexous/partyline/internal/api/dto"
@@ -18,6 +19,14 @@ const MaxWaitSeconds = 300
 
 // defaultWaitSeconds is the wait when the model gives no timeout_seconds.
 const defaultWaitSeconds = 60
+
+// worktreeNoteSaid remembers, per tools-only process, that the worktree note was already part of
+// an answer (SESS-06): the key is the process's API client, which Run creates once.
+var worktreeNoteSaid sync.Map
+
+// isLinkedWorktree is whether the process runs in a linked git worktree: it sent a main folder
+// different from its own (SESS-01). Only a tools-only process there has no live channel (SESS-06).
+func isLinkedWorktree(id Identity) bool { return id.MainFolder != "" && id.MainFolder != id.Folder }
 
 // pending fetches the agent's undelivered room messages and platform events (GET
 // /agent/pending?platform=1), waiting up to wait seconds for the first of either or for a count of
@@ -57,6 +66,15 @@ func (t *tools) waitForMessages(ctx context.Context, args json.RawMessage) (stri
 	wait := defaultWaitSeconds
 	if a.Timeout != nil {
 		wait = min(max(*a.Timeout, 0), MaxWaitSeconds)
+	}
+	if isLinkedWorktree(t.api.identity) {
+		// A tools-only process in a linked worktree holds no live channel: nothing is addressed to
+		// its label and the queue is the principal's, so it never asks the server (SESS-06). It
+		// says why once, then answers as it always does.
+		if _, said := worktreeNoteSaid.LoadOrStore(t.api, true); !said {
+			return "no new messages: " + WorktreeToolsOnlyNote, nil
+		}
+		return "no new messages", nil
 	}
 	p, err := t.api.pending(ctx, wait)
 	if err != nil {

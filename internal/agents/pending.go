@@ -27,7 +27,14 @@ type pendingMessage struct {
 // the WebSocket (wait_for_messages, turn-end hooks). Fallen-back messages are merged into the
 // same sequence order with their note, are returned without the delivery filter, and their rows
 // are deleted by this read (SESS-22, SESS-24).
-func (g *Gateway) Pending(ctx context.Context, a db.Agent, limit int) ([]dto.AgentMessage, error) {
+//
+// label is the session the request came from. A process whose folder resolves to a non-empty
+// label has no live session: nothing is addressed to it and its label's messages are the
+// principal's, so it reads no queue at all - no message, no cursor, no delivery row (SESS-06).
+func (g *Gateway) Pending(ctx context.Context, a db.Agent, label string, limit int) ([]dto.AgentMessage, error) {
+	if label != "" {
+		return []dto.AgentMessage{}, nil
+	}
 	g.pendingMu.Lock()
 	defer g.pendingMu.Unlock()
 	out := []dto.AgentMessage{}
