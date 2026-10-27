@@ -378,6 +378,20 @@
 - **Status**: active
 - **Amends**: the POS-03 rule (a creator manages an AI even when the AI holds a position). AD-017's chart computation is otherwise unchanged.
 
+### AD-030
+- **Decision**: The account and the organization are two places in the web app.
+  - `/account` owns the person's settings: the seven sections (profile, appearance and language, default organization, notifications on this device, password, sessions, deletion) stay on one page under the H1 "Minha conta" / "My account". `/settings` replaces itself with `/account`; no other address moves.
+  - The account menu (the avatar, on every width) groups its destinations under "Conta" (`/account`, `/identities`, `/tokens`, `/devices`) and "Ir para" (`/`, `/contacts`, `/orgs`), and keeps "Administração" for instance admins; the page in view is marked.
+  - A connection lives under the organization that owns it: `/orgs/{org}/connections` and `/orgs/{org}/connections/{id}`. `/connectors` resolves the organization the switcher shows, and `/connectors/{id}` the connection's own; both redirect with `replace`.
+  - The organization's pages have one entry: the gear beside the full switcher (768 px and wider, the phone's list screen included) and the compact switcher's menu on a phone's top bar, from one `ORG_PAGES` list (org chart, members, positions for admins, connections, settings, all organizations). The phone's top bar gains no fifth control.
+  - Every move is a client-side `beforeLoad` redirect with `replace: true`, so no HTTP route, DTO, table or permission rule changes; the SPA fallback already serves any path.
+  - The moved pages and both menus fit 320 px and 412 px at a 125% root font, and their rows are at least 44 px on touch.
+- **Reason**: The product owner asked for a better split between the organization's configuration and the person's (2026-10-27). "Settings" named neither, and a connection's address disagreed with the data (AD-016: a connection belongs to an organization). The split is navigation and page structure, so it is a web-only change with redirects.
+- **Trade-off**: The old addresses and their bookmarks pass through client-side redirects, and `/connectors/{id}` costs one read before it lands (put in the cache for the moved page). On a phone the top bar has no room for a gear at 320 px with an enlarged font, so the switcher's own menu carries the organization's pages there; the two entries differ in shape but not in content.
+- **Scope**: web-app (routes, components, `lib/nav.ts`, i18n), end-to-end tests, docs, specs. No `internal/` file, DTO, migration, query or permission rule.
+- **Date**: 2026-10-27
+- **Status**: active
+
 ## Handoff
 
 - **Feature**: organizations

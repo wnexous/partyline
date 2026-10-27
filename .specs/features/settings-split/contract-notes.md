@@ -82,3 +82,17 @@ word. The parity test covers both dictionaries.
 
 The `Done when` boxes of T4 were already checked in `tasks.md` at the base, as T1's were, so the
 commit carries no change to that file.
+
+## T5: proof and record
+
+Extending the fit check to `/orgs/{org}/settings` found one page that does not fit a phone's
+window when the organization's name is long: the "Leave {org}" button is an `inline-flex` with
+`whitespace-nowrap`, so the fit fixture's 60-character owner name (which also names their personal
+organization) made the button 487 px wide and the page 503 px wide at 360 px. The smallest change
+faithful to SET-12 lets that label wrap (`h-auto max-w-full py-2 text-left whitespace-normal`),
+with no behaviour change. `web/src/routes/_app/orgs/$orgId/settings.tsx` is outside this task's
+**Also** line; it is the one file T5 touches beyond its plan, and this note is its contract record.
+
+Two quoted lines of `docs/agents.md` (the login notice and the footer of `partyline orgs`) still
+say "Settings": they are the CLI's exact words, and T5 changes no `internal/` file or message
+(SET-13). The prose around them says "My account".

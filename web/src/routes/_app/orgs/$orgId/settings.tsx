@@ -224,7 +224,11 @@ function LeaveSection({ org }: { org: Organization }) {
       title={t("orgs.leave")}
       description={t("orgs.leaveBody", { org: org.name })}
     >
-      <Button variant="outline" onClick={() => setOpen(true)}>
+      <Button
+        variant="outline"
+        className="h-auto max-w-full py-2 text-left whitespace-normal"
+        onClick={() => setOpen(true)}
+      >
         {t("orgs.leaveOpen", { org: org.name })}
       </Button>
       <AlertDialog open={open} onOpenChange={close}>
