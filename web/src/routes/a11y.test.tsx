@@ -321,6 +321,21 @@ describe.each(["en", "pt-BR"] as const)("accessibility (%s)", (locale) => {
     expect(await axe(menu, AXE_OPTIONS)).toHaveNoViolations();
   });
 
+  it("the open organization menu has no axe violations", async () => {
+    appApi(locale, { "GET /orgs": ownOrgs });
+    const user = userEvent.setup();
+    renderRoute("/");
+    await user.click(
+      await screen.findByRole("button", {
+        name: locale === "en" ? "Pages of Acme" : "Páginas de Acme",
+      }),
+    );
+    const menu = await screen.findByRole("menu", {
+      name: locale === "en" ? "Pages of Acme" : "Páginas de Acme",
+    });
+    expect(await axe(menu, AXE_OPTIONS)).toHaveNoViolations();
+  });
+
   it("the new conversation dialog has no axe violations", async () => {
     appApi(locale);
     const user = userEvent.setup();

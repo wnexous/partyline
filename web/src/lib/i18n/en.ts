@@ -32,6 +32,7 @@ export const en = {
   "nav.identities": "Identities",
   "nav.tokens": "API tokens",
   "nav.account": "My account",
+  "nav.orgMenu": "Pages of {org}",
   "nav.admin": "Admin",
   "nav.adminUsers": "Users",
   "nav.groupWork": "Work",

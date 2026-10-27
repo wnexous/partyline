@@ -31,6 +31,7 @@ export const ptBR: Dictionary = {
   "nav.identities": "Identidades",
   "nav.tokens": "Tokens de API",
   "nav.account": "Minha conta",
+  "nav.orgMenu": "Páginas de {org}",
   "nav.admin": "Administração",
   "nav.adminUsers": "Usuários",
   "nav.groupWork": "Trabalho",

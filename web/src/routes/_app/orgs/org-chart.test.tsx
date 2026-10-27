@@ -724,11 +724,12 @@ describe("opening the organization", () => {
     );
   });
 
-  it("is where the switcher leads", async () => {
+  it("is where the organization's entry leads", async () => {
     api();
     const user = userEvent.setup();
     const { router } = renderRoute("/");
-    await user.click(await screen.findByRole("button", { name: /^Organization: Acme/ }));
+    // The gear beside the switcher is the organization's entry (SET-09).
+    await user.click(await screen.findByRole("button", { name: "Pages of Acme" }));
     await user.click(await screen.findByRole("menuitem", { name: "Org chart" }));
     await waitFor(() => expect(router.state.location.pathname).toBe("/orgs/o1/chart"));
   });

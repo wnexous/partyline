@@ -1,12 +1,14 @@
 import { Link } from "@tanstack/react-router";
-import { BuildingIcon, ChevronsUpDownIcon, NetworkIcon, PlusIcon } from "lucide-react";
+import { BuildingIcon, ChevronsUpDownIcon, PlusIcon } from "lucide-react";
 import { useId, useMemo, useState } from "react";
 import { NewOrgDialog } from "@/components/new-org-dialog";
 import { OrgAvatar } from "@/components/org-avatar";
+import { OrgPageItems } from "@/components/organization-menu";
 import { Button } from "@/components/ui/button";
 import {
   DropdownMenu,
   DropdownMenuContent,
+  DropdownMenuGroup,
   DropdownMenuItem,
   DropdownMenuLabel,
   DropdownMenuRadioGroup,
@@ -141,13 +143,22 @@ export function OrgSwitcher({
               <OrgItem key={o.id} org={o} unread={unread[o.id] ?? 0} />
             ))}
           </DropdownMenuRadioGroup>
+          {/*
+            On a phone's top bar the switcher is the organization's entry, because no gear fits
+            there; on a wide screen the gear beside it lists the same pages (SET-09).
+          */}
+          {compact ? (
+            <>
+              <DropdownMenuSeparator />
+              <DropdownMenuGroup>
+                <DropdownMenuLabel className="label-caps py-1 text-[0.68rem] text-muted-foreground">
+                  {t("nav.orgMenu", { org: org.name })}
+                </DropdownMenuLabel>
+                <OrgPageItems org={org} />
+              </DropdownMenuGroup>
+            </>
+          ) : null}
           <DropdownMenuSeparator />
-          <DropdownMenuItem asChild>
-            <Link to="/orgs/$orgId/chart" params={{ orgId: org.id }}>
-              <NetworkIcon aria-hidden="true" />
-              {t("orgs.tabChart")}
-            </Link>
-          </DropdownMenuItem>
           <DropdownMenuItem asChild>
             <Link to="/orgs">
               <BuildingIcon aria-hidden="true" />

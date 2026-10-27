@@ -10,6 +10,7 @@ import { makeConversation, makeMe, makeOrg } from "@/test/fixtures";
 import { stubLayout } from "@/test/layout";
 import { stubViewport } from "@/test/media";
 import { renderRoute } from "@/test/render";
+import { sampleContacts } from "@/test/sample-contacts";
 
 expect.extend(matchers);
 
@@ -216,6 +217,65 @@ describe("switching (ORG-02)", () => {
     api({ "GET /me": json(200, { ...makeMe(), default_org_id: "o3" }) });
     renderRoute("/");
     expect(await trigger(/^Organization: Initech/)).toBeInTheDocument();
+  });
+});
+
+describe("beside the organization's own entry (SET-09, SET-10)", () => {
+  it("keeps its own job: the picker, the counts, all organizations and the new one, without the pages the gear beside it lists", async () => {
+    api();
+    const user = userEvent.setup();
+    renderRoute("/");
+    await user.click(await trigger());
+    const menu = await screen.findByRole("menu", { name: "Organizations" });
+    expect(within(menu).getAllByRole("menuitemradio")).toHaveLength(3);
+    expect(within(menu).getByRole("menuitem", { name: "All organizations" })).toHaveAttribute(
+      "href",
+      "/orgs",
+    );
+    expect(within(menu).getByRole("menuitem", { name: "New organization" })).toBeInTheDocument();
+    // The pages are the gear's beside the full switcher; they are not listed twice in one menu.
+    expect(within(menu).queryByRole("menuitem", { name: "Org chart" })).toBeNull();
+    expect(within(menu).queryByRole("menuitem", { name: "Settings" })).toBeNull();
+  });
+
+  it("carries the organization's pages in a phone's top bar, where no gear fits", async () => {
+    stubViewport(360);
+    api({ "GET /contacts": json(200, sampleContacts) });
+    const user = userEvent.setup();
+    renderRoute("/contacts");
+    await user.click(await trigger(/^Organization: Acme/));
+    const menu = await screen.findByRole("menu", { name: "Organizations" });
+    for (const [name, href] of [
+      ["Org chart", "/orgs/o1/chart"],
+      ["Members", "/orgs/o1/members"],
+      ["Positions", "/orgs/o1/positions"],
+      ["Connectors", "/orgs/o1/connections"],
+      ["Settings", "/orgs/o1/settings"],
+    ] as const) {
+      expect(within(menu).getByRole("menuitem", { name })).toHaveAttribute("href", href);
+    }
+    expect(within(menu).getByRole("menuitem", { name: "All organizations" })).toHaveAttribute(
+      "href",
+      "/orgs",
+    );
+    // Nothing of the switcher's own job was lost by adding them.
+    expect(within(menu).getAllByRole("menuitemradio")).toHaveLength(3);
+    expect(within(menu).getByRole("menuitem", { name: "New organization" })).toBeInTheDocument();
+    // The pages follow the pick, and the pick still changes the organization.
+    await user.click(within(menu).getByRole("menuitemradio", { name: /^Globex/ }));
+    await user.click(await trigger(/^Organization: Globex/));
+    expect(await screen.findByRole("menuitem", { name: "Settings" })).toHaveAttribute(
+      "href",
+      "/orgs/o2/settings",
+    );
+  });
+
+  it("has no gear on a phone's top bar: the switcher is the organization's entry there", async () => {
+    stubViewport(360);
+    api({ "GET /contacts": json(200, sampleContacts) });
+    renderRoute("/contacts");
+    expect(await trigger(/^Organization: Acme/)).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /^Pages of / })).toBeNull();
   });
 });
 
