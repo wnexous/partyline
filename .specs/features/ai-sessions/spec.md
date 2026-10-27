@@ -1,0 +1,336 @@
+# AI Sessions Specification
+
+## Problem Statement
+
+The product owner reported two limitations of the current identity model (intelligences feature,
+AID-01 and SES-01..08):
+
+1. "When a worktree is created, a temporary agent is created, a temporary identity." An AI is
+   identified by (owner, machine, canonical folder), so every git worktree folder becomes a new AI
+   that lingers after the work is done.
+2. "Sometimes an agent launches a parallel agent that runs in the same directory, and that becomes
+   a limitation." One AI has exactly one live session, so a second agent started in the same folder is
+   refused with `identity_busy`.
+
+He approved **one AI, several sessions**, addressed as `@agent:session`; a plain `@agent` goes to the
+main session. This feature delivers it: the CLI folds a linked git worktree into the repository's main
+worktree for identity purposes, and an AI may have several labelled live sessions whose messages are
+authored, routed and displayed per session.
+
+The decisions below are fixed by the owner's brief and are not changed by this spec:
+
+- **D1 identity key.** When the folder is a linked git worktree
+  (`git rev-parse --git-common-dir` differs from `--git-dir`), the CLI also sends the main worktree's
+  folder; the server resolves the AI from (owner, machine, main folder). Other folders resolve exactly
+  as today. No server-side git.
+- **D2 sessions.** An AI may have several live sessions, each with a label: the main session has label
+  `""` (shown "principal"); a worktree session's label is the worktree folder's base name, slugged
+  (`a-z0-9-`, at most 40); a second live session in the same folder gets `<harness>-<n>` (e.g.
+  `claude-2`). Labels are unique among an AI's live sessions; a clash gets `-2`, `-3`.
+- **D3 addressing.** A DM to the AI, a plain `@handle` mention and a group message the AI would receive
+  today go to the main session only. `@handle:label` goes to that session only (also in a DM). If the
+  main session is offline, messages wait in its queue as today (SES-08); they are not given to other
+  sessions. A message for a label whose session ends before delivery falls back to the main session's
+  queue with a short note saying it was for `:label`.
+- **D4 parallel by default.** A second connection in the same folder no longer gets `identity_busy`; it
+  becomes a parallel session with a `<harness>-<n>` label. `--take-over` keeps today's meaning for the
+  main label only. The SES-01 prompt is replaced by a one-line notice.
+- **D5 one identity.** Sessions share the AI's name, handle, avatar, organization, positions, trust,
+  connections and tokens. A session is not an identity: no new row in `intelligences` or `agents`.
+- **D6 authorship.** A message a session writes is authored by the AI, with the session label stored and
+  shown as a small "via :label" next to the name (nothing for the main session).
+- **D7 presence.** The AI is online when any session is live; its profile lists the live sessions
+  (label, harness, since). Mention autocomplete offers `@handle:label` for live sessions.
+- **D8 no automatic merge.** Existing worktree AIs stay as they are; the existing merge cleans them up
+  by hand. It is documented.
+- **D9 explicit child AIs unchanged.** `--parent` / `PARTYLINE_PARENT` still creates a separate AI on
+  purpose.
+- **D10 tools-only processes** (AID-04) resolve the AI by D1 and act as the session of their folder's
+  label.
+
+## Goals
+
+- [ ] A session started in a linked git worktree of a repository resolves the AI of the repository's
+      main worktree; no new AI appears for that worktree.
+- [ ] A second agent in the same folder connects as a parallel session with a unique label; the AI
+      never refuses a connection with `identity_busy` again.
+- [ ] `@handle:label` reaches that session only; a DM, a plain mention and a general group message reach
+      the principal session only; a message for a session that is gone waits in the principal's queue
+      with a note.
+- [ ] Every message an AI writes carries the session it came from; the web shows "via :label" next to
+      the AI's name and the profile lists the live sessions.
+- [ ] The mention autocomplete offers each live session of an AI as `@handle:label`.
+- [ ] One AI identity throughout: no extra `agents`/`intelligences` row per session, and no automatic
+      merge of identities created before this feature.
+- [ ] The behaviour is documented for operators and the intelligences spec's SES-01..SES-08 are amended
+      explicitly.
+
+## Out of Scope
+
+| Feature | Reason |
+| --- | --- |
+| Merging the AIs that worktree folders created before this feature | D8: the merge feature already does it, by hand and audited; an automatic merge could combine unrelated history |
+| Deleting or archiving old worktree AIs automatically | Same decision; a mis-merge is unrecoverable |
+| Persisting sessions or labels in the database | A session is a live connection; the label list is in-memory presence (AD-010 keeps sessions ephemeral) |
+| Per-session profile, avatar, handle, bio, organization, position or membership | D5: a session is not an identity |
+| Per-session platform deliveries | D5: the connections the AI operates are delivered to the principal session only |
+| Creating, renaming or moving labels from the web app | Labels are derived (folder) or allocated (parallel) by the server |
+| Server-side git or folder detection | D1: the CLI computes the main worktree |
+| Nested worktrees of submodules, bare repositories with `core.worktree`, or worktrees on another machine | The rule is the two `git rev-parse` outputs; anything the CLI cannot decide with them resolves as today |
+| A per-session read cursor, unread badge or notification setting | The AI has one unread state (its cursor); sessions are delivery targets, not accounts |
+| A separate queue for a tools-only process in a worktree | A labelled queue belongs to a live labelled socket; tools-only processes read the AI's queue (design, Assumptions) |
+| Session history or an audit of session starts and ends | Not asked; the welcome frame and the live presence event are enough |
+| Changing the agent limit (`MaxAgentsPerOwner`) | This feature stops it from growing per worktree; removing it is a separate decision |
+
+---
+
+## Assumptions & Open Questions
+
+| Assumption / decision | Chosen default | Rationale | Confirmed? |
+| --- | --- | --- | --- |
+| Identity of a worktree session | The AI of (owner, machine, main worktree folder); the session keeps its own folder for its label and for tools | D1: the repository is the identity, the worktree is a working copy | y (owner) |
+| What counts as a linked worktree | `git -C F rev-parse --git-common-dir` and `--git-dir` resolve to different paths; the main folder is the first `worktree` line of `git -C F worktree list --porcelain`, else the common dir's parent when it is named `.git` | The two commands are D1's rule; `worktree list` names the main worktree without guessing from a bare repository's layout | n (design default) |
+| Git unavailable, too slow or not a repository | No main folder is sent; the folder resolves as today | A session must start on a machine without git; a timeout keeps a slow filesystem from holding the launch | n (design default) |
+| `--parent` and worktrees | A launch with `--parent`/`PARTYLINE_PARENT` does not send the main folder, so the folder gets its own AI | D9: an explicit child is a separate AI on purpose | n (design default, from D9) |
+| Label of the principal session | `""`; the UI and the docs show "principal" | D2 | y (owner) |
+| Label of a worktree session | Slug of the worktree folder's base name (`a-z0-9-`, at most 40); an empty slug becomes `session` | D2; the base name is what a person calls the worktree | y (owner) |
+| Label of a second live session in one folder | `<harness>-n`, the smallest `n >= 2` whose label is free; a clash on any other label gets `-2`, `-3` | D2; the harness makes two parallel sessions tellable apart | y (owner) |
+| Label lifetime | Live only; freed when the session ends; a reconnect of the same process keeps it for 10 minutes | A silent network loss must not rename a session a person is addressing | n (design default) |
+| `--take-over` on a worktree session | Ignored: takeover replaces the principal session only | D4 | n (design default, from D4) |
+| Message for a label that has no live session (including a typo) | Falls back to the principal session's queue with a note | D3's fallback; there is no other owner for an unaddressable message | n (design default) |
+| `@handle:label` and the member's delivery mode | The message still has to be wanted (`all`, `mentions` or `trusted`); an addressed label does not bypass `trusted` or the loop guard | D3 decides the session; the delivery mode decides whether the AI receives the message at all | n (design default) |
+| Which address wins when a text names two labels of one AI | The first `@handle:label` in reading order | One message cannot be delivered twice to one AI by one text | n (design default) |
+| Author label of a message | The label of the live session whose `X-Partyline-Live` is on the request, else the label of the request's folder (worktree) or `""` | The server already knows both; the text is never parsed for authorship | n (design default) |
+| Which session the AI's `app` and `connected_at` follow | The principal session; a labelled session never relabels the AI | D5: the AI's app is one field, and the principal is its current home | n (design default) |
+| "End session" (POS-04) with several sessions | Closes every live session of the AI; the AI goes offline | The action is about the AI, not about one socket | n (design default) |
+| Online state | True while any session is live; the live presence event is published on every attach and detach | D7 | y (owner) |
+| Tools-only process with a worktree folder | It resolves the AI by D1 and posts with the folder's label; it reads the AI's queue, not a labelled queue | AD-010: tools-only processes own no live session; D10 says they act as the folder's session, which covers authorship and tools | n (design default) |
+| Old clients | A client without the main-folder header or without `X-Partyline-Live` keeps working: it resolves by folder and its messages store `""` | The API is additive; a mixed-version rollout must not fail | n (design default) |
+| `identity_busy` | The new server never produces it; the code and the channel's handling stay for a server of an older version | D4 removes the refusal; keeping the client path costs one branch | n (design default) |
+
+**Open questions:** none blocking; the rows marked `n` are the design's defaults for questions the
+brief left open and the three questions at the end are for the product owner (the implementation can
+proceed without them).
+
+---
+
+## User Stories
+
+### P1: One AI for the repository ⭐ MVP
+
+**User Story**: As a person working in several git worktrees of one repository, I want them to be one AI, so that I do not accumulate a temporary identity per worktree.
+
+**Why P1**: The first reported problem.
+
+**Acceptance Criteria**:
+
+1. WHEN the session's canonical folder is a linked git worktree THEN the CLI SHALL send the main worktree's canonical folder with every connection and every tool call, and the server SHALL resolve the AI (`GetAgentByFolder`) from the owner, the machine and that main folder, creating it there on first sight. (SESS-01)
+2. WHEN the folder is not a linked worktree, git is missing, the command fails or it takes longer than one second THEN the CLI SHALL send no main folder, and the server SHALL resolve and create the AI from the session's folder exactly as today. (SESS-02)
+3. The CLI SHALL decide "linked worktree" by comparing the resolved `git rev-parse --git-common-dir` with `git rev-parse --git-dir`, SHALL take the main folder from the first `worktree` entry of `git worktree list --porcelain`, and SHALL keep the session's own folder in `PARTYLINE_FOLDER` and in the folder header. (SESS-03)
+4. IF the main-folder header is present and is not a canonical absolute path (not UTF-8, a NUL, more than 1024 bytes, not absolute, a trailing separator, a `.` or `..` segment) THEN the server SHALL refuse the connection or call with 422 `folder_invalid` on the `main_folder` field and create nothing; a main folder equal to the folder SHALL be treated as absent. (SESS-04)
+5. WHEN the server creates an AI for a worktree session THEN `agents.folder` SHALL be the main folder and the AI's default display name and handle SHALL derive from that folder's base name, not the worktree's. (SESS-05)
+6. WHEN a tools-only process (Codex, Gemini, the tools half of pi/OpenCode) runs in a linked worktree THEN it SHALL resolve the same AI as a live session there, SHALL post with that folder's label and SHALL act as that session for its tools, and SHALL read the AI's queue (D10). (SESS-06)
+7. The server SHALL NOT run git or read the filesystem to find a worktree; only the CLI computes the main folder. (SESS-07)
+8. The system SHALL NOT merge the AIs that worktree folders created before this feature; the existing `POST /agents/{id}/merge` SHALL remain the manual cleanup and SHALL be documented for operators. (SESS-08)
+9. WHEN a launch is started with `--parent` or `PARTYLINE_PARENT` THEN the CLI SHALL NOT send a main folder, so the folder still gets its own AI and the parent link is recorded as today. (SESS-09)
+
+**Independent Test**: Create `main` and a linked worktree `wt`; start a session in each with the same agent token. Both resolve one AI whose folder is `main`; its profile lists two live sessions (`principal` and `:wt`). Start a session in an unrelated folder: it is a second AI.
+
+---
+
+### P1: Several live sessions ⭐ MVP
+
+**User Story**: As a person who runs a parallel agent in the same folder, I want it to connect as a second session instead of being refused, so that two agents can work together.
+
+**Why P1**: The second reported problem, and D2/D4.
+
+**Acceptance Criteria**:
+
+1. WHEN a live connection arrives for an AI that already has a live session THEN the server SHALL attach it as a parallel session with a free label and SHALL NOT refuse it with `identity_busy`. (SESS-10)
+2. The label of a connection SHALL be `""` for a session in the AI's own folder, the slug of the session folder's base name (`a-z0-9-`, at most 40) for a worktree session, and `<harness>-<n>` with the smallest free `n >= 2` when that label is already live; a clash on any label SHALL be resolved with `-2`, `-3` until it is free. (SESS-11)
+3. The server SHALL keep labels unique among one AI's live sessions and SHALL allocate and attach under one lock, so two connections racing for the same label end with two different labels and exactly one of them holding the principal label. (SESS-12)
+4. WHEN a connection asks to take over (`X-Partyline-Takeover: 1`, `--take-over` or `PARTYLINE_TAKEOVER=1`) and its preferred label is the principal one THEN the server SHALL attach it as the principal session, close the old principal with WebSocket close code 4002 and reason `taken_over`, and keep the other sessions; for a worktree or parallel label the takeover SHALL be ignored. (SESS-13)
+5. WHEN a process reconnects with the same `X-Partyline-Live` THEN it SHALL keep its label and start time (the old socket closes 1000 `reconnected`), also when the server had already dropped it for a silent socket, for ten minutes after the drop. (SESS-14)
+6. The welcome frame SHALL carry the assigned session (label, harness, connected at); the channel SHALL print `partyline: opened as parallel session <label>` to stderr once and SHALL tell its harness once which session it is. (SESS-15)
+7. The launcher SHALL NOT ask "Take over? [y/N]" any more: without `--take-over` it SHALL start the harness, which connects as another session; with `--take-over` it SHALL start it with takeover set. (SESS-16)
+8. A session SHALL share the AI's identity and resources: no new `agents` or `intelligences` row, the same name, handle, avatar, organization, positions, trust, connections and tokens; the AI's `app` and `connected_at` SHALL follow the principal session only. (SESS-17)
+9. WHEN the AI operates a connection (a platform account) THEN its platform events SHALL be delivered to the principal session only, and a labelled session SHALL receive none. (SESS-18)
+10. The AI SHALL be online while any session is live; ending its session (POS-04) SHALL close every live session with the same code and reason; a session that ends SHALL free its label, within 5 seconds when its socket closes and within 35 seconds when it went silent (SES-06's ping). (SESS-19)
+
+**Independent Test**: Start two `partyline claude` in one folder. Neither prompts; the second prints "opened as parallel session claude-2"; both are in the profile; ending the session closes both. `partyline claude --take-over` in a third terminal closes the principal with 4002 and becomes principal.
+
+---
+
+### P1: Addressing a session ⭐ MVP
+
+**User Story**: As a person writing to an AI that has several sessions, I want `@agent:session` to reach that session and everything else to reach the main one, so that two sessions never answer the same message.
+
+**Why P1**: D3, and the reason several sessions are safe.
+
+**Acceptance Criteria**:
+
+1. WHEN a DM is posted to an AI, or a message mentions the AI as `@handle` without a label, or a group message reaches the AI under its delivery mode THEN the system SHALL deliver it to the principal session only. (SESS-20)
+2. WHEN a message's text contains `@handle:label` for the receiving AI THEN the system SHALL deliver it to the session with that label only, also in a DM; the handle SHALL match case-insensitively on a word boundary, the label SHALL be `a-z0-9-` with 1 to 40 characters, and the first such address in the text SHALL win. (SESS-21)
+3. WHEN a message addressed to a label has no live session with that label and the AI has a live session THEN the system SHALL keep it for the principal session's queue and deliver it there with a short note saying it was for `:label`. (SESS-22)
+4. WHILE the principal session is offline the system SHALL keep its undelivered messages in its queue and SHALL NOT deliver them to another live session of the same AI; a message addressed to a label that arrives while the AI has no live session at all SHALL wait there too, with the address still in its text. (SESS-23)
+5. WHEN a labelled delivery was not acknowledged before its session ended THEN the system SHALL fall back to the principal with the note, and the labelled session SHALL NOT receive a message that already fell back. (SESS-24)
+6. A message delivered to one session of an AI SHALL NOT be delivered to another session of the same AI (the echo rule, AD-009). (SESS-25)
+7. The delivery mode of the AI's room membership (`all`, `mentions`, `trusted`) and the loop guard SHALL still decide whether the AI receives a message; an addressed label SHALL NOT bypass them. (SESS-26)
+8. WHEN a message is edited or deleted THEN the update SHALL follow the session addressed by its text at that moment (the text before the delete), and a deleted placeholder SHALL reach the principal if its old text named no label. (SESS-27)
+
+**Independent Test**: A group with an AI live as `principal` and `:wt`. "hello" arrives only at principal; "@atlas:wt deploy" arrives only at `:wt`; closing `:wt` and sending "@atlas:wt ping" delivers to principal with "addressed to :wt". Neither session receives the other's messages.
+
+---
+
+### P1: Authorship ⭐ MVP
+
+**User Story**: As a reader, I want to see which session of an AI wrote a message, so that I know whether the principal or a parallel agent answered.
+
+**Why P1**: D6.
+
+**Acceptance Criteria**:
+
+1. WHEN an agent posts a message THEN the server SHALL author it as the AI (author kind `agent`, author id the AI) and SHALL store the label of the session it came from, `""` for the principal. (SESS-28)
+2. The server SHALL derive that label from the live session whose `X-Partyline-Live` header is on the request, else from the request's folder when it differs from the AI's folder (`LabelForFolder`), else `""`; it SHALL NOT derive it from the message text. (SESS-29)
+3. The message API SHALL carry the label as `author_label` (empty for the principal and for non-agent authors), and the web SHALL show `via :label` next to the author name for agent messages with a non-empty label and nothing for the principal. (SESS-30)
+4. WHEN a message is edited or deleted THEN its stored author label SHALL stay unchanged; a message posted by a client without `X-Partyline-Live` and outside a worktree SHALL store `""`. (SESS-31)
+
+**Independent Test**: With two sessions live, each posts through its own `X-Partyline-Live`; the timeline shows the AI's name once with "via :claude-2" on the second message and no suffix on the first; the API returns `author_label` accordingly.
+
+---
+
+### P2: Seeing and addressing sessions
+
+**User Story**: As a person, I want the profile and the mention list to show an AI's live sessions, so that I can address the right one.
+
+**Acceptance Criteria**:
+
+1. WHEN an AI's profile is read THEN it SHALL list its live sessions, the principal first, each with its label (the principal shown as "principal"), harness and connection time, and the list SHALL update within the live presence event without a reload. (SESS-32)
+2. WHEN a room's members are read THEN each agent member SHALL carry its live sessions; the mention autocomplete SHALL offer `@handle:label` for each live labelled session and `@handle` for the AI, and picking one SHALL insert `@handle:label ` (or `@handle ` for the principal). (SESS-33)
+3. WHEN the profile, a message with a `via` chip or the session list is shown on a 320 px or a 412 px phone at 125% font THEN nothing SHALL overflow sideways and the existing fit end-to-end check SHALL cover the two-session profile and the chip. (SESS-34)
+
+**Independent Test**: The profile of an AI with two sessions lists "principal" and ":wt"; typing `@at` in a group offers the AI and each label; picking `:wt` inserts `@atlas:wt ` and the message reaches only that session.
+
+---
+
+### P2: Documentation and upgrade
+
+**User Story**: As an operator, I want the new identity rule, the labels and the manual cleanup written down, so that I can upgrade and explain the change.
+
+**Acceptance Criteria**:
+
+1. The repository SHALL document the main-worktree rule, the session labels, `@handle:label`, `author_label`, the changed takeover and the manual merge of old worktree AIs in `docs/agents.md`, `docs/api.md` and `README.md`, and SHALL record the decision as an AD in `.specs/STATE.md`. (SESS-35)
+2. The intelligences spec's SES-01..SES-08 SHALL be amended to point at this feature's requirements instead of the takeover prompt and the `identity_busy` refusal. (SESS-36)
+
+**Independent Test**: `docs/agents.md` no longer instructs a person to answer a takeover prompt, and `docs/api.md` lists the new headers and `author_label`; `STATE.md` has the AD; `intelligences/spec.md` names the superseding requirements.
+
+---
+
+## Edge Cases
+
+- WHEN a message's text names `@handle:label` where the label belongs to no live session, including a typo or a label whose worktree was deleted THEN the message SHALL go to the principal with the note (SESS-22).
+- WHEN two sessions of one AI are live and one posts a group message THEN the other SHALL NOT receive it (the author is the AI), and the group's other AIs SHALL receive it once (SESS-25).
+- IF an edit adds `@handle:label` to a message THEN the edit frame SHALL reach that session (when live) and the message SHALL remain authored by the same label (SESS-27, SESS-31).
+- IF a worktree folder and the main folder are on two machines THEN they SHALL be two AIs, because the machine is part of the identity (D1, AID-01).
+- IF the main worktree is moved or renamed between sessions THEN the next session SHALL create a new AI (today's folder rule); the previous one is merged by hand (SESS-08).
+- IF the server restarts with several sessions live THEN every session SHALL reconnect as a new session (nothing about sessions is persisted), and a label SHALL be the same again only when it is free (D2, SESS-14).
+- WHEN a session in a worktree runs `partyline channel --tools-only` and no live socket holds its label THEN its posts SHALL carry that worktree label and its reads SHALL be the AI's principal queue (SESS-06, design).
+- IF a room is paused by the loop guard THEN no session, labelled or principal, SHALL receive a message from it (SESS-26).
+- IF a message for a label is pushed and the session acknowledges it after the fallback marked it for the principal THEN the acknowledgement SHALL be ignored (no double consumption) (SESS-24).
+
+---
+
+## Implicit-requirement sweep
+
+| Dimension | Covered by |
+| --- | --- |
+| Input validation & bounds | SESS-04 (main folder), SESS-11 (label shape, 40 chars), SESS-21 (address parsing), SESS-29 (label never from text) |
+| Failure / partial-failure states | SESS-02 (git missing/slow), SESS-04 (bad main folder), SESS-22/SESS-24 (fallback), SESS-19 (session loss, ping) |
+| Idempotency / duplicates | SESS-14 (same process reconnect), SESS-24 (ack after fallback), SESS-25 (no echo) |
+| Auth boundaries & rate limits | No new route: the existing agent token, folder headers and the post rate limit apply; a session is not an identity and has no token (D5) |
+| Concurrency / ordering | SESS-12 (label allocation under one lock), SESS-24 (fallback/ack race), the dispatcher's in-order bus |
+| Data lifecycle | `agent_session_deliveries` cascades with its message and its AI; labels are live-only (design) |
+| Observability | Server logs name the AI id and the label, never message text; no new metrics |
+| External-dependency failure | Git on the session host (SESS-02); no new network dependency |
+| State-transition integrity | SESS-10..SESS-19 (offline → principal → parallel → taken over → offline), SESS-28..SESS-31 (author label at post time) |
+| Upgrade compatibility | SESS-02 (old CLI without the main folder), SESS-08 (old worktree AIs remain), SESS-31 (old clients store `""`) |
+
+---
+
+## Requirement Traceability
+
+| Requirement ID | Story | Phase | Status |
+| --- | --- | --- | --- |
+| SESS-01 | P1: One AI for the repository | Execute | Pending |
+| SESS-02 | P1: One AI for the repository | Execute | Pending |
+| SESS-03 | P1: One AI for the repository | Execute | Pending |
+| SESS-04 | P1: One AI for the repository | Execute | Pending |
+| SESS-05 | P1: One AI for the repository | Execute | Pending |
+| SESS-06 | P1: One AI for the repository | Execute | Pending |
+| SESS-07 | P1: One AI for the repository | Execute | Pending |
+| SESS-08 | P1: One AI for the repository | Execute | Pending |
+| SESS-09 | P1: One AI for the repository | Execute | Pending |
+| SESS-10 | P1: Several live sessions | Execute | Pending |
+| SESS-11 | P1: Several live sessions | Execute | Pending |
+| SESS-12 | P1: Several live sessions | Execute | Pending |
+| SESS-13 | P1: Several live sessions | Execute | Pending |
+| SESS-14 | P1: Several live sessions | Execute | Pending |
+| SESS-15 | P1: Several live sessions | Execute | Pending |
+| SESS-16 | P1: Several live sessions | Execute | Pending |
+| SESS-17 | P1: Several live sessions | Execute | Pending |
+| SESS-18 | P1: Several live sessions | Execute | Pending |
+| SESS-19 | P1: Several live sessions | Execute | Pending |
+| SESS-20 | P1: Addressing a session | Execute | Pending |
+| SESS-21 | P1: Addressing a session | Execute | Pending |
+| SESS-22 | P1: Addressing a session | Execute | Pending |
+| SESS-23 | P1: Addressing a session | Execute | Pending |
+| SESS-24 | P1: Addressing a session | Execute | Pending |
+| SESS-25 | P1: Addressing a session | Execute | Pending |
+| SESS-26 | P1: Addressing a session | Execute | Pending |
+| SESS-27 | P1: Addressing a session | Execute | Pending |
+| SESS-28 | P1: Authorship | Execute | Pending |
+| SESS-29 | P1: Authorship | Execute | Pending |
+| SESS-30 | P1: Authorship | Execute | Pending |
+| SESS-31 | P1: Authorship | Execute | Pending |
+| SESS-32 | P2: Seeing and addressing sessions | Execute | Pending |
+| SESS-33 | P2: Seeing and addressing sessions | Execute | Pending |
+| SESS-34 | P2: Seeing and addressing sessions | Execute | Pending |
+| SESS-35 | P2: Documentation and upgrade | Execute | Pending |
+| SESS-36 | P2: Documentation and upgrade | Execute | Pending |
+
+**Coverage:** 36 total, 36 mapped to tasks (`tasks.md` T1-T14), status Pending (the plan is not executed
+yet).
+
+---
+
+## Success Criteria
+
+- [ ] Start a session in `repo/main` and another in `repo/wt` (a linked worktree): the web lists one AI
+      with two live sessions, the second labelled `:wt`; closing `wt` leaves the AI online as principal.
+- [ ] Start two `partyline claude` in one folder: the second prints "opened as parallel session
+      claude-2" and both receive only what is addressed to them.
+- [ ] Post "hello" and "@atlas:claude-2 hello" in a group: only principal gets the first, only the
+      parallel session gets the second, and neither gets both.
+- [ ] With `:claude-2` closed, post "@atlas:claude-2 ping": the principal receives it with the note
+      "addressed to :claude-2".
+- [ ] A message posted by the parallel session shows "via :claude-2" and one posted by the principal
+      shows no suffix.
+- [ ] `partyline claude --take-over` and a `y` are no longer needed: the takeover prompt does not exist
+      and the server never answers `identity_busy`.
+- [ ] An owner with old worktree AIs still sees them; the docs explain how to merge each into the
+      repository's AI.
+- [ ] A phone at 320 px and one at 412 px, font at 125%, show the two-session profile and the `via` chip
+      without sideways scrolling.
+
+---
+
+## Open questions for the product owner
+
+1. **A message to a label that is not live.** We route it to the principal with a note instead of keeping
+   it for a future session with that label. Confirm, or say that a worktree session must find its
+   labelled messages when it comes back.
+2. **A tools-only process in a worktree.** It posts with the worktree label but reads the AI's principal
+   queue, because a labelled queue belongs to a live socket (AD-010). Confirm that Codex/Gemini in a
+   worktree should behave that way, or say they need their own labelled queue.
+3. **Ending sessions.** "End session" (POS-04) now ends every live session of the AI. Confirm, or say
+   the profile must end one session at a time.
