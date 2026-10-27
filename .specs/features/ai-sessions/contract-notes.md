@@ -116,3 +116,26 @@ reports. So a `pi` session joining a Claude AI in the same folder is `pi-2`, and
 `{label:"claude-2",harness:"pi"}` needs a preferred label (a worktree folder named `claude-2`, for
 example) or the `pi-2` value. T6's tests attach the second session with the AI's harness when they assert
 `claude-2`.
+
+# Contract Notes (from ai-sessions T8: routing a message to its session)
+
+The rest of the design stands. Two details the design's snippets cannot carry as written:
+
+## The fallback's label needs a second read
+
+`ListSessionFallbacks` (T1) returns `message_views` only, and `message_views` has no target label: its
+`author_label` is who wrote the message, not the session it was addressed to. `Gateway.backlog` and
+`Gateway.Pending` must render `for_label` from the delivery fact even after the message text was edited,
+so `internal/store/queries/session.sql` also has `ListSessionFallbackLabels(agent_id, room_id)`, which
+returns the `(message_id, label)` pairs of that room's fallen-back rows. The generated `db` code is the
+only file this adds outside T8's list; `ListSessionFallbacks` itself keeps its `message_views` shape and
+T1's tests.
+
+## A consumed fallback advances the principal's cursor when it is above it
+
+`Pending` deletes the fallback rows it returns, because a pending read counts as delivered. If such a
+row's sequence is above the principal's cursor, deleting it alone would make the next cursor read return
+the same message again. The room's cursor therefore advances to the highest consumed sequence, a fallback
+or a cursor message; `AdvanceAgentCursor` keeps the maximum, so a fallback below the cursor changes
+nothing. `Pending` still reads cursor messages in sequence with the fallback rows and never advances over
+an unseen cursor message. `backlog` keeps the row, so only `Pending` needs this.

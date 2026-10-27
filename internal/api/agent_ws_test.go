@@ -256,7 +256,7 @@ func TestAgentLivePushSkipsBacklogOverlap(t *testing.T) {
 
 	ref := dto.RoomRef{ID: f.room.ID, Name: f.room.Name}
 	for _, m := range []dto.Message{m1, m2} {
-		require.True(t, f.env.App.Gateway.Push(f.agentID, dto.AgentMessage{Room: ref, Trusted: true, Message: m}))
+		require.True(t, f.env.App.Gateway.Push(f.agentID, "", dto.AgentMessage{Room: ref, Trusted: true, Message: m}))
 	}
 	m3 := f.post(f.alice, "three") // pushed live after the two duplicates
 	require.Equal(t, m3.ID, conn.Message(wsWait).Message.ID, "the duplicates are skipped")

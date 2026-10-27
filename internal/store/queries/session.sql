@@ -51,6 +51,16 @@ WHERE room_id = sqlc.arg(room_id)
         AND d.fell_back_at IS NOT NULL)
 ORDER BY seq ASC;
 
+-- name: ListSessionFallbackLabels :many
+-- The label each fallback row of one room belongs to, so the principal's backlog and pending reads can
+-- render the note without reading the message text (SESS-22).
+SELECT d.message_id, d.label
+FROM agent_session_deliveries d
+JOIN messages m ON m.id = d.message_id
+WHERE d.agent_id = sqlc.arg(agent_id) AND m.room_id = sqlc.arg(room_id)
+  AND d.fell_back_at IS NOT NULL
+ORDER BY m.seq ASC;
+
 -- name: ListSessionDeliveriesByLabel :many
 -- The delivery rows of one label, in the order they were created (the end-of-session sweep reads the ids
 -- of a label through FallBackSessionDeliveries' RETURNING; this lists them for tests and diagnostics).

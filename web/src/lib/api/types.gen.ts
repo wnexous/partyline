@@ -80,6 +80,11 @@ export interface AgentRoom {
 export interface AgentMessage {
   room: RoomRef;
   trusted: boolean;
+  /**
+   * ForLabel is the session label the message was addressed to when it reaches the principal
+   * instead of that session (SESS-22, SESS-24): the channel renders the note. Empty otherwise.
+   */
+  for_label?: string;
   message: Message;
 }
 /**

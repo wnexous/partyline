@@ -532,13 +532,13 @@ not use the real gateway):
 - `internal/channel/format_test.go`: a message with `ForLabel "wt"` → content starts
   `(addressed to :wt)\n` and meta `for_label=wt`; without it the content and meta are as today.
 **Done when**:
-- [ ] a message is owned by exactly one of (a live labelled session, the principal's queue) at any time
-- [ ] the fallback and the ack are race-safe (T1's `RETURNING` + conditional delete) and covered by a
+- [x] a message is owned by exactly one of (a live labelled session, the principal's queue) at any time
+- [x] the fallback and the ack are race-safe (T1's `RETURNING` + conditional delete) and covered by a
       test that acks after the sweep
-- [ ] a plain message the AI wrote is not delivered to any of its own sessions (T15 adds the labelled
+- [x] a plain message the AI wrote is not delivered to any of its own sessions (T15 adds the labelled
       exception)
-- [ ] the delivery mode, the loop guard and the echo rule are unchanged for the principal
-- [ ] Gate check passes: `make check`
+- [x] the delivery mode, the loop guard and the echo rule are unchanged for the principal
+- [x] Gate check passes: `make check`
 **Tests**: integration
 **Gate**: build
 **Commit**: `feat(delivery): route a message to the session it addresses`

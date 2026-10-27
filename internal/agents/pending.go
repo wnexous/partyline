@@ -12,10 +12,21 @@ import (
 // PendingLimit is the most messages one Pending call returns (TURN-01, TURN-02).
 const PendingLimit = 20
 
+// pendingMessage is one message selected for a Pending answer, with the trust already decided for the
+// receiving AI and the label of a fallback row.
+type pendingMessage struct {
+	view     db.MessageView
+	trusted  bool
+	fallback bool
+	label    string
+}
+
 // Pending returns the oldest messages after the agent's cursors that its delivery modes want,
 // room by room (paused rooms excepted), at most limit, and moves the cursors past everything
 // it looked at: the returned messages count as delivered. It serves harnesses that cannot hold
-// the WebSocket (wait_for_messages, turn-end hooks).
+// the WebSocket (wait_for_messages, turn-end hooks). Fallen-back messages are merged into the
+// same sequence order with their note, are returned without the delivery filter, and their rows
+// are deleted by this read (SESS-22, SESS-24).
 func (g *Gateway) Pending(ctx context.Context, a db.Agent, limit int) ([]dto.AgentMessage, error) {
 	g.pendingMu.Lock()
 	defer g.pendingMu.Unlock()
@@ -30,29 +41,78 @@ func (g *Gateway) Pending(ctx context.Context, a db.Agent, limit int) ([]dto.Age
 	}
 	trust := g.d.Trust.Open() // one for the call: the AI's home chart is read once (POS-10)
 	for _, st := range states {
-		if len(out) >= limit {
+		remaining := limit - len(out)
+		if remaining <= 0 {
 			break
 		}
 		if st.AgentsPaused {
 			continue // DLV-08
 		}
-		views, err := g.d.Store.R().ListAgentPending(ctx, db.ListAgentPendingParams{
-			RoomID: st.ID, AfterSeq: st.Cursor, AgentID: a.ID, Limit: int64(limit - len(out)),
-		})
+		fallbacks, err := loadSessionFallbacks(ctx, g.d.Store.R(), a.ID, st.ID)
 		if err != nil {
 			return nil, err
 		}
-		if len(views) == 0 {
-			continue
-		}
-		msgs, err := g.d.Rooms.Details(ctx, views)
-		if err != nil {
-			return nil, err
-		}
-		ref := delivery.RoomRef(st.ID, st.Name, st.Kind)
 		prefs := delivery.Prefs(profile, st.DisplayName, st.Delivery, st.KeywordsJson)
-		for _, m := range msgs {
-			facts, err := delivery.LoadFacts(ctx, g.d.Store.R(), m.MessageView, st.Kind)
+		var cursor []db.MessageView
+		after, exhausted := st.Cursor, false
+		fetch := func(n int) error {
+			if exhausted {
+				return nil
+			}
+			batch, err := g.d.Store.R().ListAgentPending(ctx, db.ListAgentPendingParams{
+				RoomID: st.ID, AfterSeq: after, AgentID: a.ID, Limit: int64(n),
+			})
+			if err != nil {
+				return err
+			}
+			if len(batch) > 0 {
+				after = batch[len(batch)-1].Seq
+			}
+			if len(batch) < n {
+				exhausted = true
+			}
+			cursor = append(cursor, batch...)
+			return nil
+		}
+		if err := fetch(remaining); err != nil {
+			return nil, err
+		}
+		var selected []pendingMessage
+		advanceTo := int64(0)
+		ci, fi := 0, 0
+		for len(selected) < remaining {
+			// Read more cursor messages only while a fallback still needs the stream caught up to it;
+			// without a fallback one batch is all this call looks at, as before.
+			if ci >= len(cursor) && !exhausted && fi < len(fallbacks) {
+				if err := fetch(remaining); err != nil {
+					return nil, err
+				}
+			}
+			if ci >= len(cursor) && fi >= len(fallbacks) {
+				break // no message left in either stream
+			}
+			fallbackNext := fi < len(fallbacks) && (ci >= len(cursor) || fallbacks[fi].view.Seq < cursor[ci].Seq)
+			if fallbackNext {
+				// The cursor stream is caught up past this fallback, so advancing over it later
+				// cannot skip an unseen cursor message.
+				f := fallbacks[fi]
+				fi++
+				trusted, err := trustedFor(ctx, trust, f.view, a.ID)
+				if err != nil {
+					return nil, err
+				}
+				selected = append(selected, pendingMessage{view: f.view, trusted: trusted, fallback: true, label: f.label})
+				if f.view.Seq > advanceTo {
+					advanceTo = f.view.Seq
+				}
+				continue
+			}
+			v := cursor[ci]
+			ci++
+			if v.Seq > advanceTo {
+				advanceTo = v.Seq
+			}
+			facts, err := delivery.LoadFacts(ctx, g.d.Store.R(), v, st.Kind)
 			if err != nil {
 				return nil, err
 			}
@@ -63,10 +123,37 @@ func (g *Gateway) Pending(ctx context.Context, a db.Agent, limit int) ([]dto.Age
 			if !wanted {
 				continue // MEM-03, MEM-04
 			}
-			out = append(out, dto.AgentMessage{Room: ref, Trusted: trusted, Message: convert.Message(m)})
+			selected = append(selected, pendingMessage{view: v, trusted: trusted})
 		}
-		if err := g.advance(ctx, a.ID, st.ID, views[len(views)-1].Seq); err != nil {
+		if len(selected) == 0 {
+			if advanceTo > 0 {
+				if err := g.advance(ctx, a.ID, st.ID, advanceTo); err != nil {
+					return nil, err
+				}
+			}
+			continue
+		}
+		views := make([]db.MessageView, len(selected))
+		for i, s := range selected {
+			views[i] = s.view
+		}
+		msgs, err := g.d.Rooms.Details(ctx, views)
+		if err != nil {
 			return nil, err
+		}
+		ref := delivery.RoomRef(st.ID, st.Name, st.Kind)
+		for i, s := range selected {
+			if s.fallback {
+				if err := g.deleteSessionDelivery(ctx, s.view.ID, a.ID); err != nil {
+					return nil, err
+				}
+			}
+			out = append(out, dto.AgentMessage{Room: ref, Trusted: s.trusted, ForLabel: s.label, Message: convert.Message(msgs[i])})
+		}
+		if advanceTo > 0 {
+			if err := g.advance(ctx, a.ID, st.ID, advanceTo); err != nil {
+				return nil, err
+			}
 		}
 	}
 	return out, nil

@@ -1,6 +1,7 @@
 package api_test
 
 import (
+	"context"
 	"fmt"
 	"net/http"
 	"testing"
@@ -8,6 +9,7 @@ import (
 
 	"github.com/stretchr/testify/require"
 
+	"github.com/wnexous/partyline/internal/agents"
 	"github.com/wnexous/partyline/internal/api/dto"
 	"github.com/wnexous/partyline/internal/testkit"
 )
@@ -87,6 +89,47 @@ func TestAgentPendingFollowsDeliveryMode(t *testing.T) {
 	require.Len(t, got, 1)
 	require.Equal(t, wanted.ID, got[0].Message.ID)
 	require.Empty(t, e.pending(t, ""))
+}
+
+// SESS-22, SESS-24: GET /agent/pending returns a fallen-back message with its note and consumes it;
+// the second call does not return it again.
+func TestAgentPendingReturnsAFallbackOnce(t *testing.T) {
+	e := newPendingEnv(t)
+	conn, resp := e.agent.DialAgent("codex-box")
+	require.NotNil(t, conn, "upgrade refused: %d", resp.Status)
+	conn.Welcome(wsWait)
+	m := e.post(t, "@codex-box:claude-2 hello")
+	got := conn.Message(wsWait)
+	require.Equal(t, m.ID, got.Message.ID)
+	require.Equal(t, "claude-2", got.ForLabel, "the principal reads the note")
+
+	conn.Close()
+	require.Eventually(t, func() bool { return !e.env.App.Presence.Online(e.id) }, 5*time.Second, 10*time.Millisecond)
+	first := e.pending(t, "")
+	require.Len(t, first, 1)
+	require.Equal(t, m.ID, first[0].Message.ID)
+	require.Equal(t, "claude-2", first[0].ForLabel)
+	require.Empty(t, e.pending(t, ""), "a pending read consumes the fallback")
+}
+
+// SESS-24: a delivery row still owned by a live label is not in the principal's pending queue.
+func TestAgentPendingSkipsAPendingLabelsMessage(t *testing.T) {
+	e := newPendingEnv(t)
+	principal, resp := e.agent.DialAgent("codex-box")
+	require.NotNil(t, principal, "upgrade refused: %d", resp.Status)
+	principal.Welcome(wsWait)
+	parallel, resp := e.agent.DialAgent("codex-box")
+	require.NotNil(t, parallel, "upgrade refused: %d", resp.Status)
+	require.Equal(t, "claude-2", parallel.Welcome(wsWait).Session.Label)
+
+	m := e.post(t, "@codex-box:claude-2 hello")
+	require.Equal(t, m.ID, parallel.Message(wsWait).Message.ID)
+	a, err := e.env.App.Agents.ByID(context.Background(), e.id)
+	require.NoError(t, err)
+	msgs, err := e.env.App.Gateway.Pending(context.Background(), a, agents.PendingLimit)
+	require.NoError(t, err)
+	require.Empty(t, msgs, "the live label owns the message")
+	principal.ExpectNone(300 * time.Millisecond)
 }
 
 // TURN-01: wait=N returns an empty list after N seconds when nothing arrives.

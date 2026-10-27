@@ -60,7 +60,10 @@ type AgentRoom struct {
 type AgentMessage struct {
 	Room    RoomRef `json:"room"`
 	Trusted bool    `json:"trusted"`
-	Message Message `json:"message"`
+	// ForLabel is the session label the message was addressed to when it reaches the principal
+	// instead of that session (SESS-22, SESS-24): the channel renders the note. Empty otherwise.
+	ForLabel string  `json:"for_label,omitempty"`
+	Message  Message `json:"message"`
 }
 
 // RoomInfo is GET /agent/rooms/{room}/info (INS-02): the room, its instructions, its members

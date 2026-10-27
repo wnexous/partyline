@@ -83,6 +83,12 @@ func Format(m dto.AgentMessage) Notification {
 	if msg.DeletedAt != nil {
 		content = DeletedPlaceholder
 	}
+	if m.ForLabel != "" {
+		// The note is server-authored: the label is a delivery fact, never taken from the text
+		// (SESS-22, AD-006).
+		content = "(addressed to :" + m.ForLabel + ")\n" + content
+		meta["for_label"] = m.ForLabel
+	}
 	return Notification{Content: content, Meta: meta}
 }
 

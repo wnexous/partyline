@@ -183,6 +183,50 @@ func (q *Queries) ListSessionDeliveriesByLabel(ctx context.Context, arg ListSess
 	return items, nil
 }
 
+const listSessionFallbackLabels = `-- name: ListSessionFallbackLabels :many
+SELECT d.message_id, d.label
+FROM agent_session_deliveries d
+JOIN messages m ON m.id = d.message_id
+WHERE d.agent_id = ?1 AND m.room_id = ?2
+  AND d.fell_back_at IS NOT NULL
+ORDER BY m.seq ASC
+`
+
+type ListSessionFallbackLabelsParams struct {
+	AgentID string
+	RoomID  string
+}
+
+type ListSessionFallbackLabelsRow struct {
+	MessageID string
+	Label     string
+}
+
+// The label each fallback row of one room belongs to, so the principal's backlog and pending reads can
+// render the note without reading the message text (SESS-22).
+func (q *Queries) ListSessionFallbackLabels(ctx context.Context, arg ListSessionFallbackLabelsParams) ([]ListSessionFallbackLabelsRow, error) {
+	rows, err := q.db.QueryContext(ctx, listSessionFallbackLabels, arg.AgentID, arg.RoomID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []ListSessionFallbackLabelsRow
+	for rows.Next() {
+		var i ListSessionFallbackLabelsRow
+		if err := rows.Scan(&i.MessageID, &i.Label); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const listSessionFallbacks = `-- name: ListSessionFallbacks :many
 SELECT id, room_id, seq, author_kind, author_id, author_user_id, author_iid, sender_id, sender_alt_id, sender_name, kind, text, reply_to, recipients_json, external_id, created_at, edited_at, deleted_at, interactive_json, answers_json, author_label, author_name, author_handle, author_ikind, author_avatar FROM message_views
 WHERE room_id = ?1
