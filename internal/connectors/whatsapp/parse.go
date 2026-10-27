@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"mime"
+	"slices"
 	"strconv"
 	"strings"
 	"time"
@@ -15,8 +16,12 @@ import (
 	"github.com/wnexous/partyline/internal/connectors"
 )
 
-// maxEnvelopes bounds how many envelope levels are unwrapped.
-const maxEnvelopes = 5
+// maxEnvelopes bounds how many envelope levels are unwrapped; maxUnknownKeys how many protocol
+// types an unsupported message names.
+const (
+	maxEnvelopes   = 5
+	maxUnknownKeys = 3
+)
 
 // envelopes are the message wrappers that hold the real content in {"message": {...}}.
 // associatedChildMessage wraps the items of an album and the HD copy of a photo or video (CID-29).
@@ -117,6 +122,10 @@ type Parsed struct {
 	// MentionedJIDs are the account jids the message mentions (CID-12), as the platform sent
 	// them; the connector matches them against its own jid.
 	MentionedJIDs []string
+	// UnknownKeys are the protocol types of an unsupported message: the top-level keys of its
+	// content that hold an object, sorted and at most maxUnknownKeys. They are type names, never
+	// the content of the message.
+	UnknownKeys []string
 }
 
 // ErrNotMessage means the event is not a chat message Partyline handles.
@@ -255,7 +264,26 @@ func content(p *Parsed, root map[string]json.RawMessage) bool {
 		}
 	}
 	in.Kind, in.Text = string(dto.MessageKindUnknown), "(unsupported message)"
+	if keys := unknownKeys(msg); len(keys) > 0 {
+		p.UnknownKeys = keys
+		in.Text = "(unsupported message: " + strings.Join(keys, ", ") + ")"
+	}
 	return true
+}
+
+// unknownKeys names what an unsupported message states: the top-level keys of its content that
+// hold an object, except messageContextInfo, which is metadata. They are sorted and bounded, so
+// the text of the message stays short and stable.
+func unknownKeys(msg map[string]json.RawMessage) []string {
+	keys := make([]string, 0, len(msg))
+	for key, raw := range msg {
+		if key == "messageContextInfo" || obj(raw) == nil {
+			continue
+		}
+		keys = append(keys, key)
+	}
+	slices.Sort(keys)
+	return keys[:min(len(keys), maxUnknownKeys)]
 }
 
 // wrapping is what unwrap found around the content of a message.
