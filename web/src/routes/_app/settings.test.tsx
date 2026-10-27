@@ -48,6 +48,7 @@ beforeEach(() => {
 afterEach(() => {
   vi.useRealTimers();
   vi.unstubAllGlobals();
+  vi.restoreAllMocks();
 });
 
 describe("settings page", () => {
@@ -248,11 +249,14 @@ describe("notifications on this device (PUSH-18)", () => {
     });
     expect(await screen.findByText("On for this device")).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Disable notifications" })).toBeEnabled();
+    // A success says nothing about a failed step.
+    expect(screen.queryByText(/^Step: /)).toBeNull();
   });
 
   it("gives up enabling after 10 s when the service worker never gets ready", async () => {
     // A registration that failed leaves `navigator.serviceWorker.ready` pending forever.
     const push = stubPush({ answer: "granted", ready: new Promise(() => {}) });
+    vi.spyOn(console, "warn").mockImplementation(() => {});
     const { calls } = mockApi(pushBase);
     renderRoute("/settings");
     const enable = await screen.findByRole("button", { name: "Enable notifications" });
@@ -286,7 +290,65 @@ describe("notifications on this device (PUSH-18)", () => {
     expect(
       screen.getByText("Couldn’t turn notifications on for this device. Try again."),
     ).toBeInTheDocument();
+    // The worker step is named, so a phone says which wait ran out.
+    expect(
+      screen.getByText(
+        "Step: browser worker — the browser’s notification worker did not get ready",
+      ),
+    ).toBeInTheDocument();
     expect(push.current()).toBeNull();
+    expect(posts(calls, "/push/subscriptions")).toHaveLength(0);
+  });
+
+  it("says the browser refused the subscription and why", async () => {
+    const push = stubPush({ answer: "granted" });
+    push.subscribe.mockRejectedValueOnce(
+      new DOMException("Registration failed - push service error", "AbortError"),
+    );
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    const { calls } = mockApi(pushBase);
+    const user = userEvent.setup();
+    renderRoute("/settings");
+    await user.click(await screen.findByRole("button", { name: "Enable notifications" }));
+    expect(
+      await screen.findByText("Couldn’t turn notifications on for this device. Try again."),
+    ).toBeInTheDocument();
+    const detail = screen.getByText(
+      "Step: browser subscription — AbortError: Registration failed - push service error",
+    );
+    expect(detail).toBeInTheDocument();
+    // The same line reaches remote debugging, and it carries no subscription data.
+    expect(warn).toHaveBeenCalledWith(detail.textContent);
+    expect(String(warn.mock.calls[0]?.[0])).not.toContain(PUSH_ENDPOINT);
+    expect(posts(calls, "/push/subscriptions")).toHaveLength(0);
+  });
+
+  it("says the server refused the subscription and which status", async () => {
+    stubPush({ answer: "granted" });
+    const { calls } = mockApi({
+      ...pushBase,
+      "POST /push/subscriptions": apiError(422, "invalid", "endpoint is not valid"),
+    });
+    vi.spyOn(console, "warn").mockImplementation(() => {});
+    const user = userEvent.setup();
+    renderRoute("/settings");
+    await user.click(await screen.findByRole("button", { name: "Enable notifications" }));
+    expect(await screen.findByText("Step: server — 422 invalid")).toBeInTheDocument();
+    expect(posts(calls, "/push/subscriptions")).toHaveLength(1);
+  });
+
+  it("says the server key request failed and which status", async () => {
+    const push = stubPush({ answer: "granted" });
+    const { calls } = mockApi({
+      ...base,
+      "GET /push/key": apiError(503, "unavailable", "no key"),
+    });
+    vi.spyOn(console, "warn").mockImplementation(() => {});
+    const user = userEvent.setup();
+    renderRoute("/settings");
+    await user.click(await screen.findByRole("button", { name: "Enable notifications" }));
+    expect(await screen.findByText("Step: server key — 503")).toBeInTheDocument();
+    expect(push.subscribe).not.toHaveBeenCalled();
     expect(posts(calls, "/push/subscriptions")).toHaveLength(0);
   });
 

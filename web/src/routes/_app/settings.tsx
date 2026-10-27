@@ -50,6 +50,7 @@ import { LOCALES, type MessageKey, type Translate, useI18n, useT } from "@/lib/i
 import { useLiveStore } from "@/lib/live/store";
 import { defaultOrgIdOf } from "@/lib/orgs";
 import {
+  activeRegistration,
   applicationServerKey,
   currentSubscription,
   permissionState,
@@ -253,6 +254,9 @@ function NotificationsSection({ me }: { me: Me }) {
   const [busy, setBusy] = useState<"enable" | "disable" | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  // Which step of enabling failed and why, shown only under the enable sentence; the other
+  // failures set `error` alone.
+  const [errorDetail, setErrorDetail] = useState<string | null>(null);
   const [groupError, setGroupError] = useState<string | null>(null);
   const key = usePushKey();
   const store = useSubscribePush();
@@ -284,15 +288,49 @@ function NotificationsSection({ me }: { me: Me }) {
     setBusy("enable");
     setNotice(null);
     setError(null);
+    setErrorDetail(null);
+    // Enabling has four steps; remembering which one failed is the only way a phone can tell a
+    // worker that never got ready apart from a push service that refused (PUSH-18).
+    type Step = "key" | "worker" | "subscribe" | "server";
+    const stepNames: Record<Step, MessageKey> = {
+      key: "push.step.key",
+      worker: "push.step.worker",
+      subscribe: "push.step.subscribe",
+      server: "push.step.server",
+    };
+    let step: Step = "key";
+    // Only the error's name and message: never the endpoint or the keys of a subscription. A
+    // DOMException is not an Error, so its name and message are read off the value.
+    const thrown = (err: unknown): string => {
+      const { name, message } = (err ?? {}) as { name?: unknown; message?: unknown };
+      const label = typeof name === "string" && name !== "" ? name : "Error";
+      const text = typeof message === "string" ? message : String(err);
+      return `${label}: ${text}`.slice(0, 160);
+    };
+    const reason = (err: unknown): string => {
+      if (step === "worker") return t("push.step.workerDetail");
+      if (step === "key" && isApiError(err)) return String(err.status);
+      if (step === "server" && isApiError(err)) return `${err.status} ${err.code}`;
+      return thrown(err);
+    };
     try {
       const answer = await requestPermission();
       if (answer !== "granted") {
         setDevice(answer === "denied" ? "blocked" : "off");
         return;
       }
-      const { data } = await key.refetch();
-      if (!data) throw new Error("push key unavailable");
-      const created = await subscribe(applicationServerKey(data.public_key));
+      // `refetch` resolves with the failure instead of throwing it, so the status is read here.
+      const fetched = await key.refetch();
+      if (fetched.error) throw fetched.error;
+      const publicKey = fetched.data?.public_key;
+      if (!publicKey) throw new Error("push key unavailable");
+      step = "worker";
+      // Waiting for the worker here is what tells a registration that never got ready apart from
+      // a subscription the push service refused.
+      await activeRegistration();
+      step = "subscribe";
+      const created = await subscribe(applicationServerKey(publicKey));
+      step = "server";
       try {
         await store.mutateAsync(subscriptionJSON(created));
       } catch (err) {
@@ -302,8 +340,12 @@ function NotificationsSection({ me }: { me: Me }) {
       }
       held.current = created;
       setDevice("on");
-    } catch {
+    } catch (err) {
+      const line = t("push.step.line", { step: t(stepNames[step]), detail: reason(err) });
       setError(t("push.enableFailed"));
+      setErrorDetail(line);
+      // Remote debugging on a phone is the only place this is seen; no subscription data is logged.
+      console.warn(line);
     } finally {
       setBusy(null);
     }
@@ -405,9 +447,13 @@ function NotificationsSection({ me }: { me: Me }) {
             </p>
           ) : null}
           {error ? (
-            <p role="alert" className="text-sm text-destructive">
-              {error}
-            </p>
+            <div role="alert" className="text-sm text-destructive">
+              <p>{error}</p>
+              {/* A step detail belongs to the enable sentence; other failures set `error` only. */}
+              {errorDetail && error === t("push.enableFailed") ? (
+                <p className="mt-1 text-muted-foreground">{errorDetail}</p>
+              ) : null}
+            </div>
           ) : null}
         </div>
         <fieldset>
