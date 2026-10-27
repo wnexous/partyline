@@ -44,3 +44,19 @@ check to the rest of the moved pages and both open menus.
 
 The `Done when` boxes of T2 were already checked in `tasks.md` at the base commit (`866eb80`), so
 the commit carries no change to that file.
+
+## T3: the organization's entry
+
+Removing the switcher's single "Org chart" item (SET-09 moves the pages into the gear) changes the
+premise of one case outside the task's **Also** line. The change follows the acceptance criterion
+and drops no assertion:
+
+- `web/src/routes/_app/orgs/org-chart.test.tsx` — "is where the switcher leads" became "is where
+  the organization's entry leads": it opens the gear beside the switcher ("Pages of Acme") and
+  still asserts that "Org chart" lands on `/orgs/o1/chart`. The old path (the switcher's own menu)
+  no longer offers that item; the compact switcher of a phone's top bar carries the whole group
+  instead.
+
+The switcher's existing cases (picker, counts, roles, storage, "New organization") are unchanged
+and still pass; a new case asserts the full switchboard no longer lists the pages, and another
+that the gear is absent from a phone's top bar.

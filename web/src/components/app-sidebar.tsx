@@ -28,6 +28,7 @@ import { LiveIndicator } from "@/components/live-status";
 import { NewConversationDialog } from "@/components/new-conversation-dialog";
 import { NewGroupDialog } from "@/components/new-group-dialog";
 import { OrgSwitcher } from "@/components/org-switcher";
+import { OrganizationMenu } from "@/components/organization-menu";
 import { SearchButton } from "@/components/search-button";
 import { ThemeRadioGroup } from "@/components/theme-toggle";
 import { Button } from "@/components/ui/button";
@@ -44,6 +45,7 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { SidebarContent, SidebarFooter, SidebarHeader } from "@/components/ui/sidebar";
+import { useCurrentOrg } from "@/hooks/use-current-org";
 import { useLogout } from "@/lib/api/queries";
 import { type Me, RoleAdmin } from "@/lib/api/types.gen";
 import { type MessageKey, useT } from "@/lib/i18n";
@@ -151,7 +153,7 @@ export function MessengerPanel({ me, screen = false }: { me: Me; screen?: boolea
             <AccountMenu me={me} />
           </div>
         </div>
-        <OrgSwitcher />
+        <OrgHeader />
         <ConversationSearch value={query} onChange={setQuery} />
         <StartButtons />
         {screen ? <h1 className="sr-only">{t("conversations.label")}</h1> : null}
@@ -164,6 +166,19 @@ export function MessengerPanel({ me, screen = false }: { me: Me; screen?: boolea
       <SidebarFooter className="border-t border-sidebar-border px-4 py-2.5">
         <LiveIndicator className="text-sidebar-foreground/80" />
       </SidebarFooter>
+    </div>
+  );
+}
+
+/** The organization the switcher shows, with the gear that lists its pages beside it (SET-09). */
+function OrgHeader() {
+  const { org } = useCurrentOrg();
+  return (
+    <div className="flex items-center gap-2">
+      <div className="min-w-0 flex-1">
+        <OrgSwitcher />
+      </div>
+      {org ? <OrganizationMenu org={org} /> : null}
     </div>
   );
 }
