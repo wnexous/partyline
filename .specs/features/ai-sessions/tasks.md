@@ -185,7 +185,7 @@ T9's author label.
 ### Phase 12: Docs and end-to-end
 
 T13 documents the headers, the routing, the author label, the sibling rule, the worktree tools-only
-reader and the manual merge, records AD-029 and amends SES-01..SES-08. T14 drives the real binary with
+reader and the manual merge, records AD-032 and amends SES-01..SES-08. T14 drives the real binary with
 Playwright: two real sessions, the labelled routing, the `via` chip, the profile and the autocomplete,
 and the 320/412 px fit at 125% font. They touch disjoint files and run in parallel.
 
@@ -788,7 +788,7 @@ reader (an empty pending list and the one-time note), the `X-Partyline-Live` aut
 and `for_label`, the welcome `session`, the removed takeover prompt and `identity_busy`, and the manual
 merge of old worktree AIs (end the old AI's sessions, then `POST /agents/{id}/merge`). Remove the
 prompt/`identity_busy` instructions from `docs/agents.md:216-236, 641, 719`, `docs/claude-code.md:17` and
-`README.md:172-174`. Record AD-029 in `.specs/STATE.md` and amend
+`README.md:172-174`. Record AD-032 in `.specs/STATE.md` and amend
 `.specs/features/intelligences/spec.md` SES-01..SES-08 with the superseding SESS requirements (the
 design's table). No behaviour change.
 
@@ -800,7 +800,7 @@ design's table). No behaviour change.
 **Tests first**: none (documentation; `make check` is the gate). Verify by hand that every header, field,
 close code and limit in `internal/api/dto` and the welcome frame of T6 appears in `docs/api.md`, that no
 `Take over? [y/N]` or `identity_busy` instruction remains (`grep -rn "Take over?\|identity_busy" docs
-README.md` returns nothing user-facing), and that AD-029's text matches the design's decision record.
+README.md` returns nothing user-facing), and that AD-032's text matches the design's decision record.
 **Done when**:
 - [ ] a person upgrading from the previous release reads what happens to the old worktree AIs and how to
       merge each one
@@ -808,7 +808,7 @@ README.md` returns nothing user-facing), and that AD-029's text matches the desi
       the welcome `session`, the sessions in the profile/members and the close codes
 - [ ] the docs state that a session may address a live sibling with `@handle:label` (never itself, never
       a fallback), and that a worktree tools-only process reads no queue and says so once
-- [ ] `.specs/STATE.md` gains AD-029 without changing any other decision (it amends AD-010)
+- [ ] `.specs/STATE.md` gains AD-032 without changing any other decision (it amends AD-010)
 - [ ] the intelligences spec's SES-01..SES-08 point at SESS-* and no longer describe the prompt
 - [ ] Gate check passes: `make check`
 **Tests**: docs (no code; `make check` only)

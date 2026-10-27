@@ -388,7 +388,7 @@ Written first, from the spec's acceptance criteria. Values are the expected outc
 
 ## Decision record (proposed)
 
-When the plan is approved, record one AD in `.specs/STATE.md` (AD-029, the next free number): *the account and the organization are two places in the web app — `/account` owns the person's settings and `/settings` redirects to it, a connection lives at its organization's address (`/orgs/{org}/connections`), and every move is a client-side replace redirect so no HTTP route changes.* T5 adds it with the end-to-end proof.
+When the plan is approved, record one AD in `.specs/STATE.md` (AD-030, the next free number): *the account and the organization are two places in the web app — `/account` owns the person's settings and `/settings` redirects to it, a connection lives at its organization's address (`/orgs/{org}/connections`), and every move is a client-side replace redirect so no HTTP route changes.* T5 adds it with the end-to-end proof.
 
 ## Open questions
 

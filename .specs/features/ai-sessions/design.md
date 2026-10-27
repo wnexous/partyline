@@ -811,7 +811,7 @@ below are the assertions.
 | API surfaces (`internal/api/intelligences_test.go`, `internal/api/rooms_handlers_test.go`) | profile/members/session state | the profile's `ai.sessions` is `[{label:"",harness:"claude"},{label:"claude-2",harness:"pi"}]` by connection time; an agent member's `sessions` carries both; a human member has none; `GET /agent/session.sessions` has two; the auth of the existing routes is unchanged |
 | Web unit (`web/src/components/message-item.test.tsx`, `.../mention-suggestions.test.tsx`, `.../contacts.test.tsx`, `web/src/lib/live/handlers.test.ts`) | chip, autocomplete, profile, live update | an agent message with `author_label "claude-2"` shows `via :claude-2`; `""` shows nothing; candidates are the AI plus one per labelled session; matching "claude" finds `:claude-2`; picking inserts `@atlas:claude-2 `; the profile lists `principal`, `:wt`, the harness and since; an `agent.presence` event invalidates the profile query |
 | E2E (`web/e2e/fit.spec.ts`, `web/e2e/ai-sessions.spec.ts`) | 320/412 px, a two-session AI | the two sessions are seeded with a real second socket and a live id; the conversation shows `via :claude-2` on the message that socket posted; the profile and the panel fit at both widths and 125% font; the autocomplete offers `@atlas` and `@atlas:claude-2` and inserts the labelled address |
-| Docs (`docs/agents.md`, `docs/api.md`, `README.md`, `.specs/STATE.md`, `.specs/features/intelligences/spec.md`) | none (the `make check` gate) | no `identity_busy` instruction or takeover prompt remains; `author_label`, `for_label`, `X-Partyline-MainFolder`, the sibling rule, the worktree tools-only reader and the merge cleanup are documented; AD-029 is in `STATE.md`; SES-01..SES-07 point at SESS-* |
+| Docs (`docs/agents.md`, `docs/api.md`, `README.md`, `.specs/STATE.md`, `.specs/features/intelligences/spec.md`) | none (the `make check` gate) | no `identity_busy` instruction or takeover prompt remains; `author_label`, `for_label`, `X-Partyline-MainFolder`, the sibling rule, the worktree tools-only reader and the merge cleanup are documented; AD-032 is in `STATE.md`; SES-01..SES-07 point at SESS-* |
 
 ## Code Reuse Analysis
 
@@ -888,7 +888,7 @@ in packages that already have their layer.
 
 ## Decision record (proposed)
 
-When the plan is approved, record AD-029 in `.specs/STATE.md`: *an AI is identified by the main worktree
+When the plan is approved, record AD-032 in `.specs/STATE.md`: *an AI is identified by the main worktree
 of a repository (the CLI sends it), an AI may have several labelled live sessions held in presence,
 messages are addressed to a session by `@handle:label` and authored with the session label, a labelled
 delivery that is not acknowledged falls back to the principal through `agent_session_deliveries` (a

@@ -337,7 +337,7 @@ the three old addresses; a touch context (`hasTouch: true, isMobile: true`, 360�
 does) drives the phone's account menu on `/` and the top bar's switcher menu, and measures the menu rows.
 `web/e2e/fit.spec.ts` replaces `/settings` and `/connectors` with `/account` and
 `/orgs/{org}/connections`, adds `/orgs/{org}/settings` and the two open menus, at 320×700 and 412×900 with a
-125% root font. `.specs/STATE.md` gains AD-029 (the design's decision record); `README.md`, `docs/agents.md`
+125% root font. `.specs/STATE.md` gains AD-030 (the design's decision record); `README.md`, `docs/agents.md`
 and `docs/api.md` say "My account" where they named the page "Settings". No behaviour changes.
 
 **Where**: `web/e2e/navigation.spec.ts`
@@ -362,14 +362,14 @@ SET-12, SET-13, SET-14
 - fit, at both sizes and 125%: `/account`, `/orgs/{org}/connections`, `/orgs/{org}/settings`, the open
   account menu on `/` and the open organization menu on `/`; `expectFits` reports no sideways scroll and no
   spilling text.
-- `.specs/STATE.md` has AD-029 and no other decision changed; the three docs name "My account".
+- `.specs/STATE.md` has AD-030 and no other decision changed; the three docs name "My account".
 
 **Done when**:
 - [x] `make e2e` passes for `desktop-1280`, `mobile-360` and the touch contexts
 - [x] the old addresses are asserted against the real binary, not only in unit tests
 - [x] the fit check covers every moved page and both open menus at 320×700 and 412×900 with a 125% font
 - [x] no existing e2e test is weakened or skipped
-- [x] `.specs/STATE.md` gains AD-029; `README.md`, `docs/agents.md` and `docs/api.md` name "My account"
+- [x] `.specs/STATE.md` gains AD-030; `README.md`, `docs/agents.md` and `docs/api.md` name "My account"
 - [x] `git diff` for the whole feature names no `internal/` path and no `web/src/lib/api/types.gen.ts`
 - [x] Gate check passes: `make check` (and `make check-race` before pushing)
 **Tests**: e2e

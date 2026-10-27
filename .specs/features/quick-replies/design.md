@@ -627,7 +627,7 @@ notification worker and the delivery dispatcher are deliberately not integration
 
 ## Decision record (proposed)
 
-Record one AD in `.specs/STATE.md` (AD-029, the next free number) when the plan is approved: *a message
+Record one AD in `.specs/STATE.md` (AD-031, the next free number) when the plan is approved: *a message
 may carry a question — up to 4 quick replies or a wizard of up to 8 questions — stored as one
 versioned JSON document on the message (`interactive_json`), and its answer is a normal reply that
 carries the structured answers (`answers_json`); the server validates, assigns the ids and renders the

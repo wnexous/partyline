@@ -516,7 +516,7 @@ wizard from the AI, and `checkConversation` to wait for both bubbles at 320×700
 their limits, the two response fields, the answer body, the statuses 422/403/409 with the codes, the
 `quick_replies` field of the connection send); in `docs/agents.md` the `ask` row in the tools table, the
 two frame meta attributes and a short "Asking a question" paragraph (a room gets buttons, a chat gets
-numbered text, the answer arrives as a reply); AD-029 in `.specs/STATE.md` as the design's Decision
+numbered text, the answer arrives as a reply); AD-031 in `.specs/STATE.md` as the design's Decision
 record proposes. No behaviour changes.
 
 **Where**: `docs/api.md`
@@ -530,7 +530,7 @@ and error code in `internal/api/dto/quickreplies.go` and `mapError` appears in `
 **Done when**:
 - [x] every new field, limit and error code is in `docs/api.md` with its status
 - [x] `docs/agents.md` lists `ask`, `interactive` and `answers`
-- [x] `.specs/STATE.md` gains AD-029 without changing another decision
+- [x] `.specs/STATE.md` gains AD-031 without changing another decision
 - [x] Gate check passes: `make check`
 **Tests**: docs (no code; `make check` is the gate)
 **Gate**: build
