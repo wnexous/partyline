@@ -267,7 +267,7 @@ func (s *server) revokeOwnAgentToken(w http.ResponseWriter, r *http.Request) err
 // AgentInbox reads an agent's undelivered messages for harnesses without the WebSocket
 // (TURN-01, TURN-02); the agent gateway implements it.
 type AgentInbox interface {
-	Pending(ctx context.Context, a db.Agent, limit int) ([]dto.AgentMessage, error)
+	Pending(ctx context.Context, a db.Agent, label string, limit int) ([]dto.AgentMessage, error)
 	Online(agentID string) bool
 }
 
@@ -286,7 +286,9 @@ var errPushedSession = httpx.NewError(http.StatusConflict, dto.ErrorCodeConflict
 // 20, oldest first), which count as delivered too, and a platform event ends the wait (CID-06,
 // CID-08, CID-09), and how many platform messages the server dropped since the AI was last told,
 // which is taken once and ends the wait too (CID-10); without it the platform queue and the count
-// are neither read nor touched.
+// are neither read nor touched. A tools-only process in a linked worktree has no live session:
+// its label's messages are the principal's, so it gets an empty page (items, platform events and
+// dropped count) at once, without waiting, and takes nothing (SESS-06).
 func (s *server) agentPending(w http.ResponseWriter, r *http.Request, p authn.Principal) error {
 	wait := 0
 	if v := r.URL.Query().Get("wait"); v != "" {
@@ -307,24 +309,30 @@ func (s *server) agentPending(w http.ResponseWriter, r *http.Request, p authn.Pr
 	if err != nil {
 		return err
 	}
-	if s.Inbox.Online(a.ID) {
+	folder, err := agents.FolderIDFromHeader(r.Header) // agentOnly already validated it
+	if err != nil {
+		return err
+	}
+	label := s.Agents.SessionLabelOf(r.Context(), a.ID, r.Header.Get(dto.HeaderLive), folder.Folder)
+	if label == "" && s.Inbox.Online(a.ID) {
 		return errPushedSession
 	}
 	deadline := time.Now().Add(time.Duration(wait) * time.Second)
 	for {
-		// The count goes first: when a later step fails, only a notice is lost, not messages.
+		// The count goes first: when a later step fails, only a notice is lost, not messages. A
+		// labelled reader has no queue, so its platform count is not taken either (SESS-06).
 		var dropped int64
-		if withPlatform {
+		if withPlatform && label == "" {
 			if dropped, err = s.Platform.TakeDropped(r.Context(), a.ID); err != nil {
 				return err
 			}
 		}
-		msgs, err := s.Inbox.Pending(r.Context(), a, agents.PendingLimit)
+		msgs, err := s.Inbox.Pending(r.Context(), a, label, agents.PendingLimit)
 		if err != nil {
 			return err
 		}
 		events := []dto.PlatformEvent{}
-		if withPlatform {
+		if withPlatform && label == "" {
 			taken, err := s.Platform.Take(r.Context(), a.ID, agents.PendingLimit)
 			if err != nil {
 				return err
@@ -334,7 +342,9 @@ func (s *server) agentPending(w http.ResponseWriter, r *http.Request, p authn.Pr
 			}
 		}
 		left := time.Until(deadline)
-		if len(msgs) > 0 || len(events) > 0 || dropped > 0 || left <= 0 {
+		// An empty page for a labelled reader is answered now: it must not wait for a queue it can
+		// never be given (SESS-06).
+		if label != "" || len(msgs) > 0 || len(events) > 0 || dropped > 0 || left <= 0 {
 			if withPlatform {
 				httpx.WriteJSON(w, http.StatusOK, dto.AgentPending{Items: msgs, Platform: events, Dropped: dropped})
 			} else {

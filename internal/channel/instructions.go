@@ -31,6 +31,12 @@ Call room_info to read a room's instructions, members and your own settings ther
 ` + mentionsNote + `
 ` + pasteNote
 
+// WorktreeToolsOnlyNote is what a tools-only process in a linked worktree is told: it has no live
+// channel, so nothing is addressed to its label and it only writes and reads history (SESS-06).
+// run.go appends it to ToolsOnlyInstructions for that identity only, and pending.go answers the
+// first wait_for_messages with it; every other identity never sees it.
+const WorktreeToolsOnlyNote = "This worktree session has no live channel: it only writes and reads history."
+
 // OmpInstructions is the MCP instructions text of `partyline channel --harness omp` (PUSH-03):
 // the full channel, whose events the omp extension turns into <partyline …> messages with the
 // trust line (PUSH-06). The trust rules are the same as Instructions'.

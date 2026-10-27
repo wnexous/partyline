@@ -98,6 +98,10 @@ func Run(ctx context.Context, o Options) error {
 	switch {
 	case o.ToolsOnly:
 		instructions = ToolsOnlyInstructions
+		if isLinkedWorktree(id) {
+			// Only a linked-worktree tools-only process has no live channel; it is told so (SESS-06).
+			instructions += "\n" + WorktreeToolsOnlyNote
+		}
 	case o.Harness == HarnessOmp:
 		instructions = OmpInstructions
 	}
