@@ -212,7 +212,7 @@ func (q *Queries) GetMessageIDByExternalID(ctx context.Context, arg GetMessageID
 }
 
 const getMessageView = `-- name: GetMessageView :one
-SELECT id, room_id, seq, author_kind, author_id, author_user_id, author_iid, sender_id, sender_alt_id, sender_name, kind, text, reply_to, recipients_json, external_id, created_at, edited_at, deleted_at, interactive_json, answers_json, author_name, author_handle, author_ikind, author_avatar FROM message_views WHERE id = ?
+SELECT id, room_id, seq, author_kind, author_id, author_user_id, author_iid, sender_id, sender_alt_id, sender_name, kind, text, reply_to, recipients_json, external_id, created_at, edited_at, deleted_at, interactive_json, answers_json, author_label, author_name, author_handle, author_ikind, author_avatar FROM message_views WHERE id = ?
 `
 
 func (q *Queries) GetMessageView(ctx context.Context, id string) (MessageView, error) {
@@ -239,6 +239,7 @@ func (q *Queries) GetMessageView(ctx context.Context, id string) (MessageView, e
 		&i.DeletedAt,
 		&i.InteractiveJson,
 		&i.AnswersJson,
+		&i.AuthorLabel,
 		&i.AuthorName,
 		&i.AuthorHandle,
 		&i.AuthorIkind,
@@ -294,7 +295,7 @@ func (q *Queries) ListAttachmentsByMessages(ctx context.Context, messageIds []st
 }
 
 const listLatestMessagesInRooms = `-- name: ListLatestMessagesInRooms :many
-SELECT id, room_id, seq, author_kind, author_id, author_user_id, author_iid, sender_id, sender_alt_id, sender_name, kind, text, reply_to, recipients_json, external_id, created_at, edited_at, deleted_at, interactive_json, answers_json, author_name, author_handle, author_ikind, author_avatar FROM message_views
+SELECT id, room_id, seq, author_kind, author_id, author_user_id, author_iid, sender_id, sender_alt_id, sender_name, kind, text, reply_to, recipients_json, external_id, created_at, edited_at, deleted_at, interactive_json, answers_json, author_label, author_name, author_handle, author_ikind, author_avatar FROM message_views
 WHERE room_id IN (/*SLICE:room_ids*/?)
 ORDER BY created_at DESC, id DESC
 LIMIT ?
@@ -347,6 +348,7 @@ func (q *Queries) ListLatestMessagesInRooms(ctx context.Context, arg ListLatestM
 			&i.DeletedAt,
 			&i.InteractiveJson,
 			&i.AnswersJson,
+			&i.AuthorLabel,
 			&i.AuthorName,
 			&i.AuthorHandle,
 			&i.AuthorIkind,
@@ -366,7 +368,7 @@ func (q *Queries) ListLatestMessagesInRooms(ctx context.Context, arg ListLatestM
 }
 
 const listMessagesAfter = `-- name: ListMessagesAfter :many
-SELECT id, room_id, seq, author_kind, author_id, author_user_id, author_iid, sender_id, sender_alt_id, sender_name, kind, text, reply_to, recipients_json, external_id, created_at, edited_at, deleted_at, interactive_json, answers_json, author_name, author_handle, author_ikind, author_avatar FROM message_views
+SELECT id, room_id, seq, author_kind, author_id, author_user_id, author_iid, sender_id, sender_alt_id, sender_name, kind, text, reply_to, recipients_json, external_id, created_at, edited_at, deleted_at, interactive_json, answers_json, author_label, author_name, author_handle, author_ikind, author_avatar FROM message_views
 WHERE room_id = ?1 AND seq > ?2 AND seq < ?3
 ORDER BY seq ASC
 LIMIT ?4
@@ -414,6 +416,7 @@ func (q *Queries) ListMessagesAfter(ctx context.Context, arg ListMessagesAfterPa
 			&i.DeletedAt,
 			&i.InteractiveJson,
 			&i.AnswersJson,
+			&i.AuthorLabel,
 			&i.AuthorName,
 			&i.AuthorHandle,
 			&i.AuthorIkind,
@@ -433,7 +436,7 @@ func (q *Queries) ListMessagesAfter(ctx context.Context, arg ListMessagesAfterPa
 }
 
 const listMessagesBefore = `-- name: ListMessagesBefore :many
-SELECT id, room_id, seq, author_kind, author_id, author_user_id, author_iid, sender_id, sender_alt_id, sender_name, kind, text, reply_to, recipients_json, external_id, created_at, edited_at, deleted_at, interactive_json, answers_json, author_name, author_handle, author_ikind, author_avatar FROM message_views
+SELECT id, room_id, seq, author_kind, author_id, author_user_id, author_iid, sender_id, sender_alt_id, sender_name, kind, text, reply_to, recipients_json, external_id, created_at, edited_at, deleted_at, interactive_json, answers_json, author_label, author_name, author_handle, author_ikind, author_avatar FROM message_views
 WHERE room_id = ?1 AND seq < ?2
 ORDER BY seq DESC
 LIMIT ?3
@@ -475,6 +478,7 @@ func (q *Queries) ListMessagesBefore(ctx context.Context, arg ListMessagesBefore
 			&i.DeletedAt,
 			&i.InteractiveJson,
 			&i.AnswersJson,
+			&i.AuthorLabel,
 			&i.AuthorName,
 			&i.AuthorHandle,
 			&i.AuthorIkind,

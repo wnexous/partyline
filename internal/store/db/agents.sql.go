@@ -56,6 +56,9 @@ const countAgentBacklog = `-- name: CountAgentBacklog :one
 SELECT COUNT(*) FROM messages
 WHERE room_id = ?1 AND seq > ?2
   AND NOT (author_kind = 'agent' AND author_id = ?3)
+  AND NOT EXISTS (
+      SELECT 1 FROM agent_session_deliveries d
+      WHERE d.message_id = messages.id AND d.agent_id = ?3)
 `
 
 type CountAgentBacklogParams struct {
@@ -64,6 +67,8 @@ type CountAgentBacklogParams struct {
 	AgentID  string
 }
 
+// A message with any agent_session_deliveries row belongs to a label (or already fell back to the
+// principal through its fallback list), so it is not read twice (SESS-24).
 func (q *Queries) CountAgentBacklog(ctx context.Context, arg CountAgentBacklogParams) (int64, error) {
 	row := q.db.QueryRowContext(ctx, countAgentBacklog, arg.RoomID, arg.AfterSeq, arg.AgentID)
 	var count int64
@@ -395,9 +400,12 @@ func (q *Queries) InsertFolderAgent(ctx context.Context, arg InsertFolderAgentPa
 }
 
 const listAgentBacklog = `-- name: ListAgentBacklog :many
-SELECT id, room_id, seq, author_kind, author_id, author_user_id, author_iid, sender_id, sender_alt_id, sender_name, kind, text, reply_to, recipients_json, external_id, created_at, edited_at, deleted_at, interactive_json, answers_json, author_name, author_handle, author_ikind, author_avatar FROM message_views
+SELECT id, room_id, seq, author_kind, author_id, author_user_id, author_iid, sender_id, sender_alt_id, sender_name, kind, text, reply_to, recipients_json, external_id, created_at, edited_at, deleted_at, interactive_json, answers_json, author_label, author_name, author_handle, author_ikind, author_avatar FROM message_views
 WHERE room_id = ?1 AND seq > ?2
   AND NOT (author_kind = 'agent' AND author_id = ?3)
+  AND NOT EXISTS (
+      SELECT 1 FROM agent_session_deliveries d
+      WHERE d.message_id = message_views.id AND d.agent_id = ?3)
 ORDER BY seq DESC
 LIMIT ?4
 `
@@ -444,6 +452,7 @@ func (q *Queries) ListAgentBacklog(ctx context.Context, arg ListAgentBacklogPara
 			&i.DeletedAt,
 			&i.InteractiveJson,
 			&i.AnswersJson,
+			&i.AuthorLabel,
 			&i.AuthorName,
 			&i.AuthorHandle,
 			&i.AuthorIkind,
@@ -463,9 +472,12 @@ func (q *Queries) ListAgentBacklog(ctx context.Context, arg ListAgentBacklogPara
 }
 
 const listAgentPending = `-- name: ListAgentPending :many
-SELECT id, room_id, seq, author_kind, author_id, author_user_id, author_iid, sender_id, sender_alt_id, sender_name, kind, text, reply_to, recipients_json, external_id, created_at, edited_at, deleted_at, interactive_json, answers_json, author_name, author_handle, author_ikind, author_avatar FROM message_views
+SELECT id, room_id, seq, author_kind, author_id, author_user_id, author_iid, sender_id, sender_alt_id, sender_name, kind, text, reply_to, recipients_json, external_id, created_at, edited_at, deleted_at, interactive_json, answers_json, author_label, author_name, author_handle, author_ikind, author_avatar FROM message_views
 WHERE room_id = ?1 AND seq > ?2
   AND NOT (author_kind = 'agent' AND author_id = ?3)
+  AND NOT EXISTS (
+      SELECT 1 FROM agent_session_deliveries d
+      WHERE d.message_id = message_views.id AND d.agent_id = ?3)
 ORDER BY seq ASC
 LIMIT ?4
 `
@@ -512,6 +524,7 @@ func (q *Queries) ListAgentPending(ctx context.Context, arg ListAgentPendingPara
 			&i.DeletedAt,
 			&i.InteractiveJson,
 			&i.AnswersJson,
+			&i.AuthorLabel,
 			&i.AuthorName,
 			&i.AuthorHandle,
 			&i.AuthorIkind,

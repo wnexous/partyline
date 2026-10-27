@@ -236,13 +236,13 @@ wrote, `DeleteSelfSessionDeliveries`, `ListSessionFallbacks`, `ListSessionDelive
   `room1`, by `seq`; the new message is in `ListAgentBacklog` and the fallen-back one is not; a message
   with a pending (not fallen-back) row is in neither list.
 **Done when**:
-- [ ] the migration passes on a database that existed before `0027` and on a fresh one
-- [ ] the three backlog/pending queries exclude every delivery row for the AI (pending and fallen back)
-- [ ] a row of a message the AI wrote is deleted by `DeleteSelfSessionDeliveries`, never marked
+- [x] the migration passes on a database that existed before `0027` and on a fresh one
+- [x] the three backlog/pending queries exclude every delivery row for the AI (pending and fallen back)
+- [x] a row of a message the AI wrote is deleted by `DeleteSelfSessionDeliveries`, never marked
       `fell_back_at`
-- [ ] `make generate` ran and the sqlc output is committed
-- [ ] no Go hook is added (pure SQL)
-- [ ] Gate check passes: `make check`
+- [x] `make generate` ran and the sqlc output is committed
+- [x] no Go hook is added (pure SQL)
+- [x] Gate check passes: `make check`
 **Tests**: integration
 **Gate**: build
 **Commit**: `feat(store): add the session label and the per-session delivery rows`
