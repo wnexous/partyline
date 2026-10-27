@@ -388,10 +388,10 @@ an injected clock):
 - `TestSameProcessReplacesItsSocket`: same live id twice → the old fake recorded `1000/reconnected`, the
   label and `since` are unchanged, `Sessions` has one entry.
 **Done when**:
-- [ ] every label allocation happens under the presence mutex (one `p.mu.Lock` for check + insert)
-- [ ] the old single-session methods still behave as today for the principal, so the existing gateway
+- [x] every label allocation happens under the presence mutex (one `p.mu.Lock` for check + insert)
+- [x] the old single-session methods still behave as today for the principal, so the existing gateway
       tests pass unchanged
-- [ ] Gate check passes: `make check`
+- [x] Gate check passes: `make check`
 **Tests**: unit
 **Gate**: build
 **Commit**: `feat(agents): hold several labelled sessions per AI`
