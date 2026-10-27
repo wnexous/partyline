@@ -280,6 +280,38 @@ func (q *Queries) GetRoomWithOwner(ctx context.Context, id string) (GetRoomWithO
 	return i, err
 }
 
+const listIntelligenceRoomIDs = `-- name: ListIntelligenceRoomIDs :many
+SELECT m.room_id FROM room_members m WHERE m.kind = 'agent' AND m.member_id = ?1
+UNION
+SELECT r.id FROM rooms r WHERE r.dm_a = ?1 OR r.dm_b = ?1
+`
+
+// The rooms an intelligence takes part in as itself: the ones where it is a member as an agent and,
+// since a DM is its two participant columns, the DMs it is a party to. A profile lists the
+// conversations the caller can view among them (PEOP-03).
+func (q *Queries) ListIntelligenceRoomIDs(ctx context.Context, id string) ([]string, error) {
+	rows, err := q.db.QueryContext(ctx, listIntelligenceRoomIDs, id)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []string
+	for rows.Next() {
+		var room_id string
+		if err := rows.Scan(&room_id); err != nil {
+			return nil, err
+		}
+		items = append(items, room_id)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const listRoomMembers = `-- name: ListRoomMembers :many
 SELECT m.id, m.room_id, m.kind, m.member_id, m.outbound, m.added_by, m.created_at, m.display_name, m.sign_outbound, m.delivery, m.keywords_json,
        CAST(CASE m.kind

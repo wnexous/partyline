@@ -258,6 +258,7 @@ export const ptBR: Dictionary = {
   "profilePanel.title": "Perfil",
   "profilePanel.status": "Status",
   "profilePanel.openFull": "Abrir perfil completo",
+  "profilePanel.seeAll": "Ver todas",
   "profile.edit": "Editar perfil",
   "profile.handle": "Identificador",
   "profile.handleHint":

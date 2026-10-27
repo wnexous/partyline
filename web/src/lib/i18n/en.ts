@@ -257,6 +257,7 @@ export const en = {
   "profilePanel.title": "Profile",
   "profilePanel.status": "Status",
   "profilePanel.openFull": "Open full profile",
+  "profilePanel.seeAll": "See all",
   "profile.edit": "Edit profile",
   "profile.handle": "Handle",
   "profile.handleHint":

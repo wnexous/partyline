@@ -26,6 +26,14 @@ FROM rooms r JOIN users u ON u.id = r.owner_id
 LEFT JOIN intelligences oi ON oi.id = r.owner_id
 WHERE r.id = ?;
 
+-- name: ListIntelligenceRoomIDs :many
+-- The rooms an intelligence takes part in as itself: the ones where it is a member as an agent and,
+-- since a DM is its two participant columns, the DMs it is a party to. A profile lists the
+-- conversations the caller can view among them (PEOP-03).
+SELECT m.room_id FROM room_members m WHERE m.kind = 'agent' AND m.member_id = sqlc.arg(id)
+UNION
+SELECT r.id FROM rooms r WHERE r.dm_a = sqlc.arg(id) OR r.dm_b = sqlc.arg(id);
+
 -- name: ListRoomsForUser :many
 -- The conversations a user may have in a list (AD-016): the groups they are a member of, create or
 -- administer, and the DMs they take part in. The DMs they only view as the manager of an AI are left
