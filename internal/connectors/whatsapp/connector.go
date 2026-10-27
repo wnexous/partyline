@@ -307,6 +307,11 @@ func (c *Connector) handle(ctx context.Context, h connectors.Handler, data []byt
 		}
 		return
 	}
+	if len(p.UnknownKeys) > 0 {
+		// The protocol types of a message the connector does not know; the scoped logger carries
+		// the connector id. Never the chat, the sender or the text.
+		c.log.Info("whatsapp: unsupported message", "keys", p.UnknownKeys)
+	}
 	if len(p.MentionedJIDs) > 0 {
 		p.Inbound.MentionsAccount = c.mentions(p.MentionedJIDs)
 	}
