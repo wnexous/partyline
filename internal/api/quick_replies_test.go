@@ -2,8 +2,10 @@ package api_test
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
+	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -195,4 +197,42 @@ func TestTheAgentRouteTakesTheSameFields(t *testing.T) {
 	f.ai.Post("/api/v1/agent/rooms/"+f.room.ID+"/messages",
 		dto.PostMessageRequest{ReplyTo: posted.ID, Answers: &dto.AnswerSubmission{QuickReply: "r1"}}).
 		RequireError(http.StatusForbidden, dto.ErrorCodeForbidden)
+}
+
+// QR-20: a send to a chat of a connection numbers the options after the text, because a chat renders
+// no buttons, and the send keeps what was sent, so a retry sends the same numbered text. The label
+// rules are the question's own: a set the server refuses is 422 on quick_replies and sends nothing.
+func TestConnectionSendNumbersTheOptions(t *testing.T) {
+	f := newReplyFixture(t)
+	send := func(body dto.SendToChatRequest) *testkit.Response {
+		return f.token.AsAgent("Atlas").Post(connectionChatPath(f.conn.ID, f.group.ID), body)
+	}
+
+	for name, labels := range map[string][]string{
+		"five labels":    {"a", "b", "c", "d", "e"},
+		"a long label":   {strings.Repeat("a", dto.MaxQuestionLabel+1)},
+		"the same twice": {"a", "A"},
+		"an empty label": {""},
+	} {
+		err := send(dto.SendToChatRequest{Text: "Deploy?", QuickReplies: labels}).RequireError(http.StatusUnprocessableEntity, dto.ErrorCodeInvalid)
+		require.Contains(t, err.Fields, "quick_replies", name)
+	}
+	require.Empty(t, f.inst.Sent(), "nothing was sent")
+	require.Zero(t, countRows(t, f.env, "SELECT COUNT(*) FROM platform_sends"), "nothing was stored")
+
+	got := testkit.Decode[dto.PlatformSendResult](send(dto.SendToChatRequest{
+		Text: "Deploy?", QuickReplies: []string{"Sim", "Não"},
+	}).RequireStatus(http.StatusCreated))
+	require.Equal(t, dto.PlatformSendStatusSent, got.Status)
+	sent := f.inst.WaitSend(t)
+	require.Equal(t, "Deploy?\n\n1. Sim\n2. Não", sent.Text)
+	require.Empty(t, f.sendRow(t, got.ID).Text, "the text is cleared once the send is over")
+
+	// A platform that does not take it now keeps the numbered text, so the retry sends the same.
+	f.inst.SetSendError(errors.New("platform unavailable"))
+	pending := testkit.Decode[dto.PlatformSendResult](send(dto.SendToChatRequest{
+		Text: "Deploy?", QuickReplies: []string{"Sim", "Não"},
+	}).RequireStatus(http.StatusAccepted))
+	require.Equal(t, dto.PlatformSendStatusPending, pending.Status)
+	require.Equal(t, "Deploy?\n\n1. Sim\n2. Não", f.sendRow(t, pending.ID).Text)
 }

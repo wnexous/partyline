@@ -68,6 +68,11 @@ func (t *tools) register(srv *mcp.Server) {
 		InputSchema: schema(`{"type":"object","properties":{"room":{"type":"string","description":"room id, room name, or @handle of the intelligence you have a DM with"},"to":{"type":"string","description":"instead of room: the @handle, handle or id of an intelligence to message directly; the DM is created if you never talked"},"connection":{"type":"string","description":"instead of room and to: the connection_id of a connection you operate, together with chat"},"chat":{"type":"string","description":"with connection: the chat_id of the chat to write to, as a message from that connection carries it; or the address of a chat you have not heard from, to start one: a WhatsApp phone number with its country code, digits only (5511999990000), or a WhatsApp JID; a Telegram chat id; a Discord channel id. You may start 10 such chats an hour"},"text":{"type":"string","description":"message text"}},"required":["text"]}`),
 	}, t.guard(t.sendMessage))
 	srv.HandleTool(mcp.ToolDef{
+		Name:        "ask",
+		Description: "Ask a question whose answer arrives as a message: give text and 1 to 4 quick_replies (each 1 to 48 characters on one line), or a wizard of 1 to 8 questions instead of quick_replies. Give exactly one target: room (ask in a room or DM you belong to, with an optional reply_to), or connection together with chat (ask in a chat of a connection you operate, from your own account and unsigned). In a room the person taps a button or answers the wizard in the app, and the answer reaches you as a reply to your question. A chat renders no buttons: there your text is sent with the options appended as numbered lines (1. Sim, 2. Não) and the person answers with a number in an ordinary message, so a wizard needs a room.",
+		InputSchema: schema(`{"type":"object","properties":{"room":{"type":"string","description":"room id, room name, or @handle of a DM with the intelligence to ask"},"connection":{"type":"string","description":"instead of room: the connection_id of a connection you operate, together with chat"},"chat":{"type":"string","description":"with connection: the chat_id to ask in, or the address of someone who never wrote to you, as for send_message"},"reply_to":{"type":"string","description":"with room: optional message_id this question answers"},"text":{"type":"string","description":"the question, at most 16000 characters"},"quick_replies":{"type":"array","items":{"type":"string"},"description":"1 to 4 buttons, each 1 to 48 characters on one line"},"wizard":{"type":"object","properties":{"questions":{"type":"array","items":{"type":"object","properties":{"title":{"type":"string"},"kind":{"type":"string","enum":["single","multi"]},"options":{"type":"array","items":{"type":"string"}},"allow_text":{"type":"boolean"}},"required":["title","options"]},"description":"1 to 8 questions"}},"description":"instead of quick_replies: a wizard answered step by step in the web app"}},"required":["text"]}`),
+	}, t.guard(t.ask))
+	srv.HandleTool(mcp.ToolDef{
 		Name:        "room_info",
 		Description: "Read a room's instructions for agents, its members (chats with platform and kind) and your own membership settings in it.",
 		InputSchema: schema(`{"type":"object","properties":{"room":{"type":"string","description":"room id, room name, or @handle of the intelligence you have a DM with"}},"required":["room"]}`),
@@ -320,6 +325,80 @@ func (t *tools) sendMessage(ctx context.Context, args json.RawMessage) (string, 
 	}
 	var m dto.Message
 	if err := t.api.json(ctx, http.MethodPost, roomPath(a.Room, "/messages"), nil, dto.PostMessageRequest{Text: a.Text}, &m); err != nil {
+		return "", err
+	}
+	return sent(m), nil
+}
+
+// The refusals of ask about where a question goes and what it carries. They read like the refusals
+// of send_message, whose target rules ask shares, without its "to".
+const (
+	askSeveralTargets = "give exactly one of room, or connection with chat, not several: room asks in a room or DM you belong to, connection with chat asks in a chat of a connection you operate"
+	askNoTarget       = "room, or connection with chat is required: name the room to ask in, or the connection and the chat to ask in"
+	askHalfTarget     = "connection and chat go together: give both (the connection_id and the chat_id of a message from your connection), or neither"
+	askNoShape        = "quick_replies or wizard is required: ask with 1 to 4 quick replies, or with a wizard; to send a message nobody has to answer, use send_message"
+	askWizardOnAChat  = "a wizard needs a room: on a chat, ask with quick_replies and the person answers with a number"
+	askReplyToOnAChat = "reply_to applies to rooms: a chat has no message to answer; ask in a room to answer one"
+)
+
+// ask asks a question in a room or in a chat of a connection the AI operates (QR-19, QR-20): the
+// room route takes the question as it is, and the chat route takes the text and the labels, which
+// the server appends numbered because a chat renders no buttons. Exactly one target, and a question
+// to ask: without one the AI writes a message instead.
+func (t *tools) ask(ctx context.Context, args json.RawMessage) (string, error) {
+	var a struct {
+		Room         string             `json:"room"`
+		Connection   string             `json:"connection"`
+		Chat         string             `json:"chat"`
+		ReplyTo      string             `json:"reply_to"`
+		Text         string             `json:"text"`
+		QuickReplies []string           `json:"quick_replies"`
+		Wizard       *dto.WizardRequest `json:"wizard"`
+	}
+	if err := decode(args, &a); err != nil {
+		return "", err
+	}
+	// An empty list is no list, as an empty target is no target (DM-04).
+	if len(a.QuickReplies) == 0 {
+		a.QuickReplies = nil
+	}
+	// An empty value is not given, as models that send every parameter do (DM-04). A to names no
+	// target: a DM is asked with its @handle as the room.
+	hasRoom := strings.TrimSpace(a.Room) != ""
+	hasConnection, hasChat := strings.TrimSpace(a.Connection) != "", strings.TrimSpace(a.Chat) != ""
+	if hasConnection != hasChat {
+		return "", errors.New(askHalfTarget)
+	}
+	switch targets := count(hasRoom, hasConnection); {
+	case targets > 1:
+		return "", errors.New(askSeveralTargets)
+	case targets == 0:
+		return "", errors.New(askNoTarget)
+	}
+	if err := required("text", a.Text); err != nil {
+		return "", err
+	}
+	if len(a.QuickReplies) == 0 && a.Wizard == nil {
+		return "", errors.New(askNoShape)
+	}
+	if hasConnection {
+		if a.Wizard != nil {
+			return "", errors.New(askWizardOnAChat)
+		}
+		if strings.TrimSpace(a.ReplyTo) != "" {
+			return "", errors.New(askReplyToOnAChat)
+		}
+		var res dto.PlatformSendResult
+		path := "agent/connections/" + url.PathEscape(strings.TrimSpace(a.Connection)) + "/chats/" + url.PathEscape(strings.TrimSpace(a.Chat)) + "/messages"
+		if err := t.api.json(ctx, http.MethodPost, path, nil, dto.SendToChatRequest{Text: a.Text, QuickReplies: a.QuickReplies}, &res); err != nil {
+			return "", err
+		}
+		return platformSent(res), nil
+	}
+	var m dto.Message
+	err := t.api.json(ctx, http.MethodPost, roomPath(a.Room, "/messages"), nil,
+		dto.PostMessageRequest{Text: a.Text, ReplyTo: a.ReplyTo, QuickReplies: a.QuickReplies, Wizard: a.Wizard}, &m)
+	if err != nil {
 		return "", err
 	}
 	return sent(m), nil

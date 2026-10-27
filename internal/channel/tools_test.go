@@ -81,7 +81,8 @@ func TestToolsList(t *testing.T) {
 		"edit_message":        {"message_id", "text"},
 		"delete_message":      {"message_id"},
 		"create_group":        {"name", "members"},
-		"update_profile":      nil, // at least one field, checked by the tool
+		"update_profile":      nil,      // at least one field, checked by the tool
+		"ask":                 {"text"}, // room or connection with chat, exactly one: the schema cannot say so
 	}
 	got := map[string]bool{}
 	for _, item := range list {
@@ -133,6 +134,67 @@ func TestToolReply(t *testing.T) {
 	text, isErr = s.call("reply", toolArgs("message_id", "unknown", "text", "x"))
 	require.True(t, isErr)
 	require.Equal(t, "message not found", text)
+}
+
+// QR-19: ask in a room posts the question through the agent room route, with the ids the server
+// assigns and the label the person reads, and names the message that carries it, so the answer can
+// arrive as a reply to it.
+func TestAskInARoom(t *testing.T) {
+	e := newChanEnv(t)
+	s := e.connected(e.options())
+
+	text, isErr := s.call("ask", toolArgs("room", e.room.ID, "text", "Deploy?", "quick_replies", []string{"Sim", "Não"}))
+	require.False(t, isErr, text)
+	stored := e.messages(e.room.ID)[0]
+	require.Equal(t, "sent (message_id "+stored.ID+")", text)
+	require.Equal(t, "Deploy?", stored.Text)
+	require.Equal(t, e.agentID, stored.AuthorID)
+	require.NotNil(t, stored.Interactive)
+	require.Equal(t, []dto.QuickReply{{ID: "r1", Label: "Sim"}, {ID: "r2", Label: "Não"}}, stored.Interactive.QuickReplies)
+
+	text, isErr = s.call("ask", toolArgs("room", e.room.ID, "text", "Planejar", "wizard", map[string]any{
+		"questions": []any{map[string]any{"title": "Quando?", "options": []string{"Amanhã", "Na sexta"}}},
+	}))
+	require.False(t, isErr, text)
+	stored = e.messages(e.room.ID)[0]
+	require.Equal(t, "sent (message_id "+stored.ID+")", text)
+	require.NotNil(t, stored.Interactive.Wizard)
+	require.Equal(t, []string{"q1o1", "q1o2"}, []string{
+		stored.Interactive.Wizard.Questions[0].Options[0].ID, stored.Interactive.Wizard.Questions[0].Options[1].ID,
+	})
+}
+
+// QR-19, QR-20: ask needs exactly one target (a `to` names none), a connection with its chat, and
+// a question to ask; a wizard needs a room, because a chat cannot show one; a refusal of the server
+// comes back in its own words, naming the field.
+func TestAskRefusals(t *testing.T) {
+	e := newChanEnv(t)
+	s := e.connected(e.options())
+	wizard := map[string]any{"questions": []any{map[string]any{"title": "Quando?", "options": []string{"Hoje", "Amanhã"}}}}
+
+	for name, tc := range map[string]struct {
+		args map[string]any
+		want string
+	}{
+		"no target":                    {toolArgs("text", "Deploy?", "quick_replies", []string{"Sim"}), askNoTarget},
+		"a to names no target":         {toolArgs("to", "@alice", "text", "Deploy?", "quick_replies", []string{"Sim"}), askNoTarget},
+		"a room and a connection chat": {toolArgs("room", "Support", "connection", "conn-1", "chat", "chat-1", "text", "Deploy?", "quick_replies", []string{"Sim"}), askSeveralTargets},
+		"a connection without a chat":  {toolArgs("connection", "conn-1", "text", "Deploy?", "quick_replies", []string{"Sim"}), askHalfTarget},
+		"a chat without a connection":  {toolArgs("chat", "chat-1", "text", "Deploy?", "quick_replies", []string{"Sim"}), askHalfTarget},
+		"neither shape":                {toolArgs("room", "Support", "text", "Deploy?"), askNoShape},
+		"a wizard on a chat":           {toolArgs("connection", "conn-1", "chat", "chat-1", "text", "Deploy?", "wizard", wizard), askWizardOnAChat},
+		"a reply through a connection": {toolArgs("connection", "conn-1", "chat", "chat-1", "reply_to", "m-1", "text", "Deploy?", "quick_replies", []string{"Sim"}), askReplyToOnAChat},
+	} {
+		text, isErr := s.call("ask", tc.args)
+		require.True(t, isErr, "%s: %s", name, text)
+		require.Equal(t, tc.want, text, name)
+	}
+	require.Empty(t, e.messages(e.room.ID), "a refused question is not posted")
+
+	text, isErr := s.call("ask", toolArgs("room", e.room.ID, "text", "Deploy?", "quick_replies", []string{"a", "b", "c", "d", "e"}))
+	require.True(t, isErr, text)
+	require.Contains(t, text, "quick_replies", "the server's refusal names its field")
+	require.Empty(t, e.messages(e.room.ID))
 }
 
 // TOOL-03: send_message posts as the agent to a room by id or name. recipients, the older name of
