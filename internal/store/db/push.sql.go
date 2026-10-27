@@ -82,6 +82,18 @@ func (q *Queries) DeletePushSubscriptionByID(ctx context.Context, id string) (in
 	return result.RowsAffected()
 }
 
+const getPushRecipientLocale = `-- name: GetPushRecipientLocale :one
+SELECT locale FROM users WHERE id = ?
+`
+
+// The account's language, which picks the language of the test notification's fixed text (PUSH-15).
+func (q *Queries) GetPushRecipientLocale(ctx context.Context, id string) (string, error) {
+	row := q.db.QueryRowContext(ctx, getPushRecipientLocale, id)
+	var locale string
+	err := row.Scan(&locale)
+	return locale, err
+}
+
 const hasPushSubscriptionForUserEndpoint = `-- name: HasPushSubscriptionForUserEndpoint :one
 SELECT EXISTS (
     SELECT 1 FROM push_subscriptions WHERE user_id = ? AND endpoint = ?
@@ -114,7 +126,7 @@ WITH responsible AS (
     JOIN agents a ON a.id = c.operator_iid
     WHERE c.id = ?1
 )
-SELECT r.user_id, s.id AS subscription_id, s.endpoint, s.p256dh, s.auth
+SELECT r.user_id, u.locale, s.id AS subscription_id, s.endpoint, s.p256dh, s.auth
 FROM responsible r
 JOIN users u ON u.id = r.user_id AND u.disabled_at IS NULL
 JOIN push_subscriptions s ON s.user_id = r.user_id
@@ -123,6 +135,7 @@ ORDER BY r.user_id, s.created_at, s.id
 
 type ListConnectorAlertTargetsRow struct {
 	UserID         string
+	Locale         string
 	SubscriptionID string
 	Endpoint       string
 	P256dh         string
@@ -131,7 +144,9 @@ type ListConnectorAlertTargetsRow struct {
 
 // The accounts responsible for a connection and their devices (ALERT-02): the admins of the owning
 // organization and the host of the AI that operates it, each distinct account once (UNION), skipping
-// a disabled account. users.push_groups is not read: an alert follows the devices (ALERT-13).
+// a disabled account. users.push_groups is not read: an alert follows the devices (ALERT-13);
+// users.locale is, because the alert's fixed title and reason follow the recipient's language
+// (ALERT-07, ALERT-08).
 func (q *Queries) ListConnectorAlertTargets(ctx context.Context, connectorID string) ([]ListConnectorAlertTargetsRow, error) {
 	rows, err := q.db.QueryContext(ctx, listConnectorAlertTargets, connectorID)
 	if err != nil {
@@ -143,6 +158,7 @@ func (q *Queries) ListConnectorAlertTargets(ctx context.Context, connectorID str
 		var i ListConnectorAlertTargetsRow
 		if err := rows.Scan(
 			&i.UserID,
+			&i.Locale,
 			&i.SubscriptionID,
 			&i.Endpoint,
 			&i.P256dh,

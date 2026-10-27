@@ -45,6 +45,10 @@ DELETE FROM push_subscriptions;
 -- Every device of the user, for the test notification (PUSH-15).
 SELECT * FROM push_subscriptions WHERE user_id = ? ORDER BY created_at, id;
 
+-- name: GetPushRecipientLocale :one
+-- The account's language, which picks the language of the test notification's fixed text (PUSH-15).
+SELECT locale FROM users WHERE id = ?;
+
 -- name: MarkPushSubscriptionDelivered :exec
 -- Only a 2xx from the push service writes this time (PUSH-12).
 UPDATE push_subscriptions SET last_ok_at = ? WHERE id = ?;
@@ -84,7 +88,9 @@ ORDER BY s.user_id, s.id;
 -- name: ListConnectorAlertTargets :many
 -- The accounts responsible for a connection and their devices (ALERT-02): the admins of the owning
 -- organization and the host of the AI that operates it, each distinct account once (UNION), skipping
--- a disabled account. users.push_groups is not read: an alert follows the devices (ALERT-13).
+-- a disabled account. users.push_groups is not read: an alert follows the devices (ALERT-13);
+-- users.locale is, because the alert's fixed title and reason follow the recipient's language
+-- (ALERT-07, ALERT-08).
 WITH responsible AS (
     SELECT m.iid AS user_id
     FROM connectors c
@@ -96,7 +102,7 @@ WITH responsible AS (
     JOIN agents a ON a.id = c.operator_iid
     WHERE c.id = sqlc.arg(connector_id)
 )
-SELECT r.user_id, s.id AS subscription_id, s.endpoint, s.p256dh, s.auth
+SELECT r.user_id, u.locale, s.id AS subscription_id, s.endpoint, s.p256dh, s.auth
 FROM responsible r
 JOIN users u ON u.id = r.user_id AND u.disabled_at IS NULL
 JOIN push_subscriptions s ON s.user_id = r.user_id

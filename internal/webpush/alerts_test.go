@@ -240,6 +240,43 @@ func TestAlerterAlertsOnAnError(t *testing.T) {
 	noMore(t, r, 3)
 }
 
+// ALERT-07, ALERT-08: each responsible user reads the alert in the account's language, and both
+// languages share the connection's tag so the alert still collapses per connection.
+func TestAlerterAlertsInTheRecipientsLanguage(t *testing.T) {
+	env := testkit.New(t, testkit.WithoutPush())
+	f := newAlertFixture(t, env)
+	setLocale(t, env, f.admin.User.ID, "pt-BR")
+	aliceDevice := f.device(f.admin.User.ID, "https://push.example.test/alice")
+	carol, operator := f.host("carol")
+	setLocale(t, env, carol.User.ID, "en")
+	carolDevice := f.device(carol.User.ID, "https://push.example.test/carol")
+	f.connector("k1", "ops", operator, "connected")
+
+	r := &recorder{}
+	a := newAlerter(t, env, r, webpush.AlertDeps{})
+	a.Seed(context.Background())
+	runAlerter(t, a)
+
+	publishStatus(env, "k1", string(dto.ConnectorStatusError), alertWhatsAppDetail)
+	jobs := r.await(t, 2)
+	require.Len(t, jobs, 2, "the pt-BR admin and the en host get one payload each")
+	page := env.App.Config.PublicURL.JoinPath("connectors", "k1").String()
+	want := map[string]webpush.Payload{
+		aliceDevice.ID: {
+			V: 1, Title: "Conexão caiu: ops", Author: "",
+			Preview: "O número do WhatsApp foi desconectado", URL: page, Tag: "conn:k1",
+		},
+		carolDevice.ID: {
+			V: 1, Title: "Connection down: ops", Author: "",
+			Preview: "The WhatsApp number was disconnected", URL: page, Tag: "conn:k1",
+		},
+	}
+	for _, job := range jobs {
+		require.Equal(t, want[job.sub.ID], job.payload, "the device reads its recipient's language")
+	}
+	noMore(t, r, 2)
+}
+
 // ALERT-02: an admin who also hosts the operator AI is one responsible user, so her devices get
 // one job each and not one per role.
 func TestAlerterNotifiesEachUserOnce(t *testing.T) {
