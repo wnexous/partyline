@@ -94,16 +94,23 @@ type ConversationRef struct {
 	Kind dto.ConversationKind
 }
 
-// Conversations lists the conversations of a person that the caller can view, the most
+// Conversations lists the conversations of a person or an AI that the caller can view, the most
 // recently active first (the newest message, else the room's creation), at most MaxConversations
-// (PEOP-03). Profiles of other kinds list none.
+// (PEOP-03). A person's are the rooms where it was seen in a chat or wrote a message; an AI's are
+// the rooms it is a member of and its DMs. A user's profile lists none.
 func (s *Service) Conversations(ctx context.Context, p authn.Principal, prof Profile) ([]ConversationRef, error) {
 	out := []ConversationRef{}
-	if prof.Role != RolePerson {
+	q := s.store.R()
+	var ids []string
+	var err error
+	switch prof.Role {
+	case RolePerson:
+		ids, err = q.ListPersonRoomIDs(ctx, prof.ID)
+	case RoleAI:
+		ids, err = q.ListIntelligenceRoomIDs(ctx, prof.ID)
+	default:
 		return out, nil
 	}
-	q := s.store.R()
-	ids, err := q.ListPersonRoomIDs(ctx, prof.ID)
 	if err != nil || len(ids) == 0 {
 		return out, err
 	}

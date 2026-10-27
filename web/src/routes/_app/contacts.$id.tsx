@@ -5,7 +5,6 @@ import {
   CompassIcon,
   GitMergeIcon,
   GlobeIcon,
-  MessageCircleIcon,
   PlugZapIcon,
   PowerOffIcon,
   TerminalIcon,
@@ -23,6 +22,7 @@ import { MembershipSummary } from "@/components/membership-summary";
 import { MergeAIDialog } from "@/components/merge-ai-dialog";
 import { MessageButton } from "@/components/message-button";
 import { platformLabel } from "@/components/message-item";
+import { ProfileConversations } from "@/components/profile-conversations";
 import { ProfileEditor } from "@/components/profile-editor";
 import { RemoveFromOrgDialog } from "@/components/remove-from-org-dialog";
 import { StatusDot } from "@/components/status-dot";
@@ -33,7 +33,6 @@ import { isApiError } from "@/lib/api/client";
 import { contactsQuery, useIntelligence, useMe } from "@/lib/api/queries";
 import {
   type AIDetail,
-  ConversationKindDM,
   type IntelligenceProfile,
   IntelligenceRolePerson,
   LevelManage,
@@ -233,34 +232,7 @@ function ProfileView({ profile }: { profile: IntelligenceProfile }) {
 
       {isPerson || profile.conversations.length > 0 ? (
         <Section title={t("profile.conversations")}>
-          {profile.conversations.length > 0 ? (
-            <ul aria-label={t("profile.conversations")} className="divide-y rounded-lg border">
-              {profile.conversations.map((c) => (
-                <li key={c.id}>
-                  <Link
-                    to="/rooms/$roomId"
-                    params={{ roomId: c.id }}
-                    className="flex items-center gap-3 px-4 py-3 text-sm outline-none hover:bg-accent/40 focus-visible:bg-accent/40 focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-inset"
-                  >
-                    <MessageCircleIcon
-                      className="size-4 shrink-0 text-muted-foreground"
-                      aria-hidden="true"
-                    />
-                    <span className="min-w-0 truncate font-medium">
-                      {c.name || t("profile.directMessage")}
-                    </span>
-                    {c.kind === ConversationKindDM && c.name ? (
-                      <span className="shrink-0 text-xs text-muted-foreground">
-                        {t("profile.directMessage")}
-                      </span>
-                    ) : null}
-                  </Link>
-                </li>
-              ))}
-            </ul>
-          ) : (
-            <p className="text-sm text-muted-foreground">{t("profile.noConversations")}</p>
-          )}
+          <ProfileConversations conversations={profile.conversations} />
         </Section>
       ) : null}
 

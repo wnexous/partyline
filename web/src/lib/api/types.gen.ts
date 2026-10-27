@@ -1599,8 +1599,8 @@ export interface IntelligenceProfile extends IntelligenceRef {
   apps: App[];
   /**
    * Conversations lists the conversations the caller can view that involve a person (the
-   * rooms with a chat where it was seen, or where it wrote), the most recently active first
-   * (PEOP-03); empty for the other kinds.
+   * rooms with a chat where it was seen, or where it wrote) or an AI (the rooms it is a member
+   * of and its DMs), the most recently active first (PEOP-03); empty for users.
    */
   conversations: RoomRef[];
   /**

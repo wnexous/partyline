@@ -209,6 +209,12 @@ async function checkProfilePanel(page: Page, where: string, enlarged: boolean) {
   const panel = page.getByRole("dialog", { name: AI_NAME });
   await expect(panel).toBeVisible();
   await expect(panel.getByText(/Keeps the release train moving/)).toBeVisible();
+  // The conversations the viewer can see it in (PEOP-03): the group the AI answers in.
+  const conversations = panel.getByRole("region", { name: "Conversations" });
+  await expect(conversations.getByRole("link", { name: ROOM_NAME })).toHaveAttribute(
+    "href",
+    `/rooms/${room.id}`,
+  );
   await panel.getByRole("link", { name: "Open full profile" }).scrollIntoViewIfNeeded();
   await settled(page);
   await scrollThrough(page);
