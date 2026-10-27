@@ -201,7 +201,7 @@ describe("the router and conversations", () => {
 
     expect(at("/rooms/01a16f2f-1092-705f-8d94-7643955fd6bb")).toBe(false);
     expect(at("/rooms/long")).toBe(false);
-    for (const page of ["/", "/contacts", "/contacts/a1", "/orgs/o1/chart", "/settings"]) {
+    for (const page of ["/", "/contacts", "/contacts/a1", "/orgs/o1/chart", "/account"]) {
       expect(at(page), page).toBe(true);
     }
   });

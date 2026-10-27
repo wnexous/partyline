@@ -105,14 +105,14 @@ async function stubPush(page: Page) {
   );
 }
 
-test("Settings enables this device, saves the group setting and disables it again (PUSH-18, PUSH-21)", async ({
+test("My account enables this device, saves the group setting and disables it again (PUSH-18, PUSH-21)", async ({
   context,
   page,
   push,
 }) => {
   await loginAs(context, push, OWNER);
   await stubPush(page);
-  await page.goto("/settings");
+  await page.goto("/account");
   await expect(page.getByRole("heading", { name: "Notifications on this device" })).toBeVisible();
   await expect(page.getByRole("radio", { name: "Mentions only" })).toBeChecked();
   await expect(page.getByRole("button", { name: "Enable notifications" })).toBeVisible();
@@ -184,7 +184,7 @@ test("the manifest, the worker and the icons are served from the root (PUSH-19, 
 
   // The app registers the real worker at the root, so a notification can open any route (PUSH-19).
   await loginAs(context, push, OWNER);
-  await page.goto("/settings");
+  await page.goto("/account");
   await expect
     .poll(async () =>
       page.evaluate(async () => (await navigator.serviceWorker.getRegistration())?.scope ?? ""),
@@ -199,7 +199,7 @@ test("the notifications settings fit a 360 px phone (PUSH-21, UI-24)", async ({
 }) => {
   await loginAs(context, push, OWNER);
   await stubPush(page);
-  await page.goto("/settings");
+  await page.goto("/account");
   await expect(page.getByRole("heading", { name: "Notifications on this device" })).toBeVisible();
   await settled(page);
   await expectNoSidewaysScroll(page, "the notifications settings");

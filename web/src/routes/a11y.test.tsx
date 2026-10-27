@@ -391,21 +391,21 @@ describe.each(["en", "pt-BR"] as const)("accessibility (%s)", (locale) => {
     expect(await axe(container, AXE_OPTIONS)).toHaveNoViolations();
   });
 
-  it("the settings page, with the profile editor and the appearance choices, has no axe violations", async () => {
+  it("the account page, with the profile editor and the appearance choices, has no axe violations", async () => {
     appApi(locale);
-    const { container } = renderRoute("/settings");
+    const { container } = renderRoute("/account");
     await screen.findByRole("radio", {
       name: locale === "en" ? "Dark" : "Escuro",
     });
     expect(await axe(container, AXE_OPTIONS)).toHaveNoViolations();
   });
 
-  it("the settings page, with the default organization and the account deletion, has no axe violations", async () => {
+  it("the account page, with the default organization and the account deletion, has no axe violations", async () => {
     appApi(locale, {
       "GET /me": json(200, { ...makeMe({ locale }), default_org_id: "o2" }),
       "GET /orgs": ownOrgs,
     });
-    const { container } = renderRoute("/settings");
+    const { container } = renderRoute("/account");
     await screen.findByRole("combobox", {
       name:
         locale === "en" ? "Default organization for new AIs" : "Organização padrão para novas IAs",
@@ -416,7 +416,7 @@ describe.each(["en", "pt-BR"] as const)("accessibility (%s)", (locale) => {
   it("the dialog that deletes the account has no axe violations", async () => {
     appApi(locale);
     const user = userEvent.setup();
-    renderRoute("/settings");
+    renderRoute("/account");
     await user.click(
       await screen.findByRole("button", {
         name: locale === "en" ? "Delete my account" : "Excluir minha conta",
