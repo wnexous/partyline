@@ -30,6 +30,10 @@ type Identity struct {
 	Home string
 	// Harness is the harness id (claude, opencode, pi, omp, codex, gemini); empty is unknown.
 	Harness string
+	// LiveID is the id of the process that holds the agent WebSocket, sent as X-Partyline-Live on
+	// every call so the server can record the session a message came from (SESS-29). Empty for a
+	// tools-only process, which holds no socket and posts as the AI of its folder.
+	LiveID string
 	// Adopt is the handle or v0.3 agent name of an unlinked AI to link to the folder when it has
 	// none yet (--as, PARTYLINE_AGENT) (MIG-02).
 	Adopt string
@@ -53,7 +57,7 @@ func (id Identity) setHeaders(h http.Header) {
 	h.Set(dto.HeaderMachine, machine)
 	h.Set(dto.HeaderFolder, url.PathEscape(id.Folder))
 	for k, v := range map[string]string{
-		dto.HeaderHarness: id.Harness, dto.HeaderAdopt: id.Adopt,
+		dto.HeaderHarness: id.Harness, dto.HeaderAdopt: id.Adopt, dto.HeaderLive: id.LiveID,
 		dto.HeaderMainFolder: escapeHeader(id.MainFolder),
 		dto.HeaderOrg:        id.Org, dto.HeaderPosition: escapeHeader(id.Position), dto.HeaderParent: id.Parent,
 	} {

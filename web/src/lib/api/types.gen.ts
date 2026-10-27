@@ -2681,6 +2681,11 @@ export interface Message {
    * question, in the question's order. Absent for every other message.
    */
   answers?: MessageAnswers;
+  /**
+   * AuthorLabel is the session that wrote an AI's message (SESS-30): the label of the live session
+   * or worktree it came from, absent for the principal session and for every other author.
+   */
+  author_label?: string;
   created_at: string /* RFC 3339 */;
   /**
    * EditedAt is when the author last changed the text; absent for a message that was never edited (EDT-01).

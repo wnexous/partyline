@@ -680,7 +680,7 @@ func (s *server) agentReply(w http.ResponseWriter, r *http.Request, p authn.Prin
 	if !s.Agents.AllowPost(p.AgentID) {
 		return errAgentRateLimited
 	}
-	m, err := s.Rooms.Post(r.Context(), p, orig.RoomID, rooms.PostInput{Text: req.Text, ReplyTo: orig.ID})
+	m, err := s.Rooms.Post(r.Context(), p, orig.RoomID, rooms.PostInput{Text: req.Text, ReplyTo: orig.ID, SessionLabel: s.sessionLabel(r, p)})
 	if err != nil {
 		return err
 	}
@@ -932,7 +932,7 @@ func (s *server) agentReact(w http.ResponseWriter, r *http.Request, p authn.Prin
 		return errAgentRateLimited
 	}
 	m, err := s.Rooms.Post(r.Context(), p, orig.RoomID, rooms.PostInput{
-		Kind: dto.MessageKindReaction, Text: emoji, ReplyTo: orig.ID,
+		Kind: dto.MessageKindReaction, Text: emoji, ReplyTo: orig.ID, SessionLabel: s.sessionLabel(r, p),
 	})
 	if err != nil {
 		return err
