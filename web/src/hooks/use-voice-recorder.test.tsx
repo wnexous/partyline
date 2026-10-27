@@ -50,6 +50,12 @@ const element = (id: number[], data: number[], sizeWidth = 1): number[] => [
   ...data,
 ];
 
+const float32Bytes = (value: number): number[] => {
+  const bytes = new Uint8Array(4);
+  new DataView(bytes.buffer).setFloat32(0, value, false);
+  return [...bytes];
+};
+
 const uintBytes = (value: number, width: number): number[] => {
   const bytes = Array<number>(width).fill(0);
   let rest = value;
@@ -63,7 +69,7 @@ const uintBytes = (value: number, width: number): number[] => {
 /** A recording as MediaRecorder writes it: a Segment of unknown size, Info with no Duration, a Cluster. */
 function syntheticWebm(scale = 1_000_000): Uint8Array<ArrayBuffer> {
   const info = element(
-    [0x15, 0x49, 0xa7, 0x66],
+    [0x15, 0x49, 0xa9, 0x66],
     [
       ...element([0x2a, 0xd7, 0xb1], uintBytes(scale, 3)),
       ...element([0x4d, 0x80], textBytes("partyline-test")),
@@ -86,6 +92,32 @@ function syntheticWebm(scale = 1_000_000): Uint8Array<ArrayBuffer> {
     0xff,
     ...info,
     ...element([0x1f, 0x43, 0xb6, 0x75], [0, 0, 0, 0]),
+  ]);
+}
+
+/** The Android Chrome layout: a known-size Segment and an Info with a four-byte Duration. */
+function syntheticAndroidWebm(): Uint8Array<ArrayBuffer> {
+  const block = (rel: number): number[] =>
+    element([0xa3], [0x81, ...uintBytes(rel < 0 ? rel + 0x10000 : rel, 2), 0x80, 0, 0]);
+  const cluster = (timecode: number, relatives: number[]): number[] =>
+    element(
+      [0x1f, 0x43, 0xb6, 0x75],
+      [...element([0xe7], uintBytes(timecode, 4)), ...relatives.flatMap(block)],
+    );
+  const info = element(
+    [0x15, 0x49, 0xa9, 0x66],
+    [
+      ...element([0x2a, 0xd7, 0xb1], uintBytes(1_000_000, 3)),
+      ...element([0x44, 0x89], float32Bytes(1_936_186)),
+      ...element([0x4d, 0x80], textBytes("Chrome")),
+    ],
+  );
+  return new Uint8Array([
+    ...element([0x1a, 0x45, 0xdf, 0xa3], element([0x42, 0x82], textBytes("webm"))),
+    ...element(
+      [0x18, 0x53, 0x80, 0x67],
+      [...info, ...cluster(0, [0]), ...cluster(1_662_000, [0, 20])],
+    ),
   ]);
 }
 
@@ -125,15 +157,42 @@ function childrenOf(bytes: Uint8Array, parent: Span, end: number): Span[] {
   return found;
 }
 
-/** The Duration in the file, as the container carries it. */
-function durationIn(bytes: Uint8Array): number {
+/** The Duration element in the file, as the container carries it. */
+function durationSpan(bytes: Uint8Array): Span | undefined {
   const header = readAt(bytes, 0);
   const segment = readAt(bytes, header.end);
-  const info = childrenOf(bytes, segment, bytes.length).find((child) => child.id === 0x1549a766);
+  const info = childrenOf(bytes, segment, bytes.length).find((child) => child.id === 0x1549a966);
   if (!info) throw new Error("no Info");
-  const duration = childrenOf(bytes, info, info.end).find((child) => child.id === 0x4489);
+  return childrenOf(bytes, info, info.end).find((child) => child.id === 0x4489);
+}
+
+/** The Duration as a player reads it, in the width the file already carries it. */
+function durationIn(bytes: Uint8Array): number {
+  const duration = durationSpan(bytes);
   if (!duration) throw new Error("no Duration");
-  return new DataView(bytes.buffer, bytes.byteOffset + duration.dataStart, 8).getFloat64(0, false);
+  const view = new DataView(
+    bytes.buffer,
+    bytes.byteOffset + duration.dataStart,
+    duration.dataLength,
+  );
+  return duration.dataLength === 4 ? view.getFloat32(0, false) : view.getFloat64(0, false);
+}
+
+/** Each Cluster's Timecode, as a player reads the file's timeline. */
+function clusterTimecodesIn(bytes: Uint8Array): number[] {
+  const header = readAt(bytes, 0);
+  const segment = readAt(bytes, header.end);
+  return childrenOf(bytes, segment, bytes.length)
+    .filter((child) => child.id === 0x1f43b675)
+    .map((cluster) => {
+      const timecode = childrenOf(bytes, cluster, cluster.end).find((child) => child.id === 0xe7);
+      if (!timecode) throw new Error("no Timecode");
+      let value = 0;
+      for (let i = 0; i < timecode.dataLength; i++) {
+        value = value * 256 + (bytes[timecode.dataStart + i] as number);
+      }
+      return value;
+    });
 }
 
 describe("the length in the file (VOI-08)", () => {
@@ -145,6 +204,8 @@ describe("the length in the file (VOI-08)", () => {
       lastRecorder().ondataavailable?.({
         data: new Blob([syntheticWebm()], { type: "audio/webm;codecs=opus" }),
       });
+      // The stand-in hands over its own chunk on stop; this test recorded the bytes above.
+      lastRecorder().ondataavailable = null;
       await hook.result.current.stop();
     });
     const recording = hook.result.current.recording;
@@ -154,6 +215,28 @@ describe("the length in the file (VOI-08)", () => {
     expect(recording.file.name).toBe("voice-message-2026-10-24-140513.webm");
     const bytes = new Uint8Array(await recording.file.arrayBuffer());
     expect(durationIn(bytes)).toBe(4_000);
+  });
+
+  it("closes a false gap and keeps the four-byte Duration of an Android recording", async () => {
+    const original = syntheticAndroidWebm();
+    const hook = render();
+    await start(hook);
+    act(() => vi.advanceTimersByTime(4_000));
+    await act(async () => {
+      lastRecorder().ondataavailable?.({
+        data: new Blob([original], { type: "audio/webm;codecs=opus" }),
+      });
+      lastRecorder().ondataavailable = null;
+      await hook.result.current.stop();
+    });
+    const recording = hook.result.current.recording;
+    if (!recording) throw new Error("no recording");
+    const bytes = new Uint8Array(await recording.file.arrayBuffer());
+    // In place: the file keeps its length and its four-byte Duration, and the false gap is gone.
+    expect(bytes.length).toBe(original.length);
+    expect(durationSpan(bytes)?.dataLength).toBe(4);
+    expect(durationIn(bytes)).toBe(4_000);
+    expect(clusterTimecodesIn(bytes)).toEqual([0, 20]);
   });
 
   it("leaves a format that carries its length alone", async () => {

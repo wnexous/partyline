@@ -8,7 +8,7 @@ import {
   type VoiceFailure,
   voiceFileName,
 } from "@/lib/voice";
-import { withWebmDuration } from "@/lib/webm-duration";
+import { normalizeWebm } from "@/lib/webm-duration";
 
 /*
  * The recorder behind the microphone button (VOI-01..VOI-06). It asks for the microphone, records
@@ -68,21 +68,22 @@ interface Session {
 
 const TICK_MS = 250;
 
-/** Whether the browser recorded a WebM, whose Info takes the length it recorded (VOI-08). */
+/** Whether the browser recorded a WebM, whose timeline carries false gaps and no real length (VOI-08). */
 function isWebm(mime: string): boolean {
   return (mime.split(";")[0] ?? "").trim().toLowerCase() === "audio/webm";
 }
 
 /**
- * The recording as it is to be sent, with its real length written into the WebM (VOI-08): the player
- * then knows how long it is before it has the whole file. A format that already carries its length
- * (Safari's MP4) is left alone, and a file this cannot read is still sent as it was recorded.
+ * The recording as it is to be sent, with its false timeline gaps closed and its real length
+ * written into the WebM (VOI-08): the player then knows how long it is before it has the whole file.
+ * A format that already carries its length (Safari's MP4) is left alone, and a file this cannot
+ * read is still sent as it was recorded.
  */
 async function withRealLength(file: File, mime: string, durationMs: number): Promise<File> {
   if (!isWebm(mime)) return file;
   try {
     const bytes = new Uint8Array(await file.arrayBuffer());
-    const patched = withWebmDuration(bytes, durationMs);
+    const patched = normalizeWebm(bytes, durationMs);
     if (patched === bytes) return file;
     return new File([patched], file.name, { type: file.type });
   } catch {
