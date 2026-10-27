@@ -23,6 +23,10 @@ import (
 // PauseNotice is the text of the system message posted when the loop guard pauses a room.
 const PauseNotice = "Agent delivery is paused: agents posted too many messages in a row. A room manager can resume it."
 
+// ErrAlreadyAnswered is returned when an author answers the same question twice (409 already_answered,
+// QR-08). The partial unique index messages_answer_once enforces it in the database.
+var ErrAlreadyAnswered = errors.New("the question was already answered by this author")
+
 // Message is a stored message with its author name, attachments and reactions.
 type Message struct {
 	db.MessageView
@@ -32,6 +36,11 @@ type Message struct {
 	// Chat is the chat a chat-authored message came from (CTX-01): its title, kind and
 	// connector kind (platform). Nil for other authors and for chats deleted since.
 	Chat *db.ListChatRefsRow
+	// Interactive is the question the message asks (QR-01, QR-02), nil for every other message.
+	Interactive *dto.MessageInteractive
+	// Answers is the structured answer the message carries (QR-05, QR-06), nil for every other
+	// message.
+	Answers *dto.MessageAnswers
 }
 
 // Recipients decodes the explicit chat ids stored with a message posted before rooms stopped
@@ -59,6 +68,11 @@ type PostInput struct {
 	Files   []File
 	// Kind defaults to text; agent reactions are MessageKindReaction (REACT-01).
 	Kind dto.MessageKind
+	// QuickReplies and Wizard ask a question; Answers answers one. At most one of the three
+	// shapes is set (QR-01, QR-02, QR-05).
+	QuickReplies []string
+	Wizard       *dto.WizardRequest
+	Answers      *dto.AnswerSubmission
 }
 
 // ChatMessage is a message received from an external chat (connectors' inbound pipeline).
@@ -97,6 +111,15 @@ type draft struct {
 	replyTo     string
 	externalID  string
 	files       []File
+	// interactive is the canonical question document (QR-01, QR-02), empty for every other
+	// message.
+	interactive string
+	// answers is the canonical structured answer document (QR-05, QR-06), empty for every other
+	// message.
+	answers string
+	// originalText is the text the caller gave, before the server renders an answer's text
+	// (QR-05).
+	originalText string
 }
 
 // Post stores a message from the calling user (needs post, ACL-04) or agent (needs
@@ -116,9 +139,60 @@ func (s *Service) Post(ctx context.Context, p authn.Principal, roomID string, in
 	if kind == "" {
 		kind = dto.MessageKindText
 	}
+
+	var interactiveJSON string
+	if kind != dto.MessageKindReaction {
+		interactive, err := questionFrom(in.QuickReplies, in.Wizard)
+		if err != nil {
+			return Message{}, err
+		}
+		if interactive != nil {
+			b, err := json.Marshal(interactive)
+			if err != nil {
+				return Message{}, err
+			}
+			interactiveJSON = string(b)
+		}
+	} else if in.QuickReplies != nil || in.Wizard != nil {
+		check := validation.Check{}
+		check.Add("quick_replies", "must not be combined with a reaction message")
+		return Message{}, check.Err()
+	}
+
+	var answersJSON string
+	text := in.Text
+	if in.Answers != nil {
+		if kind != dto.MessageKindText {
+			check := validation.Check{}
+			check.Add("answers", "must be a text message")
+			return Message{}, check.Err()
+		}
+		var question *dto.MessageInteractive
+		if in.ReplyTo != "" {
+			m, err := s.message(ctx, in.ReplyTo)
+			if err == nil {
+				if m.DeletedAt.Valid {
+					return Message{}, ErrMessageDeleted
+				}
+				question = dto.ParseMessageInteractive(m.InteractiveJson)
+			}
+		}
+		answers, err := answersFor(question, in.Answers)
+		if err != nil {
+			return Message{}, err
+		}
+		b, err := json.Marshal(answers)
+		if err != nil {
+			return Message{}, err
+		}
+		answersJSON = string(b)
+		text = answerText(answers)
+	}
+
 	d := draft{
 		authorKind: dto.AuthorKindUser, authorID: p.UserID, authorUserID: p.UserID, authorIID: p.UserID,
-		kind: kind, text: in.Text, replyTo: in.ReplyTo, files: in.Files,
+		kind: kind, text: text, replyTo: in.ReplyTo, files: in.Files,
+		interactive: interactiveJSON, answers: answersJSON, originalText: in.Text,
 	}
 	if p.Kind == authn.KindAgent {
 		// An agent's messages resolve to its owner (DLV-06).
@@ -235,6 +309,9 @@ func (s *Service) post(ctx context.Context, roomID string, d draft) (Message, er
 		if err := s.checkReplyTo(ctx, q, roomID, d); err != nil {
 			return err
 		}
+		if err := s.checkAnswer(ctx, q, roomID, d); err != nil {
+			return err
+		}
 		room, msg, err := s.insert(ctx, q, roomID, d)
 		if err != nil {
 			return err
@@ -256,6 +333,9 @@ func (s *Service) post(ctx context.Context, roomID string, d draft) (Message, er
 		return nil
 	})
 	if err != nil {
+		if strings.Contains(err.Error(), "UNIQUE constraint failed: messages.reply_to, messages.author_iid") {
+			return Message{}, ErrAlreadyAnswered
+		}
 		return Message{}, err
 	}
 	for _, e := range created {
@@ -301,6 +381,7 @@ func (s *Service) insert(ctx context.Context, q *db.Queries, roomID string, d dr
 		AuthorUserID: d.authorUserID, AuthorIid: d.authorIID, SenderID: d.senderID, SenderAltID: d.senderAltID, SenderName: d.senderName,
 		Kind: string(d.kind), Text: d.text, ReplyTo: d.replyTo, RecipientsJson: "[]",
 		ExternalID: sql.NullString{String: d.externalID, Valid: d.externalID != ""}, CreatedAt: now,
+		InteractiveJson: d.interactive, AnswersJson: d.answers,
 	})
 	if err != nil {
 		return db.Room{}, events.MessageCreated{}, err
@@ -368,7 +449,12 @@ func (s *Service) withDetails(ctx context.Context, views []db.MessageView) ([]Me
 	for i, v := range views {
 		ids[i] = v.ID
 		index[v.ID] = i
-		out[i] = Message{MessageView: v, Attachments: []db.Attachment{}}
+		out[i] = Message{
+			MessageView: v,
+			Attachments: []db.Attachment{},
+			Interactive: dto.ParseMessageInteractive(v.InteractiveJson),
+			Answers:     dto.ParseMessageAnswers(v.AnswersJson),
+		}
 		if v.AuthorKind == string(dto.AuthorKindChat) && !slices.Contains(chatIDs, v.AuthorID) {
 			chatIDs = append(chatIDs, v.AuthorID)
 		}
