@@ -487,6 +487,7 @@ export const ptBR: Dictionary = {
   "qr.next": "Avançar",
   "qr.send": "Enviar",
   "qr.textLabel": "Observação (opcional)",
+  "qr.textLabelOrOption": "Sua resposta (ou escolha uma opção)",
   "qr.textHint": "Até {max} caracteres",
   "qr.yourAnswer": "Sua resposta",
   "qr.noOption": "Nenhuma opção escolhida",
