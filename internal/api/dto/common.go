@@ -168,6 +168,9 @@ const (
 	// ErrorCodeIdentityOnline is a merge of an AI that has a live session: it must be offline
 	// (409, MRG-02).
 	ErrorCodeIdentityOnline ErrorCode = "identity_online"
+	// ErrorCodeAlreadyAnswered is a second structured answer by the same author to the same question
+	// (409, QR-08): the member answers once, and deletes the answer to answer again.
+	ErrorCodeAlreadyAnswered ErrorCode = "already_answered"
 )
 
 // ErrorBody is the envelope of every error response.

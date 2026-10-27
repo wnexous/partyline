@@ -204,7 +204,13 @@ type Message struct {
 	// Reactions are the emoji people reacted with, in the order each was first used; always an array
 	// (RCT-05). A live frame carries them too.
 	Reactions []Reaction `json:"reactions"`
-	CreatedAt time.Time  `json:"created_at"`
+	// Interactive is the question the message asks (QR-01, QR-02): at most 4 quick replies or one
+	// wizard, with the ids the server assigned. Absent for every other message.
+	Interactive *MessageInteractive `json:"interactive,omitempty"`
+	// Answers is the structured answer a reply carries (QR-06, QR-07): the chosen labels of the
+	// question, in the question's order. Absent for every other message.
+	Answers   *MessageAnswers `json:"answers,omitempty"`
+	CreatedAt time.Time       `json:"created_at"`
 	// EditedAt is when the author last changed the text; absent for a message that was never edited (EDT-01).
 	EditedAt *time.Time `json:"edited_at,omitempty"`
 	// DeletedAt is when the message was deleted; absent otherwise. A deleted message is a placeholder that
@@ -227,6 +233,11 @@ type PostMessageRequest struct {
 	ReplyTo string `json:"reply_to,omitempty"`
 	// Recipients, sent by v0.4 CLIs, is accepted and ignored: a room sends to no chat (CID-22).
 	Recipients []string `json:"recipients,omitempty"`
+	// QuickReplies and Wizard ask a question and Answers answers one; at most one of the three shapes
+	// is set (QR-01, QR-02, QR-05). An answer's text is rendered by the server, so it is empty.
+	QuickReplies []string          `json:"quick_replies,omitempty"`
+	Wizard       *WizardRequest    `json:"wizard,omitempty"`
+	Answers      *AnswerSubmission `json:"answers,omitempty"`
 }
 
 // AttachmentStatus is the storage state of an attachment.
