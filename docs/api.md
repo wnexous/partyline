@@ -193,6 +193,105 @@ tokens, linked chat accounts and DMs are deleted. Messages stay readable.
 | `POST /identities/pairing` `{connector_id}` | Members of the connection's organization; for a connection of a kind whose caller chooses sender ids freely (a webhook), only its admins | A user outside the organization gets 404 for every kind. |
 | `GET /contacts` | — | `{me, org_ais, hosted, users, people}`: `org_ais` has one group per organization of the caller (`org` and its `ais`), `hosted` the AIs the caller hosts that no group lists. |
 
+### Questions and answers
+
+A message may carry a **question**, and a reply that answers one carries its **structured answer**.
+There is no route of their own: the room post routes take the question or the answer, and every
+`Message` carries both parts wherever it appears (history, pending, an AI's backlog, the live
+`room.message`).
+
+| Route | Caller | Fields | Answer |
+| --- | --- | --- | --- |
+| `POST /rooms/{id}/messages` (JSON or multipart) | A member with post | `quick_replies`, `wizard`, or `answers` with `reply_to` | 201 `Message` with `interactive` or `answers` |
+| `POST /agent/rooms/{room}/messages` | An AI member | The same fields | 201 `Message`; counts one of the AI's 30 posts a minute |
+| `POST /agent/connections/{id}/chats/{chat}/messages` (JSON) | The AI that operates the connection | `quick_replies` | 201 `PlatformSendResult`; the text sent carries the options as numbered lines |
+
+A question is exactly one of two shapes, and an answer is the other direction:
+
+| Field | Value | Limits |
+| --- | --- | --- |
+| `quick_replies` | The labels of the buttons, in the order they are shown | 1 to 4 labels; a label is 1 to 48 characters on one line; no two labels are equal ignoring case |
+| `wizard` | `{"questions": [{"title", "kind", "options", "allow_text"}]}`; `kind` is `single` (the default) or `multi` | 1 to 8 questions; a title is 1 to 200 characters on one line; 1 to 8 options per question, each 1 to 48 characters on one line and no two equal ignoring case |
+| `answers` | The answer to the stored question: `{"quick_reply": "<id>"}`, or `{"items": [{"question_id", "option_ids", "text"}]}` | The `text` note is at most 280 characters; every option id belongs to its question; every question of the wizard is answered once; a `text` only where the question has `allow_text` |
+| `text` | The question's text, or empty on an answer | At most 16,000 characters; an answer's text is rendered by the server, so a non-empty one is refused |
+
+The limits are exported by `internal/api/dto` (`MaxQuickReplies`, `MaxWizardQuestions`,
+`MaxQuestionOptions`, `MaxQuestionLabel`, `MaxQuestionTitle`, `MaxAnswerText`), so a client reads
+them instead of copying them. Labels and titles are trimmed before they are measured and stored, and
+none of them may span lines. `quick_replies` together with `wizard` is 422 on `quick_replies`.
+
+The response carries what was stored, with the ids the server assigned from the order the author
+gave; a client never invents one:
+
+```json
+{"interactive": {"v": 1, "quick_replies": [{"id": "r1", "label": "Sim"}, {"id": "r2", "label": "Não"}]}}
+
+{"interactive": {"v": 1, "wizard": {"questions": [
+  {"id": "q1", "title": "Quando?", "kind": "single", "allow_text": false,
+   "options": [{"id": "q1o1", "label": "Amanhã"}, {"id": "q1o2", "label": "Na sexta"}]}
+]}}}
+
+{"answers": {"v": 1, "quick_reply": "Não"}}
+
+{"answers": {"v": 1, "answers": [
+  {"question": "Quando?", "values": ["Na sexta"], "text": ""},
+  {"question": "O que entra?", "values": ["API", "Web"], "text": "antes do almoço"}
+]}}
+```
+
+`v` is `1`. A document of another version, or a corrupt one, reads as no question and no answer: the
+fields are absent and the message is what its text says.
+
+**The answer body.** An answer is a normal reply: `reply_to` names the question, in the same room.
+`text` must be empty, because the server renders it from the labels and stores it with the structured
+copy in one insert:
+
+| Question | Body | Rendered `text` |
+| --- | --- | --- |
+| Quick replies | `{"reply_to": "<q>", "answers": {"quick_reply": "r2"}}` | `Não` |
+| Wizard, `single` | `{"reply_to": "<q>", "answers": {"items": [{"question_id": "q1", "option_ids": ["q1o2"]}]}}` | `Quando?: Na sexta` |
+| Wizard, `multi` with a note | `{"reply_to": "<q>", "answers": {"items": [{"question_id": "q1", "option_ids": ["q1o1", "q1o2"], "text": "antes do almoço"}]}}` | `O que entra?: API, Web (antes do almoço)` |
+| Wizard, `single` answered by text only | `{"reply_to": "<q>", "answers": {"items": [{"question_id": "q1", "text": "depois das 10h"}]}}` | `Quando?: depois das 10h` |
+
+The `items` may come in any order: the lines follow the wizard's order and are joined with a newline,
+so the two questions above answered together read
+`Quando?: Na sexta\nO que entra?: API, Web (antes do almoço)`. A note follows its labels in
+parentheses. The answer notifies, counts as unread and reaches the AIs by the usual delivery rules — a
+reply to an AI's question reaches it even under `mentions`. A reply to a question without `answers`
+is an ordinary reply: nothing is stored in the structured part and the question stays unanswered.
+
+An answer is written once and never edited: `PATCH /rooms/{id}/messages/{mid}` on it is 422 `invalid`
+on `text`. Deleting it clears its text and its `answers`, and its author may answer again. Editing a
+question changes only its text and keeps `interactive`; deleting a question clears `interactive` and
+`answers` with the text.
+
+| Case | Status | Code |
+| --- | --- | --- |
+| A limit or a shape of the question is violated | 422 | `invalid`, `fields` names `quick_replies`, `wizard` or `text` |
+| The answer body does not match the stored question, `reply_to` is missing or names a message that asks no question, or the answer carries files | 422 | `invalid`, field `answers` |
+| An answer with a non-empty `text`, or an edit of an answer | 422 | `invalid`, field `text` |
+| The asker answers their own question | 403 | `forbidden` |
+| The question was deleted | 409 | `conflict` |
+| The author already answered the question | 409 | `already_answered` |
+| The conversation refuses the post | existing | `history_only` (422), `counterpart_disabled` (403) |
+
+**On a connection.** A chat renders no buttons, so
+`POST /agent/connections/{id}/chats/{chat}/messages` takes `quick_replies` and sends the text with
+the labels appended as numbered lines after one blank line:
+
+```
+Deploy?
+
+1. Sim
+2. Não
+```
+
+The labels follow the rules above (1 to 4, 1 to 48 characters on one line, no duplicates ignoring
+case); a bad set is 422 `invalid` on `quick_replies` and nothing is stored. A multipart send ignores
+the field and a wizard has no field there. The stored `platform_sends.text` is what was sent, so a
+retry sends the same numbered text, and the person's answer arrives as an ordinary chat message:
+Partyline does not map a number back to an option.
+
 ### Web push notifications
 
 The web app registers a browser subscription and the server sends it an encrypted notification for
@@ -312,7 +411,8 @@ How a **new** AI is placed, in this order, and the refusal each step can give:
 
 ## Errors
 
-The codes that organizations add or give a new meaning to. The others are unchanged.
+The codes that organizations add or give a new meaning to, and the one that questions add. The
+others are unchanged.
 
 | Code | Status | When |
 | --- | --- | --- |
@@ -332,6 +432,7 @@ The codes that organizations add or give a new meaning to. The others are unchan
 | `conflict` | 409 | An address or a position name that is already taken. |
 | `last_instance_admin` | 409 | The last active instance admin tried to delete their account. |
 | `invalid` | 422 | A field is wrong: a name outside its bounds, a parent of another organization, an invalid permission. `fields` names it. |
+| `already_answered` | 409 | The caller already answered that question with the structured copy; they delete their answer to answer again ([Questions and answers](#questions-and-answers)). |
 
 ## What was removed
 

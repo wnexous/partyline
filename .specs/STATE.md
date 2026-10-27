@@ -392,6 +392,18 @@
 - **Date**: 2026-10-27
 - **Status**: active
 
+### AD-031
+- **Decision**: A message may carry a question — up to 4 quick replies or a wizard of up to 8 questions — stored as one versioned JSON document on the message (`interactive_json`), and its answer is a normal reply that carries the structured answers (`answers_json`); the server validates, assigns the ids and renders the answer text, a member answers once per question, and a platform connection gets the options as numbered plain text.
+  - The documents live on the message (migration `0026`: two `ADD COLUMN`s and the `message_views` recreate), versioned as `{"v":1,…}`, so every path that already carries a message (history, pending, an AI's backlog, the live `room.message`) carries the question and its answer too. No new table, no new route and no new live event; a document of an unknown version reads as none.
+  - The server assigns the ids from the author's order (`r1…r4`, `q1…q8`, `q1o1…q1o8`), trims the labels and titles and refuses duplicates in one set ignoring case. The limits — 4 quick replies, 8 questions, 8 options per question, 48-character labels, 200-character titles and a 280-character note — are exported by `api/dto` so the web app imports them.
+  - An answer's rendered text (`Sim`, or one `Title: answer` line per question) is written with the structured copy in one insert, and is never edited (422 `invalid` on `text`); deleting it frees its author to answer again. One structured answer per author per question is enforced by the partial unique index `messages_answer_once` (409 `already_answered`). A question keeps its interactive part across an edit and loses it, with its answers, on delete (409 `conflict` for a new answer).
+  - A platform connection gets the labels as numbered plain text (`rooms.NumberedOptions`), a wizard is refused there, and the stored send text is what went out, so a retry sends the same lines; no number is mapped back to an option. The web app derives who answered from the viewer's answer in the timeline, so the answered state needs no server aggregation and no new live frame.
+- **Reason**: The product owner asked for answer buttons inside a message and a question wizard inside the bubble (2026-10-27). A question that is a message keeps the history, ordering, read cursors, notifications, AI delivery and live socket as they are, and an answer as a normal reply gets all of that for free; the structured copy lets an AI act on the answer without parsing prose.
+- **Trade-off**: The question is JSON on the message, not a normalised table, so there is no per-question aggregation: the web app reads the answered state from the loaded timeline, and a question whose answer is on an unloaded page shows as unanswered (the safe direction). A platform send stores no question, so a number is never resolved back to an option and a wizard is room-only. The wizard's steps live in the browser tab, so a reload starts it over.
+- **Scope**: store (`0026`, the two columns in `CreateMessage` and `MarkMessageDeleted`, and `CountAnswersByAuthor`), rooms (`interactive.go`, `interactive_post.go`, `messages.go`, `message_edit.go`), `api/dto` and the room and connection routes, channel (`ask` and the two frame keys), web-app (the bubble, the wizard, `qr.*`), docs. No new package, so the architecture table is unchanged.
+- **Date**: 2026-10-27
+- **Status**: active
+
 ## Handoff
 
 - **Feature**: organizations
