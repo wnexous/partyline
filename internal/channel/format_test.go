@@ -1,6 +1,8 @@
 package channel
 
 import (
+	"encoding/json"
+	"html"
 	"regexp"
 	"testing"
 	"time"
@@ -187,4 +189,57 @@ func TestFormatNoticeOfADM(t *testing.T) {
 	n := FormatNotice(dto.AgentNoticeFrame{Type: dto.AgentFrameTypeNotice, Room: dto.RoomRef{ID: "r9", Name: "Alice A.", Kind: dto.ConversationKindDM}, Text: "5 older messages skipped"})
 	require.Equal(t, "Alice A.", n.Meta["room_name"])
 	require.Equal(t, "r9", n.Meta["room"])
+}
+
+// QR-21: a message that asks a question carries the compact JSON of the stored document in
+// meta["interactive"]; the content stays the human text.
+func TestFormatCarriesAQuestion(t *testing.T) {
+	n := Format(msg(dto.AuthorKindUser, func(m *dto.Message) {
+		m.Text = "Deploy?"
+		m.Interactive = &dto.MessageInteractive{V: 1, QuickReplies: []dto.QuickReply{{ID: "r1", Label: "Sim"}}}
+	}))
+	require.Equal(t, `{"v":1,"quick_replies":[{"id":"r1","label":"Sim"}]}`, n.Meta["interactive"])
+	require.NotContains(t, n.Meta, "answers")
+	require.Equal(t, "Deploy?", n.Content)
+}
+
+// QR-21: a reply that answers a question carries the compact JSON of the stored answer in
+// meta["answers"], and reply_to names the question.
+func TestFormatCarriesAnAnswer(t *testing.T) {
+	n := Format(msg(dto.AuthorKindUser, func(m *dto.Message) {
+		m.Text, m.ReplyTo = "Sim", "m-q1"
+		m.Answers = &dto.MessageAnswers{V: 1, QuickReply: "Sim"}
+	}))
+	require.Equal(t, `{"v":1,"quick_reply":"Sim"}`, n.Meta["answers"])
+	require.Equal(t, "m-q1", n.Meta["reply_to"])
+	require.NotContains(t, n.Meta, "interactive")
+	require.Equal(t, "Sim", n.Content)
+}
+
+// QR-21: a message that neither asks nor answers keeps the frame it had; no key appears empty.
+func TestFormatWithoutAQuestionIsUnchanged(t *testing.T) {
+	n := Format(msg(dto.AuthorKindUser, nil))
+	require.NotContains(t, n.Meta, "interactive")
+	require.NotContains(t, n.Meta, "answers")
+}
+
+// QR-21: the frame carries the answer document as one escaped attribute, and unescaping that
+// attribute gives the stored JSON back; the content is still the answer's text.
+func TestTheFrameCarriesTheJSONAsOneAttribute(t *testing.T) {
+	m := msg(dto.AuthorKindUser, func(m *dto.Message) {
+		m.Text, m.ReplyTo = "Sim", "m-q1"
+		m.Answers = &dto.MessageAnswers{V: 1, QuickReply: "Sim"}
+	})
+	framed := Frame(Record(m))
+	require.Contains(t, framed, `answers="{&quot;v&quot;:1`)
+
+	attr := regexp.MustCompile(`answers="([^"]*)"`).FindStringSubmatch(framed)
+	require.NotNil(t, attr, framed)
+	value := html.UnescapeString(attr[1])
+	require.Equal(t, `{"v":1,"quick_reply":"Sim"}`, value)
+	var doc dto.MessageAnswers
+	require.NoError(t, json.Unmarshal([]byte(value), &doc))
+	require.Equal(t, dto.MessageAnswers{V: 1, QuickReply: "Sim"}, doc)
+
+	require.Contains(t, framed, ">Sim</partyline>")
 }
