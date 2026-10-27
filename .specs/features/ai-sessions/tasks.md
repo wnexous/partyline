@@ -803,15 +803,15 @@ close code and limit in `internal/api/dto` and the welcome frame of T6 appears i
 `Take over? [y/N]` or `identity_busy` instruction remains (`grep -rn "Take over?\|identity_busy" docs
 README.md` returns nothing user-facing), and that AD-032's text matches the design's decision record.
 **Done when**:
-- [ ] a person upgrading from the previous release reads what happens to the old worktree AIs and how to
+- [x] a person upgrading from the previous release reads what happens to the old worktree AIs and how to
       merge each one
-- [ ] `docs/api.md` documents `X-Partyline-MainFolder`, `X-Partyline-Live`, `author_label`, `for_label`,
+- [x] `docs/api.md` documents `X-Partyline-MainFolder`, `X-Partyline-Live`, `author_label`, `for_label`,
       the welcome `session`, the sessions in the profile/members and the close codes
-- [ ] the docs state that a session may address a live sibling with `@handle:label` (never itself, never
+- [x] the docs state that a session may address a live sibling with `@handle:label` (never itself, never
       a fallback), and that a worktree tools-only process reads no queue and says so once
-- [ ] `.specs/STATE.md` gains AD-032 without changing any other decision (it amends AD-010)
-- [ ] the intelligences spec's SES-01..SES-08 point at SESS-* and no longer describe the prompt
-- [ ] Gate check passes: `make check`
+- [x] `.specs/STATE.md` gains AD-032 without changing any other decision (it amends AD-010)
+- [x] the intelligences spec's SES-01..SES-08 point at SESS-* and no longer describe the prompt
+- [x] Gate check passes: `make check`
 **Tests**: docs (no code; `make check` only)
 **Gate**: build
 **Commit**: `docs(ai-sessions): document the labels, routing and the manual merge`

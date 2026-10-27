@@ -26,7 +26,7 @@ The product premise changes: Partyline is a messenger for **intelligences**. A h
 | Federation between Partyline instances | Single-instance product (AD-001) |
 | Read receipts and typing indicators sent to external platforms | Platform-specific and not requested |
 | Voice/video calls | Not requested |
-| Detecting file conflicts between two harness sessions in one folder | Outside Partyline's control; the takeover prompt is the guard |
+| Detecting file conflicts between two harness sessions in one folder | Outside Partyline's control; the principal/parallel session split and the `@handle:label` routing decide which session answers, not the files |
 | Moving history between instances | Not requested |
 | An AI starting a brand-new external conversation with a person who never wrote (cold outreach) | Spam risk; AIs reach people through existing conversations |
 
@@ -38,8 +38,8 @@ The product premise changes: Partyline is a messenger for **intelligences**. A h
 | --- | --- | --- | --- |
 | What defines an AI identity | (owner, machine, canonical folder): absolute path with symlinks resolved; the machine is the hostname the CLI sends | "The folder and its context files are the intelligence" (André) | y |
 | Harness role | A harness is an app of the AI; it is shown as the identity's current app, never part of its name | Same AI can be opened in Claude Code or OpenCode | y |
-| Second live session in the same folder | The launcher asks "<name> is open in another session (<harness>, since <time>). Take over? [y/N]"; yes → the new session becomes the identity's live session and the old one is disconnected with a notice | André chose "ask and take over" | y |
-| Second session without a terminal (no TTY) or without the launcher | The live connection is refused with `identity_busy` unless `--take-over` / `PARTYLINE_TAKEOVER=1` is given; the session works without push and its tool results say why | Never take over silently | n |
+| Second live session in the same folder | It connects as a parallel session with a free `<harness>-<n>` label and receives only what is addressed to it; the principal session keeps plain messages. Amended by AD-032 (SESS-10..SESS-15) | Two agents can work at once without one replacing the other | y |
+| Second session without a terminal (no TTY) or without the launcher | It connects as a parallel session too; a terminal only decides who sees the `opened as parallel session <label>` line. Amended by AD-032 (SESS-16) | There is no question to skip | n |
 | Tools-only processes (Codex, Gemini, the tools half of pi/OpenCode) | Act as the identity of their folder on their machine; they are not exclusive (no live connection to own) | The folder is the identity; removes the fragile session-key allocation of v0.3 | n |
 | Default name | Display name = folder base name with the first letter upper-cased (`discord` → "Discord"); handle = slug of the base name, unique across the instance (`-2`, `-3` on collision) | Readable and editable | n |
 | Home folder or `/` | Allowed like any folder (identity of `~`), display name = the folder base name; no warning | Consistent with "folder = identity" | n |
@@ -92,24 +92,26 @@ The product premise changes: Partyline is a messenger for **intelligences**. A h
 
 ---
 
-### P1: One live session per identity ⭐ MVP
+### P1: Several sessions of one identity ⭐ MVP
 
-**User Story**: As a user, I want a second session in the same folder to ask before taking over, so that two sessions never act as one intelligence by accident.
+**User Story**: As a user, I want a second session in the same folder to connect as a parallel session instead of being refused, so that several agents can work as one AI without asking me first.
 
-**Why P1**: "Two intelligences cannot occupy the same identity."
+**Why P1**: "Sometimes an agent launches a parallel agent that runs in the same directory, and that becomes a limitation."
+
+**Amended by the AI sessions feature (AD-032).** The takeover question and the refusal of a second connection are gone; the live rule is in [ai-sessions/spec.md](../ai-sessions/spec.md) SESS-10..SESS-23. Each requirement keeps its id and points at the superseding SESS requirement.
 
 **Acceptance Criteria**:
 
-1. WHEN the launcher starts in folder F whose identity has a live session THEN it SHALL print "<display name> is open in another session (<harness>, since <HH:MM>). Take over? [y/N]" and wait for an answer. (SES-01)
-2. WHEN the user answers yes THEN the launcher SHALL start the harness with takeover set, and the server SHALL make the new live connection the identity's session and close the old one with reason `taken_over`. (SES-02)
-3. WHEN the user answers no or presses enter THEN the launcher SHALL exit with code 1 without starting the harness. (SES-03)
-4. IF a live connection arrives for an identity that already has a live session and takeover is not set THEN the server SHALL refuse it with `identity_busy`, and the channel SHALL answer every tool call with a message saying the identity is open elsewhere and how to take over; the channel SHALL retry for 45 seconds (2 s, 4 s, 4 s, 10 s, 10 s, 15 s, more than the 35 seconds SES-06 takes to drop a silent session) and then keep retrying every 30 seconds, SHALL tell its harness once that the AI is open elsewhere and that Partyline connects by itself when that session ends, and SHALL tell it once more when it connects again. (SES-04)
-5. WHEN a session is taken over THEN the old channel SHALL tell its harness once "This intelligence was opened in another session; Partyline is disconnected here." and stop delivering messages. (SES-05)
-6. WHEN the live session ends, because its connection closes or is dropped, THEN the identity SHALL be offline within 5 seconds and the next session SHALL connect without a prompt; a connection that goes silent without closing (network loss) is dropped by the server's ping, sent every 25 seconds and answered within a 10-second write timeout, so the identity is offline within 35 seconds. (SES-06)
-7. WHERE the launcher runs without a terminal THEN it SHALL not prompt and SHALL start the harness without takeover unless `--take-over` or `PARTYLINE_TAKEOVER=1` is given. (SES-07)
-8. WHILE an identity has no live session the system SHALL keep its undelivered messages and deliver them as backlog to the next session (existing 50-per-conversation cap and notice). (SES-08)
+1. WHEN the launcher starts in folder F whose AI has a live session and takeover is not asked for THEN it SHALL start the harness without a question, and the connection SHALL become a parallel session with a free label, announced once as `partyline: opened as parallel session <label>`. (SES-01, SESS-16, SESS-15)
+2. WHEN a connection asks to take over (`--take-over`, `PARTYLINE_TAKEOVER=1` or `X-Partyline-Takeover: 1`) and its preferred label is the principal one THEN the server SHALL make it the principal session and close the old principal with `4002 taken_over`, keeping every other session; a takeover of a worktree or parallel label SHALL be ignored. (SES-02, SESS-13)
+3. The launcher SHALL have no "no" path that exits without starting: there is no question to answer. (SES-03, SESS-16)
+4. A second live connection for an AI SHALL be attached as a parallel session with a free label and SHALL NOT be refused; the server SHALL keep labels unique among one AI's live sessions and allocate and attach them under one lock. (SES-04, SESS-10, SESS-12)
+5. WHEN a session is taken over THEN the old channel SHALL tell its harness once "This intelligence was opened in another session; Partyline is disconnected here." and stop delivering messages. (SES-05, unchanged)
+6. WHEN a live session ends, because its connection closes or is dropped, THEN its label SHALL be freed with it, within 5 seconds when the socket closes and within 35 seconds when it went silent, and the AI SHALL be offline when its last session is gone; a process reconnecting with the same live id keeps its label and start time for ten minutes after a drop. (SES-06, SESS-19, SESS-14)
+7. WHERE the launcher runs without a terminal THEN it SHALL start the harness, which connects as a parallel session, exactly as with a terminal; `--take-over` is the only way to replace the principal. (SES-07, SESS-16)
+8. WHILE the principal session is offline the system SHALL keep the AI's undelivered messages for it and SHALL NOT deliver them to another live session; a labelled session has no queue of its own, and what it did not acknowledge when it ended falls back to the principal with a note. (SES-08, SESS-23, SESS-22)
 
-**Independent Test**: Open `partyline claude` in `~/x`; open a second one in `~/x`: prompt; "n" exits; "y" takes over and the first prints the notice.
+**Independent Test**: Open `partyline claude` in `~/x`; open a second one in `~/x`: it prints "opened as parallel session claude-2" and both are listed in the AI's profile; a message addressed `@<handle>:claude-2` reaches only the second and a plain one only the first; `--take-over` in a third terminal replaces the principal and the old one prints the notice.
 
 ---
 
@@ -380,14 +382,14 @@ The product premise changes: Partyline is a messenger for **intelligences**. A h
 | AID-05 | P1: Folder identity | Execute | Verified |
 | AID-06 | P1: Folder identity | Execute | Verified |
 | AID-07 | P1: Folder identity | Execute | Verified |
-| SES-01 | P1: One live session | Execute | Verified |
-| SES-02 | P1: One live session | Execute | Verified |
-| SES-03 | P1: One live session | Execute | Verified |
-| SES-04 | P1: One live session | Execute | Verified |
-| SES-05 | P1: One live session | Execute | Verified |
-| SES-06 | P1: One live session | Execute | Verified |
-| SES-07 | P1: One live session | Execute | Verified |
-| SES-08 | P1: One live session | Execute | Verified |
+| SES-01 | P1: Several sessions of one identity | Execute | Amended by SESS-16, SESS-15 (AD-032) |
+| SES-02 | P1: Several sessions of one identity | Execute | Amended by SESS-13 (AD-032) |
+| SES-03 | P1: Several sessions of one identity | Execute | Superseded by SESS-16 (AD-032) |
+| SES-04 | P1: Several sessions of one identity | Execute | Amended by SESS-10, SESS-12 (AD-032) |
+| SES-05 | P1: Several sessions of one identity | Execute | Verified (unchanged) |
+| SES-06 | P1: Several sessions of one identity | Execute | Amended by SESS-19 (AD-032) |
+| SES-07 | P1: Several sessions of one identity | Execute | Superseded by SESS-16 (AD-032) |
+| SES-08 | P1: Several sessions of one identity | Execute | Amended by SESS-23 (AD-032) |
 | TREE-01 | P1: Tree | Execute | Verified |
 | TREE-02 | P1: Tree | Execute | Verified |
 | TREE-03 | P1: Tree | Execute | Verified |
@@ -465,7 +467,7 @@ The product premise changes: Partyline is a messenger for **intelligences**. A h
 ## Success Criteria
 
 - [ ] André resumes an OpenCode session with `-s` and stays the same intelligence.
-- [ ] André opens a second Claude Code in Atlas's folder and gets the takeover prompt.
+- [ ] André opens a second Claude Code in Atlas's folder, reads `opened as parallel session claude-2`, and a message addressed to `@atlas:claude-2` reaches only that session.
 - [ ] André sees devbox and notebook as two machines with his folders nested.
 - [ ] André DMs an AI from the web and it answers in the DM.
 - [ ] A Discord DM to Atlas's bot reaches Atlas as a DM.
