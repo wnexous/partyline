@@ -326,6 +326,7 @@ export const en = {
   "message.kind.chat": "Chat",
   "message.kind.system": "System",
   "message.via": "via {chat}",
+  "message.viaSession": "via :{label}",
   "message.trusted": "Trusted",
   "message.trustedHint":
     "Chat account verified as yours. The AIs you manage trust messages from it.",
