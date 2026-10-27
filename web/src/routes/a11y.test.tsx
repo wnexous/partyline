@@ -299,8 +299,9 @@ describe.each(["en", "pt-BR"] as const)("accessibility (%s)", (locale) => {
 
   it("a full-screen page on a phone, with its back bar, has no axe violations", async () => {
     stubViewport(360);
-    appApi(locale);
-    const { container } = renderRoute("/connectors");
+    // The connections page is an organization's page now (SET-05), and keeps the phone's back bar.
+    appApi(locale, { "GET /orgs/o1": json(200, makeOrg({ permission: "admin" })) });
+    const { container } = renderRoute("/orgs/o1/connections");
     await screen.findByRole("link", {
       name: locale === "en" ? "Back to conversations" : "Voltar para as conversas",
     });
@@ -364,10 +365,11 @@ describe.each(["en", "pt-BR"] as const)("accessibility (%s)", (locale) => {
   it("the add connector dialog, with the organization it goes to, has no axe violations", async () => {
     appApi(locale, {
       "GET /orgs": ownOrgs,
+      "GET /orgs/o1": json(200, makeOrg({ permission: "admin" })),
       "GET /connector-kinds": json(200, { items: [makeConnectorKind()] }),
     });
     const user = userEvent.setup();
-    renderRoute("/connectors");
+    renderRoute("/orgs/o1/connections");
     await user.click(
       await screen.findByRole("button", {
         name: locale === "en" ? "Add connector" : "Adicionar conector",

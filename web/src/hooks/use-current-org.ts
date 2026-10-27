@@ -1,7 +1,8 @@
+import type { QueryClient } from "@tanstack/react-query";
 import { useMemo } from "react";
-import { useMe, useMyOrgs } from "@/lib/api/queries";
+import { meQuery, orgsQuery, useMe, useMyOrgs } from "@/lib/api/queries";
 import { useLiveStore } from "@/lib/live/store";
-import { defaultOrgIdOf, type MyOrg, resolveCurrentOrg } from "@/lib/orgs";
+import { defaultOrgIdOf, type MyOrg, resolveCurrentOrg, toMyOrgs } from "@/lib/orgs";
 
 const NO_ORGS: MyOrg[] = [];
 
@@ -35,4 +36,18 @@ export function useCurrentOrg(): CurrentOrg {
     [orgs, pickedId, defaultId],
   );
   return { org, orgs, loading: mine.isLoading, failed: mine.isError && !mine.data, select };
+}
+
+/**
+ * The same rule outside React (SET-06): the organization the switcher shows, for a route that
+ * redirects before it renders. It waits for the viewer and their organizations (`ensureQueryData`)
+ * instead of guessing, so an old `/connectors` bookmark never bounces while they load.
+ */
+export async function currentOrgId(queryClient: QueryClient): Promise<string | undefined> {
+  const [me, orgs] = await Promise.all([
+    queryClient.ensureQueryData(meQuery()),
+    queryClient.ensureQueryData(orgsQuery()),
+  ]);
+  const pickedId = useLiveStore.getState().currentOrgId;
+  return resolveCurrentOrg(toMyOrgs(orgs), pickedId, defaultOrgIdOf(me))?.id;
 }

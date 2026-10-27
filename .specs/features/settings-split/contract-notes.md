@@ -18,3 +18,29 @@ it checks is `/account` either way, and T5 rewrites that entry with the rest of 
 
 The `Done when` boxes of T1 were already checked in `.specs/features/settings-split/tasks.md` at
 the base commit (`866eb80`), so the commit carries no change to that file.
+
+## T2: connections under the organization
+
+Moving the pages made three test files outside the task's **Also** line assert a page that no
+longer lives at that address. Each change follows the acceptance criteria; none weakens a case:
+
+- `web/src/routes/_app/orgs/org-chart.test.tsx` — the section-bar order assertion gains
+  "Connectors" between "Positions" and "Settings", which SET-05 requires.
+- `web/src/routes/messenger-shell.test.tsx` — its `api()` gains the viewer's organization, because
+  `/connectors` now resolves through `currentOrgId`; the header-menu case expects the resolved
+  `/orgs/o1/connections`. The shell cases still render `/connectors` and reach the page through
+  the redirect, which is SET-06.
+- `web/src/routes/a11y.test.tsx` — the full-screen page and the add-connector dialog open
+  `/orgs/o1/connections`, the list's new address, with the organization's layout loaded.
+
+Two cases of the old list asserted behaviour the spec replaces: the list following the browser's
+pick, and every connection shown while the organizations are unknown. SET-05 makes the address
+the owner of the filter, so those cases became the SET-05/SET-06 cases (`lists only the
+connections of the organization in the address`, the five redirect cases, and the admin-versus-
+member Add rule) in `org-connections.test.tsx`; no assertion was dropped without its replacement.
+
+`web/e2e/fit.spec.ts` walks `/orgs/{org}/connections` with the new list label; T5 extends the fit
+check to the rest of the moved pages and both open menus.
+
+The `Done when` boxes of T2 were already checked in `tasks.md` at the base commit (`866eb80`), so
+the commit carries no change to that file.

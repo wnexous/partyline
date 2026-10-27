@@ -72,8 +72,6 @@ export const ptBR: Dictionary = {
   "page.contactsBody":
     "As IAs das suas organizações e as que você hospeda, os outros usuários e as pessoas que seus conectores já viram.",
   "page.connectorsTitle": "Conectores",
-  "page.connectorsBody":
-    "As contas de WhatsApp, Telegram, Discord e webhook das suas organizações.",
   "page.identitiesTitle": "Identidades",
   "page.identitiesBody":
     "Contas de chat verificadas como suas. As IAs que você gerencia confiam nas mensagens delas.",
@@ -631,7 +629,8 @@ export const ptBR: Dictionary = {
   "schema.removeTag": "Remover {value}",
   "schema.tagPlaceholder": "Digite um valor e tecle Enter",
 
-  "connectors.listLabel": "Seus conectores",
+  "connectors.listLabelOrg": "Conectores de {org}",
+  "connectors.bodyOrg": "As contas de WhatsApp, Telegram, Discord e webhook desta organização.",
   "connectors.loadError": "Não foi possível carregar seus conectores.",
   "connectors.emptyTitle": "Nenhum conector ainda",
   "connectors.emptyBody":
@@ -1057,6 +1056,7 @@ export const ptBR: Dictionary = {
   "orgs.notFoundBack": "Voltar às organizações",
   "orgs.orgLoadError": "Não foi possível carregar esta organização.",
   "orgs.settingsLink": "Configurações de {org}",
+  "orgs.tabConnectors": "Conectores",
   "orgs.tabSettings": "Configurações",
   "orgs.settingsTitle": "Configurações da organização",
   "orgs.settingsBodyAdmin": "O nome, o endereço e a foto de {org}. Todo mundo nela os vê.",
