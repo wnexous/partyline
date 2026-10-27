@@ -31,6 +31,14 @@ type AgentCursor struct {
 	Seq     int64
 }
 
+type AgentSessionDelivery struct {
+	MessageID  string
+	AgentID    string
+	Label      string
+	CreatedAt  int64
+	FellBackAt sql.NullInt64
+}
+
 type ApiToken struct {
 	ID         string
 	UserID     string
@@ -188,6 +196,7 @@ type Message struct {
 	DeletedAt       sql.NullInt64
 	InteractiveJson string
 	AnswersJson     string
+	AuthorLabel     string
 }
 
 type MessageReaction struct {
@@ -219,6 +228,7 @@ type MessageView struct {
 	DeletedAt       sql.NullInt64
 	InteractiveJson string
 	AnswersJson     string
+	AuthorLabel     string
 	AuthorName      string
 	AuthorHandle    string
 	AuthorIkind     string

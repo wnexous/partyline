@@ -83,14 +83,22 @@ WHERE m.kind = 'agent' AND m.member_id = ?
 ORDER BY name, r.id;
 
 -- name: CountAgentBacklog :one
+-- A message with any agent_session_deliveries row belongs to a label (or already fell back to the
+-- principal through its fallback list), so it is not read twice (SESS-24).
 SELECT COUNT(*) FROM messages
 WHERE room_id = sqlc.arg(room_id) AND seq > sqlc.arg(after_seq)
-  AND NOT (author_kind = 'agent' AND author_id = sqlc.arg(agent_id));
+  AND NOT (author_kind = 'agent' AND author_id = sqlc.arg(agent_id))
+  AND NOT EXISTS (
+      SELECT 1 FROM agent_session_deliveries d
+      WHERE d.message_id = messages.id AND d.agent_id = sqlc.arg(agent_id));
 
 -- name: ListAgentBacklog :many
 SELECT * FROM message_views
 WHERE room_id = sqlc.arg(room_id) AND seq > sqlc.arg(after_seq)
   AND NOT (author_kind = 'agent' AND author_id = sqlc.arg(agent_id))
+  AND NOT EXISTS (
+      SELECT 1 FROM agent_session_deliveries d
+      WHERE d.message_id = message_views.id AND d.agent_id = sqlc.arg(agent_id))
 ORDER BY seq DESC
 LIMIT sqlc.arg(limit);
 
@@ -98,6 +106,9 @@ LIMIT sqlc.arg(limit);
 SELECT * FROM message_views
 WHERE room_id = sqlc.arg(room_id) AND seq > sqlc.arg(after_seq)
   AND NOT (author_kind = 'agent' AND author_id = sqlc.arg(agent_id))
+  AND NOT EXISTS (
+      SELECT 1 FROM agent_session_deliveries d
+      WHERE d.message_id = message_views.id AND d.agent_id = sqlc.arg(agent_id))
 ORDER BY seq ASC
 LIMIT sqlc.arg(limit);
 
