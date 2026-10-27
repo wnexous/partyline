@@ -368,6 +368,9 @@ export const MessageItem = memo(function MessageItem({
           <span className="sr-only">
             {kind.label ? `${t(kind.label)} ` : ""}
             {authorDisplayName(message)}
+            {message.author_kind === "agent" && message.author_label
+              ? ` ${t("message.viaSession", { label: message.author_label })}`
+              : ""}
           </span>
         ) : (
           <header className="flex flex-wrap items-baseline gap-x-2 gap-y-0.5">
@@ -379,6 +382,11 @@ export const MessageItem = memo(function MessageItem({
                 {authorDisplayName(message)}
               </span>
             )}
+            {message.author_kind === "agent" && message.author_label ? (
+              <span className="min-w-0 text-xs text-muted-foreground [overflow-wrap:anywhere]">
+                {t("message.viaSession", { label: message.author_label })}
+              </span>
+            ) : null}
             {message.author_kind === "chat" && message.chat ? (
               <>
                 <span className="text-xs text-muted-foreground">

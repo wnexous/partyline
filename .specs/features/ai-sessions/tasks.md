@@ -647,9 +647,9 @@ grouped row's screen-reader text, and has no link or menu. The i18n keys `messag
   class assertion, or the fit e2e covers the layout).
 - the i18n parity test (`web/src/lib/i18n/*.test.ts`) stays green.
 **Done when**:
-- [ ] the chip is only for agent messages with a label
-- [ ] `bun run lint`, `bun run typecheck` and the web tests are clean
-- [ ] Gate check passes: `make check`
+- [x] the chip is only for agent messages with a label
+- [x] `bun run lint`, `bun run typecheck` and the web tests are clean
+- [x] Gate check passes: `make check`
 **Tests**: web unit
 **Gate**: build
 **Commit**: `feat(web): show which session wrote a message`

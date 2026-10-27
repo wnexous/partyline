@@ -328,6 +328,7 @@ export const ptBR: Dictionary = {
   "message.kind.chat": "Chat",
   "message.kind.system": "Sistema",
   "message.via": "via {chat}",
+  "message.viaSession": "via :{label}",
   "message.trusted": "Confiável",
   "message.trustedHint":
     "Conta de chat verificada como sua. As IAs que você gerencia confiam nas mensagens dela.",

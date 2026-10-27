@@ -88,6 +88,7 @@ export function makeMessage(over: Partial<Message> = {}): Message {
     author: { id: "u1", kind: "human", role: "user", display_name: "Ana", handle: "ana" },
     kind: "text",
     text: `message ${seq}`,
+    author_label: "",
     attachments: [],
     reactions: [],
     created_at: "2026-10-19T12:00:00Z",
