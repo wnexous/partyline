@@ -262,7 +262,7 @@ func TestTakeoverDropsALatePushOfAnAcknowledgedMessage(t *testing.T) {
 	// The dispatcher, late, pushes the acknowledged message to the AI's session: the new one.
 	late, err := env.App.Gateway.Message(ctx, before.ID)
 	require.NoError(t, err)
-	require.True(t, env.App.Gateway.Push(agentID, dto.AgentMessage{Room: dto.RoomRef{ID: room.ID, Name: "Support"}, Message: late}), "queued for the new session")
+	require.True(t, env.App.Gateway.Push(agentID, "", dto.AgentMessage{Room: dto.RoomRef{ID: room.ID, Name: "Support"}, Message: late}), "queued for the new session")
 	taker.ExpectNone(500 * time.Millisecond)
 
 	after := post("after the takeover")

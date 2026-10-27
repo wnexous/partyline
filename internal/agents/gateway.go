@@ -147,26 +147,77 @@ func (g *Gateway) track() bool {
 	return true
 }
 
-// Push queues a live message for the agent's connection without blocking. It reports false
-// when the agent is offline or its queue overflowed (the connection is then closed).
-func (g *Gateway) Push(agentID string, m dto.AgentMessage) bool {
+// Push queues a live message for the session it addresses without blocking. target is the session
+// label the text names, or "" for the principal (SESS-20, SESS-21). A message for a live label gets a
+// pending agent_session_deliveries row and reaches that session only; a message for a label with no
+// live session is the principal's from the start, with ForLabel set, and a message for a label that
+// ended since the row was written falls back to the principal (SESS-22, SESS-24). It reports false
+// when nobody received it live, so the message stays in the principal's queue.
+func (g *Gateway) Push(agentID, target string, m dto.AgentMessage) bool {
+	if target == "" {
+		return g.pushToPrincipal(agentID, m)
+	}
+	now := time.Now().UnixMilli()
+	_, live := g.d.Presence.SessionByLabel(agentID, target)
+	fellBackAt := sql.NullInt64{}
+	if !live {
+		fellBackAt = sql.NullInt64{Int64: now, Valid: true}
+	}
+	if err := g.createSessionDelivery(g.ctx, m.Message.ID, agentID, target, now, fellBackAt); err != nil {
+		g.d.Logger.Error("agent: session delivery write failed", "agent_id", agentID, "message_id", m.Message.ID, "err", err)
+		return false
+	}
+	if fellBackAt.Valid {
+		// The label had no session when the row was written: the principal owns it even if a session
+		// with that label connected meanwhile.
+		m.ForLabel = target
+		return g.pushToPrincipal(agentID, m)
+	}
+	s, live := g.d.Presence.SessionByLabel(agentID, target)
+	if live {
+		c, ok := s.(*conn)
+		return ok && c.push(m)
+	}
+	// The label ended between the two reads. The end-of-session sweep may have taken the row already;
+	// when it did not (it ran before the row existed) the row is marked now and pushed here.
+	ids, err := g.fallBackSessionDeliveries(g.ctx, agentID, target, time.Now().UnixMilli())
+	if err != nil {
+		g.d.Logger.Error("agent: session fallback failed", "agent_id", agentID, "message_id", m.Message.ID, "err", err)
+		return false
+	}
+	for _, id := range ids {
+		if id == m.Message.ID {
+			m.ForLabel = target
+			return g.pushToPrincipal(agentID, m)
+		}
+	}
+	return false
+}
+
+// pushUpdateToPrincipal queues an edit or delete for the principal session without blocking.
+func (g *Gateway) pushUpdateToPrincipal(agentID string, t dto.AgentFrameType, m dto.AgentMessage) bool {
 	s, ok := g.d.Presence.Session(agentID)
 	if !ok {
 		return false
 	}
 	c, ok := s.(*conn)
-	return ok && c.push(m)
+	return ok && c.enqueue(outbound{typ: t, msg: m})
 }
 
-// PushUpdate queues, without blocking, the frame that tells the agent's connection that a message was edited
+// PushUpdate queues, without blocking, the frame that tells the targeted session that a message was edited
 // (dto.AgentFrameTypeMessageEdited) or deleted (dto.AgentFrameTypeMessageDeleted); m carries the message as it
-// is now. Like Push it reports false when the agent is offline or its queue overflowed. Such a frame is never
-// acknowledged and never sent again: a connection that was not there hears nothing of it, and reads the
-// current state of the message when it connects (EDT-07, DLT-07).
-func (g *Gateway) PushUpdate(agentID string, t dto.AgentFrameType, m dto.AgentMessage) bool {
-	s, ok := g.d.Presence.Session(agentID)
+// is now. A live label receives it; when the label has no live session the principal does, because it may hold
+// the message as a fallback (SESS-27). Like Push it reports false when the agent is offline or its queue
+// overflowed. Such a frame is never acknowledged and never sent again: a connection that was not there hears
+// nothing of it, and reads the current state of the message when it connects (EDT-07, DLT-07).
+func (g *Gateway) PushUpdate(agentID, target string, t dto.AgentFrameType, m dto.AgentMessage) bool {
+	if target == "" {
+		return g.pushUpdateToPrincipal(agentID, t, m)
+	}
+	s, ok := g.d.Presence.SessionByLabel(agentID, target)
 	if !ok {
-		return false
+		m.ForLabel = target
+		return g.pushUpdateToPrincipal(agentID, t, m)
 	}
 	c, ok := s.(*conn)
 	return ok && c.enqueue(outbound{typ: t, msg: m})
@@ -232,7 +283,14 @@ func (g *Gateway) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	if g.beforeAttach != nil {
 		g.beforeAttach()
 	}
-	defer g.d.Presence.Detach(ctx, row.Agent.ID, c) // frees the label; nothing for a connection that never attached
+	defer func() {
+		// The sweep must survive the request context that closed the socket.
+		sweepCtx, sweepCancel := context.WithTimeout(context.WithoutCancel(ctx), sessionSweepTimeout)
+		defer sweepCancel()
+		if g.d.Presence.Detach(sweepCtx, row.Agent.ID, c) { // frees the label; false after a takeover or reconnect
+			g.sessionEnded(sweepCtx, row.Agent.ID, c.label)
+		}
+	}()
 	live, err := g.d.Registry.Attach(ctx, row.Agent, c, hs.harness, hs.liveID, hs.label, hs.takeover)
 	if err != nil {
 		g.d.Logger.ErrorContext(ctx, "agent: attach failed", "agent_id", row.Agent.ID, "err", err)
@@ -607,26 +665,36 @@ func (g *Gateway) backlog(ctx context.Context, c *conn, a db.Agent) (map[string]
 		if st.AgentsPaused {
 			continue // DLV-08: no agent delivery while the loop guard holds the room
 		}
-		// The count and the list read one snapshot, so a message posted in between cannot
-		// make the skipped count disagree with the cursor jump (S6).
+		// The count, the cursor list and the fallbacks read one snapshot, so a message posted in
+		// between cannot make the skipped count disagree with the cursor jump (S6).
 		var pending int64
 		var views []db.MessageView
+		var fallbacks []sessionFallback
 		err := g.d.Store.ReadTx(ctx, func(q *db.Queries) error {
 			var err error
 			pending, err = countBacklog(ctx, q, a.ID, st)
-			if err != nil || pending == 0 {
+			if err != nil {
 				return err
 			}
-			if g.afterBacklogCount != nil {
-				g.afterBacklogCount()
+			if pending > 0 {
+				if g.afterBacklogCount != nil {
+					g.afterBacklogCount()
+				}
+				if views, err = listBacklog(ctx, q, a.ID, st); err != nil {
+					return err
+				}
 			}
-			views, err = listBacklog(ctx, q, a.ID, st)
+			if c.label == "" {
+				// A fallback belongs to the principal alone; a labelled session must never read a
+				// message that already fell back (SESS-24).
+				fallbacks, err = loadSessionFallbacks(ctx, q, a.ID, st.ID)
+			}
 			return err
 		})
 		if err != nil {
 			return nil, err
 		}
-		if pending == 0 {
+		if pending == 0 && len(fallbacks) == 0 {
 			continue
 		}
 		slices.Reverse(views) // oldest first
@@ -638,15 +706,38 @@ func (g *Gateway) backlog(ctx context.Context, c *conn, a db.Agent) (map[string]
 				return nil, err
 			}
 		}
-		msgs, err := g.d.Rooms.Details(ctx, views)
+		items := mergeRoomDeliveries(views, fallbacks)
+		all := make([]db.MessageView, len(items))
+		for i, item := range items {
+			all[i] = item.view
+		}
+		msgs, err := g.d.Rooms.Details(ctx, all)
 		if err != nil {
 			return nil, err
 		}
 		prefs := delivery.Prefs(profile, st.DisplayName, st.Delivery, st.KeywordsJson)
 		// MEM-03, MEM-04: unwanted messages are not delivered. Those before the first delivered
-		// one move the cursor (before that message is written); later ones wait for an ack.
+		// one move the cursor (before that message is written); later ones wait for an ack. A
+		// fallback is not filtered again and is delivered even below the cursor (SESS-24).
 		written, skippedTo := false, int64(0)
-		for _, m := range msgs {
+		for i, item := range items {
+			m := msgs[i]
+			if item.fallback {
+				trusted, err := trustedFor(ctx, trust, m.MessageView, a.ID)
+				if err != nil {
+					return nil, err
+				}
+				frame := dto.AgentMessageFrame{Type: dto.AgentFrameTypeMessage, AgentMessage: dto.AgentMessage{
+					Room: ref, Trusted: trusted, ForLabel: item.label, Message: convert.Message(m),
+				}}
+				if err := c.write(ctx, frame); err != nil {
+					return nil, err
+				}
+				if m.Seq > sent[st.ID] {
+					sent[st.ID] = m.Seq
+				}
+				continue
+			}
 			facts, err := delivery.LoadFacts(ctx, g.d.Store.R(), m.MessageView, st.Kind)
 			if err != nil {
 				return nil, err
@@ -655,7 +746,9 @@ func (g *Gateway) backlog(ctx context.Context, c *conn, a db.Agent) (map[string]
 			if err != nil {
 				return nil, err
 			}
-			sent[st.ID] = m.Seq
+			if m.Seq > sent[st.ID] {
+				sent[st.ID] = m.Seq
+			}
 			if !wanted {
 				if !written {
 					skippedTo = m.Seq
@@ -719,7 +812,12 @@ func (g *Gateway) readAcks(ctx context.Context, c *conn, agentID string) {
 		switch {
 		case head.Type == dto.AgentFrameTypeAck && head.MessageID != "":
 			if c.label != "" {
-				continue // the AI's cursor follows its principal session (SESS-17)
+				// A labelled session acknowledges its own delivery row; the AI's cursor follows its
+				// principal session (SESS-17, SESS-24).
+				if err := g.ackSessionDelivery(ctx, head.MessageID, agentID); err != nil && ctx.Err() == nil {
+					g.d.Logger.Error("agent: session ack failed", "agent_id", agentID, "err", err)
+				}
+				continue
 			}
 			if err := g.ack(ctx, agentID, head.MessageID); err != nil && ctx.Err() == nil {
 				g.d.Logger.Error("agent: ack failed", "agent_id", agentID, "err", err)
@@ -754,7 +852,13 @@ func (g *Gateway) ack(ctx context.Context, agentID, messageID string) error {
 		return err
 	}
 	if n > 0 {
-		return g.advance(ctx, agentID, m.RoomID, m.Seq)
+		return g.d.Store.WithTx(ctx, func(q *db.Queries) error {
+			// The principal consumes the message and any fallback row it owned (SESS-24).
+			if err := q.DeleteSessionDelivery(ctx, db.DeleteSessionDeliveryParams{MessageID: messageID, AgentID: agentID}); err != nil {
+				return err
+			}
+			return q.AdvanceAgentCursor(ctx, db.AdvanceAgentCursorParams{AgentID: agentID, RoomID: m.RoomID, Seq: m.Seq})
+		})
 	}
 	return nil
 }

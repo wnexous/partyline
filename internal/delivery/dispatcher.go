@@ -16,11 +16,13 @@ import (
 type AgentPusher interface {
 	// Online reports whether the agent has a live connection.
 	Online(agentID string) bool
-	// Push queues a message for the agent without blocking.
-	Push(agentID string, m dto.AgentMessage) bool
+	// Push queues a message for the agent without blocking. target is the session label the text
+	// addresses (SESS-21), or "" for the principal session.
+	Push(agentID, target string, m dto.AgentMessage) bool
 	// PushUpdate queues, without blocking, the frame that tells the agent that a message was edited
-	// (dto.AgentFrameTypeMessageEdited) or deleted (dto.AgentFrameTypeMessageDeleted).
-	PushUpdate(agentID string, t dto.AgentFrameType, m dto.AgentMessage) bool
+	// (dto.AgentFrameTypeMessageEdited) or deleted (dto.AgentFrameTypeMessageDeleted). target is the
+	// session label the text addressed before or after the change.
+	PushUpdate(agentID, target string, t dto.AgentFrameType, m dto.AgentMessage) bool
 }
 
 // MessageLoader renders a stored message as agents receive it.
@@ -179,7 +181,8 @@ func (d *AgentDispatcher) dispatch(ctx context.Context, e events.MessageCreated)
 		if !wanted {
 			continue // MEM-03, MEM-04: stored, not pushed
 		}
-		d.o.Agents.Push(agentID, dto.AgentMessage{Room: refs.of(agentID), Trusted: trusted, Message: msg})
+		target := SessionLabel(a.view.Text, profile.Handle)
+		d.o.Agents.Push(agentID, target, dto.AgentMessage{Room: refs.of(agentID), Trusted: trusted, Message: msg})
 	}
 	return nil
 }
@@ -240,9 +243,30 @@ func (d *AgentDispatcher) dispatchUpdate(ctx context.Context, e events.MessageUp
 		if !wanted {
 			continue // it never concerned this AI
 		}
-		d.o.Agents.PushUpdate(agentID, frame, dto.AgentMessage{Room: refs.of(agentID), Trusted: trusted, Message: msg})
+		targets := []string{SessionLabel(e.PrevText, profile.Handle)}
+		if !e.Deleted {
+			targets = append(targets, SessionLabel(a.view.Text, profile.Handle))
+		}
+		for _, target := range dedupeTargets(targets) {
+			d.o.Agents.PushUpdate(agentID, target, frame, dto.AgentMessage{Room: refs.of(agentID), Trusted: trusted, Message: msg})
+		}
 	}
 	return nil
+}
+
+// dedupeTargets keeps the first occurrence of each label, so an edit whose old and new text address
+// the same session pushes it one frame (SESS-27).
+func dedupeTargets(targets []string) []string {
+	out := make([]string, 0, len(targets))
+	seen := make(map[string]bool, len(targets))
+	for _, target := range targets {
+		if seen[target] {
+			continue
+		}
+		seen[target] = true
+		out = append(out, target)
+	}
+	return out
 }
 
 // roomNames names a room for each agent that receives from it: a group has one name; a DM is

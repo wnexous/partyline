@@ -108,6 +108,20 @@ func TestFormatContentListsAttachments(t *testing.T) {
 	require.Equal(t, "[attachment att-3: voice.ogg, audio/ogg]", n.Content)
 }
 
+// SESS-22, SESS-24: a message the principal receives because it was addressed to a session that
+// was not live carries the note in its content and the label in its meta.
+func TestFormatCarriesTheFallbackNote(t *testing.T) {
+	m := msg(dto.AuthorKindUser, nil)
+	m.ForLabel = "wt"
+	n := Format(m)
+	require.Equal(t, "(addressed to :wt)\nhello", n.Content)
+	require.Equal(t, "wt", n.Meta["for_label"])
+
+	plain := Format(msg(dto.AuthorKindUser, nil))
+	require.Equal(t, "hello", plain.Content)
+	require.NotContains(t, plain.Meta, "for_label")
+}
+
 // AGT-09: a backlog notice reaches the session as a system notification of its room.
 func TestFormatNotice(t *testing.T) {
 	n := FormatNotice(dto.AgentNoticeFrame{Type: dto.AgentFrameTypeNotice, Room: room, Text: "10 older messages skipped; use the history tool"})
