@@ -66,6 +66,7 @@ const atlas: IntelligenceProfile = makeProfile({
     folder_label: "~/atlas",
     app: "claude",
     online: false,
+    sessions: [],
     last_seen_at: "2026-10-19T09:00:00Z",
     my_level: "manage",
   },
@@ -1318,6 +1319,7 @@ describe("merging an AI from its profile (MRG-01, MRG-02)", () => {
       folder_label: "~/atlas/notes",
       app: "opencode",
       online: false,
+      sessions: [],
       my_level: "manage",
     },
   });

@@ -120,6 +120,9 @@ type AIDetail struct {
 	Online      bool       `json:"online"`
 	LastSeenAt  *time.Time `json:"last_seen_at,omitempty"`
 	ConnectedAt *time.Time `json:"connected_at,omitempty"`
+	// Sessions are the AI's live sessions, the principal (label "") first and the labelled ones in the
+	// lexical order of their label; an empty array while it is offline (SESS-32).
+	Sessions []SessionInfo `json:"sessions"`
 	// MyLevel is manage for whoever manages the AI in an organization they share with it (and the AI itself)
 	// and use for whoever only sees it.
 	MyLevel Level `json:"my_level,omitempty"`

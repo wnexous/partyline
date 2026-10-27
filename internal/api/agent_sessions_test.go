@@ -4,6 +4,7 @@ import (
 	"context"
 	"net/http"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/require"
 
@@ -130,6 +131,55 @@ func TestAMessageRecordsTheSessionThatWroteIt(t *testing.T) {
 	require.Equal(t, "claude-2", messageOf(t,
 		testkit.Decode[dto.Page[dto.Message]](l.alice.Get("/api/v1/rooms/"+l.room.ID+"/messages").RequireStatus(http.StatusOK)),
 		fromParallel.ID).AuthorLabel, "and in the history")
+}
+
+// SESS-32: an AI's profile lists its live sessions, the principal first, each with the harness and
+// start time of the connection that holds it; the list refreshes as sessions attach and detach and
+// is an empty array, never null, while the AI is offline.
+func TestAProfileListsTheAIsLiveSessions(t *testing.T) {
+	l := newLiveEnv(t)
+	principalFolder := acme
+	principalFolder.Live = testkit.NewLiveID()
+	principalConn, principalWelcome := dialAs(t, l, principalFolder)
+	id := principalWelcome.Agent.ID
+	l.addMember(t, id)
+
+	l.clock.Advance(time.Hour)
+	parallelFolder := acme
+	parallelFolder.Path = acme.Path + "/claude-2" // a worktree whose label is the preferred one
+	parallelFolder.MainFolder = acme.Path
+	parallelFolder.Harness = "pi"
+	parallelFolder.Live = testkit.NewLiveID()
+	parallelConn, parallelWelcome := dialAs(t, l, parallelFolder)
+	require.Equal(t, "claude-2", parallelWelcome.Session.Label)
+	require.Equal(t, id, parallelWelcome.Agent.ID, "one AI for both sessions")
+
+	profile := profileOf(t, l.alice, id)
+	require.NotNil(t, profile.AI)
+	require.True(t, profile.AI.Online)
+	require.Equal(t, []dto.SessionInfo{
+		{Label: "", Harness: "claude", ConnectedAt: l.start},
+		{Label: "claude-2", Harness: "pi", ConnectedAt: l.start.Add(time.Hour)},
+	}, profile.AI.Sessions, "the principal first, then the parallel session")
+
+	parallelConn.Close()
+	require.Eventually(t, func() bool {
+		p := profileOf(t, l.alice, id)
+		return p.AI != nil && len(p.AI.Sessions) == 1 && p.AI.Sessions[0].Label == ""
+	}, wsWait, 20*time.Millisecond, "closing the parallel session leaves the principal")
+
+	principalConn.Close()
+	var sessions []dto.SessionInfo
+	require.Eventually(t, func() bool {
+		p := profileOf(t, l.alice, id)
+		if p.AI == nil || p.AI.Online {
+			return false
+		}
+		sessions = p.AI.Sessions
+		return true
+	}, wsWait, 20*time.Millisecond, "the AI is offline once its last session ends")
+	require.NotNil(t, sessions, "an empty array, not null")
+	require.Empty(t, sessions)
 }
 
 // SESS-31: a message stored before this feature keeps the migration's default, "".

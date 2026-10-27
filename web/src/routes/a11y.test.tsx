@@ -53,6 +53,7 @@ const aiProfile = makeProfile({
     folder_label: "~/atlas",
     app: "claude",
     online: true,
+    sessions: [],
     my_level: "manage",
   },
   apps: [
@@ -262,6 +263,7 @@ function appApi(locale: "en" | "pt-BR", extra: Parameters<typeof mockApi>[0] = {
         folder_label: "~/atlas",
         app: "claude",
         online: true,
+        sessions: [],
       },
     }),
     "PUT /rooms/d1/read": json(200, { room_id: "d1", seq: 1, unread: 0 }),

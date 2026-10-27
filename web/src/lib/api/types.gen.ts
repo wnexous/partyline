@@ -1682,6 +1682,11 @@ export interface AIDetail {
   last_seen_at?: string /* RFC 3339 */;
   connected_at?: string /* RFC 3339 */;
   /**
+   * Sessions are the AI's live sessions, the principal (label "") first and the labelled ones in the
+   * lexical order of their label; an empty array while it is offline (SESS-32).
+   */
+  sessions: SessionInfo[];
+  /**
    * MyLevel is manage for whoever manages the AI in an organization they share with it (and the AI itself)
    * and use for whoever only sees it.
    */
@@ -2548,6 +2553,11 @@ export interface RoomMember {
    * Online is set for agent members: whether the AI has a live session.
    */
   online?: boolean;
+  /**
+   * Sessions are set for agent members: the AI's live sessions, the principal (label "") first
+   * (SESS-33). Absent for other members and for an AI with no live session.
+   */
+  sessions?: SessionInfo[];
   /**
    * Owner is set for agent members: the username of the agent's owner.
    */
