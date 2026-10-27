@@ -104,13 +104,14 @@ function QuickReplies({
                   pressed && "border-primary bg-primary/10 font-medium text-foreground",
                 )}
               >
-                {option.label}
+                {/* The label is its own flex item so a long one shrinks and breaks instead of spilling (QR-24). */}
+                <span className="min-w-0 [overflow-wrap:anywhere]">{option.label}</span>
               </button>
             );
           })
         : quickReplies.map((option) => (
             <span key={option.id} className={cn(CHIP, "border-border text-muted-foreground")}>
-              {option.label}
+              <span className="min-w-0 [overflow-wrap:anywhere]">{option.label}</span>
             </span>
           ))}
       {status ? (

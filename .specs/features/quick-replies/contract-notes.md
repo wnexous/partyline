@@ -33,3 +33,16 @@ tasks that follow, the same way the other features' contract notes do.
   rule DM-04 already applies to empty targets), so a model that sends every parameter with an empty
   array still asks its wizard, and a plain `send_message` through a connection keeps its text as it
   is.
+
+## T9: the end-to-end flow and the phone fit
+
+- **A long quick reply label wraps through its own flex item.** The fit spec seeds four labels at the
+  server's 48-character limit ending in one unbroken run, which is the case the design's risk table
+  promises to wrap ("buttons wrap, `break-words`"). A button is a flex container, so its text was an
+  anonymous flex item whose automatic minimum width is the widest word: the 48-character label spilled
+  out of the button at both viewports. The label is now its own `min-w-0 [overflow-wrap:anywhere]`
+  span, inside the button and inside the read-only chip, so the bubble grows in height only (QR-24).
+  The component's unit tests and both e2e specs cover the change; no server behaviour changed.
+- **The AI authors more than one row.** Seeding the question and the wizard from the AI gives its name
+  three links in the timeline, so the profile-panel fit check focuses the first one instead of the only
+  one. It still opens the same panel, and every page the fit spec covered before is still checked.

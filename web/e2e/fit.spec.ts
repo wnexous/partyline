@@ -8,8 +8,10 @@ import type {
   Message,
   Organization,
   PairingCode,
+  PostMessageRequest,
   Room,
   SetupRequest,
+  WizardQuestionRequest,
 } from "../src/lib/api/types.gen";
 import { postVoice } from "./audio";
 import { apiCall, test as base, type Credentials, expect, settled } from "./fixtures";
@@ -51,9 +53,64 @@ const CONNECTOR_SECRET = "synthetic-e2e-webhook-secret-not-real";
 const LONG_TEXT = `See ${"averylongunbrokenwordthatmustwrapinsidemessagesandnotpushthepage".repeat(2)} for the release notes`;
 const BIO = `Keeps the release train moving through every phone size. ${"averylongunbrokenbiowordthatmustwrapinsidetheprofilepanelwithoutwideninganything".repeat(2)}`;
 
+/**
+ * The longest label a quick reply or an option may carry (QR-03, 48 characters), ending in one run
+ * with no space, so the bubble has to break the word rather than wrap between words (QR-24).
+ */
+const label48 = (head: string) => `${head} releasebreakerreleasebreakerreleasebreaker`.slice(0, 48);
+/** The four buttons of the seeded question, each at that limit. */
+const FIT_REPLIES = [
+  label48("Deploy today"),
+  label48("Wait for review"),
+  label48("Ship the API only"),
+  label48("Cancel the release"),
+];
+/** The wizard's first question, the one the fit check answers to reach Next (QR-24). */
+const FIRST_QUESTION = "Which deployment window should this delivery use next Monday?";
+/** The eight questions of the seeded wizard, every title and option long enough to wrap. */
+const FIT_QUESTIONS: WizardQuestionRequest[] = [
+  {
+    title: FIRST_QUESTION,
+    options: [label48("Monday evening"), label48("Friday morning")],
+  },
+  {
+    title: "Who follows the publication of the version until the window closes?",
+    kind: "multi",
+    options: [label48("Release captain"), label48("Support lead"), label48("On-call engineer")],
+  },
+  {
+    title: "Which parts ship in this delivery before the code freeze?",
+    kind: "multi",
+    options: [label48("Public API"), label48("Web interface"), label48("Database")],
+  },
+  {
+    title: "How do we tell the people who use the product every day?",
+    kind: "multi",
+    options: [label48("In-app notice"), label48("Status page"), label48("Direct message")],
+  },
+  {
+    title: "What is the rollback plan when the publication fails halfway?",
+    options: [label48("Revert the release"), label48("Restore snapshot")],
+  },
+  {
+    title: "How long does the support team need to validate the delivery?",
+    options: [label48("Fifteen minutes"), label48("Half an hour")],
+  },
+  {
+    title: "Where do we record the result of the publication once it ends?",
+    options: [label48("Release notes"), label48("Incident log")],
+  },
+  {
+    title: "When do we review what this delivery taught the release team?",
+    options: [label48("Next standup"), label48("Next retro")],
+  },
+];
+
 let owner: Me;
 let orgId = "";
 let room: Room;
+let questionAt: Message;
+let wizardAt: Message;
 
 /** A root font size enlarged the way the phone's system setting enlarges it. */
 const enlarge = (page: Page) =>
@@ -94,7 +151,30 @@ async function checkPage(
   await expectFits(page, where);
 }
 
-/** The conversation of the seeded group, with its long author, long word, image and voice message. */
+/**
+ * The two seeded questions at the end of the conversation (QR-24): the four buttons at the label
+ * limit and the wizard's first step. Choosing an option must leave Next reachable on the phone.
+ */
+async function checkQuestions(page: Page) {
+  const log = page.getByRole("log");
+  const asked = log.locator(`[data-testid="message-${questionAt.seq}"]`);
+  const quick = asked.getByRole("group", { name: "Quick replies" });
+  await quick.scrollIntoViewIfNeeded();
+  for (const label of FIT_REPLIES) {
+    await expect(quick.getByRole("button", { name: label })).toBeVisible();
+  }
+  const planning = log.locator(`[data-testid="message-${wizardAt.seq}"]`);
+  const step = planning.getByRole("radiogroup", { name: FIRST_QUESTION });
+  await step.scrollIntoViewIfNeeded();
+  await expect(step).toBeVisible();
+  const next = planning.getByRole("button", { name: "Next" });
+  await expect(next).toBeVisible();
+  await expect(next).toBeDisabled();
+  await step.getByRole("radio").first().check();
+  await expect(next).toBeEnabled();
+}
+
+/** The conversation of the seeded group, with its long author, long word, image, voice and questions. */
 async function checkConversation(page: Page, where: string, enlarged: boolean) {
   await page.goto(`/rooms/${room.id}`);
   if (enlarged) await enlarge(page);
@@ -103,6 +183,7 @@ async function checkConversation(page: Page, where: string, enlarged: boolean) {
   await expect(page.getByRole("heading", { name: ROOM_NAME, level: 1 })).toBeVisible();
   await expect(log.getByRole("button", { name: "Open mobilefit-landscape.png" })).toBeVisible();
   await expect(log.getByRole("group", { name: "Voice message" })).toBeVisible();
+  await checkQuestions(page);
   await settled(page);
   await scrollThrough(page);
   await settled(page);
@@ -115,8 +196,9 @@ async function checkProfilePanel(page: Page, where: string, enlarged: boolean) {
   if (enlarged) await enlarge(page);
   const log = page.getByRole("log");
   await expect(page.getByRole("heading", { name: ROOM_NAME, level: 1 })).toBeVisible();
-  // Keyboard activation: a long truncated name's center can sit under the row's hover controls.
-  await log.getByRole("link", { name: AI_NAME, exact: true }).focus();
+  // Keyboard activation: a long truncated name's center can sit under the row's hover controls. The AI
+  // authored more than one row, since it asks the questions too: any of its names opens the panel.
+  await log.getByRole("link", { name: AI_NAME, exact: true }).first().focus();
   await page.keyboard.press("Enter");
   const panel = page.getByRole("dialog", { name: AI_NAME });
   await expect(panel).toBeVisible();
@@ -244,6 +326,27 @@ test.beforeAll(async ({ browser, fit }) => {
       room.id,
       [{ name: "mobilefit-landscape.png", hue: 150 }],
       "A picture from the release train",
+    );
+    // The questions the fit check measures (QR-24): four buttons at the label limit and an
+    // eight-question wizard, both asked by the AI through its own room route.
+    questionAt = await agentJSON<Message>(
+      context,
+      fit,
+      agent,
+      "POST",
+      `/agent/rooms/${room.id}/messages`,
+      { text: "Deploy today?", quick_replies: FIT_REPLIES } satisfies PostMessageRequest,
+    );
+    wizardAt = await agentJSON<Message>(
+      context,
+      fit,
+      agent,
+      "POST",
+      `/agent/rooms/${room.id}/messages`,
+      {
+        text: "Plan the release",
+        wizard: { questions: FIT_QUESTIONS },
+      } satisfies PostMessageRequest,
     );
 
     // A connection with a long name, and one verified identity linked through it, so both lists
