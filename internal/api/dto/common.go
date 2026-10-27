@@ -12,6 +12,11 @@ const (
 	// AgentNamePattern is the regular expression every agent name matches after slugifying
 	// (lowercase letters, digits, dot, underscore and hyphen; at most 48 characters).
 	AgentNamePattern = "^[a-z0-9][a-z0-9._-]{0,47}$"
+	// SessionLabelPattern is the regular expression every session label matches: the slug of a
+	// worktree folder or a numbered parallel session, so a hyphen never starts it (SESS-11).
+	SessionLabelPattern = "^[a-z0-9][a-z0-9-]{0,39}$"
+	// MaxSessionLabel is the longest session label, in characters (SESS-11).
+	MaxSessionLabel = 40
 	// PasswordMinLength is the minimum password length in characters.
 	PasswordMinLength = 10
 	// MaxTextLength is the maximum message text length in characters (MSG-02).

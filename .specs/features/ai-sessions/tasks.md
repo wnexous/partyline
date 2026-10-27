@@ -270,9 +270,9 @@ the design's [Labels](../ai-sessions/design.md#labels), and the kernel constants
 - `TestSessionLabelPattern`: `wt`, `claude-2` and 40 `a`s match; `""`, `Wt`, `claude_2`, `-x` and 41
   `a`s do not.
 **Done when**:
-- [ ] every example of the design's label table is a case with a literal expected string
-- [ ] the file imports only `fmt`, `strings` and `internal/api/dto`
-- [ ] Gate check passes: `make check`
+- [x] every example of the design's label table is a case with a literal expected string
+- [x] the file imports only `fmt`, `strings` and `internal/api/dto`
+- [x] Gate check passes: `make check`
 **Tests**: unit
 **Gate**: build
 **Commit**: `feat(agents): name sessions and allocate their labels`
