@@ -323,6 +323,31 @@ describe("live handlers", () => {
     expect(qc.getQueryState(queryKeys.agents)?.isInvalidated).toBe(false);
   });
 
+  it("agent.presence invalidates the profile of the AI whose sessions changed (SESS-32)", () => {
+    qc.setQueryData<IntelligenceProfile>(queryKeys.intelligence("a1"), makeProfile({ id: "a1" }));
+    qc.setQueryData<RoomMember[]>(queryKeys.roomMembers("r1"), [
+      makeMember({ id: "mb1", kind: "agent", member_id: "a1", online: false, sessions: [] }),
+    ]);
+    handleLiveEvent(qc, actions(), {
+      type: "agent.presence",
+      data: { agent_id: "a1", online: true, last_seen_at: "2026-10-19T12:05:00Z" },
+    });
+    // The profile and the room's members carry the live sessions: both are fetched again.
+    expect(qc.getQueryState(queryKeys.intelligence("a1"))?.isInvalidated).toBe(true);
+    expect(qc.getQueryState(queryKeys.roomMembers("r1"))?.isInvalidated).toBe(true);
+    // The online flag is patched at once, so the UI does not wait for the request.
+    expect(qc.getQueryData<RoomMember[]>(queryKeys.roomMembers("r1"))?.[0]?.online).toBe(true);
+  });
+
+  it("agent.presence leaves profiles and members nobody cached alone", () => {
+    handleLiveEvent(qc, actions(), {
+      type: "agent.presence",
+      data: { agent_id: "a1", online: true },
+    });
+    expect(qc.getQueryState(queryKeys.intelligence("a1"))).toBeUndefined();
+    expect(qc.getQueryState(queryKeys.roomMembers("r1"))).toBeUndefined();
+  });
+
   it("connector.status updates the store and the cached connector (UI-17)", () => {
     qc.setQueryData<Connector>(queryKeys.connector("c1"), {
       id: "c1",

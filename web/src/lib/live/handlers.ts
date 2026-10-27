@@ -305,6 +305,12 @@ export function handleLiveEvent(qc: QueryClient, actions: LiveActions, event: Li
       if (contacts && !knowsAI(contacts, agent_id)) {
         qc.invalidateQueries({ queryKey: queryKeys.contacts, exact: true });
       }
+      // A session that came or went changes what the profile and the mention list show (SESS-32,
+      // SESS-33): the profile is fetched again when it is open, and the room members carry the
+      // sessions next to the online flag.
+      if (qc.getQueryData(queryKeys.intelligence(agent_id))) {
+        qc.invalidateQueries({ queryKey: queryKeys.intelligence(agent_id), exact: true });
+      }
       for (const [key, members] of qc.getQueriesData<RoomMember[]>({ queryKey: ["rooms"] })) {
         if (key[2] !== "members" || !members) continue;
         if (!members.some((mb) => mb.kind === "agent" && mb.member_id === agent_id)) continue;
@@ -314,6 +320,7 @@ export function handleLiveEvent(qc: QueryClient, actions: LiveActions, event: Li
             mb.kind === "agent" && mb.member_id === agent_id ? { ...mb, online } : mb,
           ),
         );
+        qc.invalidateQueries({ queryKey: key, exact: true });
       }
       return;
     }

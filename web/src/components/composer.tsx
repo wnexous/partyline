@@ -19,6 +19,7 @@ import {
   useState,
 } from "react";
 import {
+  type MentionCandidate,
   MentionSuggestions,
   matchMentions,
   mentionAt,
@@ -34,7 +35,6 @@ import { isApiError } from "@/lib/api/client";
 import { useEditMessage, useMe, usePostMessage } from "@/lib/api/queries";
 import {
   ErrorCodeCounterpartDisabled,
-  type IntelligenceRef,
   type Level,
   LevelManage,
   LevelPost,
@@ -420,10 +420,14 @@ function ComposerForm({
   };
   const submit = editing ? saveEdit : send;
 
-  // Replaces the `@word` with `@handle ` (MEN-03); it never sends the message itself.
-  const completeMention = (candidate: IntelligenceRef) => {
+  // Replaces the `@word` with `@handle:label ` (MEN-03), or `@handle ` for the AI itself; it
+  // never sends the message itself.
+  const completeMention = (candidate: MentionCandidate) => {
     if (!mention) return;
-    const inserted = `@${candidate.handle} `;
+    const address = candidate.label
+      ? `@${candidate.intelligence.handle}:${candidate.label}`
+      : `@${candidate.intelligence.handle}`;
+    const inserted = `${address} `;
     const position = mention.start + inserted.length;
     pendingCaret.current = position;
     setText(`${text.slice(0, mention.start)}${inserted}${text.slice(mention.end)}`);
@@ -652,7 +656,7 @@ function ComposerForm({
           aria-autocomplete={open ? "list" : undefined}
           aria-haspopup={open ? "listbox" : undefined}
           aria-activedescendant={
-            open && activeCandidate ? mentionOptionId(mentionListId, activeCandidate.id) : undefined
+            open && activeCandidate ? mentionOptionId(mentionListId, activeCandidate) : undefined
           }
           aria-describedby={describedBy || undefined}
           // The on-screen Return key shows what it does (ENT-04).

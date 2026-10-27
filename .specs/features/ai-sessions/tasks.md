@@ -684,10 +684,10 @@ query on `agent.presence`; the i18n keys.
 - `live/handlers.test.ts`: an `agent.presence` event for a cached profile invalidates
   `["intelligences", id]` (or refetches it), and still patches the members' `online`.
 **Done when**:
-- [ ] the principal is offered as `@handle`, never as `@handle:` with an empty label
-- [ ] no request is added to the composer: the members query already carries the sessions
-- [ ] `bun run lint` and `bun run typecheck` are clean
-- [ ] Gate check passes: `make check`
+- [x] the principal is offered as `@handle`, never as `@handle:` with an empty label
+- [x] no request is added to the composer: the members query already carries the sessions
+- [x] `bun run lint` and `bun run typecheck` are clean
+- [x] Gate check passes: `make check`
 **Tests**: web unit
 **Gate**: build
 **Commit**: `feat(web): list sessions in the profile and mention them`
