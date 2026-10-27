@@ -2173,6 +2173,145 @@ export interface PushTest {
 }
 
 //////////
+// source: quickreplies.go
+
+/**
+ * MessageQuestionKind is how a wizard question is answered: one option (single) or one or more
+ * options (multi).
+ */
+export const MessageQuestionKindSingle = "single";
+export const MessageQuestionKindMulti = "multi";
+/**
+ * Wizard question kinds.
+ */
+export type MessageQuestionKind = typeof MessageQuestionKindSingle | typeof MessageQuestionKindMulti;
+/**
+ * MaxQuickReplies is the most quick replies one message carries.
+ */
+export const MaxQuickReplies = 4;
+/**
+ * MaxWizardQuestions is the most questions one wizard carries.
+ */
+export const MaxWizardQuestions = 8;
+/**
+ * MaxQuestionOptions is the most options one wizard question carries.
+ */
+export const MaxQuestionOptions = 8;
+/**
+ * MaxQuestionLabel is the longest quick reply or option label in characters.
+ */
+export const MaxQuestionLabel = 48;
+/**
+ * MaxQuestionTitle is the longest wizard question title in characters.
+ */
+export const MaxQuestionTitle = 200;
+/**
+ * MaxAnswerText is the longest free-text note of a wizard answer in characters.
+ */
+export const MaxAnswerText = 280;
+/**
+ * QuickReply is one button of a question: the label the author wrote and the id the server
+ * assigned in its order (r1..r4, QR-01).
+ */
+export interface QuickReply {
+  id: string;
+  label: string;
+}
+/**
+ * WizardOption is one option of a wizard question, with the id the server assigned in its
+ * question's order (q1o1..q8o8, QR-02).
+ */
+export interface WizardOption {
+  id: string;
+  label: string;
+}
+/**
+ * WizardQuestion is one question of a stored wizard: its server id, title, kind, whether it takes
+ * a free text and its options (QR-02).
+ */
+export interface WizardQuestion {
+  id: string;
+  title: string;
+  kind: MessageQuestionKind;
+  allow_text: boolean;
+  options: WizardOption[];
+}
+/**
+ * Wizard is the questions of a stored wizard.
+ */
+export interface Wizard {
+  questions: WizardQuestion[];
+}
+/**
+ * MessageInteractive is the canonical question a message carries, stored in
+ * messages.interactive_json and returned as Message.Interactive (QR-01, QR-02): at most 4 quick
+ * replies, or one wizard. V is the version of the document.
+ */
+export interface MessageInteractive {
+  v: number /* int */;
+  quick_replies?: QuickReply[];
+  wizard?: Wizard;
+}
+/**
+ * MessageAnswerItem is one answered wizard question in the structured answer: the question's
+ * title, the chosen labels and the optional text note (QR-07).
+ */
+export interface MessageAnswerItem {
+  question: string;
+  values: string[];
+  text: string;
+}
+/**
+ * MessageAnswers is the canonical structured answer a reply carries, stored in
+ * messages.answers_json and returned as Message.Answers (QR-06, QR-07): one quick reply label, or
+ * one item per answered wizard question. V is the version of the document.
+ */
+export interface MessageAnswers {
+  v: number /* int */;
+  quick_reply?: string;
+  answers?: MessageAnswerItem[];
+}
+/**
+ * WizardRequest is the body part of a post that asks a wizard: the questions and their labels;
+ * the server assigns every id (QR-03).
+ */
+export interface WizardRequest {
+  questions: WizardQuestionRequest[];
+}
+/**
+ * WizardQuestionRequest is one question of a WizardRequest.
+ */
+export interface WizardQuestionRequest {
+  title: string;
+  /**
+   * Kind defaults to single.
+   */
+  kind?: MessageQuestionKind;
+  options: string[];
+  /**
+   * AllowText offers an optional free text with the answer.
+   */
+  allow_text?: boolean;
+}
+/**
+ * AnswerSubmission is the body part of a reply that answers a question (QR-05..QR-07): the id of
+ * a quick reply, or one item per wizard question.
+ */
+export interface AnswerSubmission {
+  quick_reply?: string;
+  items?: AnswerItem[];
+}
+/**
+ * AnswerItem is the answer to one wizard question, given by the question's id and the ids of the
+ * options chosen, with an optional text note.
+ */
+export interface AnswerItem {
+  question_id: string;
+  option_ids?: string[];
+  text?: string;
+}
+
+//////////
 // source: reactions.go
 
 /**
