@@ -1,6 +1,6 @@
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { afterAll, afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { AppProviders } from "@/components/app-providers";
 import { Composer } from "@/components/composer";
 import { type MessagePages, queryKeys } from "@/lib/api/queries";
@@ -24,6 +24,16 @@ function renderComposer(level: Level = "post", members?: RoomMember[]) {
 
 const posts = <T extends { method: string; path: string }>(calls: T[]) =>
   calls.filter((c) => c.method === "POST" && c.path === "/rooms/r1/messages");
+
+/** A clipboard or a drag carrying files, the way a browser hands them to the composer. */
+const withFiles = (...files: File[]) => {
+  const data = new DataTransfer();
+  for (const file of files) data.items.add(file);
+  return data;
+};
+
+const fileOf = (name: string, type: string, size = 120 * 1024) =>
+  new File([new Uint8Array(size)], name, { type });
 
 beforeEach(() => useLiveStore.setState({ locale: "en" }));
 afterEach(() => vi.unstubAllGlobals());
@@ -686,5 +696,146 @@ describe("editing a message in the composer (EDT-10)", () => {
     expect(screen.getByText("Editando mensagem")).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Cancelar edição" })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Salvar alterações" })).toBeInTheDocument();
+  });
+});
+
+describe("pasting and dropping files (UI-07)", () => {
+  const createObjectURL = vi.fn(() => "blob:preview-1");
+  const revokeObjectURL = vi.fn();
+  const realCreateObjectURL = URL.createObjectURL;
+  const realRevokeObjectURL = URL.revokeObjectURL;
+
+  beforeEach(() => {
+    createObjectURL.mockClear();
+    revokeObjectURL.mockClear();
+    URL.createObjectURL = createObjectURL;
+    URL.revokeObjectURL = revokeObjectURL;
+  });
+  afterAll(() => {
+    URL.createObjectURL = realCreateObjectURL;
+    URL.revokeObjectURL = realRevokeObjectURL;
+  });
+
+  const box = () => screen.getByRole("textbox", { name: "Message deploys" });
+  const zone = () => screen.getByTestId("composer-dropzone");
+  const png = () => fileOf("shot.png", "image/png", 2048);
+
+  it("attaches a pasted image (with its thumbnail) and sends it like a picked file", async () => {
+    const { calls } = mockApi({ "POST /rooms/r1/messages": json(201, makeMessage({ seq: 9 })) });
+    const user = userEvent.setup();
+    renderComposer();
+
+    fireEvent.paste(box(), { clipboardData: withFiles(png()) });
+
+    const preview = screen.getByRole("group", { name: "shot.png, 2 KB" });
+    expect(preview.querySelector("img")).toHaveAttribute("src", "blob:preview-1");
+    expect(screen.getByRole("status")).toHaveTextContent("1 file attached");
+    expect(box()).toHaveValue("");
+
+    await user.click(screen.getByRole("button", { name: "Send" }));
+    await waitFor(() => expect(posts(calls)).toHaveLength(1));
+    const form = posts(calls)[0]?.body as FormData;
+    expect(JSON.parse(String(form.get("message")))).toEqual({ text: "" });
+    expect((form.get("file") as File).name).toBe("shot.png");
+    // Sending the file takes its thumbnail with it.
+    await waitFor(() => expect(revokeObjectURL).toHaveBeenCalledWith("blob:preview-1"));
+  });
+
+  it("keeps plain text paste working, with no attachment", async () => {
+    mockApi({});
+    const user = userEvent.setup();
+    renderComposer();
+
+    await user.click(box());
+    await user.paste("plain words");
+
+    expect(box()).toHaveValue("plain words");
+    expect(screen.queryByRole("list", { name: "Attachments" })).toBeNull();
+    expect(screen.getByRole("status")).toBeEmptyDOMElement();
+  });
+
+  it("attaches the file and not the text when the clipboard holds both", () => {
+    mockApi({});
+    renderComposer();
+    const clipboard = withFiles(png());
+    clipboard.setData("text/plain", "https://example.com/shot.png");
+
+    // The paste's default (typing the text) is stopped by the composer.
+    expect(fireEvent.paste(box(), { clipboardData: clipboard })).toBe(false);
+
+    expect(box()).toHaveValue("");
+    expect(screen.getByRole("group", { name: "shot.png, 2 KB" })).toBeInTheDocument();
+  });
+
+  it("attaches two dropped files and announces them", () => {
+    mockApi({});
+    renderComposer();
+    const drag = withFiles(png(), fileOf("notes.pdf", "application/pdf"));
+
+    fireEvent.dragEnter(zone(), { dataTransfer: drag });
+    expect(zone()).toHaveAttribute("data-dragging", "true");
+    expect(screen.getByTestId("composer-drop-hint")).toHaveTextContent("Drop files to attach");
+
+    fireEvent.drop(zone(), { dataTransfer: drag });
+
+    expect(zone()).not.toHaveAttribute("data-dragging");
+    expect(screen.queryByTestId("composer-drop-hint")).toBeNull();
+    expect(screen.getByRole("group", { name: "shot.png, 2 KB" })).toBeInTheDocument();
+    expect(screen.getByRole("group", { name: "notes.pdf, 120 KB" })).toBeInTheDocument();
+    expect(
+      within(screen.getByRole("list", { name: "Attachments" })).getAllByRole("listitem"),
+    ).toHaveLength(2);
+    expect(screen.getByRole("status")).toHaveTextContent("2 files attached");
+  });
+
+  it("clears the drop highlight when the files leave without being dropped", () => {
+    mockApi({});
+    renderComposer();
+    const drag = withFiles(png());
+
+    fireEvent.dragEnter(zone(), { dataTransfer: drag });
+    expect(screen.getByTestId("composer-drop-hint")).toBeInTheDocument();
+    fireEvent.dragLeave(zone(), { dataTransfer: drag });
+
+    expect(zone()).not.toHaveAttribute("data-dragging");
+    expect(screen.queryByTestId("composer-drop-hint")).toBeNull();
+  });
+
+  it("revokes an image's object URL when its preview is removed", async () => {
+    mockApi({});
+    const user = userEvent.setup();
+    renderComposer();
+    fireEvent.paste(box(), { clipboardData: withFiles(png()) });
+
+    await user.click(screen.getByRole("button", { name: "Remove shot.png" }));
+
+    expect(screen.queryByRole("group", { name: "shot.png, 2 KB" })).toBeNull();
+    expect(revokeObjectURL).toHaveBeenCalledWith("blob:preview-1");
+  });
+
+  it("shows a non-image file's name and size, and no image", () => {
+    mockApi({});
+    renderComposer();
+    fireEvent.paste(box(), {
+      clipboardData: withFiles(fileOf("notes.pdf", "application/pdf")),
+    });
+
+    const preview = screen.getByRole("group", { name: "notes.pdf, 120 KB" });
+    expect(preview).toHaveTextContent("notes.pdf");
+    expect(preview).toHaveTextContent("120 KB");
+    expect(preview.querySelector("img")).toBeNull();
+    expect(createObjectURL).not.toHaveBeenCalled();
+  });
+
+  it("tells a screen reader that one file is attached, in Portuguese", () => {
+    useLiveStore.setState({ locale: "pt-BR" });
+    mockApi({});
+    renderComposer();
+    fireEvent.paste(screen.getByRole("textbox", { name: "Mensagem para deploys" }), {
+      clipboardData: withFiles(png()),
+    });
+
+    expect(screen.getByRole("status")).toHaveTextContent("1 arquivo anexado");
+    expect(screen.getByRole("list", { name: "Anexos" })).toBeInTheDocument();
   });
 });

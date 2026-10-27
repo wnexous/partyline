@@ -10,6 +10,8 @@ import {
 } from "lucide-react";
 import {
   type ChangeEvent,
+  type ClipboardEvent,
+  type DragEvent,
   type KeyboardEvent,
   type SyntheticEvent,
   useEffect,
@@ -18,6 +20,7 @@ import {
   useRef,
   useState,
 } from "react";
+import { AttachmentPreviews } from "@/components/attachment-preview";
 import {
   type MentionCandidate,
   MentionSuggestions,
@@ -54,7 +57,9 @@ import type { VoiceFailure } from "@/lib/voice";
  * hooks/use-enter-sends.ts). Text over MaxTextLength (MSG-02) cannot be sent; files alone can. A post is a message to the room's
  * intelligences: chats are not members and there is no recipient picker any more (CID-22,
  * ROUTE-06/DLV-03..05 and their listen-only mapping are retired). The body carries the text and
- * files only. `members` still feeds the mention list below.
+ * files only. `members` still feeds the mention list below. Files come from the paperclip, a paste
+ * or a drop, all through the same list; the attachment row previews them (images as thumbnails,
+ * other kinds as an icon with name and size) and scrolls sideways instead of growing the composer.
  *
  * A microphone button records a voice message (VOI-01..VOI-06, hooks/use-voice-recorder.ts): a tap
  * records until Send or Cancel, a hold records while held. It is sent as a message of its own, an
@@ -183,6 +188,9 @@ function ComposerForm({
   const save = useEditMessage(roomId);
   const [text, setText] = useState("");
   const [files, setFiles] = useState<File[]>([]);
+  // A file is being dragged over the composer: it says so and takes no drop until it leaves.
+  const [dragging, setDragging] = useState(false);
+  const dragDepth = useRef(0);
   const [error, setError] = useState<string | null>(null);
   // The caret is part of the mention state: the list follows the `@word` it is in (MEN-04).
   const [caret, setCaret] = useState(0);
@@ -484,11 +492,62 @@ function ComposerForm({
     submit();
   };
 
-  const addFiles = (list: FileList | null) => {
-    if (!list?.length) return;
-    const picked = Array.from(list);
+  const addFiles = (picked: readonly File[]) => {
+    if (!picked.length) return;
     setFiles((prev) => [...prev, ...picked]);
+    setAnnouncement(
+      picked.length === 1
+        ? t("composer.announceFileAttached")
+        : t("composer.announceFilesAttached", { count: picked.length }),
+    );
+  };
+
+  // The paperclip: the chosen files join the ones already there, and the input can pick them again.
+  const pickFiles = (list: FileList | null) => {
+    if (!list?.length) return;
+    addFiles(Array.from(list));
     if (fileInput.current) fileInput.current.value = "";
+  };
+
+  /* Pasting a screenshot or a file attaches it exactly as the paperclip would; a paste with only
+     text is left to the browser, so writing carries on as before. When an app puts both an image
+     and its link on the clipboard, the file wins and the link is not typed into the box. */
+  const onPaste = (e: ClipboardEvent<HTMLTextAreaElement>) => {
+    if (editing || voiceOn) return;
+    const pasted = Array.from(e.clipboardData?.files ?? []);
+    if (!pasted.length) return;
+    e.preventDefault();
+    addFiles(pasted);
+  };
+
+  /* Dragging files onto the composer: the box lights up for as long as they are over it. Dragging
+     text or a link is left alone, so it lands in the text box as the browser means it to. */
+  const carriesFiles = (data: DataTransfer | null) =>
+    !!data && (data.files.length > 0 || Array.from(data.types).includes("Files"));
+
+  const onDragEnter = (e: DragEvent<HTMLFormElement>) => {
+    if (editing || voiceOn || !carriesFiles(e.dataTransfer)) return;
+    e.preventDefault();
+    dragDepth.current += 1;
+    setDragging(true);
+  };
+  const onDragOver = (e: DragEvent<HTMLFormElement>) => {
+    if (editing || voiceOn || !carriesFiles(e.dataTransfer)) return;
+    e.preventDefault();
+    e.dataTransfer.dropEffect = "copy";
+  };
+  const onDragLeave = () => {
+    if (!dragging) return;
+    dragDepth.current = Math.max(0, dragDepth.current - 1);
+    if (dragDepth.current === 0) setDragging(false);
+  };
+  const onDrop = (e: DragEvent<HTMLFormElement>) => {
+    if (editing || voiceOn || !carriesFiles(e.dataTransfer)) return;
+    e.preventDefault();
+    dragDepth.current = 0;
+    setDragging(false);
+    addFiles(Array.from(e.dataTransfer.files));
+    textRef.current?.focus();
   };
 
   const describedBy = [
@@ -502,6 +561,12 @@ function ComposerForm({
   return (
     <form
       className="border-t bg-background px-3 pt-2.5 pb-3 md:px-6"
+      data-testid="composer-dropzone"
+      data-dragging={dragging ? "true" : undefined}
+      onDragEnter={onDragEnter}
+      onDragOver={onDragOver}
+      onDragLeave={onDragLeave}
+      onDrop={onDrop}
       onSubmit={(e) => {
         e.preventDefault();
         submit();
@@ -614,25 +679,10 @@ function ComposerForm({
           </>
         ) : null}
         {!editing && files.length > 0 && !voiceOn ? (
-          <ul className="flex flex-wrap gap-1.5 px-3 pt-2.5">
-            {files.map((f) => (
-              <li
-                key={`${f.name}-${f.size}-${f.lastModified}`}
-                className="inline-flex max-w-full items-center gap-1 rounded-md border bg-muted py-0.5 pr-0.5 pl-2 text-xs"
-              >
-                <span className="truncate">{f.name}</span>
-                <Button
-                  type="button"
-                  variant="ghost"
-                  size="icon-xs"
-                  aria-label={t("composer.removeFile", { name: f.name })}
-                  onClick={() => setFiles((prev) => prev.filter((x) => x !== f))}
-                >
-                  <XIcon aria-hidden="true" />
-                </Button>
-              </li>
-            ))}
-          </ul>
+          <AttachmentPreviews
+            files={files}
+            onRemove={(file) => setFiles((prev) => prev.filter((x) => x !== file))}
+          />
         ) : null}
         {/* biome-ignore lint/a11y/useAriaPropsSupportedByRole: while the mention list is open the box has role combobox */}
         <textarea
@@ -644,6 +694,7 @@ function ComposerForm({
           onKeyUp={syncCaret}
           onClick={syncCaret}
           onFocus={syncCaret}
+          onPaste={onPaste}
           rows={1}
           hidden={voiceOn}
           aria-label={t("composer.label", { room: roomName })}
@@ -697,7 +748,7 @@ function ComposerForm({
                 multiple
                 className="sr-only"
                 aria-label={t("composer.attach")}
-                onChange={(e) => addFiles(e.target.files)}
+                onChange={(e) => pickFiles(e.target.files)}
               />
               <PaperclipIcon className="size-4" aria-hidden="true" />
             </label>
@@ -769,6 +820,14 @@ function ComposerForm({
             )}
           </div>
         </div>
+        {dragging ? (
+          <div
+            data-testid="composer-drop-hint"
+            className="pointer-events-none absolute inset-0 flex items-center justify-center rounded-lg border-2 border-dashed border-ring bg-background/85 text-sm font-medium text-ring"
+          >
+            {t("composer.dropFiles")}
+          </div>
+        ) : null}
       </div>
     </form>
   );
