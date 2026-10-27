@@ -85,8 +85,8 @@ func agentToken(r *http.Request) (authn.Principal, error) {
 }
 
 // agentSession reports whether the machine and folder named in the headers have an AI, whether
-// it is online, its app and when its live session connected, and changes nothing (SES-01): the
-// launcher asks before taking over a live session. When the headers also name an organization, a
+// it is online, its app, when its principal session connected and every live session it holds, and
+// changes nothing (SES-01, SESS-19). When the headers also name an organization, a
 // position or a parent (--org, --position, --parent), it answers with the refusal the session itself
 // would get for them - 403, 409 or 422, in the same words - so that the launcher can tell the person
 // before it starts the harness (ORG-05, POS-07); that check changes nothing either.
@@ -116,7 +116,10 @@ func (s *server) agentSession(w http.ResponseWriter, r *http.Request) error {
 		if row, ok := rows[a.ID]; ok {
 			ref = convert.IntelligenceRef(row, dto.IntelligenceRoleAI, "")
 		}
-		out = dto.SessionState{Exists: true, Intelligence: &ref, App: a.Harness}
+		out = dto.SessionState{Exists: true, Intelligence: &ref, App: a.Harness, Sessions: []dto.SessionInfo{}}
+		for _, live := range s.Agents.Sessions(a.ID) {
+			out.Sessions = append(out.Sessions, dto.SessionInfo{Label: live.Label, Harness: live.Harness, ConnectedAt: live.Since.UTC()})
+		}
 		if live, ok := s.Agents.Live(a.ID); ok {
 			since := live.Since.UTC()
 			out.Online, out.ConnectedAt = true, &since

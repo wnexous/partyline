@@ -130,8 +130,7 @@ func TestResolveFolderHarnessRules(t *testing.T) {
 	require.Equal(t, "claude", live.Harness)
 
 	session := &fakeSession{}
-	_, err = f.presence.Attach(ctx, live, session, "process-one", false)
-	require.NoError(t, err)
+	_, _ = f.presence.AttachLabeled(ctx, live, session, "claude", "process-one", "", false)
 	id.Harness = "codex"
 	tools, err := f.reg.ResolveFolder(ctx, alice.UserID, id, false)
 	require.NoError(t, err)
@@ -163,9 +162,9 @@ func TestResolveFolderHarnessRules(t *testing.T) {
 	require.Equal(t, DefaultHarness, unknown.Harness, "an unknown harness is the generic agent app")
 }
 
-// AID-04, SES-04: the app of a live session is the session's harness. A session that attaches
-// sets it, a tools-only call racing that attach never overwrites it, and a refused session
-// (another process holds the AI) leaves the holder's app alone.
+// AID-04, SESS-17: the app of the AI is its principal session's harness. A principal that attaches
+// sets it, a tools-only call racing that attach never overwrites it, and a parallel session
+// (another process) leaves the principal's app alone.
 func TestAttachSetsTheAppAndToolsOnlyCallsNeverOverwriteIt(t *testing.T) {
 	f := newFixture(t)
 	ctx := context.Background()
@@ -174,10 +173,13 @@ func TestAttachSetsTheAppAndToolsOnlyCallsNeverOverwriteIt(t *testing.T) {
 	a, err := f.reg.ResolveFolder(ctx, alice.UserID, FolderID{Machine: "devbox", Folder: "/work/acme", Harness: "codex"}, false)
 	require.NoError(t, err)
 	holder := &fakeSession{}
-	require.NoError(t, f.reg.Attach(ctx, a, holder, "claude", "process-one-aaaaaaaa", false))
+	_, err = f.reg.Attach(ctx, a, holder, "claude", "process-one-aaaaaaaa", "", false)
+	require.NoError(t, err)
 	require.Equal(t, "claude", f.storedAgent(t, a.ID).Harness, "the session's harness is the app")
-	require.ErrorIs(t, f.reg.Attach(ctx, a, &fakeSession{}, "opencode", "process-two-bbbbbbbb", false), ErrBusy)
-	require.Equal(t, "claude", f.storedAgent(t, a.ID).Harness, "a refused session does not relabel the holder")
+	parallel, err := f.reg.Attach(ctx, a, &fakeSession{}, "opencode", "process-two-bbbbbbbb", "", false)
+	require.NoError(t, err)
+	require.Equal(t, "opencode-2", parallel.Label, "another process is a parallel session")
+	require.Equal(t, "claude", f.storedAgent(t, a.ID).Harness, "a parallel session does not relabel the principal")
 
 	// A tools-only call that has seen nobody connected and is about to write the app while a
 	// session attaches: the live session's app wins, whichever way the two interleave.
@@ -188,7 +190,7 @@ func TestAttachSetsTheAppAndToolsOnlyCallsNeverOverwriteIt(t *testing.T) {
 	f.reg.afterAppCheck = func() {
 		close(paused)
 		go func() {
-			attachErr = f.reg.Attach(ctx, b, &fakeSession{}, "claude", "process-one-aaaaaaaa", false)
+			_, attachErr = f.reg.Attach(ctx, b, &fakeSession{}, "claude", "process-one-aaaaaaaa", "", false)
 			close(attached)
 		}()
 		select {

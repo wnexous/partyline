@@ -134,9 +134,10 @@ func sumWaits(waits []time.Duration) time.Duration {
 // text and the promise that Partyline connects by itself, keeps polling while the holder is live, and
 // when the holder ends it connects, tells the harness that it is back, and delivers again.
 func TestChannelKeepsTryingAfterBusyAndSaysSo(t *testing.T) {
-	e, holder := busyEnv(t)
+	e, held := busyEnv(t)
 
 	o := e.options()
+	o.URL = held.url
 	o.timing.busyRetries = []time.Duration{20 * time.Millisecond, 20 * time.Millisecond}
 	o.timing.busyPoll = 50 * time.Millisecond
 	s := startSession(t, o)
@@ -149,7 +150,7 @@ func TestChannelKeepsTryingAfterBusyAndSaysSo(t *testing.T) {
 	require.Contains(t, n.Content, "connects by itself", "the harness is told that Partyline comes back on its own")
 	s.expectNoNotification(200 * time.Millisecond) // one notice, not one per poll
 
-	holder.Close()
+	held.release()
 	back := s.notification()
 	require.Equal(t, reconnectText, back.Content)
 	require.Equal(t, "notice", back.Meta["type"])
@@ -165,21 +166,30 @@ func TestChannelKeepsTryingAfterBusyAndSaysSo(t *testing.T) {
 // next retry connects, with no takeover.
 func TestLinkConnectsOnceTheHolderEnds(t *testing.T) {
 	e := newChanEnv(t)
-	holder, resp := e.alice.WithBearer(e.secret).DialFolder(testkit.Folder{Machine: "testbox", Path: "/work/builder", Harness: "opencode"})
-	require.NotNil(t, holder, "upgrade refused: %d %s", resp.Status, resp.Body)
-	holder.Welcome(wait)
+	held := holdAI(t, e)
 
 	tm := fastTiming
 	tm.busyRetries = make([]time.Duration, 100)
 	for i := range tm.busyRetries {
 		tm.busyRetries[i] = 30 * time.Millisecond
 	}
-	l := linkFor(t, e, tm)
-	require.Eventually(t, func() bool { return l.Err() != nil }, wait, 5*time.Millisecond, "busy while the holder is live")
-	require.NoError(t, holder.Closed(100*time.Millisecond), "the holder keeps the AI")
+	l := linkAt(t, held.url, e, tm)
+	require.Eventually(t, func() bool { return l.Err() != nil }, wait, 5*time.Millisecond, "busy while the older server holds the AI")
 
-	holder.Close()
+	held.release()
 	require.Eventually(t, func() bool { return l.Err() == nil && e.online() }, wait, 5*time.Millisecond, "the retry connects")
+}
+
+// linkAt is linkFor against another base, such as a server of the previous release that refuses a
+// session while another one holds the AI.
+func linkAt(t *testing.T, base string, e *chanEnv, tm timing) *link {
+	t.Helper()
+	l := newLink(mustURL(t, base), e.secret, builderIdentity, http.DefaultClient, discard{}, &syncBuffer{}, tm)
+	ctx, cancel := context.WithCancel(context.Background())
+	done := make(chan struct{})
+	go func() { _ = l.run(ctx); close(done) }()
+	t.Cleanup(func() { cancel(); <-done })
+	return l
 }
 
 // SES-02, SES-05: a channel another session took the AI from reports it, does not reconnect and

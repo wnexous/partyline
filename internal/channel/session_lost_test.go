@@ -5,8 +5,10 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"maps"
 	"net/http"
 	"net/http/httptest"
+	"net/http/httputil"
 	"strings"
 	"sync"
 	"testing"
@@ -15,6 +17,7 @@ import (
 	"github.com/coder/websocket"
 	"github.com/stretchr/testify/require"
 
+	"github.com/wnexous/partyline/internal/api/dto"
 	"github.com/wnexous/partyline/internal/testkit"
 )
 
@@ -50,15 +53,65 @@ var allTools = map[string]map[string]any{
 	"update_profile":      toolArgs("bio", "x"),
 }
 
-// busyEnv is a server whose clock stands at holderStart with OpenCode holding alice's AI of
-// /work/builder.
-func busyEnv(t *testing.T) (*chanEnv, *testkit.AgentConn) {
+// heldAI is an older server in front of the app (the channel's compatibility branch, SES-04):
+// while it holds the AI it answers the agent WebSocket with 409 identity_busy and the holder's
+// details, and every other request reaches the app. The server this feature ships never refuses a
+// session (SESS-10), so the refusal has to come from a server of the previous release.
+// release lets the app answer the dial, as a new server does; holds changes the holder the
+// refusal describes.
+type heldAI struct {
+	url     string
+	mu      sync.Mutex
+	held    bool
+	details map[string]string
+}
+
+// holdAI fronts the app with an older server that holds alice's AI of /work/builder in OpenCode
+// since holderStart.
+func holdAI(t *testing.T, e *chanEnv) *heldAI {
+	t.Helper()
+	h := &heldAI{held: true, details: map[string]string{
+		dto.BusyDetailDisplayName: "Builder", dto.BusyDetailApp: "opencode",
+		dto.BusyDetailAppLabel: "OpenCode", dto.BusyDetailConnectedAt: holderStart.Format(time.RFC3339),
+	}}
+	proxy := httputil.NewSingleHostReverseProxy(mustURL(t, e.env.URL))
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		h.mu.Lock()
+		held, details := h.held, maps.Clone(h.details)
+		h.mu.Unlock()
+		if held && r.URL.Path == "/api/v1/agent/ws" {
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusConflict)
+			_ = json.NewEncoder(w).Encode(dto.ErrorBody{Error: dto.Error{Code: dto.ErrorCodeIdentityBusy, Message: "this intelligence is open in another session", Details: details}})
+			return
+		}
+		proxy.ServeHTTP(w, r)
+	}))
+	t.Cleanup(srv.Close)
+	h.url = srv.URL
+	return h
+}
+
+// holds makes the next refusals describe another holder.
+func (h *heldAI) holds(details map[string]string) {
+	h.mu.Lock()
+	h.held, h.details = true, details
+	h.mu.Unlock()
+}
+
+// release stops the refusal: the app answers, as the server of this feature does.
+func (h *heldAI) release() {
+	h.mu.Lock()
+	h.held = false
+	h.mu.Unlock()
+}
+
+// busyEnv is a server whose clock stands at holderStart in front of an older one that holds
+// alice's AI of /work/builder.
+func busyEnv(t *testing.T) (*chanEnv, *heldAI) {
 	t.Helper()
 	e := newChanEnv(t, testkit.WithClock(testkit.NewClock(holderStart).Now))
-	holder, resp := e.alice.WithBearer(e.secret).DialFolder(testkit.Folder{Machine: "testbox", Path: "/work/builder", Harness: "opencode"})
-	require.NotNil(t, holder, "upgrade refused: %d %s", resp.Status, resp.Body)
-	holder.Welcome(wait)
-	return e, holder
+	return e, holdAI(t, e)
 }
 
 // takeOver opens a session of OpenCode that takes the AI of /work/builder over.
@@ -75,8 +128,9 @@ func (e *chanEnv) takeOver() *testkit.AgentConn {
 // which app and since when (local HH:MM), and how to take over; none of them reaches the server
 // and the channel tells its harness once, not once per poll, that it keeps trying.
 func TestEveryToolAnswersTheBusyText(t *testing.T) {
-	e, holder := busyEnv(t)
+	e, held := busyEnv(t)
 	o := e.options()
+	o.URL = held.url
 	o.zone = personZone
 	o.timing.busyRetries = []time.Duration{} // no retry: the state stays busy
 	s := startSession(t, o)
@@ -97,14 +151,15 @@ func TestEveryToolAnswersTheBusyText(t *testing.T) {
 	require.Equal(t, "notice", n.Meta["type"])
 	require.Equal(t, wantBusyChannel, n.Content)
 	s.expectNoNotification(200 * time.Millisecond)
-	require.NoError(t, holder.Closed(50*time.Millisecond), "the holder keeps the AI")
+	require.False(t, e.online(), "the channel is not connected as the AI")
 }
 
 // SES-04: the retries do not change what a busy channel says, and the text follows the session
 // that holds the AI: when the retries find another one, the text names it.
 func TestTheBusyTextNamesTheSessionThatHoldsTheAI(t *testing.T) {
-	e, holder := busyEnv(t)
+	e, held := busyEnv(t)
 	o := e.options()
+	o.URL = held.url
 	o.zone = personZone
 	o.timing.busyRetries = make([]time.Duration, 100) // retries for as long as the test needs
 	for i := range o.timing.busyRetries {
@@ -118,10 +173,10 @@ func TestTheBusyTextNamesTheSessionThatHoldsTheAI(t *testing.T) {
 	}, wait, 10*time.Millisecond)
 
 	// A session of pi takes the AI over from the holder: the next retry finds it instead.
-	next, resp := e.alice.WithBearer(e.secret).DialFolder(testkit.Folder{Machine: "testbox", Path: "/work/builder", Harness: "pi", Takeover: true})
-	require.NotNil(t, next, "upgrade refused: %d %s", resp.Status, resp.Body)
-	next.Welcome(wait)
-	require.Equal(t, websocket.StatusCode(4002), websocket.CloseStatus(holder.Closed(wait)))
+	held.holds(map[string]string{
+		dto.BusyDetailDisplayName: "Builder", dto.BusyDetailApp: "pi",
+		dto.BusyDetailAppLabel: "pi", dto.BusyDetailConnectedAt: holderStart.Format(time.RFC3339),
+	})
 	require.Eventually(t, func() bool {
 		text, _ := s.call("list_rooms", map[string]any{})
 		return strings.Contains(text, "(pi, since 09:30)")
@@ -203,12 +258,18 @@ func (r *listenRun) lines() []map[string]string {
 
 func startListen(t *testing.T, e *chanEnv, harness string, tm timing) *listenRun {
 	t.Helper()
+	return startListenAt(t, e.env.URL, e, harness, tm)
+}
+
+// startListenAt is startListen against another base, such as an older server's refusal.
+func startListenAt(t *testing.T, base string, e *chanEnv, harness string, tm timing) *listenRun {
+	t.Helper()
 	r := &listenRun{err: make(chan error, 1)}
 	ctx, cancel := context.WithCancel(context.Background())
 	t.Cleanup(cancel)
 	go func() {
 		r.err <- Listen(ctx, ListenOptions{
-			URL: e.env.URL, Token: e.secret, Machine: builderFolder.Machine, Folder: builderFolder.Folder, Harness: harness,
+			URL: base, Token: e.secret, Machine: builderFolder.Machine, Folder: builderFolder.Folder, Harness: harness,
 			Stdout: r, Stderr: &syncBuffer{}, timing: tm, zone: personZone,
 		})
 	}()
@@ -250,10 +311,10 @@ func TestListenPrintsTheNoticeAndEndsWhenTakenOver(t *testing.T) {
 // SES-04: listen of a session that finds the AI held by another one retries, then prints the
 // busy text as one JSON line and ends the same way.
 func TestListenPrintsTheBusyNoticeAndEnds(t *testing.T) {
-	e, _ := busyEnv(t)
+	e, held := busyEnv(t)
 	tm := fastTiming
 	tm.busyRetries = []time.Duration{20 * time.Millisecond, 20 * time.Millisecond}
-	r := startListen(t, e, "pi", tm)
+	r := startListenAt(t, held.url, e, "pi", tm)
 
 	err := r.ended(t)
 	require.True(t, errors.Is(err, ErrSessionLost), "listen ended with %v", err)

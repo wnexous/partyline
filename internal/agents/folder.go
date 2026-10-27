@@ -492,24 +492,29 @@ func (r *Registry) setApp(ctx context.Context, agentID, harness string) error {
 	})
 }
 
-// Attach makes s the live session of the agent (Presence.Attach) and, once it is, stamps its
-// connect time and makes harness its app (AID-02). A refused attach (ErrBusy) changes nothing,
-// not even the app, so the session that holds the AI keeps its label (SES-04). A session that
-// replaces an older socket of the same process is not a new session: it keeps both.
-func (r *Registry) Attach(ctx context.Context, a db.Agent, s Session, harness, liveID string, takeover bool) error {
+// Attach makes s the live session the connection prefers (Presence.AttachLabeled) and returns the
+// session it became. Only the principal session ("") stamps the AI's connect time and makes the
+// session's harness its app (AID-02): a parallel or worktree session shares the AI without
+// relabeling it (SESS-17). A session that replaces an older socket of the same process is not a
+// new session: it keeps the label, the app and the connect time.
+func (r *Registry) Attach(ctx context.Context, a db.Agent, s Session, harness, liveID, preferred string, takeover bool) (Live, error) {
 	r.appMu.Lock()
 	defer r.appMu.Unlock()
-	fresh, err := r.presence.Attach(ctx, a, s, liveID, takeover)
-	if err != nil || !fresh {
-		return err
+	harness = cleanHarness(harness)
+	live, fresh := r.presence.AttachLabeled(ctx, a, s, harness, liveID, preferred, takeover)
+	if !fresh || live.Label != "" {
+		return live, nil
 	}
-	if harness = cleanHarness(harness); harness != "" {
+	if harness != "" {
 		if err := r.setApp(ctx, a.ID, harness); err != nil {
-			return err
+			return live, err
 		}
 	}
-	return r.MarkConnected(ctx, a.ID)
+	return live, r.MarkConnected(ctx, a.ID)
 }
+
+// Sessions returns the agent's live sessions, the principal first (SESS-32); nil when it is offline.
+func (r *Registry) Sessions(agentID string) []Live { return r.presence.Sessions(agentID) }
 
 // Live returns the agent's live session, if any.
 func (r *Registry) Live(agentID string) (Live, bool) { return r.presence.Live(agentID) }

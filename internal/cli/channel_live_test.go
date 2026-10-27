@@ -1,7 +1,6 @@
 package cli
 
 import (
-	"strings"
 	"testing"
 	"time"
 
@@ -42,17 +41,17 @@ func (e *channelEnv) holder(t *testing.T, folder string) *testkit.AgentConn {
 	return conn
 }
 
-// SES-04, SES-07: a channel started without PARTYLINE_TAKEOVER finds the AI live in another
-// session: it does not take it over and its tools say so.
-func TestChannelStaysBusyWithoutTakeover(t *testing.T) {
+// SESS-10, SESS-16: a channel started without PARTYLINE_TAKEOVER while the AI is live in another
+// session attaches as a parallel session: the other session is left alone and its tools work.
+func TestChannelStartsAsAParallelSessionWithoutTakeover(t *testing.T) {
 	e := newChannelEnv(t)
 	holder := e.holder(t, "/tmp/wd")
 	c := startChannel(t, nil, map[string]string{"PARTYLINE_URL": e.env.URL, "PARTYLINE_TOKEN": e.secret, "PARTYLINE_HARNESS": "claude"}, "/tmp/wd")
 	c.initialize()
 
 	require.Eventually(t, func() bool {
-		text, isErr := c.call(1, "list_rooms")
-		return isErr && strings.Contains(text, "open in another session")
+		_, isErr := c.call(1, "list_rooms")
+		return !isErr
 	}, chanWait, 20*time.Millisecond)
 	require.NoError(t, holder.Closed(100*time.Millisecond), "the live session was not taken over")
 }

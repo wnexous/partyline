@@ -72,36 +72,41 @@ func offlineEvents(ch <-chan events.Event, agentID string) int {
 	}
 }
 
-// SES-04: while an AI has a live session, a connection from another process is refused before
-// the upgrade with 409 identity_busy naming the AI, its app and since when the session is live;
-// the live session stays live and the refused connection changes nothing, not even the app.
-func TestASecondSessionIsRefusedWhileTheFirstIsLive(t *testing.T) {
+// SESS-10, SESS-17: a connection from another process is a parallel session, not a refusal: both
+// sessions are online, the AI keeps the principal's app and time, and GET /agent/session lists
+// both.
+func TestASecondSessionIsAParallelSession(t *testing.T) {
 	l := newLiveEnv(t)
 	first, id := l.dial(t, acme)
 	l.addMember(t, id)
 
 	l.clock.Advance(time.Hour)
-	other := acme
-	other.Harness = "opencode"
-	conn, resp := l.tok.DialFolder(other)
-	require.Nil(t, conn)
-	e := resp.RequireError(http.StatusConflict, dto.ErrorCodeIdentityBusy)
-	require.Equal(t, map[string]string{
-		"display_name": "Acme", "app": "claude", "app_label": "Claude Code", "connected_at": l.start.Format(time.RFC3339),
-	}, e.Details, "who is live, in which app and since when")
-	require.NotEmpty(t, e.Message)
+	conn, resp := l.tok.DialFolder(acme)
+	require.NotNil(t, conn, "upgrade refused: %d %s", resp.Status, resp.Body)
+	welcome := conn.Welcome(wsWait)
+	require.Equal(t, "claude-2", welcome.Session.Label)
+	require.Equal(t, id, welcome.Agent.ID, "one AI for both sessions")
 
 	require.True(t, l.env.App.Presence.Online(id))
-	require.Equal(t, "claude", aiApp(t, l.alice, id), "a refused connection does not relabel the live session")
+	require.Equal(t, "claude", aiApp(t, l.alice, id), "a parallel session does not relabel the AI")
 	m := l.post(t, "still here?")
-	require.Equal(t, m.ID, first.Message(wsWait).Message.ID, "the first session keeps receiving")
+	require.Equal(t, m.ID, first.Message(wsWait).Message.ID, "the principal keeps receiving")
 	require.NoError(t, first.Closed(200*time.Millisecond), "and stays open")
+
+	s := l.session(t)
+	require.True(t, s.Online)
+	require.Equal(t, "claude", s.App, "the app follows the principal")
+	require.True(t, l.start.Equal(*s.ConnectedAt), "and so does its time")
+	require.Equal(t, []dto.SessionInfo{
+		{Label: "", Harness: "claude", ConnectedAt: l.start},
+		{Label: "claude-2", Harness: "claude", ConnectedAt: l.start.Add(time.Hour)},
+	}, s.Sessions, "the principal first, then the parallel session")
 }
 
-// SES-04 (L-042): a connection that sends no X-Partyline-Live header is a process of its own: two
-// of them for one AI are two processes, the second is refused with 409 identity_busy before the
-// upgrade and the first stays live, receives and is not replaced.
-func TestTwoConnectionsWithoutAProcessIDAreTwoProcesses(t *testing.T) {
+// SESS-10, SESS-12: a connection that sends no X-Partyline-Live header is a process of its own:
+// two of them for one AI are two live sessions, the second with the next label, and the first
+// stays live, receives and is not replaced.
+func TestTwoConnectionsWithoutAProcessIDAreTwoSessions(t *testing.T) {
 	l := newLiveEnv(t)
 	require.Empty(t, acme.Headers().Get(dto.HeaderLive), "the folder carries no process id")
 	first, resp := l.tok.DialAgentHeaders(acme.Headers())
@@ -110,8 +115,8 @@ func TestTwoConnectionsWithoutAProcessIDAreTwoProcesses(t *testing.T) {
 	l.addMember(t, id)
 
 	second, resp := l.tok.DialAgentHeaders(acme.Headers())
-	require.Nil(t, second)
-	resp.RequireError(http.StatusConflict, dto.ErrorCodeIdentityBusy)
+	require.NotNil(t, second, "upgrade refused: %d %s", resp.Status, resp.Body)
+	require.Equal(t, "claude-2", second.Welcome(wsWait).Session.Label)
 
 	require.True(t, l.env.App.Presence.Online(id))
 	m := l.post(t, "still here?")
@@ -119,14 +124,14 @@ func TestTwoConnectionsWithoutAProcessIDAreTwoProcesses(t *testing.T) {
 	require.NoError(t, first.Closed(200*time.Millisecond), "and is not replaced")
 }
 
-// SES-04: the refusal is only for the AI that is held: another folder, or the same folder on
-// another machine, is another AI and connects at the same time.
-func TestBusyOnlyBlocksTheSameAI(t *testing.T) {
+// SESS-10: another folder, or the same folder on another machine, is another AI; the same folder
+// and machine is the same AI with a parallel session.
+func TestAnotherFolderOrMachineIsAnotherAI(t *testing.T) {
 	l := newLiveEnv(t)
 	_, id := l.dial(t, acme)
-	conn, resp := l.tok.DialFolder(acme)
-	require.Nil(t, conn)
-	resp.RequireError(http.StatusConflict, dto.ErrorCodeIdentityBusy)
+	parallel, resp := l.tok.DialFolder(acme)
+	require.NotNil(t, parallel, "upgrade refused: %d %s", resp.Status, resp.Body)
+	require.Equal(t, id, parallel.Welcome(wsWait).Agent.ID)
 
 	for _, other := range []testkit.Folder{
 		{Machine: "devbox", Path: "/home/alice/notes", Harness: "claude"},
@@ -136,6 +141,16 @@ func TestBusyOnlyBlocksTheSameAI(t *testing.T) {
 		require.NotEqual(t, id, otherID)
 		require.NoError(t, otherConn.Closed(100*time.Millisecond))
 	}
+}
+
+// The session state is still an agent route: a caller with no credentials is refused 401 and a
+// user token 403, a parallel session does not change that.
+func TestTheSessionStateAuthorizationIsUnchanged(t *testing.T) {
+	l := newLiveEnv(t)
+	_, id := l.dial(t, acme)
+	l.env.Anon().AsFolder(acme).Get("/api/v1/agent/session").RequireStatus(http.StatusUnauthorized)
+	l.alice.Token(dto.TokenKindUser, "cli").AsFolder(acme).Get("/api/v1/agent/session").RequireError(http.StatusForbidden, dto.ErrorCodeForbidden)
+	require.True(t, l.env.App.Presence.Online(id))
 }
 
 // SES-02: a process that takes over closes the old session with 4002 taken_over and becomes the

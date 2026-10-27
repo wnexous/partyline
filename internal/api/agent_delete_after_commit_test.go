@@ -33,8 +33,7 @@ func TestDeletingAnAIAnswers204WhateverItsSessionDoesAfterTheCommit(t *testing.T
 
 	agent, err := env.App.Store.R().GetAgent(ctx, builder)
 	require.NoError(t, err)
-	_, err = env.App.Presence.Attach(ctx, agent, failingSession{}, "process-one", false)
-	require.NoError(t, err)
+	env.App.Presence.AttachLabeled(ctx, agent, failingSession{}, "claude", "process-one", "", false)
 	require.True(t, env.App.Presence.Online(builder))
 
 	alice.Delete(agentDeletePath(builder)).RequireStatus(http.StatusNoContent)

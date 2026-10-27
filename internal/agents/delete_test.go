@@ -125,8 +125,7 @@ func TestEndSessionClosesTheLiveSessionOfWhoeverIsManagedByTheCaller(t *testing.
 	f.addTo(t, team.ID, carol.UserID, orgs.PermissionMember, "")
 	ai := f.aiIn(t, bob, team, "worker") // created by bob: bob manages it, carol does not
 	session := &fakeSession{}
-	_, err := f.presence.Attach(ctx, mustAgent(t, f, ai).Agent, session, "process-one", false)
-	require.NoError(t, err)
+	f.presence.AttachLabeled(ctx, mustAgent(t, f, ai).Agent, session, "claude", "process-one", "", false)
 
 	require.ErrorIs(t, f.reg.EndSession(ctx, carol, ai), access.ErrForbidden)
 	require.ErrorIs(t, f.reg.EndSession(ctx, alice, ai), access.ErrForbidden, "an admin is no manager: management is the chart's")
