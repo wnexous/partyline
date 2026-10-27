@@ -9,6 +9,20 @@ import (
 	"github.com/wnexous/partyline/internal/validation"
 )
 
+// checkPostShapes refuses a post that carries more than one of the question and answer shapes
+// (QR-01, QR-02, QR-05): a message asks a question or answers one, not both. A post with both
+// question shapes names the first field, as the validation table does.
+func checkPostShapes(quickReplies []string, wizard *dto.WizardRequest, answers *dto.AnswerSubmission) error {
+	check := validation.Check{}
+	if answers != nil && (quickReplies != nil || wizard != nil) {
+		check.Add("answers", "a message asks a question or answers one, not both")
+	}
+	if quickReplies != nil && wizard != nil {
+		check.Add("quick_replies", "a message asks a question or answers one, not both")
+	}
+	return check.Err()
+}
+
 // questionFrom canonicalises the question of a post (QR-01..QR-03): the server assigns the ids
 // from the order the author gave, trims the labels and refuses the design's limits and two shapes
 // in one message. It returns nil when the post carries no interactive part, which is every other
@@ -17,7 +31,7 @@ func questionFrom(quickReplies []string, wizard *dto.WizardRequest) (*dto.Messag
 	check := validation.Check{}
 	switch {
 	case quickReplies != nil && wizard != nil:
-		check.Add("quick_replies", "must not be combined with a wizard")
+		check.Add("quick_replies", "a message asks a question or answers one, not both")
 		return nil, check.Err()
 	case quickReplies != nil:
 		labels := checkLabels(check, quickReplies, dto.MaxQuickReplies, "quick_replies")
@@ -187,6 +201,9 @@ func wizardAnswers(wizard *dto.Wizard, submission *dto.AnswerSubmission) (*dto.M
 		switch {
 		case utf8.RuneCountInString(text) > dto.MaxAnswerText:
 			check.Add("answers", "a text answer must have at most "+strconv.Itoa(dto.MaxAnswerText)+" characters")
+			return nil, check.Err()
+		case strings.ContainsAny(text, "\r\n"):
+			check.Add("answers", "a text answer must be one line")
 			return nil, check.Err()
 		case text != "" && !question.AllowText:
 			check.Add("answers", "a question that does not allow a text answer was given one")

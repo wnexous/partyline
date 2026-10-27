@@ -46,3 +46,19 @@ tasks that follow, the same way the other features' contract notes do.
 - **The AI authors more than one row.** Seeding the question and the wizard from the AI gives its name
   three links in the timeline, so the profile-panel fit check focuses the first one instead of the only
   one. It still opens the same panel, and every page the fit spec covered before is still checked.
+
+## Review fix: the order of the answer refusals
+
+- **The author check comes before deletion and before the question check.** Deleting a message
+  clears `interactive_json` (QR-04), so after a real delete a question and a non-question are the
+  same row: `deleted_at` set and no interactive document. `checkAnswer` therefore applies, in order:
+  reply target in the room, the caller is not its author (403, also when the target is deleted),
+  the target is not deleted (409), the target carries a question (422), and the caller has no live
+  answer (409). An asker answering their own deleted question gets 403; a deleted non-question
+  answered by someone else stays 409, because the server can no longer tell it from a deleted
+  question. A live non-question stays 422. This follows the coordinator's decision for the review
+  fixes; no marker column was added, so the placeholder still keeps nothing of what it asked.
+- **`Post` renders an answer only after the room check, and only for a live target from another
+  author.** The ordered refusals above run inside the post transaction in `checkAnswer`; a draft
+  that reaches it unrendered (the caller's own target or a deleted one) is refused there before it
+  can be inserted, so `draft.validate` does not measure its empty text.

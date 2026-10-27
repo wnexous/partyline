@@ -174,6 +174,23 @@ func TestQuestionValidationOverTheAPI(t *testing.T) {
 	require.Len(t, page.Items, 1)
 }
 
+// QR-01, QR-02, QR-05: one post carries one shape over the route too; a question with an answer is
+// 422 on answers and stores nothing.
+func TestOneShapePerPostOverTheAPI(t *testing.T) {
+	f := newQuickRepliesFixture(t)
+	question := f.question(t, f.alice, "Sim", "Não")
+
+	err := f.post(t, f.bob, dto.PostMessageRequest{
+		ReplyTo:      question.ID,
+		QuickReplies: []string{"Sim"},
+		Answers:      &dto.AnswerSubmission{QuickReply: "r1"},
+	}).RequireError(http.StatusUnprocessableEntity, dto.ErrorCodeInvalid)
+	require.Contains(t, err.Fields, "answers")
+
+	page := testkit.Decode[dto.Page[dto.Message]](f.alice.Get(f.messagesPath()).RequireStatus(http.StatusOK))
+	require.Len(t, page.Items, 1, "the question only; the mixed post stored nothing")
+}
+
 // QR-09: an answer to a deleted question is 409 conflict, not a stale answer.
 func TestAnswersToADeletedQuestionAreRefused(t *testing.T) {
 	f := newQuickRepliesFixture(t)

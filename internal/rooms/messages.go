@@ -117,6 +117,9 @@ type draft struct {
 	// answers is the canonical structured answer document (QR-05, QR-06), empty for every other
 	// message.
 	answers string
+	// answering marks a draft that answers a question: checkAnswer settles the stored-message
+	// rules even when the answer cannot be rendered before the transaction (QR-05).
+	answering bool
 	// originalText is the text the caller gave, before the server renders an answer's text
 	// (QR-05).
 	originalText string
@@ -139,6 +142,9 @@ func (s *Service) Post(ctx context.Context, p authn.Principal, roomID string, in
 	if kind == "" {
 		kind = dto.MessageKindText
 	}
+	if err := checkPostShapes(in.QuickReplies, in.Wizard, in.Answers); err != nil {
+		return Message{}, err
+	}
 
 	var interactiveJSON string
 	if kind != dto.MessageKindReaction {
@@ -160,39 +166,46 @@ func (s *Service) Post(ctx context.Context, p authn.Principal, roomID string, in
 	}
 
 	var answersJSON string
+	answering := in.Answers != nil
 	text := in.Text
-	if in.Answers != nil {
+	if answering {
 		if kind != dto.MessageKindText {
 			check := validation.Check{}
 			check.Add("answers", "must be a text message")
 			return Message{}, check.Err()
 		}
-		var question *dto.MessageInteractive
-		if in.ReplyTo != "" {
-			m, err := s.message(ctx, in.ReplyTo)
-			if err == nil {
-				if m.DeletedAt.Valid {
-					return Message{}, ErrMessageDeleted
-				}
-				question = dto.ParseMessageInteractive(m.InteractiveJson)
+		if in.ReplyTo == "" {
+			// answersFor reports the missing target on the answers field, as it always has.
+			_, err := answersFor(nil, in.Answers)
+			return Message{}, err
+		}
+		target, err := s.replyTarget(ctx, roomID, in.ReplyTo)
+		if err != nil {
+			return Message{}, err
+		}
+		// Only a live target from another author is rendered against its question here. The
+		// ordered checks in checkAnswer refuse the caller's own question, a deleted target and a
+		// non-question inside the post transaction, where the read and the insert see the same
+		// rows (QR-05, QR-09).
+		if !target.DeletedAt.Valid && target.AuthorIid != author {
+			question := dto.ParseMessageInteractive(target.InteractiveJson)
+			answers, err := answersFor(question, in.Answers)
+			if err != nil {
+				return Message{}, err
 			}
+			b, err := json.Marshal(answers)
+			if err != nil {
+				return Message{}, err
+			}
+			answersJSON = string(b)
+			text = answerText(answers)
 		}
-		answers, err := answersFor(question, in.Answers)
-		if err != nil {
-			return Message{}, err
-		}
-		b, err := json.Marshal(answers)
-		if err != nil {
-			return Message{}, err
-		}
-		answersJSON = string(b)
-		text = answerText(answers)
 	}
 
 	d := draft{
 		authorKind: dto.AuthorKindUser, authorID: p.UserID, authorUserID: p.UserID, authorIID: p.UserID,
 		kind: kind, text: text, replyTo: in.ReplyTo, files: in.Files,
-		interactive: interactiveJSON, answers: answersJSON, originalText: in.Text,
+		interactive: interactiveJSON, answers: answersJSON, answering: answering, originalText: in.Text,
 	}
 	if p.Kind == authn.KindAgent {
 		// An agent's messages resolve to its owner (DLV-06).
@@ -263,11 +276,20 @@ func (s *Service) PostFromChat(ctx context.Context, roomID string, in ChatMessag
 // nothing, for callers that create something to post into and must not create it for a message
 // that will be refused.
 func ValidatePost(in PostInput) error {
+	if err := checkPostShapes(in.QuickReplies, in.Wizard, in.Answers); err != nil {
+		return err
+	}
 	return draft{text: in.Text, files: in.Files}.validate()
 }
 
-// validate applies MSG-02.
-func (d draft) validate() error { return validateText(d.text, len(d.files) > 0) }
+// validate applies MSG-02. An answer that could not be rendered yet is refused by checkAnswer
+// with the stored-message rule before anything is inserted, so it has no text to measure here.
+func (d draft) validate() error {
+	if d.answering && d.answers == "" {
+		return nil
+	}
+	return validateText(d.text, len(d.files) > 0)
+}
 
 // validateText applies MSG-02 to the text of a message that has files or not: at most 16,000 characters, and not
 // empty unless there are files. An edit applies it to the files the message already has (EDT-04).
@@ -345,6 +367,30 @@ func (s *Service) post(ctx context.Context, roomID string, d draft) (Message, er
 		s.bus.Publish(events.RoomChanged{RoomID: roomID})
 	}
 	return s.message(ctx, id)
+}
+
+// replyTarget loads the message a reply names and checks that it belongs to the room, the rule
+// checkReplyTo applies inside the write transaction. A target that does not exist and one of
+// another room get the same field error, so an id says nothing about other rooms.
+func (s *Service) replyTarget(ctx context.Context, roomID, messageID string) (db.MessageView, error) {
+	m, err := s.store.R().GetMessageView(ctx, messageID)
+	if errors.Is(err, sql.ErrNoRows) {
+		return db.MessageView{}, replyToNotInRoom()
+	}
+	if err != nil {
+		return db.MessageView{}, err
+	}
+	if m.RoomID != roomID {
+		return db.MessageView{}, replyToNotInRoom()
+	}
+	return m, nil
+}
+
+// replyToNotInRoom is the reply_to field error of a target that is not a message of the room.
+func replyToNotInRoom() error {
+	check := validation.Check{}
+	check.Add("reply_to", "must be a message of the room")
+	return check.Err()
 }
 
 // checkReplyTo validates the replied message: it must be a message of the room.
