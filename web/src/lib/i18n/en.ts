@@ -472,6 +472,15 @@ export const en = {
   "reactions.failed": "Couldn’t save your reaction.",
   "reactions.limit": "A message holds at most {max} different reactions.",
 
+  "qr.group": "Quick replies",
+  "qr.sending": "Sending your answer…",
+  "qr.answered": "Answer sent: {label}",
+  "qr.ownQuestion": "Your question",
+  "qr.noPermission": "You need permission to post in this conversation",
+  "qr.frozen": "This conversation is in history",
+  "qr.failed": "Could not send your answer. Try again.",
+  "qr.alreadyAnswered": "You already answered this question",
+
   "validation.retention": "Whole days, 0 or more",
   "presence.online": "Online",
   "presence.offline": "Offline",
