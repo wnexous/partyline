@@ -56,6 +56,52 @@ export async function expectNoSidewaysScroll(page: Page, where: string) {
 }
 
 /**
+ * What a page reports when it does not fit: the document's width beside the window's, and every
+ * visible element whose own text spills out of it. Elements that clip or ellipsize their text are
+ * doing what they were made for and are not listed.
+ */
+export async function fitReport(page: Page) {
+  return page.evaluate(() => {
+    const overflowing: string[] = [];
+    for (const el of document.querySelectorAll("body *")) {
+      const style = getComputedStyle(el);
+      if (style.display === "none" || style.visibility === "hidden") continue;
+      if (el.getClientRects().length === 0) continue;
+      const hasText = Array.from(el.childNodes).some(
+        (node) => node.nodeType === Node.TEXT_NODE && (node.textContent ?? "").trim() !== "",
+      );
+      if (!hasText) continue;
+      // A row that is cut with an ellipsis, or clipped by its own box, is meant to do that.
+      if (style.overflowX !== "visible" || style.textOverflow === "ellipsis") continue;
+      if (el.scrollWidth <= el.clientWidth + 1) continue;
+      const classes = typeof el.className === "string" ? el.className : "";
+      const text = (el.textContent ?? "").replace(/\s+/g, " ").trim();
+      overflowing.push(
+        `<${el.tagName.toLowerCase()} class="${classes.slice(0, 80)}"> "${text.slice(0, 40)}"`,
+      );
+    }
+    return {
+      scrollWidth: document.documentElement.scrollWidth,
+      innerWidth: window.innerWidth,
+      overflowing,
+    };
+  });
+}
+
+/** The whole page fits the window and no visible text spills out of its own box (UI-24). */
+export async function expectFits(page: Page, where: string) {
+  const report = await fitReport(page);
+  expect(
+    report.scrollWidth,
+    `${where} scrolls sideways (${report.scrollWidth} > ${report.innerWidth})`,
+  ).toBeLessThanOrEqual(report.innerWidth);
+  expect(
+    report.overflowing,
+    `${where} has text spilling out of its box: ${report.overflowing.join(" | ")}`,
+  ).toEqual([]);
+}
+
+/**
  * A fake AI client (AID-01, AID-02): an agent token plus the machine and folder headers the CLI
  * sends. The AI is the one the folder names, so two connects of one folder are one AI.
  */
