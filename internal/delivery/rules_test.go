@@ -3,6 +3,7 @@ package delivery
 import (
 	"fmt"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/require"
 
@@ -78,23 +79,102 @@ func TestPlanExhaustive(t *testing.T) {
 	}
 }
 
-// DLV-08: the 25th consecutive agent message pauses agent delivery, reported once.
+// loopGuardStart is the time of the first message in the loop guard tests.
+var loopGuardStart = time.Date(2026, 10, 19, 12, 0, 0, 0, time.UTC)
+
+// DLV-08: the 25th consecutive agent message within the quiet gap pauses agent delivery, reported
+// once; the guard itself never resumes it (DLV-09).
 func TestLoopGuardPausesAtTwentyFifthAgentMessage(t *testing.T) {
 	var g LoopGuard
 	s := LoopState{}
+	previous := time.Time{}
 	for i := 1; i <= 24; i++ {
+		now := loopGuardStart.Add(time.Duration(i) * time.Second)
 		var paused bool
-		s, paused = g.Next(s, dto.AuthorKindAgent)
+		s, paused = g.Next(s, dto.AuthorKindAgent, previous, now)
 		require.False(t, paused, "message %d", i)
 		require.Equal(t, LoopState{Streak: i}, s)
+		previous = now
 	}
-	s, paused := g.Next(s, dto.AuthorKindAgent)
+	now := loopGuardStart.Add(25 * time.Second)
+	s, paused := g.Next(s, dto.AuthorKindAgent, previous, now)
 	require.True(t, paused)
 	require.Equal(t, LoopState{Streak: 25, Paused: true}, s)
 
-	s, paused = g.Next(s, dto.AuthorKindAgent)
+	s, paused = g.Next(s, dto.AuthorKindAgent, now, now.Add(time.Second))
 	require.False(t, paused, "pausedNow is reported once")
 	require.True(t, s.Paused)
+}
+
+// DLV-08: a slow conversation is no ping-pong. 25 agent messages, each posted more than the quiet
+// gap after the previous one, never pause the room: every message starts its own burst.
+func TestLoopGuardQuietGapStartsTheStreakAgain(t *testing.T) {
+	var g LoopGuard
+	require.Equal(t, 10*time.Minute, DefaultQuietGap)
+	previous := time.Time{}
+	now := loopGuardStart
+	var s LoopState
+	var paused bool
+	for i := 1; i <= 25; i++ {
+		s, paused = g.Next(s, dto.AuthorKindAgent, previous, now)
+		require.False(t, paused, "message %d", i)
+		require.Equal(t, LoopState{Streak: 1}, s, "message %d starts its own burst", i)
+		previous = now
+		now = now.Add(11 * time.Minute)
+	}
+}
+
+// DLV-08: the gap must be longer than the quiet gap. Exactly 10 minutes still counts as the same
+// burst, so a boundary case keeps counting rather than silently restarting.
+func TestLoopGuardQuietGapBoundary(t *testing.T) {
+	var g LoopGuard
+	now := loopGuardStart.Add(5 * time.Minute)
+	s, paused := g.Next(LoopState{Streak: 5}, dto.AuthorKindAgent, now.Add(-DefaultQuietGap), now)
+	require.False(t, paused)
+	require.Equal(t, LoopState{Streak: 6}, s, "a gap of exactly QuietGap continues the burst")
+
+	s, paused = g.Next(s, dto.AuthorKindAgent, now, now.Add(DefaultQuietGap+time.Second))
+	require.False(t, paused)
+	require.Equal(t, LoopState{Streak: 1}, s, "a longer gap starts the streak again")
+}
+
+// DLV-08: 20 rapid agent messages, a quiet gap and 10 more rapid ones are two bursts of 20 and 10,
+// not a run of 30 that would pause the room.
+func TestLoopGuardBurstAfterQuietGap(t *testing.T) {
+	var g LoopGuard
+	s := LoopState{}
+	previous := time.Time{}
+	now := loopGuardStart
+	post := func() (LoopState, bool) {
+		next, paused := g.Next(s, dto.AuthorKindAgent, previous, now)
+		previous, s = now, next
+		return s, paused
+	}
+	for i := 0; i < 20; i++ {
+		_, paused := post()
+		require.False(t, paused)
+		now = now.Add(time.Second)
+	}
+	require.Equal(t, LoopState{Streak: 20}, s)
+
+	now = now.Add(15 * time.Minute)
+	for i := 0; i < 10; i++ {
+		_, paused := post()
+		require.False(t, paused, "message %d of the second burst", i+1)
+		now = now.Add(time.Second)
+	}
+	require.Equal(t, LoopState{Streak: 10}, s, "the quiet gap started the streak again")
+}
+
+// DLV-09: a quiet gap only restarts the counter. A paused room stays paused until a resume.
+func TestLoopGuardPausedStaysPausedAfterGap(t *testing.T) {
+	var g LoopGuard
+	previous := loopGuardStart
+	now := previous.Add(15 * time.Minute)
+	s, paused := g.Next(LoopState{Streak: 25, Paused: true}, dto.AuthorKindAgent, previous, now)
+	require.False(t, paused, "an already paused room posts no second notice")
+	require.True(t, s.Paused, "the gap does not resume the room")
+	require.Equal(t, LoopState{Streak: 1, Paused: true}, s, "the gap restarts the counter but keeps the pause")
 }
 
 // DLV-10: a user or chat message resets the streak; DLV-09: only a resume unpauses.
@@ -103,28 +183,36 @@ func TestLoopGuardResets(t *testing.T) {
 	for _, resetter := range []dto.AuthorKind{dto.AuthorKindUser, dto.AuthorKindChat} {
 		t.Run(string(resetter), func(t *testing.T) {
 			s := LoopState{}
+			previous := time.Time{}
+			now := loopGuardStart
 			for i := 0; i < 24; i++ {
-				s, _ = g.Next(s, dto.AuthorKindAgent)
+				s, _ = g.Next(s, dto.AuthorKindAgent, previous, now)
+				previous = now
+				now = now.Add(time.Second)
 			}
-			s, paused := g.Next(s, resetter)
+			s, paused := g.Next(s, resetter, previous, now)
 			require.False(t, paused)
 			require.Equal(t, LoopState{Streak: 0}, s)
+			previous = now
 
-			// After the reset, 25 more agent messages are needed to pause.
+			// After the reset, 25 more agent messages within the quiet gap are needed to pause.
 			for i := 1; i <= 24; i++ {
-				s, paused = g.Next(s, dto.AuthorKindAgent)
+				now = now.Add(time.Second)
+				s, paused = g.Next(s, dto.AuthorKindAgent, previous, now)
 				require.False(t, paused)
+				previous = now
 			}
-			s, paused = g.Next(s, dto.AuthorKindAgent)
+			now = now.Add(time.Second)
+			s, paused = g.Next(s, dto.AuthorKindAgent, previous, now)
 			require.True(t, paused)
 
-			s, _ = g.Next(s, resetter)
+			s, _ = g.Next(s, resetter, now, now.Add(15*time.Minute))
 			require.Equal(t, LoopState{Streak: 0, Paused: true}, s, "a reset does not resume a paused room")
 		})
 	}
 
 	// The loop guard's own system notice neither extends nor resets the streak.
-	s, paused := g.Next(LoopState{Streak: 7}, dto.AuthorKindSystem)
+	s, paused := g.Next(LoopState{Streak: 7}, dto.AuthorKindSystem, loopGuardStart, loopGuardStart.Add(time.Second))
 	require.False(t, paused)
 	require.Equal(t, LoopState{Streak: 7}, s)
 }
@@ -133,8 +221,18 @@ func TestLoopGuardResets(t *testing.T) {
 func TestLoopGuardLimit(t *testing.T) {
 	require.Equal(t, 25, DefaultLoopLimit)
 	g := LoopGuard{Limit: 2}
-	s, paused := g.Next(LoopState{}, dto.AuthorKindAgent)
+	now := loopGuardStart
+	s, paused := g.Next(LoopState{}, dto.AuthorKindAgent, time.Time{}, now)
 	require.False(t, paused)
-	_, paused = g.Next(s, dto.AuthorKindAgent)
+	_, paused = g.Next(s, dto.AuthorKindAgent, now, now.Add(time.Second))
 	require.True(t, paused)
+}
+
+// The quiet gap is configurable; zero means DefaultQuietGap.
+func TestLoopGuardQuietGap(t *testing.T) {
+	g := LoopGuard{Limit: 3, QuietGap: time.Minute}
+	now := loopGuardStart
+	s, paused := g.Next(LoopState{Streak: 2}, dto.AuthorKindAgent, now, now.Add(2*time.Minute))
+	require.False(t, paused)
+	require.Equal(t, LoopState{Streak: 1}, s, "a custom quiet gap starts the streak again")
 }
