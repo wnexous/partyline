@@ -25,21 +25,46 @@ export const Route = createFileRoute("/_app/orgs/$orgId/connections/")({
 function OrgConnectionsPage() {
   const t = useT();
   const { orgId } = Route.useParams();
-  const org = useOrg(orgId).data;
+  const org = useOrg(orgId);
   // The pages work on the id: an address that is the organization's slug is replaced by it.
-  const id = org?.id ?? orgId;
+  const id = org.data?.id;
   const connectors = useConnectors();
   const [adding, setAdding] = useState(false);
   const sorted = useMemo(
     () =>
-      (connectors.data ?? [])
-        .filter((c) => c.org_id === id)
-        .sort((a, b) => a.name.localeCompare(b.name)),
+      id
+        ? (connectors.data ?? [])
+            .filter((c) => c.org_id === id)
+            .sort((a, b) => a.name.localeCompare(b.name))
+        : [],
     [connectors.data, id],
   );
-  // Only an admin of this organization adds a connection to it.
-  const canAdd = org ? isAdminOf(org) : false;
 
+  /*
+   * The organization has to be known before anything names it: a list filtered by the bare address
+   * and an empty state whose owner has no name are both the wrong organization's (SET-05). The
+   * organization's own request answers the error here too, so a failure never reads "no connectors".
+   */
+  if (!org.data) {
+    return (
+      <>
+        <PageHeader title={t("page.connectorsTitle")} description={t("connectors.bodyOrg")} />
+        {org.isError ? (
+          <div className="px-4 py-10 text-sm md:px-8" role="alert">
+            <p className="text-destructive">{t("orgs.orgLoadError")}</p>
+            <Button variant="outline" size="sm" className="mt-3" onClick={() => org.refetch()}>
+              {t("common.retry")}
+            </Button>
+          </div>
+        ) : (
+          <ListSkeleton />
+        )}
+      </>
+    );
+  }
+
+  // Only an admin of this organization adds a connection to it.
+  const canAdd = isAdminOf(org.data);
   const add = canAdd ? (
     <Button onClick={() => setAdding(true)}>
       <PlusIcon aria-hidden="true" />
@@ -55,14 +80,7 @@ function OrgConnectionsPage() {
         actions={sorted.length > 0 ? add : null}
       />
       {connectors.isPending ? (
-        <ul aria-hidden="true" className="divide-y border-b">
-          {[0, 1].map((i) => (
-            <li key={i} className="space-y-2 px-4 py-4 md:px-8">
-              <Skeleton className="h-4 w-40" />
-              <Skeleton className="h-3 w-56 max-w-full" />
-            </li>
-          ))}
-        </ul>
+        <ListSkeleton />
       ) : connectors.isError ? (
         <div className="px-4 py-10 text-sm md:px-8" role="alert">
           <p className="text-destructive">{t("connectors.loadError")}</p>
@@ -75,21 +93,36 @@ function OrgConnectionsPage() {
           <p>
             {canAdd
               ? t("connectors.emptyBody")
-              : t("connectors.emptyReadOnly", { org: org?.name ?? "" })}
+              : t("connectors.emptyReadOnly", { org: org.data.name })}
           </p>
         </EmptyState>
       ) : (
         <ul
-          aria-label={t("connectors.listLabelOrg", { org: org?.name ?? "" })}
+          aria-label={t("connectors.listLabelOrg", { org: org.data.name })}
           className="divide-y border-b"
         >
           {sorted.map((c) => (
-            <ConnectorRow key={c.id} orgId={id} connector={c} />
+            <ConnectorRow key={c.id} orgId={org.data.id} connector={c} />
           ))}
         </ul>
       )}
-      <AddConnectorDialog open={adding} onOpenChange={setAdding} />
+      {/* The dialog opens on the organization the page is about (SET-08), not the browser's pick. */}
+      <AddConnectorDialog open={adding} onOpenChange={setAdding} orgId={org.data.id} />
     </>
+  );
+}
+
+/** The rows' place while the organization or the connections are still on their way. */
+function ListSkeleton() {
+  return (
+    <ul aria-hidden="true" className="divide-y border-b">
+      {[0, 1].map((i) => (
+        <li key={i} className="space-y-2 px-4 py-4 md:px-8">
+          <Skeleton className="h-4 w-40" />
+          <Skeleton className="h-3 w-56 max-w-full" />
+        </li>
+      ))}
+    </ul>
   );
 }
 

@@ -22,9 +22,10 @@ import { type Instance, startInstance } from "./server";
 // The phone fit check (UI-24): the pages the product owner uses on an Android phone, at the two
 // phone widths that must fit with the system font enlarged, and in both projects the suite already
 // runs. A page fits when it does not scroll sideways and no visible text spills out of its own box;
-// a long name, a long word, an image, a voice message and the radio cards of My account are seeded
-// so the check has something to catch. Its own instance, like orgs.spec.ts, keeps the first-run test
-// of smoke.spec.ts on an instance nobody has set up.
+// a long name, a long word, an image, a voice message, the radio cards of My account and a second
+// organization named at the 60-character limit are seeded so the check has something to catch. Its
+// own instance, like orgs.spec.ts, keeps the first-run test of smoke.spec.ts on an instance nobody
+// has set up.
 const test = base.extend<object, { fit: Instance }>({
   fit: [
     // biome-ignore lint/correctness/noEmptyPattern: Playwright fixtures must destructure their first argument.
@@ -49,6 +50,11 @@ const OWNER: Credentials & { display_name: string } = {
 const AI_NAME = "Atlas ReleaseTrainOperatorWithoutAnyBreakOpportunity";
 const ROOM_NAME = "Mobile fit release train averylongunbrokenroomnamethatkeepsgoing";
 const CONNECTOR_NAME = "Mobile fit webhook averylongunbrokenconnectorname";
+/**
+ * The organization of the compact switcher's menu (SET-09, SET-12): exactly 60 characters, one of
+ * them a 45-character word that cannot wrap, so the menu's group label has something to cut.
+ */
+const ORG_NAME = "Mobile fit org organizationnamethatcannotbreakonaphonescreen";
 const CONNECTOR_SECRET = "synthetic-e2e-webhook-secret-not-real";
 const LONG_TEXT = `See ${"averylongunbrokenwordthatmustwrapinsidemessagesandnotpushthepage".repeat(2)} for the release notes`;
 const BIO = `Keeps the release train moving through every phone size. ${"averylongunbrokenbiowordthatmustwrapinsidetheprofilepanelwithoutwideninganything".repeat(2)}`;
@@ -226,6 +232,30 @@ async function checkOpenMenu(page: Page, where: string, trigger: () => Locator, 
   await expect(menu).toHaveCount(0);
 }
 
+/**
+ * The compact switcher's menu of a phone's top bar (SET-09, SET-12): it carries the organization's
+ * pages, and a 60-character organization name must be cut inside it, not spill out of its box.
+ */
+async function checkCompactOrgMenu(page: Page, where: string, enlarged: boolean) {
+  await page.goto("/account");
+  if (enlarged) await enlarge(page);
+  const trigger = () => page.getByRole("button", { name: /^Organization: / });
+  await expect(trigger()).toBeVisible();
+  await settled(page);
+  await trigger().click();
+  const menu = page.getByRole("menu", { name: "Organizations" });
+  // The pick still switches the menu's organization: the long-named one becomes the current one.
+  await menu.getByRole("menuitemradio", { name: new RegExp(`^${ORG_NAME}`) }).click();
+  await expect(trigger()).toHaveAccessibleName(new RegExp(`^Organization: ${ORG_NAME}`));
+  await settled(page);
+  await trigger().click();
+  await expect(menu.getByRole("menuitem", { name: "Settings" })).toBeVisible();
+  await settled(page);
+  await expectFits(page, where);
+  await page.keyboard.press("Escape");
+  await expect(menu).toHaveCount(0);
+}
+
 async function checkEveryPage(page: Page, where: string, enlarged: boolean) {
   await checkPage(
     page,
@@ -302,6 +332,12 @@ test.beforeAll(async ({ browser, fit }) => {
     const orgs = await apiCall<List<Organization>>(context.request, fit, "GET", "/orgs");
     orgId = orgs.items[0]?.id ?? owner.default_org_id ?? "";
     expect(orgId, "the owner's personal organization").not.toBe("");
+    // A second organization whose name sits at the 60-character limit: the compact switcher's menu
+    // has to cut it instead of growing past the phone's width (SET-09).
+    const longName = await apiCall<Organization>(context.request, fit, "POST", "/orgs", {
+      name: ORG_NAME,
+    });
+    expect(longName.name).toBe(ORG_NAME);
 
     // An AI with a long name and a long bio: the panel and the chart must carry both.
     const agent = await connectAI(context, fit, "/work/mobilefit", MACHINE);
@@ -424,6 +460,11 @@ for (const [width, height] of [
       await loginAs(context, fit, OWNER);
       const page = await context.newPage();
       await checkEveryPage(page, `a ${width}x${height} phone at 125%`, true);
+      await checkCompactOrgMenu(
+        page,
+        `a ${width}x${height} phone at 125%: the compact switcher's menu`,
+        true,
+      );
     } finally {
       await context.close();
     }

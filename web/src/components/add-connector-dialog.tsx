@@ -47,9 +47,12 @@ const SIGNING_RECIPE = [
 export function AddConnectorDialog({
   open,
   onOpenChange,
+  orgId,
 }: {
   open: boolean;
   onOpenChange: (open: boolean) => void;
+  /** The organization the page is about: the dialog opens on it (SET-08). */
+  orgId: string;
 }) {
   const t = useT();
   const navigate = useNavigate();
@@ -57,10 +60,10 @@ export function AddConnectorDialog({
   const first = generated?.secrets[0];
   // The new connection opens under the organization that owns it (SET-08), whatever the dialog
   // was set to: the list it came from filters on the same `org_id`.
-  const openConnector = (id: string, orgId: string) =>
+  const openConnector = (id: string, destinationOrgId: string) =>
     void navigate({
       to: "/orgs/$orgId/connections/$connectorId",
-      params: { orgId, connectorId: id },
+      params: { orgId: destinationOrgId, connectorId: id },
     });
 
   return (
@@ -73,6 +76,7 @@ export function AddConnectorDialog({
           </DialogHeader>
           {open ? (
             <AddConnectorBody
+              defaultOrgId={orgId}
               onCancel={() => onOpenChange(false)}
               onCreated={(connector, kind) => {
                 onOpenChange(false);
@@ -126,9 +130,11 @@ function failureText(t: Translate, err: unknown): string {
 }
 
 function AddConnectorBody({
+  defaultOrgId,
   onCancel,
   onCreated,
 }: {
+  defaultOrgId: string;
   onCancel: () => void;
   onCreated: (connector: Connector, kind: ConnectorKind) => void;
 }) {
@@ -141,12 +147,14 @@ function AddConnectorBody({
   const idBase = useId();
   const kindName = chosen ?? (kinds.data?.length === 1 ? kinds.data[0]?.name : null) ?? null;
   const kind = kinds.data?.find((k) => k.name === kindName);
-  // The organization it goes to: the pick, else the current one when the viewer administers it,
-  // else the first they administer. None while their organizations are unknown: the server then
-  // uses their default and decides whether they may.
+  // The organization it goes to: the pick, else the one the page is about when the viewer
+  // administers it (SET-08: the address wins over the browser's current organization), else the
+  // current one they administer, else the first they administer. None while their organizations
+  // are unknown: the server then uses their default and decides whether they may.
   const adminOrgs = orgs.filter(isAdminOf);
   const org =
     adminOrgs.find((o) => o.id === pickedOrg) ??
+    adminOrgs.find((o) => o.id === defaultOrgId) ??
     adminOrgs.find((o) => o.id === current?.id) ??
     adminOrgs[0];
 

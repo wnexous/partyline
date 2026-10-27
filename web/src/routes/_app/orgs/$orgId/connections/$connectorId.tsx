@@ -90,21 +90,20 @@ function ConnectorPage() {
   const t = useT();
   const navigate = useNavigate();
   const { orgId, connectorId } = Route.useParams();
-  // The layout has loaded the organization the address names.
-  const org = useOrg(orgId).data;
+  const org = useOrg(orgId);
   const connector = useConnector(connectorId);
   const kinds = useConnectorKinds();
+  const c = connector.data;
 
   // A connection lives under its own organization (SET-07): an address naming another one moves.
   useEffect(() => {
-    const c = connector.data;
-    if (!org || !c || c.org_id === org.id) return;
+    if (!org.data || !c || c.org_id === org.data.id) return;
     void navigate({
       to: "/orgs/$orgId/connections/$connectorId",
       params: { orgId: c.org_id, connectorId: c.id },
       replace: true,
     });
-  }, [org, connector.data, navigate]);
+  }, [org.data, c, navigate]);
 
   if (connector.isError && isApiError(connector.error) && connector.error.status === 404) {
     return (
@@ -123,7 +122,12 @@ function ConnectorPage() {
       </EmptyState>
     );
   }
-  if (!connector.data) {
+  /*
+   * The connection names its own organization (SET-07). Until both are known and agree, the page
+   * holds its loading state: naming the address's organization, linking back to it or deleting to
+   * it would show a page that is not the connection's, for as long as the move takes.
+   */
+  if (!org.data || !c || c.org_id !== org.data.id) {
     return (
       <div className="space-y-3 px-4 pt-8 md:px-8" aria-hidden="true">
         <Skeleton className="h-6 w-48" />
@@ -131,8 +135,9 @@ function ConnectorPage() {
       </div>
     );
   }
-  const kind = kinds.data?.find((k) => k.name === connector.data.kind);
-  return <ConnectorView orgId={orgId} orgName={org?.name} connector={connector.data} kind={kind} />;
+  const kind = kinds.data?.find((k) => k.name === c.kind);
+  // Every link of the page points at the connection's organization, which is also the one above.
+  return <ConnectorView orgId={c.org_id} orgName={org.data.name} connector={c} kind={kind} />;
 }
 
 /**
