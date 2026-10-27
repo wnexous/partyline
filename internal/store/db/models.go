@@ -168,24 +168,26 @@ type Machine struct {
 }
 
 type Message struct {
-	ID             string
-	RoomID         string
-	Seq            int64
-	AuthorKind     string
-	AuthorID       string
-	AuthorUserID   string
-	SenderID       string
-	SenderAltID    string
-	SenderName     string
-	Kind           string
-	Text           string
-	ReplyTo        string
-	RecipientsJson string
-	ExternalID     sql.NullString
-	CreatedAt      int64
-	AuthorIid      string
-	EditedAt       sql.NullInt64
-	DeletedAt      sql.NullInt64
+	ID              string
+	RoomID          string
+	Seq             int64
+	AuthorKind      string
+	AuthorID        string
+	AuthorUserID    string
+	SenderID        string
+	SenderAltID     string
+	SenderName      string
+	Kind            string
+	Text            string
+	ReplyTo         string
+	RecipientsJson  string
+	ExternalID      sql.NullString
+	CreatedAt       int64
+	AuthorIid       string
+	EditedAt        sql.NullInt64
+	DeletedAt       sql.NullInt64
+	InteractiveJson string
+	AnswersJson     string
 }
 
 type MessageReaction struct {
@@ -197,28 +199,30 @@ type MessageReaction struct {
 }
 
 type MessageView struct {
-	ID             string
-	RoomID         string
-	Seq            int64
-	AuthorKind     string
-	AuthorID       string
-	AuthorUserID   string
-	AuthorIid      string
-	SenderID       string
-	SenderAltID    string
-	SenderName     string
-	Kind           string
-	Text           string
-	ReplyTo        string
-	RecipientsJson string
-	ExternalID     sql.NullString
-	CreatedAt      int64
-	EditedAt       sql.NullInt64
-	DeletedAt      sql.NullInt64
-	AuthorName     string
-	AuthorHandle   string
-	AuthorIkind    string
-	AuthorAvatar   string
+	ID              string
+	RoomID          string
+	Seq             int64
+	AuthorKind      string
+	AuthorID        string
+	AuthorUserID    string
+	AuthorIid       string
+	SenderID        string
+	SenderAltID     string
+	SenderName      string
+	Kind            string
+	Text            string
+	ReplyTo         string
+	RecipientsJson  string
+	ExternalID      sql.NullString
+	CreatedAt       int64
+	EditedAt        sql.NullInt64
+	DeletedAt       sql.NullInt64
+	InteractiveJson string
+	AnswersJson     string
+	AuthorName      string
+	AuthorHandle    string
+	AuthorIkind     string
+	AuthorAvatar    string
 }
 
 type OrgInvitation struct {

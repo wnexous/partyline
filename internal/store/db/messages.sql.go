@@ -11,6 +11,25 @@ import (
 	"strings"
 )
 
+const countAnswersByAuthor = `-- name: CountAnswersByAuthor :one
+SELECT COUNT(*) FROM messages
+WHERE reply_to = ?1 AND author_iid = ?2 AND answers_json <> ''
+`
+
+type CountAnswersByAuthorParams struct {
+	QuestionID string
+	AuthorIid  string
+}
+
+// Counts the live structured answers an author gave to a question (QR-08). A deleted answer cleared its
+// answers_json, so the author may answer again; a plain reply never carried one and is not counted.
+func (q *Queries) CountAnswersByAuthor(ctx context.Context, arg CountAnswersByAuthorParams) (int64, error) {
+	row := q.db.QueryRowContext(ctx, countAnswersByAuthor, arg.QuestionID, arg.AuthorIid)
+	var count int64
+	err := row.Scan(&count)
+	return count, err
+}
+
 const countRoomMessage = `-- name: CountRoomMessage :one
 SELECT COUNT(*) FROM messages WHERE id = ? AND room_id = ?
 `
@@ -59,29 +78,34 @@ func (q *Queries) CreateAttachment(ctx context.Context, arg CreateAttachmentPara
 
 const createMessage = `-- name: CreateMessage :exec
 INSERT INTO messages (id, room_id, seq, author_kind, author_id, author_user_id, author_iid, sender_id, sender_alt_id,
-                      sender_name, kind, text, reply_to, recipients_json, external_id, created_at)
-VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                      sender_name, kind, text, reply_to, recipients_json, external_id, created_at,
+                      interactive_json, answers_json)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 `
 
 type CreateMessageParams struct {
-	ID             string
-	RoomID         string
-	Seq            int64
-	AuthorKind     string
-	AuthorID       string
-	AuthorUserID   string
-	AuthorIid      string
-	SenderID       string
-	SenderAltID    string
-	SenderName     string
-	Kind           string
-	Text           string
-	ReplyTo        string
-	RecipientsJson string
-	ExternalID     sql.NullString
-	CreatedAt      int64
+	ID              string
+	RoomID          string
+	Seq             int64
+	AuthorKind      string
+	AuthorID        string
+	AuthorUserID    string
+	AuthorIid       string
+	SenderID        string
+	SenderAltID     string
+	SenderName      string
+	Kind            string
+	Text            string
+	ReplyTo         string
+	RecipientsJson  string
+	ExternalID      sql.NullString
+	CreatedAt       int64
+	InteractiveJson string
+	AnswersJson     string
 }
 
+// interactive_json and answers_json are written once, with the message (QR-01, QR-08); every other
+// message writes them empty.
 func (q *Queries) CreateMessage(ctx context.Context, arg CreateMessageParams) error {
 	_, err := q.db.ExecContext(ctx, createMessage,
 		arg.ID,
@@ -100,6 +124,8 @@ func (q *Queries) CreateMessage(ctx context.Context, arg CreateMessageParams) er
 		arg.RecipientsJson,
 		arg.ExternalID,
 		arg.CreatedAt,
+		arg.InteractiveJson,
+		arg.AnswersJson,
 	)
 	return err
 }
@@ -186,7 +212,7 @@ func (q *Queries) GetMessageIDByExternalID(ctx context.Context, arg GetMessageID
 }
 
 const getMessageView = `-- name: GetMessageView :one
-SELECT id, room_id, seq, author_kind, author_id, author_user_id, author_iid, sender_id, sender_alt_id, sender_name, kind, text, reply_to, recipients_json, external_id, created_at, edited_at, deleted_at, author_name, author_handle, author_ikind, author_avatar FROM message_views WHERE id = ?
+SELECT id, room_id, seq, author_kind, author_id, author_user_id, author_iid, sender_id, sender_alt_id, sender_name, kind, text, reply_to, recipients_json, external_id, created_at, edited_at, deleted_at, interactive_json, answers_json, author_name, author_handle, author_ikind, author_avatar FROM message_views WHERE id = ?
 `
 
 func (q *Queries) GetMessageView(ctx context.Context, id string) (MessageView, error) {
@@ -211,6 +237,8 @@ func (q *Queries) GetMessageView(ctx context.Context, id string) (MessageView, e
 		&i.CreatedAt,
 		&i.EditedAt,
 		&i.DeletedAt,
+		&i.InteractiveJson,
+		&i.AnswersJson,
 		&i.AuthorName,
 		&i.AuthorHandle,
 		&i.AuthorIkind,
@@ -266,7 +294,7 @@ func (q *Queries) ListAttachmentsByMessages(ctx context.Context, messageIds []st
 }
 
 const listLatestMessagesInRooms = `-- name: ListLatestMessagesInRooms :many
-SELECT id, room_id, seq, author_kind, author_id, author_user_id, author_iid, sender_id, sender_alt_id, sender_name, kind, text, reply_to, recipients_json, external_id, created_at, edited_at, deleted_at, author_name, author_handle, author_ikind, author_avatar FROM message_views
+SELECT id, room_id, seq, author_kind, author_id, author_user_id, author_iid, sender_id, sender_alt_id, sender_name, kind, text, reply_to, recipients_json, external_id, created_at, edited_at, deleted_at, interactive_json, answers_json, author_name, author_handle, author_ikind, author_avatar FROM message_views
 WHERE room_id IN (/*SLICE:room_ids*/?)
 ORDER BY created_at DESC, id DESC
 LIMIT ?
@@ -317,6 +345,8 @@ func (q *Queries) ListLatestMessagesInRooms(ctx context.Context, arg ListLatestM
 			&i.CreatedAt,
 			&i.EditedAt,
 			&i.DeletedAt,
+			&i.InteractiveJson,
+			&i.AnswersJson,
 			&i.AuthorName,
 			&i.AuthorHandle,
 			&i.AuthorIkind,
@@ -336,7 +366,7 @@ func (q *Queries) ListLatestMessagesInRooms(ctx context.Context, arg ListLatestM
 }
 
 const listMessagesAfter = `-- name: ListMessagesAfter :many
-SELECT id, room_id, seq, author_kind, author_id, author_user_id, author_iid, sender_id, sender_alt_id, sender_name, kind, text, reply_to, recipients_json, external_id, created_at, edited_at, deleted_at, author_name, author_handle, author_ikind, author_avatar FROM message_views
+SELECT id, room_id, seq, author_kind, author_id, author_user_id, author_iid, sender_id, sender_alt_id, sender_name, kind, text, reply_to, recipients_json, external_id, created_at, edited_at, deleted_at, interactive_json, answers_json, author_name, author_handle, author_ikind, author_avatar FROM message_views
 WHERE room_id = ?1 AND seq > ?2 AND seq < ?3
 ORDER BY seq ASC
 LIMIT ?4
@@ -382,6 +412,8 @@ func (q *Queries) ListMessagesAfter(ctx context.Context, arg ListMessagesAfterPa
 			&i.CreatedAt,
 			&i.EditedAt,
 			&i.DeletedAt,
+			&i.InteractiveJson,
+			&i.AnswersJson,
 			&i.AuthorName,
 			&i.AuthorHandle,
 			&i.AuthorIkind,
@@ -401,7 +433,7 @@ func (q *Queries) ListMessagesAfter(ctx context.Context, arg ListMessagesAfterPa
 }
 
 const listMessagesBefore = `-- name: ListMessagesBefore :many
-SELECT id, room_id, seq, author_kind, author_id, author_user_id, author_iid, sender_id, sender_alt_id, sender_name, kind, text, reply_to, recipients_json, external_id, created_at, edited_at, deleted_at, author_name, author_handle, author_ikind, author_avatar FROM message_views
+SELECT id, room_id, seq, author_kind, author_id, author_user_id, author_iid, sender_id, sender_alt_id, sender_name, kind, text, reply_to, recipients_json, external_id, created_at, edited_at, deleted_at, interactive_json, answers_json, author_name, author_handle, author_ikind, author_avatar FROM message_views
 WHERE room_id = ?1 AND seq < ?2
 ORDER BY seq DESC
 LIMIT ?3
@@ -441,6 +473,8 @@ func (q *Queries) ListMessagesBefore(ctx context.Context, arg ListMessagesBefore
 			&i.CreatedAt,
 			&i.EditedAt,
 			&i.DeletedAt,
+			&i.InteractiveJson,
+			&i.AnswersJson,
 			&i.AuthorName,
 			&i.AuthorHandle,
 			&i.AuthorIkind,
@@ -460,7 +494,7 @@ func (q *Queries) ListMessagesBefore(ctx context.Context, arg ListMessagesBefore
 }
 
 const markMessageDeleted = `-- name: MarkMessageDeleted :execrows
-UPDATE messages SET text = '', edited_at = NULL, deleted_at = ?1
+UPDATE messages SET text = '', interactive_json = '', answers_json = '', edited_at = NULL, deleted_at = ?1
 WHERE id = ?2 AND deleted_at IS NULL
 `
 
@@ -469,8 +503,9 @@ type MarkMessageDeletedParams struct {
 	ID        string
 }
 
-// Turns a message that is not deleted into its placeholder (DLT-01): no text, no edit mark, deleted_at set.
-// The caller deletes its attachment rows in the same transaction. 0 rows when it is deleted already.
+// Turns a message that is not deleted into its placeholder (DLT-01): no text, no question or answer, no edit
+// mark, deleted_at set. The caller deletes its attachment rows in the same transaction. 0 rows when it is
+// deleted already.
 func (q *Queries) MarkMessageDeleted(ctx context.Context, arg MarkMessageDeletedParams) (int64, error) {
 	result, err := q.db.ExecContext(ctx, markMessageDeleted, arg.DeletedAt, arg.ID)
 	if err != nil {
