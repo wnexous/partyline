@@ -8,6 +8,7 @@ import {
   type VoiceFailure,
   voiceFileName,
 } from "@/lib/voice";
+import { withWebmDuration } from "@/lib/webm-duration";
 
 /*
  * The recorder behind the microphone button (VOI-01..VOI-06). It asks for the microphone, records
@@ -67,6 +68,28 @@ interface Session {
 
 const TICK_MS = 250;
 
+/** Whether the browser recorded a WebM, whose Info takes the length it recorded (VOI-08). */
+function isWebm(mime: string): boolean {
+  return (mime.split(";")[0] ?? "").trim().toLowerCase() === "audio/webm";
+}
+
+/**
+ * The recording as it is to be sent, with its real length written into the WebM (VOI-08): the player
+ * then knows how long it is before it has the whole file. A format that already carries its length
+ * (Safari's MP4) is left alone, and a file this cannot read is still sent as it was recorded.
+ */
+async function withRealLength(file: File, mime: string, durationMs: number): Promise<File> {
+  if (!isWebm(mime)) return file;
+  try {
+    const bytes = new Uint8Array(await file.arrayBuffer());
+    const patched = withWebmDuration(bytes, durationMs);
+    if (patched === bytes) return file;
+    return new File([patched], file.name, { type: file.type });
+  } catch {
+    return file;
+  }
+}
+
 /** Lets go of the microphone (once): its indicator goes out and other apps can have it. */
 function teardown(session: Session) {
   window.clearInterval(session.tick);
@@ -111,26 +134,44 @@ export function useVoiceRecorder(): VoiceRecorder {
 
   /** The recorder stopped: the recording is whole, or it was cancelled, or it came to nothing. */
   const finish = useCallback(
-    (s: Session) => {
+    async (s: Session) => {
       teardown(s);
-      if (session.current === s) session.current = null;
-      const waiting = s.waiting.splice(0);
+      /** Answers every `stop()` that was waiting, once: with the recording, or with nothing. */
+      const answer = (recording: VoiceRecording | null) => {
+        for (const resolve of s.waiting.splice(0)) resolve(recording);
+      };
+      /** The session is done: a `stop()` from now on takes the recording that stays. */
+      const release = () => {
+        if (session.current === s) session.current = null;
+      };
       if (s.cancelled || !mounted.current) {
-        for (const resolve of waiting) resolve(null);
+        release();
+        answer(null);
         return;
       }
       const type = s.recorder.mimeType || "audio/webm";
-      const file = new File(s.chunks, voiceFileName(type), { type });
-      if (file.size === 0) {
-        for (const resolve of waiting) resolve(null);
+      const durationMs = Math.min(Date.now() - s.startedAt, MAX_RECORDING_MS);
+      const recorded = new File(s.chunks, voiceFileName(type), { type });
+      if (recorded.size === 0) {
+        release();
+        answer(null);
         fail("failed");
         return;
       }
-      const done = { file, durationMs: Math.min(Date.now() - s.startedAt, MAX_RECORDING_MS) };
+      // The session stays current while the file is read, so a `stop()` in the meantime waits for it.
+      const file = await withRealLength(recorded, type, durationMs);
+      // Cancelled, or gone, while the file was being read: the recording is not kept.
+      if (s.cancelled || !mounted.current) {
+        release();
+        answer(null);
+        return;
+      }
+      release();
+      const done = { file, durationMs };
       setRecording(done);
       setElapsedMs(done.durationMs);
       setPhase("recorded");
-      for (const resolve of waiting) resolve(done);
+      answer(done);
     },
     [fail, setPhase, setRecording],
   );
@@ -207,7 +248,7 @@ export function useVoiceRecorder(): VoiceRecorder {
     recorder.ondataavailable = (event) => {
       if (event.data.size > 0) s.chunks.push(event.data);
     };
-    recorder.onstop = () => finish(s);
+    recorder.onstop = () => void finish(s);
     recorder.onerror = () => {
       s.cancelled = true;
       if (session.current === s) session.current = null;

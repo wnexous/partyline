@@ -27,6 +27,168 @@ const start = (hook: ReturnType<typeof render>) => act(() => hook.result.current
 const lastRecorder = () =>
   FakeRecorder.instances[FakeRecorder.instances.length - 1] as FakeRecorder;
 
+/* A WebM built here by hand, and read back with a minimal reader: what a player would see. */
+
+const textBytes = (value: string) => [...new TextEncoder().encode(value)];
+
+/** An EBML variable-length size of `value` in `width` bytes. */
+function vint(value: number, width = 1): number[] {
+  const bytes = Array<number>(width).fill(0);
+  let rest = value;
+  for (let i = width - 1; i >= 0; i--) {
+    bytes[i] = rest % 256;
+    rest = Math.floor(rest / 256);
+  }
+  bytes[0] = (bytes[0] as number) | (0x80 >> (width - 1));
+  return bytes;
+}
+
+/** One EBML element: its ID, the size of its data and the data. */
+const element = (id: number[], data: number[], sizeWidth = 1): number[] => [
+  ...id,
+  ...vint(data.length, sizeWidth),
+  ...data,
+];
+
+const uintBytes = (value: number, width: number): number[] => {
+  const bytes = Array<number>(width).fill(0);
+  let rest = value;
+  for (let i = width - 1; i >= 0; i--) {
+    bytes[i] = rest % 256;
+    rest = Math.floor(rest / 256);
+  }
+  return bytes;
+};
+
+/** A recording as MediaRecorder writes it: a Segment of unknown size, Info with no Duration, a Cluster. */
+function syntheticWebm(scale = 1_000_000): Uint8Array<ArrayBuffer> {
+  const info = element(
+    [0x15, 0x49, 0xa7, 0x66],
+    [
+      ...element([0x2a, 0xd7, 0xb1], uintBytes(scale, 3)),
+      ...element([0x4d, 0x80], textBytes("partyline-test")),
+    ],
+  );
+  return new Uint8Array([
+    ...element([0x1a, 0x45, 0xdf, 0xa3], element([0x42, 0x82], textBytes("webm"))),
+    // The Segment: its size is unknown, so it runs to the end of the file.
+    0x18,
+    0x53,
+    0x80,
+    0x67,
+    0x01,
+    0xff,
+    0xff,
+    0xff,
+    0xff,
+    0xff,
+    0xff,
+    0xff,
+    ...info,
+    ...element([0x1f, 0x43, 0xb6, 0x75], [0, 0, 0, 0]),
+  ]);
+}
+
+interface Span {
+  id: number;
+  dataStart: number;
+  dataLength: number;
+  end: number;
+}
+
+/** What a reader of the container sees of one element at `offset`. */
+function readAt(bytes: Uint8Array, offset: number): Span {
+  const first = bytes[offset] as number;
+  let idWidth = 1;
+  while (idWidth <= 4 && (first & (0x80 >> (idWidth - 1))) === 0) idWidth++;
+  let id = 0;
+  for (let i = 0; i < idWidth; i++) id = id * 256 + (bytes[offset + i] as number);
+  const sizeFirst = bytes[offset + idWidth] as number;
+  let sizeWidth = 1;
+  while (sizeWidth <= 8 && (sizeFirst & (0x80 >> (sizeWidth - 1))) === 0) sizeWidth++;
+  let dataLength = sizeFirst & ((0x80 >> (sizeWidth - 1)) - 1);
+  for (let i = 1; i < sizeWidth; i++) {
+    dataLength = dataLength * 256 + (bytes[offset + idWidth + i] as number);
+  }
+  const dataStart = offset + idWidth + sizeWidth;
+  return { id, dataStart, dataLength, end: dataStart + dataLength };
+}
+
+function childrenOf(bytes: Uint8Array, parent: Span, end: number): Span[] {
+  const found: Span[] = [];
+  let cursor = parent.dataStart;
+  while (cursor < end) {
+    const child = readAt(bytes, cursor);
+    found.push(child);
+    cursor = child.end;
+  }
+  return found;
+}
+
+/** The Duration in the file, as the container carries it. */
+function durationIn(bytes: Uint8Array): number {
+  const header = readAt(bytes, 0);
+  const segment = readAt(bytes, header.end);
+  const info = childrenOf(bytes, segment, bytes.length).find((child) => child.id === 0x1549a766);
+  if (!info) throw new Error("no Info");
+  const duration = childrenOf(bytes, info, info.end).find((child) => child.id === 0x4489);
+  if (!duration) throw new Error("no Duration");
+  return new DataView(bytes.buffer, bytes.byteOffset + duration.dataStart, 8).getFloat64(0, false);
+}
+
+describe("the length in the file (VOI-08)", () => {
+  it("writes the recorded time into the WebM it hands over", async () => {
+    const hook = render();
+    await start(hook);
+    act(() => vi.advanceTimersByTime(4_000));
+    await act(async () => {
+      lastRecorder().ondataavailable?.({
+        data: new Blob([syntheticWebm()], { type: "audio/webm;codecs=opus" }),
+      });
+      await hook.result.current.stop();
+    });
+    const recording = hook.result.current.recording;
+    if (!recording) throw new Error("no recording");
+    expect(recording.durationMs).toBe(4_000);
+    expect(recording.file.type).toBe("audio/webm;codecs=opus");
+    expect(recording.file.name).toBe("voice-message-2026-10-24-140513.webm");
+    const bytes = new Uint8Array(await recording.file.arrayBuffer());
+    expect(durationIn(bytes)).toBe(4_000);
+  });
+
+  it("leaves a format that carries its length alone", async () => {
+    FakeRecorder.supported = new Set();
+    const hook = render();
+    await start(hook);
+    act(() => vi.advanceTimersByTime(4_000));
+    await act(async () => {
+      await hook.result.current.stop();
+    });
+    const recording = hook.result.current.recording;
+    if (!recording) throw new Error("no recording");
+    expect(new Uint8Array(await recording.file.arrayBuffer())).toEqual(
+      new TextEncoder().encode("voice"),
+    );
+  });
+
+  it("answers nothing when the recording was cancelled", async () => {
+    const hook = render();
+    await start(hook);
+    let answer: unknown = "pending";
+    act(() => {
+      void hook.result.current.stop().then((rec) => {
+        answer = rec;
+      });
+      hook.result.current.cancel();
+    });
+    await act(async () => {
+      await Promise.resolve();
+    });
+    expect(answer).toBeNull();
+    expect(hook.result.current.recording).toBeNull();
+  });
+});
+
 describe("starting (VOI-01, VOI-02)", () => {
   it("is supported where there is a MediaRecorder and a microphone API", () => {
     expect(render().result.current.supported).toBe(true);
