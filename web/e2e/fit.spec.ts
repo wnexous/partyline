@@ -20,7 +20,7 @@ import { type Instance, startInstance } from "./server";
 // The phone fit check (UI-24): the pages the product owner uses on an Android phone, at the two
 // phone widths that must fit with the system font enlarged, and in both projects the suite already
 // runs. A page fits when it does not scroll sideways and no visible text spills out of its own box;
-// a long name, a long word, an image, a voice message and the radio cards of Settings are seeded
+// a long name, a long word, an image, a voice message and the radio cards of My account are seeded
 // so the check has something to catch. Its own instance, like orgs.spec.ts, keeps the first-run test
 // of smoke.spec.ts on an instance nobody has set up.
 const test = base.extend<object, { fit: Instance }>({
@@ -128,6 +128,22 @@ async function checkProfilePanel(page: Page, where: string, enlarged: boolean) {
   await expectFits(page, where);
 }
 
+/** The account's menu and the organization's, open on the list screen: they must fit too (SET-12). */
+async function checkOpenMenu(page: Page, where: string, trigger: () => Locator, enlarged: boolean) {
+  await page.goto("/");
+  if (enlarged) await enlarge(page);
+  const button = trigger();
+  await expect(button).toBeVisible();
+  await settled(page);
+  await button.click();
+  const menu = page.getByRole("menu");
+  await expect(menu.getByRole("menuitem").first()).toBeVisible();
+  await settled(page);
+  await expectFits(page, where);
+  await page.keyboard.press("Escape");
+  await expect(menu).toHaveCount(0);
+}
+
 async function checkEveryPage(page: Page, where: string, enlarged: boolean) {
   await checkPage(
     page,
@@ -139,8 +155,8 @@ async function checkEveryPage(page: Page, where: string, enlarged: boolean) {
   await checkConversation(page, `${where}: the group conversation`, enlarged);
   await checkPage(
     page,
-    `${where}: Settings`,
-    "/settings",
+    `${where}: My account`,
+    "/account",
     () => page.getByRole("radio", { name: "System" }),
     enlarged,
   );
@@ -172,7 +188,26 @@ async function checkEveryPage(page: Page, where: string, enlarged: boolean) {
     () => page.getByRole("list", { name: /^Connectors of / }),
     enlarged,
   );
+  await checkPage(
+    page,
+    `${where}: the organization's settings`,
+    `/orgs/${orgId}/settings`,
+    () => page.getByRole("heading", { name: "Details" }),
+    enlarged,
+  );
   await checkProfilePanel(page, `${where}: the profile panel`, enlarged);
+  await checkOpenMenu(
+    page,
+    `${where}: the account menu`,
+    () => page.getByRole("button", { name: "Account menu" }),
+    enlarged,
+  );
+  await checkOpenMenu(
+    page,
+    `${where}: the organization menu`,
+    () => page.getByRole("button", { name: /^Pages of / }),
+    enlarged,
+  );
 }
 
 test.beforeAll(async ({ browser, fit }) => {

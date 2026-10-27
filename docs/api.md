@@ -231,7 +231,7 @@ the request to the push service is authenticated with a VAPID JWT (RFC 8292):
 
 No message id, attachment, participant list, token or server secret is in the payload.
 
-A subscription belongs to the session that registered it: a logout, a device revoked in Settings or
+A subscription belongs to the session that registered it: a logout, a device revoked in My account or
 a password change deletes its rows, and deleting the account deletes them all (the browser registers
 its existing subscription again on the next signed-in load, without asking for permission again). A
 push service that answers 404 or 410 deletes the row; any other non-2xx, a network error or a

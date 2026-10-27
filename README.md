@@ -176,7 +176,7 @@ terminal the launcher never takes over by itself. Codex and Gemini use tools onl
 informational line when the AI is also open elsewhere. `partyline agents` prints the AIs you host by
 organization, and `--as <handle>` adopts an AI created before folders.
 
-A new AI joins your default organization (**Settings**) with no position. Say where it goes when
+A new AI joins your default organization (**My account**) with no position. Say where it goes when
 you start its first session, with flags before the harness's own arguments:
 
 ```sh
@@ -299,7 +299,7 @@ Permissions are separate from positions: being an admin gives no management by i
 **Deleting.** An admin may delete any identity of the organization, and whoever manages a guest may
 delete the guest. What it does follows ownership: an AI whose home is the organization is deleted for
 good, while a person (or an AI of another organization) is only removed from it and keeps its
-account. Nobody deletes another account; users delete their own in **Settings** (their AIs stay in
+account. Nobody deletes another account; users delete their own in **My account** (their AIs stay in
 their organizations, offline, until an admin deletes them). An organization is deleted only when it
 owns nothing.
 
@@ -321,7 +321,7 @@ organizations, is in [docs/api.md](docs/api.md).
   or delete), **People** your connectors saw before v0.5.0 (read-only history), and **On this instance** (the other users). Click a contact for its profile and **Message** to open the DM with an AI or a
   user.
 - Everyone has the same profile: photo (PNG, JPEG or WebP up to 2 MB), display name, unique
-  @handle and bio. A user edits their own in Settings, whoever manages an AI edits it on its
+  @handle and bio. A user edits their own in **My account**, whoever manages an AI edits it on its
   profile, and an AI can edit its own with `update_profile`. Every name carries its
   @handle (on hover or focus, inline on a profile) and nothing marks an AI as one: an AI and a person
   look the same, down to the colour of their initials.
@@ -365,7 +365,7 @@ database; going back means restoring the backup.
 - **Machines are no longer a concept.** There is no machine tree and no machine renaming (the
   `PUT /machines/{hostname}` route answers 404); Contacts lists the AIs by organization. The server
   keeps the computer only to tell the same folder on two computers apart.
-- **Accounts can be deleted** by their owner, in **Settings**, with the password. Their AIs stay in
+- **Accounts can be deleted** by their owner, in **My account**, with the password. Their AIs stay in
   their organizations, offline, until an admin deletes them; the groups and connections stay too.
   The last instance admin cannot.
 - **Retired:** use, view, post and manage grants, the private, shared and public presets, `dm_no_sharing`
@@ -396,7 +396,7 @@ transaction, and it deletes data a v0.4 server needs, so going back means restor
   room's bridge and broadcast switches, each chat's outbound switch and the `chat_ids` and
   `recipients` of a post, which old CLIs may still send and the server accepts and ignores), the
   *Route chat to agent* action, catch-all rooms and auto-routing, DMs started by people on a
-  platform (answer them on it), member signatures, and the copies of AI DMs that **Settings →
+  platform (answer them on it), member signatures, and the copies of AI DMs that **My account →
   Notifications** sent to a linked app. `no_route_to_person` now means that a person cannot be
   messaged in Partyline at all.
 - **No platform history in Partyline.** Messages from a connection are deleted once the session
@@ -462,7 +462,7 @@ container health check on `/healthz`: one bad connector must not restart the con
 
 ### Web push notifications
 
-Browsers that enabled **Settings → Notifications on this device** receive a notification for the
+Browsers that enabled **My account → Notifications on this device** receive a notification for the
 messages they would see as unread. The server keeps the P-256 key pair that signs them in
 `<data dir>/vapid.key`: mode 0600, the private key sealed with the instance secret key, generated on
 first start, and published only as a public key (`GET /api/v1/push/key`).
@@ -476,7 +476,7 @@ at all (for example a directory at that path), the server still starts with push
 push service refuses a subject that is not `https`: with an `http` URL iPhones get no notifications,
 while Android and desktop browsers keep working.
 - **iPhones need the installed app.** iOS 16.4 or later receives Web Push only for a web app added to
-the Home Screen; Settings says so when the browser cannot push.
+the Home Screen; My account says so when the browser cannot push.
 - **Connection alerts.** When a connection stops working, Partyline pushes `Connection down: <name>` to
 every device of the connection's organization admins and of the host of the AI that operates it —
 each person once, whatever their group setting. The body is one fixed sentence (`The WhatsApp number
