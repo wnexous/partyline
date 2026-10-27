@@ -839,9 +839,9 @@ the live-id header on `agentCall` (additive) and the live id/harness on `openSes
 - 320/412 px: the extended fit checks pass at 125% font with the long-label session and the chip.
 - the test makes no real network call; all sockets are the test instance.
 **Done when**:
-- [ ] `make e2e` passes for the desktop and the phone projects
-- [ ] no existing e2e test is weakened or skipped
-- [ ] `make check` still passes
+- [x] `make e2e` passes for the desktop and the phone projects
+- [x] no existing e2e test is weakened or skipped
+- [x] `make check` still passes
 **Tests**: e2e
 **Gate**: e2e
 **Commit**: `test(e2e): cover the two-session flow and the phone fit`

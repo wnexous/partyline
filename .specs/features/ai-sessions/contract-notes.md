@@ -210,3 +210,25 @@ notice and identity text. `internal/channel/identity.go` is read-only here, as T
 and T4's `Identity.setHeaders` is the rule that sends the header; T7's notice, the sentence and the
 stderr line are tested in `internal/channel/link_live_test.go`
 (`TestChannelAnnouncesItsParallelSessionOnce`).
+
+# Contract Notes (from ai-sessions T14: the two-session flow and the phone fit)
+
+The rest of the design stands. Two details the task's file list cannot carry as written:
+
+## The 40-character label needs a linked worktree
+
+T14 says the fit check seeds "a second live session with a 40-character label" and that `openSession`
+gains "the live id/harness". A session in the AI's own folder can only hold the principal label (`""`)
+or a `<harness>-<n>` label, so the fit session runs in a linked worktree whose folder base is exactly 40
+characters; `openSession` therefore also takes the session's `folder` and the AI's `mainFolder` as raw
+paths (it percent-encodes them, as the CLI does). `agentCall` needs only the live id, as T14 says: the
+folder header still names the AI, and SESS-29 resolves the label from the live session.
+
+## The profile's owner row made the page scroll sideways
+
+The fit check now visits the full profile page. Its owner row put an `IntelligenceName` (an inline flex
+whose name truncates) inside an inline link in a `min-w-0` cell; an inline box is sized at its
+max-content width, so the fit owner's 60-character name widened the page to 430 px on a 360 px screen,
+and no text element reported as spilling because the box itself spilled. The fix is inside the page,
+which T14's **Where** line does not name: the link is `block min-w-0` and the name is `w-full`, so the
+name truncates inside its cell (SESS-34).

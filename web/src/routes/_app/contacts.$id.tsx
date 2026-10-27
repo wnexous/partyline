@@ -378,9 +378,9 @@ function AIDetails({ ai, id }: { ai: AIDetail; id: string }) {
         <Link
           to="/contacts/$id"
           params={{ id: ai.owner.id }}
-          className="rounded-sm outline-none hover:underline focus-visible:ring-2 focus-visible:ring-ring"
+          className="block min-w-0 rounded-sm outline-none hover:underline focus-visible:ring-2 focus-visible:ring-ring"
         >
-          <IntelligenceName intelligence={ai.owner} showHandle />
+          <IntelligenceName intelligence={ai.owner} showHandle className="w-full" />
         </Link>
       </Row>
       <Row label={t("profile.app")}>
