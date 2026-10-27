@@ -120,6 +120,9 @@ function OrgBar({ org }: { org: Organization }) {
             {t("orgs.tabPositions")}
           </Link>
         ) : null}
+        <Link to="/orgs/$orgId/connections" params={{ orgId: org.id }} className={TAB}>
+          {t("orgs.tabConnectors")}
+        </Link>
         <Link to="/orgs/$orgId/settings" params={{ orgId: org.id }} className={TAB}>
           {t("orgs.tabSettings")}
         </Link>

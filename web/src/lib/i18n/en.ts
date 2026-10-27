@@ -73,8 +73,6 @@ export const en = {
   "page.contactsBody":
     "The AIs of your organizations and the ones you host, the other users and the people your connectors have seen.",
   "page.connectorsTitle": "Connectors",
-  "page.connectorsBody":
-    "The WhatsApp, Telegram, Discord and webhook accounts of your organizations.",
   "page.identitiesTitle": "Identities",
   "page.identitiesBody":
     "Chat accounts verified as yours. The AIs you manage trust messages from them.",
@@ -627,7 +625,9 @@ export const en = {
   "schema.removeTag": "Remove {value}",
   "schema.tagPlaceholder": "Type a value and press Enter",
 
-  "connectors.listLabel": "Your connectors",
+  "connectors.listLabelOrg": "Connectors of {org}",
+  "connectors.bodyOrg":
+    "The WhatsApp, Telegram, Discord and webhook accounts of this organization.",
   "connectors.loadError": "Couldn’t load your connectors.",
   "connectors.emptyTitle": "No connectors yet",
   "connectors.emptyBody":
@@ -1050,6 +1050,7 @@ export const en = {
   "orgs.notFoundBack": "Back to organizations",
   "orgs.orgLoadError": "Couldn’t load this organization.",
   "orgs.settingsLink": "Settings of {org}",
+  "orgs.tabConnectors": "Connectors",
   "orgs.tabSettings": "Settings",
   "orgs.settingsTitle": "Organization settings",
   "orgs.settingsBodyAdmin": "The name, address and photo of {org}. Everyone in it sees them.",

@@ -55,8 +55,13 @@ export function AddConnectorDialog({
   const navigate = useNavigate();
   const [generated, setGenerated] = useState<Generated | null>(null);
   const first = generated?.secrets[0];
-  const openConnector = (id: string) =>
-    void navigate({ to: "/connectors/$connectorId", params: { connectorId: id } });
+  // The new connection opens under the organization that owns it (SET-08), whatever the dialog
+  // was set to: the list it came from filters on the same `org_id`.
+  const openConnector = (id: string, orgId: string) =>
+    void navigate({
+      to: "/orgs/$orgId/connections/$connectorId",
+      params: { orgId, connectorId: id },
+    });
 
   return (
     <>
@@ -78,7 +83,7 @@ export function AddConnectorDialog({
                   }),
                 );
                 if (secrets.length > 0) setGenerated({ connector, secrets });
-                else openConnector(connector.id);
+                else openConnector(connector.id, connector.org_id);
               }}
             />
           ) : null}
@@ -92,9 +97,9 @@ export function AddConnectorDialog({
         warning={t("connectors.secretWarning")}
         confirmLabel={t("connectors.secretDone")}
         onClose={() => {
-          const id = generated?.connector.id;
+          const connector = generated?.connector;
           setGenerated(null);
-          if (id) openConnector(id);
+          if (connector) openConnector(connector.id, connector.org_id);
         }}
       >
         {generated?.secrets.slice(1).map((s) => (

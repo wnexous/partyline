@@ -29,7 +29,9 @@ function api(role: "member" | "admin" = "member", extra: Parameters<typeof mockA
       ],
     }),
     "GET /agents": json(200, { items: [makeAgent({ id: "a1", name: "release-bot" })] }),
-    "GET /connectors": json(200, { items: [makeConnector({ id: "k1", name: "ops-bot" })] }),
+    "GET /connectors": json(200, {
+      items: [makeConnector({ id: "k1", name: "ops-bot", org_id: "o1" })],
+    }),
     ...extra,
   });
 }
@@ -191,7 +193,8 @@ describe("command palette (UI-22)", () => {
       await waitFor(() => expect(screen.queryByRole("dialog", { name: "Go to" })).toBeNull());
     };
 
-    await jump("ops-bot", "/connectors/k1");
+    // A connection result goes to the organization that owns it (SET-07, SET-11).
+    await jump("ops-bot", "/orgs/o1/connections/k1");
     await jump("audit", "/admin/audit");
   });
 

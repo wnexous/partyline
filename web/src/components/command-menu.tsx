@@ -156,7 +156,13 @@ function PaletteBody({
               <ConnectorItem
                 key={c.id}
                 connector={c}
-                onSelect={() => go("/connectors/$connectorId", { connectorId: c.id })}
+                onSelect={() =>
+                  // A connection result opens under the organization that owns it (SET-07).
+                  go("/orgs/$orgId/connections/$connectorId", {
+                    orgId: c.org_id,
+                    connectorId: c.id,
+                  })
+                }
               />
             ))}
           </CommandGroup>

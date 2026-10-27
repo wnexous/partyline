@@ -38,6 +38,8 @@ import { Route as AppOrgsOrgIdChartRouteImport } from './routes/_app/orgs/$orgId
 import { Route as AppOrgsOrgIdMembersRouteImport } from './routes/_app/orgs/$orgId/members'
 import { Route as AppOrgsOrgIdPositionsRouteImport } from './routes/_app/orgs/$orgId/positions'
 import { Route as AppOrgsOrgIdSettingsRouteImport } from './routes/_app/orgs/$orgId/settings'
+import { Route as AppOrgsOrgIdConnectionsIndexRouteImport } from './routes/_app/orgs/$orgId/connections/index'
+import { Route as AppOrgsOrgIdConnectionsConnectorIdRouteImport } from './routes/_app/orgs/$orgId/connections/$connectorId'
 
 const AppRoute = AppRouteImport.update({
   id: '/_app',
@@ -184,6 +186,18 @@ const AppOrgsOrgIdSettingsRoute = AppOrgsOrgIdSettingsRouteImport.update({
   path: '/settings',
   getParentRoute: () => AppOrgsOrgIdRouteRoute,
 } as any)
+const AppOrgsOrgIdConnectionsIndexRoute =
+  AppOrgsOrgIdConnectionsIndexRouteImport.update({
+    id: '/connections/',
+    path: '/connections/',
+    getParentRoute: () => AppOrgsOrgIdRouteRoute,
+  } as any)
+const AppOrgsOrgIdConnectionsConnectorIdRoute =
+  AppOrgsOrgIdConnectionsConnectorIdRouteImport.update({
+    id: '/connections/$connectorId',
+    path: '/connections/$connectorId',
+    getParentRoute: () => AppOrgsOrgIdRouteRoute,
+  } as any)
 
 export interface FileRoutesByFullPath {
   '/': typeof AppIndexRoute
@@ -214,6 +228,8 @@ export interface FileRoutesByFullPath {
   '/orgs/$orgId/positions': typeof AppOrgsOrgIdPositionsRoute
   '/orgs/$orgId/settings': typeof AppOrgsOrgIdSettingsRoute
   '/orgs/$orgId/': typeof AppOrgsOrgIdIndexRoute
+  '/orgs/$orgId/connections/$connectorId': typeof AppOrgsOrgIdConnectionsConnectorIdRoute
+  '/orgs/$orgId/connections/': typeof AppOrgsOrgIdConnectionsIndexRoute
 }
 export interface FileRoutesByTo {
   '/login': typeof LoginRoute
@@ -243,6 +259,8 @@ export interface FileRoutesByTo {
   '/orgs/$orgId/positions': typeof AppOrgsOrgIdPositionsRoute
   '/orgs/$orgId/settings': typeof AppOrgsOrgIdSettingsRoute
   '/orgs/$orgId': typeof AppOrgsOrgIdIndexRoute
+  '/orgs/$orgId/connections/$connectorId': typeof AppOrgsOrgIdConnectionsConnectorIdRoute
+  '/orgs/$orgId/connections': typeof AppOrgsOrgIdConnectionsIndexRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
@@ -275,6 +293,8 @@ export interface FileRoutesById {
   '/_app/orgs/$orgId/positions': typeof AppOrgsOrgIdPositionsRoute
   '/_app/orgs/$orgId/settings': typeof AppOrgsOrgIdSettingsRoute
   '/_app/orgs/$orgId/': typeof AppOrgsOrgIdIndexRoute
+  '/_app/orgs/$orgId/connections/$connectorId': typeof AppOrgsOrgIdConnectionsConnectorIdRoute
+  '/_app/orgs/$orgId/connections/': typeof AppOrgsOrgIdConnectionsIndexRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
@@ -307,6 +327,8 @@ export interface FileRouteTypes {
     | '/orgs/$orgId/positions'
     | '/orgs/$orgId/settings'
     | '/orgs/$orgId/'
+    | '/orgs/$orgId/connections/$connectorId'
+    | '/orgs/$orgId/connections/'
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/login'
@@ -336,6 +358,8 @@ export interface FileRouteTypes {
     | '/orgs/$orgId/positions'
     | '/orgs/$orgId/settings'
     | '/orgs/$orgId'
+    | '/orgs/$orgId/connections/$connectorId'
+    | '/orgs/$orgId/connections'
   id:
     | '__root__'
     | '/_app'
@@ -367,6 +391,8 @@ export interface FileRouteTypes {
     | '/_app/orgs/$orgId/positions'
     | '/_app/orgs/$orgId/settings'
     | '/_app/orgs/$orgId/'
+    | '/_app/orgs/$orgId/connections/$connectorId'
+    | '/_app/orgs/$orgId/connections/'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
@@ -581,6 +607,20 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AppOrgsOrgIdSettingsRouteImport
       parentRoute: typeof AppOrgsOrgIdRouteRoute
     }
+    '/_app/orgs/$orgId/connections/': {
+      id: '/_app/orgs/$orgId/connections/'
+      path: '/connections'
+      fullPath: '/orgs/$orgId/connections/'
+      preLoaderRoute: typeof AppOrgsOrgIdConnectionsIndexRouteImport
+      parentRoute: typeof AppOrgsOrgIdRouteRoute
+    }
+    '/_app/orgs/$orgId/connections/$connectorId': {
+      id: '/_app/orgs/$orgId/connections/$connectorId'
+      path: '/connections/$connectorId'
+      fullPath: '/orgs/$orgId/connections/$connectorId'
+      preLoaderRoute: typeof AppOrgsOrgIdConnectionsConnectorIdRouteImport
+      parentRoute: typeof AppOrgsOrgIdRouteRoute
+    }
   }
 }
 
@@ -606,6 +646,8 @@ interface AppOrgsOrgIdRouteRouteChildren {
   AppOrgsOrgIdPositionsRoute: typeof AppOrgsOrgIdPositionsRoute
   AppOrgsOrgIdSettingsRoute: typeof AppOrgsOrgIdSettingsRoute
   AppOrgsOrgIdIndexRoute: typeof AppOrgsOrgIdIndexRoute
+  AppOrgsOrgIdConnectionsConnectorIdRoute: typeof AppOrgsOrgIdConnectionsConnectorIdRoute
+  AppOrgsOrgIdConnectionsIndexRoute: typeof AppOrgsOrgIdConnectionsIndexRoute
 }
 
 const AppOrgsOrgIdRouteRouteChildren: AppOrgsOrgIdRouteRouteChildren = {
@@ -614,6 +656,9 @@ const AppOrgsOrgIdRouteRouteChildren: AppOrgsOrgIdRouteRouteChildren = {
   AppOrgsOrgIdPositionsRoute: AppOrgsOrgIdPositionsRoute,
   AppOrgsOrgIdSettingsRoute: AppOrgsOrgIdSettingsRoute,
   AppOrgsOrgIdIndexRoute: AppOrgsOrgIdIndexRoute,
+  AppOrgsOrgIdConnectionsConnectorIdRoute:
+    AppOrgsOrgIdConnectionsConnectorIdRoute,
+  AppOrgsOrgIdConnectionsIndexRoute: AppOrgsOrgIdConnectionsIndexRoute,
 }
 
 const AppOrgsOrgIdRouteRouteWithChildren =

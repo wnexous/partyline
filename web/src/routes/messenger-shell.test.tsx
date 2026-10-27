@@ -3,7 +3,7 @@ import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { useLiveStore } from "@/lib/live/store";
 import { json, mockApi } from "@/test/fetch";
-import { makeConversation, makeMe, makeRoom } from "@/test/fixtures";
+import { makeConversation, makeMe, makeOrg, makeRoom } from "@/test/fixtures";
 import { stubLayout } from "@/test/layout";
 import { stubViewport } from "@/test/media";
 import { renderRoute } from "@/test/render";
@@ -29,6 +29,9 @@ function api(role: "member" | "admin" = "member") {
     "GET /rooms/r1/members": json(200, { items: [] }),
     "GET /rooms/r1/messages": json(200, { items: [], has_more: false }),
     "GET /connectors": json(200, { items: [] }),
+    // The connections page is an organization's page (SET-05); `/connectors` resolves to its address.
+    "GET /orgs": json(200, { items: [makeOrg({ permission: "admin" })] }),
+    "GET /orgs/o1": json(200, makeOrg({ permission: "admin" })),
   });
 }
 
@@ -165,7 +168,8 @@ describe("header menu (LAY-06)", () => {
     const { router } = renderRoute("/");
     const menu = await openMenu();
     await user.click(within(menu).getByRole("menuitem", { name: "Connectors" }));
-    await waitFor(() => expect(router.state.location.pathname).toBe("/connectors"));
+    // The old address still resolves to the current organization's connections (SET-06).
+    await waitFor(() => expect(router.state.location.pathname).toBe("/orgs/o1/connections"));
   });
 
   it("shows the person's name and handle at the top of the menu", async () => {

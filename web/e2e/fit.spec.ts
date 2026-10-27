@@ -168,8 +168,8 @@ async function checkEveryPage(page: Page, where: string, enlarged: boolean) {
   await checkPage(
     page,
     `${where}: Connectors`,
-    "/connectors",
-    () => page.getByRole("list", { name: "Your connectors" }),
+    `/orgs/${orgId}/connections`,
+    () => page.getByRole("list", { name: /^Connectors of / }),
     enlarged,
   );
   await checkProfilePanel(page, `${where}: the profile panel`, enlarged);

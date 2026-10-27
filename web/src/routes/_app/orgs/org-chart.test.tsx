@@ -699,7 +699,7 @@ describe("opening the organization", () => {
     expect(router.state.location.pathname).toBe("/orgs/o1/chart");
   });
 
-  it("puts the chart first among the sections, then the members, the positions for admins, and the settings", async () => {
+  it("puts the chart first among the sections, then the members, the positions for admins, the connections and the settings", async () => {
     api(adminChart, "admin");
     renderRoute("/orgs/o1/chart");
     const bar = await screen.findByRole("navigation", { name: "Sections of Acme" });
@@ -707,7 +707,7 @@ describe("opening the organization", () => {
       within(bar)
         .getAllByRole("link")
         .map((l) => l.textContent),
-    ).toEqual(["Org chart", "Members", "Positions", "Settings"]);
+    ).toEqual(["Org chart", "Members", "Positions", "Connectors", "Settings"]);
     expect(within(bar).getByRole("link", { name: "Org chart" })).toHaveAttribute(
       "aria-current",
       "page",
