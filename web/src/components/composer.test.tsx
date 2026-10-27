@@ -167,6 +167,53 @@ describe("composer (UI-07)", () => {
   });
 });
 
+describe("mentioning a session (SESS-33)", () => {
+  const sessions = [
+    { label: "", harness: "claude", connected_at: "2026-10-19T11:00:00Z" },
+    { label: "claude-2", harness: "pi", connected_at: "2026-10-19T12:00:00Z" },
+  ];
+  const atlas = makeMember({
+    kind: "agent",
+    member_id: "a1",
+    name: "Atlas",
+    intelligence: makeAI(),
+    sessions,
+  });
+
+  it("inserts @handle:label for a labelled session, with the caret after the space", async () => {
+    const { calls } = mockApi({ "POST /rooms/r1/messages": json(201, makeMessage({ seq: 9 })) });
+    const user = userEvent.setup();
+    renderComposer("post", [atlas]);
+    const box = screen.getByRole("textbox", { name: "Message deploys" });
+    await user.type(box, "@at");
+    expect(screen.getAllByRole("option")).toHaveLength(2);
+    // The principal is the first candidate; the labelled session is the second.
+    await user.keyboard("{ArrowDown}{Enter}");
+    expect(box).toHaveValue("@atlas:claude-2 ");
+    expect((box as HTMLTextAreaElement).selectionStart).toBe("@atlas:claude-2 ".length);
+    expect(posts(calls)).toHaveLength(0);
+
+    await user.keyboard("{Enter}");
+    await waitFor(() => expect(posts(calls)).toHaveLength(1));
+    expect(posts(calls)[0]?.body).toEqual({ text: "@atlas:claude-2" });
+  });
+
+  it("inserts @handle for the AI itself", async () => {
+    const { calls } = mockApi({ "POST /rooms/r1/messages": json(201, makeMessage({ seq: 9 })) });
+    const user = userEvent.setup();
+    renderComposer("post", [atlas]);
+    const box = screen.getByRole("textbox", { name: "Message deploys" });
+    await user.type(box, "@at");
+    await user.keyboard("{Enter}");
+    expect(box).toHaveValue("@atlas ");
+    expect((box as HTMLTextAreaElement).selectionStart).toBe("@atlas ".length);
+
+    await user.keyboard("{Enter}");
+    await waitFor(() => expect(posts(calls)).toHaveLength(1));
+    expect(posts(calls)[0]?.body).toEqual({ text: "@atlas" });
+  });
+});
+
 describe("Enter on touch devices (ENT-01..ENT-05)", () => {
   const sendsOnEnter = "Enter to send · Shift+Enter for a new line";
   const newLineOnEnter = "Enter for a new line · tap Send to send";

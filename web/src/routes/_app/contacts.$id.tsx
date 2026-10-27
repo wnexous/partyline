@@ -126,7 +126,7 @@ function ProfileSkeleton() {
 }
 
 function ProfileView({ profile }: { profile: IntelligenceProfile }) {
-  const t = useT();
+  const { t, locale } = useI18n();
   const me = useMe().data;
   const navigate = useNavigate();
   const [deleting, setDeleting] = useState(false);
@@ -199,6 +199,40 @@ function ProfileView({ profile }: { profile: IntelligenceProfile }) {
           {profile.person?.name_locked ? (
             <p className="text-xs text-muted-foreground">{t("profile.nameLocked")}</p>
           ) : null}
+        </Section>
+      ) : null}
+
+      {/* The AI's live sessions, the principal first (SESS-32): a fact of the profile, and the
+          addresses the mention list offers. Absent while the AI has no live session. */}
+      {profile.ai && profile.ai.sessions.length > 0 ? (
+        <Section title={t("profile.sessions")}>
+          <ul aria-label={t("profile.sessions")} className="divide-y rounded-lg border">
+            {profile.ai.sessions.map((session) => (
+              <li
+                key={session.label || "principal"}
+                className="flex flex-wrap items-baseline gap-x-2 gap-y-1 px-4 py-3 text-sm"
+              >
+                <span
+                  data-testid="session-label"
+                  className="min-w-0 font-mono text-xs [overflow-wrap:anywhere]"
+                >
+                  {session.label ? `:${session.label}` : t("profile.sessionPrincipal")}
+                </span>
+                <span className="min-w-0 text-muted-foreground [overflow-wrap:anywhere]">
+                  {harnessLabel(session.harness) ?? session.harness}
+                </span>
+                <time
+                  dateTime={session.connected_at}
+                  title={formatAbsolute(session.connected_at, locale)}
+                  className="ml-auto shrink-0 font-mono text-xs text-muted-foreground tabular"
+                >
+                  {t("profile.sessionConnected", {
+                    time: formatRelative(session.connected_at, locale),
+                  })}
+                </time>
+              </li>
+            ))}
+          </ul>
         </Section>
       ) : null}
 

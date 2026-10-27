@@ -126,7 +126,7 @@ describe("mentionAt", () => {
 
 describe("mention candidates", () => {
   it("MEN-01: keeps participants with a handle and drops the viewer and chats", () => {
-    expect(mentionCandidates(members, me.id).map((i) => i.handle)).toEqual([
+    expect(mentionCandidates(members, me.id).map((c) => c.intelligence.handle)).toEqual([
       "atlas",
       "atlas-2",
       "bruno",
@@ -136,7 +136,7 @@ describe("mention candidates", () => {
 
   it("MEN-02: matches the display name or the handle ignoring case and accents", () => {
     const all = mentionCandidates(members, me.id);
-    const handles = (query: string) => matchMentions(all, query).map((i) => i.handle);
+    const handles = (query: string) => matchMentions(all, query).map((c) => c.intelligence.handle);
     expect(handles("ATL")).toEqual(["atlas", "atlas-2"]);
     expect(handles("sá")).toEqual(["bruno"]);
     expect(handles("SA")).toEqual(["bruno"]);
@@ -149,6 +149,94 @@ describe("mention candidates", () => {
     const all = mentionCandidates(crowd(), me.id);
     expect(all).toHaveLength(10);
     expect(matchMentions(all, "")).toHaveLength(8);
+  });
+});
+
+describe("session candidates (SESS-33)", () => {
+  const principalSession = { label: "", harness: "claude", connected_at: "2026-10-19T11:00:00Z" };
+  const labelledSession = {
+    label: "claude-2",
+    harness: "pi",
+    connected_at: "2026-10-19T12:00:00Z",
+  };
+  const sessions = [principalSession, labelledSession];
+  const atlasSession = makeMember({
+    id: "mb-a1",
+    kind: "agent",
+    member_id: "a1",
+    name: "Atlas",
+    intelligence: atlas,
+    sessions,
+  });
+  // A human member never has sessions of its own; a stray one must still add only its handle.
+  const withSessions: RoomMember[] = [
+    atlasSession,
+    makeMember({
+      id: "mb-me",
+      kind: "user",
+      member_id: "u1",
+      name: "Ana Souza",
+      intelligence: me.intelligence,
+    }),
+    makeMember({
+      id: "mb-u2",
+      kind: "user",
+      member_id: "u2",
+      name: "Bruno Sá",
+      intelligence: bruno,
+      sessions,
+    }),
+  ];
+  const pairs = (list: { intelligence: { handle: string }; label: string }[]) =>
+    list.map((c) => ({ handle: c.intelligence.handle, label: c.label }));
+
+  it("MEN-01: offers the AI once and one candidate per live labelled session", () => {
+    expect(pairs(mentionCandidates(withSessions, me.id))).toEqual([
+      { handle: "atlas", label: "" },
+      { handle: "atlas", label: "claude-2" },
+      { handle: "bruno", label: "" },
+    ]);
+  });
+
+  it("MEN-02: matches the label as well as the display name and the handle", () => {
+    const all = mentionCandidates(withSessions, me.id);
+    expect(pairs(matchMentions(all, "claude"))).toEqual([{ handle: "atlas", label: "claude-2" }]);
+    expect(pairs(matchMentions(all, "atlas"))).toEqual([
+      { handle: "atlas", label: "" },
+      { handle: "atlas", label: "claude-2" },
+    ]);
+  });
+
+  it("MEN-01: two AIs with the same label are two candidates", () => {
+    const both = [
+      makeMember({ id: "mb-a1", kind: "agent", member_id: "a1", intelligence: atlas, sessions }),
+      makeMember({
+        id: "mb-a2",
+        kind: "agent",
+        member_id: "a2",
+        intelligence: atlasTwo,
+        sessions: [labelledSession],
+      }),
+    ];
+    expect(pairs(mentionCandidates(both, me.id))).toEqual([
+      { handle: "atlas", label: "" },
+      { handle: "atlas", label: "claude-2" },
+      { handle: "atlas-2", label: "" },
+      { handle: "atlas-2", label: "claude-2" },
+    ]);
+  });
+
+  it("MEN-01: the option shows the label and leaves the principal plain", async () => {
+    const { user, box } = renderComposer(withSessions);
+    await user.type(box, "@atlas");
+    const options = within(listbox()).getAllByRole("option");
+    expect(options).toHaveLength(2);
+    const principal = options[0] as HTMLElement;
+    expect(within(principal).getByText("@atlas", { exact: true })).toBeInTheDocument();
+    expect(within(principal).queryByText(/^:claude-2$/)).toBeNull();
+    const labelled = options[1] as HTMLElement;
+    expect(within(labelled).getByText("@atlas", { exact: true })).toBeInTheDocument();
+    expect(within(labelled).getByText(":claude-2", { exact: true })).toBeInTheDocument();
   });
 });
 

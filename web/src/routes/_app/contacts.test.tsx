@@ -1,7 +1,9 @@
 import { act, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import type { Contacts } from "@/lib/api/types.gen";
+import { axe } from "vitest-axe";
+import * as matchers from "vitest-axe/matchers";
+import type { AIDetail, Contacts, SessionInfo } from "@/lib/api/types.gen";
 import { handleLiveEvent } from "@/lib/live/handlers";
 import { useLiveStore } from "@/lib/live/store";
 import { apiError, json, mockApi } from "@/test/fetch";
@@ -19,6 +21,8 @@ import {
 import { stubLayout } from "@/test/layout";
 import { renderRoute } from "@/test/render";
 import { bob, lia, liam, oldHelper, sampleContacts } from "@/test/sample-contacts";
+
+expect.extend(matchers);
 
 vi.mock("@/lib/live", () => ({ startLive: vi.fn(() => () => {}) }));
 
@@ -908,5 +912,73 @@ describe("loading, failing and empty", () => {
     expect(section.queryByRole("button", { name: "Connect an agent" })).toBeNull();
     await user.click(screen.getByRole("button", { name: "Connect an agent" }));
     expect(await screen.findByRole("dialog", { name: "Connect an agent" })).toBeInTheDocument();
+  });
+});
+
+describe("the live sessions of an AI's profile (SESS-32)", () => {
+  const sessions: SessionInfo[] = [
+    { label: "", harness: "claude", connected_at: "2026-10-19T11:00:00Z" },
+    { label: "claude-2", harness: "pi", connected_at: "2026-10-19T12:00:00Z" },
+  ];
+  const atlas = makeAI();
+  const ai: AIDetail = {
+    owner: makeMe().intelligence,
+    folder: "/home/dev/atlas",
+    folder_label: "~/atlas",
+    app: "claude",
+    online: true,
+    sessions,
+    my_level: "manage",
+  };
+  const profile = makeProfile({ ...atlas, ai });
+
+  function profileApi(withSessions: SessionInfo[] = sessions) {
+    return api(sampleContacts, {
+      "GET /intelligences/a1": json(200, { ...profile, ai: { ...ai, sessions: withSessions } }),
+    });
+  }
+
+  it("lists the principal first, then each labelled session with its harness and start", async () => {
+    vi.useFakeTimers({ toFake: ["Date"] });
+    vi.setSystemTime(new Date("2026-10-19T13:00:00Z"));
+    profileApi();
+    renderRoute("/contacts/a1");
+    const section = await screen.findByRole("region", { name: "Live sessions" });
+    const rows = within(section).getAllByRole("listitem");
+    expect(rows).toHaveLength(2);
+
+    const principal = rows[0] as HTMLElement;
+    expect(within(principal).getByTestId("session-label")).toHaveTextContent("principal");
+    expect(within(principal).getByText("Claude Code")).toBeInTheDocument();
+    expect(
+      within(principal)
+        .getByText(/^connected /)
+        .closest("time"),
+    ).toHaveAttribute("datetime", "2026-10-19T11:00:00Z");
+
+    const labelled = rows[1] as HTMLElement;
+    expect(within(labelled).getByTestId("session-label")).toHaveTextContent(":claude-2");
+    expect(within(labelled).getByText("pi")).toBeInTheDocument();
+    expect(
+      within(labelled)
+        .getByText(/^connected /)
+        .closest("time"),
+    ).toHaveAttribute("datetime", "2026-10-19T12:00:00Z");
+  });
+
+  it("shows no sessions section for an AI that is not live", async () => {
+    profileApi([]);
+    renderRoute("/contacts/a1");
+    await screen.findByRole("heading", { name: "Atlas", level: 1 });
+    expect(screen.queryByRole("region", { name: "Live sessions" })).toBeNull();
+  });
+
+  it("has no axe violations with two live sessions", async () => {
+    profileApi();
+    const { container } = renderRoute("/contacts/a1");
+    await screen.findByRole("region", { name: "Live sessions" });
+    expect(
+      await axe(container, { rules: { "color-contrast": { enabled: false } } }),
+    ).toHaveNoViolations();
   });
 });
