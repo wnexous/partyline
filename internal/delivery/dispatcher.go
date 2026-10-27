@@ -94,18 +94,29 @@ func (d *AgentDispatcher) Run(ctx context.Context) error {
 }
 
 // audience is who a dispatch about one message reaches: the room, the message as stored, the online AI members
-// other than its author and the rows of those members.
+// other than its author, the rows of those members, and the author AI's own sessions the text addresses (D11).
 type audience struct {
 	room    db.Room
 	view    db.MessageView
 	pushes  []string
+	self    []selfTarget
 	members map[string]db.RoomMember // the AI members' rows by id
 }
 
-// audienceOf finds the online AI members a message of the room is dispatched to. ok is false when there is
-// nobody to tell: the room or the message is gone, the loop guard paused the room (DLV-08), or no AI member other
-// than the author is online.
-func (d *AgentDispatcher) audienceOf(ctx context.Context, roomID, messageID string) (a audience, ok bool, err error) {
+// selfTarget is the one recipient the delivery plan leaves out: the AI that wrote a message, when the
+// message addresses one of its other sessions with @handle:label (SESS-37). The label may have no live
+// session; the gateway then delivers nothing (SESS-38).
+type selfTarget struct {
+	agentID string
+	label   string
+}
+
+// audienceOf finds the sessions a message of the room is dispatched to. prevText is the text of an
+// edit or a delete before the change, which may address a sibling the message no longer names
+// (SESS-39), and is empty for a new message. ok is false when there is nobody to tell: the room or the
+// message is gone, the loop guard paused the room (DLV-08), or neither another AI member nor a session
+// of the author AI is a target.
+func (d *AgentDispatcher) audienceOf(ctx context.Context, roomID, messageID, prevText string) (a audience, ok bool, err error) {
 	q := d.o.Store.R()
 	a.room, err = q.GetRoom(ctx, roomID)
 	if errors.Is(err, sql.ErrNoRows) {
@@ -138,12 +149,40 @@ func (d *AgentDispatcher) audienceOf(ctx context.Context, roomID, messageID stri
 			a.pushes = append(a.pushes, id)
 		}
 	}
-	return a, len(a.pushes) > 0, nil
+	if a.self, err = d.selfTargets(ctx, q, a.view, prevText); err != nil {
+		return a, false, err
+	}
+	return a, len(a.pushes) > 0 || len(a.self) > 0, nil
+}
+
+// selfTargets returns the sessions of the AI that wrote a message that its text addresses
+// (SESS-37). The stored author_label names the writing session and is never parsed from the text
+// (SESS-29): the message's own text before an edit or a delete and as it is now are both read, and
+// the label of the writing session itself is never a target (SESS-38, SESS-39).
+func (d *AgentDispatcher) selfTargets(ctx context.Context, q *db.Queries, view db.MessageView, prevText string) ([]selfTarget, error) {
+	if view.AuthorKind != string(dto.AuthorKindAgent) || view.AuthorID == "" {
+		return nil, nil
+	}
+	profile, err := IntelligenceOf(ctx, q, view.AuthorID)
+	if err != nil {
+		return nil, err
+	}
+	var out []selfTarget
+	seen := map[string]bool{}
+	for _, text := range []string{prevText, view.Text} {
+		label := SessionLabel(text, profile.Handle)
+		if label == "" || label == view.AuthorLabel || seen[label] {
+			continue
+		}
+		seen[label] = true
+		out = append(out, selfTarget{agentID: view.AuthorID, label: label})
+	}
+	return out, nil
 }
 
 func (d *AgentDispatcher) dispatch(ctx context.Context, e events.MessageCreated) error {
 	q := d.o.Store.R()
-	a, ok, err := d.audienceOf(ctx, e.RoomID, e.MessageID)
+	a, ok, err := d.audienceOf(ctx, e.RoomID, e.MessageID, "")
 	if err != nil || !ok {
 		return err
 	}
@@ -184,6 +223,11 @@ func (d *AgentDispatcher) dispatch(ctx context.Context, e events.MessageCreated)
 		target := SessionLabel(a.view.Text, profile.Handle)
 		d.o.Agents.Push(agentID, target, dto.AgentMessage{Room: refs.of(agentID), Trusted: trusted, Message: msg})
 	}
+	// D11: the author AI's own sessions are outside the plan's author exclusion and outside the
+	// membership's delivery mode, because the author is the AI itself (SESS-37).
+	for _, t := range a.self {
+		d.o.Agents.Push(t.agentID, t.label, dto.AgentMessage{Room: refs.of(t.agentID), Trusted: true, Message: msg})
+	}
 	return nil
 }
 
@@ -193,7 +237,7 @@ func (d *AgentDispatcher) dispatch(ctx context.Context, e events.MessageCreated)
 // that was told of it. The frame carries the message as it is now, with the trust of its author for that AI.
 func (d *AgentDispatcher) dispatchUpdate(ctx context.Context, e events.MessageUpdated) error {
 	q := d.o.Store.R()
-	a, ok, err := d.audienceOf(ctx, e.RoomID, e.MessageID)
+	a, ok, err := d.audienceOf(ctx, e.RoomID, e.MessageID, e.PrevText)
 	if err != nil || !ok {
 		return err
 	}
@@ -250,6 +294,11 @@ func (d *AgentDispatcher) dispatchUpdate(ctx context.Context, e events.MessageUp
 		for _, target := range dedupeTargets(targets) {
 			d.o.Agents.PushUpdate(agentID, target, frame, dto.AgentMessage{Room: refs.of(agentID), Trusted: trusted, Message: msg})
 		}
+	}
+	// SESS-39: the update reaches the sibling the message addressed before or after the change, and
+	// never another session of the author AI.
+	for _, t := range a.self {
+		d.o.Agents.PushUpdate(t.agentID, t.label, frame, dto.AgentMessage{Room: refs.of(t.agentID), Trusted: true, Message: msg})
 	}
 	return nil
 }

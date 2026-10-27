@@ -147,13 +147,25 @@ func (g *Gateway) track() bool {
 	return true
 }
 
+// selfAuthored reports whether the AI wrote the message itself: it is the AI's own message when both
+// the author kind and the author id say so (SESS-38).
+func selfAuthored(m dto.Message, agentID string) bool {
+	return m.AuthorKind == dto.AuthorKindAgent && m.AuthorID == agentID
+}
+
 // Push queues a live message for the session it addresses without blocking. target is the session
 // label the text names, or "" for the principal (SESS-20, SESS-21). A message for a live label gets a
 // pending agent_session_deliveries row and reaches that session only; a message for a label with no
 // live session is the principal's from the start, with ForLabel set, and a message for a label that
 // ended since the row was written falls back to the principal (SESS-22, SESS-24). It reports false
 // when nobody received it live, so the message stays in the principal's queue.
+//
+// A message the AI wrote itself is the exception (D11): it reaches only the live sibling its text
+// addresses, and a target with no live session gets no row and no fallback to the principal (SESS-38).
 func (g *Gateway) Push(agentID, target string, m dto.AgentMessage) bool {
+	if selfAuthored(m.Message, agentID) {
+		return g.pushToSelfSession(agentID, target, m)
+	}
 	if target == "" {
 		return g.pushToPrincipal(agentID, m)
 	}
@@ -194,6 +206,34 @@ func (g *Gateway) Push(agentID, target string, m dto.AgentMessage) bool {
 	return false
 }
 
+// pushToSelfSession queues a message the AI wrote for the live sibling it addresses, with a pending
+// delivery row. Nothing happens for a target with no live session: the AI never receives its own
+// message, neither there nor as a fallback to its principal (SESS-38).
+func (g *Gateway) pushToSelfSession(agentID, target string, m dto.AgentMessage) bool {
+	if target == "" {
+		return false
+	}
+	s, live := g.d.Presence.SessionByLabel(agentID, target)
+	if !live {
+		return false
+	}
+	now := time.Now().UnixMilli()
+	if err := g.createSessionDelivery(g.ctx, m.Message.ID, agentID, target, now, sql.NullInt64{}); err != nil {
+		g.d.Logger.Error("agent: session delivery write failed", "agent_id", agentID, "message_id", m.Message.ID, "err", err)
+		return false
+	}
+	if _, live := g.d.Presence.SessionByLabel(agentID, target); !live {
+		// The session ended between the two reads, and its sweep may have run before the row existed:
+		// the row is dropped here instead of becoming the principal's (SESS-38).
+		if err := g.deleteSessionDelivery(g.ctx, m.Message.ID, agentID); err != nil {
+			g.d.Logger.Error("agent: self session delivery delete failed", "agent_id", agentID, "message_id", m.Message.ID, "err", err)
+		}
+		return false
+	}
+	c, ok := s.(*conn)
+	return ok && c.push(m)
+}
+
 // pushUpdateToPrincipal queues an edit or delete for the principal session without blocking.
 func (g *Gateway) pushUpdateToPrincipal(agentID string, t dto.AgentFrameType, m dto.AgentMessage) bool {
 	s, ok := g.d.Presence.Session(agentID)
@@ -207,10 +247,23 @@ func (g *Gateway) pushUpdateToPrincipal(agentID string, t dto.AgentFrameType, m 
 // PushUpdate queues, without blocking, the frame that tells the targeted session that a message was edited
 // (dto.AgentFrameTypeMessageEdited) or deleted (dto.AgentFrameTypeMessageDeleted); m carries the message as it
 // is now. A live label receives it; when the label has no live session the principal does, because it may hold
-// the message as a fallback (SESS-27). Like Push it reports false when the agent is offline or its queue
-// overflowed. Such a frame is never acknowledged and never sent again: a connection that was not there hears
-// nothing of it, and reads the current state of the message when it connects (EDT-07, DLT-07).
+// the message as a fallback (SESS-27). A message the AI wrote is the exception: only the addressed live sibling
+// receives its update, and a dead target receives nothing (SESS-39). Like Push it reports false when the agent is
+// offline or its queue overflowed. Such a frame is never acknowledged and never sent again: a connection that was
+// not there hears nothing of it, and reads the current state of the message when it connects (EDT-07, DLT-07).
 func (g *Gateway) PushUpdate(agentID, target string, t dto.AgentFrameType, m dto.AgentMessage) bool {
+	if selfAuthored(m.Message, agentID) {
+		// The update stays with the addressed sibling and never reaches the principal (SESS-39).
+		if target == "" {
+			return false
+		}
+		s, ok := g.d.Presence.SessionByLabel(agentID, target)
+		if !ok {
+			return false
+		}
+		c, ok := s.(*conn)
+		return ok && c.enqueue(outbound{typ: t, msg: m})
+	}
 	if target == "" {
 		return g.pushUpdateToPrincipal(agentID, t, m)
 	}

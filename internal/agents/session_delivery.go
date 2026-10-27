@@ -105,6 +105,18 @@ func (g *Gateway) deleteSessionDelivery(ctx context.Context, messageID, agentID 
 	})
 }
 
+// deleteSelfSessionDeliveries drops the pending rows of a label whose message the AI itself wrote:
+// they are never handed to the principal (SESS-38).
+func (g *Gateway) deleteSelfSessionDeliveries(ctx context.Context, agentID, label string) (int64, error) {
+	var n int64
+	err := g.d.Store.WithTx(ctx, func(q *db.Queries) error {
+		var err error
+		n, err = q.DeleteSelfSessionDeliveries(ctx, db.DeleteSelfSessionDeliveriesParams{AgentID: agentID, Label: label})
+		return err
+	})
+	return n, err
+}
+
 // fallBackSessionDeliveries marks the pending rows of a label as the principal's and returns their
 // message ids, so the caller can push each with the note (SESS-24).
 func (g *Gateway) fallBackSessionDeliveries(ctx context.Context, agentID, label string, at int64) ([]string, error) {
@@ -132,9 +144,14 @@ func (g *Gateway) pushToPrincipal(agentID string, m dto.AgentMessage) bool {
 // sessionEnded is the end-of-session sweep: when a labelled connection was the current session of
 // its label, the rows it did not acknowledge become the principal's, and each is pushed to a live
 // principal with the note (SESS-24). When the principal is offline the rows stay in its fallback list.
+// The rows of messages the AI itself wrote are dropped instead: the AI never receives its own text
+// (SESS-38).
 func (g *Gateway) sessionEnded(ctx context.Context, agentID, label string) {
 	if label == "" {
 		return
+	}
+	if _, err := g.deleteSelfSessionDeliveries(ctx, agentID, label); err != nil {
+		g.d.Logger.Error("agent: self session delivery sweep failed", "agent_id", agentID, "label", label, "err", err)
 	}
 	ids, err := g.fallBackSessionDeliveries(ctx, agentID, label, time.Now().UnixMilli())
 	if err != nil {
