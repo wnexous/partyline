@@ -792,6 +792,44 @@ describe("the connections of the organization in the address (SET-05)", () => {
     expect(screen.getByRole("button", { name: "Add connector" })).toBeInTheDocument();
   });
 
+  it("holds its loading state until the organization is known, never the empty state", async () => {
+    let release: () => void = () => {};
+    mockApi({
+      "GET /me": json(200, me),
+      "GET /connector-kinds": kinds,
+      "GET /connectors": json(200, { items: [] }),
+      "GET /orgs/o1": () =>
+        new Promise<Response>((resolve) => {
+          release = () => resolve(json(200, acmeAdmin));
+        }),
+      ...memberOf(acme),
+    });
+    renderRoute("/orgs/o1/connections");
+    // The page holds its place with skeleton rows; nothing claims the organization has none.
+    await waitFor(() =>
+      expect(document.querySelectorAll('[data-slot="skeleton"]').length).toBeGreaterThan(0),
+    );
+    expect(screen.queryByRole("heading", { name: "No connectors yet" })).toBeNull();
+    expect(screen.queryByText(/Nothing is connected in/)).toBeNull();
+    expect(screen.queryByRole("list", { name: /^Connectors of / })).toBeNull();
+    release();
+    expect(await screen.findByRole("heading", { name: "No connectors yet" })).toBeInTheDocument();
+  });
+
+  it("shows the organization's error, not that it has no connectors, when it cannot be read", async () => {
+    mockApi({
+      "GET /me": json(200, me),
+      "GET /connector-kinds": kinds,
+      "GET /connectors": json(200, { items: [] }),
+      "GET /orgs/o1": apiError(500, "internal", "boom"),
+      ...memberOf(acme),
+    });
+    renderRoute("/orgs/o1/connections");
+    expect(await screen.findByText("Couldn’t load this organization.")).toBeInTheDocument();
+    expect(screen.queryByRole("heading", { name: "No connectors yet" })).toBeNull();
+    expect(screen.queryByText("Couldn’t load your connectors.")).toBeNull();
+  });
+
   it("names no owner: the organization is the owner (AD-019)", async () => {
     api(
       [
@@ -910,6 +948,7 @@ describe("the old /connectors addresses resolve (SET-06, SET-07)", () => {
     const { router } = renderRoute("/orgs/o2/connections/k1");
     await waitFor(() => expect(router.state.location.pathname).toBe("/orgs/o1/connections/k1"));
     expect(await screen.findByRole("heading", { name: "ops-bot" })).toBeInTheDocument();
+    expect(await screen.findByText("Organization: Acme")).toBeInTheDocument();
   });
 
   it("sends an unreadable connection to the organizations", async () => {
@@ -928,6 +967,7 @@ describe("adding a connection to an organization (ORG-03)", () => {
   async function openAdd(
     memberships: ReturnType<typeof makeMembership>[],
     routes: Parameters<typeof mockApi>[0] = {},
+    path = "/orgs/o1/connections",
   ) {
     const api = mockApi({
       "GET /me": json(200, me),
@@ -938,7 +978,7 @@ describe("adding a connection to an organization (ORG-03)", () => {
       ...routes,
     });
     const user = userEvent.setup();
-    const utils = renderRoute("/orgs/o1/connections");
+    const utils = renderRoute(path);
     await user.click(await screen.findByRole("button", { name: "Add connector" }));
     const dialog = await screen.findByRole("dialog", { name: "Add connector" });
     return { ...api, ...utils, user, dialog };
@@ -953,10 +993,46 @@ describe("adding a connection to an organization (ORG-03)", () => {
     expect(field).toHaveValue("o1");
   });
 
-  it("starts on the current organization when the viewer administers it", async () => {
+  it("starts on the organization in the address, not on the browser's current one", async () => {
     useLiveStore.setState({ currentOrgId: "o3" });
     const { dialog } = await openAdd([acme, globex, initech]);
-    expect(await orgField(dialog)).toHaveValue("o3");
+    expect(await orgField(dialog)).toHaveValue("o1");
+  });
+
+  it("creates the connection in the organization in the address, not the current one", async () => {
+    const globexAdmin = makeMembership({
+      org_id: "o2",
+      org_name: "Globex",
+      org_slug: "globex",
+      permission: "admin",
+    });
+    const created = makeConnector({ id: "k9", name: "ops-bot", org_id: "o2" });
+    const { user, dialog, calls, router } = await openAdd(
+      [acme, globexAdmin],
+      {
+        "GET /orgs/o2": json(
+          200,
+          makeOrg({ id: "o2", name: "Globex", slug: "globex", permission: "admin" }),
+        ),
+        "POST /connectors": json(201, created),
+        "GET /connectors/k9": json(200, created),
+        "GET /connectors/k9/chats": json(200, { items: [] }),
+      },
+      // The browser's current organization is Acme; the page is Globex's.
+      "/orgs/o2/connections",
+    );
+    expect(await orgField(dialog)).toHaveValue("o2");
+    await user.click(within(dialog).getByRole("radio", { name: /Telegram/ }));
+    await user.type(within(dialog).getByLabelText("Name"), "ops-bot");
+    await user.type(within(dialog).getByLabelText("Bot token"), "123:abc");
+    await user.click(within(dialog).getByRole("button", { name: "Add connector" }));
+
+    await waitFor(() => expect(router.state.location.pathname).toBe("/orgs/o2/connections/k9"));
+    expect(calls.find((c) => c.method === "POST" && c.path === "/connectors")?.body).toMatchObject({
+      org_id: "o2",
+      kind: "telegram",
+      name: "ops-bot",
+    });
   });
 
   it("starts on the first organization the viewer administers when they only belong to the current one", async () => {
@@ -1057,6 +1133,32 @@ describe("the page of a connection in an organization (ORG-03, ORG-07, OMEM-04)"
     api({ org_id: "o2", my_level: "use" });
     renderRoute("/orgs/o2/connections/k1");
     expect(await screen.findByText("Organization: Globex")).toBeInTheDocument();
+  });
+
+  it("never names the address's organization while it moves the page to the connection's own", async () => {
+    let release: () => void = () => {};
+    api(
+      {},
+      {
+        "GET /connectors/k1": () =>
+          new Promise<Response>((resolve) => {
+            release = () => resolve(json(200, base));
+          }),
+      },
+    );
+    const { router } = renderRoute("/orgs/o2/connections/k1");
+    // The address's organization is known; the connection is still on its way.
+    await screen.findByRole("navigation", { name: "Sections of Globex" });
+    // Hold the move, so what the page would show before it happens is what stays on screen.
+    const navigate = vi.spyOn(router, "navigate").mockResolvedValue(undefined);
+    await act(async () => {
+      release();
+    });
+    await waitFor(() => expect(navigate).toHaveBeenCalled());
+    // The page belongs to Acme: it names no organization and offers no page until it says Acme.
+    expect(screen.queryByText("Organization: Globex")).toBeNull();
+    expect(screen.queryByRole("heading", { level: 1, name: "support-line" })).toBeNull();
+    navigate.mockRestore();
   });
 
   it("names no owner and offers no way to share it one by one, even to an admin", async () => {

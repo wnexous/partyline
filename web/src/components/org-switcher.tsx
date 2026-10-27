@@ -130,7 +130,7 @@ export function OrgSwitcher({
         <DropdownMenuContent
           align={compact ? "end" : "start"}
           aria-labelledby={labelId}
-          className="max-h-[min(24rem,var(--radix-dropdown-menu-content-available-height))] w-72 max-w-[calc(100vw-1.5rem)] overflow-y-auto"
+          className="max-h-[min(24rem,var(--radix-dropdown-menu-content-available-height))] w-72 max-w-[calc(100vw-1rem)] overflow-y-auto"
         >
           <DropdownMenuLabel
             id={labelId}
@@ -151,8 +151,9 @@ export function OrgSwitcher({
             <>
               <DropdownMenuSeparator />
               <DropdownMenuGroup>
+                {/* A long name is cut, not wrapped or spilled: the menu keeps its width (SET-09). */}
                 <DropdownMenuLabel className="label-caps py-1 text-[0.68rem] text-muted-foreground">
-                  {t("nav.orgMenu", { org: org.name })}
+                  <span className="block truncate">{t("nav.orgMenu", { org: org.name })}</span>
                 </DropdownMenuLabel>
                 <OrgPageItems org={org} />
               </DropdownMenuGroup>
