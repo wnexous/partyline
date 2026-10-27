@@ -160,7 +160,7 @@ function AppearanceSection() {
           <RadioGroup
             value={theme}
             onValueChange={(v) => setTheme(v as ThemePreference)}
-            className="grid grid-cols-3 gap-2"
+            className="grid gap-2 sm:grid-cols-3"
           >
             {THEMES.map(({ value, icon: Icon, label }) => (
               <Choice
@@ -426,7 +426,13 @@ function NotificationsSection({ me }: { me: Me }) {
                   {t("push.enable")}
                 </Button>
               )}
-              <Button type="button" variant="outline" disabled={busy !== null} onClick={sendTest}>
+              {/* A test can only fail while this device holds no subscription: say so by disabling. */}
+              <Button
+                type="button"
+                variant="outline"
+                disabled={busy !== null || device !== "on"}
+                onClick={sendTest}
+              >
                 {t("push.test")}
               </Button>
               {device === "on" ? (

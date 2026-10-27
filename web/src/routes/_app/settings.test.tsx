@@ -218,6 +218,8 @@ describe("notifications on this device (PUSH-18)", () => {
     renderRoute("/settings");
     expect(await screen.findByRole("radio", { name: "Mentions only" })).toBeChecked();
     expect(screen.getByRole("button", { name: "Enable notifications" })).toBeEnabled();
+    // A test notification can only fail while this device is not on (PUSH-21).
+    expect(screen.getByRole("button", { name: "Send test" })).toBeDisabled();
     expect(screen.getByText("Not enabled on this device")).toBeInTheDocument();
     expect(push.requestPermission).not.toHaveBeenCalled();
     expect(calls.some((c) => c.path === "/push/key")).toBe(false);
@@ -251,6 +253,7 @@ describe("notifications on this device (PUSH-18)", () => {
     expect(screen.getByRole("button", { name: "Disable notifications" })).toBeEnabled();
     // A success says nothing about a failed step.
     expect(screen.queryByText(/^Step: /)).toBeNull();
+    expect(screen.getByRole("button", { name: "Send test" })).toBeEnabled();
   });
 
   it("gives up enabling after 10 s when the service worker never gets ready", async () => {
@@ -362,6 +365,7 @@ describe("notifications on this device (PUSH-18)", () => {
     expect(await screen.findByText(/Notifications are blocked for partyline/)).toBeInTheDocument();
     expect(posts(calls, "/push/subscriptions")).toHaveLength(0);
     expect(screen.getByRole("button", { name: "Enable notifications" })).toBeDisabled();
+    expect(screen.getByRole("button", { name: "Send test" })).toBeDisabled();
   });
 
   it("says notifications are blocked on mount and asks for nothing", async () => {

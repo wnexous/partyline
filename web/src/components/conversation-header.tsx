@@ -60,7 +60,7 @@ export function ConversationHeader({
   return (
     <header
       data-testid="conversation-header"
-      className="flex items-center gap-2 border-b px-4 py-2.5 md:px-6"
+      className="flex flex-wrap items-center gap-2 border-b px-4 py-2.5 md:px-6"
     >
       {back ? <BackToConversations className="-ml-3" /> : null}
       {face ? (
@@ -121,7 +121,7 @@ export function ConversationHeader({
           ) : null}
         </p>
       </div>
-      {actions}
+      {actions ? <div className="ml-auto flex shrink-0 items-center gap-2">{actions}</div> : null}
     </header>
   );
 }
