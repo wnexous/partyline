@@ -768,7 +768,9 @@ func (s *server) reactOnConnection(w http.ResponseWriter, r *http.Request, p aut
 // agentConnectionSend writes to a chat of a connection the AI operates: the connection and the chat
 // are Partyline's ids, as a platform event carries them (CID-16), or the address of a chat the connection
 // has not heard from (CID-31). The body is JSON with the text, or multipart with a caption and one file
-// (CID-32). An AI that is a member of the
+// (CID-32). A JSON body may ask a question: its quick replies are validated like a room's, and the
+// text that goes out is the text with the options numbered after it (QR-20), because a chat renders no
+// buttons. An AI that is a member of the
 // connection's organization and is not its operator is refused with 403 not_operator (CID-03); an AI that
 // is no member of it gets 404, as for a connection that does not exist, so the answer reveals nothing about
 // it (AD-016: the AI acts as itself, not through its host). A chat of another connection is 404
@@ -780,6 +782,11 @@ func (s *server) agentConnectionSend(w http.ResponseWriter, r *http.Request, p a
 		if err := httpx.DecodeJSON(w, r, &req); err != nil {
 			return err
 		}
+		if len(req.QuickReplies) > 0 {
+			if err := rooms.ValidateQuickReplyLabels(req.QuickReplies); err != nil {
+				return err
+			}
+		}
 	}
 	if s.Sends == nil {
 		return access.ErrNotFound
@@ -788,7 +795,8 @@ func (s *server) agentConnectionSend(w http.ResponseWriter, r *http.Request, p a
 	if err := s.Connectors.Require(r.Context(), p, connectionID, dto.LevelUse); err != nil {
 		return err // access.ErrNotFound: the AI is no member of its organization (or it does not exist)
 	}
-	in := connectors.SendInput{AgentID: p.AgentID, ConnectorID: connectionID, ChatID: r.PathValue("chat"), Text: req.Text}
+	in := connectors.SendInput{AgentID: p.AgentID, ConnectorID: connectionID, ChatID: r.PathValue("chat"),
+		Text: rooms.NumberedOptions(req.Text, req.QuickReplies)}
 	if upload {
 		// A caption and a file, read after the AI is known to belong to the connection's organization (CID-32).
 		var err error

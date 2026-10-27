@@ -169,6 +169,22 @@ func TestToolSendMessageWritesToAChatOfAConnection(t *testing.T) {
 	require.Empty(t, c.messages(c.room.ID), "nothing was posted to the room")
 }
 
+// QR-20: ask with connection and chat sends the text with its options numbered after it, through
+// the connection, from the AI's account, and posts nothing in a room: a chat has no bubble to tap.
+func TestAskOnAConnection(t *testing.T) {
+	c := newConnectionChan(t)
+	s := c.connected(c.options())
+
+	text, isErr := s.call("ask", toolArgs("connection", c.conn, "chat", c.group.ID, "text", "Deploy?", "quick_replies", []string{"Sim", "Não"}))
+	require.False(t, isErr, text)
+	require.Equal(t, "sent", text)
+	sent := c.inst.WaitSend(t)
+	require.Equal(t, "Deploy?\n\n1. Sim\n2. Não", sent.Text)
+	require.Equal(t, []any{groupChatExternal, true}, []any{sent.ChatID, sent.Unsigned})
+	require.Len(t, c.inst.Sent(), 1)
+	require.Empty(t, c.messages(c.room.ID), "nothing was posted to the room")
+}
+
 // CID-16: exactly one of room, to, or connection with chat says where the message goes. Several, or
 // none, or a connection or a chat alone, is a tool error that sends and posts nothing; the text is
 // still required.

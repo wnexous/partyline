@@ -952,11 +952,13 @@ export const PlatformSendStatusFailed = "failed";
 export type PlatformSendStatus = typeof PlatformSendStatusPending | typeof PlatformSendStatusSending | typeof PlatformSendStatusSent | typeof PlatformSendStatusFailed;
 /**
  * SendToChatRequest is the body of POST /agent/connections/{id}/chats/{chat}/messages: the text an
- * AI writes, as its own account, to a chat of a connection it operates (CID-16). The answer is a
- * PlatformSendResult.
+ * AI writes, as its own account, to a chat of a connection it operates (CID-16). QuickReplies is the
+ * options of a question (QR-20): the server appends them to the text as numbered lines and stores
+ * what was sent, because a chat renders no buttons. The answer is a PlatformSendResult.
  */
 export interface SendToChatRequest {
   text: string;
+  quick_replies?: string[];
 }
 /**
  * PlatformSendResult is what an AI is told about an answer it sent through its connection (CID-15,
