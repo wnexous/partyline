@@ -209,8 +209,11 @@ type Message struct {
 	Interactive *MessageInteractive `json:"interactive,omitempty"`
 	// Answers is the structured answer a reply carries (QR-06, QR-07): the chosen labels of the
 	// question, in the question's order. Absent for every other message.
-	Answers   *MessageAnswers `json:"answers,omitempty"`
-	CreatedAt time.Time       `json:"created_at"`
+	Answers *MessageAnswers `json:"answers,omitempty"`
+	// AuthorLabel is the session that wrote an AI's message (SESS-30): the label of the live session
+	// or worktree it came from, absent for the principal session and for every other author.
+	AuthorLabel string    `json:"author_label,omitempty"`
+	CreatedAt   time.Time `json:"created_at"`
 	// EditedAt is when the author last changed the text; absent for a message that was never edited (EDT-01).
 	EditedAt *time.Time `json:"edited_at,omitempty"`
 	// DeletedAt is when the message was deleted; absent otherwise. A deleted message is a placeholder that

@@ -578,11 +578,11 @@ the sqlc and tygo outputs.
   `run.go` gives the client the link's live id (asserted through the recorded request).
 - `internal/api/convert/convert_test.go`: `AuthorLabel` is copied, empty stays empty.
 **Done when**:
-- [ ] the label is derived only from the live-id/folder rule, never from the text (a test posts
+- [x] the label is derived only from the live-id/folder rule, never from the text (a test posts
   `"@me:fake"` from the principal and asserts `author_label ""`)
-- [ ] users, chats and system notices store `''`
-- [ ] `make generate` ran and the generated files are committed
-- [ ] Gate check passes: `make check`
+- [x] users, chats and system notices store `''`
+- [x] `make generate` ran and the generated files are committed
+- [x] Gate check passes: `make check`
 **Tests**: integration
 **Gate**: build
 **Commit**: `feat(rooms): record which session wrote a message`

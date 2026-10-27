@@ -6,6 +6,7 @@ import (
 	"io"
 	"mime"
 	"net/http"
+	"net/url"
 	"path/filepath"
 	"strings"
 	"time"
@@ -237,12 +238,28 @@ func (s *server) postTo(w http.ResponseWriter, r *http.Request, p authn.Principa
 	m, err := s.Rooms.Post(r.Context(), p, roomID, rooms.PostInput{
 		Text: req.Text, ReplyTo: req.ReplyTo, Files: files,
 		QuickReplies: req.QuickReplies, Wizard: req.Wizard, Answers: req.Answers,
+		SessionLabel: s.sessionLabel(r, p),
 	})
 	if err != nil {
 		return err
 	}
 	httpx.WriteJSON(w, http.StatusCreated, convert.Message(m))
 	return nil
+}
+
+// sessionLabel is the label of the session an agent principal posts from (SESS-29): the live
+// session its X-Partyline-Live header names, else the label of a worktree folder different from the
+// AI's own, else "" for the principal. A user's post and a chat's message never carry one (SESS-28),
+// and the text is never read for it.
+func (s *server) sessionLabel(r *http.Request, p authn.Principal) string {
+	if p.Kind != authn.KindAgent || s.Agents == nil {
+		return ""
+	}
+	folder, err := url.PathUnescape(r.Header.Get(dto.HeaderFolder))
+	if err != nil {
+		folder = "" // an unusable folder header names no worktree; the agent routes refuse it first
+	}
+	return s.Agents.SessionLabelOf(r.Context(), p.AgentID, r.Header.Get(dto.HeaderLive), folder)
 }
 
 func (s *server) readMultipartMessage(r *http.Request) (dto.PostMessageRequest, []rooms.File, error) {

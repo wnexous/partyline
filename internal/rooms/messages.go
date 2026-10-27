@@ -74,6 +74,9 @@ type PostInput struct {
 	QuickReplies []string
 	Wizard       *dto.WizardRequest
 	Answers      *dto.AnswerSubmission
+	// SessionLabel is the session an AI posts from, resolved by the API (SESS-29). It is stored for
+	// agent principals only: a user's post and a chat's message never carry one (SESS-28).
+	SessionLabel string
 }
 
 // ChatMessage is a message received from an external chat (connectors' inbound pipeline).
@@ -118,6 +121,9 @@ type draft struct {
 	// answers is the canonical structured answer document (QR-05, QR-06), empty for every other
 	// message.
 	answers string
+	// authorLabel is the session that wrote an agent's message, empty for the principal and for
+	// every other author (SESS-28, SESS-29).
+	authorLabel string
 	// answering marks a draft that answers a question: checkAnswer settles the stored-message
 	// rules even when the answer cannot be rendered before the transaction (QR-05).
 	answering bool
@@ -211,6 +217,7 @@ func (s *Service) Post(ctx context.Context, p authn.Principal, roomID string, in
 	if p.Kind == authn.KindAgent {
 		// An agent's messages resolve to its owner (DLV-06).
 		d.authorKind, d.authorID, d.authorIID = dto.AuthorKindAgent, p.AgentID, p.AgentID
+		d.authorLabel = in.SessionLabel
 	}
 	return s.post(ctx, roomID, d)
 }
@@ -438,7 +445,7 @@ func (s *Service) insert(ctx context.Context, q *db.Queries, roomID string, d dr
 		AuthorUserID: d.authorUserID, AuthorIid: d.authorIID, SenderID: d.senderID, SenderAltID: d.senderAltID, SenderName: d.senderName,
 		Kind: string(d.kind), Text: d.text, ReplyTo: d.replyTo, RecipientsJson: "[]",
 		ExternalID: sql.NullString{String: d.externalID, Valid: d.externalID != ""}, CreatedAt: now,
-		InteractiveJson: d.interactive, AnswersJson: d.answers,
+		InteractiveJson: d.interactive, AnswersJson: d.answers, AuthorLabel: d.authorLabel,
 	})
 	if err != nil {
 		return db.Room{}, events.MessageCreated{}, err

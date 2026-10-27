@@ -139,3 +139,29 @@ the same message again. The room's cursor therefore advances to the highest cons
 or a cursor message; `AdvanceAgentCursor` keeps the maximum, so a fallback below the cursor changes
 nothing. `Pending` still reads cursor messages in sequence with the fallback rows and never advances over
 an unseen cursor message. `backlog` keeps the row, so only `Pending` needs this.
+
+# Contract Notes (from ai-sessions T9: record which session wrote a message)
+
+The rest of the design stands. Three details the task's file list does not carry as written:
+
+## `CreateMessage` lives in `messages.sql`, not `rooms.sql`
+
+The task's **Also** line names `internal/store/queries/rooms.sql`, but the message queries (and so
+`CreateMessage`, which gains the `author_label` parameter and column) are in
+`internal/store/queries/messages.sql`; `rooms.sql` holds the rooms and their members and was not
+touched. `make generate` regenerated `internal/store/db/messages.sql.go` and
+`web/src/lib/api/types.gen.ts`.
+
+## `SessionLabelOf` is a `Registry` method in `presence.go`
+
+It reads the live-id lookup (`Presence.SessionLabel`) and the AI's stored folder, so it lives next to
+the presence code the task lists rather than in `registry.go`. It resolves in the design's order: the
+live session whose `X-Partyline-Live` matches, else `LabelForFolder` of a session folder different from
+the AI's own (an empty folder header names none), else `""`.
+
+## One existing assertion asserted the old rule
+
+`internal/channel/identity_test.go` asserted "REST calls carry no live id", which SESS-29 reverses.
+`TestEveryConnectionAndCallSendsTheIdentity` now requires the tool call to carry the same live id the
+connection sent (the tools-only process still sends none). It is a stronger assertion, not a weaker
+one.

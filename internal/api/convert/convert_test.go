@@ -215,3 +215,23 @@ func TestOrgChart(t *testing.T) {
 	require.Contains(t, string(raw), `"unassigned":[]`)
 	require.NotContains(t, string(raw), "null")
 }
+
+// SESS-30: a rendered message carries the label of the session that wrote it, and an empty label
+// stays empty for the principal and for every author that is not an AI.
+func TestMessageAuthorLabel(t *testing.T) {
+	view := func(kind, label string) rooms.Message {
+		return rooms.Message{MessageView: db.MessageView{
+			ID: "m1", RoomID: "r1", Seq: 1, Kind: "text", AuthorKind: kind, AuthorID: "a1",
+			AuthorLabel: label, RecipientsJson: "[]",
+		}}
+	}
+
+	labelled := convert.Message(view("agent", "claude-2"))
+	require.Equal(t, "claude-2", labelled.AuthorLabel)
+	data, err := json.Marshal(labelled)
+	require.NoError(t, err)
+	require.Contains(t, string(data), `"author_label":"claude-2"`)
+
+	require.Empty(t, convert.Message(view("agent", "")).AuthorLabel, "the principal has no label")
+	require.Empty(t, convert.Message(view("user", "")).AuthorLabel)
+}

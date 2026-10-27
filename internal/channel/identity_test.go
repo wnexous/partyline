@@ -277,7 +277,8 @@ func everyConnectionSendsTheIdentity(t *testing.T, id Identity) {
 		call := nextRequest(t, reqs)
 		require.Equal(t, "/api/v1/agent/rooms", call.path)
 		requireIdentity(t, call, id)
-		require.Empty(t, call.header.Get(dto.HeaderLive), "REST calls carry no live id")
+		require.Equal(t, first.header.Get(dto.HeaderLive), call.header.Get(dto.HeaderLive),
+			"a REST call carries the live id of the process whose socket is connected (SESS-29)")
 	})
 
 	t.Run("channel without a harness is Claude Code", func(t *testing.T) {

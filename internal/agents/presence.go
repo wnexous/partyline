@@ -216,6 +216,22 @@ func (p *Presence) SessionByLabel(agentID, label string) (Session, bool) {
 	return e.session, ok
 }
 
+// SessionLabel returns the label of the agent's live session that the process liveID holds, if any:
+// the lookup the author label of a tool call resolves through (SESS-29).
+func (p *Presence) SessionLabel(agentID, liveID string) (string, bool) {
+	if liveID == "" {
+		return "", false
+	}
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	for held, e := range p.sessions[agentID] {
+		if e.liveID == liveID {
+			return held, true
+		}
+	}
+	return "", false
+}
+
 // Detach removes s when it is still one of the agent's live sessions and remembers its label for a
 // reconnect of its process; the agent goes offline when the last session ends. It reports whether s was
 // the current session (false after a takeover or a reconnect), which the end-of-session sweep needs.
@@ -344,4 +360,23 @@ func (p *Presence) touch(ctx context.Context, agentID string) error {
 	return p.store.WithTx(ctx, func(q *db.Queries) error {
 		return q.TouchAgent(ctx, db.TouchAgentParams{LastSeenAt: nullMillis(p.now()), ID: agentID})
 	})
+}
+
+// SessionLabelOf is the label of the session a message came from (SESS-29), resolved server-side and
+// never from the message text: the live session of the AI that holds liveID (the X-Partyline-Live
+// header of a tool call), else the label of a worktree folder different from the AI's own (the
+// tools-only process in a linked worktree, D10), else "" for the principal and for an AI whose row is
+// gone.
+func (r *Registry) SessionLabelOf(ctx context.Context, agentID, liveID, sessionFolder string) string {
+	if agentID == "" {
+		return ""
+	}
+	if label, ok := r.presence.SessionLabel(agentID, liveID); ok {
+		return label
+	}
+	a, err := r.store.R().GetAgent(ctx, agentID)
+	if err != nil || sessionFolder == "" || sessionFolder == a.Folder {
+		return ""
+	}
+	return LabelForFolder(sessionFolder)
 }

@@ -2,6 +2,7 @@ package rooms
 
 import (
 	"context"
+	"fmt"
 	"sort"
 	"strings"
 	"sync"
@@ -456,4 +457,37 @@ func TestReplyTo(t *testing.T) {
 	var verr *validation.Error
 	require.ErrorAs(t, err, &verr)
 	require.Contains(t, verr.Fields, "reply_to")
+}
+
+// SESS-28, SESS-29: the rooms service stores the session label the caller resolved for an agent
+// principal, and only for it: a user's post, a chat's message and a system notice store "".
+func TestPostsStoreTheSessionLabelOfAnAgent(t *testing.T) {
+	ctx := context.Background()
+	f := newFixture(t)
+	alice := f.user(t, "alice", dto.RoleMember)
+	a1 := f.agent(t, alice, "a1")
+	_, open := f.chat(t, alice, "open")
+	r := f.room(t, alice, "ops")
+	f.addMember(t, alice, r.ID, dto.MemberKindAgent, a1)
+	f.addMember(t, alice, r.ID, dto.MemberKindChat, open)
+
+	fromAgent, err := f.svc.Post(ctx, agentPrincipal(alice, a1), r.ID, PostInput{Text: "from a worktree", SessionLabel: "wt"})
+	require.NoError(t, err)
+	require.Equal(t, "wt", fromAgent.AuthorLabel, "an AI's post keeps the label of its session")
+
+	fromUser, err := f.svc.Post(ctx, alice, r.ID, PostInput{Text: "from a person", SessionLabel: "wt"})
+	require.NoError(t, err)
+	require.Empty(t, fromUser.AuthorLabel, "a person has no session label, whatever the input says")
+
+	fromChat, err := f.svc.PostFromChat(ctx, r.ID, ChatMessage{ChatID: open, SenderID: "5511999990000", Text: "from a chat"})
+	require.NoError(t, err)
+	require.Empty(t, fromChat.AuthorLabel, "a chat's message is no session's")
+
+	// The pause notice is a system message, written with no label (SESS-28).
+	for i := range 30 {
+		f.post(t, agentPrincipal(alice, a1), r.ID, fmt.Sprintf("burst %d", i))
+	}
+	var notice string
+	require.NoError(t, f.raw.QueryRow("SELECT author_label FROM messages WHERE room_id = ? AND author_kind = 'system'", r.ID).Scan(&notice))
+	require.Empty(t, notice, "a system notice has no author label")
 }

@@ -123,6 +123,10 @@ func Run(ctx context.Context, o Options) error {
 		return err
 	}
 	l := newLink(base, o.Token, id, o.HTTPClient, srv, o.Stderr, o.timing)
+	// The tools post as the process whose socket is connected, so the server records the session
+	// each message came from (SESS-29). A tools-only process has no link and sends no live id.
+	id.LiveID = l.liveID
+	t.api.identity = id
 	l.takeover, l.zone, l.announce = o.Takeover, o.zone, true
 	l.keepTryingWhenBusy = true // a channel reconnects by itself, it never gives up (SES-04)
 	l.onLost = func(reason lostReason, text string) {

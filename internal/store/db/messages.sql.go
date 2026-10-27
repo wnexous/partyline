@@ -79,8 +79,8 @@ func (q *Queries) CreateAttachment(ctx context.Context, arg CreateAttachmentPara
 const createMessage = `-- name: CreateMessage :exec
 INSERT INTO messages (id, room_id, seq, author_kind, author_id, author_user_id, author_iid, sender_id, sender_alt_id,
                       sender_name, kind, text, reply_to, recipients_json, external_id, created_at,
-                      interactive_json, answers_json)
-VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                      interactive_json, answers_json, author_label)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 `
 
 type CreateMessageParams struct {
@@ -102,10 +102,12 @@ type CreateMessageParams struct {
 	CreatedAt       int64
 	InteractiveJson string
 	AnswersJson     string
+	AuthorLabel     string
 }
 
 // interactive_json and answers_json are written once, with the message (QR-01, QR-08); every other
-// message writes them empty.
+// message writes them empty. author_label is the session that wrote an AI's message; it is "" for the
+// principal and for every other author (SESS-28, SESS-29).
 func (q *Queries) CreateMessage(ctx context.Context, arg CreateMessageParams) error {
 	_, err := q.db.ExecContext(ctx, createMessage,
 		arg.ID,
@@ -126,6 +128,7 @@ func (q *Queries) CreateMessage(ctx context.Context, arg CreateMessageParams) er
 		arg.CreatedAt,
 		arg.InteractiveJson,
 		arg.AnswersJson,
+		arg.AuthorLabel,
 	)
 	return err
 }
