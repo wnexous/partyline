@@ -85,6 +85,9 @@ type stdio struct {
 	// where it cannot; environ is the environment a launcher passes on (nil: os.Environ).
 	exec    func(path string, argv, env []string) (int, error)
 	environ func() []string
+	// binaryVersion prints what `<path> --version` says (nil: runs it for real, with
+	// binaryVersionTimeout); the OpenCode launcher reads the major version from it.
+	binaryVersion func(ctx context.Context, path string) (string, error)
 	// launcherEnv returns the launcher variables of the nearest launched ancestor process
 	// (withLauncherEnv); nil means none (Run sets procLauncherEnv).
 	launcherEnv func() map[string]string

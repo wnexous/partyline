@@ -50,6 +50,8 @@ type launchMachine struct {
 	// afterExec runs inside the exec hook, before it returns (the takeover test dials as the
 	// harness's channel from there).
 	afterExec func(env []string)
+	// version answers `<harness> --version` (nil: the binary says nothing readable).
+	version func(path string) (string, error)
 }
 
 func newLaunchMachine(t *testing.T) *launchMachine {
@@ -174,6 +176,12 @@ func (m *launchMachine) run(t *testing.T, args ...string) launchRun {
 				return []byte(`{"name":"partyline","transport":{"type":"stdio","command":"` + launchBinary + `"}}`), nil
 			}
 			return []byte("Error: No MCP server named 'partyline' found."), errors.New("exit status 1")
+		},
+		binaryVersion: func(_ context.Context, path string) (string, error) {
+			if m.version == nil {
+				return "", errors.New("version not read")
+			}
+			return m.version(path)
 		},
 		environ:     func() []string { return append([]string(nil), m.environ...) },
 		isTerminal:  func(fd int) bool { return m.terminals[fd] },
@@ -765,4 +773,74 @@ func TestParentChildInAWorktreeSendsNoMainFolder(t *testing.T) {
 	h := http.Header{}
 	setIdentityHeaders(h, id)
 	require.Empty(t, h.Values(dto.HeaderMainFolder))
+}
+
+// OpenCode 2 runs its plugin in a background server shared by all windows, so the plugin never sees
+// the launcher's PARTYLINE_HARNESS. The launcher starts a 2.x OpenCode with its own server
+// (--standalone); a 1.x, an unreadable version, a subcommand and a choice the person made are left as typed.
+func TestOpenCodeLauncherRunsVersion2Standalone(t *testing.T) {
+	cases := []struct {
+		name    string
+		version func(string) (string, error)
+		args    []string
+		want    []string
+	}{
+		{"1.19.3", reply("1.19.3\n"), nil, []string{"opencode"}},
+		{"2.2.0", reply("opencode v2.2.0\n"), nil, []string{"opencode", "--standalone"}},
+		{"2.2.0 bare", reply("2.2.0"), []string{"-c", "--prompt", "hi"}, []string{"opencode", "--standalone", "-c", "--prompt", "hi"}},
+		{"2.2.0 with a directory", reply("2.2.0"), []string{"/work/acme"}, []string{"opencode", "--standalone", "/work/acme"}},
+		{"v2.0.1-beta", reply("v2.0.1-beta\n"), nil, []string{"opencode", "--standalone"}},
+		{"garbage", reply("what is this\n"), nil, []string{"opencode"}},
+		{"cannot run", func(string) (string, error) { return "", errors.New("timeout") }, nil, []string{"opencode"}},
+		{"unreadable", nil, nil, []string{"opencode"}},
+		{"already standalone", reply("2.2.0"), []string{"--standalone"}, []string{"opencode", "--standalone"}},
+		{"another server", reply("2.2.0"), []string{"--server", "http://x"}, []string{"opencode", "--server", "http://x"}},
+		{"subcommand run", reply("2.2.0"), []string{"run", "hi"}, []string{"opencode", "run", "hi"}},
+		{"subcommand serve", reply("2.2.0"), []string{"serve"}, []string{"opencode", "serve"}},
+		{"help", reply("2.2.0"), []string{"--help"}, []string{"opencode", "--help"}},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			m := newLaunchMachine(t)
+			m.onPath["opencode"] = true
+			m.register(t, "opencode")
+			m.version = c.version
+			r := m.run(t, append([]string{"opencode"}, c.args...)...)
+			require.Equal(t, 7, r.code, r.stderr)
+			require.Empty(t, r.stderr, "an unreadable version is no reason to warn")
+			require.Equal(t, c.want, r.argv)
+		})
+	}
+
+	t.Run("other harnesses never ask for a version", func(t *testing.T) {
+		m := newLaunchMachine(t)
+		m.onPath["pi"] = true
+		m.register(t, "pi")
+		m.version = func(string) (string, error) { t.Error("version read"); return "9.0.0", nil }
+		r := m.run(t, "pi")
+		require.Equal(t, []string{"pi"}, r.argv)
+	})
+}
+
+func reply(s string) func(string) (string, error) {
+	return func(path string) (string, error) {
+		if path != "/usr/local/bin/opencode" {
+			return "", errors.New("wrong binary " + path)
+		}
+		return s, nil
+	}
+}
+
+func TestBinaryMajor(t *testing.T) {
+	for in, want := range map[string]int{"2.2.0": 2, "v2.0.1-beta": 2, "opencode v2.2.0\n": 2, "1.19.3": 1, "0.0.0-dev-202610280102": 0, "10.1.2": 10} {
+		got, ok := binaryMajor(in, nil)
+		require.True(t, ok, in)
+		require.Equal(t, want, got, in)
+	}
+	for _, in := range []string{"", "garbage", "2", "2.2", "build 12345"} {
+		_, ok := binaryMajor(in, nil)
+		require.False(t, ok, in)
+	}
+	_, ok := binaryMajor("2.2.0", errors.New("exit 1"))
+	require.False(t, ok)
 }

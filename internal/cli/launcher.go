@@ -9,7 +9,9 @@ import (
 	"net/url"
 	"os"
 	"os/exec"
+	"regexp"
 	"slices"
+	"strconv"
 	"strings"
 	"time"
 
@@ -247,7 +249,13 @@ func launch(ctx context.Context, l launcher, args []string, io stdio) int {
 		}
 	}
 
-	argv := append(append([]string{l.id}, l.extra...), opts.args...)
+	userArgs := opts.args
+	if l.id == "opencode" && wantsStandalone(userArgs) {
+		if major, ok := binaryMajor(opencodeVersion(ctx, path, io)); ok && standaloneForVersion(major) {
+			userArgs = append([]string{"--standalone"}, userArgs...)
+		}
+	}
+	argv := append(append([]string{l.id}, l.extra...), userArgs...)
 	run := io.exec
 	if run == nil {
 		run = execProgram
@@ -457,4 +465,77 @@ func warnUnregistered(ctx context.Context, id, title string, io stdio) {
 		}
 		return
 	}
+}
+
+// binaryVersionTimeout bounds `<harness> --version` before a launch, so a harness that hangs never
+// holds a person up (the launch goes on without the flag the version would have added).
+const binaryVersionTimeout = 3 * time.Second
+
+// opencodeStandaloneMajor is the first OpenCode version that runs its plugins in a background
+// server shared by all windows and takes --standalone to run one of its own.
+const opencodeStandaloneMajor = 2
+
+// opencodeSubcommands are the OpenCode 2 commands that are not the interactive session. They take
+// no part in the launch: `partyline opencode run ...` or `serve` goes through unchanged.
+var opencodeSubcommands = []string{
+	"upgrade", "update", "uninstall", "acp", "api", "debug", "auth", "mcp", "plugin", "models",
+	"stats", "mini", "run", "session", "service", "reload", "pair", "serve",
+}
+
+// wantsStandalone reports whether the arguments for OpenCode start its interactive session and leave the
+// server choice to the launcher: no subcommand, no --standalone or --server (the person chose), and no
+// flag that only prints something.
+func wantsStandalone(args []string) bool {
+	if len(args) > 0 && slices.Contains(opencodeSubcommands, args[0]) {
+		return false
+	}
+	for _, a := range args {
+		if a == "--" {
+			break
+		}
+		flag, _, _ := strings.Cut(a, "=")
+		switch flag {
+		case "--standalone", "--server", "--help", "-h", "--version", "-v", "--completions", "--wizard":
+			return false
+		}
+	}
+	return true
+}
+
+// standaloneForVersion reports whether an OpenCode of this major version needs --standalone for its
+// plugin to run in the window's own environment (PARTYLINE_HARNESS).
+func standaloneForVersion(major int) bool { return major >= opencodeStandaloneMajor }
+
+// binaryMajor reads the leading major version out of what `--version` printed: "2.2.0", "v2.0.1-beta" and
+// "opencode 2.2.0" give 2; text without a version gives false.
+func binaryMajor(out string, err error) (int, bool) {
+	if err != nil {
+		return 0, false
+	}
+	m := semverRe.FindStringSubmatch(out)
+	if m == nil {
+		return 0, false
+	}
+	major, err := strconv.Atoi(m[1])
+	return major, err == nil
+}
+
+var semverRe = regexp.MustCompile(`(?:^|[^0-9.])v?(\d{1,4})\.\d+\.\d+`)
+
+// opencodeVersion asks the OpenCode binary for its version once.
+func opencodeVersion(ctx context.Context, path string, io stdio) (string, error) {
+	run := io.binaryVersion
+	if run == nil {
+		run = runBinaryVersion
+	}
+	ctx, cancel := context.WithTimeout(ctx, binaryVersionTimeout)
+	defer cancel()
+	return run(ctx, path)
+}
+
+func runBinaryVersion(ctx context.Context, path string) (string, error) {
+	cmd := exec.CommandContext(ctx, path, "--version") // #nosec G204 -- the harness binary found on PATH
+	cmd.WaitDelay = time.Second                        // a child that keeps the pipe open does not outlive the timeout
+	out, err := cmd.Output()
+	return string(out), err
 }
