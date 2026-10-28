@@ -134,9 +134,10 @@ func (g *Gateway) ackSessionDelivery(ctx context.Context, messageID, agentID, ow
 }
 
 // ackFallbackDelivery is the principal's consumption of a fallen-back row, which stays as a tombstone.
-func ackFallbackDelivery(ctx context.Context, q *db.Queries, messageID, agentID string) error {
-	_, err := q.AckFallbackDelivery(ctx, db.AckFallbackDeliveryParams{AckedAt: nullNow(), MessageID: messageID, AgentID: agentID})
-	return err
+// It reports whether a row was consumed: the message was a fallback.
+func ackFallbackDelivery(ctx context.Context, q *db.Queries, messageID, agentID string) (bool, error) {
+	n, err := q.AckFallbackDelivery(ctx, db.AckFallbackDeliveryParams{AckedAt: nullNow(), MessageID: messageID, AgentID: agentID})
+	return n > 0, err
 }
 
 func nullNow() sql.NullInt64 { return sql.NullInt64{Int64: time.Now().UnixMilli(), Valid: true} }
@@ -173,14 +174,16 @@ func (g *Gateway) pushToPrincipal(agentID string, m dto.AgentMessage) bool {
 	return ok && c.push(m)
 }
 
-// ownerConn returns the live connection that owns the rows of owner, if any.
-func (g *Gateway) ownerConn(agentID, owner string) *conn {
-	if owner == "" {
+// ownerConn returns the live connection that owns the row of owner addressed to label, if any: the
+// connection must hold that label now. A process that was labelled and reconnected as the principal has
+// the same live id, but it is not the session the row was pushed to, and it never acknowledges the row.
+func (g *Gateway) ownerConn(agentID, owner, label string) *conn {
+	if owner == "" || label == "" {
 		return nil
 	}
 	s, ok := g.d.Presence.Find(agentID, func(s Session) bool {
 		c, ok := s.(*conn)
-		return ok && c.owner == owner
+		return ok && c.owner == owner && c.labelOf() == label
 	})
 	if !ok {
 		return nil
@@ -217,17 +220,26 @@ func (g *Gateway) deliverOwned(agentID string, m dto.AgentMessage) bool {
 		m.ForLabel = row.Label
 		return g.pushToPrincipal(agentID, m)
 	}
-	if c := g.ownerConn(agentID, row.OwnerLive); c != nil {
+	if c := g.ownerConn(agentID, row.OwnerLive, row.Label); c != nil {
 		return c.push(m)
 	}
-	return slices.Contains(g.releaseOwner(g.ctx, agentID, row.OwnerLive), m.Message.ID)
+	if g.afterOwnerMiss != nil {
+		g.afterOwnerMiss()
+	}
+	return slices.Contains(g.releaseOwner(g.ctx, agentID, row.OwnerLive, row.Label), m.Message.ID)
 }
 
 // releaseOwner sweeps the rows of a connection that is no longer attached and pushes them to the
-// principal with the note. It returns the messages the principal received live.
-func (g *Gateway) releaseOwner(ctx context.Context, agentID, owner string) []string {
+// principal with the note. It returns the messages the principal received live. The caller found no owner
+// connection without the life lock, so a connection of the same process may have attached since: the
+// check runs again under the lock, and the sweep only when the owner is still absent.
+func (g *Gateway) releaseOwner(ctx context.Context, agentID, owner, label string) []string {
 	mu := g.lifeLock(agentID)
 	mu.Lock()
+	if g.ownerConn(agentID, owner, label) != nil {
+		mu.Unlock()
+		return nil // it attached meanwhile and receives the row itself
+	}
 	ids, err := g.fallBackOwned(ctx, agentID, owner)
 	mu.Unlock()
 	if err != nil {
@@ -270,7 +282,7 @@ func (g *Gateway) connectionKicked(ctx context.Context, agentID string, s Sessio
 // sweepEnded falls back what the ended connection c owned, unless its process holds another connection
 // (a reconnect). The caller holds the AI's life lock. The principal owns no rows.
 func (g *Gateway) sweepEnded(ctx context.Context, agentID string, c *conn) ([]string, error) {
-	if c.label == "" || g.d.Presence.HoldsLive(agentID, c.liveID) {
+	if c.labelOf() == "" || g.d.Presence.HoldsLive(agentID, c.liveID) {
 		return nil, nil
 	}
 	return g.fallBackOwned(ctx, agentID, c.owner)

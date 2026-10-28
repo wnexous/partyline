@@ -149,7 +149,7 @@ func (g *Gateway) Pending(ctx context.Context, a db.Agent, label string, limit i
 		ref := delivery.RoomRef(st.ID, st.Name, st.Kind)
 		for i, s := range selected {
 			if s.fallback {
-				if err := g.d.Store.WithTx(ctx, func(q *db.Queries) error { return ackFallbackDelivery(ctx, q, s.view.ID, a.ID) }); err != nil {
+				if err := g.d.Store.WithTx(ctx, func(q *db.Queries) error { _, err := ackFallbackDelivery(ctx, q, s.view.ID, a.ID); return err }); err != nil {
 					return nil, err
 				}
 			}

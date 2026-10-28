@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"net/http"
+	"runtime"
 	"testing"
 	"time"
 
@@ -678,4 +679,118 @@ func TestPendingWithOnlyAFallbackKeepsTheCursor(t *testing.T) {
 		_, err := f.cursor(t)
 		require.ErrorIs(t, err, sql.ErrNoRows, "a fallback's sequence never becomes the cursor")
 	})
+}
+
+// dialPrincipalAs opens the AI's principal session as the process live.
+func (f *sessionFixture) dialPrincipalAs(t *testing.T, live string) *testkit.AgentConn {
+	t.Helper()
+	folder := testkit.FolderOf("atlas")
+	folder.Live = live
+	conn, resp := f.token.DialFolder(folder)
+	require.NotNil(t, conn, "upgrade refused: %d %s", resp.Status, resp.Body)
+	conn.Welcome(time.Minute)
+	t.Cleanup(conn.Close)
+	return conn
+}
+
+// pushRow runs the dispatcher's push of a stored message towards a label.
+func (f *sessionFixture) pushRow(t *testing.T, m dto.Message, label string) bool {
+	t.Helper()
+	msg, err := f.env.App.Gateway.Message(context.Background(), m.ID)
+	require.NoError(t, err)
+	return f.env.App.Gateway.Push(f.agentID, label, dto.AgentMessage{Room: dto.RoomRef{ID: f.room.ID, Name: "Support"}, Trusted: true, Message: msg})
+}
+
+// SESS-14, SESS-24: a row belongs to the connection that holds its label. A process that was labelled and
+// is now the principal has the same live id as the row's owner, but it is not the session the row was
+// pushed to: the row falls back, and the principal receives it with the note instead of as a plain message.
+func TestAPrincipalWithTheOwnersLiveIDIsNotGivenALabelledRow(t *testing.T) {
+	f := newSessionFixture(t)
+	live := testkit.NewLiveID()
+	principal := f.dialPrincipalAs(t, live)
+	f.settle(t, principal)
+	m := f.post(t, "plain, then claimed by a label this process no longer holds")
+	require.Equal(t, m.ID, principal.Message(time.Minute).Message.ID)
+	f.ownPending(t, m.ID, "wt", live)
+
+	f.pushRow(t, m, "wt")
+	got := principal.Message(time.Minute)
+	require.Equal(t, m.ID, got.Message.ID)
+	require.Equal(t, "wt", got.ForLabel, "the principal receives the row with the note")
+	require.Eventually(t, func() bool { return f.rowOf(t, m.ID).FellBackAt.Valid }, 5*time.Second, 10*time.Millisecond,
+		"the row fell back instead of staying pending")
+}
+
+// SESS-14, SESS-24: a connection of the owning process that attaches while the release looks for the
+// owner receives the row, and the principal does not get it as a fallback too.
+func TestAReconnectDuringTheReleaseDoesNotDeliverTwice(t *testing.T) {
+	f := newSessionFixture(t)
+	principal := f.dial(t)
+	f.settle(t, principal)
+	m := f.post(t, "plain, claimed by a session that is not attached yet")
+	require.Equal(t, m.ID, principal.Message(time.Minute).Message.ID)
+	live := testkit.NewLiveID()
+	f.ownPending(t, m.ID, "wt", live)
+
+	var sibling *testkit.AgentConn
+	agents.SetAfterOwnerMiss(f.env.App.Gateway, func() { sibling = f.dialWorktreeAs(t, live) })
+	f.pushRow(t, m, "wt")
+	require.NotNil(t, sibling, "the owner was missing when the push looked for it")
+
+	require.Equal(t, m.ID, sibling.Message(time.Minute).Message.ID, "the reconnected owner receives its row")
+	sibling.ExpectNone(400 * time.Millisecond)
+	principal.ExpectNone(400 * time.Millisecond)
+	require.False(t, f.rowOf(t, m.ID).FellBackAt.Valid, "the release found the owner attached and swept nothing")
+}
+
+// A connection's label is set before it is visible, and the Kick sweep and the owner lookup read it
+// from other goroutines: a message pushed to a session the moment it becomes visible finds it as the
+// owner of its row, and kicking it at once does not race (run with -race).
+func TestAConnectionsLabelIsSetBeforeItIsVisible(t *testing.T) {
+	f := newSessionFixture(t)
+	for i := 0; i < 40; i++ {
+		folder := worktreeFolder()
+		folder.Live = testkit.NewLiveID()
+		ws := f.token.DialFolderSilent(folder)
+		deadline := time.Now().Add(5 * time.Second)
+		for ; time.Now().Before(deadline); runtime.Gosched() { // spin: the Kick must land in the attach's tail
+			if _, ok := f.env.App.Presence.SessionByLabel(f.agentID, "wt"); ok {
+				break
+			}
+		}
+		m := f.post(t, "@atlas:wt as soon as you are there")
+		var row db.AgentSessionDelivery
+		require.Eventually(t, func() bool {
+			var err error
+			row, err = f.env.App.Store.R().GetSessionDelivery(context.Background(), db.GetSessionDeliveryParams{MessageID: m.ID, AgentID: f.agentID})
+			return err == nil
+		}, 5*time.Second, time.Millisecond)
+		require.False(t, row.FellBackAt.Valid, "the session owns the row it was visible for")
+		f.env.App.Presence.Kick(context.Background(), f.agentID, agents.CloseTakenOver, "ended")
+		_ = ws.CloseNow()
+		f.waitSessionGone(t, "wt")
+	}
+}
+
+// SESS-24: acknowledging a fallback never moves the principal's cursor to the fallback's sequence: a
+// plain message below it that was not acknowledged is still the principal's.
+func TestAFallbackAckDoesNotMoveTheCursorPastAnUnackedMessage(t *testing.T) {
+	f := newSessionFixture(t)
+	principal := f.dial(t)
+	f.settle(t, principal)
+	plain := f.post(t, "plain, delivered but not acknowledged")
+	require.Equal(t, plain.ID, principal.Message(time.Minute).Message.ID)
+	fallback := f.post(t, "@atlas:wt addressed to no live session")
+	require.Equal(t, fallback.ID, principal.Message(time.Minute).Message.ID)
+	require.Greater(t, fallback.Seq, plain.Seq)
+
+	principal.Ack(fallback.ID)
+	require.Eventually(t, func() bool { return f.rowOf(t, fallback.ID).AckedAt.Valid }, 5*time.Second, 10*time.Millisecond)
+	_, err := f.cursor(t)
+	require.ErrorIs(t, err, sql.ErrNoRows, "the cursor did not jump over the unacknowledged plain message")
+
+	principal.Close()
+	f.waitPrincipalGone(t)
+	again := f.dial(t)
+	require.Equal(t, plain.ID, again.Message(time.Minute).Message.ID, "the plain message is still pending")
 }
