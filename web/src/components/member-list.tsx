@@ -115,6 +115,23 @@ function MemberRow({
       </>
     );
   }
+  // An online AI open in parallel sessions lists them (SESS-44): "principal · :pi-2", so who is
+  // addressed by @handle:label is visible from the room.
+  const sessions = m.kind === "agent" && online ? (m.sessions ?? []) : [];
+  const sessionLine = sessions.some((s) => s.label !== "") ? (
+    <p
+      data-testid={`member-sessions-${m.id}`}
+      className="flex flex-wrap gap-x-1.5 text-xs text-muted-foreground"
+    >
+      <span className="sr-only">{t("profile.sessions")}: </span>
+      {sessions.map((s, i) => (
+        <span key={s.label || "principal"} className="font-mono">
+          {i > 0 ? "· " : ""}
+          {s.label === "" ? t("profile.sessionPrincipal") : `:${s.label}`}
+        </span>
+      ))}
+    </p>
+  ) : null;
 
   return (
     <li
@@ -147,6 +164,7 @@ function MemberRow({
             {meta}
           </p>
         ) : null}
+        {sessionLine}
       </div>
       <div className="relative flex shrink-0 items-start gap-2.5 empty:hidden">
         {canMessage && profile ? <MemberDmActions member={m} profile={profile} /> : null}
