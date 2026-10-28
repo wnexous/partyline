@@ -7,7 +7,7 @@ import {
   Settings2Icon,
   TriangleAlertIcon,
 } from "lucide-react";
-import { type ReactNode, useEffect, useId, useState } from "react";
+import { useEffect, useId, useState } from "react";
 import { toast } from "sonner";
 import { ConnectorStatusBadge, useConnectorState } from "@/components/connector-status";
 import { chatTitle, platformLabel } from "@/components/message-item";
@@ -36,11 +36,13 @@ import {
   type UpdateConnectorRequest,
 } from "@/shared/api/types.gen";
 import { type MessageKey, useI18n, useT } from "@/shared/i18n";
-import { formatAbsolute, formatRelative } from "@/shared/lib/time";
 import { NativeSelect } from "@/shared/ui/atoms/native-select";
+import { RelativeTime } from "@/shared/ui/atoms/relative-time";
+import { ConfirmDialog } from "@/shared/ui/molecules/confirm-dialog";
 import { CodeBlock } from "@/shared/ui/molecules/copy-field";
 import { EmptyState } from "@/shared/ui/molecules/empty-state";
 import { FormAlert } from "@/shared/ui/molecules/form-fields";
+import { PageSection } from "@/shared/ui/molecules/page-section";
 import {
   Sheet,
   SheetContent,
@@ -49,17 +51,6 @@ import {
   SheetTitle,
   SheetTrigger,
 } from "@/shared/ui/molecules/sheet";
-import {
-  AlertDialog,
-  AlertDialogAction,
-  AlertDialogCancel,
-  AlertDialogContent,
-  AlertDialogDescription,
-  AlertDialogFooter,
-  AlertDialogHeader,
-  AlertDialogTitle,
-  AlertDialogTrigger,
-} from "@/shared/ui/primitives/alert-dialog";
 import { Button } from "@/shared/ui/primitives/button";
 import { Skeleton } from "@/shared/ui/primitives/skeleton";
 import { Switch } from "@/shared/ui/primitives/switch";
@@ -245,35 +236,19 @@ function ConnectorView({
         <DeliverySection connector={c} canManage={canManage} />
 
         {c.inbound_url ? (
-          <Section title={t("connector.inboundTitle")}>
+          <PageSection
+            layout="stacked"
+            headingClassName="label-caps text-[0.72rem] text-muted-foreground"
+            title={t("connector.inboundTitle")}
+          >
             <p className="text-sm text-muted-foreground">{t("connector.inboundBody")}</p>
             <CodeBlock label={t("connector.inboundUrl")} value={c.inbound_url} />
-          </Section>
+          </PageSection>
         ) : null}
 
         <ChatsSection connector={c} canList={kind?.can_list_chats ?? false} />
       </div>
     </>
-  );
-}
-
-function Section({
-  title,
-  actions,
-  children,
-}: {
-  title: ReactNode;
-  actions?: ReactNode;
-  children: ReactNode;
-}) {
-  return (
-    <section className="space-y-3">
-      <div className="flex items-center justify-between gap-3">
-        <h2 className="label-caps text-[0.72rem] text-muted-foreground">{title}</h2>
-        {actions}
-      </div>
-      {children}
-    </section>
   );
 }
 
@@ -284,7 +259,9 @@ function ChatsSection({ connector: c, canList }: { connector: Connector; canList
   const list = chats.data ?? [];
 
   return (
-    <Section
+    <PageSection
+      layout="stacked"
+      headingClassName="label-caps text-[0.72rem] text-muted-foreground"
       title={
         <>
           {t("connector.chats")}{" "}
@@ -340,12 +317,11 @@ function ChatsSection({ connector: c, canList }: { connector: Connector; canList
                     </span>
                     <span className="truncate font-mono">{chat.external_id}</span>
                     {chat.last_seen_at ? (
-                      <span
+                      <RelativeTime
+                        value={chat.last_seen_at}
+                        locale={locale}
                         className="font-mono tabular"
-                        title={formatAbsolute(chat.last_seen_at, locale)}
-                      >
-                        {formatRelative(chat.last_seen_at, locale)}
-                      </span>
+                      />
                     ) : null}
                   </p>
                 </div>
@@ -354,7 +330,7 @@ function ChatsSection({ connector: c, canList }: { connector: Connector; canList
           })}
         </ul>
       )}
-    </Section>
+    </PageSection>
   );
 }
 
@@ -434,10 +410,14 @@ function DeliverySection({
 }) {
   const t = useT();
   return (
-    <Section title={t("connector.delivery")}>
+    <PageSection
+      layout="stacked"
+      headingClassName="label-caps text-[0.72rem] text-muted-foreground"
+      title={t("connector.delivery")}
+    >
       <p className="text-sm text-muted-foreground">{t("connector.deliveryBody")}</p>
       {canManage ? <DeliveryForm connector={c} /> : <DeliverySummary connector={c} />}
-    </Section>
+    </PageSection>
   );
 }
 
@@ -660,41 +640,34 @@ function DeleteConnector({ orgId, connector: c }: { orgId: string; connector: Co
   const t = useT();
   const navigate = useNavigate();
   const remove = useDeleteConnector();
+  const [asking, setAsking] = useState(false);
   return (
     <div className="space-y-2 border-t pt-5">
       <p className="text-sm text-muted-foreground">{t("connector.deleteHint")}</p>
-      <AlertDialog>
-        <AlertDialogTrigger asChild>
-          <Button variant="outline" className="text-destructive hover:text-destructive">
-            {t("connector.delete")}
-          </Button>
-        </AlertDialogTrigger>
-        <AlertDialogContent>
-          <AlertDialogHeader>
-            <AlertDialogTitle>{t("connector.deleteTitle", { name: c.name })}</AlertDialogTitle>
-            <AlertDialogDescription>{t("connector.deleteBody")}</AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogCancel>{t("common.cancel")}</AlertDialogCancel>
-            <AlertDialogAction
-              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
-              disabled={remove.isPending}
-              onClick={(e) => {
-                e.preventDefault();
-                remove.mutate(c.id, {
-                  onSuccess: () => {
-                    toast(t("connector.deleted", { name: c.name }));
-                    void navigate({ to: "/orgs/$orgId/connections", params: { orgId } });
-                  },
-                  onError: () => toast.error(t("connector.deleteFailed")),
-                });
-              }}
-            >
-              {t("connector.delete")}
-            </AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
+      <Button
+        variant="outline"
+        className="text-destructive hover:text-destructive"
+        onClick={() => setAsking(true)}
+      >
+        {t("connector.delete")}
+      </Button>
+      <ConfirmDialog
+        open={asking}
+        onClose={() => setAsking(false)}
+        title={t("connector.deleteTitle", { name: c.name })}
+        body={t("connector.deleteBody")}
+        confirmLabel={t("connector.delete")}
+        pending={remove.isPending}
+        onConfirm={() =>
+          remove.mutate(c.id, {
+            onSuccess: () => {
+              toast(t("connector.deleted", { name: c.name }));
+              void navigate({ to: "/orgs/$orgId/connections", params: { orgId } });
+            },
+            onError: () => toast.error(t("connector.deleteFailed")),
+          })
+        }
+      />
     </div>
   );
 }

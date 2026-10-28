@@ -8,16 +8,8 @@ import { type CreateOrgForm, createOrgSchema } from "@/lib/schemas";
 import { isApiError } from "@/shared/api/client";
 import { useT } from "@/shared/i18n";
 import { applyFieldErrors } from "@/shared/lib/forms";
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from "@/shared/ui/molecules/dialog";
+import { FormDialog } from "@/shared/ui/molecules/form-dialog";
 import { FormAlert, TextField } from "@/shared/ui/molecules/form-fields";
-import { Button } from "@/shared/ui/primitives/button";
 import { Form } from "@/shared/ui/primitives/form";
 
 /**
@@ -33,22 +25,11 @@ export function NewOrgDialog({
   open: boolean;
   onOpenChange: (open: boolean) => void;
 }) {
-  const t = useT();
-  return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent>
-        <DialogHeader>
-          <DialogTitle>{t("orgs.new")}</DialogTitle>
-          <DialogDescription>{t("orgs.newBody")}</DialogDescription>
-        </DialogHeader>
-        {/* Mounted only while open: every opening starts with an empty form. */}
-        {open ? <NewOrgForm onDone={() => onOpenChange(false)} /> : null}
-      </DialogContent>
-    </Dialog>
-  );
+  // Mounted only while open: every opening starts with an empty form.
+  return open ? <NewOrgForm onOpenChange={onOpenChange} /> : null;
 }
 
-function NewOrgForm({ onDone }: { onDone: () => void }) {
+function NewOrgForm({ onOpenChange }: { onOpenChange: (open: boolean) => void }) {
   const t = useT();
   const create = useCreateOrg();
   const { select } = useCurrentOrg();
@@ -67,7 +48,7 @@ function NewOrgForm({ onDone }: { onDone: () => void }) {
         onSuccess: (org) => {
           select(org.id);
           toast.success(t("orgs.created", { org: org.name }));
-          onDone();
+          onOpenChange(false);
         },
         onError: (err) => {
           if (applyFieldErrors(err, form.setError, ["name"])) return;
@@ -78,8 +59,16 @@ function NewOrgForm({ onDone }: { onDone: () => void }) {
   });
 
   return (
-    <Form {...form}>
-      <form onSubmit={onSubmit} noValidate className="space-y-4">
+    <FormDialog
+      open
+      onOpenChange={onOpenChange}
+      title={t("orgs.new")}
+      description={t("orgs.newBody")}
+      onSubmit={onSubmit}
+      submitLabel={create.isPending ? t("orgs.creating") : t("orgs.create")}
+      pending={create.isPending}
+    >
+      <Form {...form}>
         <FormAlert>{error}</FormAlert>
         <TextField
           control={form.control}
@@ -89,15 +78,7 @@ function NewOrgForm({ onDone }: { onDone: () => void }) {
           autoComplete="off"
           autoFocus
         />
-        <DialogFooter>
-          <Button type="button" variant="outline" onClick={onDone}>
-            {t("common.cancel")}
-          </Button>
-          <Button type="submit" disabled={create.isPending}>
-            {create.isPending ? t("orgs.creating") : t("orgs.create")}
-          </Button>
-        </DialogFooter>
-      </form>
-    </Form>
+      </Form>
+    </FormDialog>
   );
 }

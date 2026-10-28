@@ -5,16 +5,8 @@ import { isApiError } from "@/shared/api/client";
 import { ErrorCodeIdentityOnline, type IntelligenceRef } from "@/shared/api/types.gen";
 import { useT } from "@/shared/i18n";
 import { NativeSelect } from "@/shared/ui/atoms/native-select";
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from "@/shared/ui/molecules/dialog";
+import { FormDialog } from "@/shared/ui/molecules/form-dialog";
 import { FormAlert } from "@/shared/ui/molecules/form-fields";
-import { Button } from "@/shared/ui/primitives/button";
 
 /*
  * Merge one of the caller's AIs into another one (MRG-01, MRG-02): the one picked keeps
@@ -37,22 +29,10 @@ export function MergeAIDialog({
   /** Called with the id of the AI that remains once the merge succeeded, before the dialog closes. */
   onMerged?: (survivorId: string) => void;
 }) {
-  return (
-    <Dialog open={ai !== null} onOpenChange={(open) => (open ? undefined : onClose())}>
-      <DialogContent>
-        {/* Keyed by the AI: a different opening starts from nothing picked and no old error. */}
-        {ai ? (
-          <MergeForm
-            key={ai.id}
-            ai={ai}
-            candidates={candidates}
-            onClose={onClose}
-            onMerged={onMerged}
-          />
-        ) : null}
-      </DialogContent>
-    </Dialog>
-  );
+  // Keyed by the AI: a different opening starts from nothing picked and no old error.
+  return ai ? (
+    <MergeForm key={ai.id} ai={ai} candidates={candidates} onClose={onClose} onMerged={onMerged} />
+  ) : null;
 }
 
 function MergeForm({
@@ -116,12 +96,20 @@ function MergeForm({
   const fieldErrorId = `${id}-into-error`;
 
   return (
-    <form aria-label={title} onSubmit={submit} noValidate className="space-y-4">
-      <DialogHeader>
-        {/* The dialog is named by Radix's own id on the title; adding one here would orphan it. */}
-        <DialogTitle>{title}</DialogTitle>
-        <DialogDescription>{t("merge.body", { name: ai.display_name })}</DialogDescription>
-      </DialogHeader>
+    // The dialog is named by Radix's own id on the title; the form takes the same name for its own.
+    <FormDialog
+      open
+      onOpenChange={(open) => {
+        if (!open) onClose();
+      }}
+      title={title}
+      description={t("merge.body", { name: ai.display_name })}
+      onSubmit={submit}
+      formLabel={title}
+      submitLabel={t("merge.confirm")}
+      submitDisabled={into === "" || merge.isPending}
+      pending={merge.isPending}
+    >
       <FormAlert>{error}</FormAlert>
       <div className="space-y-1">
         <label htmlFor={fieldId} className="block text-sm font-medium">
@@ -150,14 +138,6 @@ function MergeForm({
           </p>
         ) : null}
       </div>
-      <DialogFooter>
-        <Button type="button" variant="outline" onClick={onClose}>
-          {t("common.cancel")}
-        </Button>
-        <Button type="submit" disabled={into === "" || merge.isPending}>
-          {t("merge.confirm")}
-        </Button>
-      </DialogFooter>
-    </form>
+    </FormDialog>
   );
 }

@@ -16,7 +16,7 @@ import { type MyOrg, PermissionGuest, permissionLabel } from "@/lib/orgs";
 import { isApiError } from "@/shared/api/client";
 import { ErrorCodeAlreadyMember, type Invitation } from "@/shared/api/types.gen";
 import { type MessageKey, type Translate, useI18n, useT } from "@/shared/i18n";
-import { formatAbsolute, formatRelative } from "@/shared/lib/time";
+import { RelativeTime } from "@/shared/ui/atoms/relative-time";
 import { EmptyState } from "@/shared/ui/molecules/empty-state";
 import { PageHeader } from "@/shared/ui/molecules/page-header";
 import { Badge } from "@/shared/ui/primitives/badge";
@@ -260,9 +260,9 @@ function InvitationItem({ invitation: inv }: { invitation: Invitation }) {
           ) : null}
           {grants ? <p className="text-sm text-pretty">{grants}</p> : null}
           <p className="text-xs text-muted-foreground">
-            <time dateTime={inv.expires_at} title={formatAbsolute(inv.expires_at, locale)}>
-              {t("orgs.expires", { when: formatRelative(inv.expires_at, locale) })}
-            </time>
+            <RelativeTime value={inv.expires_at} locale={locale}>
+              {(when) => t("orgs.expires", { when })}
+            </RelativeTime>
           </p>
         </div>
       </div>

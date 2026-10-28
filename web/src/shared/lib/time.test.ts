@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { formatListTime as format } from "./time";
+import { dayKey, formatListTime as format, formatDayLabel, formatFull } from "./time";
 
 // Newer ICU versions put a narrow no-break space before AM and PM.
 const formatListTime = (...args: Parameters<typeof format>) => format(...args).replace(/\s/g, " ");
@@ -47,5 +47,27 @@ describe("formatListTime", () => {
 
   it("is empty for a time it cannot read", () => {
     expect(formatListTime("not a time", "en", NOW)).toBe("");
+  });
+});
+
+describe("formatDayLabel", () => {
+  const words = { today: "Today", yesterday: "Yesterday" };
+  it("says today and yesterday for the two days before now, else the weekday and date", () => {
+    expect(formatDayLabel(at(2026, 10, 21, 8), "en", words, NOW)).toBe("Today");
+    expect(formatDayLabel(at(2026, 10, 20, 23), "en", words, NOW)).toBe("Yesterday");
+    expect(formatDayLabel(at(2026, 10, 19, 12), "en", words, NOW)).toBe("Monday, October 19");
+  });
+
+  it("groups by local day", () => {
+    expect(dayKey(at(2026, 10, 21, 0, 1))).toBe(dayKey(at(2026, 10, 21, 23, 59)));
+    expect(dayKey(at(2026, 10, 21))).not.toBe(dayKey(at(2026, 10, 20)));
+  });
+});
+
+describe("formatFull", () => {
+  it("is the long date with the short time", () => {
+    expect(formatFull(at(2026, 10, 21, 15, 0), "en").replace(/\s/g, " ")).toBe(
+      "October 21, 2026 at 3:00 PM",
+    );
   });
 });

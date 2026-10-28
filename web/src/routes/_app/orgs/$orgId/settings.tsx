@@ -25,19 +25,10 @@ import {
 } from "@/shared/api/types.gen";
 import { useI18n, useT } from "@/shared/i18n";
 import { applyFieldErrors } from "@/shared/lib/forms";
+import { ConfirmDialog } from "@/shared/ui/molecules/confirm-dialog";
 import { FormAlert, TextField } from "@/shared/ui/molecules/form-fields";
 import { PageHeader } from "@/shared/ui/molecules/page-header";
 import { PageSection as Section } from "@/shared/ui/molecules/page-section";
-import {
-  AlertDialog,
-  AlertDialogAction,
-  AlertDialogCancel,
-  AlertDialogContent,
-  AlertDialogDescription,
-  AlertDialogFooter,
-  AlertDialogHeader,
-  AlertDialogTitle,
-} from "@/shared/ui/primitives/alert-dialog";
 import { Button } from "@/shared/ui/primitives/button";
 import { Form } from "@/shared/ui/primitives/form";
 
@@ -231,54 +222,43 @@ function LeaveSection({ org }: { org: Organization }) {
       >
         {t("orgs.leaveOpen", { org: org.name })}
       </Button>
-      <AlertDialog open={open} onOpenChange={close}>
-        <AlertDialogContent>
-          <AlertDialogHeader>
-            <AlertDialogTitle>{t("orgs.leaveTitle", { org: org.name })}</AlertDialogTitle>
-            <AlertDialogDescription>
-              {t("orgs.leaveDialogBody", { org: org.name })}
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          {error ? (
-            <p role="alert" className="text-sm text-destructive">
-              {error}
-            </p>
-          ) : null}
-          <AlertDialogFooter>
-            <AlertDialogCancel>{t("common.cancel")}</AlertDialogCancel>
-            <AlertDialogAction
-              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
-              disabled={leave.isPending || !me}
-              onClick={(e) => {
-                // Stay open while the request runs: a failure must leave the dialog to retry from.
-                e.preventDefault();
-                if (!me) return;
-                setError(null);
-                leave.mutate(
-                  { orgId: org.id, iid: me.intelligence.id },
-                  {
-                    onSuccess: () => {
-                      toast(t("orgs.left", { org: org.name }));
-                      void navigate({ to: "/orgs" });
-                    },
-                    onError: (err) => {
-                      if (isApiError(err) && err.code === ErrorCodeLastAdmin) {
-                        setError(t("orgs.leaveLastAdmin", { org: org.name }));
-                      } else if (isApiError(err) && err.status === 0) {
-                        setError(t("error.network"));
-                      } else {
-                        setError(t("orgs.leaveFailed", { org: org.name }));
-                      }
-                    },
-                  },
-                );
-              }}
-            >
-              {t("orgs.leaveConfirm")}
-            </AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
+      <ConfirmDialog
+        open={open}
+        onClose={() => close(false)}
+        title={t("orgs.leaveTitle", { org: org.name })}
+        body={t("orgs.leaveDialogBody", { org: org.name })}
+        confirmLabel={t("orgs.leaveConfirm")}
+        pending={leave.isPending || !me}
+        onConfirm={() => {
+          // Stay open while the request runs: a failure must leave the dialog to retry from.
+          if (!me) return;
+          setError(null);
+          leave.mutate(
+            { orgId: org.id, iid: me.intelligence.id },
+            {
+              onSuccess: () => {
+                toast(t("orgs.left", { org: org.name }));
+                void navigate({ to: "/orgs" });
+              },
+              onError: (err) => {
+                if (isApiError(err) && err.code === ErrorCodeLastAdmin) {
+                  setError(t("orgs.leaveLastAdmin", { org: org.name }));
+                } else if (isApiError(err) && err.status === 0) {
+                  setError(t("error.network"));
+                } else {
+                  setError(t("orgs.leaveFailed", { org: org.name }));
+                }
+              },
+            },
+          );
+        }}
+      >
+        {error ? (
+          <p role="alert" className="text-sm text-destructive">
+            {error}
+          </p>
+        ) : null}
+      </ConfirmDialog>
     </Section>
   );
 }
@@ -318,41 +298,30 @@ function DeleteSection({ org }: { org: Organization }) {
       >
         {t("orgs.deleteOpen")}
       </Button>
-      <AlertDialog open={open} onOpenChange={close}>
-        <AlertDialogContent>
-          <AlertDialogHeader>
-            <AlertDialogTitle>{t("orgs.deleteTitle", { org: org.name })}</AlertDialogTitle>
-            <AlertDialogDescription>
-              {t("orgs.deleteDialogBody", { org: org.name })}
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          {error ? (
-            <p role="alert" className="text-sm text-destructive">
-              {error}
-            </p>
-          ) : null}
-          <AlertDialogFooter>
-            <AlertDialogCancel>{t("common.cancel")}</AlertDialogCancel>
-            <AlertDialogAction
-              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
-              disabled={remove.isPending}
-              onClick={(e) => {
-                e.preventDefault();
-                setError(null);
-                remove.mutate(org.id, {
-                  onSuccess: () => {
-                    toast(t("orgs.deleted", { org: org.name }));
-                    void navigate({ to: "/orgs" });
-                  },
-                  onError: (err) => setError(refusal(err)),
-                });
-              }}
-            >
-              {t("orgs.deleteConfirm")}
-            </AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
+      <ConfirmDialog
+        open={open}
+        onClose={() => close(false)}
+        title={t("orgs.deleteTitle", { org: org.name })}
+        body={t("orgs.deleteDialogBody", { org: org.name })}
+        confirmLabel={t("orgs.deleteConfirm")}
+        pending={remove.isPending}
+        onConfirm={() => {
+          setError(null);
+          remove.mutate(org.id, {
+            onSuccess: () => {
+              toast(t("orgs.deleted", { org: org.name }));
+              void navigate({ to: "/orgs" });
+            },
+            onError: (err) => setError(refusal(err)),
+          });
+        }}
+      >
+        {error ? (
+          <p role="alert" className="text-sm text-destructive">
+            {error}
+          </p>
+        ) : null}
+      </ConfirmDialog>
     </Section>
   );
 }

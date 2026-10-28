@@ -17,8 +17,9 @@ import {
 } from "@/shared/api/types.gen";
 import { type MessageKey, useI18n, useT } from "@/shared/i18n";
 import { applyFieldErrors } from "@/shared/lib/forms";
-import { formatAbsolute, formatRelative } from "@/shared/lib/time";
 import { cn } from "@/shared/lib/utils";
+import { RelativeTime } from "@/shared/ui/atoms/relative-time";
+import { ConfirmDialog } from "@/shared/ui/molecules/confirm-dialog";
 import {
   Dialog,
   DialogContent,
@@ -30,16 +31,6 @@ import {
 import { EmptyState } from "@/shared/ui/molecules/empty-state";
 import { FormAlert, TextField } from "@/shared/ui/molecules/form-fields";
 import { PageHeader } from "@/shared/ui/molecules/page-header";
-import {
-  AlertDialog,
-  AlertDialogAction,
-  AlertDialogCancel,
-  AlertDialogContent,
-  AlertDialogDescription,
-  AlertDialogFooter,
-  AlertDialogHeader,
-  AlertDialogTitle,
-} from "@/shared/ui/primitives/alert-dialog";
 import { Button } from "@/shared/ui/primitives/button";
 import { Form } from "@/shared/ui/primitives/form";
 import { RadioGroup, RadioGroupItem } from "@/shared/ui/primitives/radio-group";
@@ -229,18 +220,20 @@ function TokenRow({
         </p>
         <p className="mt-0.5 flex min-w-0 flex-wrap gap-x-3 gap-y-0.5 text-xs text-muted-foreground">
           <span className="font-mono">{token.prefix}…</span>
-          <span title={formatAbsolute(token.created_at, locale)}>
-            {t("tokens.created", { time: formatRelative(token.created_at, locale) })}
-          </span>
-          <span>
-            {token.last_used_at
-              ? t("tokens.lastUsed", { time: formatRelative(token.last_used_at, locale) })
-              : t("tokens.neverUsed")}
-          </span>
+          <RelativeTime value={token.created_at} locale={locale}>
+            {(time) => t("tokens.created", { time })}
+          </RelativeTime>
+          {token.last_used_at ? (
+            <RelativeTime value={token.last_used_at} locale={locale}>
+              {(time) => t("tokens.lastUsed", { time })}
+            </RelativeTime>
+          ) : (
+            <span>{t("tokens.neverUsed")}</span>
+          )}
           {token.expires_at && state === "active" ? (
-            <span title={formatAbsolute(token.expires_at, locale)}>
-              {t("tokens.expires", { time: formatRelative(token.expires_at, locale) })}
-            </span>
+            <RelativeTime value={token.expires_at} locale={locale}>
+              {(time) => t("tokens.expires", { time })}
+            </RelativeTime>
           ) : null}
         </p>
       </div>
@@ -420,36 +413,24 @@ function RevokeTokenDialog({ token, onClose }: { token: Token | null; onClose: (
   const t = useT();
   const revoke = useRevokeToken();
   return (
-    <AlertDialog open={token !== null} onOpenChange={(open) => (open ? null : onClose())}>
-      <AlertDialogContent>
-        <AlertDialogHeader>
-          <AlertDialogTitle>
-            {t("tokens.revokeTitle", { name: token?.name ?? "" })}
-          </AlertDialogTitle>
-          <AlertDialogDescription>{t("tokens.revokeBody")}</AlertDialogDescription>
-        </AlertDialogHeader>
-        <AlertDialogFooter>
-          <AlertDialogCancel>{t("common.cancel")}</AlertDialogCancel>
-          <AlertDialogAction
-            className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
-            disabled={revoke.isPending}
-            onClick={(e) => {
-              e.preventDefault();
-              if (!token) return;
-              revoke.mutate(token.id, {
-                onSuccess: () => {
-                  toast(t("tokens.revokedToast", { name: token.name }));
-                  onClose();
-                },
-                onError: () => toast.error(t("tokens.revokeFailed")),
-              });
-            }}
-          >
-            {t("tokens.revokeConfirm")}
-          </AlertDialogAction>
-        </AlertDialogFooter>
-      </AlertDialogContent>
-    </AlertDialog>
+    <ConfirmDialog
+      open={token !== null}
+      onClose={onClose}
+      title={t("tokens.revokeTitle", { name: token?.name ?? "" })}
+      body={t("tokens.revokeBody")}
+      confirmLabel={t("tokens.revokeConfirm")}
+      pending={revoke.isPending}
+      onConfirm={() => {
+        if (!token) return;
+        revoke.mutate(token.id, {
+          onSuccess: () => {
+            toast(t("tokens.revokedToast", { name: token.name }));
+            onClose();
+          },
+          onError: () => toast.error(t("tokens.revokeFailed")),
+        });
+      }}
+    />
   );
 }
 
@@ -457,35 +438,23 @@ function DeleteTokenDialog({ token, onClose }: { token: Token | null; onClose: (
   const t = useT();
   const purge = usePurgeToken();
   return (
-    <AlertDialog open={token !== null} onOpenChange={(open) => (open ? null : onClose())}>
-      <AlertDialogContent>
-        <AlertDialogHeader>
-          <AlertDialogTitle>
-            {t("tokens.deleteTitle", { name: token?.name ?? "" })}
-          </AlertDialogTitle>
-          <AlertDialogDescription>{t("tokens.deleteBody")}</AlertDialogDescription>
-        </AlertDialogHeader>
-        <AlertDialogFooter>
-          <AlertDialogCancel>{t("common.cancel")}</AlertDialogCancel>
-          <AlertDialogAction
-            className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
-            disabled={purge.isPending}
-            onClick={(e) => {
-              e.preventDefault();
-              if (!token) return;
-              purge.mutate(token.id, {
-                onSuccess: () => {
-                  toast(t("tokens.deletedToast", { name: token.name }));
-                  onClose();
-                },
-                onError: () => toast.error(t("tokens.deleteFailed")),
-              });
-            }}
-          >
-            {t("tokens.deleteConfirm")}
-          </AlertDialogAction>
-        </AlertDialogFooter>
-      </AlertDialogContent>
-    </AlertDialog>
+    <ConfirmDialog
+      open={token !== null}
+      onClose={onClose}
+      title={t("tokens.deleteTitle", { name: token?.name ?? "" })}
+      body={t("tokens.deleteBody")}
+      confirmLabel={t("tokens.deleteConfirm")}
+      pending={purge.isPending}
+      onConfirm={() => {
+        if (!token) return;
+        purge.mutate(token.id, {
+          onSuccess: () => {
+            toast(t("tokens.deletedToast", { name: token.name }));
+            onClose();
+          },
+          onError: () => toast.error(t("tokens.deleteFailed")),
+        });
+      }}
+    />
   );
 }

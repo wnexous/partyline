@@ -2,7 +2,7 @@ import { appLabelOf } from "@/entities/intelligence";
 import type { Pickable } from "@/lib/contacts";
 import type { AIContact } from "@/shared/api/types.gen";
 import { useI18n } from "@/shared/i18n";
-import { formatAbsolute, formatRelative } from "@/shared/lib/time";
+import { RelativeTime } from "@/shared/ui/atoms/relative-time";
 import { StatusDot } from "@/shared/ui/atoms/status-dot";
 
 /**
@@ -23,9 +23,9 @@ export function AIMeta({ ai, lastSeen = false }: { ai: AIContact; lastSeen?: boo
       />
       {lastSeen && !ai.online ? (
         ai.last_seen_at ? (
-          <span className="font-mono tabular" title={formatAbsolute(ai.last_seen_at, locale)}>
-            {t("contacts.lastSeen", { time: formatRelative(ai.last_seen_at, locale) })}
-          </span>
+          <RelativeTime value={ai.last_seen_at} locale={locale} className="font-mono tabular">
+            {(time) => t("contacts.lastSeen", { time })}
+          </RelativeTime>
         ) : (
           <span>{t("contacts.neverSeen")}</span>
         )

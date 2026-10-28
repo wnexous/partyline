@@ -17,6 +17,7 @@ import { MaxRoomInstructions, type Room, type UpdateRoomRequest } from "@/shared
 import { useI18n } from "@/shared/i18n";
 import { applyFieldErrors } from "@/shared/lib/forms";
 import { cn } from "@/shared/lib/utils";
+import { ConfirmDialog } from "@/shared/ui/molecules/confirm-dialog";
 import { FieldError, FormAlert, TextField } from "@/shared/ui/molecules/form-fields";
 import {
   Sheet,
@@ -27,17 +28,6 @@ import {
   SheetTitle,
   SheetTrigger,
 } from "@/shared/ui/molecules/sheet";
-import {
-  AlertDialog,
-  AlertDialogAction,
-  AlertDialogCancel,
-  AlertDialogContent,
-  AlertDialogDescription,
-  AlertDialogFooter,
-  AlertDialogHeader,
-  AlertDialogTitle,
-  AlertDialogTrigger,
-} from "@/shared/ui/primitives/alert-dialog";
 import { Button } from "@/shared/ui/primitives/button";
 import {
   FormControl,
@@ -225,45 +215,35 @@ function DeleteRoom({ room }: { room: Room }) {
   const { t } = useI18n();
   const navigate = useNavigate();
   const remove = useDeleteRoom();
+  const [asking, setAsking] = useState(false);
   return (
     <div className="space-y-2 border-t pt-5">
       <p className="text-sm text-muted-foreground">{t("room.deleteHint")}</p>
-      <AlertDialog>
-        <AlertDialogTrigger asChild>
-          <Button
-            type="button"
-            variant="outline"
-            className="text-destructive hover:text-destructive"
-          >
-            {t("room.delete")}
-          </Button>
-        </AlertDialogTrigger>
-        <AlertDialogContent>
-          <AlertDialogHeader>
-            <AlertDialogTitle>{t("room.deleteTitle", { name: room.name })}</AlertDialogTitle>
-            <AlertDialogDescription>{t("room.deleteBody")}</AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogCancel>{t("common.cancel")}</AlertDialogCancel>
-            <AlertDialogAction
-              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
-              disabled={remove.isPending}
-              onClick={(e) => {
-                e.preventDefault();
-                remove.mutate(room.id, {
-                  onSuccess: () => {
-                    toast(t("room.deleted", { name: room.name }));
-                    void navigate({ to: "/" });
-                  },
-                  onError: () => toast.error(t("room.deleteFailed")),
-                });
-              }}
-            >
-              {t("room.delete")}
-            </AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
+      <Button
+        type="button"
+        variant="outline"
+        className="text-destructive hover:text-destructive"
+        onClick={() => setAsking(true)}
+      >
+        {t("room.delete")}
+      </Button>
+      <ConfirmDialog
+        open={asking}
+        onClose={() => setAsking(false)}
+        title={t("room.deleteTitle", { name: room.name })}
+        body={t("room.deleteBody")}
+        confirmLabel={t("room.delete")}
+        pending={remove.isPending}
+        onConfirm={() =>
+          remove.mutate(room.id, {
+            onSuccess: () => {
+              toast(t("room.deleted", { name: room.name }));
+              void navigate({ to: "/" });
+            },
+            onError: () => toast.error(t("room.deleteFailed")),
+          })
+        }
+      />
     </div>
   );
 }

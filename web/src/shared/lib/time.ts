@@ -26,6 +26,13 @@ export function formatAbsolute(iso: string, locale: string): string {
   return new Intl.DateTimeFormat(locale, { dateStyle: "medium", timeStyle: "short" }).format(time);
 }
 
+/** The absolute date and time in the long style ("21 de outubro de 2026, 15:00"). */
+export function formatFull(iso: string, locale: string): string {
+  const time = Date.parse(iso);
+  if (Number.isNaN(time)) return "";
+  return new Intl.DateTimeFormat(locale, { dateStyle: "long", timeStyle: "short" }).format(time);
+}
+
 /** Clock time (HH:MM) for message rows. */
 export function formatClock(iso: string, locale: string): string {
   const time = Date.parse(iso);
@@ -56,4 +63,30 @@ export function formatListTime(iso: string, locale: string, now = Date.now()): s
       ? { day: "numeric", month: "short" }
       : { day: "numeric", month: "short", year: "numeric" },
   ).format(time);
+}
+
+/** The local day an instant falls on: two instants share it when they are on the same day. */
+export const dayKey = (iso: string): string => new Date(iso).toDateString();
+
+/**
+ * The label of a day separator in the message timeline: "today", "yesterday", then the weekday and
+ * the date. The two words come from the caller's dictionary; `now` is the moment it is read.
+ */
+export function formatDayLabel(
+  iso: string,
+  locale: string,
+  words: { today: string; yesterday: string },
+  now = Date.now(),
+): string {
+  const today = new Date(now);
+  const yesterday = new Date(today);
+  yesterday.setDate(today.getDate() - 1);
+  const key = dayKey(iso);
+  if (key === today.toDateString()) return words.today;
+  if (key === yesterday.toDateString()) return words.yesterday;
+  return new Intl.DateTimeFormat(locale, {
+    weekday: "long",
+    day: "numeric",
+    month: "long",
+  }).format(new Date(iso));
 }

@@ -7,18 +7,9 @@ import { type AdminUser, type Role, RoleAdmin, RoleMember } from "@/shared/api/t
 import { useI18n, useT } from "@/shared/i18n";
 import { formatAbsolute } from "@/shared/lib/time";
 import { cn } from "@/shared/lib/utils";
+import { ConfirmDialog } from "@/shared/ui/molecules/confirm-dialog";
 import { EmptyState } from "@/shared/ui/molecules/empty-state";
 import { PageHeader } from "@/shared/ui/molecules/page-header";
-import {
-  AlertDialog,
-  AlertDialogAction,
-  AlertDialogCancel,
-  AlertDialogContent,
-  AlertDialogDescription,
-  AlertDialogFooter,
-  AlertDialogHeader,
-  AlertDialogTitle,
-} from "@/shared/ui/primitives/alert-dialog";
 import { Button } from "@/shared/ui/primitives/button";
 import { Skeleton } from "@/shared/ui/primitives/skeleton";
 import { Switch } from "@/shared/ui/primitives/switch";
@@ -160,36 +151,26 @@ function DisableDialog({ user, onClose }: { user: AdminUser | null; onClose: () 
   const update = useUpdateUser();
   const name = user ? displayName(user) : "";
   return (
-    <AlertDialog open={user !== null} onOpenChange={(open) => (open ? null : onClose())}>
-      <AlertDialogContent>
-        <AlertDialogHeader>
-          <AlertDialogTitle>{t("admin.disableTitle", { name })}</AlertDialogTitle>
-          <AlertDialogDescription>{t("admin.disableBody")}</AlertDialogDescription>
-        </AlertDialogHeader>
-        <AlertDialogFooter>
-          <AlertDialogCancel>{t("common.cancel")}</AlertDialogCancel>
-          <AlertDialogAction
-            className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
-            disabled={update.isPending}
-            onClick={(e) => {
-              e.preventDefault();
-              if (!user) return;
-              update.mutate(
-                { id: user.id, disabled: true },
-                {
-                  onSuccess: () => {
-                    toast(t("admin.disabledToast", { name }));
-                    onClose();
-                  },
-                  onError: () => toast.error(t("admin.updateFailed", { name })),
-                },
-              );
-            }}
-          >
-            {t("admin.disableConfirm")}
-          </AlertDialogAction>
-        </AlertDialogFooter>
-      </AlertDialogContent>
-    </AlertDialog>
+    <ConfirmDialog
+      open={user !== null}
+      onClose={onClose}
+      title={t("admin.disableTitle", { name })}
+      body={t("admin.disableBody")}
+      confirmLabel={t("admin.disableConfirm")}
+      pending={update.isPending}
+      onConfirm={() => {
+        if (!user) return;
+        update.mutate(
+          { id: user.id, disabled: true },
+          {
+            onSuccess: () => {
+              toast(t("admin.disabledToast", { name }));
+              onClose();
+            },
+            onError: () => toast.error(t("admin.updateFailed", { name })),
+          },
+        );
+      }}
+    />
   );
 }

@@ -1,22 +1,15 @@
-import { useId, useState } from "react";
+import { useState } from "react";
+import { useForm } from "react-hook-form";
 import { toast } from "sonner";
 import { useOrgMovePreview, useUpdateOrgMember } from "@/lib/api/queries";
 import { movablePositions, type PositionOption } from "@/lib/org-chart";
 import { isApiError } from "@/shared/api/client";
 import type { Position } from "@/shared/api/types.gen";
 import { useI18n, useT } from "@/shared/i18n";
-import { NativeSelect } from "@/shared/ui/atoms/native-select";
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from "@/shared/ui/molecules/dialog";
+import { FormDialog } from "@/shared/ui/molecules/form-dialog";
+import { SelectField } from "@/shared/ui/molecules/form-fields";
 import { Alert, AlertDescription } from "@/shared/ui/primitives/alert";
-import { Button } from "@/shared/ui/primitives/button";
-import { Label } from "@/shared/ui/primitives/label";
+import { Form } from "@/shared/ui/primitives/form";
 
 /** Who is being moved, and where they sit now (`""` for no position). */
 export interface MoveTarget {
@@ -49,27 +42,17 @@ export function MoveMemberDialog({
   viewer: { admin: boolean; positionId?: string };
   onClose: () => void;
 }) {
-  const t = useT();
-  return (
-    <Dialog open={target !== null} onOpenChange={(open) => (open ? null : onClose())}>
-      <DialogContent>
-        {target ? (
-          <MoveForm
-            orgId={orgId}
-            orgName={orgName}
-            target={target}
-            positions={positions}
-            viewer={viewer}
-            onClose={onClose}
-          />
-        ) : (
-          <DialogHeader>
-            <DialogTitle>{t("orgs.move")}</DialogTitle>
-          </DialogHeader>
-        )}
-      </DialogContent>
-    </Dialog>
-  );
+  // Mounted only while a member is being moved: every opening starts from where they are now.
+  return target ? (
+    <MoveForm
+      orgId={orgId}
+      orgName={orgName}
+      target={target}
+      positions={positions}
+      viewer={viewer}
+      onClose={onClose}
+    />
+  ) : null;
 }
 
 function MoveForm({
@@ -89,9 +72,11 @@ function MoveForm({
 }) {
   const t = useT();
   const { locale } = useI18n();
-  const id = useId();
   const update = useUpdateOrgMember(orgId);
-  const [value, setValue] = useState(target.positionId);
+  const form = useForm<{ position_id: string }>({
+    defaultValues: { position_id: target.positionId },
+  });
+  const value = form.watch("position_id");
   const [error, setError] = useState<string | null>(null);
 
   const moving = value !== target.positionId;
@@ -144,27 +129,27 @@ function MoveForm({
   };
 
   return (
-    <form onSubmit={submit} className="space-y-4">
-      <DialogHeader>
-        <DialogTitle>{t("orgs.moveTitle", { name: target.name })}</DialogTitle>
-        <DialogDescription>
-          {t("orgs.moveBody", { name: target.name, org: orgName })}
-        </DialogDescription>
-      </DialogHeader>
-      <div className="grid gap-2">
-        <Label htmlFor={`${id}-position`}>{t("orgs.movePosition")}</Label>
-        <NativeSelect
-          id={`${id}-position`}
-          value={value}
-          onChange={(e) => setValue(e.target.value)}
-        >
+    <FormDialog
+      open
+      onOpenChange={(open) => {
+        if (!open) onClose();
+      }}
+      title={t("orgs.moveTitle", { name: target.name })}
+      description={t("orgs.moveBody", { name: target.name, org: orgName })}
+      onSubmit={submit}
+      submitLabel={t("orgs.move")}
+      submitDisabled={update.isPending || value === target.positionId}
+      pending={update.isPending}
+    >
+      <Form {...form}>
+        <SelectField control={form.control} name="position_id" label={t("orgs.movePosition")}>
           {choices.map((c) => (
             <option key={c.id || "none"} value={c.id} disabled={c.disabled}>
               {c.name}
             </option>
           ))}
-        </NativeSelect>
-      </div>
+        </SelectField>
+      </Form>
       {losingNames ? (
         <Alert role="status" aria-live="polite">
           <AlertDescription>
@@ -177,14 +162,6 @@ function MoveForm({
           {error}
         </p>
       ) : null}
-      <DialogFooter>
-        <Button type="button" variant="outline" onClick={onClose}>
-          {t("common.cancel")}
-        </Button>
-        <Button type="submit" disabled={update.isPending || value === target.positionId}>
-          {t("orgs.move")}
-        </Button>
-      </DialogFooter>
-    </form>
+    </FormDialog>
   );
 }

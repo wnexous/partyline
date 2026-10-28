@@ -2,7 +2,6 @@ import { useQuery } from "@tanstack/react-query";
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 import {
   ArrowLeftIcon,
-  CompassIcon,
   GitMergeIcon,
   GlobeIcon,
   PlugZapIcon,
@@ -11,7 +10,7 @@ import {
   Trash2Icon,
   UserMinusIcon,
 } from "lucide-react";
-import { type ReactNode, useId, useState } from "react";
+import { type ReactNode, useState } from "react";
 import { DeleteAIDialog } from "@/components/delete-ai-dialog";
 import { EndSessionDialog } from "@/components/end-session-dialog";
 import { MembershipSummary } from "@/components/membership-summary";
@@ -36,9 +35,11 @@ import {
   type ProfileMembership,
 } from "@/shared/api/types.gen";
 import { useI18n, useT } from "@/shared/i18n";
-import { formatAbsolute, formatRelative } from "@/shared/lib/time";
+import { RelativeTime } from "@/shared/ui/atoms/relative-time";
 import { StatusDot } from "@/shared/ui/atoms/status-dot";
-import { EmptyState } from "@/shared/ui/molecules/empty-state";
+import { NotFound } from "@/shared/ui/molecules/not-found";
+import { PageSection } from "@/shared/ui/molecules/page-section";
+import { PanelSkeleton } from "@/shared/ui/molecules/panel-skeleton";
 import { Button } from "@/shared/ui/primitives/button";
 import { Skeleton } from "@/shared/ui/primitives/skeleton";
 
@@ -94,23 +95,21 @@ function BackToContacts() {
 function ProfileNotFound() {
   const t = useT();
   return (
-    <EmptyState
-      icon={CompassIcon}
+    <NotFound
       title={t("profile.notFoundTitle")}
+      body={t("profile.notFoundBody")}
       action={
         <Button asChild variant="outline">
           <Link to="/contacts">{t("profile.backToContacts")}</Link>
         </Button>
       }
-    >
-      <p>{t("profile.notFoundBody")}</p>
-    </EmptyState>
+    />
   );
 }
 
 function ProfileSkeleton() {
   return (
-    <div aria-hidden="true" className="space-y-5 px-4 py-6 md:px-8">
+    <PanelSkeleton className="space-y-5 px-4 py-6 md:px-8">
       <Skeleton className="h-4 w-20" />
       <div className="flex items-center gap-5">
         <Skeleton className="size-24 rounded-full" />
@@ -119,7 +118,7 @@ function ProfileSkeleton() {
           <Skeleton className="h-4 w-32" />
         </div>
       </div>
-    </div>
+    </PanelSkeleton>
   );
 }
 
@@ -189,7 +188,7 @@ function ProfileView({ profile }: { profile: IntelligenceProfile }) {
       {profile.can_edit && !isPerson ? <ProfileEditor profile={profile} /> : null}
 
       {profile.ai || profile.person ? (
-        <Section title={t("profile.details")}>
+        <PageSection layout="stacked" title={t("profile.details")}>
           <dl className="grid gap-x-6 gap-y-3 text-sm sm:grid-cols-[9rem_minmax(0,1fr)]">
             {profile.ai ? <AIDetails ai={profile.ai} id={profile.id} /> : null}
             {profile.person ? <PersonDetails person={profile.person} /> : null}
@@ -197,13 +196,13 @@ function ProfileView({ profile }: { profile: IntelligenceProfile }) {
           {profile.person?.name_locked ? (
             <p className="text-xs text-muted-foreground">{t("profile.nameLocked")}</p>
           ) : null}
-        </Section>
+        </PageSection>
       ) : null}
 
       {/* The AI's live sessions, the principal first (SESS-32): a fact of the profile, and the
           addresses the mention list offers. Absent while the AI has no live session. */}
       {profile.ai && (profile.ai.sessions ?? []).length > 0 ? (
-        <Section title={t("profile.sessions")}>
+        <PageSection layout="stacked" title={t("profile.sessions")}>
           <ul aria-label={t("profile.sessions")} className="divide-y rounded-lg border">
             {(profile.ai.sessions ?? []).map((session) => (
               <li
@@ -219,23 +218,21 @@ function ProfileView({ profile }: { profile: IntelligenceProfile }) {
                 <span className="min-w-0 text-muted-foreground [overflow-wrap:anywhere]">
                   {harnessLabel(session.harness) ?? session.harness}
                 </span>
-                <time
-                  dateTime={session.connected_at}
-                  title={formatAbsolute(session.connected_at, locale)}
+                <RelativeTime
+                  value={session.connected_at}
+                  locale={locale}
                   className="ml-auto shrink-0 font-mono text-xs text-muted-foreground tabular"
                 >
-                  {t("profile.sessionConnected", {
-                    time: formatRelative(session.connected_at, locale),
-                  })}
-                </time>
+                  {(time) => t("profile.sessionConnected", { time })}
+                </RelativeTime>
               </li>
             ))}
           </ul>
-        </Section>
+        </PageSection>
       ) : null}
 
       {profile.memberships.length > 0 ? (
-        <Section title={t("profile.orgs")}>
+        <PageSection layout="stacked" title={t("profile.orgs")}>
           <ul className="divide-y rounded-lg border">
             {profile.memberships.map((m) => (
               <MembershipRow
@@ -247,11 +244,11 @@ function ProfileView({ profile }: { profile: IntelligenceProfile }) {
               />
             ))}
           </ul>
-        </Section>
+        </PageSection>
       ) : null}
 
       {profile.apps.length > 0 ? (
-        <Section title={t("profile.apps")}>
+        <PageSection layout="stacked" title={t("profile.apps")}>
           <ul className="divide-y rounded-lg border">
             {profile.apps.map((app) => (
               <li key={`${app.kind}:${app.connector_id ?? ""}:${app.label}`}>
@@ -259,13 +256,13 @@ function ProfileView({ profile }: { profile: IntelligenceProfile }) {
               </li>
             ))}
           </ul>
-        </Section>
+        </PageSection>
       ) : null}
 
       {isPerson || (profile.conversations ?? []).length > 0 ? (
-        <Section title={t("profile.conversations")}>
+        <PageSection layout="stacked" title={t("profile.conversations")}>
           <ProfileConversations conversations={profile.conversations ?? []} />
-        </Section>
+        </PageSection>
       ) : null}
 
       <DeleteAIDialog
@@ -342,18 +339,6 @@ function MembershipRow({
   );
 }
 
-function Section({ title, children }: { title: string; children: ReactNode }) {
-  const id = useId();
-  return (
-    <section aria-labelledby={id} className="space-y-3">
-      <h2 id={id} className="text-lg font-semibold tracking-[-0.015em]">
-        {title}
-      </h2>
-      {children}
-    </section>
-  );
-}
-
 function Row({ label, children }: { label: string; children: ReactNode }) {
   return (
     <>
@@ -390,9 +375,9 @@ function AIDetails({ ai, id }: { ai: AIDetail; id: string }) {
             withLabel
           />
           {online ? null : lastSeen ? (
-            <span className="font-mono text-xs tabular" title={formatAbsolute(lastSeen, locale)}>
-              {t("contacts.lastSeen", { time: formatRelative(lastSeen, locale) })}
-            </span>
+            <RelativeTime value={lastSeen} locale={locale} className="font-mono text-xs tabular">
+              {(time) => t("contacts.lastSeen", { time })}
+            </RelativeTime>
           ) : (
             <span className="text-xs text-muted-foreground">{t("contacts.neverSeen")}</span>
           )}

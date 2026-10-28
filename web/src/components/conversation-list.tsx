@@ -27,9 +27,9 @@ import { formatAbsolute, formatListTime } from "@/shared/lib/time";
 import { useLongPress } from "@/shared/lib/use-long-press";
 import { cn } from "@/shared/lib/utils";
 import { EmptyState } from "@/shared/ui/molecules/empty-state";
+import { ListSkeleton } from "@/shared/ui/molecules/list-skeleton";
 import { RowMenuButton } from "@/shared/ui/molecules/row-menu-button";
 import { Button } from "@/shared/ui/primitives/button";
-import { Skeleton } from "@/shared/ui/primitives/skeleton";
 
 /*
  * The sidebar's conversation list (LAY-01, DM-06): direct messages and groups together, newest
@@ -110,7 +110,7 @@ export function ConversationList({
     [inCurrentOrg, text],
   );
 
-  if (conversations.isPending || orgLoading) return <ListSkeleton />;
+  if (conversations.isPending || orgLoading) return <ListSkeleton rows={5} avatar />;
 
   // A refresh that fails keeps the list on screen; only a list that never loaded is an error.
   if (conversations.isError && !conversations.data) {
@@ -341,24 +341,5 @@ function UnreadBadge({ count }: { count: number }) {
         {t(count === 1 ? "conversations.unreadOne" : "conversations.unreadMany", { count })}
       </span>
     </span>
-  );
-}
-
-function ListSkeleton() {
-  return (
-    <ul aria-hidden="true" className="space-y-1 py-1">
-      {[0, 1, 2, 3, 4].map((i) => (
-        <li
-          key={i}
-          className="grid grid-cols-[2.5rem_minmax(0,1fr)] items-center gap-x-3 px-3 py-2.5"
-        >
-          <Skeleton className="size-10 rounded-full" />
-          <div className="space-y-2">
-            <Skeleton className="h-3.5 w-32" />
-            <Skeleton className="h-3 w-48 max-w-full" />
-          </div>
-        </li>
-      ))}
-    </ul>
   );
 }

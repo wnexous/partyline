@@ -2,16 +2,7 @@ import { toast } from "sonner";
 import { useDeleteMessage } from "@/lib/api/queries";
 import type { Message } from "@/shared/api/types.gen";
 import { useT } from "@/shared/i18n";
-import {
-  AlertDialog,
-  AlertDialogAction,
-  AlertDialogCancel,
-  AlertDialogContent,
-  AlertDialogDescription,
-  AlertDialogFooter,
-  AlertDialogHeader,
-  AlertDialogTitle,
-} from "@/shared/ui/primitives/alert-dialog";
+import { ConfirmDialog } from "@/shared/ui/molecules/confirm-dialog";
 
 /*
  * What a viewer may do with one message: edit their own text (EDT-02, EDT-03) and delete their own or, in a
@@ -58,29 +49,20 @@ export function DeleteMessageDialog({
   const t = useT();
   const remove = useDeleteMessage(message.room_id);
   return (
-    <AlertDialog open={open} onOpenChange={onOpenChange}>
-      <AlertDialogContent onCloseAutoFocus={onCloseFocus}>
-        <AlertDialogHeader>
-          <AlertDialogTitle>{t("message.deleteTitle")}</AlertDialogTitle>
-          <AlertDialogDescription>{t("message.deleteBody")}</AlertDialogDescription>
-        </AlertDialogHeader>
-        <AlertDialogFooter>
-          <AlertDialogCancel>{t("common.cancel")}</AlertDialogCancel>
-          <AlertDialogAction
-            className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
-            disabled={remove.isPending}
-            onClick={(e) => {
-              e.preventDefault();
-              remove.mutate(message.id, {
-                onSuccess: () => onOpenChange(false),
-                onError: () => toast.error(t("message.deleteFailed")),
-              });
-            }}
-          >
-            {t("message.deleteConfirm")}
-          </AlertDialogAction>
-        </AlertDialogFooter>
-      </AlertDialogContent>
-    </AlertDialog>
+    <ConfirmDialog
+      open={open}
+      onClose={() => onOpenChange(false)}
+      title={t("message.deleteTitle")}
+      body={t("message.deleteBody")}
+      confirmLabel={t("message.deleteConfirm")}
+      pending={remove.isPending}
+      onConfirm={() =>
+        remove.mutate(message.id, {
+          onSuccess: () => onOpenChange(false),
+          onError: () => toast.error(t("message.deleteFailed")),
+        })
+      }
+      onCloseFocus={onCloseFocus}
+    />
   );
 }

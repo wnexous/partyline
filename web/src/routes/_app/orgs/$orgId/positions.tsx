@@ -19,19 +19,10 @@ import {
 } from "@/shared/api/types.gen";
 import { type Translate, useT } from "@/shared/i18n";
 import { NativeSelect } from "@/shared/ui/atoms/native-select";
+import { ConfirmDialog } from "@/shared/ui/molecules/confirm-dialog";
 import { EmptyState } from "@/shared/ui/molecules/empty-state";
 import { InlineRename } from "@/shared/ui/molecules/inline-rename";
 import { PageHeader } from "@/shared/ui/molecules/page-header";
-import {
-  AlertDialog,
-  AlertDialogAction,
-  AlertDialogCancel,
-  AlertDialogContent,
-  AlertDialogDescription,
-  AlertDialogFooter,
-  AlertDialogHeader,
-  AlertDialogTitle,
-} from "@/shared/ui/primitives/alert-dialog";
 import { Button } from "@/shared/ui/primitives/button";
 import { Skeleton } from "@/shared/ui/primitives/skeleton";
 
@@ -416,44 +407,35 @@ function DeletePositionDialog({
   };
 
   return (
-    <AlertDialog open={position !== null} onOpenChange={(open) => (open ? null : close())}>
-      <AlertDialogContent>
-        <AlertDialogHeader>
-          <AlertDialogTitle>{t("orgs.deletePositionTitle", { name })}</AlertDialogTitle>
-          <AlertDialogDescription>
-            {parent
-              ? t("orgs.deletePositionBody", { parent: parent.name })
-              : t("orgs.deletePositionBodyRoot")}
-          </AlertDialogDescription>
-        </AlertDialogHeader>
-        {error ? (
-          <p role="alert" className="text-sm text-destructive">
-            {error}
-          </p>
-        ) : null}
-        <AlertDialogFooter>
-          <AlertDialogCancel>{t("common.cancel")}</AlertDialogCancel>
-          <AlertDialogAction
-            className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
-            disabled={remove.isPending}
-            onClick={(e) => {
-              // Stay open while the request runs: a failure must leave the dialog to retry from.
-              e.preventDefault();
-              if (!position) return;
-              setError(null);
-              remove.mutate(position.id, {
-                onSuccess: () => {
-                  toast(t("orgs.positionDeleted", { name }));
-                  close();
-                },
-                onError: (err) => setError(problem(t, err, orgName)),
-              });
-            }}
-          >
-            {t("orgs.deletePositionConfirm")}
-          </AlertDialogAction>
-        </AlertDialogFooter>
-      </AlertDialogContent>
-    </AlertDialog>
+    <ConfirmDialog
+      open={position !== null}
+      onClose={close}
+      title={t("orgs.deletePositionTitle", { name })}
+      body={
+        parent
+          ? t("orgs.deletePositionBody", { parent: parent.name })
+          : t("orgs.deletePositionBodyRoot")
+      }
+      confirmLabel={t("orgs.deletePositionConfirm")}
+      pending={remove.isPending}
+      onConfirm={() => {
+        // Stay open while the request runs: a failure must leave the dialog to retry from.
+        if (!position) return;
+        setError(null);
+        remove.mutate(position.id, {
+          onSuccess: () => {
+            toast(t("orgs.positionDeleted", { name }));
+            close();
+          },
+          onError: (err) => setError(problem(t, err, orgName)),
+        });
+      }}
+    >
+      {error ? (
+        <p role="alert" className="text-sm text-destructive">
+          {error}
+        </p>
+      ) : null}
+    </ConfirmDialog>
   );
 }

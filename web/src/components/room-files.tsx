@@ -14,8 +14,8 @@ import { IntelligenceName } from "@/entities/intelligence";
 import { attachmentUrl, type FileFilter, useRoomFiles } from "@/lib/api/queries";
 import type { FileKind, RoomFile } from "@/shared/api/types.gen";
 import { type MessageKey, useI18n } from "@/shared/i18n";
-import { formatAbsolute, formatRelative } from "@/shared/lib/time";
 import { cn } from "@/shared/lib/utils";
+import { RelativeTime } from "@/shared/ui/atoms/relative-time";
 import { Button } from "@/shared/ui/primitives/button";
 import { Skeleton } from "@/shared/ui/primitives/skeleton";
 import { ToggleGroup, ToggleGroupItem } from "@/shared/ui/primitives/toggle-group";
@@ -236,13 +236,11 @@ function FileRow({
               {f.name}
             </p>
           )}
-          <time
-            dateTime={f.created_at}
-            title={formatAbsolute(f.created_at, locale)}
+          <RelativeTime
+            value={f.created_at}
+            locale={locale}
             className="shrink-0 text-[0.7rem] text-muted-foreground"
-          >
-            {formatRelative(f.created_at, locale)}
-          </time>
+          />
         </div>
         <p className="flex min-w-0 items-center gap-1.5 text-xs text-muted-foreground">
           {stored ? (

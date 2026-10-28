@@ -4,6 +4,7 @@ import { type PersonRow, toPersonRow } from "@/entities/room-member";
 import { useAddMember, useMe, useRemoveMember } from "@/lib/api/queries";
 import type { IntelligenceRef, RoomMember } from "@/shared/api/types.gen";
 import { useI18n } from "@/shared/i18n";
+import { PanelSkeleton } from "@/shared/ui/molecules/panel-skeleton";
 import { Skeleton } from "@/shared/ui/primitives/skeleton";
 import { MemberRow } from "./member-row";
 
@@ -57,10 +58,10 @@ export function MemberPanel({
   let body: ReactNode;
   if (loading) {
     body = (
-      <div className="space-y-3 p-4" aria-hidden="true">
+      <PanelSkeleton className="p-4">
         <Skeleton className="h-4 w-36" />
         <Skeleton className="h-4 w-44" />
-      </div>
+      </PanelSkeleton>
     );
   } else if (rows.length === 0) {
     body = (

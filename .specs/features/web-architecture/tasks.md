@@ -40,13 +40,17 @@ ticks its requirement ids here.
   hooks (debounced-value, document-visible, visual-viewport, long-press, disconnected).
 - T2a shared/api + shared/i18n (done): client + types.gen (tygo.yaml/Makefile paths updated,
   make generate rerun); lib/api/queries stays for T3; lib/i18n moved as is.
-- Remaining (T2b): new `RelativeTime` (adopt at all ~11 sites),
-  `ConfirmDialog` with open/onClose (adopt at all 14 sites), `FormDialog`, `NotFound`,
-  `ListSkeleton`, `ChoiceGroup`, `PageSection` adoption (3 local Sections).
-  `shared/lib` (time incl. the single day-label rule, device predicates, avatar tone/initials,
-  utils, clipboard, viewport, forms, validation), `shared/api` (client, queryKeys, error-text,
-  socket transport, types.gen), `shared/i18n` (move only).
-- Status: T2a done; T2b pending
+- T2b (done): `shared/ui/atoms/relative-time` (adopted at the 12 sites of audit 1.N; the timeline
+  day label is `shared/lib/time` `formatDayLabel`), `shared/ui/molecules/confirm-dialog` (open/onClose,
+  adopted at all 14 sites), `form-dialog` (new org, merge AI, move member, invite),
+  `not-found` (four variants; `org-not-found.tsx` deleted), `list-skeleton` and `panel-skeleton`,
+  `choice-group` (account appearance, language, push group; identities connector pick),
+  `PageSection` layouts `stacked` and `list` (the three local Sections), SelectField in move member.
+- T2b not adopted (behaviour would change or the molecule does not fit): ThemeRadioGroup and
+  LanguageRadioGroup (dropdown menu radio items, role menuitemradio, not radio cards); org-select
+  (controlled by its callers, one outside react-hook-form) and the devices code input (own
+  attributes and local error); RoomSkeleton (a header, not a panel).
+- Status: T2a done; T2b done (see the list above for what stayed)
 
 ## T3 — entities (WA-06 part)
 - `entities/{intelligence, room, room-member, message, organization, connector}` with `ui/`,

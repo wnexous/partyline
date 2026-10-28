@@ -12,8 +12,8 @@ import { isApiError } from "@/shared/api/client";
 import type { DeviceRequest } from "@/shared/api/types.gen";
 import { type Translate, useI18n, useT } from "@/shared/i18n";
 import { useAutoFocus } from "@/shared/lib/device";
-import { formatAbsolute, formatRelative } from "@/shared/lib/time";
 import { cn } from "@/shared/lib/utils";
+import { RelativeTime } from "@/shared/ui/atoms/relative-time";
 import { EmptyState } from "@/shared/ui/molecules/empty-state";
 import { FormAlert } from "@/shared/ui/molecules/form-fields";
 import { Button } from "@/shared/ui/primitives/button";
@@ -252,9 +252,7 @@ function Request({
             </span>
           </Field>
           <Field label={t("devices.requested")}>
-            <time dateTime={request.created_at} title={formatAbsolute(request.created_at, locale)}>
-              {formatRelative(request.created_at, locale)}
-            </time>
+            <RelativeTime value={request.created_at} locale={locale} />
           </Field>
           <Field label={t("devices.expires")}>
             <span

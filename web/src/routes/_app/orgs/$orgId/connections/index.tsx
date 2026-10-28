@@ -9,9 +9,9 @@ import { isAdminOf } from "@/lib/orgs";
 import type { Connector } from "@/shared/api/types.gen";
 import { useT } from "@/shared/i18n";
 import { EmptyState } from "@/shared/ui/molecules/empty-state";
+import { ListSkeleton } from "@/shared/ui/molecules/list-skeleton";
 import { PageHeader } from "@/shared/ui/molecules/page-header";
 import { Button } from "@/shared/ui/primitives/button";
-import { Skeleton } from "@/shared/ui/primitives/skeleton";
 
 export const Route = createFileRoute("/_app/orgs/$orgId/connections/")({
   component: OrgConnectionsPage,
@@ -57,7 +57,7 @@ function OrgConnectionsPage() {
             </Button>
           </div>
         ) : (
-          <ListSkeleton />
+          <ListSkeleton rows={2} />
         )}
       </>
     );
@@ -80,7 +80,7 @@ function OrgConnectionsPage() {
         actions={sorted.length > 0 ? add : null}
       />
       {connectors.isPending ? (
-        <ListSkeleton />
+        <ListSkeleton rows={2} />
       ) : connectors.isError ? (
         <div className="px-4 py-10 text-sm md:px-8" role="alert">
           <p className="text-destructive">{t("connectors.loadError")}</p>
@@ -109,20 +109,6 @@ function OrgConnectionsPage() {
       {/* The dialog opens on the organization the page is about (SET-08), not the browser's pick. */}
       <AddConnectorDialog open={adding} onOpenChange={setAdding} orgId={org.data.id} />
     </>
-  );
-}
-
-/** The rows' place while the organization or the connections are still on their way. */
-function ListSkeleton() {
-  return (
-    <ul aria-hidden="true" className="divide-y border-b">
-      {[0, 1].map((i) => (
-        <li key={i} className="space-y-2 px-4 py-4 md:px-8">
-          <Skeleton className="h-4 w-40" />
-          <Skeleton className="h-3 w-56 max-w-full" />
-        </li>
-      ))}
-    </ul>
   );
 }
 

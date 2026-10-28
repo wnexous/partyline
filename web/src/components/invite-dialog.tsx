@@ -18,16 +18,8 @@ import {
 } from "@/shared/api/types.gen";
 import { useT } from "@/shared/i18n";
 import { applyFieldErrors } from "@/shared/lib/forms";
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from "@/shared/ui/molecules/dialog";
+import { FormDialog } from "@/shared/ui/molecules/form-dialog";
 import { FormAlert, SelectField, TextField } from "@/shared/ui/molecules/form-fields";
-import { Button } from "@/shared/ui/primitives/button";
 import { Form } from "@/shared/ui/primitives/form";
 
 /**
@@ -52,29 +44,16 @@ export function InviteDialog({
   open: boolean;
   onOpenChange: (open: boolean) => void;
 }) {
-  const t = useT();
-  return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-h-[calc(100dvh-2rem)] overflow-y-auto">
-        <DialogHeader>
-          <DialogTitle>{t("orgs.inviteTitle", { org: org.name })}</DialogTitle>
-          <DialogDescription>
-            {admin ? t("orgs.inviteBodyAdmin") : t("orgs.inviteBodyGuest", { org: org.name })}
-          </DialogDescription>
-        </DialogHeader>
-        {/* Mounted only while open: every opening starts with an empty form. */}
-        {open ? (
-          <InviteForm
-            org={org}
-            admin={admin}
-            positions={positions}
-            members={members}
-            onDone={() => onOpenChange(false)}
-          />
-        ) : null}
-      </DialogContent>
-    </Dialog>
-  );
+  // Mounted only while open: every opening starts with an empty form.
+  return open ? (
+    <InviteForm
+      org={org}
+      admin={admin}
+      positions={positions}
+      members={members}
+      onOpenChange={onOpenChange}
+    />
+  ) : null;
 }
 
 function InviteForm({
@@ -82,13 +61,13 @@ function InviteForm({
   admin,
   positions,
   members,
-  onDone,
+  onOpenChange,
 }: {
   org: { id: string; name: string };
   admin: boolean;
   positions: readonly Position[];
   members: readonly OrgMember[];
-  onDone: () => void;
+  onOpenChange: (open: boolean) => void;
 }) {
   const t = useT();
   const invite = useInviteToOrg(org.id);
@@ -121,7 +100,7 @@ function InviteForm({
       {
         onSuccess: (sent) => {
           toast.success(t("orgs.invited", { name: sent.invitee.display_name }));
-          onDone();
+          onOpenChange(false);
         },
         onError: (err) => {
           if (isApiError(err) && err.code === ErrorCodeContactNotFound) {
@@ -148,8 +127,17 @@ function InviteForm({
   });
 
   return (
-    <Form {...form}>
-      <form onSubmit={onSubmit} noValidate className="space-y-4">
+    <FormDialog
+      open
+      onOpenChange={onOpenChange}
+      title={t("orgs.inviteTitle", { org: org.name })}
+      description={admin ? t("orgs.inviteBodyAdmin") : t("orgs.inviteBodyGuest", { org: org.name })}
+      onSubmit={onSubmit}
+      contentClassName="max-h-[calc(100dvh-2rem)] overflow-y-auto"
+      submitLabel={invite.isPending ? t("orgs.inviteSending") : t("orgs.inviteSend")}
+      pending={invite.isPending}
+    >
+      <Form {...form}>
         <FormAlert>{error}</FormAlert>
         <div className="space-y-2">
           <TextField
@@ -206,15 +194,7 @@ function InviteForm({
             </SelectField>
           </>
         ) : null}
-        <DialogFooter>
-          <Button type="button" variant="outline" onClick={onDone}>
-            {t("common.cancel")}
-          </Button>
-          <Button type="submit" disabled={invite.isPending}>
-            {invite.isPending ? t("orgs.inviteSending") : t("orgs.inviteSend")}
-          </Button>
-        </DialogFooter>
-      </form>
-    </Form>
+      </Form>
+    </FormDialog>
   );
 }

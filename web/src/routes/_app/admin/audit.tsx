@@ -3,7 +3,7 @@ import { ScrollTextIcon } from "lucide-react";
 import { useAudit } from "@/lib/api/queries";
 import type { AuditEntry } from "@/shared/api/types.gen";
 import { useI18n, useT } from "@/shared/i18n";
-import { formatAbsolute, formatRelative } from "@/shared/lib/time";
+import { RelativeTime } from "@/shared/ui/atoms/relative-time";
 import { EmptyState } from "@/shared/ui/molecules/empty-state";
 import { PageHeader } from "@/shared/ui/molecules/page-header";
 import { Button } from "@/shared/ui/primitives/button";
@@ -75,12 +75,11 @@ function AuditRow({ entry: e }: { entry: AuditEntry }) {
   const detail = detailText(e.detail);
   return (
     <li className="grid grid-cols-[minmax(0,1fr)_auto] gap-x-4 gap-y-0.5 px-4 py-2.5 md:grid-cols-[9rem_minmax(0,1fr)_auto] md:px-8">
-      <span
+      <RelativeTime
+        value={e.created_at}
+        locale={locale}
         className="order-2 text-right font-mono text-xs text-muted-foreground tabular md:order-none md:text-left"
-        title={formatAbsolute(e.created_at, locale)}
-      >
-        {formatRelative(e.created_at, locale)}
-      </span>
+      />
       <div className="order-1 min-w-0 md:order-none">
         <p className="flex min-w-0 flex-wrap items-baseline gap-x-2 text-sm">
           <code className="font-mono text-[0.8rem] font-semibold">{e.action}</code>
