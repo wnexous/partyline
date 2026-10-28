@@ -523,25 +523,53 @@ func (r *Registry) setApp(ctx context.Context, agentID, harness string) error {
 	})
 }
 
-// Attach makes s the live session the connection prefers (Presence.AttachLabeled) and returns the
-// session it became. Only the principal session ("") stamps the AI's connect time and makes the
-// session's harness its app (AID-02): a parallel or worktree session shares the AI without
-// relabeling it (SESS-17). A session that replaces an older socket of the same process is not a
-// new session: it keeps the label, the app and the connect time.
+// Attach is AttachSession for a connection that sends no harness session id.
 func (r *Registry) Attach(ctx context.Context, a db.Agent, s Session, harness, liveID, preferred string, takeover bool) (Live, error) {
+	return r.AttachSession(ctx, a, s, AttachRequest{Harness: harness, LiveID: liveID, Preferred: preferred, Takeover: takeover})
+}
+
+// AttachSession makes s the live session the connection prefers (Presence.Attach) and returns the session it
+// became. The AI's pinned principal session is read here, under the same lock that serializes every attach, and
+// written back when the connection changes it (the first session with an id, --principal, --take-over;
+// SESS-52, SESS-57). Only the principal session ("") stamps the AI's connect time and makes the session's
+// harness its app (AID-02): a parallel or worktree session shares the AI without relabeling it (SESS-17). A
+// session that replaces an older socket of the same process is not a new session: it keeps the label, the app
+// and the connect time.
+func (r *Registry) AttachSession(ctx context.Context, a db.Agent, s Session, req AttachRequest) (Live, error) {
 	r.appMu.Lock()
 	defer r.appMu.Unlock()
-	harness = cleanHarness(harness)
-	live, fresh := r.presence.AttachLabeled(ctx, a, s, harness, liveID, preferred, takeover)
-	if !fresh || live.Label != "" {
-		return live, nil
+	req.Harness = cleanHarness(req.Harness)
+	current, err := r.store.R().GetAgent(ctx, a.ID)
+	if err != nil {
+		return Live{}, err
 	}
-	if harness != "" {
-		if err := r.setApp(ctx, a.ID, harness); err != nil {
-			return live, err
+	req.Pinned = current.PrincipalSession
+	out := r.presence.Attach(ctx, a, s, req)
+	if out.Pin != nil {
+		if err := r.setPin(ctx, a.ID, *out.Pin); err != nil {
+			return out.Live, err
 		}
 	}
-	return live, r.MarkConnected(ctx, a.ID)
+	if !out.Fresh || out.Live.Label != "" {
+		return out.Live, nil
+	}
+	if req.Harness != "" {
+		if err := r.setApp(ctx, a.ID, req.Harness); err != nil {
+			return out.Live, err
+		}
+	}
+	return out.Live, r.MarkConnected(ctx, a.ID)
+}
+
+func (r *Registry) setPin(ctx context.Context, agentID, sessionID string) error {
+	return r.store.WithTx(ctx, func(q *db.Queries) error {
+		return q.SetAgentPrincipalSession(ctx, db.SetAgentPrincipalSessionParams{PrincipalSession: sessionID, ID: agentID})
+	})
+}
+
+// PrincipalGone is when the AI's principal session left while another session is live (SESS-61).
+func (r *Registry) PrincipalGone(agentID string) (time.Time, bool) {
+	return r.presence.PrincipalGone(agentID)
 }
 
 // Sessions returns the agent's live sessions, the principal first (SESS-32); nil when it is offline.

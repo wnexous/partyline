@@ -20,12 +20,18 @@ const (
 	// CloseTakenOver ends a connection because another process took the AI's session over, or
 	// because the AI's session was ended (SES-02, POS-04).
 	CloseTakenOver websocket.StatusCode = 4002
+	// CloseRoleChanged ends a connection because the principal role moved to another session (SESS-59):
+	// unlike CloseTakenOver the channel does not stop, it connects again and takes the role it now has, the
+	// principal's or a parallel session's.
+	CloseRoleChanged websocket.StatusCode = 4004
 )
 
 // Close reasons sent with the close codes.
 const (
 	ReasonDeleted   = "deleted"
 	ReasonTakenOver = "taken_over"
+	// ReasonRoleChanged closes a connection whose session must connect again with the role it now has.
+	ReasonRoleChanged = "role_changed"
 	// ReasonReconnected closes the old socket of a process that connected again (code 1000).
 	ReasonReconnected = "reconnected"
 )
@@ -33,6 +39,11 @@ const (
 // retiredTTL is how long a process keeps the label of a session that ended, so that a reconnect within
 // it keeps the label a person is addressing (SESS-14).
 const retiredTTL = 10 * time.Minute
+
+// sessionLabelTTL is how long a session with a harness session id keeps the label it had after it ended:
+// the id outlives the process (`claude --resume` is a new process of the same session), and the label a
+// person addresses must come back with it (SESS-54).
+const sessionLabelTTL = 24 * time.Hour
 
 // Session is one live agent connection held by Presence.
 type Session interface {
@@ -47,7 +58,9 @@ type presenceEntry struct {
 	label   string // "" for the principal
 	harness string
 	liveID  string
-	since   time.Time
+	// sessionID is the harness session id the session connected with ("" when its harness has none).
+	sessionID string
+	since     time.Time
 }
 
 // setSessionLabel tells a session the label it attached with, when it wants to know (a gateway
@@ -60,7 +73,7 @@ func setSessionLabel(s Session, label string) {
 
 // live is the exported view of an entry.
 func (e presenceEntry) live() Live {
-	return Live{Label: e.label, Harness: e.harness, Since: e.since}
+	return Live{Label: e.label, Harness: e.harness, Since: e.since, CanBePrincipal: e.sessionID != ""}
 }
 
 // retiredLabel is the memory a dropped socket leaves: the label and the start time its process gets back
@@ -79,6 +92,9 @@ type Live struct {
 	Harness string
 	// Since is when the session started; a process reconnecting keeps it.
 	Since time.Time
+	// CanBePrincipal is whether the session has a harness session id, which the principal role is pinned
+	// to: only such a session can be made the principal (SESS-59).
+	CanBePrincipal bool
 }
 
 // Presence tracks which agents are connected. One AI has any number of labelled live sessions, at most
@@ -95,6 +111,11 @@ type Presence struct {
 	mu       sync.Mutex
 	sessions map[string]map[string]presenceEntry // AI id -> label -> entry
 	retired  map[string]map[string]retiredLabel  // AI id -> live id -> remembered label
+	// remembered is the same memory by harness session id, which survives a new process (SESS-54).
+	remembered map[string]map[string]retiredLabel // AI id -> harness session id -> remembered label
+	// principalGone is when the AI's principal session was last seen leaving (SESS-61); in memory like
+	// the sessions themselves.
+	principalGone map[string]time.Time
 	// ended runs for each session Kick closes, after the AI is offline and the sockets are closed: the
 	// gateway sweeps the delivery rows that connection owned. Set before the first connection; nil leaves
 	// the sweep to the connection's own end.
@@ -149,76 +170,237 @@ func NewPresence(st *store.Store, bus *events.Bus, now func() time.Time) *Presen
 		now:      now,
 		sessions: map[string]map[string]presenceEntry{},
 		retired:  map[string]map[string]retiredLabel{},
+
+		remembered:    map[string]map[string]retiredLabel{},
+		principalGone: map[string]time.Time{},
 	}
 }
 
-// AttachLabeled makes s a live session of the agent (SESS-10) and returns the session it became:
-//   - the same process (liveID is not empty and live) replaces its own socket silently, which is closed
-//     normally, and keeps its label, harness and start time (SESS-14);
-//   - a takeover of another process with the principal label preferred replaces the principal: the old
-//     socket is closed with CloseTakenOver and every other label stays (SESS-13); a takeover of any other
-//     label is ignored;
-//   - otherwise the connection gets AllocateLabel(preferred, harness, taken, remembered): the preferred
-//     label while it is free, the label its process remembers from before a drop, or the first free
-//     "<harness>-<n>" (SESS-11).
+// AttachRequest is what a connection says about itself when it attaches (see Presence.Attach).
+type AttachRequest struct {
+	// Harness is the app the session runs in (cleanHarness already applied).
+	Harness string
+	// LiveID is the id of the process that holds the connection; empty when the client sent none.
+	LiveID string
+	// Preferred is the label the session asks for: "" in the AI's own folder, the worktree's slug otherwise.
+	Preferred string
+	// Takeover asks to replace the live principal session (--take-over).
+	Takeover bool
+	// SessionID is the harness session id the connection carries (X-Partyline-Harness-Session); empty when
+	// its harness has none.
+	SessionID string
+	// Principal asks to be the AI's principal session (--principal).
+	Principal bool
+	// Pinned is the AI's pinned principal session id as stored when the attach starts ("" pins none).
+	Pinned string
+}
+
+// Attached is the outcome of Presence.Attach.
+type Attached struct {
+	// Live is the session the connection became.
+	Live Live
+	// Fresh reports whether a new session started (everything but a process reconnecting).
+	Fresh bool
+	// Pin is the new pinned principal session id the caller must store (an empty string unpins), nil when
+	// the pin does not change (SESS-52, SESS-57).
+	Pin *string
+}
+
+// decideRole says whether the connection takes the principal label, and the pin that results. The principal
+// role belongs to the session whose harness session id is pinned and to nobody else (SESS-53):
+//   - a worktree session (preferred label) is never the principal;
+//   - --principal always is, and pins its id; --take-over is when a principal of another process is live
+//     (SESS-57, SESS-58);
+//   - with an id pinned, only a session with that id is, whoever is connected and whether or not the label
+//     is free: no session is promoted because the principal left (SESS-53, SESS-55);
+//   - with nothing pinned the folder's first live session acts as the principal, as before the feature
+//     (SESS-56), and the id of the first session that holds the role gets pinned (SESS-52).
+func decideRole(req AttachRequest, main presenceEntry, mainLive bool) (principal bool, pin *string) {
+	if req.Preferred != "" {
+		return false, nil
+	}
+	set := func(id string) *string {
+		if id == req.Pinned {
+			return nil
+		}
+		return &id
+	}
+	sameProcess := mainLive && req.LiveID != "" && main.liveID == req.LiveID
+	sameSession := mainLive && req.SessionID != "" && main.sessionID == req.SessionID
+	switch {
+	case req.Principal || (req.Takeover && mainLive && !sameProcess):
+		return true, set(req.SessionID)
+	case req.Pinned != "":
+		return req.SessionID == req.Pinned, nil
+	case !mainLive || sameProcess || sameSession:
+		if req.SessionID == "" {
+			return true, nil
+		}
+		return true, set(req.SessionID)
+	case main.sessionID != "":
+		return false, set(main.sessionID) // the holder's id is the first one seen: it is the pinned one
+	}
+	return false, nil
+}
+
+// AttachLabeled is Attach with the arguments a connection that sends no harness session id has.
+func (p *Presence) AttachLabeled(ctx context.Context, agent db.Agent, s Session, harness, liveID, preferred string, takeover bool) (live Live, fresh bool) {
+	out := p.Attach(ctx, agent, s, AttachRequest{Harness: harness, LiveID: liveID, Preferred: preferred, Takeover: takeover, Pinned: agent.PrincipalSession})
+	return out.Live, out.Fresh
+}
+
+// Attach makes s a live session of the agent (SESS-10) and returns the session it became:
+//   - the same process (LiveID is not empty and live) replaces its own socket silently, which is closed
+//     normally, and keeps its label, harness and start time (SESS-14); when the principal rules say its role
+//     changed (it is now the pinned session, or no longer is) it takes the role it has now instead;
+//   - a session the rules give the principal label (decideRole) takes it, and replaces the live holder: the
+//     old socket is closed with CloseTakenOver when the replacement is explicit or the same harness session,
+//     with CloseRoleChanged otherwise, so that it connects again as a parallel session (SESS-13, SESS-53);
+//   - any other connection gets AllocateLabel(preferred, harness, taken, remembered): the preferred label
+//     while it is free, the label its harness session or its process remembers from before a drop, or the
+//     first free "<harness>-<n>" (SESS-11, SESS-54). The principal label is never allocated to it.
 //
 // The whole check, allocation and insert run under one lock, so two connections racing for the principal
-// label end with two different labels (SESS-12). fresh reports whether a new session started (everything
-// but a process reconnecting).
-func (p *Presence) AttachLabeled(ctx context.Context, agent db.Agent, s Session, harness, liveID, preferred string, takeover bool) (live Live, fresh bool) {
+// label end with two different labels (SESS-12).
+func (p *Presence) Attach(ctx context.Context, agent db.Agent, s Session, req AttachRequest) Attached {
 	p.mu.Lock()
 	now := p.now()
 	p.pruneLocked(agent.ID, now)
 	held := p.sessions[agent.ID]
+	main, mainLive := held[""]
+	wantMain, pin := decideRole(req, main, mainLive)
+	var replaced *presenceEntry
 	// The same process replaces its own socket: same label, harness and start time (SESS-14).
-	if liveID != "" {
+	if req.LiveID != "" {
 		for label, prev := range held {
-			if prev.liveID != liveID {
+			if prev.liveID != req.LiveID {
 				continue
+			}
+			if (label == "") != wantMain && req.Preferred == "" {
+				// Its role changed while it was away: it is taken out and attaches as what it is now.
+				delete(held, label)
+				replaced = &prev
+				break
 			}
 			next := prev
 			next.session = s
+			next.sessionID = req.SessionID
 			setSessionLabel(s, next.label)
 			held[label] = next
-			delete(p.retired[agent.ID], liveID)
+			delete(p.retired[agent.ID], req.LiveID)
 			p.mu.Unlock()
 			prev.session.Close(websocket.StatusNormalClosure, ReasonReconnected)
 			_ = p.touch(ctx, agent.ID) // best effort, like Detach: last_seen_at is informational
-			return next.live(), false
+			return Attached{Live: next.live(), Pin: pin}
 		}
 	}
-	main, mainLive := held[""]
 	if held == nil {
 		held = map[string]presenceEntry{}
 	}
-	entry := presenceEntry{ownerID: agent.OwnerID, session: s, harness: harness, liveID: liveID, since: now}
+	entry := presenceEntry{ownerID: agent.OwnerID, session: s, harness: req.Harness, liveID: req.LiveID, sessionID: req.SessionID, since: now}
+	memory, remembered := p.memoryLocked(agent.ID, req.LiveID, req.SessionID)
 	var closed Session
-	if takeover && preferred == "" && mainLive {
-		// The principal label is the only one a takeover replaces (SESS-13).
-		closed = main.session
+	closeCode, closeReason := CloseTakenOver, ReasonTakenOver
+	if wantMain {
+		if mainLive && (req.LiveID == "" || main.liveID != req.LiveID) {
+			closed = main.session
+			sameSession := req.SessionID != "" && main.sessionID == req.SessionID
+			if !req.Principal && !req.Takeover && !sameSession {
+				closeCode, closeReason = CloseRoleChanged, ReasonRoleChanged
+			}
+		}
 		entry.label = ""
+		if remembered && memory.label == "" {
+			entry.since = memory.since // a reconnect keeps the start time (SESS-14)
+		}
 	} else {
-		memory, remembered := p.retired[agent.ID][liveID] // the process's drop memory, if it has one
-		taken := func(label string) bool { _, ok := held[label]; return ok }
-		entry.label = AllocateLabel(preferred, harness, taken, memory.label)
+		taken := func(label string) bool {
+			_, ok := held[label]
+			return label == "" || ok // the principal label is never allocated to a session that is not the principal
+		}
+		entry.label = AllocateLabel(req.Preferred, req.Harness, taken, memory.label)
 		if remembered && entry.label == memory.label {
 			entry.since = memory.since // a reconnect keeps the start time (SESS-14)
 		}
-		if remembered {
-			delete(p.retired[agent.ID], liveID) // live again: its next drop writes a new memory
-		}
+	}
+	if replaced != nil && replaced.label == entry.label {
+		entry.since = replaced.since
+	}
+	if remembered {
+		delete(p.retired[agent.ID], req.LiveID) // live again: its next drop writes a new memory
+		delete(p.remembered[agent.ID], req.SessionID)
 	}
 	setSessionLabel(s, entry.label) // before the session is visible: a lookup by label sees it set
 	held[entry.label] = entry
 	p.sessions[agent.ID] = held
+	if _, principalNow := held[""]; principalNow {
+		delete(p.principalGone, agent.ID)
+	} else if _, known := p.principalGone[agent.ID]; !known {
+		p.principalGone[agent.ID] = now // the first sign that the principal is away
+	}
 	p.mu.Unlock()
 	if closed != nil {
-		closed.Close(CloseTakenOver, ReasonTakenOver)
+		closed.Close(closeCode, closeReason)
+	}
+	if replaced != nil {
+		replaced.session.Close(websocket.StatusNormalClosure, ReasonReconnected)
 	}
 	_ = p.touch(ctx, agent.ID) // best effort, like Detach: last_seen_at is informational
 	// A fresh session is a change of the AI's sessions even when it was already online (SESS-32).
 	p.bus.Publish(events.AgentPresence{AgentID: agent.ID, OwnerID: agent.OwnerID, Online: true})
-	return entry.live(), true
+	return Attached{Live: entry.live(), Fresh: true, Pin: pin}
+}
+
+// memoryLocked returns what the AI remembers of a connection that ended: by its process first, then by its
+// harness session, whose memory outlives the process (SESS-54). The caller holds p.mu.
+func (p *Presence) memoryLocked(agentID, liveID, sessionID string) (retiredLabel, bool) {
+	if m, ok := p.retired[agentID][liveID]; ok && liveID != "" {
+		return m, true
+	}
+	if m, ok := p.remembered[agentID][sessionID]; ok && sessionID != "" {
+		return m, true
+	}
+	return retiredLabel{}, false
+}
+
+// SessionID returns the harness session id of the agent's live session with label, when it has one: what a
+// make-principal pins (SESS-59).
+func (p *Presence) SessionID(agentID, label string) (id string, live bool) {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	e, ok := p.sessions[agentID][label]
+	return e.sessionID, ok
+}
+
+// CloseForRoleChange closes the agent's live sessions that hold the given labels with CloseRoleChanged, so
+// that they connect again and take the role the pin now gives them (SESS-59). Labels that are not live are
+// skipped.
+func (p *Presence) CloseForRoleChange(agentID string, labels ...string) {
+	p.mu.Lock()
+	var sessions []Session
+	for _, label := range labels {
+		if e, ok := p.sessions[agentID][label]; ok {
+			sessions = append(sessions, e.session)
+		}
+	}
+	p.mu.Unlock()
+	for _, s := range sessions {
+		s.Close(CloseRoleChanged, ReasonRoleChanged)
+	}
+}
+
+// PrincipalGone returns when the agent's principal session was last seen leaving, while another of its
+// sessions is live: the moment "principal offline since" shows (SESS-61). It reports false when the
+// principal is live, when no session is live at all or when the moment is not known.
+func (p *Presence) PrincipalGone(agentID string) (time.Time, bool) {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	held := p.sessions[agentID]
+	if _, principal := held[""]; principal || len(held) == 0 {
+		return time.Time{}, false
+	}
+	at, ok := p.principalGone[agentID]
+	return at, ok
 }
 
 // Live returns the agent's principal session, if any.
@@ -317,6 +499,16 @@ func (p *Presence) detach(ctx context.Context, agentID string, s Session, stamp 
 		}
 		p.retired[agentID][cur.liveID] = retiredLabel{label: cur.label, since: cur.since, expires: now.Add(retiredTTL)}
 	}
+	if cur.sessionID != "" && cur.label != "" {
+		// A parallel session keeps its label with its harness session id, beyond the process (SESS-54).
+		if p.remembered[agentID] == nil {
+			p.remembered[agentID] = map[string]retiredLabel{}
+		}
+		p.remembered[agentID][cur.sessionID] = retiredLabel{label: cur.label, since: cur.since, expires: now.Add(sessionLabelTTL)}
+	}
+	if cur.label == "" {
+		p.principalGone[agentID] = now
+	}
 	offline := len(held) == 0
 	if offline {
 		delete(p.sessions, agentID)
@@ -362,6 +554,8 @@ func (p *Presence) end(ctx context.Context, agentID string, code websocket.Statu
 	if len(held) == 0 {
 		if forget {
 			delete(p.retired, agentID)
+			delete(p.remembered, agentID)
+			delete(p.principalGone, agentID)
 		}
 		p.mu.Unlock()
 		return
@@ -371,9 +565,14 @@ func (p *Presence) end(ctx context.Context, agentID string, code websocket.Statu
 		entries = append(entries, e)
 	}
 	ownerID := entries[0].ownerID
+	if _, principal := held[""]; principal {
+		p.principalGone[agentID] = p.now()
+	}
 	delete(p.sessions, agentID)
 	if forget {
 		delete(p.retired, agentID)
+		delete(p.remembered, agentID)
+		delete(p.principalGone, agentID)
 	}
 	ended := p.ended
 	p.mu.Unlock()
@@ -396,20 +595,22 @@ func (p *Presence) end(ctx context.Context, agentID string, code websocket.Statu
 	}
 }
 
-// pruneLocked forgets the labels of the agent's dropped processes whose ten minutes are over. The caller
-// holds p.mu.
+// pruneLocked forgets the labels of the agent's dropped processes and harness sessions whose time is over.
+// The caller holds p.mu.
 func (p *Presence) pruneLocked(agentID string, now time.Time) {
-	memory := p.retired[agentID]
-	if memory == nil {
-		return
-	}
-	for liveID, retired := range memory {
-		if !now.Before(retired.expires) {
-			delete(memory, liveID)
+	for _, memory := range []map[string]map[string]retiredLabel{p.retired, p.remembered} {
+		kept := memory[agentID]
+		if kept == nil {
+			continue
 		}
-	}
-	if len(memory) == 0 {
-		delete(p.retired, agentID)
+		for key, retired := range kept {
+			if !now.Before(retired.expires) {
+				delete(kept, key)
+			}
+		}
+		if len(kept) == 0 {
+			delete(memory, agentID)
+		}
 	}
 }
 

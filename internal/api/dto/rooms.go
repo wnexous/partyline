@@ -108,6 +108,9 @@ type RoomMember struct {
 	// Sessions are set for agent members: the AI's live sessions, the principal (label "") first
 	// (SESS-33). Absent for other members and for an AI with no live session.
 	Sessions []SessionInfo `json:"sessions,omitempty"`
+	// PrincipalOfflineSince is set for agent members whose principal session left while another session is
+	// live (SESS-61).
+	PrincipalOfflineSince *time.Time `json:"principal_offline_since,omitempty"`
 	// Owner is set for agent members: the username of the agent's owner.
 	Owner string `json:"owner,omitempty"`
 	// ConnectorKind and ChatKind are set for chat members.

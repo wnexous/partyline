@@ -123,6 +123,9 @@ type AIDetail struct {
 	// Sessions are the AI's live sessions, the principal (label "") first and the labelled ones in the
 	// lexical order of their label; an empty array while it is offline (SESS-32).
 	Sessions []SessionInfo `json:"sessions"`
+	// PrincipalOfflineSince is when the principal session left while another session is live; absent
+	// when the principal is live or the AI is offline (SESS-61).
+	PrincipalOfflineSince *time.Time `json:"principal_offline_since,omitempty"`
 	// MyLevel is manage for whoever manages the AI in an organization they share with it (and the AI itself)
 	// and use for whoever only sees it.
 	MyLevel Level `json:"my_level,omitempty"`

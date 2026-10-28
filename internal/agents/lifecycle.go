@@ -74,41 +74,81 @@ func authorizeDelete(ctx context.Context, q *db.Queries, p authn.Principal, agen
 // An AI with no live session has nothing to end. Whoever cannot see the AI gets access.ErrNotFound, whoever sees it
 // and does not manage it access.ErrForbidden.
 func (r *Registry) EndSession(ctx context.Context, p authn.Principal, agentID string) error {
-	actor := p.IID()
-	q := r.store.R()
-	a, err := q.GetAgent(ctx, agentID)
-	if errors.Is(err, sql.ErrNoRows) {
-		return access.ErrNotFound
-	}
-	if err != nil {
+	if _, err := r.managedAgent(ctx, p, agentID); err != nil {
 		return err
 	}
-	shared, err := q.ListSharedOrgIDs(ctx, db.ListSharedOrgIDsParams{FirstIid: actor, SecondIid: agentID})
-	if err != nil {
-		return err
-	}
-	managed := false
-	for _, orgID := range shared {
-		chart, err := orgs.Load(ctx, q, orgID)
-		if err != nil {
-			return err
-		}
-		if chart.Manages(actor, agentID) {
-			managed = true
-			break
-		}
-	}
-	switch {
-	case managed:
-	case len(shared) > 0 || (actor != "" && a.OwnerID == actor):
-		return access.ErrForbidden
-	default:
-		return access.ErrNotFound
-	}
-	who, err := q.GetIntelligence(ctx, actor)
+	who, err := r.store.R().GetIntelligence(ctx, p.IID())
 	if err != nil {
 		return err
 	}
 	r.presence.Kick(ctx, agentID, CloseTakenOver, ReasonEndedByPrefix+who.Handle)
+	return nil
+}
+
+// managedAgent loads the AI for a caller who must manage it in an organization they share (POS-04, SESS-59):
+// whoever cannot see the AI gets access.ErrNotFound, whoever sees it and does not manage it access.ErrForbidden.
+func (r *Registry) managedAgent(ctx context.Context, p authn.Principal, agentID string) (db.Agent, error) {
+	actor := p.IID()
+	q := r.store.R()
+	a, err := q.GetAgent(ctx, agentID)
+	if errors.Is(err, sql.ErrNoRows) {
+		return db.Agent{}, access.ErrNotFound
+	}
+	if err != nil {
+		return db.Agent{}, err
+	}
+	shared, err := q.ListSharedOrgIDs(ctx, db.ListSharedOrgIDsParams{FirstIid: actor, SecondIid: agentID})
+	if err != nil {
+		return db.Agent{}, err
+	}
+	for _, orgID := range shared {
+		chart, err := orgs.Load(ctx, q, orgID)
+		if err != nil {
+			return db.Agent{}, err
+		}
+		if chart.Manages(actor, agentID) {
+			return a, nil
+		}
+	}
+	if len(shared) > 0 || (actor != "" && a.OwnerID == actor) {
+		return db.Agent{}, access.ErrForbidden
+	}
+	return db.Agent{}, access.ErrNotFound
+}
+
+// Errors of MakePrincipal: the answer is a conflict, the request being right for another state of the AI.
+var (
+	// ErrSessionNotLive means no session of the AI is live with the label asked for.
+	ErrSessionNotLive = errors.New("agents: that session is not live")
+	// ErrSessionUnidentified means the session has no harness session id, which the principal role is pinned to.
+	ErrSessionUnidentified = errors.New("agents: that session has no harness session id to pin")
+)
+
+// MakePrincipal makes the AI's live session with label the principal one on behalf of whoever manages the AI
+// (SESS-59): its harness session id is pinned, and the sessions concerned (the new principal and the one that
+// holds the role) are closed with CloseRoleChanged, so that both connect again and take the role the pin now
+// gives them, in whatever order they come back. A label that is already the principal's only pins it. A
+// session that is not live is ErrSessionNotLive and one with no harness session id ErrSessionUnidentified.
+func (r *Registry) MakePrincipal(ctx context.Context, p authn.Principal, agentID, label string) error {
+	if _, err := r.managedAgent(ctx, p, agentID); err != nil {
+		return err
+	}
+	r.appMu.Lock()
+	defer r.appMu.Unlock()
+	id, live := r.presence.SessionID(agentID, label)
+	switch {
+	case !live:
+		return ErrSessionNotLive
+	case id == "":
+		return ErrSessionUnidentified
+	}
+	if err := r.setPin(ctx, agentID, id); err != nil {
+		return err
+	}
+	if label != "" {
+		// The holder of the principal label is closed too: it comes back as a parallel session, whichever of the two
+		// connects first.
+		r.presence.CloseForRoleChange(agentID, "", label)
+	}
 	return nil
 }

@@ -45,9 +45,19 @@ func (s *server) roomRoutes(mux *http.ServeMux) {
 func liveSessions(lives []agents.Live) []dto.SessionInfo {
 	out := make([]dto.SessionInfo, 0, len(lives))
 	for _, live := range lives {
-		out = append(out, dto.SessionInfo{Label: live.Label, Harness: live.Harness, ConnectedAt: live.Since.UTC()})
+		out = append(out, dto.SessionInfo{Label: live.Label, Harness: live.Harness, ConnectedAt: live.Since.UTC(), CanBePrincipal: live.CanBePrincipal})
 	}
 	return out
+}
+
+// principalOfflineSince is when an AI's principal session left while another of its sessions is live
+// (SESS-61); nil when the principal is live, the AI is offline or the moment is not known.
+func (s *server) principalOfflineSince(agentID string) *time.Time {
+	if at, ok := s.Agents.PrincipalGone(agentID); ok {
+		at = at.UTC()
+		return &at
+	}
+	return nil
 }
 
 // toMember renders a member; agent members carry their online state and live sessions.
@@ -62,6 +72,7 @@ func (s *server) toMember(m rooms.Member) dto.RoomMember {
 		online := s.Agents.Online(m.MemberID)
 		out.Online = &online
 		out.Sessions = liveSessions(s.Agents.Sessions(m.MemberID))
+		out.PrincipalOfflineSince = s.principalOfflineSince(m.MemberID)
 	}
 	if m.Intelligence.ID != "" && (out.Kind == dto.MemberKindAgent || out.Kind == dto.MemberKindUser) {
 		role := dto.IntelligenceRoleUser

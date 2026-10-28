@@ -44,6 +44,7 @@ func (s *server) agentWithSessions(a agents.Agent) dto.Agent {
 	out := toAgent(a)
 	if lives := s.Agents.Sessions(a.ID); len(lives) > 0 {
 		out.Sessions = liveSessions(lives)
+		out.PrincipalOfflineSince = s.principalOfflineSince(a.ID)
 	}
 	return out
 }

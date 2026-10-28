@@ -216,9 +216,14 @@ type Folder struct {
 	Live       string
 	Features   []string
 	Takeover   bool
-	Org        string
-	Position   string
-	Parent     string
+	// HarnessSession is the harness's session id (Claude Code's CLAUDE_CODE_SESSION_ID) the session
+	// sends as X-Partyline-Harness-Session; empty sends none, as a harness without one does.
+	HarnessSession string
+	// Principal sends X-Partyline-Principal: the session asks to be the AI's principal (--principal).
+	Principal bool
+	Org       string
+	Position  string
+	Parent    string
 }
 
 // WithPlatform returns the folder of a client that understands platform events (CID-06).
@@ -241,7 +246,7 @@ func (f Folder) Headers() http.Header {
 	for k, v := range map[string]string{
 		dto.HeaderMachine: f.Machine, dto.HeaderHarness: f.Harness, dto.HeaderAdopt: f.Adopt,
 		dto.HeaderFolder: escapePath(f.Path), dto.HeaderMainFolder: escapePath(f.MainFolder),
-		dto.HeaderHome: escapePath(f.Home), dto.HeaderLive: f.Live,
+		dto.HeaderHome: escapePath(f.Home), dto.HeaderLive: f.Live, dto.HeaderHarnessSession: f.HarnessSession,
 		dto.HeaderFeatures: strings.Join(f.Features, ","),
 		dto.HeaderOrg:      f.Org, dto.HeaderPosition: escapePath(f.Position), dto.HeaderParent: f.Parent,
 	} {
@@ -251,6 +256,9 @@ func (f Folder) Headers() http.Header {
 	}
 	if f.Takeover {
 		h.Set(dto.HeaderTakeover, "1")
+	}
+	if f.Principal {
+		h.Set(dto.HeaderPrincipal, "1")
 	}
 	return h
 }
