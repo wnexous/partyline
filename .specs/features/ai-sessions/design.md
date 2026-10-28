@@ -933,7 +933,14 @@ holder with 4002 `taken_over` when the replacement is explicit or the same conve
 
 Labels: `Presence.remembered[agent][harness session id]` (24 hours) next to the `retired[agent][live id]`
 memory (10 minutes); both are consulted on attach, the process first. A parallel session that ends writes
-both; the principal only writes the live id one.
+both; the principal only writes the live id one. Because presence is lost when the server restarts (a deploy
+makes every session reconnect at once, in any order), the label of a session with an id is also stored:
+`agent_session_labels (agent_id, harness_session, label, updated_at)` in migration 0028. `Registry.AttachSession`
+reads the row before the attach (`AttachRequest.StoredLabel`, used when presence remembers nothing) and upserts
+the label the session got after it (the principal's row is deleted; rows older than 30 days are pruned on
+write; the AI's deletion cascades). Presence stays in memory: only this mapping and the pin are persisted.
+After a restart the pinned session is the principal whenever it reconnects, because the role depends on the
+stored pin and not on the order, and the parallel sessions get their labels back while they are free.
 
 "Principal offline since": `Presence.principalGone[agent]`, set when the principal detaches or is ended (and
 when the first parallel session is seen with no principal), cleared when a principal attaches. It is in memory
@@ -962,7 +969,7 @@ have to change), and the same path handles a process that never comes back: the 
 
 ### Tests
 
-`internal/store/principal_migration_test.go` (migration); `internal/api/agent_principal_test.go` (the incident,
+`internal/store/principal_migration_test.go` (migration and label table); `internal/api/agent_principal_test.go` (the incident, a server restart with the sessions reconnecting in the wrong order,
 label stickiness, header validation, first pin, no-id fallback, `--principal`, `--take-over`, make principal
 by API); `internal/channel/link_live_test.go`, `internal/cli/{procenv,launcher,channel_live}_test.go`
 (the CLI side); `integrations/{pi,opencode}/partyline.test.ts` (the adapters);

@@ -147,6 +147,20 @@ func (q *Queries) DeleteAgentMemberships(ctx context.Context, memberID string) (
 	return items, nil
 }
 
+const deleteSessionLabel = `-- name: DeleteSessionLabel :exec
+DELETE FROM agent_session_labels WHERE agent_id = ? AND harness_session = ?
+`
+
+type DeleteSessionLabelParams struct {
+	AgentID        string
+	HarnessSession string
+}
+
+func (q *Queries) DeleteSessionLabel(ctx context.Context, arg DeleteSessionLabelParams) error {
+	_, err := q.db.ExecContext(ctx, deleteSessionLabel, arg.AgentID, arg.HarnessSession)
+	return err
+}
+
 const getAgent = `-- name: GetAgent :one
 SELECT id, owner_id, name, description, created_at, last_seen_at, project_id, harness, machine, connected_at, folder, platform_dropped, org_id, creator_iid, principal_session FROM agents WHERE id = ?
 `
@@ -298,6 +312,24 @@ func (q *Queries) GetMessageRoomSeq(ctx context.Context, id string) (GetMessageR
 	var i GetMessageRoomSeqRow
 	err := row.Scan(&i.RoomID, &i.Seq)
 	return i, err
+}
+
+const getSessionLabel = `-- name: GetSessionLabel :one
+SELECT label FROM agent_session_labels WHERE agent_id = ? AND harness_session = ? AND updated_at >= ?
+`
+
+type GetSessionLabelParams struct {
+	AgentID        string
+	HarnessSession string
+	UpdatedAt      int64
+}
+
+// The label a parallel session had, by its harness session id (SESS-54).
+func (q *Queries) GetSessionLabel(ctx context.Context, arg GetSessionLabelParams) (string, error) {
+	row := q.db.QueryRowContext(ctx, getSessionLabel, arg.AgentID, arg.HarnessSession, arg.UpdatedAt)
+	var label string
+	err := row.Scan(&label)
+	return label, err
 }
 
 const getUnlinkedAgentByHandle = `-- name: GetUnlinkedAgentByHandle :one
@@ -835,6 +867,20 @@ func (q *Queries) MarkAgentConnected(ctx context.Context, arg MarkAgentConnected
 	return err
 }
 
+const pruneSessionLabels = `-- name: PruneSessionLabels :exec
+DELETE FROM agent_session_labels WHERE agent_id = ? AND updated_at < ?
+`
+
+type PruneSessionLabelsParams struct {
+	AgentID   string
+	UpdatedAt int64
+}
+
+func (q *Queries) PruneSessionLabels(ctx context.Context, arg PruneSessionLabelsParams) error {
+	_, err := q.db.ExecContext(ctx, pruneSessionLabels, arg.AgentID, arg.UpdatedAt)
+	return err
+}
+
 const setAgentHarness = `-- name: SetAgentHarness :exec
 UPDATE agents SET harness = ? WHERE id = ?
 `
@@ -889,5 +935,27 @@ type UpdateAgentDescriptionParams struct {
 
 func (q *Queries) UpdateAgentDescription(ctx context.Context, arg UpdateAgentDescriptionParams) error {
 	_, err := q.db.ExecContext(ctx, updateAgentDescription, arg.Description, arg.ID)
+	return err
+}
+
+const upsertSessionLabel = `-- name: UpsertSessionLabel :exec
+INSERT INTO agent_session_labels (agent_id, harness_session, label, updated_at) VALUES (?, ?, ?, ?)
+ON CONFLICT (agent_id, harness_session) DO UPDATE SET label = excluded.label, updated_at = excluded.updated_at
+`
+
+type UpsertSessionLabelParams struct {
+	AgentID        string
+	HarnessSession string
+	Label          string
+	UpdatedAt      int64
+}
+
+func (q *Queries) UpsertSessionLabel(ctx context.Context, arg UpsertSessionLabelParams) error {
+	_, err := q.db.ExecContext(ctx, upsertSessionLabel,
+		arg.AgentID,
+		arg.HarnessSession,
+		arg.Label,
+		arg.UpdatedAt,
+	)
 	return err
 }

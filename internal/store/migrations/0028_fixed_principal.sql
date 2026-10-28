@@ -6,3 +6,14 @@
 -- created before this migration until its first session with an id connects, or one whose harness has no
 -- session id): the folder's first live session acts as the principal, as before.
 ALTER TABLE agents ADD COLUMN principal_session TEXT NOT NULL DEFAULT '';
+
+-- The label a parallel session had, by the harness session id, so that it survives a restart of the
+-- server (SESS-54): a session that connects again with the same id gets the same label back while it is
+-- free. Presence itself stays in memory. updated_at lets old rows be dropped.
+CREATE TABLE agent_session_labels (
+    agent_id        TEXT    NOT NULL REFERENCES agents (id) ON DELETE CASCADE,
+    harness_session TEXT    NOT NULL,
+    label           TEXT    NOT NULL CHECK (label <> ''),
+    updated_at      INTEGER NOT NULL,
+    PRIMARY KEY (agent_id, harness_session)
+);

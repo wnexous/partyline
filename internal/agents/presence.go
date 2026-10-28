@@ -191,6 +191,9 @@ type AttachRequest struct {
 	SessionID string
 	// Principal asks to be the AI's principal session (--principal).
 	Principal bool
+	// StoredLabel is the label the database remembers for SessionID (agent_session_labels): what a session
+	// gets back after a restart of the server, when presence remembers nothing (SESS-54).
+	StoredLabel string
 	// Pinned is the AI's pinned principal session id as stored when the attach starts ("" pins none).
 	Pinned string
 }
@@ -299,6 +302,9 @@ func (p *Presence) Attach(ctx context.Context, agent db.Agent, s Session, req At
 	}
 	entry := presenceEntry{ownerID: agent.OwnerID, session: s, harness: req.Harness, liveID: req.LiveID, sessionID: req.SessionID, since: now}
 	memory, remembered := p.memoryLocked(agent.ID, req.LiveID, req.SessionID)
+	if !remembered && req.StoredLabel != "" {
+		memory = retiredLabel{label: req.StoredLabel, since: now} // the database's memory; no start time to keep
+	}
 	var closed Session
 	closeCode, closeReason := CloseTakenOver, ReasonTakenOver
 	if wantMain {

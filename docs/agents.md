@@ -249,8 +249,8 @@ and both sessions are live. People and the AI's other sessions address one of th
 - A label is live only: it is freed when the session ends, within about 5 seconds when its socket
   closes and within about 35 seconds when it went silent. A process that reconnects with the same
   live id keeps its label and start time, also when the server had already dropped it, for ten
-  minutes after the drop. After a server restart every session reconnects as a new session and
-  takes the label that is free then.
+  minutes after the drop. After a server restart every session reconnects as a new session; one
+  with a harness session id gets its label back, the others take the label that is free then.
 
 #### The principal session is fixed
 
@@ -280,8 +280,10 @@ operates. Which session it is does not depend on who connects first or on who is
     comes back, the oldest first. The AI shows online while any session is live, and its profile and
     member card say `Principal offline since 14:02`.
 - A parallel session keeps its label with its harness session id: after a restart it is
-  `:claude-2` again while that label is free, for 24 hours after it ended (a restart of the server
-  forgets it, as it does every label).
+  `:claude-2` again while that label is free: the server remembers it for 24 hours in memory and,
+  in the database (`agent_session_labels`), for 30 days, so it also survives a restart of the server.
+  After a deploy every session reconnects at once, in any order: the pinned session is the
+  principal even when it reconnects last, and the parallel ones get their labels back.
 - To change the principal on purpose:
   - `partyline claude --principal` (or `PARTYLINE_PRINCIPAL=1`) makes the session you start the
     principal and pins its id, whether the old principal is live (it is closed as `taken_over` and

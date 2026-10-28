@@ -42,6 +42,13 @@ type AgentSessionDelivery struct {
 	AckedAt    sql.NullInt64
 }
 
+type AgentSessionLabel struct {
+	AgentID        string
+	HarnessSession string
+	Label          string
+	UpdatedAt      int64
+}
+
 type ApiToken struct {
 	ID         string
 	UserID     string

@@ -358,3 +358,34 @@ func TestMakingThePrincipalThePrincipalPinsItAndChangesNothing(t *testing.T) {
 	r.Manager.Post("/api/v1/agents/"+ai+"/principal", dto.MakePrincipalRequest{}).RequireStatus(http.StatusNoContent)
 	require.NoError(t, conn.Closed(300*time.Millisecond), "the principal stays connected")
 }
+
+// SESS-52, SESS-53, SESS-54 (production, deploy): after a server restart every session reconnects at once, in
+// whatever order. The pinned principal (a pi session) stays the principal although it reconnects last, and the
+// two Claude sessions get their labels back, which the server remembered in the database.
+func TestAServerRestartKeepsThePrincipalAndTheLabelsWhateverTheReconnectOrder(t *testing.T) {
+	l := newLiveEnv(t)
+	pi := acme
+	pi.Harness = "pi"
+	_, pWelcome := dialAs(t, l, session(pi, "pi-session-0000-0001"))
+	require.Empty(t, pWelcome.Session.Label)
+	id := pWelcome.Agent.ID
+	_, c1 := dialAs(t, l, session(acme, "sess-c1-0000-0001"))
+	_, c2 := dialAs(t, l, session(acme, "sess-c2-0000-0001"))
+	require.Equal(t, "claude-2", c1.Session.Label)
+	require.Equal(t, "claude-3", c2.Session.Label)
+
+	l.env.Restart() // presence is in memory: every session and label is gone
+
+	// The sessions are new processes and come back in the "wrong" order: C2, C1, the principal last.
+	_, c2 = dialAs(t, l, session(acme, "sess-c2-0000-0001"))
+	require.Equal(t, "claude-3", c2.Session.Label, "its label survived the restart")
+	_, c1 = dialAs(t, l, session(acme, "sess-c1-0000-0001"))
+	require.Equal(t, "claude-2", c1.Session.Label)
+	requireLabels(t, l, id, "claude-2", "claude-3")
+	require.False(t, principalLive(t, l), "nothing took the principal label while the principal was away")
+
+	_, pWelcome = dialAs(t, l, session(pi, "pi-session-0000-0001"))
+	require.Empty(t, pWelcome.Session.Label, "the pinned session is the principal although it came last")
+	requireLabels(t, l, id, "", "claude-2", "claude-3")
+	require.Equal(t, "pi-session-0000-0001", pinnedOf(t, l, id))
+}

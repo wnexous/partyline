@@ -544,7 +544,22 @@ func (r *Registry) AttachSession(ctx context.Context, a db.Agent, s Session, req
 		return Live{}, err
 	}
 	req.Pinned = current.PrincipalSession
+	if req.SessionID != "" {
+		// A parallel session's label by harness session id outlives the server (SESS-54).
+		label, err := r.store.R().GetSessionLabel(ctx, db.GetSessionLabelParams{
+			AgentID: a.ID, HarnessSession: req.SessionID, UpdatedAt: r.now().Add(-sessionLabelRetention).UnixMilli(),
+		})
+		if err != nil && !errors.Is(err, sql.ErrNoRows) {
+			return Live{}, err
+		}
+		req.StoredLabel = label
+	}
 	out := r.presence.Attach(ctx, a, s, req)
+	if req.SessionID != "" && out.Fresh {
+		if err := r.rememberLabel(ctx, a.ID, req.SessionID, out.Live.Label); err != nil {
+			return out.Live, err
+		}
+	}
 	if out.Pin != nil {
 		if err := r.setPin(ctx, a.ID, *out.Pin); err != nil {
 			return out.Live, err
@@ -559,6 +574,26 @@ func (r *Registry) AttachSession(ctx context.Context, a db.Agent, s Session, req
 		}
 	}
 	return out.Live, r.MarkConnected(ctx, a.ID)
+}
+
+// sessionLabelRetention is how long the database remembers the label of a parallel session that did not come back.
+const sessionLabelRetention = 30 * 24 * time.Hour
+
+// rememberLabel records the label a session with a harness session id attached with, and drops what is
+// older than sessionLabelRetention; the principal ("") has none to remember (SESS-54).
+func (r *Registry) rememberLabel(ctx context.Context, agentID, sessionID, label string) error {
+	now := r.now()
+	return r.store.WithTx(ctx, func(q *db.Queries) error {
+		if label == "" {
+			return q.DeleteSessionLabel(ctx, db.DeleteSessionLabelParams{AgentID: agentID, HarnessSession: sessionID})
+		}
+		if err := q.UpsertSessionLabel(ctx, db.UpsertSessionLabelParams{
+			AgentID: agentID, HarnessSession: sessionID, Label: label, UpdatedAt: now.UnixMilli(),
+		}); err != nil {
+			return err
+		}
+		return q.PruneSessionLabels(ctx, db.PruneSessionLabelsParams{AgentID: agentID, UpdatedAt: now.Add(-sessionLabelRetention).UnixMilli()})
+	})
 }
 
 func (r *Registry) setPin(ctx context.Context, agentID, sessionID string) error {
