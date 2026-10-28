@@ -15,6 +15,7 @@ import type { Connector, Identity, PairingCode } from "@/shared/api/types.gen";
 import { useI18n, useT } from "@/shared/i18n";
 import { formatAbsolute } from "@/shared/lib/time";
 import { cn } from "@/shared/lib/utils";
+import { ChoiceGroup } from "@/shared/ui/molecules/choice-group";
 import { ConfirmDialog } from "@/shared/ui/molecules/confirm-dialog";
 import { CodeBlock } from "@/shared/ui/molecules/copy-field";
 import {
@@ -27,7 +28,6 @@ import {
 import { EmptyState } from "@/shared/ui/molecules/empty-state";
 import { PageHeader } from "@/shared/ui/molecules/page-header";
 import { Button } from "@/shared/ui/primitives/button";
-import { RadioGroup, RadioGroupItem } from "@/shared/ui/primitives/radio-group";
 import { Skeleton } from "@/shared/ui/primitives/skeleton";
 
 export const Route = createFileRoute("/_app/identities")({
@@ -289,27 +289,25 @@ function ConnectorChoice({
   };
   return (
     <div className="space-y-4">
-      <fieldset className="space-y-2">
-        <legend className="mb-2 text-sm font-medium">{t("pairing.chooseConnector")}</legend>
-        <RadioGroup value={selected} onValueChange={setSelected} className="grid gap-2">
-          {connectors.map((c) => (
-            <label
-              key={c.id}
-              htmlFor={`${idBase}-${c.id}`}
-              className={cn(
-                "flex cursor-pointer items-center gap-3 rounded-md border px-3 py-2.5 text-sm transition-colors hover:bg-accent/60",
-                c.id === selected && "border-tape-strong bg-tape/40",
-              )}
-            >
-              <RadioGroupItem id={`${idBase}-${c.id}`} value={c.id} />
+      <ChoiceGroup
+        fieldsetClassName="space-y-2"
+        legend={t("pairing.chooseConnector")}
+        idBase={idBase}
+        value={selected}
+        onValueChange={setSelected}
+        itemClassName="gap-3 py-2.5"
+        options={connectors.map((c) => ({
+          value: c.id,
+          label: (
+            <>
               <span className="min-w-0 flex-1 truncate font-medium">{c.name}</span>
               <span className="max-w-[45%] shrink-0 truncate text-xs text-muted-foreground">
                 {kindOf(c)}
               </span>
-            </label>
-          ))}
-        </RadioGroup>
-      </fieldset>
+            </>
+          ),
+        }))}
+      />
       <p className="text-xs text-muted-foreground">{t("pairing.chooseHint")}</p>
       <div className="flex justify-end">
         <Button disabled={!chosen} onClick={() => chosen && onChoose(chosen)}>

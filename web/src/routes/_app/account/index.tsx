@@ -1,7 +1,7 @@
 import { zodResolver } from "@hookform/resolvers/zod";
 import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import { MonitorIcon, MoonIcon, SunIcon } from "lucide-react";
-import { type ReactNode, useEffect, useId, useRef, useState } from "react";
+import { useEffect, useId, useRef, useState } from "react";
 import { useForm } from "react-hook-form";
 import { toast } from "sonner";
 import { LOCALE_NAMES, useChooseLocale } from "@/components/language-switch";
@@ -50,9 +50,9 @@ import {
 } from "@/shared/api/types.gen";
 import { LOCALES, type MessageKey, type Translate, useI18n, useT } from "@/shared/i18n";
 import { applyFieldErrors } from "@/shared/lib/forms";
-import { cn } from "@/shared/lib/utils";
 import { NativeSelect } from "@/shared/ui/atoms/native-select";
 import { RelativeTime } from "@/shared/ui/atoms/relative-time";
+import { ChoiceGroup } from "@/shared/ui/molecules/choice-group";
 import {
   Dialog,
   DialogContent,
@@ -67,7 +67,6 @@ import { PageHeader } from "@/shared/ui/molecules/page-header";
 import { PageSection as Section } from "@/shared/ui/molecules/page-section";
 import { Button } from "@/shared/ui/primitives/button";
 import { Form } from "@/shared/ui/primitives/form";
-import { RadioGroup, RadioGroupItem } from "@/shared/ui/primitives/radio-group";
 import { Skeleton } from "@/shared/ui/primitives/skeleton";
 
 export const Route = createFileRoute("/_app/account/")({
@@ -155,70 +154,30 @@ function AppearanceSection() {
       description={t("account.appearanceBody")}
     >
       <div className="space-y-6">
-        <fieldset>
-          <legend className="mb-2 text-sm font-medium">{t("theme.label")}</legend>
-          <RadioGroup
-            value={theme}
-            onValueChange={(v) => setTheme(v as ThemePreference)}
-            className="grid gap-2 sm:grid-cols-3"
-          >
-            {THEMES.map(({ value, icon: Icon, label }) => (
-              <Choice
-                key={value}
-                id={`${id}-theme-${value}`}
-                value={value}
-                checked={theme === value}
-              >
-                <Icon className="size-4 shrink-0 text-muted-foreground" aria-hidden="true" />
-                {t(label)}
-              </Choice>
-            ))}
-          </RadioGroup>
-        </fieldset>
-        <fieldset>
-          <legend className="mb-2 text-sm font-medium">{t("locale.label")}</legend>
-          <RadioGroup
-            value={locale}
-            onValueChange={chooseLocale}
-            className="grid gap-2 sm:grid-cols-2"
-          >
-            {LOCALES.map((l) => (
-              <Choice key={l} id={`${id}-locale-${l}`} value={l} checked={locale === l} lang={l}>
-                {LOCALE_NAMES[l]}
-              </Choice>
-            ))}
-          </RadioGroup>
-        </fieldset>
+        <ChoiceGroup
+          legend={t("theme.label")}
+          idBase={`${id}-theme`}
+          value={theme}
+          onValueChange={(v) => setTheme(v as ThemePreference)}
+          className="sm:grid-cols-3"
+          emphasizeChecked
+          options={THEMES.map(({ value, icon: Icon, label }) => ({
+            value,
+            icon: <Icon className="size-4 shrink-0 text-muted-foreground" aria-hidden="true" />,
+            label: t(label),
+          }))}
+        />
+        <ChoiceGroup
+          legend={t("locale.label")}
+          idBase={`${id}-locale`}
+          value={locale}
+          onValueChange={chooseLocale}
+          className="sm:grid-cols-2"
+          emphasizeChecked
+          options={LOCALES.map((l) => ({ value: l, label: LOCALE_NAMES[l], lang: l }))}
+        />
       </div>
     </Section>
-  );
-}
-
-function Choice({
-  id,
-  value,
-  checked,
-  lang,
-  children,
-}: {
-  id: string;
-  value: string;
-  checked: boolean;
-  lang?: string;
-  children: ReactNode;
-}) {
-  return (
-    <label
-      htmlFor={id}
-      lang={lang}
-      className={cn(
-        "flex cursor-pointer items-center gap-2 rounded-md border px-3 py-2 text-sm transition-colors hover:bg-accent/60",
-        checked && "border-tape-strong bg-tape/40 font-medium",
-      )}
-    >
-      <RadioGroupItem id={id} value={value} />
-      {children}
-    </label>
   );
 }
 
@@ -462,31 +421,21 @@ function NotificationsSection({ me }: { me: Me }) {
             </div>
           ) : null}
         </div>
-        <fieldset>
-          <legend className="mb-2 text-sm font-medium">{t("push.group.label")}</legend>
-          <RadioGroup
-            value={group}
-            onValueChange={chooseGroup}
-            disabled={updateMe.isPending}
-            className="grid gap-2"
-          >
-            {PUSH_GROUPS.map(({ value, label }) => (
-              <Choice
-                key={value}
-                id={`${id}-push-${value}`}
-                value={value}
-                checked={group === value}
-              >
-                {t(label)}
-              </Choice>
-            ))}
-          </RadioGroup>
+        <ChoiceGroup
+          legend={t("push.group.label")}
+          idBase={`${id}-push`}
+          value={group}
+          onValueChange={chooseGroup}
+          disabled={updateMe.isPending}
+          emphasizeChecked
+          options={PUSH_GROUPS.map(({ value, label }) => ({ value, label: t(label) }))}
+        >
           {groupError ? (
             <p role="alert" className="mt-2 text-sm text-destructive">
               {groupError}
             </p>
           ) : null}
-        </fieldset>
+        </ChoiceGroup>
       </div>
     </Section>
   );
