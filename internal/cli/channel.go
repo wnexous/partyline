@@ -100,13 +100,14 @@ func sessionIdentity(adopt string, io stdio) channel.Identity {
 	if id.Adopt == "" {
 		id.Adopt = strings.TrimSpace(io.getenv("PARTYLINE_AGENT"))
 	}
+	// A child session (a launch parent) never sends a main folder, whatever its environment holds, so --parent
+	// keeps its own AI (SESS-09). A session whose folder is unknown sends none either.
 	switch main := strings.TrimSpace(io.getenv(mainFolderVar)); {
+	case id.Parent != "":
 	case main != "":
 		id.MainFolder = main // the launcher computed it once for the whole session
-	case id.Parent == "" && id.Folder != "":
-		// A session started by hand computes it once; a child session never does, so --parent keeps its own AI
-		// (SESS-09). A session whose folder is unknown sends no main folder either.
-		id.MainFolder = worktreeMainFolder(id.Folder)
+	case id.Folder != "":
+		id.MainFolder = launchMainFolder(id.Folder, "") // a session started by hand computes it once
 	}
 	hostname := io.hostname
 	if hostname == nil {

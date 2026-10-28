@@ -232,3 +232,12 @@ max-content width, so the fit owner's 60-character name widened the page to 430 
 and no text element reported as spilling because the box itself spilled. The fix is inside the page,
 which T14's **Where** line does not name: the link is `block min-w-0` and the name is `w-full`, so the
 name truncates inside its cell (SESS-34).
+
+## A session label's boundary lets a sentence's final "." through
+
+The review asked that a label end at the end of the text or at a character that is not `[A-Za-z0-9-]` and
+not `.`, `/` or `:`. Read literally, that also refuses `@atlas:claude-2.` at the end of a sentence, which
+SESS-21 and its existing test accept. The boundary therefore treats `.` as a boundary only when it ends the
+text or is followed by whitespace, so `@atlas:wt.example.com` and `@atlas:wt/x` do not route while
+`ping @atlas:wt. Thanks` does. An address preceded by `/` (`https://example.com/@atlas:wt`) is not one
+either.

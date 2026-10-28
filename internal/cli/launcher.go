@@ -215,10 +215,8 @@ func launch(ctx context.Context, l launcher, args []string, io stdio) int {
 		set[folderEnvVar] = folder
 		// The main worktree travels beside the session's own folder, so the server resolves the AI of the
 		// repository (SESS-01). A launch that asked for a parent keeps its own AI (SESS-09).
-		if place.parent == "" {
-			if main := worktreeMainFolder(folder); main != "" && main != folder {
-				set[mainFolderVar] = main
-			}
+		if main := launchMainFolder(folder, place.parent); main != "" {
+			set[mainFolderVar] = main
 		}
 	}
 	if opts.as != "" {
@@ -275,6 +273,18 @@ var consumedVars = []string{
 // directory, never an inherited PARTYLINE_FOLDER (the new session runs where it was started).
 func launchFolder(io stdio) string {
 	return sessionFolder(stdio{getenv: func(string) string { return "" }, getwd: io.getwd})
+}
+
+// launchMainFolder is the main worktree of folder when it is a linked worktree, empty otherwise and for a
+// launch that asked for a parent (SESS-01, SESS-09).
+func launchMainFolder(folder, parent string) string {
+	if parent != "" || folder == "" {
+		return ""
+	}
+	if main := worktreeMainFolder(folder); main != folder {
+		return main
+	}
+	return ""
 }
 
 // announceToolsOnly prints the one informational line of Codex and Gemini when the folder's AI
@@ -357,9 +367,9 @@ func lookupSession(ctx context.Context, l launcher, as string, place launchPlace
 	identity.Folder, identity.Harness = launchFolder(io), l.id
 	// This launch's own placement, never the one of a session it may run in (sessionIdentity reads that one).
 	identity.Org, identity.Position, identity.Parent = place.org, place.position, place.parent
-	if place.parent != "" {
-		identity.MainFolder = "" // a child launch is another AI, which its own folder identifies (SESS-09)
-	}
+	// The main folder of the folder being launched in, never the one of the session this may run in; a child
+	// launch is another AI, which its own folder identifies (SESS-09).
+	identity.MainFolder = launchMainFolder(identity.Folder, place.parent)
 	setIdentityHeaders(req.Header, identity)
 	resp, err := client.Do(req)
 	if err != nil {

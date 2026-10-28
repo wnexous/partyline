@@ -120,8 +120,19 @@ func (s *server) agentSession(w http.ResponseWriter, r *http.Request) error {
 		for _, live := range s.Agents.Sessions(a.ID) {
 			out.Sessions = append(out.Sessions, dto.SessionInfo{Label: live.Label, Harness: live.Harness, ConnectedAt: live.Since.UTC()})
 		}
-		if live, ok := s.Agents.Live(a.ID); ok {
-			since := live.Since.UTC()
+		// Online is true while any session is live; ConnectedAt is the principal's start when it is live, else
+		// the earliest live session's (SESS-19).
+		var earliest time.Time
+		for i, live := range s.Agents.Sessions(a.ID) {
+			if i == 0 || live.Since.Before(earliest) {
+				earliest = live.Since
+			}
+		}
+		if len(out.Sessions) > 0 {
+			since := earliest.UTC()
+			if live, ok := s.Agents.Live(a.ID); ok {
+				since = live.Since.UTC()
+			}
 			out.Online, out.ConnectedAt = true, &since
 		}
 	}
@@ -314,9 +325,14 @@ func (s *server) agentPending(w http.ResponseWriter, r *http.Request, p authn.Pr
 		return err
 	}
 	label := s.Agents.SessionLabelOf(r.Context(), a.ID, r.Header.Get(dto.HeaderLive), folder.Folder)
-	if label == "" && s.Inbox.Online(a.ID) {
+	// Only the principal session is pushed to: a process of the AI's own folder is refused while the principal is
+	// live, not while the AI is live only through a labelled session (SESS-06).
+	if _, principalLive := s.Agents.Live(a.ID); label == "" && principalLive {
 		return errPushedSession
 	}
+	// A labelled reader that is itself a live session waits as asked and answers empty: nothing is queued for it.
+	// One that is not live (a tools-only process of a worktree) is answered at once (SESS-06).
+	liveReader := label != "" && r.Header.Get(dto.HeaderLive) != "" && slices.ContainsFunc(s.Agents.Sessions(a.ID), func(l agents.Live) bool { return l.Label == label })
 	deadline := time.Now().Add(time.Duration(wait) * time.Second)
 	for {
 		// The count goes first: when a later step fails, only a notice is lost, not messages. A
@@ -342,9 +358,9 @@ func (s *server) agentPending(w http.ResponseWriter, r *http.Request, p authn.Pr
 			}
 		}
 		left := time.Until(deadline)
-		// An empty page for a labelled reader is answered now: it must not wait for a queue it can
-		// never be given (SESS-06).
-		if label != "" || len(msgs) > 0 || len(events) > 0 || dropped > 0 || left <= 0 {
+		// An empty page for a labelled reader that is not a live session is answered now: it must not wait for a
+		// queue it can never be given (SESS-06).
+		if (label != "" && !liveReader) || len(msgs) > 0 || len(events) > 0 || dropped > 0 || left <= 0 {
 			if withPlatform {
 				httpx.WriteJSON(w, http.StatusOK, dto.AgentPending{Items: msgs, Platform: events, Dropped: dropped})
 			} else {

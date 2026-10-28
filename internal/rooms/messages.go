@@ -349,6 +349,14 @@ func (s *Service) post(ctx context.Context, roomID string, d draft) (Message, er
 			}
 			return err
 		}
+		// The quiet gap is measured from the room's previous message, never from rooms.updated_at, which a
+		// rename or any other edit of the room moves too.
+		var previousAt time.Time
+		if last, err := q.ListMessagesBefore(ctx, db.ListMessagesBeforeParams{RoomID: roomID, BeforeSeq: previous.NextSeq, Limit: 1}); err != nil {
+			return err
+		} else if len(last) > 0 {
+			previousAt = time.UnixMilli(last[0].CreatedAt)
+		}
 		room, msg, err := s.insert(ctx, q, roomID, d)
 		if err != nil {
 			return err
@@ -359,7 +367,7 @@ func (s *Service) post(ctx context.Context, roomID string, d draft) (Message, er
 		// The quiet gap ends a burst: a message posted more than QuietGap after the room's previous
 		// one starts the streak again, so only a fast ping-pong pauses the room (DLV-08).
 		state, pausedNow := s.guard.Next(delivery.LoopState{Streak: int(room.AgentStreak), Paused: room.AgentsPaused}, d.authorKind,
-			time.UnixMilli(previous.UpdatedAt), time.UnixMilli(room.UpdatedAt))
+			previousAt, time.UnixMilli(room.UpdatedAt))
 		if err := q.SetRoomLoopState(ctx, db.SetRoomLoopStateParams{AgentStreak: int64(state.Streak), AgentsPaused: state.Paused, ID: roomID}); err != nil {
 			return err
 		}

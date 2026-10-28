@@ -3,6 +3,7 @@ package delivery
 import (
 	"regexp"
 	"strings"
+	"unicode"
 	"unicode/utf8"
 
 	"github.com/wnexous/partyline/internal/api/dto"
@@ -16,7 +17,9 @@ var sessionLabelPattern = regexp.MustCompile(dto.SessionLabelPattern)
 // by a label; the handle matches case-insensitively with no letter, digit or underscore right
 // before the "@" and no handle character right after it (the rules of containsBounded and
 // continuesHandle), and the label is lowercase a-z, 0-9 and "-", 1 to dto.MaxSessionLabel
-// characters. An invalid or over-long label is not an address, so the scan continues, and the
+// characters; it is read case-insensitively (handles are) and returned lowercase, and it must end at a
+// boundary: the end of the text or a character that is none of a-z, A-Z, 0-9, "-", ".", "/" and ":", so
+// "@atlas:wt.example.com" and "@atlas:wt/x" are not addresses, and neither is "/@atlas:wt". An invalid or over-long label is not an address, so the scan continues, and the
 // first valid address wins.
 func SessionLabel(text, handle string) string {
 	if handle == "" {
@@ -28,7 +31,7 @@ func SessionLabel(text, handle string) string {
 		}
 		if i > 0 {
 			before, _ := utf8.DecodeLastRuneInString(text[:i])
-			if isWordRune(before) {
+			if isWordRune(before) || before == '/' { // not inside a path or a URL
 				continue
 			}
 		}
@@ -65,21 +68,41 @@ func cutPrefixFold(s, prefix string) (string, bool) {
 	return s[i:], true
 }
 
-// leadingLabel returns the maximal run of label characters at the start of s when it matches
-// dto.SessionLabelPattern, else "".
+// leadingLabel returns the maximal run of label characters (any case) at the start of s, lowercased, when it
+// ends at a boundary (endsLabel) and matches dto.SessionLabelPattern, else "".
 func leadingLabel(s string) string {
 	end := 0
 	for end < len(s) {
 		c := s[end]
-		if (c >= 'a' && c <= 'z') || (c >= '0' && c <= '9') || c == '-' {
+		if (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || (c >= '0' && c <= '9') || c == '-' {
 			end++
 			continue
 		}
 		break
 	}
-	label := s[:end]
+	if end < len(s) && !endsLabel(s[end:]) {
+		return ""
+	}
+	label := strings.ToLower(s[:end])
 	if label == "" || !sessionLabelPattern.MatchString(label) {
 		return ""
 	}
 	return label
+}
+
+// endsLabel reports whether rest, what follows a label, is a boundary: nothing, or a character that is none of
+// "/", ":" and the label characters. A "." is a boundary only as a sentence's end - last, or followed by a
+// space - so a host name ("wt.example.com") or a path never routes.
+func endsLabel(rest string) bool {
+	switch rest[0] {
+	case '/', ':':
+		return false
+	case '.':
+		if len(rest) == 1 {
+			return true
+		}
+		next, _ := utf8.DecodeRuneInString(rest[1:])
+		return unicode.IsSpace(next)
+	}
+	return true
 }

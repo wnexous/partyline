@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"log/slog"
 	"net/url"
 	"sync"
@@ -206,8 +207,8 @@ func (n *Notifier) recipientLocale(ctx context.Context, userID string) string {
 		return ""
 	}
 	if err != nil {
-		n.logger.Warn("webpush: cannot read the notification recipient's language",
-			"user_id", userID, "err", err)
+		// Neither the account nor the raw error is logged: the kind of the error says enough.
+		n.logger.Warn("webpush: cannot read the notification recipient's language", "err_kind", fmt.Sprintf("%T", err))
 	}
 	return locale
 }
