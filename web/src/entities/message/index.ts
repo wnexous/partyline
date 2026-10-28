@@ -9,6 +9,7 @@ export * from "./lib/voice";
 export * from "./model/author";
 export * from "./model/cache";
 export * from "./model/live";
+export * from "./model/permissions";
 export * from "./model/platform";
 export * from "./ui/attachment-view";
 export * from "./ui/audio-player";

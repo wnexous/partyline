@@ -1,13 +1,14 @@
 import { CopyIcon, PencilIcon, ReplyIcon, Trash2Icon } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
+import { ReactionBar, ReactionMenuRow } from "@/components/reaction-bar";
 import {
+  authorDisplayName,
   canDeleteMessage,
   canEditMessage,
-  DeleteMessageDialog,
-} from "@/components/message-actions";
-import { ReactionBar, ReactionMenuRow } from "@/components/reaction-bar";
-import { authorDisplayName, messageExcerpt } from "@/entities/message";
+  messageExcerpt,
+} from "@/entities/message";
+import { DeleteMessageDialog } from "@/features/delete-message";
 import { MORE_REACTIONS, PICKER_COLUMNS, ReactionPicker } from "@/features/react-to-message";
 import type { Message } from "@/shared/api/types.gen";
 import { useT } from "@/shared/i18n";

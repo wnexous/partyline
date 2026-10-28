@@ -5,29 +5,9 @@ import { useT } from "@/shared/i18n";
 import { ConfirmDialog } from "@/shared/ui/molecules/confirm-dialog";
 
 /*
- * What a viewer may do with one message: edit their own text (EDT-02, EDT-03) and delete their own or, in a
- * group they manage, anyone's but a system notice (DLT-02). The server decides; these rules only keep the menu
- * from offering what it would refuse. The menu itself is the message's (components/message-menu.tsx), which
- * opens as a sheet on a touch device and as a menu with a mouse; this file holds the rules and the question
- * that comes before a delete.
+ * The question that comes before a delete (DLT-09). The rules of what may be deleted are in
+ * entities/message (model/permissions.ts); the menu that offers it is the message's.
  */
-
-/** The viewer wrote the message here: a person's own message, not a chat's or an AI's, whoever they host. */
-export const isOwnMessage = (m: Message, meId: string) =>
-  m.author_kind === "user" && m.author_id === meId;
-
-/** Edit: the viewer's own text message that is still there (EDT-02, EDT-03). */
-export const canEditMessage = (m: Message, meId: string) =>
-  isOwnMessage(m, meId) && m.kind === "text" && m.deleted_at === undefined;
-
-/**
- * Delete: the viewer's own message and, when `canModerate` (they manage the group; nobody manages a DM), any
- * other, but never a system notice and never one that is deleted already (DLT-02, DLT-03).
- */
-export const canDeleteMessage = (m: Message, meId: string, canModerate: boolean) =>
-  m.deleted_at === undefined &&
-  m.author_kind !== "system" &&
-  (isOwnMessage(m, meId) || canModerate);
 
 /**
  * Asks before deleting (DLT-09): the message goes for everyone, files included, and it cannot be undone. It

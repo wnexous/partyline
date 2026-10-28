@@ -2,12 +2,12 @@ import { screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { useState } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { canDeleteMessage, canEditMessage } from "@/components/message-actions";
 import {
   type MessageCapabilities,
   MessageMenu,
   type MessageMenuTarget,
 } from "@/components/message-menu";
+import { canDeleteMessage, canEditMessage } from "@/entities/message";
 import type { MessagePages } from "@/shared/api/cache-types";
 import { queryKeys } from "@/shared/api/query-keys";
 import type { Message } from "@/shared/api/types.gen";
