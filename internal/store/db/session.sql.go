@@ -10,20 +10,50 @@ import (
 	"database/sql"
 )
 
-const ackSessionDelivery = `-- name: AckSessionDelivery :execrows
-DELETE FROM agent_session_deliveries
-WHERE message_id = ? AND agent_id = ? AND fell_back_at IS NULL
+const ackFallbackDelivery = `-- name: AckFallbackDelivery :execrows
+UPDATE agent_session_deliveries SET acked_at = ?1
+WHERE message_id = ?2 AND agent_id = ?3
+  AND fell_back_at IS NOT NULL AND acked_at IS NULL
 `
 
-type AckSessionDeliveryParams struct {
+type AckFallbackDeliveryParams struct {
+	AckedAt   sql.NullInt64
 	MessageID string
 	AgentID   string
 }
 
-// A live labelled session's acknowledgement. A row that already fell back belongs to the principal, so it
-// is left alone: a late acknowledgement never consumes a message twice (SESS-24).
+// The principal's acknowledgement of a fallen-back row: it becomes a tombstone.
+func (q *Queries) AckFallbackDelivery(ctx context.Context, arg AckFallbackDeliveryParams) (int64, error) {
+	result, err := q.db.ExecContext(ctx, ackFallbackDelivery, arg.AckedAt, arg.MessageID, arg.AgentID)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected()
+}
+
+const ackSessionDelivery = `-- name: AckSessionDelivery :execrows
+UPDATE agent_session_deliveries SET acked_at = ?1
+WHERE message_id = ?2 AND agent_id = ?3 AND owner_live = ?4
+  AND fell_back_at IS NULL AND acked_at IS NULL
+`
+
+type AckSessionDeliveryParams struct {
+	AckedAt   sql.NullInt64
+	MessageID string
+	AgentID   string
+	OwnerLive string
+}
+
+// The acknowledgement of the connection that owns a pending row. The row stays as a tombstone, so the
+// principal's queue keeps excluding the message. Another connection of the AI, even one holding the same
+// label, and a row that already fell back or was acknowledged are left alone (SESS-24).
 func (q *Queries) AckSessionDelivery(ctx context.Context, arg AckSessionDeliveryParams) (int64, error) {
-	result, err := q.db.ExecContext(ctx, ackSessionDelivery, arg.MessageID, arg.AgentID)
+	result, err := q.db.ExecContext(ctx, ackSessionDelivery,
+		arg.AckedAt,
+		arg.MessageID,
+		arg.AgentID,
+		arg.OwnerLive,
+	)
 	if err != nil {
 		return 0, err
 	}
@@ -31,8 +61,8 @@ func (q *Queries) AckSessionDelivery(ctx context.Context, arg AckSessionDelivery
 }
 
 const createSessionDelivery = `-- name: CreateSessionDelivery :exec
-INSERT INTO agent_session_deliveries (message_id, agent_id, label, created_at, fell_back_at)
-VALUES (?, ?, ?, ?, ?)
+INSERT INTO agent_session_deliveries (message_id, agent_id, label, owner_live, created_at, fell_back_at)
+VALUES (?, ?, ?, ?, ?, ?)
 ON CONFLICT (message_id, agent_id) DO NOTHING
 `
 
@@ -40,20 +70,22 @@ type CreateSessionDeliveryParams struct {
 	MessageID  string
 	AgentID    string
 	Label      string
+	OwnerLive  string
 	CreatedAt  int64
 	FellBackAt sql.NullInt64
 }
 
-// Records that a message was pushed to the AI's label (SESS-24, SESS-37, SESS-38). A row exists only
-// while the message belongs to that label: the session's acknowledgement deletes it, or the end of the
-// session marks fell_back_at and the principal consumes it. fell_back_at is NULL for a live label and
-// the dispatch time when the label has no session (the message is the principal's from the start). A
-// retried push is a no-op: the first row keeps the ownership it was given.
+// Records that a message was pushed to the AI's label (SESS-24, SESS-37, SESS-38). owner_live is the live
+// id of the connection the message was pushed to, and ” for a row born fallen back (fell_back_at is the
+// dispatch time then: the message is the principal's from the start). A row is never deleted by an
+// acknowledgement, so a retried push is a no-op: the first row keeps the ownership it was given, and an
+// acknowledged message is never delivered again.
 func (q *Queries) CreateSessionDelivery(ctx context.Context, arg CreateSessionDeliveryParams) error {
 	_, err := q.db.ExecContext(ctx, createSessionDelivery,
 		arg.MessageID,
 		arg.AgentID,
 		arg.Label,
+		arg.OwnerLive,
 		arg.CreatedAt,
 		arg.FellBackAt,
 	)
@@ -74,8 +106,7 @@ type DeleteSelfSessionDeliveriesParams struct {
 	Label   string
 }
 
-// The end of a labelled session drops the pending rows whose message the AI itself wrote instead of
-// falling them back: the AI must not receive its own text (SESS-38).
+// The label-keyed drop of the AI's own pending rows.
 func (q *Queries) DeleteSelfSessionDeliveries(ctx context.Context, arg DeleteSelfSessionDeliveriesParams) (int64, error) {
 	result, err := q.db.ExecContext(ctx, deleteSelfSessionDeliveries, arg.AgentID, arg.Label)
 	if err != nil {
@@ -85,6 +116,7 @@ func (q *Queries) DeleteSelfSessionDeliveries(ctx context.Context, arg DeleteSel
 }
 
 const deleteSessionDelivery = `-- name: DeleteSessionDelivery :exec
+
 DELETE FROM agent_session_deliveries WHERE message_id = ? AND agent_id = ?
 `
 
@@ -93,10 +125,68 @@ type DeleteSessionDeliveryParams struct {
 	AgentID   string
 }
 
+// Legacy queries below keep the callers of internal/agents compiling until the gateway is wired to the
+// owned rows; they are label-keyed and delete rows, so nothing new may use them.
 // Deletes a fallen-back or unowned row: the principal's or a tools-only process's consumption.
 func (q *Queries) DeleteSessionDelivery(ctx context.Context, arg DeleteSessionDeliveryParams) error {
 	_, err := q.db.ExecContext(ctx, deleteSessionDelivery, arg.MessageID, arg.AgentID)
 	return err
+}
+
+const fallBackOwnedDeliveries = `-- name: FallBackOwnedDeliveries :many
+UPDATE agent_session_deliveries
+SET fell_back_at = CASE WHEN EXISTS (
+        SELECT 1 FROM messages m
+        WHERE m.id = agent_session_deliveries.message_id
+          AND m.author_kind = 'agent' AND m.author_id = ?1)
+    THEN NULL ELSE ?2 END,
+    acked_at = CASE WHEN EXISTS (
+        SELECT 1 FROM messages m
+        WHERE m.id = agent_session_deliveries.message_id
+          AND m.author_kind = 'agent' AND m.author_id = ?1)
+    THEN ?2 ELSE NULL END
+WHERE agent_id = ?1 AND owner_live = ?3
+  AND fell_back_at IS NULL AND acked_at IS NULL
+RETURNING message_id, fell_back_at
+`
+
+type FallBackOwnedDeliveriesParams struct {
+	AgentID   string
+	Now       sql.NullInt64
+	OwnerLive string
+}
+
+type FallBackOwnedDeliveriesRow struct {
+	MessageID  string
+	FellBackAt sql.NullInt64
+}
+
+// The end of one connection: its pending rows (and only its: owner_live is the connection's live id, so a
+// later connection that reused the label is untouched) become the principal's, and the rows that fell
+// back come back so the gateway can push each to a live principal with the note. A row whose message the
+// AI itself wrote is acknowledged instead of falling back, because the AI never receives its own message
+// (SESS-38): it keeps fell_back_at NULL, so the caller keeps only the rows with a fell_back_at.
+func (q *Queries) FallBackOwnedDeliveries(ctx context.Context, arg FallBackOwnedDeliveriesParams) ([]FallBackOwnedDeliveriesRow, error) {
+	rows, err := q.db.QueryContext(ctx, fallBackOwnedDeliveries, arg.AgentID, arg.Now, arg.OwnerLive)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []FallBackOwnedDeliveriesRow
+	for rows.Next() {
+		var i FallBackOwnedDeliveriesRow
+		if err := rows.Scan(&i.MessageID, &i.FellBackAt); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
 }
 
 const fallBackSessionDeliveries = `-- name: FallBackSessionDeliveries :many
@@ -115,9 +205,7 @@ type FallBackSessionDeliveriesParams struct {
 	Label      string
 }
 
-// The end of a labelled session: the pending rows of that label become the principal's, and the ids come
-// back so the gateway can push each to a live principal with the note. A message the AI itself wrote is
-// never handed back to it (SESS-38).
+// The label-keyed end-of-session sweep.
 func (q *Queries) FallBackSessionDeliveries(ctx context.Context, arg FallBackSessionDeliveriesParams) ([]string, error) {
 	rows, err := q.db.QueryContext(ctx, fallBackSessionDeliveries, arg.FellBackAt, arg.AgentID, arg.Label)
 	if err != nil {
@@ -141,8 +229,100 @@ func (q *Queries) FallBackSessionDeliveries(ctx context.Context, arg FallBackSes
 	return items, nil
 }
 
+const getSessionDelivery = `-- name: GetSessionDelivery :one
+SELECT message_id, agent_id, label, owner_live, created_at, fell_back_at, acked_at FROM agent_session_deliveries WHERE message_id = ? AND agent_id = ?
+`
+
+type GetSessionDeliveryParams struct {
+	MessageID string
+	AgentID   string
+}
+
+// The delivery row of a message for an AI (label, owner, fallback and acknowledgement), which routes an
+// edit or a delete; sql.ErrNoRows when the message was never pushed to a label.
+func (q *Queries) GetSessionDelivery(ctx context.Context, arg GetSessionDeliveryParams) (AgentSessionDelivery, error) {
+	row := q.db.QueryRowContext(ctx, getSessionDelivery, arg.MessageID, arg.AgentID)
+	var i AgentSessionDelivery
+	err := row.Scan(
+		&i.MessageID,
+		&i.AgentID,
+		&i.Label,
+		&i.OwnerLive,
+		&i.CreatedAt,
+		&i.FellBackAt,
+		&i.AckedAt,
+	)
+	return i, err
+}
+
+const listOwnedPending = `-- name: ListOwnedPending :many
+SELECT id, room_id, seq, author_kind, author_id, author_user_id, author_iid, sender_id, sender_alt_id, sender_name, kind, text, reply_to, recipients_json, external_id, created_at, edited_at, deleted_at, interactive_json, answers_json, author_label, author_name, author_handle, author_ikind, author_avatar FROM message_views
+WHERE EXISTS (
+      SELECT 1 FROM agent_session_deliveries d
+      WHERE d.message_id = message_views.id AND d.agent_id = ?1
+        AND d.owner_live = ?2
+        AND d.fell_back_at IS NULL AND d.acked_at IS NULL)
+ORDER BY seq ASC, id ASC
+`
+
+type ListOwnedPendingParams struct {
+	AgentID   string
+	OwnerLive string
+}
+
+// What a connection owns and has not acknowledged, in sequence order: what a reconnecting session of the
+// same live id must receive again.
+func (q *Queries) ListOwnedPending(ctx context.Context, arg ListOwnedPendingParams) ([]MessageView, error) {
+	rows, err := q.db.QueryContext(ctx, listOwnedPending, arg.AgentID, arg.OwnerLive)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []MessageView
+	for rows.Next() {
+		var i MessageView
+		if err := rows.Scan(
+			&i.ID,
+			&i.RoomID,
+			&i.Seq,
+			&i.AuthorKind,
+			&i.AuthorID,
+			&i.AuthorUserID,
+			&i.AuthorIid,
+			&i.SenderID,
+			&i.SenderAltID,
+			&i.SenderName,
+			&i.Kind,
+			&i.Text,
+			&i.ReplyTo,
+			&i.RecipientsJson,
+			&i.ExternalID,
+			&i.CreatedAt,
+			&i.EditedAt,
+			&i.DeletedAt,
+			&i.InteractiveJson,
+			&i.AnswersJson,
+			&i.AuthorLabel,
+			&i.AuthorName,
+			&i.AuthorHandle,
+			&i.AuthorIkind,
+			&i.AuthorAvatar,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const listSessionDeliveriesByLabel = `-- name: ListSessionDeliveriesByLabel :many
-SELECT message_id, agent_id, label, created_at, fell_back_at FROM agent_session_deliveries
+SELECT message_id, agent_id, label, owner_live, created_at, fell_back_at, acked_at FROM agent_session_deliveries
 WHERE agent_id = ? AND label = ?
 ORDER BY created_at, message_id
 `
@@ -167,8 +347,10 @@ func (q *Queries) ListSessionDeliveriesByLabel(ctx context.Context, arg ListSess
 			&i.MessageID,
 			&i.AgentID,
 			&i.Label,
+			&i.OwnerLive,
 			&i.CreatedAt,
 			&i.FellBackAt,
+			&i.AckedAt,
 		); err != nil {
 			return nil, err
 		}
@@ -188,7 +370,8 @@ SELECT d.message_id, d.label
 FROM agent_session_deliveries d
 JOIN messages m ON m.id = d.message_id
 WHERE d.agent_id = ?1 AND m.room_id = ?2
-  AND d.fell_back_at IS NOT NULL
+  AND d.fell_back_at IS NOT NULL AND d.acked_at IS NULL
+  AND NOT (m.author_kind = 'agent' AND m.author_id = ?1)
 ORDER BY m.seq ASC
 `
 
@@ -233,7 +416,8 @@ WHERE room_id = ?1
   AND EXISTS (
       SELECT 1 FROM agent_session_deliveries d
       WHERE d.message_id = message_views.id AND d.agent_id = ?2
-        AND d.fell_back_at IS NOT NULL)
+        AND d.fell_back_at IS NOT NULL AND d.acked_at IS NULL)
+  AND NOT (author_kind = 'agent' AND author_id = ?2)
 ORDER BY seq ASC
 `
 
@@ -243,7 +427,8 @@ type ListSessionFallbacksParams struct {
 }
 
 // The principal's fallback queue of one room: the messages whose delivery to a label was not
-// acknowledged before that session ended, in the order they arrived.
+// acknowledged before that session ended, in the order they arrived. An acknowledged row is a tombstone
+// and is not listed, and neither is a message the AI wrote itself (SESS-38).
 func (q *Queries) ListSessionFallbacks(ctx context.Context, arg ListSessionFallbacksParams) ([]MessageView, error) {
 	rows, err := q.db.QueryContext(ctx, listSessionFallbacks, arg.RoomID, arg.AgentID)
 	if err != nil {
@@ -291,4 +476,23 @@ func (q *Queries) ListSessionFallbacks(ctx context.Context, arg ListSessionFallb
 		return nil, err
 	}
 	return items, nil
+}
+
+const releaseSessionDelivery = `-- name: ReleaseSessionDelivery :execrows
+DELETE FROM agent_session_deliveries
+WHERE message_id = ? AND agent_id = ? AND fell_back_at IS NULL
+`
+
+type ReleaseSessionDeliveryParams struct {
+	MessageID string
+	AgentID   string
+}
+
+// A live labelled session's acknowledgement by deletion, keyed by the AI only.
+func (q *Queries) ReleaseSessionDelivery(ctx context.Context, arg ReleaseSessionDeliveryParams) (int64, error) {
+	result, err := q.db.ExecContext(ctx, releaseSessionDelivery, arg.MessageID, arg.AgentID)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected()
 }

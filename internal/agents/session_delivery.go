@@ -84,7 +84,7 @@ func trustedFor(ctx context.Context, trust delivery.Trust, view db.MessageView, 
 func (g *Gateway) createSessionDelivery(ctx context.Context, messageID, agentID, label string, createdAt int64, fellBackAt sql.NullInt64) error {
 	return g.d.Store.WithTx(ctx, func(q *db.Queries) error {
 		return q.CreateSessionDelivery(ctx, db.CreateSessionDeliveryParams{
-			MessageID: messageID, AgentID: agentID, Label: label, CreatedAt: createdAt, FellBackAt: fellBackAt,
+			MessageID: messageID, AgentID: agentID, Label: label, OwnerLive: "", CreatedAt: createdAt, FellBackAt: fellBackAt,
 		})
 	})
 }
@@ -93,7 +93,7 @@ func (g *Gateway) createSessionDelivery(ctx context.Context, messageID, agentID,
 // principal, so a late acknowledgement cannot consume it twice (SESS-24).
 func (g *Gateway) ackSessionDelivery(ctx context.Context, messageID, agentID string) error {
 	return g.d.Store.WithTx(ctx, func(q *db.Queries) error {
-		_, err := q.AckSessionDelivery(ctx, db.AckSessionDeliveryParams{MessageID: messageID, AgentID: agentID})
+		_, err := q.ReleaseSessionDelivery(ctx, db.ReleaseSessionDeliveryParams{MessageID: messageID, AgentID: agentID})
 		return err
 	})
 }

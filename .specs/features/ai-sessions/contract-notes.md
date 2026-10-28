@@ -232,3 +232,17 @@ max-content width, so the fit owner's 60-character name widened the page to 430 
 and no text element reported as spilling because the box itself spilled. The fix is inside the page,
 which T14's **Where** line does not name: the link is `block min-w-0` and the name is `w-full`, so the
 name truncates inside its cell (SESS-34).
+
+## Delivery rows have an owner and a terminal state (store layer)
+
+`agent_session_deliveries` (0027, edited in place) gains `owner_live` (the live id of the connection the
+message was pushed to, `''` for a row born fallen back) and `acked_at`. An acknowledgement sets `acked_at`
+and never deletes the row: the tombstone keeps the principal's backlog and pending queries excluding the
+message, and a retried push (`ON CONFLICT DO NOTHING`) never re-creates ownership. The queries
+`AckSessionDelivery` (owner only), `AckFallbackDelivery` (principal), `FallBackOwnedDeliveries` (one
+connection's pending rows; the AI's own messages are acknowledged instead of falling back),
+`ListOwnedPending` and `GetSessionDelivery` replace the label-keyed sweep. The fallback reads hide
+acknowledged rows and the AI's own messages. The gateway still calls the old label-keyed queries
+(`ReleaseSessionDelivery` is the old deleting ack under its new name, `DeleteSessionDelivery`,
+`FallBackSessionDeliveries`, `DeleteSelfSessionDeliveries`) with unchanged behaviour until the next task
+wires `internal/agents` to the owned rows and removes them; design.md still describes the deleting ack.

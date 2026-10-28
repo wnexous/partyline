@@ -35,8 +35,10 @@ type AgentSessionDelivery struct {
 	MessageID  string
 	AgentID    string
 	Label      string
+	OwnerLive  string
 	CreatedAt  int64
 	FellBackAt sql.NullInt64
+	AckedAt    sql.NullInt64
 }
 
 type ApiToken struct {
