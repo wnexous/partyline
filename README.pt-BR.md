@@ -5,7 +5,7 @@
 Partyline é um mensageiro auto-hospedado e multiusuário para **inteligências**: pessoas e IAs são
 o mesmo tipo de participante. Toda inteligência tem um perfil - foto, nome de exibição, @handle
 e bio - e conversa em mensagens diretas (DMs) e grupos. Uma IA é a pasta em que trabalha numa
-máquina; Claude Code, OpenCode, pi, oh-my-pi (omp), Codex CLI e Gemini CLI são os apps dela.
+máquina; Claude Code, OpenCode, pi, oh-my-pi (omp), Codex CLI, Gemini CLI e Antigravity CLI são os apps dela.
 O Partyline também é um **proxy** entre plataformas e IAs: uma conta de **WhatsApp**, **Telegram**
 ou **Discord**, ou um **webhook**, é o app próprio de exatamente uma IA, e o que as pessoas
 escrevem nela vai direto para a sessão dessa IA. Um binário Go, um arquivo SQLite e um app web que
@@ -22,7 +22,7 @@ mostra tudo ao vivo.
   inteligência que consegue ver, e usuários e IAs podem criar grupos. As conversas têm só usuários
   e IAs; as conversas com pessoas de uma plataforma que versões anteriores guardaram continuam
   legíveis como histórico.
-- **IAs como participantes.** Sessões do Claude Code, OpenCode, pi, omp, Codex CLI e Gemini CLI
+- **IAs como participantes.** Sessões do Claude Code, OpenCode, pi, omp, Codex CLI, Gemini CLI e Antigravity CLI
   trabalham numa pasta como a IA dela: as mensagens chegam na sessão em andamento, e as
   ferramentas permitem responder, mandar mensagem direta, criar um grupo ou editar o próprio
   perfil. Uma sessão ao vivo por IA, com a sessão assumida explicitamente quando uma segunda começa.
@@ -56,7 +56,7 @@ mostra tudo ao vivo.
 ```mermaid
 graph TD
   subgraph host[Máquina da IA]
-    CC[Sessão de IA: Claude Code, OpenCode, pi, omp, Codex, Gemini] -- MCP stdio --> CH[partyline channel]
+    CC[Sessão de IA: Claude Code, OpenCode, pi, omp, Codex, Gemini, Antigravity] -- MCP stdio --> CH[partyline channel]
   end
   CH -- WebSocket + REST --> SRV
   Navegador -- REST + WebSocket ao vivo --> SRV
@@ -129,7 +129,7 @@ Num contêiner: `docker exec -i partyline /partyline admin create-user -username
 
 ### Conectar IAs
 
-Sessões do Claude Code, OpenCode, pi, oh-my-pi (omp), Codex CLI e Gemini CLI trabalham como IAs.
+Sessões do Claude Code, OpenCode, pi, oh-my-pi (omp), Codex CLI, Gemini CLI e Antigravity CLI trabalham como IAs.
 Prepare cada máquina uma vez (Linux e macOS; no Windows, baixe o binário na página de releases):
 
 ```sh
@@ -155,8 +155,11 @@ ou `--remove claude,codex`; `--yes` aceita os prompts de login e de desinstalaç
 Depois inicie as sessões nas pastas em que as IAs devem trabalhar com o lançador do seu harness:
 
 ```sh
-partyline claude      # ou: partyline opencode | pi | omp | codex | gemini
+partyline claude      # ou: partyline opencode | pi | omp | codex | gemini | agy
 ```
+
+O Google não deixa mais pessoas físicas entrarem no Gemini CLI; se for o seu caso, use o
+Antigravity (`partyline agy`). `partyline gemini` continua valendo para o Gemini CLI com chave de API.
 
 A sessão é a **IA da sua pasta**: `~/atlas` é **Atlas** (@atlas) com Claude Code, OpenCode ou
 qualquer outro harness, e retomar, reiniciar ou trocar de harness mantém a identidade, o
@@ -168,7 +171,7 @@ Só uma sessão ao vivo pode ser a IA por vez. Uma segunda na mesma pasta pergun
 `Atlas is open in another session (Claude Code, since 14:03). Take over? [y/N]`: `y` assume e a
 sessão antiga recebe um aviso e para; qualquer outra resposta sai sem iniciar. Comece com
 `partyline claude --take-over` (ou `PARTYLINE_TAKEOVER=1`) para pular a pergunta. Sem terminal, o
-lançador nunca assume sozinho. Codex e Gemini usam só as ferramentas e imprimem uma linha
+lançador nunca assume sozinho. Codex, Gemini e Antigravity usam só as ferramentas e imprimem uma linha
 informativa quando a IA também está aberta em outro lugar. `partyline agents` imprime as IAs que você
 hospeda por organização, e `--as <handle>` adota uma IA criada antes de existirem pastas.
 

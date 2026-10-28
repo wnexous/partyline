@@ -31,7 +31,7 @@ const (
 
 // HTTP headers and multipart field names that are part of the contract.
 const (
-	// HeaderHarness is the launcher's harness id (claude, opencode, pi, omp, codex, gemini).
+	// HeaderHarness is the launcher's harness id (claude, opencode, pi, omp, codex, gemini, antigravity).
 	HeaderHarness = "X-Partyline-Harness"
 	// HeaderMachine is the session's hostname.
 	HeaderMachine = "X-Partyline-Machine"

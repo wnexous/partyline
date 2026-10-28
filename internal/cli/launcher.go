@@ -37,13 +37,22 @@ var claudeChannelArgs = []string{"--dangerously-load-development-channels", "ser
 const launcherSessionTimeout = 2 * time.Second
 
 // launcher is one `partyline <harness>` command (HAR-03): the harness binary (named like the
-// registrar id) and the arguments put before the user's. live is whether the harness opens a
-// live session; those can take the AI over (claude, opencode, pi, omp). Codex and Gemini use the tools
-// only (design Spec issue 6).
+// registrar id unless bin names it, as Antigravity's `agy`) and the arguments put before the user's.
+// live is whether the harness opens a live session; those can take the AI over (claude, opencode, pi,
+// omp). Codex, Gemini and Antigravity use the tools only (design Spec issue 6).
 type launcher struct {
 	id    string
+	bin   string
 	extra []string
 	live  bool
+}
+
+// binary is the program the launcher starts: bin, else the harness id.
+func (l launcher) binary() string {
+	if l.bin != "" {
+		return l.bin
+	}
+	return l.id
 }
 
 // launchers are the harnesses `partyline <id>` starts, in the order --help lists them.
@@ -54,10 +63,22 @@ var launchers = []launcher{
 	{id: "omp", live: true},
 	{id: "codex"},
 	{id: "gemini"},
+	{id: "antigravity", bin: "agy"},
 }
 
 // launcherAliases are other spellings of a launcher id.
-var launcherAliases = map[string]string{"claudecode": "claude", "claude-code": "claude"}
+var launcherAliases = map[string]string{"claudecode": "claude", "claude-code": "claude", "agy": "antigravity"}
+
+// launcherCommand is the command that starts harness id (`partyline <command>`): the short one when
+// the launcher has its own binary name (agy for Antigravity), else the id.
+func launcherCommand(id string) string {
+	for _, l := range launchers {
+		if l.id == id && l.bin != "" {
+			return l.bin
+		}
+	}
+	return id
+}
 
 // findLauncher returns the launcher a command name selects.
 func findLauncher(name string) (launcher, bool) {
@@ -165,7 +186,7 @@ func placementOf(opts launcherOptions, io stdio) launchPlacement {
 // be refused, and a refusal is printed and exits 1 without starting anything. A harness that opens a
 // live session (claude, opencode, pi, omp) never asks anything: it starts as another session of the AI,
 // which the channel announces (SESS-15, SESS-16), or takes the AI over with PARTYLINE_TAKEOVER=1 when
-// --take-over or PARTYLINE_TAKEOVER=1 gave the consent (SESS-13). Codex and Gemini use the tools only
+// --take-over or PARTYLINE_TAKEOVER=1 gave the consent (SESS-13). Codex, Gemini and Antigravity use the tools only
 // and only announce the live session. Without the binary it exits 127; when Partyline is not
 // registered in the harness it warns once and starts anyway.
 func launch(ctx context.Context, l launcher, args []string, io stdio) int {
@@ -179,7 +200,7 @@ func launch(ctx context.Context, l launcher, args []string, io stdio) int {
 	if lookPath == nil {
 		lookPath = execLookPath
 	}
-	path, err := lookPath(l.id)
+	path, err := lookPath(l.binary())
 	if err != nil {
 		fmt.Fprintf(io.stderr, "partyline %s: %s is not installed (install it, then run partyline setup)\n", l.id, title)
 		return 127
@@ -264,7 +285,7 @@ func launch(ctx context.Context, l launcher, args []string, io stdio) int {
 			userArgs = append([]string{"--standalone"}, userArgs...)
 		}
 	}
-	argv := append(append([]string{l.id}, l.extra...), userArgs...)
+	argv := append(append([]string{l.binary()}, l.extra...), userArgs...)
 	run := io.exec
 	if run == nil {
 		run = execProgram
@@ -309,7 +330,7 @@ func launchMainFolder(folder, parent string) string {
 	return ""
 }
 
-// announceToolsOnly prints the one informational line of Codex and Gemini when the folder's AI
+// announceToolsOnly prints the one informational line of Codex, Gemini and Antigravity when the folder's AI
 // has a live session elsewhere (design Spec issue 6): those harnesses use the tools only, so
 // there is nothing to take over.
 func announceToolsOnly(lookup func() sessionLookup, io stdio) {

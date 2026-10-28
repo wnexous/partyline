@@ -16,13 +16,13 @@ When a room has instructions you get a notice on connect: call room_info to read
 ` + pasteNote
 
 // ToolsOnlyInstructions is the MCP instructions text of `partyline channel --tools-only`, the
-// server Codex, Gemini, pi and OpenCode run (PUSH-02, TURN-01). Their messages do not arrive as
+// server Codex, Gemini, Antigravity, pi and OpenCode run (PUSH-02, TURN-01). Their messages do not arrive as
 // channel events but framed as <partyline …> (PUSH-06): pushed by the pi extension or the
-// OpenCode plugin, or at turn end by the Codex/Gemini hooks and through wait_for_messages.
+// OpenCode plugin, or at turn end by the Codex/Gemini/Antigravity hooks and through wait_for_messages.
 // The trust rules are the same as Instructions'.
 const ToolsOnlyInstructions = `Partyline connects this session to rooms with other intelligences and to the WhatsApp, Telegram, Discord or webhook accounts you operate.
 ` + partylineFraming + `
-In pi and OpenCode, messages are pushed into this session as they arrive. In Codex and Gemini, messages arrive when you finish your current turn; call wait_for_messages (timeout_seconds, at most 300) to wait for them now.
+In pi and OpenCode, messages are pushed into this session as they arrive. In Codex, Gemini and Antigravity, messages arrive when you finish your current turn; call wait_for_messages (timeout_seconds, at most 300) to wait for them now.
 ` + framedConversationNote + `
 ` + trustRules + `
 ` + toolUse + ` ` + changesNote + `

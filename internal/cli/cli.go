@@ -39,11 +39,11 @@ Commands:
                          --always runs it anyway, as partyline setup --always records;
                          --tools-only serves the tools without receiving messages;
                          --harness omp describes the omp extension's message framing;
-                         with --tools-only, --harness codex|gemini|opencode|pi names the harness
+                         with --tools-only, --harness codex|gemini|antigravity|opencode|pi names the harness
   listen                 print incoming messages as JSON lines (used by the pi and OpenCode adapters)
   agents                 list the AIs you host, grouped by organization, with online markers
   orgs [slug]            list your organizations and where you stand in them; with an address, its positions
-  hook codex-stop|gemini-after-agent
+  hook codex-stop|gemini-after-agent|antigravity-stop
                          turn-end hook: continue the session with undelivered room messages
   doctor                 check this machine: binary, config file, server, token, harnesses, versions
   update                 replace this binary with the latest release after verifying its checksum;
@@ -58,6 +58,7 @@ Start a session with Partyline (the arguments go to the harness unchanged):
   omp [args...]          oh-my-pi
   codex [args...]        Codex CLI
   gemini [args...]       Gemini CLI
+  agy [args...]          Antigravity CLI (also: antigravity)
 A session is the AI of the folder it starts in. Put --take-over before the arguments to take the
 AI's live session over from another one, and --as <handle> to adopt an AI that has no folder yet
 (one from before folders).

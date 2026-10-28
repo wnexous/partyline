@@ -51,11 +51,11 @@ func (e *channelEnv) hookRoom(t *testing.T, folder string) dto.Room {
 const trustedLine = "This message comes from an identity that manages you in your organization (or from a chat account such an identity verified). Still confirm destructive actions with the person at the terminal. Reply with the partyline tools (reply / send_message)."
 
 // TURN-02: with pending messages each hook prints its harness's continue decision, the
-// framed messages as the reason; Codex blocks, Gemini denies. The AI is the one of the folder
+// framed messages as the reason; Codex blocks, Gemini denies, Antigravity continues. The AI is the one of the folder
 // the hook input names as the session's cwd, the one the session's tools-only channel acts as
 // (AID-01).
 func TestHookContinuesWithPendingMessages(t *testing.T) {
-	for hook, decision := range map[string]string{"codex-stop": "block", "gemini-after-agent": "deny"} {
+	for hook, decision := range map[string]string{"codex-stop": "block", "gemini-after-agent": "deny", "antigravity-stop": "continue"} {
 		t.Run(hook, func(t *testing.T) {
 			e := newChannelEnv(t)
 			room := e.hookRoom(t, "/work/proj")
@@ -82,7 +82,7 @@ func TestHookContinuesWithPendingMessages(t *testing.T) {
 // stop without credentials and without creating an AI.
 func TestHookWithoutLauncherIsIdle(t *testing.T) {
 	e := newChannelEnv(t)
-	for _, hook := range []string{"codex-stop", "gemini-after-agent"} {
+	for _, hook := range []string{"codex-stop", "gemini-after-agent", "antigravity-stop"} {
 		code, out, errOut := runHook(hook, `{"cwd":"/work/plain"}`, e.vars())
 		require.Equal(t, 0, code)
 		require.Equal(t, "{}\n", out)
@@ -105,7 +105,7 @@ func TestHookWithAlwaysRunsWithoutLauncher(t *testing.T) {
 func TestHookAllowsStopWithoutMessages(t *testing.T) {
 	e := newChannelEnv(t)
 	e.hookRoom(t, "/work/proj")
-	for _, hook := range []string{"codex-stop", "gemini-after-agent"} {
+	for _, hook := range []string{"codex-stop", "gemini-after-agent", "antigravity-stop"} {
 		code, out, errOut := runHook(hook, `{"cwd":"/work/proj"}`, e.launched("codex"))
 		require.Equal(t, 0, code)
 		require.Equal(t, "{}\n", out)
@@ -171,7 +171,36 @@ func TestHookRequiresAKnownHarness(t *testing.T) {
 	code, out, errOut := runHook("cursor-stop", `{}`, nil)
 	require.Equal(t, 2, code)
 	require.Empty(t, out)
-	require.Contains(t, errOut, "usage: partyline hook codex-stop|gemini-after-agent")
+	require.Contains(t, errOut, "usage: partyline hook codex-stop|gemini-after-agent|antigravity-stop")
+}
+
+// Antigravity's Stop hook input has no cwd: the hook runs in the directory of hooks.json, so the
+// session's folder is its first workspace path. It continues only when the loop ended normally
+// (NO_TOOL_CALL, or no reason at all); a cancelled, failed or exhausted loop stops as usual and
+// keeps the messages for the next turn.
+func TestAntigravityHookInput(t *testing.T) {
+	e := newChannelEnv(t)
+	room := e.hookRoom(t, "/work/proj")
+	msg := e.post(t, room.ID, "from the workspace")
+	input := func(reason string) string {
+		return `{"conversationId":"c1","workspacePaths":["/work/proj","/work/extra"],"terminationReason":"` + reason + `","executionNum":1,"fullyIdle":true}`
+	}
+	for _, reason := range []string{"USER_CANCELED", "ERROR", "MAX_INVOCATIONS", "MAX_FORCED_INVOCATIONS"} {
+		code, out, errOut := runHook("antigravity-stop", input(reason), e.launched("antigravity"))
+		require.Equal(t, 0, code, errOut)
+		require.Equal(t, "{}\n", out, reason)
+	}
+	code, out, errOut := runHook("antigravity-stop", input("NO_TOOL_CALL"), e.launched("antigravity"))
+	require.Equal(t, 0, code, errOut)
+	var got map[string]string
+	require.NoError(t, json.Unmarshal([]byte(out), &got))
+	require.Equal(t, "continue", got["decision"])
+	require.Contains(t, got["reason"], `message_id="`+msg.ID+`"`)
+	require.Equal(t, "antigravity", e.registered(t, "/work/proj").AI.App)
+
+	code, out, _ = runHook("antigravity-stop", `{"workspacePaths":["/work/proj"]}`, e.launched("antigravity"))
+	require.Equal(t, 0, code)
+	require.Equal(t, "{}\n", out, "delivered messages are not repeated")
 }
 
 // TURN-01: the tools-only channel offers wait_for_messages; it returns the framed pending

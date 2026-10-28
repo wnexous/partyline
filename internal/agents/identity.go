@@ -20,17 +20,18 @@ const (
 // harnessLabels are the readable names of the known harnesses (ID-01). The keys are the
 // launcher ids (`partyline <harness>`).
 var harnessLabels = map[string]string{
-	"claude":   "Claude Code",
-	"opencode": "OpenCode",
-	"pi":       "pi",
-	"omp":      "oh-my-pi",
-	"codex":    "Codex",
-	"gemini":   "Gemini",
-	"agent":    "Agent",
+	"claude":      "Claude Code",
+	"opencode":    "OpenCode",
+	"pi":          "pi",
+	"omp":         "oh-my-pi",
+	"codex":       "Codex",
+	"gemini":      "Gemini",
+	"antigravity": "Antigravity",
+	"agent":       "Agent",
 }
 
 // harnessAliases map other launcher names to their harness id.
-var harnessAliases = map[string]string{"claudecode": "claude", "claude-code": "claude"}
+var harnessAliases = map[string]string{"claudecode": "claude", "claude-code": "claude", "agy": "antigravity"}
 
 // HarnessID returns the harness id for a header value: a known id or alias, else "agent".
 func HarnessID(v string) string {

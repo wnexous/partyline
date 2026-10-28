@@ -123,6 +123,8 @@ func (m *launchMachine) register(t *testing.T, id string) {
 		write(".gemini/settings.json", `{"mcpServers":{"partyline":{"command":"`+launchBinary+`","args":["channel","--tools-only"]}}}`)
 	case "codex":
 		m.codex = true
+	case "antigravity":
+		write(".gemini/config/mcp_config.json", `{"mcpServers":{"partyline":{"command":"`+launchBinary+`","args":["channel","--tools-only","--harness","antigravity"],"disabled":false}}}`)
 	default: // the file harnesses write their own entry
 		env := harness.Env{Home: m.home, Binary: launchBinary, Version: "dev", Getenv: func(string) string { return "" }}
 		for _, r := range harness.All(env) {
@@ -889,4 +891,60 @@ func TestLauncherNeverHandsOnAnotherSessionsLiveID(t *testing.T) {
 			require.Equal(t, m.pid, pid)
 		})
 	}
+}
+
+// HAR-03 (Antigravity): `partyline agy` and `partyline antigravity` start the `agy` binary with the user's
+// arguments unchanged and PARTYLINE_HARNESS=antigravity (the id the server knows), no live id; without agy on
+// PATH they exit 127 naming Antigravity, and without a registration they warn with the harness id.
+func TestAntigravityLauncher(t *testing.T) {
+	user := []string{"--continue", "--dangerously-skip-permissions", "--add-dir", "/work/other", "-i", "hi there"}
+	for _, command := range []string{"agy", "antigravity"} {
+		t.Run(command, func(t *testing.T) {
+			m := newLaunchMachine(t)
+			m.onPath["agy"] = true
+			m.register(t, "antigravity")
+
+			r := m.run(t, append([]string{command}, user...)...)
+			require.Equal(t, 7, r.code, r.stderr)
+			require.Empty(t, r.stderr)
+			require.True(t, r.execed)
+			require.Equal(t, "/usr/local/bin/agy", r.path)
+			require.Equal(t, append([]string{"agy"}, user...), r.argv)
+			require.Equal(t, []string{"HOME=" + m.home, "PATH=/usr/local/bin:/usr/bin", "LANG=C.UTF-8", "PARTYLINE_FOLDER=/work/acme", "PARTYLINE_HARNESS=antigravity"}, r.env)
+		})
+
+		t.Run(command+" without agy", func(t *testing.T) {
+			m := newLaunchMachine(t)
+			r := m.run(t, command, "--version")
+			require.Equal(t, 127, r.code)
+			require.Equal(t, "partyline antigravity: Antigravity is not installed (install it, then run partyline setup)\n", r.stderr)
+			require.False(t, r.execed)
+		})
+
+		t.Run(command+" not registered", func(t *testing.T) {
+			m := newLaunchMachine(t)
+			m.onPath["agy"] = true
+			r := m.run(t, command)
+			require.Equal(t, "partyline antigravity: Partyline is not registered in Antigravity; run partyline setup --harness antigravity. Starting anyway.\n", r.stderr)
+			require.True(t, r.execed)
+		})
+	}
+}
+
+// Spec issue 6: Antigravity opens no live session either: its launcher never takes over and prints the
+// informational line when the AI is live elsewhere.
+func TestAntigravityLauncherAnnouncesTheLiveSession(t *testing.T) {
+	since := time.Date(2026, 10, 21, 12, 30, 0, 0, time.UTC)
+	m := newLaunchMachine(t)
+	m.onPath["agy"] = true
+	m.register(t, "antigravity")
+	m.terminals = map[int]bool{0: true, 2: true}
+	m.answerSession(t, sessionState("Atlas", "claude", since), nil)
+
+	r := m.run(t, "agy", "--take-over")
+	require.Equal(t, 7, r.code, r.stderr)
+	require.True(t, r.execed)
+	require.Equal(t, "Atlas is also open in another session (Claude Code, since "+since.In(time.Local).Format("15:04")+"); this session uses tools only\n", r.stderr)
+	require.NotContains(t, r.env, "PARTYLINE_TAKEOVER=1")
+	require.Empty(t, envValues(r.env, liveEnvVar))
 }

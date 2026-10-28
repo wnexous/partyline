@@ -31,6 +31,7 @@ describe("connect an agent (WIZ-01)", () => {
     { tab: "omp", start: "partyline omp" },
     { tab: "Codex", start: "partyline codex" },
     { tab: "Gemini", start: "partyline gemini" },
+    { tab: "Antigravity", start: "partyline agy" },
   ];
   const PUSH = "Room messages arrive in the running session as they come in.";
   const TURN_END =
@@ -83,7 +84,7 @@ describe("connect an agent (WIZ-01)", () => {
       await user.click(within(tabs).getByRole("tab", { name: h.tab }));
       const panel = within(dialog).getByRole("tabpanel");
       expect(code(panel, "Start command")).toBe(h.start);
-      const turnEnd = h.tab === "Codex" || h.tab === "Gemini";
+      const turnEnd = h.tab === "Codex" || h.tab === "Gemini" || h.tab === "Antigravity";
       expect(within(panel).getByText(turnEnd ? TURN_END : PUSH)).toBeInTheDocument();
       expect(within(panel).queryByText(turnEnd ? PUSH : TURN_END)).toBeNull();
     }

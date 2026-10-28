@@ -17,14 +17,15 @@ import (
 const hookTimeout = 10 * time.Second
 
 // hookDecisions is the "keep going" decision of each harness's turn-end hook (TURN-02): Codex
-// CLI's Stop hook blocks the stop, Gemini CLI's AfterAgent hook denies the response; both take
-// the reason as the next prompt.
+// CLI's Stop hook blocks the stop, Gemini CLI's AfterAgent hook denies the response, Antigravity's
+// Stop hook continues the loop; all take the reason as the next prompt.
 var hookDecisions = map[string]string{
 	"codex-stop":         "block",
 	"gemini-after-agent": "deny",
+	"antigravity-stop":   "continue",
 }
 
-// hookCmd runs `partyline hook codex-stop|gemini-after-agent`: it reads the hook input (JSON
+// hookCmd runs `partyline hook codex-stop|gemini-after-agent|antigravity-stop`: it reads the hook input (JSON
 // with the session's cwd) from stdin, takes the agent's undelivered room messages and platform
 // events (the messages that arrived on the connections it operates), and the count of the platform
 // messages the server dropped, and prints the harness's decision to continue with them as the
@@ -32,7 +33,7 @@ var hookDecisions = map[string]string{
 // block the harness.
 func hookCmd(ctx context.Context, args []string, io stdio) int {
 	if len(args) < 1 || hookDecisions[args[0]] == "" {
-		fmt.Fprintln(io.stderr, "usage: partyline hook codex-stop|gemini-after-agent")
+		fmt.Fprintln(io.stderr, "usage: partyline hook codex-stop|gemini-after-agent|antigravity-stop")
 		return 2
 	}
 	name := args[0]
@@ -57,9 +58,21 @@ func hookCmd(ctx context.Context, args []string, io stdio) int {
 	}
 	var in struct {
 		Cwd string `json:"cwd"`
+		// Antigravity's hook input has no cwd (the hook runs in the directory of hooks.json): it
+		// names the workspaces, and why the loop stopped.
+		WorkspacePaths    []string `json:"workspacePaths"`
+		TerminationReason string   `json:"terminationReason"`
 	}
 	data, _ := readAllLimited(io.stdin, 1<<20)
 	_ = json.Unmarshal(data, &in)
+	// Only a turn that ended normally continues with messages: a cancelled, failed or exhausted
+	// Antigravity loop stops (an empty reason is a harness that does not send one).
+	if name == "antigravity-stop" && in.TerminationReason != "" && in.TerminationReason != "NO_TOOL_CALL" {
+		return allow()
+	}
+	if in.Cwd == "" && len(in.WorkspacePaths) > 0 {
+		in.Cwd = in.WorkspacePaths[0]
+	}
 
 	creds, err := cliconfig.Resolve(cliconfig.Config{}, io.getenv)
 	if err != nil {

@@ -20,7 +20,7 @@ export function installCommand(origin: string): string {
   return `curl -fsSL ${origin.replace(/\/+$/, "")}/install.sh | sh`;
 }
 
-export type HarnessId = "claude" | "opencode" | "pi" | "omp" | "codex" | "gemini";
+export type HarnessId = "claude" | "opencode" | "pi" | "omp" | "codex" | "gemini" | "antigravity";
 
 /** push: messages reach the running session; turn: at turn end or through wait_for_messages. */
 export type Delivery = "push" | "turn";
@@ -109,6 +109,16 @@ export const HARNESSES: readonly Harness[] = [
     delivery: "turn",
     manual: {
       file: "~/.gemini/settings.json",
+      entry: json({ mcpServers: { partyline: { command: "partyline", args: toolsOnly } } }),
+    },
+  },
+  {
+    id: "antigravity",
+    title: "Antigravity",
+    start: "partyline agy",
+    delivery: "turn",
+    manual: {
+      file: "~/.gemini/config/mcp_config.json",
       entry: json({ mcpServers: { partyline: { command: "partyline", args: toolsOnly } } }),
     },
   },

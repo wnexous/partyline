@@ -496,12 +496,13 @@ func TestBackupsArePrivate(t *testing.T) {
 	}
 
 	want := map[string][]string{
-		"claude":   nil,
-		"codex":    {hooks + ".partyline.bak"},
-		"gemini":   {filepath.Join(env.Home, ".gemini/settings.json.partyline.bak")},
-		"opencode": {filepath.Join(env.Home, ".config/opencode/opencode.json.partyline.bak")},
-		"pi":       {pi + ".partyline.bak"},
-		"omp":      {filepath.Join(env.Home, ".omp/agent/mcp.json.partyline.bak")},
+		"claude":      nil,
+		"codex":       {hooks + ".partyline.bak"},
+		"gemini":      {filepath.Join(env.Home, ".gemini/settings.json.partyline.bak")},
+		"antigravity": {filepath.Join(env.Home, ".gemini/config/hooks.json.partyline.bak")},
+		"opencode":    {filepath.Join(env.Home, ".config/opencode/opencode.json.partyline.bak")},
+		"pi":          {pi + ".partyline.bak"},
+		"omp":         {filepath.Join(env.Home, ".omp/agent/mcp.json.partyline.bak")},
 	}
 	for _, r := range All(env) {
 		require.Equal(t, want[r.ID()], r.Backups(), r.ID())

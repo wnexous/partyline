@@ -50,7 +50,7 @@ type Options struct {
 	ToolsOnly bool
 	// LiveID is, for a tools-only process, the id of the `partyline listen` process of the same pi or
 	// OpenCode session (SESS-45): sent as X-Partyline-Live with every call, so the server resolves the
-	// session the tools act as. Empty for Codex and Gemini, which hold no such process; the full channel
+	// session the tools act as. Empty for Codex, Gemini and Antigravity, which hold no such process; the full channel
 	// ignores it and uses its own.
 	LiveID string
 	// Harness is the harness id sent on connect; HarnessOmp also switches the MCP

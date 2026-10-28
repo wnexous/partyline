@@ -45,7 +45,7 @@ func (c *client) pending(ctx context.Context, wait int) (dto.AgentPending, error
 }
 
 // registerWait adds wait_for_messages, the way a session without pushed messages (Codex,
-// Gemini) receives them (TURN-01).
+// Gemini, Antigravity) receives them (TURN-01).
 func (t *tools) registerWait(srv *mcp.Server) {
 	srv.HandleTool(mcp.ToolDef{
 		Name:        "wait_for_messages",

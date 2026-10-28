@@ -194,6 +194,7 @@ test("connect an agent shows the install and setup commands and each harness's s
     ["omp", "partyline omp", PUSH, "~/.omp/agent/mcp.json"],
     ["Codex", "partyline codex", TURN_END, "~/.codex/config.toml"],
     ["Gemini", "partyline gemini", TURN_END, "~/.gemini/settings.json"],
+    ["Antigravity", "partyline agy", TURN_END, "~/.gemini/config/mcp_config.json"],
   ];
   const tabs = dialog.getByRole("tablist", { name: "Harness" });
   await expect(tabs.getByRole("tab")).toHaveText(harnesses.map(([tab]) => tab));
