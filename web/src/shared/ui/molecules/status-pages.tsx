@@ -1,7 +1,8 @@
 import { Link } from "@tanstack/react-router";
-import { CompassIcon, ShieldOffIcon, TriangleAlertIcon } from "lucide-react";
+import { ShieldOffIcon, TriangleAlertIcon } from "lucide-react";
 import { useT } from "@/shared/i18n";
 import { EmptyState } from "@/shared/ui/molecules/empty-state";
+import { NotFound } from "@/shared/ui/molecules/not-found";
 import { Button } from "@/shared/ui/primitives/button";
 
 /** 403 for members opening admin routes (UI-21). */
@@ -27,17 +28,15 @@ export function NotFoundPage() {
   const t = useT();
   return (
     <main className="grid min-h-[60dvh] place-items-center">
-      <EmptyState
-        icon={CompassIcon}
+      <NotFound
         title={t("notFound.title")}
+        body={t("notFound.body")}
         action={
           <Button asChild variant="outline">
             <Link to="/">{t("notFound.back")}</Link>
           </Button>
         }
-      >
-        <p>{t("notFound.body")}</p>
-      </EmptyState>
+      />
     </main>
   );
 }

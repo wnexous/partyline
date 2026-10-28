@@ -24,10 +24,10 @@ import type { AIContact, Contacts, IntelligenceRef } from "@/shared/api/types.ge
 import { useI18n } from "@/shared/i18n";
 import { useDebouncedValue } from "@/shared/lib/use-debounced-value";
 import { EmptyState } from "@/shared/ui/molecules/empty-state";
+import { ListSkeleton } from "@/shared/ui/molecules/list-skeleton";
 import { PageHeader } from "@/shared/ui/molecules/page-header";
 import { Button } from "@/shared/ui/primitives/button";
 import { Input } from "@/shared/ui/primitives/input";
-import { Skeleton } from "@/shared/ui/primitives/skeleton";
 
 export const Route = createFileRoute("/_app/contacts/")({
   component: ContactsPage,
@@ -315,18 +315,5 @@ function Section({
       </div>
       {children}
     </section>
-  );
-}
-
-function ListSkeleton() {
-  return (
-    <ul aria-hidden="true" className="divide-y border-b">
-      {[0, 1, 2].map((i) => (
-        <li key={i} className="space-y-2 px-4 py-4 md:px-8">
-          <Skeleton className="h-4 w-40" />
-          <Skeleton className="h-3 w-56 max-w-full" />
-        </li>
-      ))}
-    </ul>
   );
 }

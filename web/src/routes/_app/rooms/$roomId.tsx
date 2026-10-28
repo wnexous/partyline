@@ -42,7 +42,7 @@ import {
 import { useI18n, useT } from "@/shared/i18n";
 import { useIsMobile } from "@/shared/lib/device";
 import { BackToConversations } from "@/shared/ui/molecules/back-link";
-import { EmptyState } from "@/shared/ui/molecules/empty-state";
+import { NotFound } from "@/shared/ui/molecules/not-found";
 import {
   Sheet,
   SheetContent,
@@ -431,16 +431,15 @@ function RoomSkeleton({ back }: { back: boolean }) {
 function RoomNotFound() {
   const t = useT();
   return (
-    <EmptyState
+    <NotFound
       icon={MessageSquareOffIcon}
       title={t("room.notFoundTitle")}
+      body={t("room.notFoundBody")}
       action={
         <Button asChild variant="outline">
           <Link to="/">{t("nav.back")}</Link>
         </Button>
       }
-    >
-      <p>{t("room.notFoundBody")}</p>
-    </EmptyState>
+    />
   );
 }

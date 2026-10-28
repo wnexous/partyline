@@ -2,7 +2,6 @@ import { useQuery } from "@tanstack/react-query";
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 import {
   ArrowLeftIcon,
-  CompassIcon,
   GitMergeIcon,
   GlobeIcon,
   PlugZapIcon,
@@ -38,7 +37,8 @@ import {
 import { useI18n, useT } from "@/shared/i18n";
 import { RelativeTime } from "@/shared/ui/atoms/relative-time";
 import { StatusDot } from "@/shared/ui/atoms/status-dot";
-import { EmptyState } from "@/shared/ui/molecules/empty-state";
+import { NotFound } from "@/shared/ui/molecules/not-found";
+import { PanelSkeleton } from "@/shared/ui/molecules/panel-skeleton";
 import { Button } from "@/shared/ui/primitives/button";
 import { Skeleton } from "@/shared/ui/primitives/skeleton";
 
@@ -94,23 +94,21 @@ function BackToContacts() {
 function ProfileNotFound() {
   const t = useT();
   return (
-    <EmptyState
-      icon={CompassIcon}
+    <NotFound
       title={t("profile.notFoundTitle")}
+      body={t("profile.notFoundBody")}
       action={
         <Button asChild variant="outline">
           <Link to="/contacts">{t("profile.backToContacts")}</Link>
         </Button>
       }
-    >
-      <p>{t("profile.notFoundBody")}</p>
-    </EmptyState>
+    />
   );
 }
 
 function ProfileSkeleton() {
   return (
-    <div aria-hidden="true" className="space-y-5 px-4 py-6 md:px-8">
+    <PanelSkeleton className="space-y-5 px-4 py-6 md:px-8">
       <Skeleton className="h-4 w-20" />
       <div className="flex items-center gap-5">
         <Skeleton className="size-24 rounded-full" />
@@ -119,7 +117,7 @@ function ProfileSkeleton() {
           <Skeleton className="h-4 w-32" />
         </div>
       </div>
-    </div>
+    </PanelSkeleton>
   );
 }
 

@@ -4,7 +4,6 @@ import { useMemo, useState } from "react";
 import { ChartTree, type TreeRowState } from "@/components/chart-tree";
 import { DeleteAIDialog } from "@/components/delete-ai-dialog";
 import { MoveMemberDialog, type MoveTarget } from "@/components/move-member-dialog";
-import { OrgNotFound } from "@/components/org-not-found";
 import { RemoveFromOrgDialog } from "@/components/remove-from-org-dialog";
 import { IntelligenceAvatar, YouBadge } from "@/entities/intelligence";
 import { useMe, useOrg, useOrgChart } from "@/lib/api/queries";
@@ -20,6 +19,7 @@ import {
 } from "@/shared/api/types.gen";
 import { type Translate, useT } from "@/shared/i18n";
 import { StatusDot } from "@/shared/ui/atoms/status-dot";
+import { NotFound } from "@/shared/ui/molecules/not-found";
 import { PageHeader } from "@/shared/ui/molecules/page-header";
 import { Badge } from "@/shared/ui/primitives/badge";
 import { Button } from "@/shared/ui/primitives/button";
@@ -68,7 +68,17 @@ function OrgChartPage() {
 
   if (!org) return null;
   if (chart.isError && isApiError(chart.error) && chart.error.status === 404) {
-    return <OrgNotFound />;
+    return (
+      <NotFound
+        title={t("orgs.notFoundTitle")}
+        body={t("orgs.notFoundBody")}
+        action={
+          <Button asChild variant="outline">
+            <Link to="/orgs">{t("orgs.notFoundBack")}</Link>
+          </Button>
+        }
+      />
+    );
   }
   if (chart.isError && !data) {
     return (

@@ -2,13 +2,13 @@ import { createFileRoute, Link, Outlet, useRouter } from "@tanstack/react-router
 import { ArrowLeftIcon } from "lucide-react";
 import { useEffect } from "react";
 import { OrgAvatar } from "@/components/org-avatar";
-import { OrgNotFound } from "@/components/org-not-found";
 import { useOrg } from "@/lib/api/queries";
 import { PermissionAdmin, permissionLabel } from "@/lib/orgs";
 import { isApiError } from "@/shared/api/client";
 import type { Organization } from "@/shared/api/types.gen";
 import { useT } from "@/shared/i18n";
 import { cn } from "@/shared/lib/utils";
+import { NotFound } from "@/shared/ui/molecules/not-found";
 import { Badge } from "@/shared/ui/primitives/badge";
 import { Button } from "@/shared/ui/primitives/button";
 import { Skeleton } from "@/shared/ui/primitives/skeleton";
@@ -40,7 +40,17 @@ function OrgLayout() {
   }, [id, orgId, router]);
 
   if (org.isError && isApiError(org.error) && org.error.status === 404) {
-    return <OrgNotFound />;
+    return (
+      <NotFound
+        title={t("orgs.notFoundTitle")}
+        body={t("orgs.notFoundBody")}
+        action={
+          <Button asChild variant="outline">
+            <Link to="/orgs">{t("orgs.notFoundBack")}</Link>
+          </Button>
+        }
+      />
+    );
   }
   if (org.isError && !org.data) {
     return (
