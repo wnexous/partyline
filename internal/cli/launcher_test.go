@@ -897,6 +897,7 @@ func TestLauncherNeverHandsOnAnotherSessionsLiveID(t *testing.T) {
 // arguments unchanged and PARTYLINE_HARNESS=antigravity (the id the server knows), no live id; without agy on
 // PATH they exit 127 naming Antigravity, and without a registration they warn with the harness id.
 func TestAntigravityLauncher(t *testing.T) {
+	require.Equal(t, "partyline antigravity: messages arrive at the end of a turn, or while the session runs wait_for_messages\n", antigravityHint)
 	user := []string{"--continue", "--dangerously-skip-permissions", "--add-dir", "/work/other", "-i", "hi there"}
 	for _, command := range []string{"agy", "antigravity"} {
 		t.Run(command, func(t *testing.T) {
@@ -906,7 +907,7 @@ func TestAntigravityLauncher(t *testing.T) {
 
 			r := m.run(t, append([]string{command}, user...)...)
 			require.Equal(t, 7, r.code, r.stderr)
-			require.Empty(t, r.stderr)
+			require.Equal(t, antigravityHint, r.stderr, "one hint line, nothing else")
 			require.True(t, r.execed)
 			require.Equal(t, "/usr/local/bin/agy", r.path)
 			require.Equal(t, append([]string{"agy"}, user...), r.argv)
@@ -925,7 +926,7 @@ func TestAntigravityLauncher(t *testing.T) {
 			m := newLaunchMachine(t)
 			m.onPath["agy"] = true
 			r := m.run(t, command)
-			require.Equal(t, "partyline antigravity: Partyline is not registered in Antigravity; run partyline setup --harness antigravity. Starting anyway.\n", r.stderr)
+			require.Equal(t, "partyline antigravity: Partyline is not registered in Antigravity; run partyline setup --harness antigravity. Starting anyway.\n"+antigravityHint, r.stderr)
 			require.True(t, r.execed)
 		})
 	}
@@ -944,7 +945,17 @@ func TestAntigravityLauncherAnnouncesTheLiveSession(t *testing.T) {
 	r := m.run(t, "agy", "--take-over")
 	require.Equal(t, 7, r.code, r.stderr)
 	require.True(t, r.execed)
-	require.Equal(t, "Atlas is also open in another session (Claude Code, since "+since.In(time.Local).Format("15:04")+"); this session uses tools only\n", r.stderr)
+	require.Equal(t, "Atlas is also open in another session (Claude Code, since "+since.In(time.Local).Format("15:04")+"); this session uses tools only\n"+antigravityHint, r.stderr)
 	require.NotContains(t, r.env, "PARTYLINE_TAKEOVER=1")
 	require.Empty(t, envValues(r.env, liveEnvVar))
+}
+
+// antigravityHint is the line `partyline agy` prints at start; the other launchers print none.
+const antigravityHint = "partyline antigravity: messages arrive at the end of a turn, or while the session runs wait_for_messages\n"
+
+// The hint is Antigravity's alone: Claude Code, pi, OpenCode, omp, Codex and Gemini start silent.
+func TestOnlyAntigravityLauncherPrintsAHint(t *testing.T) {
+	for _, l := range launchers {
+		require.Equal(t, l.id == "antigravity", l.hint != "", l.id)
+	}
 }
