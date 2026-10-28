@@ -1,19 +1,20 @@
 import type { ReactNode } from "react";
-import { LanguageSwitch } from "@/features/change-language";
-import { ThemeToggle } from "@/features/toggle-theme";
 import { Wordmark } from "@/shared/ui/atoms/brand";
 
 /**
  * Public pages (setup, login, invite): one form on the paper, the page's purpose pasted above
  * the title on a strip of telegram tape.
  */
-export function AuthLayout({
+export function AuthFrame({
   tape,
   title,
   description,
   children,
   footer,
+  controls,
 }: {
+  /** The language and theme controls of the header, which the page brings. */
+  controls?: ReactNode;
   tape: ReactNode;
   title: ReactNode;
   description?: ReactNode;
@@ -28,10 +29,7 @@ export function AuthLayout({
       />
       <header className="relative flex items-center justify-between px-4 py-4 md:px-8">
         <Wordmark />
-        <div className="flex items-center gap-1">
-          <LanguageSwitch />
-          <ThemeToggle />
-        </div>
+        {controls ? <div className="flex items-center gap-1">{controls}</div> : null}
       </header>
       <main className="relative flex flex-1 items-start justify-center px-4 pt-6 pb-16 md:items-center md:pt-0">
         <div className="w-full max-w-[25rem]">
