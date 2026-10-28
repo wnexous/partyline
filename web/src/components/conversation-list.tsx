@@ -24,7 +24,7 @@ import { useCurrentOrg } from "@/hooks/use-current-org";
 import { useTouchFirst } from "@/shared/lib/device";
 import { useLongPress } from "@/shared/lib/use-long-press";
 import { useConversations } from "@/lib/api/queries";
-import type { Conversation } from "@/lib/api/types.gen";
+import type { Conversation } from "@/shared/api/types.gen";
 import { conversationMatches } from "@/lib/conversations";
 import { useI18n, useT } from "@/shared/i18n";
 import { inOrg } from "@/lib/orgs";

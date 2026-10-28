@@ -24,7 +24,7 @@ import type {
   Reaction,
   Room,
   RoomMember,
-} from "@/lib/api/types.gen";
+} from "@/shared/api/types.gen";
 import {
   makeAI,
   makeAIContact,

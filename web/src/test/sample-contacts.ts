@@ -1,4 +1,4 @@
-import type { Contacts } from "@/lib/api/types.gen";
+import type { Contacts } from "@/shared/api/types.gen";
 import {
   makeAI,
   makeAIContact,

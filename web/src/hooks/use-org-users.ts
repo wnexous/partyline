@@ -1,6 +1,6 @@
 import { useMemo } from "react";
 import { useMe, useOrgMembers } from "@/lib/api/queries";
-import type { IntelligenceRef } from "@/lib/api/types.gen";
+import type { IntelligenceRef } from "@/shared/api/types.gen";
 import { userMembers } from "@/lib/orgs";
 
 /**

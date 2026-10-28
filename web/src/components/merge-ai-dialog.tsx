@@ -11,9 +11,9 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/shared/ui/primitives/dialog";
-import { isApiError } from "@/lib/api/client";
+import { isApiError } from "@/shared/api/client";
 import { useMergeAgent } from "@/lib/api/queries";
-import { ErrorCodeIdentityOnline, type IntelligenceRef } from "@/lib/api/types.gen";
+import { ErrorCodeIdentityOnline, type IntelligenceRef } from "@/shared/api/types.gen";
 import { useT } from "@/shared/i18n";
 import { isCoarsePointer } from "@/shared/lib/device";
 

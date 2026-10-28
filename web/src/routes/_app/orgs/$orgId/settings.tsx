@@ -20,7 +20,7 @@ import {
 } from "@/shared/ui/primitives/alert-dialog";
 import { Button } from "@/shared/ui/primitives/button";
 import { Form } from "@/shared/ui/primitives/form";
-import { isApiError } from "@/lib/api/client";
+import { isApiError } from "@/shared/api/client";
 import {
   useDeleteOrg,
   useMe,
@@ -35,7 +35,7 @@ import {
   ErrorCodeOrganizationNotEmpty,
   type Organization,
   type UpdateOrganizationRequest,
-} from "@/lib/api/types.gen";
+} from "@/shared/api/types.gen";
 import { applyFieldErrors } from "@/shared/lib/forms";
 import { useI18n, useT } from "@/shared/i18n";
 import { ownedThings, PermissionAdmin } from "@/lib/orgs";

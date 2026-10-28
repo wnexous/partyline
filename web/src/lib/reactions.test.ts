@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { MaxMessageEmoji, type Reaction } from "@/lib/api/types.gen";
+import { MaxMessageEmoji, type Reaction } from "@/shared/api/types.gen";
 import {
   atReactionLimit,
   MORE_REACTIONS,

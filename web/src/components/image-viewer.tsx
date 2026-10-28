@@ -18,7 +18,7 @@ import {
 } from "@/shared/ui/primitives/dialog";
 import { Skeleton } from "@/shared/ui/primitives/skeleton";
 import { attachmentUrl } from "@/lib/api/queries";
-import type { Attachment, Message } from "@/lib/api/types.gen";
+import type { Attachment, Message } from "@/shared/api/types.gen";
 import { useI18n } from "@/shared/i18n";
 import { cn } from "@/shared/lib/utils";
 import { isCoarsePointer } from "@/shared/lib/device";

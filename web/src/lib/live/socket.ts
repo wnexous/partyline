@@ -1,4 +1,4 @@
-import type { LiveEvent } from "@/lib/api/types.gen";
+import type { LiveEvent } from "@/shared/api/types.gen";
 import type { SocketStatus } from "./store";
 
 /*

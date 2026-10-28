@@ -16,7 +16,7 @@ import {
 } from "@/shared/ui/primitives/dropdown-menu";
 import { IntelligenceAvatar } from "@/entities/intelligence";
 import { useLogout } from "@/lib/api/queries";
-import { type Me, RoleAdmin } from "@/lib/api/types.gen";
+import { type Me, RoleAdmin } from "@/shared/api/types.gen";
 import { useT } from "@/shared/i18n";
 import { NAV_GROUPS } from "@/lib/nav";
 import { cn } from "@/shared/lib/utils";

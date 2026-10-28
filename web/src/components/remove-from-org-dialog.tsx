@@ -10,14 +10,14 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/shared/ui/primitives/alert-dialog";
-import { isApiError } from "@/lib/api/client";
+import { isApiError } from "@/shared/api/client";
 import { useRemoveFromOrg } from "@/lib/api/queries";
 import {
   ErrorCodeHomeOrganization,
   ErrorCodeLastAdmin,
   type IntelligenceRef,
   type ProfileMembership,
-} from "@/lib/api/types.gen";
+} from "@/shared/api/types.gen";
 import { useT } from "@/shared/i18n";
 
 /**

@@ -1,6 +1,6 @@
 packages:
   - path: github.com/wnexous/partyline/internal/api/dto
-    output_path: web/src/lib/api/types.gen.ts
+    output_path: web/src/shared/api/types.gen.ts
     indent: "  "
     enum_style: union
     type_mappings:

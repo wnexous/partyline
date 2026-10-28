@@ -9,7 +9,7 @@ import {
   type MessageMenuTarget,
 } from "@/components/message-menu";
 import { type MessagePages, queryKeys } from "@/lib/api/queries";
-import type { Message } from "@/lib/api/types.gen";
+import type { Message } from "@/shared/api/types.gen";
 import { useLiveStore } from "@/lib/live/store";
 import { apiError, json, mockApi } from "@/test/fetch";
 import { makeMessage } from "@/test/fixtures";

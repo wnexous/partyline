@@ -1,5 +1,5 @@
 import { Badge } from "@/shared/ui/primitives/badge";
-import type { IntelligenceRef } from "@/lib/api/types.gen";
+import type { IntelligenceRef } from "@/shared/api/types.gen";
 import { useT } from "@/shared/i18n";
 import { cn } from "@/shared/lib/utils";
 

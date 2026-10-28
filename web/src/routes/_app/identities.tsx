@@ -33,7 +33,7 @@ import {
   useMyOrgs,
   useStartPairing,
 } from "@/lib/api/queries";
-import type { Connector, Identity, PairingCode } from "@/lib/api/types.gen";
+import type { Connector, Identity, PairingCode } from "@/shared/api/types.gen";
 import { useI18n, useT } from "@/shared/i18n";
 import { useLiveStore } from "@/lib/live/store";
 import { formatAbsolute } from "@/shared/lib/time";

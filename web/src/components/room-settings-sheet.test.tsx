@@ -3,7 +3,7 @@ import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { RoomSettingsSheet } from "@/components/room-settings-sheet";
 import { queryKeys, useRoom } from "@/lib/api/queries";
-import type { Room } from "@/lib/api/types.gen";
+import type { Room } from "@/shared/api/types.gen";
 import { useLiveStore } from "@/lib/live/store";
 import { apiError, json, mockApi } from "@/test/fetch";
 import { makeRoom } from "@/test/fixtures";

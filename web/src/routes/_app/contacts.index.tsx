@@ -22,7 +22,7 @@ import { Input } from "@/shared/ui/primitives/input";
 import { Skeleton } from "@/shared/ui/primitives/skeleton";
 import { useDebouncedValue } from "@/shared/lib/use-debounced-value";
 import { useContacts } from "@/lib/api/queries";
-import type { AIContact, Contacts, IntelligenceRef } from "@/lib/api/types.gen";
+import type { AIContact, Contacts, IntelligenceRef } from "@/shared/api/types.gen";
 import { aiText, filterOrgs, mergeTargets, onlineCount } from "@/lib/contacts";
 import { matchesTerms } from "@/lib/conversations";
 import { useI18n } from "@/shared/i18n";

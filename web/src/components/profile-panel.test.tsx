@@ -10,7 +10,7 @@ import type {
   ProfileMembership,
   RoomMember,
   RoomRef,
-} from "@/lib/api/types.gen";
+} from "@/shared/api/types.gen";
 import { useLiveStore } from "@/lib/live/store";
 import { apiError, json, mockApi } from "@/test/fetch";
 import {

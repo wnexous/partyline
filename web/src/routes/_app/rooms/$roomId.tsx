@@ -42,7 +42,7 @@ import { useDraft, useDraftStore } from "@/features/send-message";
 import { useMarkRoomRead } from "@/hooks/use-mark-room-read";
 import { useIsMobile } from "@/shared/lib/device";
 import { useOpenConversation } from "@/hooks/use-open-conversation";
-import { isApiError } from "@/lib/api/client";
+import { isApiError } from "@/shared/api/client";
 import { postMessageKey, useMe, useResumeRoom, useRoom, useRoomMembers } from "@/lib/api/queries";
 import {
   ConversationKindDM,
@@ -51,7 +51,7 @@ import {
   type Message,
   type Room,
   type RoomMember,
-} from "@/lib/api/types.gen";
+} from "@/shared/api/types.gen";
 import { useI18n, useT } from "@/shared/i18n";
 import { MemberPanel } from "@/widgets/member-panel";
 

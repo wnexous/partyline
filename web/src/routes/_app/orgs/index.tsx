@@ -10,7 +10,7 @@ import { Badge } from "@/shared/ui/primitives/badge";
 import { Button } from "@/shared/ui/primitives/button";
 import { Skeleton } from "@/shared/ui/primitives/skeleton";
 import { useCurrentOrg } from "@/hooks/use-current-org";
-import { isApiError } from "@/lib/api/client";
+import { isApiError } from "@/shared/api/client";
 import {
   useAcceptInvitation,
   useDeclineInvitation,
@@ -18,7 +18,7 @@ import {
   useMyInvitations,
   useOrgs,
 } from "@/lib/api/queries";
-import { ErrorCodeAlreadyMember, type Invitation } from "@/lib/api/types.gen";
+import { ErrorCodeAlreadyMember, type Invitation } from "@/shared/api/types.gen";
 import { type MessageKey, type Translate, useI18n, useT } from "@/shared/i18n";
 import { type MyOrg, PermissionGuest, permissionLabel } from "@/lib/orgs";
 import { formatAbsolute, formatRelative } from "@/shared/lib/time";

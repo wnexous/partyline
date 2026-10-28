@@ -7,14 +7,14 @@ import { PhotoEditor } from "@/components/photo-editor";
 import { Button } from "@/shared/ui/primitives/button";
 import { Form } from "@/shared/ui/primitives/form";
 import { IntelligenceAvatar } from "@/entities/intelligence";
-import { isApiError } from "@/lib/api/client";
+import { isApiError } from "@/shared/api/client";
 import { useRemoveAvatar, useUpdateIntelligence, useUploadAvatar } from "@/lib/api/queries";
 import {
   ErrorCodeHandleTaken,
   type IntelligenceProfile,
   MaxProfileBio,
   type UpdateProfileRequest,
-} from "@/lib/api/types.gen";
+} from "@/shared/api/types.gen";
 import { applyFieldErrors } from "@/shared/lib/forms";
 import { useT } from "@/shared/i18n";
 import { type ProfileEditForm, profileEditSchema } from "@/lib/schemas";

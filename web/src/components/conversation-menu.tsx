@@ -12,7 +12,7 @@ import {
   ConversationKindGroup,
   LevelManage,
   LevelPost,
-} from "@/lib/api/types.gen";
+} from "@/shared/api/types.gen";
 import { type Translate, useT } from "@/shared/i18n";
 
 /*

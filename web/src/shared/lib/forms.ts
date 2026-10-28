@@ -1,5 +1,5 @@
 import type { FieldValues, Path, UseFormSetError } from "react-hook-form";
-import { isApiError } from "@/lib/api/client";
+import { isApiError } from "@/shared/api/client";
 import { dictionaries, type MessageKey, type Translate } from "@/shared/i18n";
 import { validationVars } from "@/lib/schemas";
 

@@ -4,7 +4,7 @@ import type {
   Me,
   Organization,
   OrgMember,
-} from "@/lib/api/types.gen";
+} from "@/shared/api/types.gen";
 import type { MessageKey, Translate } from "@/shared/i18n";
 
 /*

@@ -1,6 +1,6 @@
 import { StatusDot } from "@/shared/ui/atoms/status-dot";
 import { appLabelOf } from "@/entities/intelligence";
-import type { AIContact } from "@/lib/api/types.gen";
+import type { AIContact } from "@/shared/api/types.gen";
 import type { Pickable } from "@/lib/contacts";
 import { useI18n } from "@/shared/i18n";
 import { formatAbsolute, formatRelative } from "@/shared/lib/time";

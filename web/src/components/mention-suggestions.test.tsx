@@ -3,7 +3,7 @@ import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { Composer } from "@/components/composer";
 import { matchMentions, mentionAt, mentionCandidates } from "@/components/mention-suggestions";
-import { LevelPost, type RoomMember } from "@/lib/api/types.gen";
+import { LevelPost, type RoomMember } from "@/shared/api/types.gen";
 import { useLiveStore } from "@/lib/live/store";
 import { json, mockApi } from "@/test/fetch";
 import {

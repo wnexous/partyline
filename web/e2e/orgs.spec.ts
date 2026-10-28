@@ -6,7 +6,7 @@ import type {
   OrgChart,
   Position,
   SetupRequest,
-} from "../src/lib/api/types.gen";
+} from "../src/shared/api/types.gen";
 import { apiCall, test as base, type Credentials, expect } from "./fixtures";
 import {
   connectAI,

@@ -35,7 +35,7 @@ import { type HoldState, MicButton, RecordingBar } from "@/components/voice-cont
 import { useDraft, useDraftStore, useEditDraft } from "@/features/send-message";
 import { useEnterSends } from "@/shared/lib/device";
 import { useVoiceRecorder } from "@/hooks/use-voice-recorder";
-import { isApiError } from "@/lib/api/client";
+import { isApiError } from "@/shared/api/client";
 import { useEditMessage, useMe, usePostMessage } from "@/lib/api/queries";
 import {
   ErrorCodeCounterpartDisabled,
@@ -45,7 +45,7 @@ import {
   MaxTextLength,
   type Message,
   type RoomMember,
-} from "@/lib/api/types.gen";
+} from "@/shared/api/types.gen";
 import { type MessageKey, type Translate, useI18n } from "@/shared/i18n";
 import { messageExcerpt } from "@/lib/message-excerpt";
 import { textLength } from "@/lib/schemas";

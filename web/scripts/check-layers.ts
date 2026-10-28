@@ -33,7 +33,7 @@ const FIRST_SEGMENT_LAYERS = new Set<string>([
   "shared",
 ]);
 const LEGACY_DIRS = new Set(["components", "hooks", "lib"]);
-const SKIPPED = new Set(["routeTree.gen", "lib/api/types.gen"]);
+const SKIPPED = new Set(["routeTree.gen", "shared/api/types.gen"]);
 
 export interface Place {
   /** `legacy` is components/, hooks/, lib/; `test` is src/test; `other` is anything unclassified. */

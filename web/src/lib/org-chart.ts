@@ -1,4 +1,4 @@
-import type { ChartMember, ChartPosition, OrgChart } from "@/lib/api/types.gen";
+import type { ChartMember, ChartPosition, OrgChart } from "@/shared/api/types.gen";
 
 /*
  * The positions of an organization as the pages read them (POS-01, POS-02, POS-04): in tree order,

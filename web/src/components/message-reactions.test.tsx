@@ -4,7 +4,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { axe } from "vitest-axe";
 import * as matchers from "vitest-axe/matchers";
 import { MessageTimeline } from "@/components/message-timeline";
-import type { Message, Reaction } from "@/lib/api/types.gen";
+import type { Message, Reaction } from "@/shared/api/types.gen";
 import { useLiveStore } from "@/lib/live/store";
 import { QUICK_REACTIONS } from "@/lib/reactions";
 import { json, mockApi } from "@/test/fetch";

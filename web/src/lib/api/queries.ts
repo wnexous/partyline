@@ -12,7 +12,7 @@ import {
 import { withIntelligence, withoutAI } from "@/lib/contacts";
 import { type MeWithDefaultOrg, toMyOrgs } from "@/lib/orgs";
 import { withReaction } from "@/lib/reactions";
-import { api, isApiError } from "./client";
+import { api, isApiError } from "@/shared/api/client";
 import {
   type AcceptInviteRequest,
   type ActivityItem,
@@ -96,7 +96,7 @@ import {
   type UpdateRoomRequest,
   type UpdateUserRequest,
   type User,
-} from "./types.gen";
+} from "@/shared/api/types.gen";
 
 /*
  * Query keys and hooks for every API resource. Naming: `useX` reads, `useVerbX` mutates;

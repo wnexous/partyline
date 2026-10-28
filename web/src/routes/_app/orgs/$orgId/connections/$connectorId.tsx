@@ -39,7 +39,7 @@ import {
 } from "@/shared/ui/primitives/sheet";
 import { Skeleton } from "@/shared/ui/primitives/skeleton";
 import { Switch } from "@/shared/ui/primitives/switch";
-import { isApiError } from "@/lib/api/client";
+import { isApiError } from "@/shared/api/client";
 import {
   useConnector,
   useConnectorChats,
@@ -59,7 +59,7 @@ import {
   type ConnectorKind,
   LevelManage,
   type UpdateConnectorRequest,
-} from "@/lib/api/types.gen";
+} from "@/shared/api/types.gen";
 import { allAIs } from "@/lib/contacts";
 import { type MessageKey, useI18n, useT } from "@/shared/i18n";
 import { formatAbsolute, formatRelative } from "@/shared/lib/time";

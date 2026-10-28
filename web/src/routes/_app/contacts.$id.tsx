@@ -27,7 +27,7 @@ import { Button } from "@/shared/ui/primitives/button";
 import { Skeleton } from "@/shared/ui/primitives/skeleton";
 import { IntelligenceAvatar, IntelligenceName, YouBadge } from "@/entities/intelligence";
 import { harnessLabel } from "@/lib/agents";
-import { isApiError } from "@/lib/api/client";
+import { isApiError } from "@/shared/api/client";
 import { contactsQuery, useIntelligence, useMe } from "@/lib/api/queries";
 import {
   type AIDetail,
@@ -36,7 +36,7 @@ import {
   LevelManage,
   type PersonDetail,
   type ProfileMembership,
-} from "@/lib/api/types.gen";
+} from "@/shared/api/types.gen";
 import { mergeTargets } from "@/lib/contacts";
 import { useI18n, useT } from "@/shared/i18n";
 import { useLiveStore } from "@/lib/live/store";

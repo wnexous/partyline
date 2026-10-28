@@ -1,5 +1,5 @@
 import type { ElementType, ReactNode } from "react";
-import type { IntelligenceRef } from "@/lib/api/types.gen";
+import type { IntelligenceRef } from "@/shared/api/types.gen";
 import { cn } from "@/shared/lib/utils";
 import { IntelligenceAvatar } from "./intelligence-avatar";
 import { IntelligenceName } from "./intelligence-name";

@@ -23,7 +23,7 @@ import { Skeleton } from "@/shared/ui/primitives/skeleton";
 import { IntelligenceAvatar, IntelligenceName } from "@/entities/intelligence";
 import { useCurrentOrg } from "@/hooks/use-current-org";
 import { useOrgUsers } from "@/hooks/use-org-users";
-import { isApiError } from "@/lib/api/client";
+import { isApiError } from "@/shared/api/client";
 import { useContacts, useCreateGroup } from "@/lib/api/queries";
 import {
   ErrorCodeMembersRefused,
@@ -33,7 +33,7 @@ import {
   type RefusedReason,
   RefusedReasonNotOrgMember,
   RefusedReasonPerson,
-} from "@/lib/api/types.gen";
+} from "@/shared/api/types.gen";
 import { type Pickable, pickableList } from "@/lib/contacts";
 import { matchesTerms } from "@/lib/conversations";
 import { applyFieldErrors } from "@/shared/lib/forms";

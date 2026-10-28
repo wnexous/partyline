@@ -12,7 +12,7 @@ import { Badge } from "@/shared/ui/primitives/badge";
 import { Button } from "@/shared/ui/primitives/button";
 import { Skeleton } from "@/shared/ui/primitives/skeleton";
 import { IntelligenceAvatar, YouBadge } from "@/entities/intelligence";
-import { isApiError } from "@/lib/api/client";
+import { isApiError } from "@/shared/api/client";
 import { useMe, useOrg, useOrgChart } from "@/lib/api/queries";
 import {
   type ChartMember,
@@ -20,7 +20,7 @@ import {
   type IntelligenceRef,
   PermissionAdmin,
   PermissionGuest,
-} from "@/lib/api/types.gen";
+} from "@/shared/api/types.gen";
 import { type Translate, useT } from "@/shared/i18n";
 import { useLiveStore } from "@/lib/live/store";
 import { buildChartTree, type ChartTreeNode } from "@/lib/org-chart";

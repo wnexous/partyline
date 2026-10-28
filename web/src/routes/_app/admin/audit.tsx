@@ -5,7 +5,7 @@ import { PageHeader } from "@/shared/ui/molecules/page-header";
 import { Button } from "@/shared/ui/primitives/button";
 import { Skeleton } from "@/shared/ui/primitives/skeleton";
 import { useAudit } from "@/lib/api/queries";
-import type { AuditEntry } from "@/lib/api/types.gen";
+import type { AuditEntry } from "@/shared/api/types.gen";
 import { useI18n, useT } from "@/shared/i18n";
 import { formatAbsolute, formatRelative } from "@/shared/lib/time";
 

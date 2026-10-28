@@ -4,7 +4,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { ProfileEditor } from "@/components/profile-editor";
 import { IntelligenceAvatar } from "@/entities/intelligence";
 import { queryKeys, useIntelligence } from "@/lib/api/queries";
-import type { IntelligenceProfile } from "@/lib/api/types.gen";
+import type { IntelligenceProfile } from "@/shared/api/types.gen";
 import { useLiveStore } from "@/lib/live/store";
 import { apiError, json, mockApi } from "@/test/fetch";
 import { makeProfile } from "@/test/fixtures";

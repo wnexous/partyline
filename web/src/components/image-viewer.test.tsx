@@ -3,7 +3,7 @@ import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { collectImages } from "@/components/image-viewer";
 import { MessageTimeline } from "@/components/message-timeline";
-import type { Attachment, Message } from "@/lib/api/types.gen";
+import type { Attachment, Message } from "@/shared/api/types.gen";
 import { useLiveStore } from "@/lib/live/store";
 import { apiError, json, mockApi } from "@/test/fetch";
 import { makeMessage } from "@/test/fixtures";

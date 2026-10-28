@@ -14,7 +14,7 @@ import {
 } from "@/shared/ui/primitives/dialog";
 import { Form } from "@/shared/ui/primitives/form";
 import { IntelligenceAvatar, IntelligenceName } from "@/entities/intelligence";
-import { isApiError } from "@/lib/api/client";
+import { isApiError } from "@/shared/api/client";
 import { useContacts, useInviteToOrg } from "@/lib/api/queries";
 import {
   ErrorCodeAlreadyMember,
@@ -22,7 +22,7 @@ import {
   type OrgMember,
   type Permission,
   type Position,
-} from "@/lib/api/types.gen";
+} from "@/shared/api/types.gen";
 import { inviteCandidates } from "@/lib/contacts";
 import { applyFieldErrors } from "@/shared/lib/forms";
 import { useT } from "@/shared/i18n";

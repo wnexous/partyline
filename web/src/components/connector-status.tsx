@@ -1,4 +1,4 @@
-import type { Connector, ConnectorStatus } from "@/lib/api/types.gen";
+import type { Connector, ConnectorStatus } from "@/shared/api/types.gen";
 import { type MessageKey, useT } from "@/shared/i18n";
 import { useLiveStore } from "@/lib/live/store";
 import { cn } from "@/shared/lib/utils";

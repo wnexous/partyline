@@ -12,7 +12,7 @@ import type {
   Page as Paged,
   Room,
   SetupRequest,
-} from "../src/lib/api/types.gen";
+} from "../src/shared/api/types.gen";
 import { makeWav, postVoice } from "./audio";
 import { apiCall, test as base, type Credentials, expect, MEMBER, settled } from "./fixtures";
 import {

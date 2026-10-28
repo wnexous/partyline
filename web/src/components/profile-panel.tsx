@@ -15,9 +15,9 @@ import { appLabelOf, IntelligenceAvatar, YouBadge } from "@/entities/intelligenc
 import { useIsMobile } from "@/shared/lib/device";
 import { useProfilePanelStore } from "@/hooks/use-profile-panel";
 import { useStartConversation } from "@/hooks/use-start-conversation";
-import { isApiError } from "@/lib/api/client";
+import { isApiError } from "@/shared/api/client";
 import { intelligenceQuery, useMe } from "@/lib/api/queries";
-import { type IntelligenceProfile, IntelligenceRolePerson } from "@/lib/api/types.gen";
+import { type IntelligenceProfile, IntelligenceRolePerson } from "@/shared/api/types.gen";
 import { useT } from "@/shared/i18n";
 import { useLiveStore } from "@/lib/live/store";
 import { cn } from "@/shared/lib/utils";

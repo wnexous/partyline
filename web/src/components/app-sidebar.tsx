@@ -15,7 +15,7 @@ import { SearchButton } from "@/shared/ui/molecules/search-button";
 import { Button } from "@/shared/ui/primitives/button";
 import { SidebarContent, SidebarFooter, SidebarHeader } from "@/shared/ui/primitives/sidebar";
 import { useCurrentOrg } from "@/hooks/use-current-org";
-import type { Me } from "@/lib/api/types.gen";
+import type { Me } from "@/shared/api/types.gen";
 import { useT } from "@/shared/i18n";
 import { cn } from "@/shared/lib/utils";
 

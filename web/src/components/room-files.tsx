@@ -15,7 +15,7 @@ import { Skeleton } from "@/shared/ui/primitives/skeleton";
 import { ToggleGroup, ToggleGroupItem } from "@/shared/ui/primitives/toggle-group";
 import { IntelligenceName } from "@/entities/intelligence";
 import { attachmentUrl, type FileFilter, useRoomFiles } from "@/lib/api/queries";
-import type { FileKind, RoomFile } from "@/lib/api/types.gen";
+import type { FileKind, RoomFile } from "@/shared/api/types.gen";
 import { type MessageKey, useI18n } from "@/shared/i18n";
 import { formatAbsolute, formatRelative } from "@/shared/lib/time";
 import { cn } from "@/shared/lib/utils";

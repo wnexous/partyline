@@ -19,7 +19,7 @@ import { Skeleton } from "@/shared/ui/primitives/skeleton";
 import { Switch } from "@/shared/ui/primitives/switch";
 import { ToggleGroup, ToggleGroupItem } from "@/shared/ui/primitives/toggle-group";
 import { useAdminUsers, useMe, useUpdateUser } from "@/lib/api/queries";
-import { type AdminUser, type Role, RoleAdmin, RoleMember } from "@/lib/api/types.gen";
+import { type AdminUser, type Role, RoleAdmin, RoleMember } from "@/shared/api/types.gen";
 import { useI18n, useT } from "@/shared/i18n";
 import { formatAbsolute } from "@/shared/lib/time";
 import { cn } from "@/shared/lib/utils";

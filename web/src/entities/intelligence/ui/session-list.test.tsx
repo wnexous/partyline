@@ -1,6 +1,6 @@
 import { screen } from "@testing-library/react";
 import { beforeEach, describe, expect, it } from "vitest";
-import type { SessionInfo } from "@/lib/api/types.gen";
+import type { SessionInfo } from "@/shared/api/types.gen";
 import { useLiveStore } from "@/lib/live/store";
 import { renderWithProviders } from "@/test/render";
 import { SessionList } from "./session-list";

@@ -7,7 +7,7 @@ import {
   MemberKindUser,
   type RoomMember,
   type SessionInfo,
-} from "@/lib/api/types.gen";
+} from "@/shared/api/types.gen";
 
 /** What a person of a conversation is, whichever way the server named it. */
 export type PersonKind = "ai" | "user" | "person";

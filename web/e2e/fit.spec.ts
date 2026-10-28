@@ -12,7 +12,7 @@ import type {
   Room,
   SetupRequest,
   WizardQuestionRequest,
-} from "../src/lib/api/types.gen";
+} from "../src/shared/api/types.gen";
 import { postVoice } from "./audio";
 import { apiCall, test as base, type Credentials, expect, settled } from "./fixtures";
 import { agentJSON, connectAI, expectFits, loginAs, MACHINE, openSession } from "./helpers";

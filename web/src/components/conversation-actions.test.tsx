@@ -4,7 +4,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { axe } from "vitest-axe";
 import * as matchers from "vitest-axe/matchers";
 import { useProfilePanelStore } from "@/hooks/use-profile-panel";
-import type { Conversation, RoomMember } from "@/lib/api/types.gen";
+import type { Conversation, RoomMember } from "@/shared/api/types.gen";
 import { useLiveStore } from "@/lib/live/store";
 import { json, mockApi } from "@/test/fetch";
 import { makeConversation, makeIntelligence, makeMe, makeMember, makeRoom } from "@/test/fixtures";

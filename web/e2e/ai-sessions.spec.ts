@@ -1,4 +1,4 @@
-import type { Me, Message, Room, SetupRequest } from "../src/lib/api/types.gen";
+import type { Me, Message, Room, SetupRequest } from "../src/shared/api/types.gen";
 import { apiCall, test as base, type Credentials, expect } from "./fixtures";
 import { type AgentClient, agentJSON, connectAI, loginAs, MACHINE, openSession } from "./helpers";
 import { type Instance, startInstance } from "./server";

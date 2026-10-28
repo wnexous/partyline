@@ -4,7 +4,7 @@ import type { ReactNode } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { apiError, json, mockApi } from "@/test/fetch";
 import { makeConversation, makeIntelligence, makeMe, makeMessage, makeRoom } from "@/test/fixtures";
-import { ApiError } from "./client";
+import { ApiError } from "@/shared/api/client";
 import type { MessagePages } from "./queries";
 import {
   queryKeys,
@@ -20,7 +20,7 @@ import {
   useUpdateRoom,
   useUploadAvatar,
 } from "./queries";
-import type { Conversation, IntelligenceProfile, Me, Message, Room } from "./types.gen";
+import type { Conversation, IntelligenceProfile, Me, Message, Room } from "@/shared/api/types.gen";
 
 /*
  * The hooks of the messenger's data layer: what each one sends, and what it leaves in the cache

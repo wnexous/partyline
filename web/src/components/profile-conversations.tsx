@@ -1,6 +1,6 @@
 import { Link } from "@tanstack/react-router";
 import { MessageCircleIcon } from "lucide-react";
-import { ConversationKindDM, type RoomRef } from "@/lib/api/types.gen";
+import { ConversationKindDM, type RoomRef } from "@/shared/api/types.gen";
 import { useT } from "@/shared/i18n";
 
 /** The rows the profile panel shows before it sends the viewer to the full page for the rest. */

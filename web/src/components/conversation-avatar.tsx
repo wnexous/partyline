@@ -1,6 +1,6 @@
 import { GroupAvatar } from "@/components/group-avatar";
 import { IntelligenceAvatar, type IntelligenceAvatarProps } from "@/entities/intelligence";
-import type { Conversation } from "@/lib/api/types.gen";
+import type { Conversation } from "@/shared/api/types.gen";
 
 /**
  * The face of a row of the conversation list: the other party of a DM, who looks like anyone

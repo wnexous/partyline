@@ -10,7 +10,7 @@ import {
   AlertDialogTitle,
 } from "@/shared/ui/primitives/alert-dialog";
 import { useDeleteMessage } from "@/lib/api/queries";
-import type { Message } from "@/lib/api/types.gen";
+import type { Message } from "@/shared/api/types.gen";
 import { useT } from "@/shared/i18n";
 
 /*

@@ -9,7 +9,7 @@ import {
   messageActionSet,
 } from "@/components/message-menu";
 import { MessageTimeline } from "@/components/message-timeline";
-import type { Message } from "@/lib/api/types.gen";
+import type { Message } from "@/shared/api/types.gen";
 import { handleLiveEvent } from "@/lib/live/handlers";
 import { useLiveStore } from "@/lib/live/store";
 import { json, mockApi } from "@/test/fetch";

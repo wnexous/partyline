@@ -14,14 +14,14 @@ import {
 import { RadioGroup, RadioGroupItem } from "@/shared/ui/primitives/radio-group";
 import { Skeleton } from "@/shared/ui/primitives/skeleton";
 import { useCurrentOrg } from "@/hooks/use-current-org";
-import { isApiError } from "@/lib/api/client";
+import { isApiError } from "@/shared/api/client";
 import { useConnectorKinds, useCreateConnector } from "@/lib/api/queries";
 import {
   type Connector,
   type ConnectorKind,
   HeaderSignature,
   HeaderTimestamp,
-} from "@/lib/api/types.gen";
+} from "@/shared/api/types.gen";
 import { type Translate, useT } from "@/shared/i18n";
 import { isAdminOf } from "@/lib/orgs";
 import { cn } from "@/shared/lib/utils";

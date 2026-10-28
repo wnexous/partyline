@@ -29,7 +29,7 @@ import type {
   Room,
   RoomMember,
   RoomRef,
-} from "@/lib/api/types.gen";
+} from "@/shared/api/types.gen";
 import { knowsAI } from "@/lib/contacts";
 import type { LiveState } from "./store";
 

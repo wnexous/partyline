@@ -1,5 +1,5 @@
 import { harnessLabel } from "@/lib/agents";
-import type { AIContact, Contacts, IntelligenceRef, OrgAIs } from "@/lib/api/types.gen";
+import type { AIContact, Contacts, IntelligenceRef, OrgAIs } from "@/shared/api/types.gen";
 import { matchesTerms } from "@/lib/conversations";
 
 /*

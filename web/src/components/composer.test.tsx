@@ -4,7 +4,7 @@ import { afterAll, afterEach, beforeEach, describe, expect, it, vi } from "vites
 import { AppProviders } from "@/components/app-providers";
 import { Composer } from "@/components/composer";
 import { type MessagePages, queryKeys } from "@/lib/api/queries";
-import { type Level, MaxTextLength, type Message, type RoomMember } from "@/lib/api/types.gen";
+import { type Level, MaxTextLength, type Message, type RoomMember } from "@/shared/api/types.gen";
 import { useLiveStore } from "@/lib/live/store";
 import { apiError, json, mockApi } from "@/test/fetch";
 import { makeAI, makeMember, makeMessage } from "@/test/fixtures";

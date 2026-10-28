@@ -29,7 +29,7 @@ import type {
   IntelligenceRef,
   Message,
   RoomMember,
-} from "@/lib/api/types.gen";
+} from "@/shared/api/types.gen";
 import { type MessageKey, type Translate, useI18n } from "@/shared/i18n";
 import { formatAbsolute, formatClock } from "@/shared/lib/time";
 import { cn } from "@/shared/lib/utils";

@@ -16,7 +16,7 @@ import {
 import { Dialog, DialogContent, DialogDescription, DialogTitle } from "@/shared/ui/primitives/dialog";
 import { useProfilePanel } from "@/hooks/use-profile-panel";
 import { useAgents, useConnectors, useConversations } from "@/lib/api/queries";
-import { type Connector, type Me, RoleAdmin } from "@/lib/api/types.gen";
+import { type Connector, type Me, RoleAdmin } from "@/shared/api/types.gen";
 import { useT } from "@/shared/i18n";
 import { useLiveStore } from "@/lib/live/store";
 import { NAV_GROUPS } from "@/lib/nav";

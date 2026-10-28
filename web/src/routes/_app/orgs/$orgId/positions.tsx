@@ -18,7 +18,7 @@ import {
 } from "@/shared/ui/primitives/alert-dialog";
 import { Button } from "@/shared/ui/primitives/button";
 import { Skeleton } from "@/shared/ui/primitives/skeleton";
-import { isApiError } from "@/lib/api/client";
+import { isApiError } from "@/shared/api/client";
 import {
   useCreatePosition,
   useDeletePosition,
@@ -30,7 +30,7 @@ import {
   type ChartPosition,
   ErrorCodePositionCycle,
   type UpdatePositionRequest,
-} from "@/lib/api/types.gen";
+} from "@/shared/api/types.gen";
 import { type Translate, useT } from "@/shared/i18n";
 import { descendantsOf, type PositionNode, positionOptions, positionTree } from "@/lib/org-chart";
 import { MaxPositionNameLength, PermissionAdmin } from "@/lib/orgs";

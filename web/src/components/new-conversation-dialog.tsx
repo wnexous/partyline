@@ -15,7 +15,7 @@ import { Skeleton } from "@/shared/ui/primitives/skeleton";
 import { IntelligenceAvatar, IntelligenceName } from "@/entities/intelligence";
 import { useStartConversation } from "@/hooks/use-start-conversation";
 import { useContacts } from "@/lib/api/queries";
-import type { IntelligenceRef } from "@/lib/api/types.gen";
+import type { IntelligenceRef } from "@/shared/api/types.gen";
 import { type Pickable, pickableList } from "@/lib/contacts";
 import { matchesTerms } from "@/lib/conversations";
 import { useT } from "@/shared/i18n";

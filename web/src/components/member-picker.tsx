@@ -18,7 +18,7 @@ import { IntelligenceAvatar, IntelligenceName } from "@/entities/intelligence";
 import { isCoarsePointer, useAutoFocus } from "@/shared/lib/device";
 import { useOrgUsers } from "@/hooks/use-org-users";
 import { useAddMember, useContacts, useRoom } from "@/lib/api/queries";
-import type { MemberKind, RoomMember } from "@/lib/api/types.gen";
+import type { MemberKind, RoomMember } from "@/shared/api/types.gen";
 import { type Pickable, pickableList } from "@/lib/contacts";
 import { matchesTerms } from "@/lib/conversations";
 import { useI18n } from "@/shared/i18n";

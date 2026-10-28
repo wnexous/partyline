@@ -1,4 +1,4 @@
-import type { Message } from "@/lib/api/types.gen";
+import type { Message } from "@/shared/api/types.gen";
 import { isVoiceName } from "@/lib/voice";
 
 /** A line is this many characters at most. */

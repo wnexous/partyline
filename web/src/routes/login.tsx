@@ -6,7 +6,7 @@ import { AuthLayout } from "@/components/auth-layout";
 import { FormAlert, TextField } from "@/shared/ui/molecules/form-fields";
 import { Button } from "@/shared/ui/primitives/button";
 import { Form } from "@/shared/ui/primitives/form";
-import { isApiError } from "@/lib/api/client";
+import { isApiError } from "@/shared/api/client";
 import { setupStatusQuery, useLogin } from "@/lib/api/queries";
 import { safeRedirect } from "@/shared/lib/forms";
 import { type Translate, useT } from "@/shared/i18n";

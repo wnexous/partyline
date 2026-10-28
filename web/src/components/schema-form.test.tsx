@@ -2,7 +2,7 @@ import { screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { ConnectorForm, type ConnectorFormValues } from "@/components/schema-form";
-import { SecretMask } from "@/lib/api/types.gen";
+import { SecretMask } from "@/shared/api/types.gen";
 import { useLiveStore } from "@/lib/live/store";
 import { makeConnectorKind } from "@/test/fixtures";
 import { renderWithProviders } from "@/test/render";

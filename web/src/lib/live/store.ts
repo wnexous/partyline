@@ -1,5 +1,5 @@
 import { create } from "zustand";
-import type { ConnectorStatus, Identity } from "@/lib/api/types.gen";
+import type { ConnectorStatus, Identity } from "@/shared/api/types.gen";
 import { detectLocale, isLocale, type Locale } from "@/shared/i18n";
 import { CURRENT_ORG_KEY } from "@/lib/orgs";
 import {

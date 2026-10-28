@@ -1,4 +1,4 @@
-import type { Reaction } from "@/lib/api/types.gen";
+import type { Reaction } from "@/shared/api/types.gen";
 import { useI18n } from "@/shared/i18n";
 import { cn } from "@/shared/lib/utils";
 

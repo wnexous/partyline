@@ -2,7 +2,7 @@ import { act, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { LiveBanner } from "@/shared/ui/molecules/live-status";
-import { api } from "@/lib/api/client";
+import { api } from "@/shared/api/client";
 import { useLiveStore } from "@/lib/live/store";
 import { apiError, json, mockApi } from "@/test/fetch";
 import { makeMe } from "@/test/fixtures";

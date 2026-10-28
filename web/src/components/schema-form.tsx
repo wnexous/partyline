@@ -21,7 +21,7 @@ import {
   FieldTypeSecret,
   FieldTypeStringList,
   FieldTypeURL,
-} from "@/lib/api/types.gen";
+} from "@/shared/api/types.gen";
 import { type MessageKey, useT } from "@/shared/i18n";
 import { cn } from "@/shared/lib/utils";
 

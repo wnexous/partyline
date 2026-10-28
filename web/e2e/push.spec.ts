@@ -1,5 +1,5 @@
 import type { Page } from "@playwright/test";
-import type { Me, SetupRequest } from "../src/lib/api/types.gen";
+import type { Me, SetupRequest } from "../src/shared/api/types.gen";
 import { apiCall, test as base, type Credentials, expect, settled } from "./fixtures";
 import { expectNoSidewaysScroll, loginAs } from "./helpers";
 import { type Instance, startInstance } from "./server";

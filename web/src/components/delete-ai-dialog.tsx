@@ -9,9 +9,9 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/shared/ui/primitives/alert-dialog";
-import { isApiError } from "@/lib/api/client";
+import { isApiError } from "@/shared/api/client";
 import { useDeleteAgent } from "@/lib/api/queries";
-import { ErrorCodeLastAdmin, type IntelligenceRef } from "@/lib/api/types.gen";
+import { ErrorCodeLastAdmin, type IntelligenceRef } from "@/shared/api/types.gen";
 import { useT } from "@/shared/i18n";
 
 /**

@@ -4,7 +4,7 @@ import { BackToConversations } from "@/shared/ui/molecules/back-link";
 import { GroupAvatar } from "@/components/group-avatar";
 import { ProfileLink } from "@/components/profile-link";
 import { IntelligenceAvatar, IntelligenceName } from "@/entities/intelligence";
-import { ConversationKindDM, type Room } from "@/lib/api/types.gen";
+import { ConversationKindDM, type Room } from "@/shared/api/types.gen";
 import { counterpartOf } from "@/lib/conversations";
 import { type Translate, useT } from "@/shared/i18n";
 

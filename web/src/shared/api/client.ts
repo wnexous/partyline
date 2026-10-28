@@ -1,4 +1,4 @@
-import type { ErrorBody, ErrorCode, RefusedMember } from "./types.gen";
+import type { ErrorBody, ErrorCode, RefusedMember } from "@/shared/api/types.gen";
 
 /** Every API path is relative to this prefix (see internal/api/dto). */
 export const API_BASE = "/api/v1";

@@ -2,7 +2,7 @@ import { createRootRouteWithContext, Outlet, useRouter } from "@tanstack/react-r
 import { useEffect } from "react";
 import { CrashPage, NotFoundPage } from "@/shared/ui/molecules/status-pages";
 import { Toaster } from "@/shared/ui/primitives/sonner";
-import { setUnauthorizedHandler } from "@/lib/api/client";
+import { setUnauthorizedHandler } from "@/shared/api/client";
 import { queryKeys } from "@/lib/api/queries";
 import { useLiveStore } from "@/lib/live/store";
 import type { RouterContext } from "@/router";

@@ -23,7 +23,7 @@ import {
 import { Form } from "@/shared/ui/primitives/form";
 import { RadioGroup, RadioGroupItem } from "@/shared/ui/primitives/radio-group";
 import { Skeleton } from "@/shared/ui/primitives/skeleton";
-import { isApiError } from "@/lib/api/client";
+import { isApiError } from "@/shared/api/client";
 import {
   useChangePassword,
   useDeleteAccount,
@@ -44,7 +44,7 @@ import {
   type Me,
   PasswordMinLength,
   type Session,
-} from "@/lib/api/types.gen";
+} from "@/shared/api/types.gen";
 import { applyFieldErrors } from "@/shared/lib/forms";
 import { LOCALES, type MessageKey, type Translate, useI18n, useT } from "@/shared/i18n";
 import { useLiveStore } from "@/lib/live/store";

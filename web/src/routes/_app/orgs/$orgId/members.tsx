@@ -12,7 +12,7 @@ import { Badge } from "@/shared/ui/primitives/badge";
 import { Button } from "@/shared/ui/primitives/button";
 import { Skeleton } from "@/shared/ui/primitives/skeleton";
 import { IntelligenceAvatar, IntelligenceName } from "@/entities/intelligence";
-import { isApiError } from "@/lib/api/client";
+import { isApiError } from "@/shared/api/client";
 import {
   useMe,
   useOrg,
@@ -28,7 +28,7 @@ import {
   type Invitation,
   type OrgMember,
   type Permission,
-} from "@/lib/api/types.gen";
+} from "@/shared/api/types.gen";
 import { useI18n, useT } from "@/shared/i18n";
 import { PermissionAdmin, PermissionGuest, PermissionMember, permissionLabel } from "@/lib/orgs";
 import { formatAbsolute, formatRelative } from "@/shared/lib/time";

@@ -8,7 +8,7 @@ import {
 } from "lucide-react";
 import { useEffect, useState } from "react";
 import { Button } from "@/shared/ui/primitives/button";
-import { type FileKind, FileKindImage } from "@/lib/api/types.gen";
+import { type FileKind, FileKindImage } from "@/shared/api/types.gen";
 import { useI18n } from "@/shared/i18n";
 
 /*

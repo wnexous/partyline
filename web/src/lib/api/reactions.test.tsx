@@ -6,7 +6,7 @@ import { apiError, json, mockApi } from "@/test/fetch";
 import { makeMessage } from "@/test/fixtures";
 import type { MessagePages } from "./queries";
 import { applyReactions, queryKeys, useToggleReaction } from "./queries";
-import type { ActivityItem, Message, Reaction } from "./types.gen";
+import type { ActivityItem, Message, Reaction } from "@/shared/api/types.gen";
 
 /*
  * What a tap on a reaction sends and leaves in the cache (RCT-01, RCT-03, RCT-08): the reaction shows at once,

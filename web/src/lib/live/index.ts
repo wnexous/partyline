@@ -1,5 +1,5 @@
 import type { QueryClient } from "@tanstack/react-query";
-import { notifyUnauthorized } from "@/lib/api/client";
+import { notifyUnauthorized } from "@/shared/api/client";
 import { catchUp, handleLiveEvent } from "./handlers";
 import { createLiveSocket, type LiveSocketOptions } from "./socket";
 import { useLiveStore } from "./store";

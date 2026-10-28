@@ -1,4 +1,4 @@
-import type { PushSubscriptionRequest } from "@/lib/api/types.gen";
+import type { PushSubscriptionRequest } from "@/shared/api/types.gen";
 
 /*
  * The browser's side of Web Push (PUSH-18, PUSH-21, PUSH-22): whether this browser can push, the

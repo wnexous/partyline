@@ -34,7 +34,7 @@ import {
   type Role,
   RoleAdmin,
   RoleMember,
-} from "@/lib/api/types.gen";
+} from "@/shared/api/types.gen";
 import { type MessageKey, useI18n, useT } from "@/shared/i18n";
 import { formatAbsolute, formatRelative } from "@/shared/lib/time";
 import { cn } from "@/shared/lib/utils";

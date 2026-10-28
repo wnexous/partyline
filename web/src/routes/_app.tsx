@@ -12,7 +12,7 @@ import { Button } from "@/shared/ui/primitives/button";
 import { SidebarInset, SidebarProvider } from "@/shared/ui/primitives/sidebar";
 import { useIsMobile } from "@/shared/lib/device";
 import { useVisualViewport } from "@/shared/lib/use-visual-viewport";
-import { isApiError } from "@/lib/api/client";
+import { isApiError } from "@/shared/api/client";
 import { meQuery, useMe } from "@/lib/api/queries";
 import { isLocale, useT } from "@/shared/i18n";
 import { startLive } from "@/lib/live";

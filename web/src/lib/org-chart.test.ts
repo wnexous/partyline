@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import type { Position } from "@/lib/api/types.gen";
+import type { Position } from "@/shared/api/types.gen";
 import {
   makeChartMember,
   makeChartPosition,

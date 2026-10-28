@@ -1,7 +1,7 @@
 import { randomBytes } from "node:crypto";
 import { request } from "node:http";
 import type { BrowserContext, Page, TestInfo } from "@playwright/test";
-import type { AgentInfo, CreatedToken, Me } from "../src/lib/api/types.gen";
+import type { AgentInfo, CreatedToken, Me } from "../src/shared/api/types.gen";
 import { apiCall, type Credentials, expect } from "./fixtures";
 import type { Instance } from "./server";
 

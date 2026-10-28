@@ -18,7 +18,7 @@ import { Input } from "@/shared/ui/primitives/input";
 import { Popover, PopoverContent, PopoverTrigger } from "@/shared/ui/primitives/popover";
 import { RadioGroup, RadioGroupItem } from "@/shared/ui/primitives/radio-group";
 import { isCoarsePointer } from "@/shared/lib/device";
-import { isApiError } from "@/lib/api/client";
+import { isApiError } from "@/shared/api/client";
 import { useUpdateMember } from "@/lib/api/queries";
 import {
   type DeliveryMode,
@@ -28,7 +28,7 @@ import {
   MaxMemberKeywords,
   type RoomMember,
   type UpdateMemberRequest,
-} from "@/lib/api/types.gen";
+} from "@/shared/api/types.gen";
 import { applyFieldErrors, errorText } from "@/shared/lib/forms";
 import { type MessageKey, useI18n } from "@/shared/i18n";
 import {

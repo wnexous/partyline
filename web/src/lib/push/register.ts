@@ -1,5 +1,5 @@
-import { api } from "@/lib/api/client";
-import type { PushKey, PushSubscriptionRequest } from "@/lib/api/types.gen";
+import { api } from "@/shared/api/client";
+import type { PushKey, PushSubscriptionRequest } from "@/shared/api/types.gen";
 import { activeRegistration } from "@/lib/push/subscription";
 
 /*

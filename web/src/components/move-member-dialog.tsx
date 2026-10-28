@@ -12,9 +12,9 @@ import {
   DialogTitle,
 } from "@/shared/ui/primitives/dialog";
 import { Label } from "@/shared/ui/primitives/label";
-import { isApiError } from "@/lib/api/client";
+import { isApiError } from "@/shared/api/client";
 import { useOrgMovePreview, useUpdateOrgMember } from "@/lib/api/queries";
-import type { Position } from "@/lib/api/types.gen";
+import type { Position } from "@/shared/api/types.gen";
 import { useI18n, useT } from "@/shared/i18n";
 import { movablePositions, type PositionOption } from "@/lib/org-chart";
 import { isCoarsePointer } from "@/shared/lib/device";

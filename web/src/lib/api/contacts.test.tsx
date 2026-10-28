@@ -13,7 +13,7 @@ import {
   makePerson,
   makeProfile,
 } from "@/test/fixtures";
-import { ApiError } from "./client";
+import { ApiError } from "@/shared/api/client";
 import {
   queryKeys,
   useContacts,
@@ -22,7 +22,7 @@ import {
   useMergeAgent,
   usePeople,
 } from "./queries";
-import type { Contacts, IntelligenceProfile, IntelligenceRef } from "./types.gen";
+import type { Contacts, IntelligenceProfile, IntelligenceRef } from "@/shared/api/types.gen";
 
 /*
  * The hooks behind the contacts and profile pages (T42 part 2): what each one asks of the server

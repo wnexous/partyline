@@ -38,14 +38,14 @@ import {
   SheetTrigger,
 } from "@/shared/ui/primitives/sheet";
 import { Textarea } from "@/shared/ui/primitives/textarea";
-import { isApiError } from "@/lib/api/client";
+import { isApiError } from "@/shared/api/client";
 import {
   useDeleteRoom,
   useRemoveRoomAvatar,
   useUpdateRoom,
   useUploadRoomAvatar,
 } from "@/lib/api/queries";
-import { MaxRoomInstructions, type Room, type UpdateRoomRequest } from "@/lib/api/types.gen";
+import { MaxRoomInstructions, type Room, type UpdateRoomRequest } from "@/shared/api/types.gen";
 import { applyFieldErrors } from "@/shared/lib/forms";
 import { useI18n } from "@/shared/i18n";
 import { type RoomSettingsForm, roomSettingsSchema, textLength } from "@/lib/schemas";

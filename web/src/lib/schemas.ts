@@ -13,7 +13,7 @@ import {
   MaxTextLength,
   PasswordMinLength,
   UsernamePattern,
-} from "./api/types.gen";
+} from "@/shared/api/types.gen";
 import type { MessageKey } from "@/shared/i18n";
 import { isOrgSlug, MaxOrgNameLength, normalizeSlug } from "./orgs";
 

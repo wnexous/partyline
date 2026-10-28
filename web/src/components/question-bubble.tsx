@@ -8,7 +8,7 @@ import {
   type MessageAnswers,
   type QuickReply,
   type WizardQuestion,
-} from "@/lib/api/types.gen";
+} from "@/shared/api/types.gen";
 import { useI18n } from "@/shared/i18n";
 import { emptyDraft, type QuestionDraft, questionValid, submissionOf } from "@/lib/questions";
 import { cn } from "@/shared/lib/utils";

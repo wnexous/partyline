@@ -1,7 +1,7 @@
 import { screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import type { IntelligenceRef } from "@/lib/api/types.gen";
+import type { IntelligenceRef } from "@/shared/api/types.gen";
 import { useLiveStore } from "@/lib/live/store";
 import { renderWithProviders } from "@/test/render";
 import { avatarTone, IntelligenceAvatar, initials } from "./intelligence-avatar";

@@ -14,7 +14,7 @@ import {
 } from "@/shared/ui/primitives/dialog";
 import { Form } from "@/shared/ui/primitives/form";
 import { useCurrentOrg } from "@/hooks/use-current-org";
-import { isApiError } from "@/lib/api/client";
+import { isApiError } from "@/shared/api/client";
 import { useCreateOrg } from "@/lib/api/queries";
 import { applyFieldErrors } from "@/shared/lib/forms";
 import { useT } from "@/shared/i18n";

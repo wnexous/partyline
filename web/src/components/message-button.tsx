@@ -2,7 +2,7 @@ import { MessageSquareIcon } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/shared/ui/primitives/button";
 import { useStartConversation } from "@/hooks/use-start-conversation";
-import type { IntelligenceRef } from "@/lib/api/types.gen";
+import type { IntelligenceRef } from "@/shared/api/types.gen";
 import { useT } from "@/shared/i18n";
 
 /**

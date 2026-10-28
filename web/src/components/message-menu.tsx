@@ -12,7 +12,7 @@ import { authorDisplayName } from "@/components/message-item";
 import { ReactionBar, ReactionMenuRow } from "@/components/reaction-bar";
 import { ReactionPicker } from "@/components/reaction-picker";
 import { PopoverAnchor } from "@/shared/ui/primitives/popover";
-import type { Message } from "@/lib/api/types.gen";
+import type { Message } from "@/shared/api/types.gen";
 import { copyText } from "@/shared/lib/clipboard";
 import { useT } from "@/shared/i18n";
 import { messageExcerpt } from "@/lib/message-excerpt";

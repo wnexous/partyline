@@ -1,5 +1,5 @@
 import { Avatar, AvatarFallback, AvatarImage } from "@/shared/ui/primitives/avatar";
-import type { IntelligenceRef } from "@/lib/api/types.gen";
+import type { IntelligenceRef } from "@/shared/api/types.gen";
 import { avatarTone, initials } from "@/shared/lib/avatar";
 import { cn } from "@/shared/lib/utils";
 
