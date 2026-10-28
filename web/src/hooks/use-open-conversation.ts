@@ -1,5 +1,5 @@
 import { useEffect } from "react";
-import { useDocumentVisible } from "@/hooks/use-document-visible";
+import { useDocumentVisible } from "@/shared/lib/use-document-visible";
 import { useLiveStore } from "@/lib/live/store";
 
 /**

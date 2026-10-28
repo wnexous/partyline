@@ -1,5 +1,5 @@
 import { LanguagesIcon } from "lucide-react";
-import { Button } from "@/components/ui/button";
+import { Button } from "@/shared/ui/primitives/button";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -7,7 +7,7 @@ import {
   DropdownMenuRadioGroup,
   DropdownMenuRadioItem,
   DropdownMenuTrigger,
-} from "@/components/ui/dropdown-menu";
+} from "@/shared/ui/primitives/dropdown-menu";
 import { useUpdateMe } from "@/lib/api/queries";
 import { isLocale, LOCALES, type Locale, useT } from "@/lib/i18n";
 import { useLiveStore } from "@/lib/live/store";

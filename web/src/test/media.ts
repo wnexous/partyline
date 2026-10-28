@@ -24,7 +24,7 @@ export function stubPointer(kind: "coarse" | "fine") {
 
 /**
  * A viewport `width` px wide: `window.innerWidth` and the `(max-width: Npx)` media queries
- * agree with it, which is all the app's mobile switch reads (hooks/use-mobile.ts).
+ * agree with it, which is all the app's mobile switch reads (shared/lib/device.ts).
  */
 export function stubViewport(width: number) {
   vi.stubGlobal("innerWidth", width);

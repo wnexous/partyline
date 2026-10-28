@@ -1,6 +1,6 @@
 import { type QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { type ReactNode, useEffect } from "react";
-import { TooltipProvider } from "@/components/ui/tooltip";
+import { TooltipProvider } from "@/shared/ui/primitives/tooltip";
 import { I18nProvider } from "@/lib/i18n";
 import { useLiveStore } from "@/lib/live/store";
 import { applyTheme } from "@/lib/theme";

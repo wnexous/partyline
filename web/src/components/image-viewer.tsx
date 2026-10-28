@@ -8,19 +8,20 @@ import {
 } from "lucide-react";
 import { type KeyboardEvent, type PointerEvent, useEffect, useRef, useState } from "react";
 import { isViewableImage } from "@/components/message-item";
-import { Button } from "@/components/ui/button";
+import { Button } from "@/shared/ui/primitives/button";
 import {
   Dialog,
   DialogClose,
   DialogContent,
   DialogDescription,
   DialogTitle,
-} from "@/components/ui/dialog";
-import { Skeleton } from "@/components/ui/skeleton";
+} from "@/shared/ui/primitives/dialog";
+import { Skeleton } from "@/shared/ui/primitives/skeleton";
 import { attachmentUrl } from "@/lib/api/queries";
 import type { Attachment, Message } from "@/lib/api/types.gen";
 import { useI18n } from "@/lib/i18n";
-import { cn } from "@/lib/utils";
+import { cn } from "@/shared/lib/utils";
+import { isCoarsePointer } from "@/shared/lib/device";
 
 /*
  * The image viewer (IMG-01..IMG-06): an image attachment opens in a dialog inside the app instead
@@ -192,6 +193,7 @@ export function ImageViewer({
       <DialogContent
         ref={content}
         showCloseButton={false}
+        touchFirst={isCoarsePointer()}
         onKeyDown={onKeyDown}
         // Focus starts on the dialog itself: Escape and the arrows work at once, and no action is
         // one stray Enter away.

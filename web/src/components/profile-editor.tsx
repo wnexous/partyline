@@ -4,8 +4,8 @@ import { useForm } from "react-hook-form";
 import { toast } from "sonner";
 import { FormAlert, TextAreaField, TextField } from "@/components/form-fields";
 import { PhotoEditor } from "@/components/photo-editor";
-import { Button } from "@/components/ui/button";
-import { Form } from "@/components/ui/form";
+import { Button } from "@/shared/ui/primitives/button";
+import { Form } from "@/shared/ui/primitives/form";
 import { IntelligenceAvatar } from "@/entities/intelligence";
 import { isApiError } from "@/lib/api/client";
 import { useRemoveAvatar, useUpdateIntelligence, useUploadAvatar } from "@/lib/api/queries";
@@ -15,7 +15,7 @@ import {
   MaxProfileBio,
   type UpdateProfileRequest,
 } from "@/lib/api/types.gen";
-import { applyFieldErrors } from "@/lib/forms";
+import { applyFieldErrors } from "@/shared/lib/forms";
 import { useT } from "@/lib/i18n";
 import { type ProfileEditForm, profileEditSchema } from "@/lib/schemas";
 

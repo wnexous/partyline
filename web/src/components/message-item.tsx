@@ -18,9 +18,9 @@ import { QuestionBubble } from "@/components/question-bubble";
 import { ReactionToolbar } from "@/components/reaction-bar";
 import { ReactionChips } from "@/components/reaction-chips";
 import { RowMenuButton } from "@/components/row-menu-button";
-import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
+import { Tooltip, TooltipContent, TooltipTrigger } from "@/shared/ui/primitives/tooltip";
 import { IntelligenceAvatar, IntelligenceName } from "@/entities/intelligence";
-import { useLongPress } from "@/hooks/use-long-press";
+import { useLongPress } from "@/shared/lib/use-long-press";
 import { useSwipeReply } from "@/hooks/use-swipe-reply";
 import { attachmentUrl } from "@/lib/api/queries";
 import type {
@@ -31,8 +31,8 @@ import type {
   RoomMember,
 } from "@/lib/api/types.gen";
 import { type MessageKey, type Translate, useI18n } from "@/lib/i18n";
-import { formatAbsolute, formatClock } from "@/lib/time";
-import { cn } from "@/lib/utils";
+import { formatAbsolute, formatClock } from "@/shared/lib/time";
+import { cn } from "@/shared/lib/utils";
 import { isAudio } from "@/lib/voice";
 
 const Markdown = lazy(() => import("@/components/markdown"));

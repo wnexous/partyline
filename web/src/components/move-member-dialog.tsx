@@ -1,8 +1,8 @@
 import { useId, useState } from "react";
 import { toast } from "sonner";
 import { NativeSelect } from "@/components/native-select";
-import { Alert, AlertDescription } from "@/components/ui/alert";
-import { Button } from "@/components/ui/button";
+import { Alert, AlertDescription } from "@/shared/ui/primitives/alert";
+import { Button } from "@/shared/ui/primitives/button";
 import {
   Dialog,
   DialogContent,
@@ -10,13 +10,14 @@ import {
   DialogFooter,
   DialogHeader,
   DialogTitle,
-} from "@/components/ui/dialog";
-import { Label } from "@/components/ui/label";
+} from "@/shared/ui/primitives/dialog";
+import { Label } from "@/shared/ui/primitives/label";
 import { isApiError } from "@/lib/api/client";
 import { useOrgMovePreview, useUpdateOrgMember } from "@/lib/api/queries";
 import type { Position } from "@/lib/api/types.gen";
 import { useI18n, useT } from "@/lib/i18n";
 import { movablePositions, type PositionOption } from "@/lib/org-chart";
+import { isCoarsePointer } from "@/shared/lib/device";
 
 /** Who is being moved, and where they sit now (`""` for no position). */
 export interface MoveTarget {
@@ -52,7 +53,7 @@ export function MoveMemberDialog({
   const t = useT();
   return (
     <Dialog open={target !== null} onOpenChange={(open) => (open ? null : onClose())}>
-      <DialogContent>
+      <DialogContent closeLabel={t("common.close")} touchFirst={isCoarsePointer()}>
         {target ? (
           <MoveForm
             orgId={orgId}

@@ -9,7 +9,7 @@ import {
   UsersIcon,
   WaypointsIcon,
 } from "lucide-react";
-import { Button } from "@/components/ui/button";
+import { Button } from "@/shared/ui/primitives/button";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -17,7 +17,7 @@ import {
   DropdownMenuLabel,
   DropdownMenuSeparator,
   DropdownMenuTrigger,
-} from "@/components/ui/dropdown-menu";
+} from "@/shared/ui/primitives/dropdown-menu";
 import { type MessageKey, useT } from "@/lib/i18n";
 import { isAdminOf, type MyOrg, permissionLabel } from "@/lib/orgs";
 

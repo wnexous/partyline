@@ -13,9 +13,9 @@ import { makeQueryClient, renderWithRouter } from "@/test/render";
 const toast = vi.hoisted(() => Object.assign(vi.fn(), { success: vi.fn(), error: vi.fn() }));
 vi.mock("sonner", () => ({ toast }));
 
-/** The resize/decode step is mocked here; its own tests live in lib/avatar.test.ts. */
+/** The resize/decode step is mocked here; its own tests live in shared/lib/avatar.test.ts. */
 const prepareAvatar = vi.hoisted(() => vi.fn((file: File) => Promise.resolve<Blob>(file)));
-vi.mock("@/lib/avatar", () => ({ prepareAvatar }));
+vi.mock("@/shared/lib/avatar", async (importOriginal) => ({ ...(await importOriginal<Record<string, unknown>>()), prepareAvatar }));
 
 /*
  * Room settings after AD-015 (CID-22): a room is a conversation of intelligences, so there is no

@@ -3,7 +3,7 @@ import { useMemo, useState } from "react";
 import { useForm } from "react-hook-form";
 import { toast } from "sonner";
 import { FormAlert, SelectField, TextField } from "@/components/form-fields";
-import { Button } from "@/components/ui/button";
+import { Button } from "@/shared/ui/primitives/button";
 import {
   Dialog,
   DialogContent,
@@ -11,8 +11,8 @@ import {
   DialogFooter,
   DialogHeader,
   DialogTitle,
-} from "@/components/ui/dialog";
-import { Form } from "@/components/ui/form";
+} from "@/shared/ui/primitives/dialog";
+import { Form } from "@/shared/ui/primitives/form";
 import { IntelligenceAvatar, IntelligenceName } from "@/entities/intelligence";
 import { isApiError } from "@/lib/api/client";
 import { useContacts, useInviteToOrg } from "@/lib/api/queries";
@@ -24,11 +24,12 @@ import {
   type Position,
 } from "@/lib/api/types.gen";
 import { inviteCandidates } from "@/lib/contacts";
-import { applyFieldErrors } from "@/lib/forms";
+import { applyFieldErrors } from "@/shared/lib/forms";
 import { useT } from "@/lib/i18n";
 import { positionOptions } from "@/lib/org-chart";
 import { PermissionAdmin, PermissionGuest, PermissionMember, permissionLabel } from "@/lib/orgs";
 import { type InviteFormValues, inviteSchema } from "@/lib/schemas";
+import { isCoarsePointer } from "@/shared/lib/device";
 
 /**
  * Invites someone to the organization by @handle (OMEM-01). An admin gives any permission and
@@ -55,7 +56,7 @@ export function InviteDialog({
   const t = useT();
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-h-[calc(100dvh-2rem)] overflow-y-auto">
+      <DialogContent className="max-h-[calc(100dvh-2rem)] overflow-y-auto" closeLabel={t("common.close")} touchFirst={isCoarsePointer()}>
         <DialogHeader>
           <DialogTitle>{t("orgs.inviteTitle", { org: org.name })}</DialogTitle>
           <DialogDescription>

@@ -1,7 +1,7 @@
 import { Link } from "@tanstack/react-router";
 import { CompassIcon, ShieldOffIcon, TriangleAlertIcon } from "lucide-react";
 import { EmptyState } from "@/components/empty-state";
-import { Button } from "@/components/ui/button";
+import { Button } from "@/shared/ui/primitives/button";
 import { useT } from "@/lib/i18n";
 
 /** 403 for members opening admin routes (UI-21). */

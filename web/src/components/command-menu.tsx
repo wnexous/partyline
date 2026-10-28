@@ -12,15 +12,16 @@ import {
   CommandInput,
   CommandItem,
   CommandList,
-} from "@/components/ui/command";
-import { Dialog, DialogContent, DialogDescription, DialogTitle } from "@/components/ui/dialog";
+} from "@/shared/ui/primitives/command";
+import { Dialog, DialogContent, DialogDescription, DialogTitle } from "@/shared/ui/primitives/dialog";
 import { useProfilePanel } from "@/hooks/use-profile-panel";
 import { useAgents, useConnectors, useConversations } from "@/lib/api/queries";
 import { type Connector, type Me, RoleAdmin } from "@/lib/api/types.gen";
 import { useT } from "@/lib/i18n";
 import { useLiveStore } from "@/lib/live/store";
 import { NAV_GROUPS } from "@/lib/nav";
-import { cn } from "@/lib/utils";
+import { cn } from "@/shared/lib/utils";
+import { isCoarsePointer } from "@/shared/lib/device";
 
 /*
  * Command palette (UI-22): Ctrl/Cmd+K from anywhere in the app jumps to a conversation, a connector
@@ -58,7 +59,7 @@ export function CommandMenu({ me }: { me: Me }) {
       <DialogContent
         showCloseButton={false}
         className="top-[12%] translate-y-0 gap-0 overflow-hidden p-0 sm:top-[18%] sm:max-w-xl"
-      >
+       closeLabel={t("common.close")} touchFirst={isCoarsePointer()}>
         <DialogTitle className="sr-only">{t("palette.title")}</DialogTitle>
         <DialogDescription className="sr-only">{t("palette.description")}</DialogDescription>
         {/* Mounted only while open: lists load on demand and the search starts empty. */}

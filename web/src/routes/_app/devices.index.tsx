@@ -9,16 +9,16 @@ import {
 import { type FormEvent, type ReactNode, useEffect, useId, useState } from "react";
 import { EmptyState } from "@/components/empty-state";
 import { FormAlert } from "@/components/form-fields";
-import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
-import { useAutoFocus } from "@/hooks/use-auto-focus";
+import { Button } from "@/shared/ui/primitives/button";
+import { Input } from "@/shared/ui/primitives/input";
+import { Label } from "@/shared/ui/primitives/label";
+import { useAutoFocus } from "@/shared/lib/device";
 import { isApiError } from "@/lib/api/client";
 import { useDeviceAction } from "@/lib/api/queries";
 import type { DeviceRequest } from "@/lib/api/types.gen";
 import { type Translate, useI18n, useT } from "@/lib/i18n";
-import { formatAbsolute, formatRelative } from "@/lib/time";
-import { cn } from "@/lib/utils";
+import { formatAbsolute, formatRelative } from "@/shared/lib/time";
+import { cn } from "@/shared/lib/utils";
 
 /*
  * Approve a machine (WIZ-02, DEV-02, DEV-05): `partyline setup --browser` prints this page's

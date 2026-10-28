@@ -1,5 +1,5 @@
 import { type RefObject, useEffect, useId, useRef, useState } from "react";
-import { Button } from "@/components/ui/button";
+import { Button } from "@/shared/ui/primitives/button";
 import { useAnswerQuestion } from "@/hooks/use-answer-question";
 import {
   MaxAnswerText,
@@ -11,7 +11,7 @@ import {
 } from "@/lib/api/types.gen";
 import { useI18n } from "@/lib/i18n";
 import { emptyDraft, type QuestionDraft, questionValid, submissionOf } from "@/lib/questions";
-import { cn } from "@/lib/utils";
+import { cn } from "@/shared/lib/utils";
 
 /*
  * The question a message carries, under its text (QR-10..QR-17). A quick reply is one tap: the

@@ -1,6 +1,6 @@
 import { useId } from "react";
 import { NativeSelect } from "@/components/native-select";
-import { Label } from "@/components/ui/label";
+import { Label } from "@/shared/ui/primitives/label";
 import type { MyOrg } from "@/lib/orgs";
 
 /**

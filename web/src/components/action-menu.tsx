@@ -1,13 +1,13 @@
 import { type LucideIcon, XIcon } from "lucide-react";
 import { Fragment, type ReactNode, useRef } from "react";
-import { Button } from "@/components/ui/button";
+import { Button } from "@/shared/ui/primitives/button";
 import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuSeparator,
   DropdownMenuTrigger,
-} from "@/components/ui/dropdown-menu";
+} from "@/shared/ui/primitives/dropdown-menu";
 import {
   Sheet,
   SheetClose,
@@ -15,9 +15,9 @@ import {
   SheetDescription,
   SheetHeader,
   SheetTitle,
-} from "@/components/ui/sheet";
+} from "@/shared/ui/primitives/sheet";
 import { useT } from "@/lib/i18n";
-import { cn } from "@/lib/utils";
+import { cn } from "@/shared/lib/utils";
 
 /*
  * What a row's actions look like once they are open (ACT-01, ACT-02, ACT-06). A touch device gets

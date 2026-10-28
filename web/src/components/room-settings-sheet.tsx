@@ -16,8 +16,8 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
   AlertDialogTrigger,
-} from "@/components/ui/alert-dialog";
-import { Button } from "@/components/ui/button";
+} from "@/shared/ui/primitives/alert-dialog";
+import { Button } from "@/shared/ui/primitives/button";
 import {
   FormControl,
   FormDescription,
@@ -26,8 +26,8 @@ import {
   FormLabel,
   Form as FormProvider,
   useFormField,
-} from "@/components/ui/form";
-import { Input } from "@/components/ui/input";
+} from "@/shared/ui/primitives/form";
+import { Input } from "@/shared/ui/primitives/input";
 import {
   Sheet,
   SheetContent,
@@ -36,8 +36,8 @@ import {
   SheetHeader,
   SheetTitle,
   SheetTrigger,
-} from "@/components/ui/sheet";
-import { Textarea } from "@/components/ui/textarea";
+} from "@/shared/ui/primitives/sheet";
+import { Textarea } from "@/shared/ui/primitives/textarea";
 import { isApiError } from "@/lib/api/client";
 import {
   useDeleteRoom,
@@ -46,10 +46,10 @@ import {
   useUploadRoomAvatar,
 } from "@/lib/api/queries";
 import { MaxRoomInstructions, type Room, type UpdateRoomRequest } from "@/lib/api/types.gen";
-import { applyFieldErrors } from "@/lib/forms";
+import { applyFieldErrors } from "@/shared/lib/forms";
 import { useI18n } from "@/lib/i18n";
 import { type RoomSettingsForm, roomSettingsSchema, textLength } from "@/lib/schemas";
-import { cn } from "@/lib/utils";
+import { cn } from "@/shared/lib/utils";
 
 /**
  * Room settings for managers: the group's photo (GAV-06), name, description, instructions for
@@ -63,7 +63,7 @@ export function RoomSettingsSheet({ room, trigger }: { room: Room; trigger: Reac
   return (
     <Sheet open={open} onOpenChange={setOpen}>
       <SheetTrigger asChild>{trigger}</SheetTrigger>
-      <SheetContent className="w-full gap-0 sm:max-w-md">
+      <SheetContent className="w-full gap-0 sm:max-w-md" closeLabel={t("common.close")}>
         <SheetHeader className="border-b">
           <SheetTitle>{t("settings.title")}</SheetTitle>
           <SheetDescription>{t("settings.body")}</SheetDescription>

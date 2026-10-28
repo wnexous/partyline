@@ -6,8 +6,8 @@ import { useForm } from "react-hook-form";
 import { PickableMeta } from "@/components/contact-meta";
 import { FormAlert, TextField } from "@/components/form-fields";
 import { OrgSelect } from "@/components/org-select";
-import { Button } from "@/components/ui/button";
-import { Checkbox } from "@/components/ui/checkbox";
+import { Button } from "@/shared/ui/primitives/button";
+import { Checkbox } from "@/shared/ui/primitives/checkbox";
 import {
   Dialog,
   DialogContent,
@@ -16,10 +16,10 @@ import {
   DialogHeader,
   DialogTitle,
   DialogTrigger,
-} from "@/components/ui/dialog";
-import { Form } from "@/components/ui/form";
-import { Input } from "@/components/ui/input";
-import { Skeleton } from "@/components/ui/skeleton";
+} from "@/shared/ui/primitives/dialog";
+import { Form } from "@/shared/ui/primitives/form";
+import { Input } from "@/shared/ui/primitives/input";
+import { Skeleton } from "@/shared/ui/primitives/skeleton";
 import { IntelligenceAvatar, IntelligenceName } from "@/entities/intelligence";
 import { useCurrentOrg } from "@/hooks/use-current-org";
 import { useOrgUsers } from "@/hooks/use-org-users";
@@ -36,12 +36,13 @@ import {
 } from "@/lib/api/types.gen";
 import { type Pickable, pickableList } from "@/lib/contacts";
 import { matchesTerms } from "@/lib/conversations";
-import { applyFieldErrors } from "@/lib/forms";
+import { applyFieldErrors } from "@/shared/lib/forms";
 import { useT } from "@/lib/i18n";
 import { useLiveStore } from "@/lib/live/store";
 import { canCreateGroupsIn } from "@/lib/orgs";
 import { withContactPresence } from "@/lib/presence";
 import { type CreateGroupForm, createGroupSchema } from "@/lib/schemas";
+import { isCoarsePointer } from "@/shared/lib/device";
 
 /*
  * "New group" (LAY-04): a name, the organization it belongs to, and the members that join, AIs and
@@ -58,7 +59,7 @@ export function NewGroupDialog({ trigger }: { trigger: ReactNode }) {
   return (
     <Dialog open={open} onOpenChange={setOpen}>
       <DialogTrigger asChild>{trigger}</DialogTrigger>
-      <DialogContent className="flex max-h-[min(44rem,calc(100dvh-2rem))] flex-col gap-0 p-0 sm:max-w-lg">
+      <DialogContent className="flex max-h-[min(44rem,calc(100dvh-2rem))] flex-col gap-0 p-0 sm:max-w-lg" closeLabel={t("common.close")} touchFirst={isCoarsePointer()}>
         <DialogHeader className="border-b px-5 pt-5 pb-4 text-left">
           <DialogTitle>{t("newGroup.title")}</DialogTitle>
           <DialogDescription>{t("newGroup.body")}</DialogDescription>

@@ -1,7 +1,7 @@
 import { CheckIcon, XIcon } from "lucide-react";
 import { type FormEvent, useId, useState } from "react";
-import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
+import { Button } from "@/shared/ui/primitives/button";
+import { Input } from "@/shared/ui/primitives/input";
 import { useT } from "@/lib/i18n";
 
 /**

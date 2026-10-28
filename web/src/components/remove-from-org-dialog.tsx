@@ -9,7 +9,7 @@ import {
   AlertDialogFooter,
   AlertDialogHeader,
   AlertDialogTitle,
-} from "@/components/ui/alert-dialog";
+} from "@/shared/ui/primitives/alert-dialog";
 import { isApiError } from "@/lib/api/client";
 import { useRemoveFromOrg } from "@/lib/api/queries";
 import {

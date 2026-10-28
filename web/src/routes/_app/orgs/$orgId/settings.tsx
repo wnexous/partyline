@@ -17,9 +17,9 @@ import {
   AlertDialogFooter,
   AlertDialogHeader,
   AlertDialogTitle,
-} from "@/components/ui/alert-dialog";
-import { Button } from "@/components/ui/button";
-import { Form } from "@/components/ui/form";
+} from "@/shared/ui/primitives/alert-dialog";
+import { Button } from "@/shared/ui/primitives/button";
+import { Form } from "@/shared/ui/primitives/form";
 import { isApiError } from "@/lib/api/client";
 import {
   useDeleteOrg,
@@ -36,7 +36,7 @@ import {
   type Organization,
   type UpdateOrganizationRequest,
 } from "@/lib/api/types.gen";
-import { applyFieldErrors } from "@/lib/forms";
+import { applyFieldErrors } from "@/shared/lib/forms";
 import { useI18n, useT } from "@/lib/i18n";
 import { ownedThings, PermissionAdmin } from "@/lib/orgs";
 import { type UpdateOrgForm, updateOrgSchema } from "@/lib/schemas";

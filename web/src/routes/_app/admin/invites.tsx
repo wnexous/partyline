@@ -14,8 +14,8 @@ import {
   AlertDialogFooter,
   AlertDialogHeader,
   AlertDialogTitle,
-} from "@/components/ui/alert-dialog";
-import { Button } from "@/components/ui/button";
+} from "@/shared/ui/primitives/alert-dialog";
+import { Button } from "@/shared/ui/primitives/button";
 import {
   Dialog,
   DialogContent,
@@ -23,9 +23,9 @@ import {
   DialogFooter,
   DialogHeader,
   DialogTitle,
-} from "@/components/ui/dialog";
-import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
-import { Skeleton } from "@/components/ui/skeleton";
+} from "@/shared/ui/primitives/dialog";
+import { RadioGroup, RadioGroupItem } from "@/shared/ui/primitives/radio-group";
+import { Skeleton } from "@/shared/ui/primitives/skeleton";
 import { useAdminInvites, useCreateInvite, useRevokeInvite } from "@/lib/api/queries";
 import {
   type CreatedInvite,
@@ -36,8 +36,9 @@ import {
   RoleMember,
 } from "@/lib/api/types.gen";
 import { type MessageKey, useI18n, useT } from "@/lib/i18n";
-import { formatAbsolute, formatRelative } from "@/lib/time";
-import { cn } from "@/lib/utils";
+import { formatAbsolute, formatRelative } from "@/shared/lib/time";
+import { cn } from "@/shared/lib/utils";
+import { isCoarsePointer } from "@/shared/lib/device";
 
 export const Route = createFileRoute("/_app/admin/invites")({
   component: AdminInvitesPage,
@@ -229,7 +230,7 @@ function CreateInviteDialog({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-md">
+      <DialogContent className="sm:max-w-md" closeLabel={t("common.close")} touchFirst={isCoarsePointer()}>
         <DialogHeader>
           <DialogTitle>{t("invites.new")}</DialogTitle>
           <DialogDescription>{t("invites.newBody")}</DialogDescription>

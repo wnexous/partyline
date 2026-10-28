@@ -3,7 +3,7 @@ import { PlusIcon, SearchIcon } from "lucide-react";
 import { type ReactNode, useMemo, useState } from "react";
 import { toast } from "sonner";
 import { PickableMeta } from "@/components/contact-meta";
-import { Button } from "@/components/ui/button";
+import { Button } from "@/shared/ui/primitives/button";
 import {
   Dialog,
   DialogContent,
@@ -11,11 +11,11 @@ import {
   DialogHeader,
   DialogTitle,
   DialogTrigger,
-} from "@/components/ui/dialog";
-import { Input } from "@/components/ui/input";
-import { Skeleton } from "@/components/ui/skeleton";
+} from "@/shared/ui/primitives/dialog";
+import { Input } from "@/shared/ui/primitives/input";
+import { Skeleton } from "@/shared/ui/primitives/skeleton";
 import { IntelligenceAvatar, IntelligenceName } from "@/entities/intelligence";
-import { useAutoFocus } from "@/hooks/use-auto-focus";
+import { isCoarsePointer, useAutoFocus } from "@/shared/lib/device";
 import { useOrgUsers } from "@/hooks/use-org-users";
 import { useAddMember, useContacts, useRoom } from "@/lib/api/queries";
 import type { MemberKind, RoomMember } from "@/lib/api/types.gen";
@@ -48,7 +48,7 @@ export function MemberPicker({
   return (
     <Dialog open={open} onOpenChange={setOpen}>
       <DialogTrigger asChild>{trigger}</DialogTrigger>
-      <DialogContent className="flex max-h-[min(40rem,calc(100dvh-2rem))] flex-col gap-0 p-0 sm:max-w-lg">
+      <DialogContent className="flex max-h-[min(40rem,calc(100dvh-2rem))] flex-col gap-0 p-0 sm:max-w-lg" closeLabel={t("common.close")} touchFirst={isCoarsePointer()}>
         <DialogHeader className="border-b px-5 pt-5 pb-4 text-left">
           <DialogTitle>{t("picker.title")}</DialogTitle>
           <DialogDescription>{t("picker.body")}</DialogDescription>

@@ -10,7 +10,7 @@ import {
 } from "react";
 import { useT } from "@/lib/i18n";
 import { type ChartTreeNode, visibleNodes } from "@/lib/org-chart";
-import { cn } from "@/lib/utils";
+import { cn } from "@/shared/lib/utils";
 
 /*
  * The org chart as an ARIA tree (CHART-04): `role="tree"` with a `treeitem` for each position,

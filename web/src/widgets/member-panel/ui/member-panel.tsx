@@ -1,6 +1,6 @@
 import type { ReactNode } from "react";
 import { toast } from "sonner";
-import { Skeleton } from "@/components/ui/skeleton";
+import { Skeleton } from "@/shared/ui/primitives/skeleton";
 import { type PersonRow, toPersonRow } from "@/entities/room-member";
 import { useAddMember, useMe, useRemoveMember } from "@/lib/api/queries";
 import type { IntelligenceRef, RoomMember } from "@/lib/api/types.gen";

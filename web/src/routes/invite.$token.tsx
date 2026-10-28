@@ -6,13 +6,13 @@ import { useForm } from "react-hook-form";
 import { AuthLayout } from "@/components/auth-layout";
 import { EmptyState } from "@/components/empty-state";
 import { FormAlert, TextField } from "@/components/form-fields";
-import { Button } from "@/components/ui/button";
-import { Form } from "@/components/ui/form";
-import { Skeleton } from "@/components/ui/skeleton";
+import { Button } from "@/shared/ui/primitives/button";
+import { Form } from "@/shared/ui/primitives/form";
+import { Skeleton } from "@/shared/ui/primitives/skeleton";
 import { isApiError } from "@/lib/api/client";
 import { useAcceptInvite, useInviteInfo } from "@/lib/api/queries";
 import { type InviteInfo, PasswordMinLength, RoleAdmin } from "@/lib/api/types.gen";
-import { applyFieldErrors } from "@/lib/forms";
+import { applyFieldErrors } from "@/shared/lib/forms";
 import { useI18n } from "@/lib/i18n";
 import { type AcceptInviteForm, acceptInviteSchema } from "@/lib/schemas";
 

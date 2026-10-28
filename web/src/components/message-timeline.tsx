@@ -13,15 +13,15 @@ import {
   type MessageMenuTarget,
   messageActionSet,
 } from "@/components/message-menu";
-import { Button } from "@/components/ui/button";
-import { Skeleton } from "@/components/ui/skeleton";
-import { useTouchFirst } from "@/hooks/use-enter-sends";
+import { Button } from "@/shared/ui/primitives/button";
+import { Skeleton } from "@/shared/ui/primitives/skeleton";
+import { useTouchFirst } from "@/shared/lib/device";
 import { useReact } from "@/hooks/use-react";
 import { useStickToEnd } from "@/hooks/use-stick-to-end";
 import { useRoomMessages } from "@/lib/api/queries";
 import type { Message, Page, RoomMember } from "@/lib/api/types.gen";
 import { type Translate, useI18n } from "@/lib/i18n";
-import { cn } from "@/lib/utils";
+import { cn } from "@/shared/lib/utils";
 
 /*
  * The live room timeline (UI-04, UI-05). Pages come from the infinite query (newest page first,

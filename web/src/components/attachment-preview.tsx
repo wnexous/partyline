@@ -8,7 +8,7 @@ import {
 } from "lucide-react";
 import { useEffect, useState } from "react";
 import { formatBytes } from "@/components/message-item";
-import { Button } from "@/components/ui/button";
+import { Button } from "@/shared/ui/primitives/button";
 import { fileKindOf } from "@/lib/api/queries";
 import { type FileKind, FileKindImage } from "@/lib/api/types.gen";
 import { useI18n } from "@/lib/i18n";

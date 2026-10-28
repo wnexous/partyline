@@ -1,7 +1,7 @@
 import type { Connector, ConnectorStatus } from "@/lib/api/types.gen";
 import { type MessageKey, useT } from "@/lib/i18n";
 import { useLiveStore } from "@/lib/live/store";
-import { cn } from "@/lib/utils";
+import { cn } from "@/shared/lib/utils";
 
 /*
  * Connector status (UI-17): the line metaphor again. Connected is a filled, pulsing green dot like

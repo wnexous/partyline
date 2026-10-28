@@ -1,6 +1,6 @@
 import { SearchIcon, XIcon } from "lucide-react";
 import { useRef } from "react";
-import { Input } from "@/components/ui/input";
+import { Input } from "@/shared/ui/primitives/input";
 import { useT } from "@/lib/i18n";
 
 /**

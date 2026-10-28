@@ -15,17 +15,17 @@ import {
   AlertDialogFooter,
   AlertDialogHeader,
   AlertDialogTitle,
-} from "@/components/ui/alert-dialog";
-import { Button } from "@/components/ui/button";
+} from "@/shared/ui/primitives/alert-dialog";
+import { Button } from "@/shared/ui/primitives/button";
 import {
   Dialog,
   DialogContent,
   DialogDescription,
   DialogHeader,
   DialogTitle,
-} from "@/components/ui/dialog";
-import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
-import { Skeleton } from "@/components/ui/skeleton";
+} from "@/shared/ui/primitives/dialog";
+import { RadioGroup, RadioGroupItem } from "@/shared/ui/primitives/radio-group";
+import { Skeleton } from "@/shared/ui/primitives/skeleton";
 import {
   useConnectors,
   useDeleteIdentity,
@@ -36,8 +36,9 @@ import {
 import type { Connector, Identity, PairingCode } from "@/lib/api/types.gen";
 import { useI18n, useT } from "@/lib/i18n";
 import { useLiveStore } from "@/lib/live/store";
-import { formatAbsolute } from "@/lib/time";
-import { cn } from "@/lib/utils";
+import { formatAbsolute } from "@/shared/lib/time";
+import { cn } from "@/shared/lib/utils";
+import { isCoarsePointer } from "@/shared/lib/device";
 
 export const Route = createFileRoute("/_app/identities")({
   component: IdentitiesPage,
@@ -203,7 +204,7 @@ function PairingDialog({
   const t = useT();
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-md">
+      <DialogContent className="sm:max-w-md" closeLabel={t("common.close")} touchFirst={isCoarsePointer()}>
         <DialogHeader>
           <DialogTitle>{t("identities.link")}</DialogTitle>
           <DialogDescription>{t("pairing.body")}</DialogDescription>

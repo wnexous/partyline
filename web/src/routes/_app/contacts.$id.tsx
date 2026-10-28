@@ -23,8 +23,8 @@ import { ProfileConversations } from "@/components/profile-conversations";
 import { ProfileEditor } from "@/components/profile-editor";
 import { RemoveFromOrgDialog } from "@/components/remove-from-org-dialog";
 import { StatusDot } from "@/components/status-dot";
-import { Button } from "@/components/ui/button";
-import { Skeleton } from "@/components/ui/skeleton";
+import { Button } from "@/shared/ui/primitives/button";
+import { Skeleton } from "@/shared/ui/primitives/skeleton";
 import { IntelligenceAvatar, IntelligenceName, YouBadge } from "@/entities/intelligence";
 import { harnessLabel } from "@/lib/agents";
 import { isApiError } from "@/lib/api/client";
@@ -40,7 +40,7 @@ import {
 import { mergeTargets } from "@/lib/contacts";
 import { useI18n, useT } from "@/lib/i18n";
 import { useLiveStore } from "@/lib/live/store";
-import { formatAbsolute, formatRelative } from "@/lib/time";
+import { formatAbsolute, formatRelative } from "@/shared/lib/time";
 
 export const Route = createFileRoute("/_app/contacts/$id")({
   component: ProfilePage,

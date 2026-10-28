@@ -1,5 +1,5 @@
 import { useI18n } from "@/lib/i18n";
-import { cn } from "@/lib/utils";
+import { cn } from "@/shared/lib/utils";
 
 /** Agent presence: a filled, pulsing green dot when online, a hollow grey ring when offline. */
 export function StatusDot({

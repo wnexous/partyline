@@ -1,7 +1,7 @@
-import { Badge } from "@/components/ui/badge";
+import { Badge } from "@/shared/ui/primitives/badge";
 import type { IntelligenceRef } from "@/lib/api/types.gen";
 import { useT } from "@/lib/i18n";
-import { cn } from "@/lib/utils";
+import { cn } from "@/shared/lib/utils";
 
 /*
  * "You" beside the viewer's own name (PROF-09). It says whose name this is, never what the identity

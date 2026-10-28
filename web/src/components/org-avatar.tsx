@@ -1,6 +1,6 @@
-import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
-import { avatarTone, initials } from "@/entities/intelligence";
-import { cn } from "@/lib/utils";
+import { Avatar, AvatarFallback, AvatarImage } from "@/shared/ui/primitives/avatar";
+import { avatarTone, initials } from "@/shared/lib/avatar";
+import { cn } from "@/shared/lib/utils";
 
 /*
  * An organization's face: the picture its admins gave it, or initials on a grey picked from the

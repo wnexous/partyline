@@ -10,7 +10,7 @@ import { NativeSelect } from "@/components/native-select";
 import { PageHeader } from "@/components/page-header";
 import { PageSection as Section } from "@/components/page-section";
 import { ProfileEditor } from "@/components/profile-editor";
-import { Button } from "@/components/ui/button";
+import { Button } from "@/shared/ui/primitives/button";
 import {
   Dialog,
   DialogContent,
@@ -19,10 +19,10 @@ import {
   DialogHeader,
   DialogTitle,
   DialogTrigger,
-} from "@/components/ui/dialog";
-import { Form } from "@/components/ui/form";
-import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
-import { Skeleton } from "@/components/ui/skeleton";
+} from "@/shared/ui/primitives/dialog";
+import { Form } from "@/shared/ui/primitives/form";
+import { RadioGroup, RadioGroupItem } from "@/shared/ui/primitives/radio-group";
+import { Skeleton } from "@/shared/ui/primitives/skeleton";
 import { isApiError } from "@/lib/api/client";
 import {
   useChangePassword,
@@ -45,7 +45,7 @@ import {
   PasswordMinLength,
   type Session,
 } from "@/lib/api/types.gen";
-import { applyFieldErrors } from "@/lib/forms";
+import { applyFieldErrors } from "@/shared/lib/forms";
 import { LOCALES, type MessageKey, type Translate, useI18n, useT } from "@/lib/i18n";
 import { useLiveStore } from "@/lib/live/store";
 import { defaultOrgIdOf } from "@/lib/orgs";
@@ -67,8 +67,9 @@ import {
   deleteAccountSchema,
 } from "@/lib/schemas";
 import type { ThemePreference } from "@/lib/theme";
-import { formatAbsolute, formatRelative } from "@/lib/time";
-import { cn } from "@/lib/utils";
+import { formatAbsolute, formatRelative } from "@/shared/lib/time";
+import { cn } from "@/shared/lib/utils";
+import { isCoarsePointer } from "@/shared/lib/device";
 
 export const Route = createFileRoute("/_app/account/")({
   component: SettingsPage,
@@ -743,7 +744,7 @@ function DeleteAccountSection() {
             {t("account.deleteOpen")}
           </Button>
         </DialogTrigger>
-        <DialogContent>
+        <DialogContent closeLabel={t("common.close")} touchFirst={isCoarsePointer()}>
           <DialogHeader>
             <DialogTitle>{t("account.deleteTitle")}</DialogTitle>
             <DialogDescription>{t("account.deleteDialogBody")}</DialogDescription>

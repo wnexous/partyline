@@ -17,8 +17,8 @@ import {
   AlertDialogFooter,
   AlertDialogHeader,
   AlertDialogTitle,
-} from "@/components/ui/alert-dialog";
-import { Button } from "@/components/ui/button";
+} from "@/shared/ui/primitives/alert-dialog";
+import { Button } from "@/shared/ui/primitives/button";
 import {
   Dialog,
   DialogContent,
@@ -26,20 +26,21 @@ import {
   DialogFooter,
   DialogHeader,
   DialogTitle,
-} from "@/components/ui/dialog";
-import { Form } from "@/components/ui/form";
-import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
-import { Skeleton } from "@/components/ui/skeleton";
-import { Switch } from "@/components/ui/switch";
+} from "@/shared/ui/primitives/dialog";
+import { Form } from "@/shared/ui/primitives/form";
+import { RadioGroup, RadioGroupItem } from "@/shared/ui/primitives/radio-group";
+import { Skeleton } from "@/shared/ui/primitives/skeleton";
+import { Switch } from "@/shared/ui/primitives/switch";
 import { isApiError } from "@/lib/api/client";
 import { useCreateToken, usePurgeToken, useRevokeToken, useTokens } from "@/lib/api/queries";
 import { type CreatedToken, type Token, TokenKindAgent, TokenKindUser } from "@/lib/api/types.gen";
-import { applyFieldErrors } from "@/lib/forms";
+import { applyFieldErrors } from "@/shared/lib/forms";
 import { type MessageKey, useI18n, useT } from "@/lib/i18n";
 import { type CreateTokenForm, createTokenSchema, TOKEN_EXPIRY_DAYS } from "@/lib/schemas";
 import { readStorage, writeStorage } from "@/lib/theme";
-import { formatAbsolute, formatRelative } from "@/lib/time";
-import { cn } from "@/lib/utils";
+import { formatAbsolute, formatRelative } from "@/shared/lib/time";
+import { cn } from "@/shared/lib/utils";
+import { isCoarsePointer } from "@/shared/lib/device";
 
 export const Route = createFileRoute("/_app/tokens")({
   component: TokensPage,
@@ -276,7 +277,7 @@ function CreateTokenDialog({
   const t = useT();
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-md">
+      <DialogContent className="sm:max-w-md" closeLabel={t("common.close")} touchFirst={isCoarsePointer()}>
         <DialogHeader>
           <DialogTitle>{t("tokens.new")}</DialogTitle>
           <DialogDescription>{t("tokens.newBody")}</DialogDescription>

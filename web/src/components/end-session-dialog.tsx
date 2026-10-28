@@ -8,7 +8,7 @@ import {
   AlertDialogFooter,
   AlertDialogHeader,
   AlertDialogTitle,
-} from "@/components/ui/alert-dialog";
+} from "@/shared/ui/primitives/alert-dialog";
 import { useEndSession } from "@/lib/api/queries";
 import type { IntelligenceRef } from "@/lib/api/types.gen";
 import { useT } from "@/lib/i18n";

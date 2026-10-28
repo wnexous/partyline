@@ -28,19 +28,19 @@ import {
 } from "@/components/message-timeline";
 import { RoomFiles } from "@/components/room-files";
 import { RoomSettingsSheet } from "@/components/room-settings-sheet";
-import { Button } from "@/components/ui/button";
+import { Button } from "@/shared/ui/primitives/button";
 import {
   Sheet,
   SheetContent,
   SheetDescription,
   SheetHeader,
   SheetTitle,
-} from "@/components/ui/sheet";
-import { Skeleton } from "@/components/ui/skeleton";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+} from "@/shared/ui/primitives/sheet";
+import { Skeleton } from "@/shared/ui/primitives/skeleton";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/shared/ui/primitives/tabs";
 import { useDraft, useDraftStore } from "@/features/send-message";
 import { useMarkRoomRead } from "@/hooks/use-mark-room-read";
-import { useIsMobile } from "@/hooks/use-mobile";
+import { useIsMobile } from "@/shared/lib/device";
 import { useOpenConversation } from "@/hooks/use-open-conversation";
 import { isApiError } from "@/lib/api/client";
 import { postMessageKey, useMe, useResumeRoom, useRoom, useRoomMembers } from "@/lib/api/queries";
@@ -251,7 +251,7 @@ function RoomPage() {
       ) : null}
       {isMobile ? (
         <Sheet open={sheetOpen} onOpenChange={setSheetOpen}>
-          <SheetContent className="w-[min(22rem,100vw)] gap-0 p-0">
+          <SheetContent className="w-[min(22rem,100vw)] gap-0 p-0" closeLabel={t("common.close")}>
             <SheetHeader className="sr-only">
               <SheetTitle>{panelLabel}</SheetTitle>
               <SheetDescription>{title}</SheetDescription>

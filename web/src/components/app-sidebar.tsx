@@ -11,12 +11,12 @@ import { NewGroupDialog } from "@/components/new-group-dialog";
 import { OrgSwitcher } from "@/components/org-switcher";
 import { OrganizationMenu } from "@/components/organization-menu";
 import { SearchButton } from "@/components/search-button";
-import { Button } from "@/components/ui/button";
-import { SidebarContent, SidebarFooter, SidebarHeader } from "@/components/ui/sidebar";
+import { Button } from "@/shared/ui/primitives/button";
+import { SidebarContent, SidebarFooter, SidebarHeader } from "@/shared/ui/primitives/sidebar";
 import { useCurrentOrg } from "@/hooks/use-current-org";
 import type { Me } from "@/lib/api/types.gen";
 import { useT } from "@/lib/i18n";
-import { cn } from "@/lib/utils";
+import { cn } from "@/shared/lib/utils";
 
 /** The wide-screen column: the messenger panel beside the page, as tall as the window. */
 export function AppSidebar({ me }: { me: Me }) {

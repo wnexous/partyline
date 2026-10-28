@@ -3,7 +3,7 @@ import { useState } from "react";
 import { useForm } from "react-hook-form";
 import { toast } from "sonner";
 import { FormAlert, TextField } from "@/components/form-fields";
-import { Button } from "@/components/ui/button";
+import { Button } from "@/shared/ui/primitives/button";
 import {
   Dialog,
   DialogContent,
@@ -11,14 +11,15 @@ import {
   DialogFooter,
   DialogHeader,
   DialogTitle,
-} from "@/components/ui/dialog";
-import { Form } from "@/components/ui/form";
+} from "@/shared/ui/primitives/dialog";
+import { Form } from "@/shared/ui/primitives/form";
 import { useCurrentOrg } from "@/hooks/use-current-org";
 import { isApiError } from "@/lib/api/client";
 import { useCreateOrg } from "@/lib/api/queries";
-import { applyFieldErrors } from "@/lib/forms";
+import { applyFieldErrors } from "@/shared/lib/forms";
 import { useT } from "@/lib/i18n";
 import { type CreateOrgForm, createOrgSchema } from "@/lib/schemas";
+import { isCoarsePointer } from "@/shared/lib/device";
 
 /**
  * "New organization" (ORG-01): a name of 1 to 100 characters. The creator becomes its admin and the
@@ -36,7 +37,7 @@ export function NewOrgDialog({
   const t = useT();
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent>
+      <DialogContent closeLabel={t("common.close")} touchFirst={isCoarsePointer()}>
         <DialogHeader>
           <DialogTitle>{t("orgs.new")}</DialogTitle>
           <DialogDescription>{t("orgs.newBody")}</DialogDescription>

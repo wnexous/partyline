@@ -10,9 +10,9 @@ import {
   DialogDescription,
   DialogHeader,
   DialogTitle,
-} from "@/components/ui/dialog";
-import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
-import { Skeleton } from "@/components/ui/skeleton";
+} from "@/shared/ui/primitives/dialog";
+import { RadioGroup, RadioGroupItem } from "@/shared/ui/primitives/radio-group";
+import { Skeleton } from "@/shared/ui/primitives/skeleton";
 import { useCurrentOrg } from "@/hooks/use-current-org";
 import { isApiError } from "@/lib/api/client";
 import { useConnectorKinds, useCreateConnector } from "@/lib/api/queries";
@@ -24,7 +24,8 @@ import {
 } from "@/lib/api/types.gen";
 import { type Translate, useT } from "@/lib/i18n";
 import { isAdminOf } from "@/lib/orgs";
-import { cn } from "@/lib/utils";
+import { cn } from "@/shared/lib/utils";
+import { isCoarsePointer } from "@/shared/lib/device";
 
 /** Secrets the server generated for a new connector, with the labels of their fields. */
 interface Generated {
@@ -69,7 +70,7 @@ export function AddConnectorDialog({
   return (
     <>
       <Dialog open={open} onOpenChange={onOpenChange}>
-        <DialogContent className="flex max-h-[calc(100dvh-2rem)] flex-col gap-0 p-0 sm:max-w-lg">
+        <DialogContent className="flex max-h-[calc(100dvh-2rem)] flex-col gap-0 p-0 sm:max-w-lg" closeLabel={t("common.close")} touchFirst={isCoarsePointer()}>
           <DialogHeader className="border-b px-5 pt-5 pb-4 text-left">
             <DialogTitle>{t("connectors.addTitle")}</DialogTitle>
             <DialogDescription>{t("connectors.addBody")}</DialogDescription>

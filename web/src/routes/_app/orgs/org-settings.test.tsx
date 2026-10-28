@@ -13,7 +13,7 @@ expect.extend(matchers);
 
 vi.mock("@/lib/live", () => ({ startLive: vi.fn(() => () => {}) }));
 // The photo is resized by its own unit tests; the page tests the upload flow itself.
-vi.mock("@/lib/avatar", () => ({ prepareAvatar: (file: File) => Promise.resolve(file) }));
+vi.mock("@/shared/lib/avatar", async (importOriginal) => ({ ...(await importOriginal<Record<string, unknown>>()), prepareAvatar: (file: File) => Promise.resolve(file) }));
 
 /*
  * The settings of an organization (T41: OMEM-04, ORG-06, OMEM-05): its name, address and picture,

@@ -8,9 +8,9 @@ import { MoveMemberDialog, type MoveTarget } from "@/components/move-member-dial
 import { NativeSelect } from "@/components/native-select";
 import { PageHeader } from "@/components/page-header";
 import { RemoveFromOrgDialog } from "@/components/remove-from-org-dialog";
-import { Badge } from "@/components/ui/badge";
-import { Button } from "@/components/ui/button";
-import { Skeleton } from "@/components/ui/skeleton";
+import { Badge } from "@/shared/ui/primitives/badge";
+import { Button } from "@/shared/ui/primitives/button";
+import { Skeleton } from "@/shared/ui/primitives/skeleton";
 import { IntelligenceAvatar, IntelligenceName } from "@/entities/intelligence";
 import { isApiError } from "@/lib/api/client";
 import {
@@ -31,7 +31,7 @@ import {
 } from "@/lib/api/types.gen";
 import { useI18n, useT } from "@/lib/i18n";
 import { PermissionAdmin, PermissionGuest, PermissionMember, permissionLabel } from "@/lib/orgs";
-import { formatAbsolute, formatRelative } from "@/lib/time";
+import { formatAbsolute, formatRelative } from "@/shared/lib/time";
 
 export const Route = createFileRoute("/_app/orgs/$orgId/members")({
   component: OrgMembersPage,

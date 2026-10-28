@@ -2,7 +2,7 @@ import type { ReactNode } from "react";
 import { ProfileLink } from "@/components/profile-link";
 import { IntelligenceAvatar, IntelligenceName } from "@/entities/intelligence";
 import type { IntelligenceRef } from "@/lib/api/types.gen";
-import { cn } from "@/lib/utils";
+import { cn } from "@/shared/lib/utils";
 
 /**
  * One contact on the contacts page: avatar, name with its badge and @handle, a line of what

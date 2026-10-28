@@ -1,7 +1,7 @@
 import { StatusDot } from "@/components/status-dot";
 import { appLabelOf, useIsOnline } from "@/entities/intelligence";
 import { useIntelligence } from "@/lib/api/queries";
-import { cn } from "@/lib/utils";
+import { cn } from "@/shared/lib/utils";
 
 /**
  * Whether an AI is online and the app it runs in (Claude Code, OpenCode…), from its profile and

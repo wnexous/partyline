@@ -4,11 +4,11 @@ import { useState } from "react";
 import { useForm } from "react-hook-form";
 import { AuthLayout } from "@/components/auth-layout";
 import { FormAlert, TextField } from "@/components/form-fields";
-import { Button } from "@/components/ui/button";
-import { Form } from "@/components/ui/form";
+import { Button } from "@/shared/ui/primitives/button";
+import { Form } from "@/shared/ui/primitives/form";
 import { isApiError } from "@/lib/api/client";
 import { setupStatusQuery, useLogin } from "@/lib/api/queries";
-import { safeRedirect } from "@/lib/forms";
+import { safeRedirect } from "@/shared/lib/forms";
 import { type Translate, useT } from "@/lib/i18n";
 import { type LoginForm, loginSchema } from "@/lib/schemas";
 

@@ -4,7 +4,7 @@ import { type FormEvent, type KeyboardEvent, useId, useState } from "react";
 import { useForm } from "react-hook-form";
 import { toast } from "sonner";
 import { FieldError, FormAlert } from "@/components/form-fields";
-import { Button } from "@/components/ui/button";
+import { Button } from "@/shared/ui/primitives/button";
 import {
   FormControl,
   FormDescription,
@@ -13,11 +13,11 @@ import {
   FormLabel,
   Form as FormProvider,
   useFormField,
-} from "@/components/ui/form";
-import { Input } from "@/components/ui/input";
-import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
-import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
-import { isCoarsePointer } from "@/hooks/use-auto-focus";
+} from "@/shared/ui/primitives/form";
+import { Input } from "@/shared/ui/primitives/input";
+import { Popover, PopoverContent, PopoverTrigger } from "@/shared/ui/primitives/popover";
+import { RadioGroup, RadioGroupItem } from "@/shared/ui/primitives/radio-group";
+import { isCoarsePointer } from "@/shared/lib/device";
 import { isApiError } from "@/lib/api/client";
 import { useUpdateMember } from "@/lib/api/queries";
 import {
@@ -29,7 +29,7 @@ import {
   type RoomMember,
   type UpdateMemberRequest,
 } from "@/lib/api/types.gen";
-import { applyFieldErrors, errorText } from "@/lib/forms";
+import { applyFieldErrors, errorText } from "@/shared/lib/forms";
 import { type MessageKey, useI18n } from "@/lib/i18n";
 import {
   keywordError,
@@ -37,7 +37,7 @@ import {
   memberSettingsSchema,
   validationVars,
 } from "@/lib/schemas";
-import { cn } from "@/lib/utils";
+import { cn } from "@/shared/lib/utils";
 
 /*
  * Per-room settings of an agent member (MEM-01..05): the name it uses in this room and which room

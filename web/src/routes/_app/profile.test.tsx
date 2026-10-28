@@ -25,7 +25,7 @@ import { sampleContacts } from "@/test/sample-contacts";
 
 vi.mock("@/lib/live", () => ({ startLive: vi.fn(() => () => {}) }));
 // The photo is resized by its own unit tests; the page tests the upload flow itself.
-vi.mock("@/lib/avatar", () => ({ prepareAvatar: (file: File) => Promise.resolve(file) }));
+vi.mock("@/shared/lib/avatar", async (importOriginal) => ({ ...(await importOriginal<Record<string, unknown>>()), prepareAvatar: (file: File) => Promise.resolve(file) }));
 
 /*
  * The profile page (PROF-03, PROF-05, PROF-11, PEOP-03, ACC-07): what an intelligence is, with an

@@ -1,6 +1,6 @@
 import { MessageSquareIcon } from "lucide-react";
 import { toast } from "sonner";
-import { Button } from "@/components/ui/button";
+import { Button } from "@/shared/ui/primitives/button";
 import { useStartConversation } from "@/hooks/use-start-conversation";
 import type { IntelligenceRef } from "@/lib/api/types.gen";
 import { useT } from "@/lib/i18n";

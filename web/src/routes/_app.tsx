@@ -8,10 +8,10 @@ import { CommandMenu } from "@/components/command-menu";
 import { LiveBanner } from "@/components/live-status";
 import { OrgSwitcher } from "@/components/org-switcher";
 import { ProfilePanel } from "@/components/profile-panel";
-import { Button } from "@/components/ui/button";
-import { SidebarInset } from "@/components/ui/sidebar";
-import { useIsMobile } from "@/hooks/use-mobile";
-import { useVisualViewport } from "@/hooks/use-visual-viewport";
+import { Button } from "@/shared/ui/primitives/button";
+import { SidebarInset, SidebarProvider } from "@/shared/ui/primitives/sidebar";
+import { useIsMobile } from "@/shared/lib/device";
+import { useVisualViewport } from "@/shared/lib/use-visual-viewport";
 import { isApiError } from "@/lib/api/client";
 import { meQuery, useMe } from "@/lib/api/queries";
 import { isLocale, useT } from "@/lib/i18n";
@@ -65,6 +65,14 @@ function AppLayout() {
   }, [me.locale]);
 
   return (
+    <SidebarProvider
+      isMobile={isMobile}
+      labels={{
+        navLabel: t("nav.label"),
+        sheetDescription: t("nav.sheetDescription"),
+        toggleSidebar: t("nav.toggleSidebar"),
+      }}
+    >
     <div className="flex min-h-svh w-full">
       <a
         href="#main"
@@ -91,6 +99,7 @@ function AppLayout() {
       <CommandMenu me={me} />
       <ProfilePanel />
     </div>
+    </SidebarProvider>
   );
 }
 

@@ -2,7 +2,7 @@ import { type FormEvent, useId, useState } from "react";
 import { toast } from "sonner";
 import { FormAlert } from "@/components/form-fields";
 import { NativeSelect } from "@/components/native-select";
-import { Button } from "@/components/ui/button";
+import { Button } from "@/shared/ui/primitives/button";
 import {
   Dialog,
   DialogContent,
@@ -10,11 +10,12 @@ import {
   DialogFooter,
   DialogHeader,
   DialogTitle,
-} from "@/components/ui/dialog";
+} from "@/shared/ui/primitives/dialog";
 import { isApiError } from "@/lib/api/client";
 import { useMergeAgent } from "@/lib/api/queries";
 import { ErrorCodeIdentityOnline, type IntelligenceRef } from "@/lib/api/types.gen";
 import { useT } from "@/lib/i18n";
+import { isCoarsePointer } from "@/shared/lib/device";
 
 /*
  * Merge one of the caller's AIs into another one (MRG-01, MRG-02): the one picked keeps
@@ -37,9 +38,10 @@ export function MergeAIDialog({
   /** Called with the id of the AI that remains once the merge succeeded, before the dialog closes. */
   onMerged?: (survivorId: string) => void;
 }) {
+  const t = useT();
   return (
     <Dialog open={ai !== null} onOpenChange={(open) => (open ? undefined : onClose())}>
-      <DialogContent>
+      <DialogContent closeLabel={t("common.close")} touchFirst={isCoarsePointer()}>
         {/* Keyed by the AI: a different opening starts from nothing picked and no old error. */}
         {ai ? (
           <MergeForm

@@ -1,7 +1,7 @@
 import { TriangleAlertIcon } from "lucide-react";
 import type { ReactNode } from "react";
 import { CodeBlock } from "@/components/copy-field";
-import { Button } from "@/components/ui/button";
+import { Button } from "@/shared/ui/primitives/button";
 import {
   Dialog,
   DialogContent,
@@ -9,7 +9,7 @@ import {
   DialogFooter,
   DialogHeader,
   DialogTitle,
-} from "@/components/ui/dialog";
+} from "@/shared/ui/primitives/dialog";
 
 /*
  * A secret the server returns exactly once (token secret, invite link): shown with a copy
@@ -39,7 +39,7 @@ export function SecretOnceDialog({
 }) {
   return (
     <Dialog open={secret !== null} onOpenChange={(open) => (open ? null : onClose())}>
-      <DialogContent className="sm:max-w-lg" onInteractOutside={(e) => e.preventDefault()}>
+      <DialogContent className="sm:max-w-lg" closeLabel={confirmLabel} onInteractOutside={(e) => e.preventDefault()}>
         <DialogHeader>
           <DialogTitle>{title}</DialogTitle>
           {description ? <DialogDescription>{description}</DialogDescription> : null}

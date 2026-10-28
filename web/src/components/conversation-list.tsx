@@ -18,18 +18,18 @@ import { EmptyState } from "@/components/empty-state";
 import { NewConversationDialog } from "@/components/new-conversation-dialog";
 import { NewGroupDialog } from "@/components/new-group-dialog";
 import { RowMenuButton } from "@/components/row-menu-button";
-import { Button } from "@/components/ui/button";
-import { Skeleton } from "@/components/ui/skeleton";
+import { Button } from "@/shared/ui/primitives/button";
+import { Skeleton } from "@/shared/ui/primitives/skeleton";
 import { useCurrentOrg } from "@/hooks/use-current-org";
-import { useTouchFirst } from "@/hooks/use-enter-sends";
-import { useLongPress } from "@/hooks/use-long-press";
+import { useTouchFirst } from "@/shared/lib/device";
+import { useLongPress } from "@/shared/lib/use-long-press";
 import { useConversations } from "@/lib/api/queries";
 import type { Conversation } from "@/lib/api/types.gen";
 import { conversationMatches } from "@/lib/conversations";
 import { useI18n, useT } from "@/lib/i18n";
 import { inOrg } from "@/lib/orgs";
-import { formatAbsolute, formatListTime } from "@/lib/time";
-import { cn } from "@/lib/utils";
+import { formatAbsolute, formatListTime } from "@/shared/lib/time";
+import { cn } from "@/shared/lib/utils";
 import { isVoicePreview } from "@/lib/voice";
 
 /*

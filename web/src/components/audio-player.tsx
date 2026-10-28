@@ -1,6 +1,6 @@
 import { FileIcon, PauseIcon, PlayIcon } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
-import { Button } from "@/components/ui/button";
+import { Button } from "@/shared/ui/primitives/button";
 import { attachmentUrl } from "@/lib/api/queries";
 import type { Attachment } from "@/lib/api/types.gen";
 import { useI18n } from "@/lib/i18n";

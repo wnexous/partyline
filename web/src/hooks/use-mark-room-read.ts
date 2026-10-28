@@ -1,5 +1,5 @@
 import { useEffect, useRef } from "react";
-import { useDocumentVisible } from "@/hooks/use-document-visible";
+import { useDocumentVisible } from "@/shared/lib/use-document-visible";
 import { useMarkRead, useNewestSeq } from "@/lib/api/queries";
 
 /**

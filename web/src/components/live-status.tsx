@@ -2,7 +2,7 @@ import { RadioTowerIcon } from "lucide-react";
 import { useDisconnected } from "@/hooks/use-disconnected";
 import { useT } from "@/lib/i18n";
 import { useLiveStore } from "@/lib/live/store";
-import { cn } from "@/lib/utils";
+import { cn } from "@/shared/lib/utils";
 
 /** The line indicator: a filled, pulsing green dot while the live socket is open, a pulsing ring while it connects. */
 export function LiveIndicator({ className }: { className?: string }) {

@@ -8,7 +8,7 @@ import {
   AlertDialogFooter,
   AlertDialogHeader,
   AlertDialogTitle,
-} from "@/components/ui/alert-dialog";
+} from "@/shared/ui/primitives/alert-dialog";
 import { isApiError } from "@/lib/api/client";
 import { useDeleteAgent } from "@/lib/api/queries";
 import { ErrorCodeLastAdmin, type IntelligenceRef } from "@/lib/api/types.gen";

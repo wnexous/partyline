@@ -3,7 +3,7 @@ import { appLabelOf } from "@/entities/intelligence";
 import type { AIContact } from "@/lib/api/types.gen";
 import type { Pickable } from "@/lib/contacts";
 import { useI18n } from "@/lib/i18n";
-import { formatAbsolute, formatRelative } from "@/lib/time";
+import { formatAbsolute, formatRelative } from "@/shared/lib/time";
 
 /**
  * What tells one AI from another beside its name: whether it is online (and, with `lastSeen`,

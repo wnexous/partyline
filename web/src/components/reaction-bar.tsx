@@ -6,11 +6,11 @@ import {
   DropdownMenuGroup,
   DropdownMenuItem,
   DropdownMenuSeparator,
-} from "@/components/ui/dropdown-menu";
-import { PopoverTrigger } from "@/components/ui/popover";
+} from "@/shared/ui/primitives/dropdown-menu";
+import { PopoverTrigger } from "@/shared/ui/primitives/popover";
 import { useT } from "@/lib/i18n";
 import { QUICK_REACTIONS } from "@/lib/reactions";
-import { cn } from "@/lib/utils";
+import { cn } from "@/shared/lib/utils";
 
 /*
  * The six emoji at hand (RCT-02), in the three places a message offers them: a bar in the action sheet of a

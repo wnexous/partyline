@@ -1,7 +1,7 @@
 import { createRootRouteWithContext, Outlet, useRouter } from "@tanstack/react-router";
 import { useEffect } from "react";
 import { CrashPage, NotFoundPage } from "@/components/status-pages";
-import { Toaster } from "@/components/ui/sonner";
+import { Toaster } from "@/shared/ui/primitives/sonner";
 import { setUnauthorizedHandler } from "@/lib/api/client";
 import { queryKeys } from "@/lib/api/queries";
 import { useLiveStore } from "@/lib/live/store";

@@ -1,6 +1,6 @@
 import { type KeyboardEvent, useRef, useState } from "react";
 import { useT } from "@/lib/i18n";
-import { cn } from "@/lib/utils";
+import { cn } from "@/shared/lib/utils";
 
 /*
  * The larger set of emoji behind "More" (RCT-02): a grid of buttons, each named "React with <emoji>" and pressed

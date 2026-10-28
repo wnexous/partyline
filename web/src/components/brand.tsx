@@ -1,4 +1,4 @@
-import { cn } from "@/lib/utils";
+import { cn } from "@/shared/lib/utils";
 
 /** The partyline mark: three wires of a shared line, paper on ink (inverted in dark mode). */
 export function LogoMark({ className }: { className?: string }) {

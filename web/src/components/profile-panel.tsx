@@ -8,11 +8,11 @@ import { platformName } from "@/components/message-item";
 import { PANEL_CONVERSATIONS, ProfileConversations } from "@/components/profile-conversations";
 import { opensElsewhere } from "@/components/profile-link";
 import { StatusDot } from "@/components/status-dot";
-import { Button } from "@/components/ui/button";
-import { Sheet, SheetClose, SheetContent, SheetTitle } from "@/components/ui/sheet";
-import { Skeleton } from "@/components/ui/skeleton";
+import { Button } from "@/shared/ui/primitives/button";
+import { Sheet, SheetClose, SheetContent, SheetTitle } from "@/shared/ui/primitives/sheet";
+import { Skeleton } from "@/shared/ui/primitives/skeleton";
 import { appLabelOf, IntelligenceAvatar, YouBadge } from "@/entities/intelligence";
-import { useIsMobile } from "@/hooks/use-mobile";
+import { useIsMobile } from "@/shared/lib/device";
 import { useProfilePanelStore } from "@/hooks/use-profile-panel";
 import { useStartConversation } from "@/hooks/use-start-conversation";
 import { isApiError } from "@/lib/api/client";
@@ -20,7 +20,7 @@ import { intelligenceQuery, useMe } from "@/lib/api/queries";
 import { type IntelligenceProfile, IntelligenceRolePerson } from "@/lib/api/types.gen";
 import { useT } from "@/lib/i18n";
 import { useLiveStore } from "@/lib/live/store";
-import { cn } from "@/lib/utils";
+import { cn } from "@/shared/lib/utils";
 
 /*
  * The profile panel (PRF-01..PRF-06): who an intelligence is, beside the page you were on. One

@@ -8,7 +8,7 @@ import {
   AlertDialogFooter,
   AlertDialogHeader,
   AlertDialogTitle,
-} from "@/components/ui/alert-dialog";
+} from "@/shared/ui/primitives/alert-dialog";
 import { useDeleteMessage } from "@/lib/api/queries";
 import type { Message } from "@/lib/api/types.gen";
 import { useT } from "@/lib/i18n";

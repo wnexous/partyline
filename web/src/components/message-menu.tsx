@@ -11,9 +11,9 @@ import {
 import { authorDisplayName } from "@/components/message-item";
 import { ReactionBar, ReactionMenuRow } from "@/components/reaction-bar";
 import { ReactionPicker } from "@/components/reaction-picker";
-import { PopoverAnchor } from "@/components/ui/popover";
+import { PopoverAnchor } from "@/shared/ui/primitives/popover";
 import type { Message } from "@/lib/api/types.gen";
-import { copyText } from "@/lib/clipboard";
+import { copyText } from "@/shared/lib/clipboard";
 import { useT } from "@/lib/i18n";
 import { messageExcerpt } from "@/lib/message-excerpt";
 import { MORE_REACTIONS, PICKER_COLUMNS } from "@/lib/reactions";

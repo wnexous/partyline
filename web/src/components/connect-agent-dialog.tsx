@@ -3,7 +3,7 @@ import { ArrowUpRightIcon, ChevronRightIcon, HourglassIcon, RadioTowerIcon } fro
 import { type ReactNode, useEffect, useState } from "react";
 import { CodeBlock } from "@/components/copy-field";
 import { StatusDot } from "@/components/status-dot";
-import { Button } from "@/components/ui/button";
+import { Button } from "@/shared/ui/primitives/button";
 import {
   Dialog,
   DialogContent,
@@ -11,8 +11,8 @@ import {
   DialogFooter,
   DialogHeader,
   DialogTitle,
-} from "@/components/ui/dialog";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+} from "@/shared/ui/primitives/dialog";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/shared/ui/primitives/tabs";
 import {
   CLAUDE_CODE_DOCS_URL,
   CONFIG_FILE,
@@ -26,7 +26,8 @@ import {
 import { useAgents, useMe } from "@/lib/api/queries";
 import { useT } from "@/lib/i18n";
 import { useLiveStore } from "@/lib/live/store";
-import { cn } from "@/lib/utils";
+import { cn } from "@/shared/lib/utils";
+import { isCoarsePointer } from "@/shared/lib/device";
 
 /*
  * "Connect an agent" (WIZ-01): install partyline from this instance, approve the machine once
@@ -51,7 +52,7 @@ export function ConnectAgentDialog({
   const t = useT();
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="flex max-h-[calc(100dvh-2rem)] flex-col gap-0 p-0 sm:max-w-2xl">
+      <DialogContent className="flex max-h-[calc(100dvh-2rem)] flex-col gap-0 p-0 sm:max-w-2xl" closeLabel={t("common.close")} touchFirst={isCoarsePointer()}>
         <DialogHeader className="border-b px-5 pt-5 pb-4 text-left">
           <DialogTitle>{t("connect.title")}</DialogTitle>
           <DialogDescription>{t("connect.body")}</DialogDescription>

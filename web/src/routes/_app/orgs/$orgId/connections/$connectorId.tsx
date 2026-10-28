@@ -27,8 +27,8 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
   AlertDialogTrigger,
-} from "@/components/ui/alert-dialog";
-import { Button } from "@/components/ui/button";
+} from "@/shared/ui/primitives/alert-dialog";
+import { Button } from "@/shared/ui/primitives/button";
 import {
   Sheet,
   SheetContent,
@@ -36,9 +36,9 @@ import {
   SheetHeader,
   SheetTitle,
   SheetTrigger,
-} from "@/components/ui/sheet";
-import { Skeleton } from "@/components/ui/skeleton";
-import { Switch } from "@/components/ui/switch";
+} from "@/shared/ui/primitives/sheet";
+import { Skeleton } from "@/shared/ui/primitives/skeleton";
+import { Switch } from "@/shared/ui/primitives/switch";
 import { isApiError } from "@/lib/api/client";
 import {
   useConnector,
@@ -62,7 +62,7 @@ import {
 } from "@/lib/api/types.gen";
 import { allAIs } from "@/lib/contacts";
 import { type MessageKey, useI18n, useT } from "@/lib/i18n";
-import { formatAbsolute, formatRelative } from "@/lib/time";
+import { formatAbsolute, formatRelative } from "@/shared/lib/time";
 
 export const Route = createFileRoute("/_app/orgs/$orgId/connections/$connectorId")({
   component: ConnectorPage,
@@ -379,7 +379,7 @@ function ConnectorSettingsSheet({
           <Settings2Icon aria-hidden="true" />
         </Button>
       </SheetTrigger>
-      <SheetContent className="w-full gap-0 sm:max-w-md">
+      <SheetContent className="w-full gap-0 sm:max-w-md" closeLabel={t("common.close")}>
         <SheetHeader className="border-b">
           <SheetTitle>{t("connector.settings")}</SheetTitle>
           <SheetDescription>{t("connector.settingsBody")}</SheetDescription>

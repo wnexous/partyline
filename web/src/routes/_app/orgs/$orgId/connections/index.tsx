@@ -6,8 +6,8 @@ import { ConnectorStatusBadge, useConnectorState } from "@/components/connector-
 import { EmptyState } from "@/components/empty-state";
 import { platformLabel } from "@/components/message-item";
 import { PageHeader } from "@/components/page-header";
-import { Button } from "@/components/ui/button";
-import { Skeleton } from "@/components/ui/skeleton";
+import { Button } from "@/shared/ui/primitives/button";
+import { Skeleton } from "@/shared/ui/primitives/skeleton";
 import { useConnectors, useOrg } from "@/lib/api/queries";
 import type { Connector } from "@/lib/api/types.gen";
 import { useT } from "@/lib/i18n";

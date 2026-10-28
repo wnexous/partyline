@@ -4,12 +4,12 @@ import { useState } from "react";
 import { useForm } from "react-hook-form";
 import { AuthLayout } from "@/components/auth-layout";
 import { FormAlert, TextField } from "@/components/form-fields";
-import { Button } from "@/components/ui/button";
-import { Form } from "@/components/ui/form";
+import { Button } from "@/shared/ui/primitives/button";
+import { Form } from "@/shared/ui/primitives/form";
 import { isApiError } from "@/lib/api/client";
 import { setupStatusQuery, useSetup } from "@/lib/api/queries";
 import { PasswordMinLength } from "@/lib/api/types.gen";
-import { applyFieldErrors } from "@/lib/forms";
+import { applyFieldErrors } from "@/shared/lib/forms";
 import { useT } from "@/lib/i18n";
 import { type SetupForm, setupSchema } from "@/lib/schemas";
 
