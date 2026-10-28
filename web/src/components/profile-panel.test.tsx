@@ -152,6 +152,23 @@ stubLayout();
 beforeEach(() => useLiveStore.setState({ locale: "en", presence: {}, paletteOpen: false }));
 afterEach(() => vi.unstubAllGlobals());
 
+describe("a profile from a server that sends no conversations", () => {
+  it("renders the panel without them", async () => {
+    const { conversations: _c, ...rest } = profiles.a1 as IntelligenceProfile;
+    mockApi({
+      "GET /me": json(200, me),
+      "GET /conversations": json(200, { items: [] }),
+      "GET /contacts": json(200, sampleContacts),
+      "GET /intelligences/a1": json(200, rest),
+    });
+    const user = userEvent.setup();
+    renderRoute("/contacts");
+    const row = await screen.findByTestId("contact-a1");
+    await user.click(within(row).getByRole("link", { name: /Atlas/ }));
+    expect(await panelOf("Atlas")).toBeInTheDocument();
+  });
+});
+
 describe("opening the panel from where an identity shows (PRF-01)", () => {
   it("opens from the name of a timeline author, without leaving the page", async () => {
     roomApi();

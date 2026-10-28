@@ -1,4 +1,4 @@
-import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
+import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterAll, afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { AppProviders } from "@/components/app-providers";
@@ -470,6 +470,19 @@ describe("editing a message in the composer (EDT-10)", () => {
 
   const box = () => screen.getByRole("textbox", { name: "Message deploys" });
 
+  it("a file dropped while editing is not left to the browser and attaches nothing", () => {
+    mockApi({});
+    renderEditing();
+    const zone = screen.getByTestId("composer-dropzone");
+    const drag = withFiles(fileOf("shot.png", "image/png", 2048));
+
+    expect(fireEvent.dragOver(zone, { dataTransfer: drag })).toBe(false);
+    expect(fireEvent.drop(zone, { dataTransfer: drag })).toBe(false);
+
+    expect(screen.queryByRole("list", { name: "Attachments" })).toBeNull();
+    expect(zone).not.toHaveAttribute("data-dragging");
+  });
+
   it("loads the text under an 'Editing message' bar, without the attach button, and saves instead of sending", () => {
     mockApi({});
     renderEditing();
@@ -799,6 +812,45 @@ describe("pasting and dropping files (UI-07)", () => {
 
     expect(zone()).not.toHaveAttribute("data-dragging");
     expect(screen.queryByTestId("composer-drop-hint")).toBeNull();
+  });
+
+  it("clears the highlight after enter, leave, enter, leave in one tick", () => {
+    mockApi({});
+    renderComposer();
+    const drag = withFiles(png());
+
+    act(() => {
+      fireEvent.dragEnter(zone(), { dataTransfer: drag });
+      fireEvent.dragLeave(zone(), { dataTransfer: drag });
+      fireEvent.dragEnter(zone(), { dataTransfer: drag });
+      fireEvent.dragLeave(zone(), { dataTransfer: drag });
+    });
+
+    expect(zone()).not.toHaveAttribute("data-dragging");
+    expect(screen.queryByTestId("composer-drop-hint")).toBeNull();
+  });
+
+  it("shows two previews for two identical files and removing one keeps the other", async () => {
+    const { calls } = mockApi({ "POST /rooms/r1/messages": json(201, makeMessage({ seq: 9 })) });
+    const user = userEvent.setup();
+    const errors = vi.spyOn(console, "error").mockImplementation(() => {});
+    renderComposer();
+    const twin = () =>
+      new File([new Uint8Array(10)], "same.txt", { type: "text/plain", lastModified: 1 });
+
+    fireEvent.paste(box(), { clipboardData: withFiles(twin(), twin()) });
+    const list = screen.getByRole("list", { name: "Attachments" });
+    expect(within(list).getAllByRole("listitem")).toHaveLength(2);
+    expect(errors.mock.calls.filter((c) => String(c[0]).includes("same key"))).toEqual([]);
+    errors.mockRestore();
+
+    await user.click(screen.getAllByRole("button", { name: "Remove same.txt" })[0] as HTMLElement);
+    expect(within(list).getAllByRole("listitem")).toHaveLength(1);
+
+    await user.click(screen.getByRole("button", { name: "Send" }));
+    await waitFor(() => expect(posts(calls)).toHaveLength(1));
+    const form = posts(calls)[0]?.body as FormData;
+    expect(form.getAll("file")).toHaveLength(1);
   });
 
   it("revokes an image's object URL when its preview is removed", async () => {

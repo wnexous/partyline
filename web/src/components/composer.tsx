@@ -20,7 +20,7 @@ import {
   useRef,
   useState,
 } from "react";
-import { AttachmentPreviews } from "@/components/attachment-preview";
+import { type AttachedFile, AttachmentPreviews } from "@/components/attachment-preview";
 import {
   type MentionCandidate,
   MentionSuggestions,
@@ -187,7 +187,9 @@ function ComposerForm({
   const post = usePostMessage(roomId);
   const save = useEditMessage(roomId);
   const [text, setText] = useState("");
-  const [files, setFiles] = useState<File[]>([]);
+  const [attached, setAttached] = useState<AttachedFile[]>([]);
+  const nextFileId = useRef(0);
+  const files = useMemo(() => attached.map((a) => a.file), [attached]);
   // A file is being dragged over the composer: it says so and takes no drop until it leaves.
   const [dragging, setDragging] = useState(false);
   const dragDepth = useRef(0);
@@ -403,7 +405,7 @@ function ComposerForm({
       {
         onSuccess: () => {
           setText("");
-          setFiles([]);
+          setAttached([]);
           if (replyTo) onClearReply?.();
           textRef.current?.focus();
         },
@@ -494,7 +496,11 @@ function ComposerForm({
 
   const addFiles = (picked: readonly File[]) => {
     if (!picked.length) return;
-    setFiles((prev) => [...prev, ...picked]);
+    const added = picked.map((file) => {
+      nextFileId.current += 1;
+      return { id: nextFileId.current, file };
+    });
+    setAttached((prev) => [...prev, ...added]);
     setAnnouncement(
       picked.length === 1
         ? t("composer.announceFileAttached")
@@ -526,26 +532,29 @@ function ComposerForm({
     !!data && (data.files.length > 0 || Array.from(data.types).includes("Files"));
 
   const onDragEnter = (e: DragEvent<HTMLFormElement>) => {
-    if (editing || voiceOn || !carriesFiles(e.dataTransfer)) return;
+    if (!carriesFiles(e.dataTransfer)) return;
     e.preventDefault();
+    if (editing || voiceOn) return;
     dragDepth.current += 1;
     setDragging(true);
   };
+  // A file dropped on the composer is never left to the browser, which would open it and leave
+  // the app: while editing or recording it is swallowed without being added.
   const onDragOver = (e: DragEvent<HTMLFormElement>) => {
-    if (editing || voiceOn || !carriesFiles(e.dataTransfer)) return;
+    if (!carriesFiles(e.dataTransfer)) return;
     e.preventDefault();
-    e.dataTransfer.dropEffect = "copy";
+    e.dataTransfer.dropEffect = editing || voiceOn ? "none" : "copy";
   };
   const onDragLeave = () => {
-    if (!dragging) return;
     dragDepth.current = Math.max(0, dragDepth.current - 1);
     if (dragDepth.current === 0) setDragging(false);
   };
   const onDrop = (e: DragEvent<HTMLFormElement>) => {
-    if (editing || voiceOn || !carriesFiles(e.dataTransfer)) return;
+    if (!carriesFiles(e.dataTransfer)) return;
     e.preventDefault();
     dragDepth.current = 0;
     setDragging(false);
+    if (editing || voiceOn) return;
     addFiles(Array.from(e.dataTransfer.files));
     textRef.current?.focus();
   };
@@ -680,8 +689,8 @@ function ComposerForm({
         ) : null}
         {!editing && files.length > 0 && !voiceOn ? (
           <AttachmentPreviews
-            files={files}
-            onRemove={(file) => setFiles((prev) => prev.filter((x) => x !== file))}
+            files={attached}
+            onRemove={(id) => setAttached((prev) => prev.filter((x) => x.id !== id))}
           />
         ) : null}
         {/* biome-ignore lint/a11y/useAriaPropsSupportedByRole: while the mention list is open the box has role combobox */}

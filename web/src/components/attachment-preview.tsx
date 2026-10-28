@@ -31,6 +31,12 @@ const KIND_ICON: Record<FileKind, LucideIcon> = {
   document: FileTextIcon,
 };
 
+/** A file in the composer with the id it got when it was added; the id keys and removes it. */
+export interface AttachedFile {
+  id: number;
+  file: File;
+}
+
 /** One attachment's preview. `onRemove` takes it out of the composer. */
 export function AttachmentPreview({ file, onRemove }: { file: File; onRemove: () => void }) {
   const { t, locale } = useI18n();
@@ -92,9 +98,9 @@ export function AttachmentPreviews({
   files,
   onRemove,
 }: {
-  files: File[];
-  /** Takes this file out; the rest stay attached. */
-  onRemove: (file: File) => void;
+  files: AttachedFile[];
+  /** Takes this attachment out by its id; the rest stay attached, even identical files. */
+  onRemove: (id: number) => void;
 }) {
   const { t } = useI18n();
   return (
@@ -102,12 +108,8 @@ export function AttachmentPreviews({
       aria-label={t("composer.attachments")}
       className="flex gap-2 overflow-x-auto overscroll-x-contain px-3 pt-2.5 pb-1"
     >
-      {files.map((file) => (
-        <AttachmentPreview
-          key={`${file.name}-${file.size}-${file.lastModified}`}
-          file={file}
-          onRemove={() => onRemove(file)}
-        />
+      {files.map(({ id, file }) => (
+        <AttachmentPreview key={id} file={file} onRemove={() => onRemove(id)} />
       ))}
     </ul>
   );

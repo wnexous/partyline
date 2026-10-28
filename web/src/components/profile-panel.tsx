@@ -280,14 +280,14 @@ function ProfileCard({ profile }: { profile: IntelligenceProfile }) {
         </section>
       ) : null}
 
-      {profile.conversations.length > 0 ? (
+      {(profile.conversations ?? []).length > 0 ? (
         <section aria-labelledby={conversationsId} className="border-t px-5 py-4">
           <h3 id={conversationsId} className="text-sm font-medium">
             {t("profile.conversations")}
           </h3>
           <div className="mt-2.5">
             <ProfileConversations
-              conversations={profile.conversations}
+              conversations={profile.conversations ?? []}
               limit={PANEL_CONVERSATIONS}
               seeAllId={profile.id}
             />
