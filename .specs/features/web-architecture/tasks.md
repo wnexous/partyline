@@ -108,9 +108,46 @@ ticks its requirement ids here.
   edit-member-settings, remove-member, conversation-actions, manage-org-member (single org member
   actions), connect-agent, add-connector, edit-profile, change-language, toggle-theme,
   push-notifications, edit-room, create-org, invite-to-org.
-- Status: pending
+- Split into two branches so they can run in parallel: **T4a** (messaging: send-message,
+  mention-autocomplete, send-voice-message, delete-message, react-to-message, answer-question,
+  conversation-actions, edit-room, and the rooms routes) and **T4b** (people, organizations and
+  account: everything else in the list above, the account sections, and the pages and widgets that
+  go with them; see the T4b notes below).
+- Status: T4b done on wnexous/web-fsd-t4b; T4a pending on its own branch.
+
+## T4b — people, organizations, account (WA-06 part)
+- features: start-conversation, create-group, add-member, edit-member-settings, manage-org-member,
+  connect-agent, add-connector, edit-profile, change-language, toggle-theme, push-notifications,
+  create-org, invite-to-org, change-password, revoke-session, delete-account, set-default-org.
+- widgets: app-sidebar, profile-panel, command-palette, org-chart, people-group. app: providers,
+  layouts. pages: every route with a component (`contacts`, `account`, `orgs`, `connections`,
+  `devices`, `tokens`, `identities`, `admin`, `auth`, `setup`, `invite`); every route file is now
+  `createFileRoute(...)` with its guard or loader and the page component.
+- lib/schemas: base validators in `shared/lib/validation`, form schemas in their feature or page
+  `model/schema.ts`; `messageTextSchema` stays in `lib/schemas.ts` for T4a.
+- Notes (what was decided, and what stayed):
+  - `SecretOnceDialog` is a shared molecule (three slices use it; add-connector cannot import
+    connect-agent). `AuthLayout` is the shared `AuthFrame`, filled by each auth page with its
+    language and theme controls (pages cannot import app layouts).
+  - Theme rules and the preference keys are in `shared/lib` (the prefs store uses them);
+    `ThemeRadioGroup` is a shared molecule; the feature keeps `ThemeToggle`.
+  - The profile panel's open state is in `entities/intelligence/model/profile-panel` (the
+    `profile-link` entity uses it). Position rules are in `entities/organization/lib/positions`; the
+    chart tree in `widgets/org-chart/lib`.
+  - Pickers: `entities/intelligence/ui/pickable-row` is the one candidate row (IntelligenceRow with
+    presence from `useIsOnline`); the two lists keep their own containers (a list of Add buttons, a
+    fieldset of checkboxes), so their roles stay as they were.
+  - `OrgMemberActions` is the one move/delete/remove set for the members table and the chart; the two
+    row shells stay separate (a table row, a chart row).
+  - Not done: the contacts profile (`pages/contacts` ProfileView) still has its own sections; the
+    profile panel's sections are not yet shared with it (T5).
+  - Not done: `messageTextSchema` (T4a); `profileSchema` (unused) was removed.
+- Status: done
 
 ## T5 — widgets + pages (WA-01, WA-06 part)
+- Left after T4b: the contacts profile sections into `widgets/profile-panel` (see T4b notes),
+  `edit-room` form and `room-settings` (components/room-settings-sheet), `conversation-list`,
+  `conversation-header`, the timeline and member-panel legacy files (T4a / T5).
 - widgets: app-sidebar, conversation-list, conversation-header, conversation-timeline,
   member-panel (from T1), profile-panel (also used by contacts.$id), command-palette, org-chart,
   room-files, room-settings.

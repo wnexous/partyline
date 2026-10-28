@@ -101,6 +101,10 @@ Fix the import instead (move the code down a layer, or go through the index).
 | Device predicates | `shared/lib/device` (`isNarrow`/`useIsMobile`, `isCoarsePointer`, `isTouchFirst`) | 3 files (§1.Q) |
 | Pickable candidates | `entities/intelligence/model/pickables` `usePickables({ orgId })` | 3 wirings (§1.P) |
 | Composer draft | `features/send-message/model/draft-store` (zustand, per room: text, files, replyTo; edit drafts per message id) | local useState + keyed remount (§4) |
+| Validators (text length, username, password, handle) | `shared/lib/validation`; form schemas in their feature (`features/<x>/model/schema.ts`) or page (`pages/<p>/model/schema.ts`) | `lib/schemas.ts` (T4b) |
+| Theme and preference keys | `shared/lib/theme`, `shared/lib/storage`; the theme radio is `shared/ui/molecules/theme-radio-group` | `lib/theme.ts` (T4b) |
+| Candidate row of a picker (DM, group, member) | `entities/intelligence/ui/pickable-row` (IntelligenceRow + `useIsOnline`) | three private rows (T4b) |
+| Shared auth page frame | `shared/ui/molecules/auth-frame` (pages pass their language and theme controls) | `components/auth-layout.tsx` (T4b) |
 
 
 Some of these land with later migration tasks (`.specs/features/web-architecture/tasks.md`); until
