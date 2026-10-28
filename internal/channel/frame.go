@@ -21,7 +21,7 @@ var (
 
 // Frame renders a message record (the channel notification's meta fields plus "content", as
 // `partyline listen` prints it) the way the omp, pi and OpenCode adapters do (PUSH-06):
-// <partyline room=… conversation=… chat=… platform=… from=… trusted=… message_id=… interactive=… answers=… connection_id=… chat_id=…>text</partyline>
+// <partyline room=… conversation=… chat=… platform=… from=… author_session=… from_own_session=… trusted=… message_id=… interactive=… answers=… connection_id=… chat_id=…>text</partyline>
 // and the trust line (TrustedLine or DataLine). Absent fields are left out; markup in the text
 // is escaped. interactive and answers are the stored question and answer documents as JSON
 // (QR-21). connection_id and chat_id are what send_message takes to write to a chat of a
@@ -40,12 +40,19 @@ func Frame(r map[string]string) string {
 	if r["trusted"] == "true" {
 		trusted, line = "true", TrustedLine
 	}
+	// An AI's parallel session is named after its author: "Nexous (via :pi-2)".
+	from := first("sender_name", "author")
+	if from != "" && r["author_session"] != "" {
+		from += " (via :" + r["author_session"] + ")"
+	}
 	attrs := [][2]string{
 		{"room", first("room_name", "room")},
 		{"conversation", r["conversation"]},
 		{"chat", r["chat_title"]},
 		{"platform", r["platform"]},
-		{"from", first("sender_name", "author")},
+		{"from", from},
+		{"author_session", r["author_session"]},
+		{"from_own_session", r["from_own_session"]},
 		{"trusted", trusted},
 		{"message_id", r["message_id"]},
 		{"interactive", r["interactive"]},

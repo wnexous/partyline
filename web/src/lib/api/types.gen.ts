@@ -34,6 +34,11 @@ export interface Agent {
   online: boolean;
   last_seen_at?: string /* RFC 3339 */;
   created_at: string /* RFC 3339 */;
+  /**
+   * Sessions are the AI's live sessions, the principal ("") first; set by GET /agent/agents
+   * (`partyline agents`) and absent elsewhere and while the AI is offline.
+   */
+  sessions?: SessionInfo[];
 }
 /**
  * MaxAgentDisplayName is the longest agent display name in characters (ID-04).

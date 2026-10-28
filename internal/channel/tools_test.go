@@ -405,6 +405,83 @@ func TestToolListRooms(t *testing.T) {
 	}
 }
 
+// SESS-40: a room's AI that has a principal and a parallel "pi-2" session lists both with their addresses in
+// list_rooms and room_info; an offline AI has no sessions field.
+func TestRoomToolsListAnAIsLiveSessions(t *testing.T) {
+	e := newChanEnv(t)
+	helper := e.env.NewAI(e.alice, "helper")
+	e.alice.Post("/api/v1/rooms/"+e.room.ID+"/members", dto.AddMemberRequest{Kind: dto.MemberKindAgent, MemberID: helper}).RequireStatus(http.StatusCreated)
+	e.env.NewAI(e.alice, "idle")
+	s := e.connected(e.options())
+
+	tok := e.alice.WithBearer(e.secret)
+	principal, resp := tok.DialAgent("helper")
+	require.NotNil(t, principal, "upgrade refused: %d", resp.Status)
+	principal.Welcome(wait)
+	parallel := testkit.FolderOf("helper")
+	parallel.Harness = "pi"
+	second, resp := tok.DialFolder(parallel)
+	require.NotNil(t, second, "upgrade refused: %d", resp.Status)
+	require.Equal(t, "pi-2", second.Welcome(wait).Session.Label)
+
+	want := []sessionListing{
+		{Label: "", Harness: "claude", Address: "@helper"},
+		{Label: "pi-2", Harness: "pi", Address: "@helper:pi-2"},
+	}
+
+	text, isErr := s.call("list_rooms", map[string]any{})
+	require.False(t, isErr, text)
+	var rooms struct {
+		Rooms []roomListing `json:"rooms"`
+	}
+	require.NoError(t, json.Unmarshal([]byte(text), &rooms))
+	var listed memberListing
+	for _, m := range rooms.Rooms[0].Members {
+		if m.Name == "helper" {
+			listed = m
+		}
+	}
+	require.Equal(t, "helper", listed.Handle)
+	require.Equal(t, want, listed.Sessions)
+
+	text, isErr = s.call("room_info", toolArgs("room", e.room.ID))
+	require.False(t, isErr, text)
+	var info struct {
+		Members []roomInfoMember `json:"members"`
+	}
+	require.NoError(t, json.Unmarshal([]byte(text), &info))
+	var seen roomInfoMember
+	for _, m := range info.Members {
+		if m.Name == "helper" {
+			seen = m
+		}
+	}
+	require.Equal(t, "helper", seen.Handle)
+	require.Equal(t, want, seen.Sessions)
+
+	// An offline AI has no sessions field at all.
+	e.alice.Post("/api/v1/rooms/"+e.room.ID+"/members", dto.AddMemberRequest{Kind: dto.MemberKindAgent, MemberID: e.env.NewAI(e.alice, "sleepy")}).RequireStatus(http.StatusCreated)
+	for _, tool := range []string{"list_rooms", "room_info"} {
+		text, isErr = s.call(tool, toolArgs("room", e.room.ID))
+		require.False(t, isErr, text)
+		var raw map[string]any
+		require.NoError(t, json.Unmarshal([]byte(text), &raw))
+		members := raw["members"]
+		if tool == "list_rooms" {
+			members = raw["rooms"].([]any)[0].(map[string]any)["members"]
+		}
+		found := false
+		for _, m := range members.([]any) {
+			mm := m.(map[string]any)
+			if mm["name"] == "Sleepy" || mm["name"] == "sleepy" {
+				found = true
+				require.NotContains(t, mm, "sessions", tool)
+			}
+		}
+		require.True(t, found, tool)
+	}
+}
+
 // AGT-02: with an invalid token every tool reports "partyline: not connected (invalid token)".
 func TestToolsWithInvalidToken(t *testing.T) {
 	e := newChanEnv(t)

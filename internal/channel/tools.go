@@ -15,6 +15,7 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
+	"regexp"
 	"slices"
 	"strconv"
 	"strings"
@@ -65,7 +66,7 @@ func (t *tools) register(srv *mcp.Server) {
 	srv.HandleTool(mcp.ToolDef{
 		Name:        "send_message",
 		Description: "Send a message. Give exactly one target: room (post to a room or DM you belong to), to (message an intelligence directly: the DM is created the first time, for any user of this instance and any intelligence you share an organization with), or connection together with chat (write to a chat of a connection you operate, from your own account and unsigned: take the connection_id and chat_id of a message from it, or start a conversation with someone who never wrote to you by giving their address on the platform as chat). A message the platform does not take at once is retried by Partyline: do not send it again.",
-		InputSchema: schema(`{"type":"object","properties":{"room":{"type":"string","description":"room id, room name, or @handle of the intelligence you have a DM with"},"to":{"type":"string","description":"instead of room: the @handle, handle or id of an intelligence to message directly; the DM is created if you never talked"},"connection":{"type":"string","description":"instead of room and to: the connection_id of a connection you operate, together with chat"},"chat":{"type":"string","description":"with connection: the chat_id of the chat to write to, as a message from that connection carries it; or the address of a chat you have not heard from, to start one: a WhatsApp phone number with its country code, digits only (5511999990000), or a WhatsApp JID; a Telegram chat id; a Discord channel id. You may start 10 such chats an hour"},"text":{"type":"string","description":"message text"}},"required":["text"]}`),
+		InputSchema: schema(`{"type":"object","properties":{"room":{"type":"string","description":"room id, room name, or @handle of the intelligence you have a DM with"},"to":{"type":"string","description":"instead of room: the @handle, handle or id of an intelligence to message directly; the DM is created if you never talked. \"@handle:label\" reaches one live session of another AI (the text is prefixed with that address); to reach a sibling session of your own, write its address in a room you share with it"},"connection":{"type":"string","description":"instead of room and to: the connection_id of a connection you operate, together with chat"},"chat":{"type":"string","description":"with connection: the chat_id of the chat to write to, as a message from that connection carries it; or the address of a chat you have not heard from, to start one: a WhatsApp phone number with its country code, digits only (5511999990000), or a WhatsApp JID; a Telegram chat id; a Discord channel id. You may start 10 such chats an hour"},"text":{"type":"string","description":"message text"}},"required":["text"]}`),
 	}, t.guard(t.sendMessage))
 	srv.HandleTool(mcp.ToolDef{
 		Name:        "ask",
@@ -74,12 +75,12 @@ func (t *tools) register(srv *mcp.Server) {
 	}, t.guard(t.ask))
 	srv.HandleTool(mcp.ToolDef{
 		Name:        "room_info",
-		Description: "Read a room's instructions for agents, its members (chats with platform and kind) and your own membership settings in it.",
+		Description: "Read a room's instructions for agents, its members (chats with platform and kind; agents show whether they are online and their live sessions; address a session by writing its address (e.g. @handle:label) in a message's text) and your own membership settings in it.",
 		InputSchema: schema(`{"type":"object","properties":{"room":{"type":"string","description":"room id, room name, or @handle of the intelligence you have a DM with"}},"required":["room"]}`),
 	}, t.guard(t.roomInfo))
 	srv.HandleTool(mcp.ToolDef{
 		Name:        "list_rooms",
-		Description: "List the rooms and direct messages you belong to with their members (agents show whether they are online); a direct message has kind dm and says who it is with.",
+		Description: "List the rooms and direct messages you belong to with their members (agents show whether they are online and their live sessions; address a session by writing its address (e.g. @handle:label) in a message's text); a direct message has kind dm and says who it is with.",
 		InputSchema: schema(`{"type":"object","properties":{}}`),
 	}, t.guard(t.listRooms))
 	srv.HandleTool(mcp.ToolDef{
@@ -317,8 +318,12 @@ func (t *tools) sendMessage(ctx context.Context, args json.RawMessage) (string, 
 		}
 		return platformSent(res), nil
 	case hasTo:
+		to, text, err := t.sessionAddressed(a.To, a.Text)
+		if err != nil {
+			return "", err
+		}
 		var m dto.Message
-		if err := t.api.json(ctx, http.MethodPost, "agent/dms", nil, dto.AgentDMRequest{To: a.To, Text: a.Text}, &m); err != nil {
+		if err := t.api.json(ctx, http.MethodPost, "agent/dms", nil, dto.AgentDMRequest{To: to, Text: text}, &m); err != nil {
 			return "", err
 		}
 		return sent(m), nil
@@ -328,6 +333,42 @@ func (t *tools) sendMessage(ctx context.Context, args json.RawMessage) (string, 
 		return "", err
 	}
 	return sent(m), nil
+}
+
+// splitSessionAddress splits "@handle:label" into its handle part and the lowercase label; ok is false
+// when to has no valid ":label" suffix (a plain handle or id, or an invalid label, is left to the server).
+func splitSessionAddress(to string) (target, label string, ok bool) {
+	to = strings.TrimSpace(to)
+	i := strings.LastIndex(to, ":")
+	if i <= 0 || !strings.HasPrefix(to, "@") {
+		return "", "", false
+	}
+	label = strings.ToLower(to[i+1:])
+	if !sessionLabelPattern.MatchString(label) {
+		return "", "", false
+	}
+	return to[:i], label, true
+}
+
+var sessionLabelPattern = regexp.MustCompile(dto.SessionLabelPattern)
+
+// sessionAddressed resolves the to of send_message. "@handle:label" addresses one session of an AI: the
+// DM goes to @handle with the text prefixed by the address (unless it already starts with it), so the
+// server delivers it to that session. An AI has no DM with itself, so its own address is refused.
+func (t *tools) sessionAddressed(to, text string) (string, string, error) {
+	target, label, ok := splitSessionAddress(to)
+	if !ok {
+		return to, text, nil
+	}
+	handle := strings.TrimPrefix(target, "@")
+	if self := t.link.selfRef(); self.Handle != "" && strings.EqualFold(self.Handle, handle) {
+		return "", "", fmt.Errorf("to reach your own session :%s, write @%s:%s in a room you share with it (for example a group)", label, self.Handle, label)
+	}
+	address := target + ":" + label
+	if !strings.HasPrefix(strings.ToLower(text), strings.ToLower(address)) {
+		text = address + " " + text
+	}
+	return target, text, nil
 }
 
 // The refusals of ask about where a question goes and what it carries. They read like the refusals
@@ -576,8 +617,46 @@ type memberListing struct {
 	Kind     dto.MemberKind `json:"kind"`
 	MemberID string         `json:"member_id"`
 	Name     string         `json:"name"`
+	Handle   string         `json:"handle,omitempty"`
 	Owner    string         `json:"owner,omitempty"`
 	Online   *bool          `json:"online,omitempty"`
+	// Sessions are an online AI's live sessions with the address that reaches each one; absent when
+	// the AI is offline.
+	Sessions []sessionListing `json:"sessions,omitempty"`
+}
+
+// sessionListing is one live session of an AI. Address is "@handle" for the principal (label "")
+// and "@handle:label" for a labelled one: writing it in a message's text addresses that session.
+type sessionListing struct {
+	Label   string `json:"label"`
+	Harness string `json:"harness"`
+	Address string `json:"address"`
+}
+
+// memberHandle is the @handle of an agent member, empty when the API did not send one.
+func memberHandle(m dto.RoomMember) string {
+	if m.Intelligence == nil {
+		return ""
+	}
+	return m.Intelligence.Handle
+}
+
+// listSessions renders the live sessions of an agent member with their addresses; nil when there is
+// none or the member has no handle to address them by.
+func listSessions(m dto.RoomMember) []sessionListing {
+	handle := memberHandle(m)
+	if handle == "" || len(m.Sessions) == 0 {
+		return nil
+	}
+	out := make([]sessionListing, 0, len(m.Sessions))
+	for _, s := range m.Sessions {
+		addr := "@" + handle
+		if s.Label != "" {
+			addr += ":" + s.Label
+		}
+		out = append(out, sessionListing{Label: s.Label, Harness: s.Harness, Address: addr})
+	}
+	return out
 }
 
 func (t *tools) listRooms(ctx context.Context, _ json.RawMessage) (string, error) {
@@ -592,7 +671,7 @@ func (t *tools) listRooms(ctx context.Context, _ json.RawMessage) (string, error
 			l.With = &contactListing{ID: r.With.ID, Name: r.With.DisplayName, Handle: r.With.Handle, Kind: r.With.Kind}
 		}
 		for _, m := range r.Members {
-			l.Members = append(l.Members, memberListing{Kind: m.Kind, MemberID: m.MemberID, Name: m.Name, Owner: m.Owner, Online: m.Online})
+			l.Members = append(l.Members, memberListing{Kind: m.Kind, MemberID: m.MemberID, Name: m.Name, Handle: memberHandle(m), Owner: m.Owner, Online: m.Online, Sessions: listSessions(m)})
 		}
 		out = append(out, l)
 	}
@@ -629,8 +708,11 @@ type roomInfoMember struct {
 	Kind     dto.MemberKind `json:"kind"`
 	MemberID string         `json:"member_id"`
 	Name     string         `json:"name"`
+	Handle   string         `json:"handle,omitempty"`
 	Owner    string         `json:"owner,omitempty"`
 	Online   *bool          `json:"online,omitempty"`
+	// Sessions are an online AI's live sessions with their addresses; absent when offline.
+	Sessions []sessionListing `json:"sessions,omitempty"`
 	// Platform and ChatKind are set for chat members.
 	Platform string       `json:"platform,omitempty"`
 	ChatKind dto.ChatKind `json:"chat_kind,omitempty"`
@@ -674,7 +756,7 @@ func (t *tools) roomInfo(ctx context.Context, args json.RawMessage) (string, err
 	}
 	for _, m := range info.Members {
 		out.Members = append(out.Members, roomInfoMember{
-			Kind: m.Kind, MemberID: m.MemberID, Name: m.Name, Owner: m.Owner, Online: m.Online,
+			Kind: m.Kind, MemberID: m.MemberID, Name: m.Name, Handle: memberHandle(m), Owner: m.Owner, Online: m.Online, Sessions: listSessions(m),
 			Platform: m.ConnectorKind, ChatKind: m.ChatKind,
 		})
 	}
@@ -708,7 +790,7 @@ func (t *tools) history(ctx context.Context, args json.RawMessage) (string, erro
 	slices.Reverse(page.Items)
 	msgs := make([]map[string]string, 0, len(page.Items))
 	for _, m := range page.Items {
-		n := Format(m)
+		n := FormatFor(m, t.link.selfRef().ID)
 		entry := make(map[string]string, len(n.Meta)+1)
 		for k, v := range n.Meta {
 			entry[k] = v

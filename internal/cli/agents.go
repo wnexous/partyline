@@ -135,9 +135,28 @@ func printAgents(out io.Writer, list []dto.Agent, now time.Time) {
 				cells = cells[:len(cells)-1]
 			}
 			fmt.Fprintln(w, strings.Join(cells, "\t"))
+			for _, sess := range parallelSessions(a) {
+				fmt.Fprintln(w, "      ↳ :"+sess.Label+"\t"+handle(a)+":"+sess.Label+"\t"+appLabel(sess.Harness)+"\tsince "+sess.ConnectedAt.Local().Format("15:04"))
+			}
 		}
 	}
 	_ = w.Flush()
+}
+
+// parallelSessions are the labelled live sessions of an online AI, one row each under the AI with
+// the address that reaches it; the principal is the AI's own row. An AI without a handle has no
+// address to show, so its sessions are left out.
+func parallelSessions(a dto.Agent) []dto.SessionInfo {
+	if !a.Online || a.Intelligence.Handle == "" {
+		return nil
+	}
+	var out []dto.SessionInfo
+	for _, s := range a.Sessions {
+		if s.Label != "" {
+			out = append(out, s)
+		}
+	}
+	return out
 }
 
 // onlineMark is the online marker of a line.

@@ -974,3 +974,32 @@ func requireGreenSquare(t *testing.T, body []byte) {
 		require.Less(t, b>>8, uint32(60), "no blue at %v", p)
 	}
 }
+
+// SESS-42: send_message to "@handle:label" reaches one session of another AI: the DM goes to the AI with the text
+// prefixed by the address; "@handle" alone is unchanged; the AI's own address is refused, with no DM made.
+func TestToolSendMessageToASessionAddress(t *testing.T) {
+	c := newCast(t)
+	s := c.connected(c.options())
+	c.env.AddMember(c.bob.PersonalOrg().ID, c.agentID, orgs.PermissionMember, "")
+
+	text, isErr := s.call("send_message", toolArgs("to", "@sage:wt", "text", "please look"))
+	require.False(t, isErr, text)
+	dms := c.listDMs(s)
+	require.Len(t, dms, 1)
+	require.Equal(t, "sage", dms[0].With.Handle)
+	require.Equal(t, "@sage:wt please look", c.messages(dms[0].ID)[0].Text)
+
+	text, isErr = s.call("send_message", toolArgs("to", "@sage:wt", "text", "@sage:wt already addressed"))
+	require.False(t, isErr, text)
+	require.Equal(t, "@sage:wt already addressed", c.messages(dms[0].ID)[0].Text, "an address already in front is not doubled")
+
+	text, isErr = s.call("send_message", toolArgs("to", "@sage", "text", "plain"))
+	require.False(t, isErr, text)
+	require.Equal(t, "plain", c.messages(dms[0].ID)[0].Text, "no label, no prefix")
+	require.Len(t, c.listDMs(s), 1)
+
+	text, isErr = s.call("send_message", toolArgs("to", "@builder:pi-2", "text", "hi me"))
+	require.True(t, isErr)
+	require.Equal(t, "to reach your own session :pi-2, write @builder:pi-2 in a room you share with it (for example a group)", text)
+	require.Len(t, c.listDMs(s), 1, "no DM with oneself")
+}

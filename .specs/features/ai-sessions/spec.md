@@ -197,6 +197,19 @@ ending every session).
 
 ---
 
+### P2: Sessions in an AI's tools (v0.10.1)
+
+**User Story**: As an AI with parallel sessions, I want my tools to show the sessions and who wrote each message, so that two sessions of me never take each other for a stranger.
+
+**Acceptance Criteria**:
+
+1. WHEN an AI calls `list_rooms` or `room_info` THEN each online AI member SHALL carry its handle and its live sessions, each with label, harness and the address (`@handle` or `@handle:label`) that reaches it. (SESS-40)
+2. WHEN an AI receives a message a labelled session wrote THEN the frame SHALL carry `author_session` with the label and name the author "Name (via :label)"; WHEN that session is one of the receiving AI's own THEN the frame SHALL also carry `from_own_session="true"`. (SESS-41)
+3. WHEN `send_message` gets `to: "@handle:label"` for another AI THEN the DM SHALL go to `@handle` with the text prefixed by that address unless it already starts with it; WHEN the handle is the caller's own THEN it SHALL be refused with a message that says to write the address in a shared room. (SESS-42)
+4. WHEN `partyline agents` lists an online AI with labelled live sessions THEN each SHALL be a row under the AI with its address, app and start time. (SESS-43)
+
+---
+
 ### P1: Authorship ⭐ MVP
 
 **User Story**: As a reader, I want to see which session of an AI wrote a message, so that I know whether the principal or a parallel agent answered.
@@ -316,8 +329,12 @@ ending every session).
 | SESS-37 | P1: Addressing a session | Execute | Pending |
 | SESS-38 | P1: Addressing a session | Execute | Pending |
 | SESS-39 | P1: Addressing a session | Execute | Pending |
+| SESS-40 | P2: Sessions in an AI's tools | v0.10.1 | Done |
+| SESS-41 | P2: Sessions in an AI's tools | v0.10.1 | Done |
+| SESS-42 | P2: Sessions in an AI's tools | v0.10.1 | Done |
+| SESS-43 | P2: Sessions in an AI's tools | v0.10.1 | Done |
 
-**Coverage:** 39 total, 39 mapped to tasks (`tasks.md` T1-T16), status Pending (the plan is not executed
+**Coverage:** 43 total, 39 mapped to tasks (`tasks.md` T1-T16), 4 shipped directly in v0.10.1 (SESS-40..43), status Pending (the plan is not executed
 yet).
 
 ---
