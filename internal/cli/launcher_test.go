@@ -715,3 +715,54 @@ func TestListenSendsTheMainWorktreeFolder(t *testing.T) {
 	e.ai(t, "/repo/the repo")
 	require.Equal(t, []string{"/repo/the repo"}, e.folders(t))
 }
+
+// SESS-01, SESS-09: the launcher's own question to the server names the main folder of the folder it
+// launches in - never the one of the session it runs in - and a child launch (--parent) names none.
+func TestLauncherSessionLookupRecomputesTheMainFolder(t *testing.T) {
+	ask := func(t *testing.T, cwd string, args ...string) http.Header {
+		t.Helper()
+		m := newLaunchMachine(t)
+		m.onPath["claude"] = true
+		m.register(t, "claude")
+		m.cwd = cwd
+		m.environ = append(m.environ, "PARTYLINE_MAIN_FOLDER=/inherited/repo") // the session this launch runs in
+		fakeWorktree(t, "/repo/wt", "/repo", nil)
+		var header http.Header
+		m.serveSession(t, func(w http.ResponseWriter, r *http.Request) {
+			header = r.Header.Clone()
+			require.NoError(t, json.NewEncoder(w).Encode(dto.SessionState{}))
+		})
+		r := m.run(t, append([]string{"claude", "--org", "acme"}, args...)...)
+		require.Equal(t, 7, r.code, r.stderr)
+		require.NotNil(t, header)
+		return header
+	}
+
+	h := ask(t, "/repo/wt")
+	require.Equal(t, "%2Frepo", h.Get(dto.HeaderMainFolder), "the launch folder's own main folder")
+	h = ask(t, "/work/plain")
+	require.Empty(t, h.Values(dto.HeaderMainFolder), "a plain folder has none, whatever the current session held")
+	h = ask(t, "/repo/wt", "--parent", "@lead")
+	require.Empty(t, h.Values(dto.HeaderMainFolder), "a child launch names none")
+}
+
+// SESS-09: a session whose launch parent is set (a --parent child in a linked worktree) sends no main
+// folder, neither the one it was handed nor one it would compute.
+func TestParentChildInAWorktreeSendsNoMainFolder(t *testing.T) {
+	folder := canonicalDir(t, "repo", "wt")
+	calls := 0
+	fakeWorktree(t, folder, "/repo", &calls)
+	id := sessionIdentity("", stdio{
+		getenv: func(k string) string {
+			return map[string]string{"PARTYLINE_FOLDER": folder, "PARTYLINE_LAUNCH_PARENT": "@lead", "PARTYLINE_MAIN_FOLDER": "/repo"}[k]
+		},
+		getwd:    func() (string, error) { return folder, nil },
+		hostname: func() (string, error) { return "devbox", nil },
+	})
+	require.Equal(t, "@lead", id.Parent)
+	require.Empty(t, id.MainFolder, "the child keeps its own AI")
+	require.Equal(t, 0, calls)
+	h := http.Header{}
+	setIdentityHeaders(h, id)
+	require.Empty(t, h.Values(dto.HeaderMainFolder))
+}

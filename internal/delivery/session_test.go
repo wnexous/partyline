@@ -10,7 +10,7 @@ import (
 
 // SESS-21: a message addresses one session of an AI with "@handle:label". The handle matches
 // case-insensitively on a word boundary (the rules of containsBounded/continuesHandle), the
-// label is a-z0-9- with 1 to 40 characters, an invalid or over-long label is not an address
+// label is a-z0-9- (any case, read in lowercase) ending at a boundary, with 1 to 40 characters, an invalid or over-long label is not an address
 // (the scan continues) and the first valid address wins.
 func TestSessionLabel(t *testing.T) {
 	longLabel := ""
@@ -25,16 +25,22 @@ func TestSessionLabel(t *testing.T) {
 		{"label after text", "hi @atlas:claude-2", "claude-2"},
 		{"mention without a label", "@atlas", ""},
 		{"empty label", "@atlas:", ""},
-		{"uppercase label is no address", "@atlas:Bad", ""},
+		{"uppercase label is read in lowercase", "@atlas:Bad", "bad"},
 		{"longer label", "@atlas:claude-2x", "claude-2x"},
 		{"label before punctuation", "@atlas:claude-2.", "claude-2"},
-		{"invalid label then a valid one", "@atlas:Bad @atlas:wt", "wt"},
+		{"invalid label then a valid one", "@atlas:_bad @atlas:wt", "wt"},
 		{"first address wins", "@atlas:claude-2 @atlas:wt", "claude-2"},
 		{"handle continued by a hyphen", "@atlas-two:x", ""},
 		{"mention after a word character", "x@atlas:wt", ""},
 		{"label before a closing parenthesis", "(@atlas:wt)", "wt"},
 		{"handle in another case", "@ATLAS:wt", "wt"},
-		{"uppercase label in another case", "@ATLAS:WT", ""},
+		{"uppercase label in another case", "@ATLAS:WT", "wt"},
+		{"host name is no address", "@atlas:wt.example.com", ""},
+		{"path after the label is no address", "@atlas:wt/x", ""},
+		{"URL-embedded address is no address", "see https://example.com/@atlas:wt", ""},
+		{"path-embedded address is no address", "x/@atlas:wt", ""},
+		{"label before a sentence end", "ping @atlas:wt. Thanks", "wt"},
+		{"second colon is no boundary", "@atlas:wt:x", ""},
 		{"over-long label", "@atlas:" + longLabel, ""},
 		{"empty text", "", ""},
 	}

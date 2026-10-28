@@ -117,3 +117,21 @@ func TestWorktreeToolsOnlyWaitForMessagesAnswersAtOnce(t *testing.T) {
 	require.Less(t, time.Since(start), 5*time.Second)
 	require.Empty(t, rec.all())
 }
+
+// SESS-06: the "no live channel" short-circuit is for a process with no live channel only. A worktree
+// process that holds a live session (it has a live id) asks the server and honours the timeout.
+func TestLiveWorktreeSessionWaitForMessagesAsksTheServer(t *testing.T) {
+	url, rec := pendingRecorder(t, oneMessageBody(t))
+	base, err := parseBase(url)
+	require.NoError(t, err)
+	tl := &tools{api: &client{
+		base: base, token: "pl_agent_x", http: http.DefaultClient,
+		identity: Identity{Machine: "testbox", Folder: "/repo/wt", MainFolder: "/repo", LiveID: "live-1"},
+	}}
+
+	text, err := tl.waitForMessages(t.Context(), json.RawMessage(`{"timeout_seconds":7}`))
+	require.NoError(t, err)
+	require.Contains(t, text, "hello from the room")
+	require.NotContains(t, text, worktreeNoChannelNote)
+	require.Equal(t, []string{"GET /api/v1/agent/pending?platform=1&wait=7"}, rec.all())
+}

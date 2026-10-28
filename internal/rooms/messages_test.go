@@ -404,6 +404,31 @@ func TestLoopGuardQuietGapKeepsASlowConversationFlowing(t *testing.T) {
 	require.Equal(t, 0, streak())
 }
 
+// DLV-08: the quiet gap is measured from the room's previous message, so renaming the room inside a
+// burst's silence does not keep the streak alive: the previous message is 15 minutes old although the
+// rename was only 6 minutes ago.
+func TestLoopGuardQuietGapIgnoresARoomRename(t *testing.T) {
+	ctx := context.Background()
+	f := newFixture(t)
+	alice := f.user(t, "alice", dto.RoleMember)
+	a1 := f.agent(t, alice, "a1")
+	r := f.room(t, alice, "ops")
+	f.addMember(t, alice, r.ID, dto.MemberKindAgent, a1)
+	agent := agentPrincipal(alice, a1)
+	streak := func() int { return f.count(t, "SELECT agent_streak FROM rooms WHERE id = ?", r.ID) }
+
+	f.post(t, agent, r.ID, "one")
+	f.post(t, agent, r.ID, "two")
+	require.Equal(t, 2, streak())
+
+	f.clock.now = f.clock.now.Add(9 * time.Minute)
+	_, err := f.svc.Update(ctx, alice, r.ID, UpdateInput{Name: ptr("renamed")})
+	require.NoError(t, err)
+	f.clock.now = f.clock.now.Add(6 * time.Minute)
+	f.post(t, agent, r.ID, "three")
+	require.Equal(t, 1, streak(), "15 minutes after the previous message the burst starts again")
+}
+
 // Pagination: newest first by default and with before_seq, oldest first with after_seq.
 func TestListPages(t *testing.T) {
 	ctx := context.Background()

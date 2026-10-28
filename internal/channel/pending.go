@@ -67,8 +67,8 @@ func (t *tools) waitForMessages(ctx context.Context, args json.RawMessage) (stri
 	if a.Timeout != nil {
 		wait = min(max(*a.Timeout, 0), MaxWaitSeconds)
 	}
-	if isLinkedWorktree(t.api.identity) {
-		// A tools-only process in a linked worktree holds no live channel: nothing is addressed to
+	if isLinkedWorktree(t.api.identity) && t.api.identity.LiveID == "" {
+		// A tools-only process in a linked worktree holds no live channel (no live id): nothing is addressed to
 		// its label and the queue is the principal's, so it never asks the server (SESS-06). It
 		// says why once, then answers as it always does.
 		if _, said := worktreeNoteSaid.LoadOrStore(t.api, true); !said {

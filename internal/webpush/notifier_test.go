@@ -487,3 +487,27 @@ func TestCloseCancelsBeforeRun(t *testing.T) {
 	}
 	require.Zero(t, r.count())
 }
+
+// A recipient whose language cannot be read still gets the English test notification, and the log line
+// names neither the account nor the raw error.
+func TestEnqueueTestLogsNoAccountOrErrorWhenTheLanguageCannotBeRead(t *testing.T) {
+	var buf logBuffer
+	env := testkit.New(t, testkit.WithoutPush())
+	bob := account(t, env, "bob", "Bob")
+	subscribe(t, env, bob.User.ID, "https://push.example.com/send/phone")
+	subs := subscriptionsOf(t, env, bob.User.ID)
+	n := webpush.NewNotifier(webpush.NotifierDeps{
+		Store: env.App.Store, Bus: env.App.Bus, Delivery: &recorder{},
+		PublicURL: env.App.Config.PublicURL, Logger: testLogger(&buf),
+	})
+	startNotifier(t, n)
+
+	gone, cancel := context.WithCancel(context.Background())
+	cancel() // every read of the language fails with a non-"no rows" error
+	n.EnqueueTest(gone, subs)
+
+	require.Contains(t, buf.String(), "cannot read the notification recipient's language")
+	require.NotContains(t, buf.String(), bob.User.ID, "no account id in the log")
+	require.NotContains(t, buf.String(), "user_id")
+	require.NotContains(t, buf.String(), "context canceled", "no raw error in the log")
+}
