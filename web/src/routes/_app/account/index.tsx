@@ -4,7 +4,6 @@ import { MonitorIcon, MoonIcon, SunIcon } from "lucide-react";
 import { useEffect, useId, useRef, useState } from "react";
 import { useForm } from "react-hook-form";
 import { toast } from "sonner";
-import { LOCALE_NAMES, useChooseLocale } from "@/components/language-switch";
 import { ProfileEditor } from "@/components/profile-editor";
 import {
   useChangePassword,
@@ -21,6 +20,7 @@ import {
 } from "@/entities/account";
 import { useIntelligence } from "@/entities/intelligence";
 import { defaultOrgIdOf, useMyOrgs } from "@/entities/organization";
+import { LOCALE_NAMES, useChooseLocale } from "@/features/change-language";
 import {
   activeRegistration,
   applicationServerKey,
@@ -38,7 +38,6 @@ import {
   type DeleteAccountForm,
   deleteAccountSchema,
 } from "@/lib/schemas";
-import type { ThemePreference } from "@/lib/theme";
 import { isApiError } from "@/shared/api/client";
 import {
   ErrorCodeLastInstanceAdmin,
@@ -49,6 +48,7 @@ import {
 import { LOCALES, type MessageKey, type Translate, useI18n, useT } from "@/shared/i18n";
 import { applyFieldErrors } from "@/shared/lib/forms";
 import { usePrefsStore } from "@/shared/lib/prefs-store";
+import type { ThemePreference } from "@/shared/lib/theme";
 import { NativeSelect } from "@/shared/ui/atoms/native-select";
 import { RelativeTime } from "@/shared/ui/atoms/relative-time";
 import { ChoiceGroup } from "@/shared/ui/molecules/choice-group";

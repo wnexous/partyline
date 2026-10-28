@@ -1,25 +1,9 @@
-/** Color scheme preference (UI-23). Keep THEME_KEY in sync with public/theme-init.js. */
-export const THEME_KEY = "partyline.theme";
-export const LOCALE_KEY = "partyline.locale";
+import { readStorage, THEME_KEY } from "@/shared/lib/storage";
+
+/** Browser chrome colour per scheme: the `--background` token in sRGB. */
+export const THEME_COLORS = { light: "#fafafa", dark: "#0f0f0f" } as const;
 
 export type ThemePreference = "system" | "light" | "dark";
-
-export function readStorage(key: string): string | null {
-  try {
-    return window.localStorage.getItem(key);
-  } catch {
-    return null;
-  }
-}
-
-export function writeStorage(key: string, value: string | null) {
-  try {
-    if (value === null) window.localStorage.removeItem(key);
-    else window.localStorage.setItem(key, value);
-  } catch {
-    // Storage unavailable (private mode, blocked): the preference lasts for this tab only.
-  }
-}
 
 export function readThemePreference(): ThemePreference {
   const stored = readStorage(THEME_KEY);
@@ -36,9 +20,6 @@ export function resolveTheme(pref: ThemePreference): "light" | "dark" {
   if (pref === "system") return systemPrefersDark() ? "dark" : "light";
   return pref;
 }
-
-/** Browser chrome colour per scheme: the `--background` token in sRGB. */
-export const THEME_COLORS = { light: "#fafafa", dark: "#0f0f0f" } as const;
 
 /**
  * Applies the resolved scheme to <html> (the `dark` class drives the tokens) and points every

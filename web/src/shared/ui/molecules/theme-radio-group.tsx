@@ -1,15 +1,10 @@
 import { MonitorIcon, MoonIcon, SunIcon } from "lucide-react";
-import type { ThemePreference } from "@/lib/theme";
 import { useT } from "@/shared/i18n";
 import { usePrefsStore } from "@/shared/lib/prefs-store";
-import { Button } from "@/shared/ui/primitives/button";
+import type { ThemePreference } from "@/shared/lib/theme";
 import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuLabel,
   DropdownMenuRadioGroup,
   DropdownMenuRadioItem,
-  DropdownMenuTrigger,
 } from "@/shared/ui/primitives/dropdown-menu";
 
 const OPTIONS = [
@@ -32,23 +27,5 @@ export function ThemeRadioGroup() {
         </DropdownMenuRadioItem>
       ))}
     </DropdownMenuRadioGroup>
-  );
-}
-
-export function ThemeToggle() {
-  const t = useT();
-  return (
-    <DropdownMenu>
-      <DropdownMenuTrigger asChild>
-        <Button variant="ghost" size="icon" aria-label={t("theme.label")}>
-          <SunIcon className="dark:hidden" aria-hidden="true" />
-          <MoonIcon className="hidden dark:block" aria-hidden="true" />
-        </Button>
-      </DropdownMenuTrigger>
-      <DropdownMenuContent align="end" className="min-w-40">
-        <DropdownMenuLabel>{t("theme.label")}</DropdownMenuLabel>
-        <ThemeRadioGroup />
-      </DropdownMenuContent>
-    </DropdownMenu>
   );
 }

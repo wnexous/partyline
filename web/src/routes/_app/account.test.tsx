@@ -1,8 +1,8 @@
 import { act, fireEvent, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { LOCALE_KEY, THEME_KEY } from "@/lib/theme";
 import type { Session } from "@/shared/api/types.gen";
+import { LOCALE_KEY, THEME_KEY } from "@/shared/lib/storage";
 import { apiError, json, mockApi } from "@/test/fetch";
 import { makeMe, makeProfile } from "@/test/fixtures";
 import { useLiveStore } from "@/test/live-store";

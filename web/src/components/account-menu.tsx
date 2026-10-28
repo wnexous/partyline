@@ -1,13 +1,13 @@
 import { Link, useNavigate } from "@tanstack/react-router";
 import { LanguagesIcon, LogOutIcon, PaletteIcon } from "lucide-react";
-import { LanguageRadioGroup } from "@/components/language-switch";
-import { ThemeRadioGroup } from "@/components/theme-toggle";
 import { useLogout } from "@/entities/account";
 import { IntelligenceAvatar } from "@/entities/intelligence";
+import { LanguageRadioGroup } from "@/features/change-language";
 import { NAV_GROUPS } from "@/lib/nav";
 import { type Me, RoleAdmin } from "@/shared/api/types.gen";
 import { useT } from "@/shared/i18n";
 import { cn } from "@/shared/lib/utils";
+import { ThemeRadioGroup } from "@/shared/ui/molecules/theme-radio-group";
 import {
   DropdownMenu,
   DropdownMenuContent,

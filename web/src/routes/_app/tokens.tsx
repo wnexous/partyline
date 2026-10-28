@@ -6,7 +6,6 @@ import { Controller, useForm } from "react-hook-form";
 import { toast } from "sonner";
 import { useCreateToken, usePurgeToken, useRevokeToken, useTokens } from "@/entities/account";
 import { type CreateTokenForm, createTokenSchema, TOKEN_EXPIRY_DAYS } from "@/lib/schemas";
-import { readStorage, writeStorage } from "@/lib/theme";
 import { isApiError } from "@/shared/api/client";
 import {
   type CreatedToken,
@@ -16,6 +15,7 @@ import {
 } from "@/shared/api/types.gen";
 import { type MessageKey, useI18n, useT } from "@/shared/i18n";
 import { applyFieldErrors } from "@/shared/lib/forms";
+import { readStorage, writeStorage } from "@/shared/lib/storage";
 import { cn } from "@/shared/lib/utils";
 import { RelativeTime } from "@/shared/ui/atoms/relative-time";
 import { ConfirmDialog } from "@/shared/ui/molecules/confirm-dialog";

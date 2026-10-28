@@ -1,5 +1,5 @@
 import { create } from "zustand";
-import { readStorage, writeStorage } from "@/lib/theme";
+import { readStorage, writeStorage } from "@/shared/lib/storage";
 import { CURRENT_ORG_KEY } from "../lib/orgs";
 
 export interface CurrentOrgState {

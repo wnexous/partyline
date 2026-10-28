@@ -1,8 +1,8 @@
 import { type QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { type ReactNode, useEffect } from "react";
-import { applyTheme } from "@/lib/theme";
 import { I18nProvider } from "@/shared/i18n";
 import { usePrefsStore } from "@/shared/lib/prefs-store";
+import { applyTheme } from "@/shared/lib/theme";
 import { TooltipProvider } from "@/shared/ui/primitives/tooltip";
 
 /** Applies the theme preference and follows the system scheme while it is "system" (UI-23). */
