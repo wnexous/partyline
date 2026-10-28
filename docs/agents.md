@@ -628,8 +628,7 @@ like Codex and Gemini: the session has the Partyline tools and no live connectio
 reach it when a turn ends or when it calls `wait_for_messages`.
 
 **Setup.** `partyline setup --harness antigravity` (or tick Antigravity in the checklist; it is
-offered when `agy` is on your `PATH`) does two things in the global configuration
-`~/.gemini/config/`, which Antigravity reads for every session:
+offered when `agy` is on your `PATH`) does three things:
 
 - runs `agy mcp add partyline <partyline> channel --tools-only --harness antigravity`, which
   writes the server into `~/.gemini/config/mcp_config.json` (adding it again updates it);
@@ -640,10 +639,18 @@ offered when `agy` is on your `PATH`) does two things in the global configuratio
 {"partyline": {"Stop": [{"type": "command", "command": "/path/to/partyline hook antigravity-stop", "timeout": 30}]}}
 ```
 
-`partyline setup --remove antigravity` (and `--uninstall`) runs `agy mcp remove partyline` and takes
-that handler out of `hooks.json` again, deleting the file if nothing else is in it.
+- adds one allow rule per Partyline tool to `permissions.allow` in `~/.gemini/antigravity-cli/settings.json`,
+  so `agy` stops asking before every call: `mcp(partyline/reply)`, `send_message`, `react`,
+  `edit_message`, `ask`, `history`, `room_info`, `list_rooms` and `wait_for_messages`. The rules name the
+  `partyline` server only and use no wildcard; the tools that read or write local files or create things
+  (`send_file`, `download_attachment`, `update_profile`, `create_group`) and `delete_message` still ask.
 
-**Start.** Run `partyline agy` (or `partyline antigravity`) in the folder the AI works in; every
+`partyline setup --remove antigravity` (and `--uninstall`) runs `agy mcp remove partyline`, takes that
+handler out of `hooks.json` and those rules out of `settings.json` (your own rules and settings stay;
+a file left empty is deleted).
+
+**Start.** `partyline agy` prints one line (`messages arrive at the end of a turn, or while the session runs
+wait_for_messages`) and starts `agy`. Run `partyline agy` (or `partyline antigravity`) in the folder the AI works in; every
 argument goes to `agy` unchanged (`partyline agy --continue`, `partyline agy -i "hi"`). The launcher
 sets `PARTYLINE_HARNESS=antigravity`, which the MCP server and the hook read. A plain `agy` session
 shows no Partyline tools and its hook does nothing, unless you ran setup with `--always`.
@@ -652,11 +659,24 @@ shows no Partyline tools and its hook does nothing, unless you ran setup with `-
 the session's workspaces on stdin. The hook takes the AI's pending room messages and platform
 events and, if there are any, answers `{"decision":"continue","reason":"<the messages, framed as
 <partyline …>>"}`, which keeps the loop going with the messages as a new instruction. With nothing
-pending it answers `{}` and the agent stops as usual. The session can also call
+pending it answers `{}` and the agent stops as usual. The reason opens with a one-line instruction
+(handle them with the partyline tools, do not repeat your previous answer, end with one short line):
+Antigravity's Stop hook has no field the person sees, so the model's own closing line is the only visible
+sign, next to the tool calls. The session can also call
 `wait_for_messages` (up to 300 seconds) to wait in the middle of a task.
 
 **Limits.**
 
+- An AI used only through Antigravity is not "online": it holds no socket, so `partyline agents` shows it
+  offline with its relative last seen (`now`, `5m ago`), which every tool call, pending read and hook of the
+  session refreshes (at most once a minute). Online keeps meaning "has a live session", because the pushes and
+  the "also open in another session" notice depend on it.
+- Opened in the folder of an AI whose principal session is live elsewhere, `agy` does not become a
+  labelled parallel session (it has no live channel): its calls act as the AI's principal and the messages go
+  to the live principal. See the proposal in `.specs/features/ai-sessions/design.md`.
+- A message to an AI whose principal has left while a parallel session is still open waits in the
+  principal's queue (SESS-23): it is not pushed to the parallel session, so the person at that session sees it
+  only in `history`.
 - An idle session cannot be woken: messages wait until the next turn ends, or the next
   `wait_for_messages`.
 - The hook continues only a turn that ended on its own. A turn you cancelled, that failed or that

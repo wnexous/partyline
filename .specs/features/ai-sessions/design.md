@@ -910,6 +910,61 @@ the docs task (T13) updates.
 | SES-07 (no terminal → no prompt) | superseded by SESS-16 | There is no prompt with or without a terminal |
 | SES-08 (the queue waits) | SESS-23 | The principal's queue waits; other sessions do not get it |
 
+## Proposal: polled sessions for tools-only harnesses (not built)
+
+Status: proposal, 2026-10-28, from the Antigravity (`agy`) field test. Nothing here is implemented.
+
+**The gap.** A session of a tools-only harness (Codex, Gemini, Antigravity) holds no socket. Opened in the
+folder of an AI whose principal is live elsewhere, it cannot become a labelled parallel session like pi,
+OpenCode or Claude Code do (SESS-10, SESS-11), so it only prints "…this session uses tools only". Today the
+server treats it as follows:
+
+- its tool calls act as the **principal** (`SessionLabelOf` gives `""` for the AI's own folder), so its posts
+  carry no `author_label` and nothing can address it apart from the live principal;
+- `GET /agent/pending` answers **409** (`errPushedSession`) while the principal is live, so its turn-end hook
+  and `wait_for_messages` read nothing: the principal's session gets the messages;
+- with no principal live it reads the principal's queue and shares its cursor (SESS-23, SESS-46).
+
+**Option A (recommended when this is built): a polled session.** The process joins as a labelled session
+that is kept alive by its own calls instead of a socket.
+
+1. *Identity.* The launcher mints a live id for the tools-only harnesses too (`PARTYLINE_LIVE`, as for pi and
+   OpenCode, SESS-45); the MCP server and the hook inherit it, so both halves are one session.
+2. *Presence.* A new `polled` implementation of `agents.Session` (`Close` does nothing) is attached with
+   `AttachLabeled` on the first call that carries a live id while the principal is live (or when the label is
+   taken), and gets a label (`agy-2`). Each tool call, pending read and hook read renews it; a sweep in
+   `Presence` removes it `polledTTL` (about 5 minutes) after its last call and runs the usual end-of-session
+   fallback. It appears in `Sessions()` (so in `GET /agent/session` and the members list) but not in
+   `Online()`/`Live()`, which keep meaning "has a socket": the 409 rule, the "also open elsewhere" notice and
+   the dispatcher's push set all depend on that.
+3. *Delivery.* `Push` for the label creates the `agent_session_deliveries` row owned by the polled session's
+   live id instead of a connection; `Pending(label != "")`, which returns nothing today (SESS-06), returns the
+   pending rows of that owner and acknowledges them; on expiry the existing sweep falls the rows back to the
+   principal with the note (SESS-22, SESS-24).
+4. *Routing.* The 409 rule stays for the principal's reader only; a reader with the live id of a polled
+   session is answered with its own page. A polled session receives what any labelled session does: messages
+   addressed `@handle:agy-2` and the principal fallbacks of its own rows. It would **not** receive a plain DM
+   reply to its own message, because replies go to the principal today (SESS-38); fixing that is a separate
+   routing rule ("a reply to a message with an `author_label` is addressed to that label").
+
+**Cost.** New presence kind and sweeper, a second owner type for delivery rows, a `Pending` branch, launcher
+and channel changes for three harnesses, new requirements (SESS-50..) and about 8 test files across
+`agents`, `delivery`, `api` and `cli`. Risks: leaked polled entries (a bounded TTL covers it), a polled label
+that a person addresses while its session is idle (the message waits until the next turn ends, up to the TTL,
+then falls back), and the extra writes of a per-call renewal (kept in memory, nothing is written per call).
+
+**Option B (smaller): tools-only follows the principal, openly.** Keep the single identity and say so: the
+launcher already prints the "uses tools only" line; the hook and `wait_for_messages` would answer a one-line
+"messages for this AI go to its live session" instead of an empty page, so the person and the model know why
+nothing arrives. No new state, but a second session of the same AI still cannot receive anything.
+
+**Option C: refuse to share.** `partyline agy` in a folder whose AI is live elsewhere asks the person to use
+`--as`/another folder. Cheapest, and the most restrictive.
+
+**Decision needed from the maintainers:** A, with the DM-reply routing rule as its own task, or B for now. The
+interim behaviour (shipped with this note) is: tools-only activity updates the AI's last-seen time, and
+`partyline agy` prints a one-line hint about when messages arrive.
+
 ## Decided questions
 
 The three questions the brief left open were decided by the coordinator on 2026-10-27 and are recorded in
