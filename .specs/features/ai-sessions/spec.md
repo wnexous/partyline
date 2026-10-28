@@ -159,9 +159,9 @@ ending every session).
 **Acceptance Criteria**:
 
 1. WHEN a live connection arrives for an AI that already has a live session THEN the server SHALL attach it as a parallel session with a free label and SHALL NOT refuse it with `identity_busy`. (SESS-10)
-2. The label of a connection SHALL be `""` for a session in the AI's own folder, the slug of the session folder's base name (`a-z0-9-`, at most 40) for a worktree session, and `<harness>-<n>` with the smallest free `n >= 2` when that label is already live; a clash on any label SHALL be resolved with `-2`, `-3` until it is free. (SESS-11)
+2. The label of a connection SHALL be `""` for a session in the AI's own folder, the slug of the session folder's base name (`a-z0-9-`, at most 40) for a worktree session, and `<harness>-<n>` with the smallest free `n >= 2` when that label is already live; a clash on any label SHALL be resolved with `-2`, `-3` until it is free. From v0.11.0 the label `""` belongs to the pinned session only (SESS-53). (SESS-11)
 3. The server SHALL keep labels unique among one AI's live sessions and SHALL allocate and attach under one lock, so two connections racing for the same label end with two different labels and exactly one of them holding the principal label. (SESS-12)
-4. WHEN a connection asks to take over (`X-Partyline-Takeover: 1`, `--take-over` or `PARTYLINE_TAKEOVER=1`) and its preferred label is the principal one THEN the server SHALL attach it as the principal session, close the old principal with WebSocket close code 4002 and reason `taken_over`, and keep the other sessions; for a worktree or parallel label the takeover SHALL be ignored. (SESS-13)
+4. WHEN a connection asks to take over (`X-Partyline-Takeover: 1`, `--take-over` or `PARTYLINE_TAKEOVER=1`) and its preferred label is the principal one THEN the server SHALL attach it as the principal session, close the old principal with WebSocket close code 4002 and reason `taken_over`, and keep the other sessions; for a worktree or parallel label the takeover SHALL be ignored. From v0.11.0 a take-over also pins the new session and does nothing when no principal is live (SESS-58). (SESS-13)
 5. WHEN a process reconnects with the same `X-Partyline-Live` THEN it SHALL keep its label and start time (the old socket closes 1000 `reconnected`), also when the server had already dropped it for a silent socket, for ten minutes after the drop. (SESS-14)
 6. The welcome frame SHALL carry the assigned session (label, harness, connected at); the channel SHALL print `partyline: opened as parallel session <label>` to stderr once and SHALL tell its harness once which session it is. (SESS-15)
 7. The launcher SHALL NOT ask "Take over? [y/N]" any more: without `--take-over` it SHALL start the harness, which connects as another session; with `--take-over` it SHALL start it with takeover set. (SESS-16)
@@ -272,6 +272,31 @@ pi and OpenCode run `partyline listen` (the WebSocket and the live id) and, from
 
 ---
 
+### P1: Fixed principal (v0.11.0)
+
+**User Story**: As the owner of an AI that runs in several sessions, I want the principal session to be the one I chose and to stay that one, so that a parallel session never starts receiving my DMs, my platform events and my plain mentions because the principal's process died.
+
+**What happened.** An AI "A" was the principal with Claude Code session id `15cf…`. A second Claude session B (`--resume 073e…`) joined as `:claude-2`. A's process died and B reconnected as the principal (the label `""` was free and a connection prefers it: `Presence.AttachLabeled` allocated `""` to whoever asked for it first); everything not addressed went to B. When A was reopened with `claude --resume` (same session id, new process) it found `""` taken and came back as `:claude-2`. Only a lucky reconnect order restored the roles. The harness session id (`CLAUDE_CODE_SESSION_ID`) is the same across `--resume`, so it identifies the conversation, not the process.
+
+**Acceptance Criteria**:
+
+1. WHEN `partyline channel` or `partyline listen` connects and its harness has a session id THEN it SHALL send it as `X-Partyline-Harness-Session`: Claude Code's `CLAUDE_CODE_SESSION_ID` for the harness `claude` (or an unnamed full channel), `PARTYLINE_HARNESS_SESSION` for any harness (the pi adapter sets it on `listen` from pi's session id); a value that the server would refuse SHALL be dropped by the CLI; a harness with no id (OpenCode, omp, Codex, Gemini, Antigravity) SHALL send none. (SESS-51)
+2. The server SHALL store, per AI, the harness session id of its principal session (`agents.principal_session`, migration 0028; empty = nothing pinned). WHEN a session with an id connects and nothing is pinned THEN the session that holds the principal label SHALL be pinned if it has an id, else the connecting session SHALL be pinned when the label is free and it takes it; a parallel session that connects while the label holder has no id SHALL pin nothing. After that the pin SHALL change only by SESS-57, SESS-58 and SESS-59. (SESS-52)
+3. WHEN a connection in the AI's own folder carries the pinned id THEN it SHALL get the principal label, also as a new process, also when a parallel session connected first, and also when the label is held by another process (the older process of the same session is closed 4002 `taken_over`; a holder with another id is closed 4004 `role_changed`). WHEN a connection does not carry the pinned id THEN it SHALL never get the principal label, whether or not the label is free, so the principal leaving SHALL NOT promote any session, SHALL NOT change where unaddressed messages go, and what is for the principal SHALL wait in its queue as for any offline principal and drain when the pinned session connects. (SESS-53)
+4. A parallel session's label SHALL be tied to its harness session id: a session that reconnects with the same id, in the same or a new process, SHALL get the label it had while that label is free, for 24 hours after it ended; the memory by live id (SESS-14, 10 minutes) SHALL stay for sessions without an id. (SESS-54)
+5. WHEN a session whose id is not the pinned one connects (a different conversation, or no id while an id is pinned) THEN it SHALL join as a parallel session. (SESS-55)
+6. WHEN nothing is pinned and the harness has no id THEN the folder's first live session SHALL act as the principal, as before this feature; the server SHALL NOT promote a session over a stored id. (SESS-56)
+7. WHEN a launch is started with `--principal` (or `PARTYLINE_PRINCIPAL=1`) THEN the first connection that succeeds SHALL send `X-Partyline-Principal: 1`, the server SHALL give it the principal label, close a live principal of another process with 4002 `taken_over` and pin its id (an absent id clears the pin), whether the old principal is live or away; a reconnect after a drop SHALL NOT send it again. The flag SHALL be ignored for a worktree label and for a harness with no live session. (SESS-57)
+8. WHEN a connection asks to take over (SESS-13) and the principal label is held by another process THEN it SHALL replace it and pin its id as in SESS-57; WHEN the principal is not live THEN `--take-over` SHALL change nothing (the session is the principal only if it carries the pinned id). (SESS-58)
+9. `POST /agents/{id}/principal {label}` SHALL, for whoever manages the AI (the rule of ending a session, POS-04), pin the harness session id of the live session with that label and close that session and the current principal with 4004 `role_changed`, which the CLI answers by reconnecting at once, so that the two swap roles whichever reconnects first; it SHALL answer 204, 409 `conflict` for a label with no live session or a session that sent no id, and 403/404 as for ending a session. The profile's Sessions list and the member card SHALL offer **Make principal** next to such a session (`sessions[].can_be_principal`) to whoever manages the AI. (SESS-59)
+10. IF `X-Partyline-Harness-Session` is not 1 to 128 characters of `[A-Za-z0-9._:-]` starting with a letter or a digit THEN the agent WebSocket SHALL be refused with 422 `invalid` on the field `harness_session` and nothing SHALL be created. (SESS-60)
+11. WHILE the AI has a live session but its principal is not live THEN it SHALL be online, and the profile and the member card SHALL say "Principal offline since …" (`principal_offline_since`, English and Brazilian Portuguese), from the moment the principal left. (SESS-61)
+12. The behaviour SHALL be documented in `docs/agents.md`, `docs/api.md`, `docs/claude-code.md` and `README.md`, including the harnesses with no session id, `--principal` and the reconciled `--take-over`. (SESS-62)
+
+**Independent Test**: A (id `sess-a`) is the principal and B (`sess-b`) is `:claude-2`. A's connection closes: the profile says "Principal offline since …", B stays `:claude-2` and a message posted to the group is not delivered to B. B's process restarts: `:claude-2` again. A reconnects as a new process: the principal, and it receives the queued message. "Make principal" on `:claude-2` swaps the roles.
+
+---
+
 ## Edge Cases
 
 - WHEN a message's text names `@handle:label` where the label belongs to no live session, including a typo or a label whose worktree was deleted THEN the message SHALL go to the principal with the note (SESS-22).
@@ -280,7 +305,9 @@ pi and OpenCode run `partyline listen` (the WebSocket and the live id) and, from
 - IF an edit adds `@handle:label` to a message THEN the edit frame SHALL reach that session (when live) and the message SHALL remain authored by the same label (SESS-27, SESS-31); for a message an agent wrote, only the addressed sibling SHALL receive the update (SESS-39).
 - IF a worktree folder and the main folder are on two machines THEN they SHALL be two AIs, because the machine is part of the identity (D1, AID-01).
 - IF the main worktree is moved or renamed between sessions THEN the next session SHALL create a new AI (today's folder rule); the previous one is merged by hand (SESS-08).
-- IF the server restarts with several sessions live THEN every session SHALL reconnect as a new session (nothing about sessions is persisted), and a label SHALL be the same again only when it is free (D2, SESS-14).
+- IF the server restarts with several sessions live THEN every session SHALL reconnect as a new session (nothing about sessions is persisted, except the pinned principal id), the pinned session SHALL get the principal label back whenever it reconnects and the others SHALL be parallel (SESS-53); a label SHALL be the same again only when it is free (D2, SESS-14), and the memory of a parallel session's label by harness session id is lost (SESS-54).
+- IF the AI is from before the upgrade and its sessions reconnect in an arbitrary order after the first start of the new server THEN the principal SHALL be the session that holds the label first and, if it has an id, it is pinned (SESS-52); the owner fixes a wrong one with Make principal.
+- IF the pinned conversation is closed for good THEN no session takes the role by itself: the owner starts a session with `--principal` or uses Make principal (SESS-57, SESS-59).
 - WHEN a session in a worktree runs `partyline channel --tools-only` and no live socket holds its label THEN its posts SHALL carry that worktree label, its pending list SHALL be empty, and its first empty tool answer SHALL say that a worktree session without a live channel only writes and reads history (SESS-06).
 - IF a room is paused by the loop guard THEN no session, labelled or principal, SHALL receive a message from it (SESS-26).
 - IF a message for a label is pushed and the session acknowledges it after the fallback marked it for the principal THEN the acknowledgement SHALL be ignored (no double consumption) (SESS-24).
@@ -358,8 +385,20 @@ pi and OpenCode run `partyline listen` (the WebSocket and the live id) and, from
 | SESS-48 | P2: The two halves of a pi or OpenCode session | v0.10.2 | Done |
 | SESS-49 | P2: The two halves of a pi or OpenCode session | v0.10.2 | Done |
 | SESS-50 | P2: The two halves of a pi or OpenCode session | v0.10.4 | Done |
+| SESS-51 | P1: Fixed principal | v0.11.0 | Done |
+| SESS-52 | P1: Fixed principal | v0.11.0 | Done |
+| SESS-53 | P1: Fixed principal | v0.11.0 | Done |
+| SESS-54 | P1: Fixed principal | v0.11.0 | Done |
+| SESS-55 | P1: Fixed principal | v0.11.0 | Done |
+| SESS-56 | P1: Fixed principal | v0.11.0 | Done |
+| SESS-57 | P1: Fixed principal | v0.11.0 | Done |
+| SESS-58 | P1: Fixed principal | v0.11.0 | Done |
+| SESS-59 | P1: Fixed principal | v0.11.0 | Done |
+| SESS-60 | P1: Fixed principal | v0.11.0 | Done |
+| SESS-61 | P1: Fixed principal | v0.11.0 | Done |
+| SESS-62 | P1: Fixed principal | v0.11.0 | Done |
 
-**Coverage:** 49 total, 39 mapped to tasks (`tasks.md` T1-T16), 5 shipped directly in v0.10.1 (SESS-40..44), 5 in v0.10.2 (SESS-45..49), status Pending (the plan is not executed
+**Coverage:** 62 total (SESS-51..62 shipped in v0.11.0, tests listed in the design note), 39 mapped to tasks (`tasks.md` T1-T16), 5 shipped directly in v0.10.1 (SESS-40..44), 5 in v0.10.2 (SESS-45..49), status Pending (the plan is not executed
 yet).
 
 ---

@@ -886,6 +886,88 @@ in packages that already have their layer.
 - **Removal**: no table or column is removed by this feature. If a later feature removes sessions, the
   `agent_session_deliveries` rows must be consumed or deleted first (they are the message's only owner).
 
+## Fixed principal (v0.11.0)
+
+Spec: "P1: Fixed principal (v0.11.0)", SESS-51..SESS-62; decision AD-034.
+
+### How a parallel session became the principal (before)
+
+`Presence.AttachLabeled` (`internal/agents/presence.go`) allocates a label with
+`AllocateLabel(preferred, harness, taken, remembered)` (`labels.go`). A session in the AI's own folder
+prefers `""` (`gateway.register` sets no preferred label), and `AllocateLabel` returns `preferred` as soon as
+`!taken("")`. So the label was a free-for-all decided at connect time: when the principal's socket dropped,
+`Detach` freed `""`, and the first connection that arrived after it, whichever process or conversation it
+belonged to, took it (B reconnecting, or any new `partyline claude`). The 10-minute memory was keyed by the
+random live id of the process, so a resumed conversation (a new process) never recovered its label: A
+reopened with `claude --resume` found `""` taken and was allocated `claude-2`. Delivery only ever asks "which
+connection holds `""`" (`pushToPrincipal` -> `Presence.Session`), and the platform feed is attached when
+`live.Label == ""`, so whoever held `""` received everything unaddressed.
+
+### The pin
+
+`agents.principal_session TEXT NOT NULL DEFAULT ''` (migration 0028) holds the harness session id of the
+principal; no new table, since it is one value per AI and `GetAgent` already returns it. The id is
+what `X-Partyline-Harness-Session` carries; the CLI reads `CLAUDE_CODE_SESSION_ID` for Claude Code (the
+`partyline channel` process inherits it, and it stays the same across `--resume`) and
+`PARTYLINE_HARNESS_SESSION` for any other harness. The server validates the header against
+`dto.HarnessSessionPattern` in `gateway.register`, before `ResolveFolder`, so a bad value creates nothing
+(422 on `harness_session`).
+
+`Registry.AttachSession` reads the pin under `appMu`, the lock every attach already takes, calls
+`Presence.Attach` and writes back the pin the attach decided to change. `decideRole` (pure, tested through the
+API) is the whole policy:
+
+| Case | Principal? | Pin after |
+| --- | --- | --- |
+| worktree label (preferred != "") | no | unchanged |
+| `--principal`, or `--take-over` while another process holds `""` | yes | this session's id (empty clears) |
+| an id is pinned | iff the session's id is the pinned one | unchanged |
+| nothing pinned, `""` free, the same process or the same harness session | yes | this id, when it has one |
+| nothing pinned, `""` held by another | no | the holder's id, when it has one |
+
+A parallel session never gets `""`: the allocator treats the principal label as taken. When the role
+changes for a process that is already attached (the same live id reconnects after the pin moved), the old
+entry is dropped and the process attaches again in its new role. The session that takes `""` closes the
+holder with 4002 `taken_over` when the replacement is explicit or the same conversation, else with 4004
+`role_changed`, so a displaced session reconnects as parallel instead of stopping.
+
+Labels: `Presence.remembered[agent][harness session id]` (24 hours) next to the `retired[agent][live id]`
+memory (10 minutes); both are consulted on attach, the process first. A parallel session that ends writes
+both; the principal only writes the live id one.
+
+"Principal offline since": `Presence.principalGone[agent]`, set when the principal detaches or is ended (and
+when the first parallel session is seen with no principal), cleared when a principal attaches. It is in memory
+like every session fact; `Presence.PrincipalGone` returns it only while the AI has a live session and no
+principal. The API exposes it as `principal_offline_since` on the AI of a profile, on `GET /agents` and on a
+room member.
+
+### Make principal
+
+`POST /agents/{id}/principal {label}` -> `Registry.MakePrincipal`: authorize like `EndSession`
+(`managedAgent`), under `appMu` find the live session by label, require it to have an id, write the pin,
+then `Presence.CloseForRoleChange(agent, "", label)` (4004). Both connections end, their processes
+reconnect, and `decideRole` gives the role to the pinned one whichever arrives first. The old principal
+therefore needs no relabel of a live connection (its delivery rows, platform feed and welcome would all
+have to change), and the same path handles a process that never comes back: the pin is already moved.
+
+### Per-harness session id
+
+| Harness | Source | Notes |
+| --- | --- | --- |
+| Claude Code | `CLAUDE_CODE_SESSION_ID` in the `partyline channel` environment | verified in production to stay the same across `--resume` |
+| pi | `ctx.sessionManager.getSessionId()` in the extension, passed to `listen` as `PARTYLINE_HARNESS_SESSION` | read defensively (an absent or malformed id is none); not verifiable without pi in the build environment |
+| OpenCode | none | one `listen` per plugin instance serves whichever conversation is active, so no id names the listener |
+| omp | none | the channel is started by omp from `mcp.json`; `PARTYLINE_HARNESS_SESSION` is honoured if a wrapper sets it |
+| Codex, Gemini, Antigravity | none | tools only, no live session |
+
+### Tests
+
+`internal/store/principal_migration_test.go` (migration); `internal/api/agent_principal_test.go` (the incident,
+label stickiness, header validation, first pin, no-id fallback, `--principal`, `--take-over`, make principal
+by API); `internal/channel/link_live_test.go`, `internal/cli/{procenv,launcher,channel_live}_test.go`
+(the CLI side); `integrations/{pi,opencode}/partyline.test.ts` (the adapters);
+`web/src/**` unit tests for the button and the offline line; `web/e2e/principal-session.spec.ts`.
+
 ## Decision record (proposed)
 
 When the plan is approved, record AD-032 in `.specs/STATE.md`: *an AI is identified by the main worktree
