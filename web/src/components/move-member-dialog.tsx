@@ -1,14 +1,15 @@
-import { useId, useState } from "react";
+import { useState } from "react";
+import { useForm } from "react-hook-form";
 import { toast } from "sonner";
 import { useOrgMovePreview, useUpdateOrgMember } from "@/lib/api/queries";
 import { movablePositions, type PositionOption } from "@/lib/org-chart";
 import { isApiError } from "@/shared/api/client";
 import type { Position } from "@/shared/api/types.gen";
 import { useI18n, useT } from "@/shared/i18n";
-import { NativeSelect } from "@/shared/ui/atoms/native-select";
 import { FormDialog } from "@/shared/ui/molecules/form-dialog";
+import { SelectField } from "@/shared/ui/molecules/form-fields";
 import { Alert, AlertDescription } from "@/shared/ui/primitives/alert";
-import { Label } from "@/shared/ui/primitives/label";
+import { Form } from "@/shared/ui/primitives/form";
 
 /** Who is being moved, and where they sit now (`""` for no position). */
 export interface MoveTarget {
@@ -71,9 +72,11 @@ function MoveForm({
 }) {
   const t = useT();
   const { locale } = useI18n();
-  const id = useId();
   const update = useUpdateOrgMember(orgId);
-  const [value, setValue] = useState(target.positionId);
+  const form = useForm<{ position_id: string }>({
+    defaultValues: { position_id: target.positionId },
+  });
+  const value = form.watch("position_id");
   const [error, setError] = useState<string | null>(null);
 
   const moving = value !== target.positionId;
@@ -138,20 +141,15 @@ function MoveForm({
       submitDisabled={update.isPending || value === target.positionId}
       pending={update.isPending}
     >
-      <div className="grid gap-2">
-        <Label htmlFor={`${id}-position`}>{t("orgs.movePosition")}</Label>
-        <NativeSelect
-          id={`${id}-position`}
-          value={value}
-          onChange={(e) => setValue(e.target.value)}
-        >
+      <Form {...form}>
+        <SelectField control={form.control} name="position_id" label={t("orgs.movePosition")}>
           {choices.map((c) => (
             <option key={c.id || "none"} value={c.id} disabled={c.disabled}>
               {c.name}
             </option>
           ))}
-        </NativeSelect>
-      </div>
+        </SelectField>
+      </Form>
       {losingNames ? (
         <Alert role="status" aria-live="polite">
           <AlertDescription>
