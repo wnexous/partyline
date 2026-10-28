@@ -4,7 +4,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import { axe } from "vitest-axe";
 import * as matchers from "vitest-axe/matchers";
 import { ReactionBar, ReactionToolbar } from "@/components/reaction-bar";
-import { QUICK_REACTIONS } from "@/lib/reactions";
+import { QUICK_REACTIONS } from "@/features/react-to-message";
 import { useLiveStore } from "@/test/live-store";
 import { renderWithProviders } from "@/test/render";
 

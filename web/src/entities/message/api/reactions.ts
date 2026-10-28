@@ -1,5 +1,5 @@
 import { useMutation, useQueryClient } from "@tanstack/react-query";
-import { withReaction } from "@/lib/reactions";
+import { withReaction } from "../lib/reaction-list";
 import { api } from "@/shared/api/client";
 import { items } from "@/shared/api/list";
 import { queryKeys } from "@/shared/api/query-keys";

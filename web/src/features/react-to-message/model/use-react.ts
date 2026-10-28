@@ -1,8 +1,7 @@
 import { useQueryClient } from "@tanstack/react-query";
 import { useCallback } from "react";
 import { toast } from "sonner";
-import { readReactions, useToggleReaction } from "@/entities/message";
-import { atReactionLimit, reactedWith } from "@/lib/reactions";
+import { atReactionLimit, readReactions, reactedWith, useToggleReaction } from "@/entities/message";
 import { isApiError } from "@/shared/api/client";
 import { ErrorCodeReactionLimit, MaxMessageEmoji, type Message } from "@/shared/api/types.gen";
 import { useT } from "@/shared/i18n";

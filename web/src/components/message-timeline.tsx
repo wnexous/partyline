@@ -12,7 +12,7 @@ import {
   messageActionSet,
 } from "@/components/message-menu";
 import { collectImages, ImageViewer, useRoomMessages } from "@/entities/message";
-import { useReact } from "@/hooks/use-react";
+import { useReact } from "@/features/react-to-message";
 import { useStickToEnd } from "@/hooks/use-stick-to-end";
 import type { Message, Page, RoomMember } from "@/shared/api/types.gen";
 import { useI18n } from "@/shared/i18n";

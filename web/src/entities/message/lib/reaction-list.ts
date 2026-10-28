@@ -1,72 +1,11 @@
-import { MaxMessageEmoji, type Reaction } from "@/shared/api/types.gen";
-
 /*
- * The emoji a message is reacted with (RCT-01, RCT-02) and what one reaction does to the list a message
- * carries. The server keeps the truth (`Message.reactions`, in the order each emoji was first used); these are
- * the rules that let a tap show its result before the answer comes (RCT-08).
+ * The rules of one message's reaction list (RCT-01, RCT-02, RCT-04, RCT-08): whom a reaction
+ * belongs to, what one tap does to the list a message carries, and when the server would refuse
+ * a new emoji. The server keeps the truth (`Message.reactions`); these let a tap show its result
+ * before the answer comes. The emoji sets the picker offers live in features/react-to-message.
  */
 
-/** The six at hand: the bar of a menu or a sheet, and the toolbar of a row under a mouse. */
-export const QUICK_REACTIONS = ["👍", "❤️", "😂", "😮", "😢", "🙏"] as const;
-
-/** How many emoji a row of the picker holds. */
-export const PICKER_COLUMNS = 8;
-
-/**
- * The rest, behind "More": what a chat about work reaches for after the six, laid out in rows of eight. The six
- * are not repeated, as they sit beside the button that opens these. Every one is a single emoji of Unicode 13 or
- * older, so a system without the newest fonts draws them all.
- */
-export const MORE_REACTIONS: readonly string[] = [
-  "👎",
-  "🔥",
-  "🎉",
-  "👏",
-  "🙌",
-  "💪",
-  "👀",
-  "💯",
-  "✅",
-  "❌",
-  "⚠️",
-  "❓",
-  "🚀",
-  "⭐",
-  "✨",
-  "💥",
-  "😀",
-  "😅",
-  "😉",
-  "🙂",
-  "😍",
-  "😘",
-  "😎",
-  "🤔",
-  "😭",
-  "😡",
-  "😴",
-  "🤯",
-  "🥳",
-  "🤝",
-  "👋",
-  "🤗",
-  "🎯",
-  "💡",
-  "⏳",
-  "📌",
-  "🐛",
-  "🔧",
-  "☕",
-  "🍕",
-  "🎂",
-  "🙈",
-  "🤣",
-  "😊",
-  "💔",
-  "🤖",
-  "🧪",
-  "🏆",
-];
+import { MaxMessageEmoji, type Reaction } from "@/shared/api/types.gen";
 
 /** Whether the intelligence `iid` reacted with `emoji`. */
 export const reactedWith = (reactions: Reaction[], emoji: string, iid: string) =>

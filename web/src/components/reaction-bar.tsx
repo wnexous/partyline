@@ -1,8 +1,7 @@
 import { SmilePlusIcon } from "lucide-react";
 import { Toolbar } from "radix-ui";
 import { useState } from "react";
-import { ReactionPicker } from "@/components/reaction-picker";
-import { QUICK_REACTIONS } from "@/lib/reactions";
+import { QUICK_REACTIONS, ReactionPicker } from "@/features/react-to-message";
 import { useT } from "@/shared/i18n";
 import { cn } from "@/shared/lib/utils";
 import {

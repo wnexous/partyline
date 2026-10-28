@@ -1,5 +1,5 @@
 import type { ReactNode } from "react";
-import { MORE_REACTIONS, PICKER_COLUMNS } from "@/lib/reactions";
+import { MORE_REACTIONS, PICKER_COLUMNS } from "../lib/reactions";
 import { useT } from "@/shared/i18n";
 import { EmojiGrid } from "@/shared/ui/molecules/emoji-grid";
 import { Popover, PopoverContent } from "@/shared/ui/primitives/popover";

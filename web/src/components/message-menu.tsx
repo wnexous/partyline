@@ -7,9 +7,8 @@ import {
   DeleteMessageDialog,
 } from "@/components/message-actions";
 import { ReactionBar, ReactionMenuRow } from "@/components/reaction-bar";
-import { ReactionPicker } from "@/components/reaction-picker";
+import { ReactionPicker, MORE_REACTIONS, PICKER_COLUMNS } from "@/features/react-to-message";
 import { authorDisplayName, messageExcerpt } from "@/entities/message";
-import { MORE_REACTIONS, PICKER_COLUMNS } from "@/lib/reactions";
 import type { Message } from "@/shared/api/types.gen";
 import { useT } from "@/shared/i18n";
 import { copyText } from "@/shared/lib/clipboard";
