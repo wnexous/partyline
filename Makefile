@@ -85,11 +85,11 @@ web-test: web-install
 	cd web && $(BUN) run test
 
 web-check: web-install
-	cd web && $(BUN) run lint && $(BUN) run typecheck
+	cd web && $(BUN) run lint && $(BUN) run check:layers && $(BUN) run typecheck
 
-## web-verify: web lint, typecheck and unit tests in one stage of `check`
+## web-verify: web lint, layer check, typecheck and unit tests in one stage of `check`
 web-verify: web-install
-	cd web && $(BUN) run lint && $(BUN) run typecheck && $(BUN) run test
+	cd web && $(BUN) run lint && $(BUN) run check:layers && $(BUN) run typecheck && $(BUN) run test
 
 ## web-build: build web/ and copy web/dist into the embed directory (internal/webui/dist)
 web-build: web-install

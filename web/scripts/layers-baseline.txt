@@ -1,0 +1,2 @@
+# Accepted legacy layer violations: `file -> target rule`. This file only shrinks (WA-05).
+# Fix a violation and run `bun run check:layers --prune`; never add a line to hide a new one.
