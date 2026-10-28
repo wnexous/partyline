@@ -26,8 +26,7 @@ type Agent struct {
 	Online      bool       `json:"online"`
 	LastSeenAt  *time.Time `json:"last_seen_at,omitempty"`
 	CreatedAt   time.Time  `json:"created_at"`
-	// Sessions are the AI's live sessions, the principal ("") first; set by GET /agent/agents
-	// (`partyline agents`) and absent elsewhere and while the AI is offline.
+	// Sessions are the AI's live sessions, the principal ("") first; absent while it is offline.
 	Sessions []SessionInfo `json:"sessions,omitempty"`
 }
 
