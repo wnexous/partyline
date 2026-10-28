@@ -2,6 +2,7 @@ import {
   type Conversation,
   ConversationKindDM,
   ConversationKindGroup,
+  type Level,
   LevelManage,
   LevelPost,
   type Room,
@@ -55,3 +56,6 @@ export function hasConversationActions(c: Conversation): boolean {
     memberOfGroup(c)
   );
 }
+
+/** Whether the viewer, at `level`, may post in a conversation (MSG-01): a poster or a manager. */
+export const canPost = (level: Level) => level === LevelPost || level === LevelManage;

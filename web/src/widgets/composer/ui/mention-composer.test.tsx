@@ -1,7 +1,6 @@
 import { screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { Composer } from "@/components/composer";
 import { matchMentions, mentionAt, mentionCandidates } from "@/features/mention-autocomplete";
 import { LevelPost, type RoomMember } from "@/shared/api/types.gen";
 import { json, mockApi } from "@/test/fetch";
@@ -15,6 +14,7 @@ import {
 } from "@/test/fixtures";
 import { useLiveStore } from "@/test/live-store";
 import { renderWithProviders } from "@/test/render";
+import { Composer } from "@/widgets/composer";
 
 /*
  * Mention suggestions in the composer (MEN-01..MEN-06). The list comes from the conversation's

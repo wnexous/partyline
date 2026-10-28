@@ -2,7 +2,6 @@ import { act, fireEvent, screen, waitFor, within } from "@testing-library/react"
 import userEvent from "@testing-library/user-event";
 import { useState } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { Composer } from "@/components/composer";
 import type { VoicePhase } from "@/features/send-voice-message";
 import { MicButton } from "@/features/send-voice-message";
 import { apiError, json, mockApi } from "@/test/fetch";
@@ -11,6 +10,7 @@ import { useLiveStore } from "@/test/live-store";
 import { stubPointer } from "@/test/media";
 import { type FakeMicrophone, FakeRecorder, stubMicrophone } from "@/test/recorder";
 import { renderWithProviders } from "@/test/render";
+import { Composer } from "@/widgets/composer";
 
 /*
  * Recording a voice message in the composer (VOI-01..VOI-06): a microphone button where the browser

@@ -11,7 +11,6 @@ import {
 } from "lucide-react";
 import { useEffect, useState } from "react";
 import { toast } from "sonner";
-import { Composer, canPost } from "@/components/composer";
 import { ConversationHeader } from "@/components/conversation-header";
 import { MemberPicker } from "@/components/member-picker";
 import {
@@ -20,10 +19,10 @@ import {
   useTimelineMessages,
 } from "@/components/message-timeline";
 import { RoomFiles } from "@/components/room-files";
-import { RoomSettingsSheet } from "@/widgets/room-settings";
 import { useMe } from "@/entities/account";
 import { platformName, postMessageKey } from "@/entities/message";
 import {
+  canPost,
   conversationTitle,
   historyPlatform,
   isHistoryOnly,
@@ -57,7 +56,9 @@ import {
 import { Button } from "@/shared/ui/primitives/button";
 import { Skeleton } from "@/shared/ui/primitives/skeleton";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/shared/ui/primitives/tabs";
+import { Composer } from "@/widgets/composer";
 import { MemberPanel } from "@/widgets/member-panel";
+import { RoomSettingsSheet } from "@/widgets/room-settings";
 
 export const Route = createFileRoute("/_app/rooms/$roomId")({
   component: RoomPage,

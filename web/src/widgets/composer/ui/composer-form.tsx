@@ -1,65 +1,3 @@
-import {
-  CheckIcon,
-  EyeIcon,
-  PaperclipIcon,
-  PencilIcon,
-  ReplyIcon,
-  SendHorizontalIcon,
-  Trash2Icon,
-  XIcon,
-} from "lucide-react";
-import {
-  type ChangeEvent,
-  type ClipboardEvent,
-  type DragEvent,
-  type KeyboardEvent,
-  type SyntheticEvent,
-  useEffect,
-  useId,
-  useMemo,
-  useRef,
-  useState,
-} from "react";
-import { useMe } from "@/entities/account";
-import {
-  authorDisplayName,
-  messageExcerpt,
-  useEditMessage,
-  usePostMessage,
-} from "@/entities/message";
-import {
-  type MentionCandidate,
-  MentionSuggestions,
-  matchMentions,
-  mentionAt,
-  mentionCandidates,
-  mentionOptionId,
-} from "@/features/mention-autocomplete";
-import { useDraft, useDraftStore, useEditDraft } from "@/features/send-message";
-import {
-  type HoldState,
-  MicButton,
-  RecordingBar,
-  useVoiceRecorder,
-  type VoiceFailure,
-} from "@/features/send-voice-message";
-import { textLength } from "@/lib/schemas";
-import { isApiError } from "@/shared/api/client";
-import {
-  ErrorCodeCounterpartDisabled,
-  type Level,
-  LevelManage,
-  LevelPost,
-  MaxTextLength,
-  type Message,
-  type RoomMember,
-} from "@/shared/api/types.gen";
-import { type MessageKey, type Translate, useI18n } from "@/shared/i18n";
-import { useEnterSends } from "@/shared/lib/device";
-import { cn } from "@/shared/lib/utils";
-import { AttachmentPreviews } from "@/shared/ui/molecules/attachment-preview";
-import { Button } from "@/shared/ui/primitives/button";
-
 /*
  * Message composer (UI-07). Enter sends the trimmed text and Shift+Enter adds a line, with a mouse
  * or a trackpad; on a touch device Enter adds a line and only the Send button sends (ENT-01..ENT-05,
@@ -70,7 +8,7 @@ import { Button } from "@/shared/ui/primitives/button";
  * or a drop, all through the same list; the attachment row previews them (images as thumbnails,
  * other kinds as an icon with name and size) and scrolls sideways instead of growing the composer.
  *
- * A microphone button records a voice message (VOI-01..VOI-06, hooks/use-voice-recorder.ts): a tap
+ * A microphone button records a voice message (VOI-01..VOI-06, features/send-voice-message): a tap
  * records until Send or Cancel, a hold records while held. It is sent as a message of its own, an
  * audio attachment with no text, and the draft stays where it is. The recording bar takes the text
  * box's place, so focus moves to the button that sends it and, when the recording ends, goes back
@@ -90,23 +28,56 @@ import { Button } from "@/shared/ui/primitives/button";
  * matches.
  */
 
+import { CheckIcon, PaperclipIcon, SendHorizontalIcon, Trash2Icon } from "lucide-react";
+import {
+  type ChangeEvent,
+  type ClipboardEvent,
+  type DragEvent,
+  type KeyboardEvent,
+  type SyntheticEvent,
+  useEffect,
+  useId,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
+import { useMe } from "@/entities/account";
+import { messageExcerpt, useEditMessage, usePostMessage } from "@/entities/message";
+import { EditBar } from "@/features/edit-message";
+import {
+  type MentionCandidate,
+  MentionSuggestions,
+  matchMentions,
+  mentionAt,
+  mentionCandidates,
+  mentionOptionId,
+} from "@/features/mention-autocomplete";
+import {
+  carriesFiles,
+  keepFocus,
+  ReplyStrip,
+  useDraft,
+  useDraftStore,
+  useEditDraft,
+} from "@/features/send-message";
+import {
+  type HoldState,
+  MicButton,
+  RecordingBar,
+  useVoiceRecorder,
+  type VoiceFailure,
+} from "@/features/send-voice-message";
+import { textLength } from "@/lib/schemas";
+import { errorText } from "@/shared/api/error-text";
+import { MaxTextLength, type Message, type RoomMember } from "@/shared/api/types.gen";
+import { type MessageKey, useI18n } from "@/shared/i18n";
+import { useEnterSends } from "@/shared/lib/device";
+import { cn } from "@/shared/lib/utils";
+import { AttachmentPreviews } from "@/shared/ui/molecules/attachment-preview";
+import { Button } from "@/shared/ui/primitives/button";
+
 /** The counter appears once the text gets this close to the limit. */
 const COUNTER_FROM = MaxTextLength - 1_000;
-
-export const canPost = (level: Level) => level === LevelPost || level === LevelManage;
-
-function postErrorText(t: Translate, err: unknown): string {
-  if (!isApiError(err)) return t("error.generic");
-  if (err.status === 0) return t("error.network");
-  if (err.status === 403) return t("composer.forbidden");
-  if (err.status === 413) return t("composer.tooLarge");
-  if (err.status === 429) return t("composer.rateLimited");
-  if (err.status === 422) return err.message || t("error.generic");
-  return t("error.generic");
-}
-
-/** Cancels the press that would move focus off the text box; the click that follows still happens. */
-const keepFocus = (e: SyntheticEvent) => e.preventDefault();
 
 /** What each reason the microphone could not be had is called (VOI-06). */
 const MIC_FAILURES: Record<VoiceFailure, MessageKey> = {
@@ -116,66 +87,7 @@ const MIC_FAILURES: Record<VoiceFailure, MessageKey> = {
   failed: "composer.micFailed",
 };
 
-/** Why a save of an edit failed (EDT-02..EDT-05): the message is gone, it is not the viewer's, the DM's other side is disabled, or the text is refused. */
-function editErrorText(t: Translate, err: unknown): string {
-  if (!isApiError(err)) return t("error.generic");
-  if (err.status === 0) return t("error.network");
-  if (err.status === 409) return t("composer.editGone");
-  if (err.code === ErrorCodeCounterpartDisabled) return t("composer.editCounterpartDisabled");
-  if (err.status === 403) return t("composer.editForbidden");
-  if (err.status === 429) return t("composer.rateLimited");
-  if (err.status === 422) return err.message || t("error.generic");
-  return t("error.generic");
-}
-
-export interface ComposerProps {
-  roomId: string;
-  roomName: string;
-  level: Level;
-  members?: RoomMember[];
-  /** The message the next one answers (ACT-07); the room page holds it. */
-  replyTo?: Message | null;
-  /** Takes the reply back, or says it was sent: the room page drops `replyTo`. */
-  onClearReply?: () => void;
-  /** The message being edited in the box (EDT-10); null or absent while a new one is written. */
-  editing?: Message | null;
-  /** Leaves editing: after a save, on Escape and on Cancel. */
-  onEditDone?: () => void;
-}
-
-export function Composer({
-  roomId,
-  roomName,
-  level,
-  members,
-  replyTo,
-  onClearReply,
-  editing,
-  onEditDone,
-}: ComposerProps) {
-  const { t } = useI18n();
-  if (!canPost(level)) {
-    return (
-      <div className="flex items-center gap-2.5 border-t bg-muted/50 px-4 py-3 text-sm text-muted-foreground md:px-6">
-        <EyeIcon className="size-4 shrink-0" aria-hidden="true" />
-        <p>{t("composer.readOnly")}</p>
-      </div>
-    );
-  }
-  return (
-    <ComposerForm
-      roomId={roomId}
-      roomName={roomName}
-      members={members}
-      replyTo={replyTo ?? null}
-      onClearReply={onClearReply}
-      editing={editing ?? null}
-      onEditDone={onEditDone}
-    />
-  );
-}
-
-function ComposerForm({
+export function ComposerForm({
   roomId,
   roomName,
   members,
@@ -401,7 +313,7 @@ function ComposerForm({
         // The recording stays, stopped, to send again or to discard.
         onError: (err) => {
           sendingVoice.current = false;
-          setError(postErrorText(t, err));
+          setError(errorText(t, err, "post"));
         },
       },
     );
@@ -431,7 +343,7 @@ function ComposerForm({
           if (replyTo) onClearReply?.();
           textRef.current?.focus();
         },
-        onError: (err) => setError(postErrorText(t, err)),
+        onError: (err) => setError(errorText(t, err, "post")),
       },
     );
   };
@@ -452,7 +364,7 @@ function ComposerForm({
           leaveEdit();
           textRef.current?.focus();
         },
-        onError: (err) => setError(editErrorText(t, err)),
+        onError: (err) => setError(errorText(t, err, "edit")),
       },
     );
   };
@@ -550,11 +462,6 @@ function ComposerForm({
     addFiles(pasted);
   };
 
-  /* Dragging files onto the composer: the box lights up for as long as they are over it. Dragging
-     text or a link is left alone, so it lands in the text box as the browser means it to. */
-  const carriesFiles = (data: DataTransfer | null) =>
-    !!data && (data.files.length > 0 || Array.from(data.types).includes("Files"));
-
   const onDragEnter = (e: DragEvent<HTMLFormElement>) => {
     if (!carriesFiles(e.dataTransfer)) return;
     e.preventDefault();
@@ -643,34 +550,12 @@ function ComposerForm({
           />
         ) : null}
         {replyTo && !editing ? (
-          <div
+          <ReplyStrip
             id={replyStripId}
-            data-testid="reply-strip"
-            className="flex items-center gap-2.5 border-b px-3 py-2"
-          >
-            <ReplyIcon className="size-4 shrink-0 text-muted-foreground" aria-hidden="true" />
-            <div className="min-w-0 flex-1 text-xs leading-snug">
-              <p className="truncate font-medium">
-                {t("composer.replyingTo", { name: authorDisplayName(replyTo) })}
-              </p>
-              {replyExcerpt ? (
-                <p className="truncate text-muted-foreground">{replyExcerpt}</p>
-              ) : null}
-            </div>
-            <Button
-              type="button"
-              variant="ghost"
-              size="icon-xs"
-              aria-label={t("composer.cancelReply")}
-              // Taking it back must not close the keyboard of someone who is typing (KBD-03).
-              onPointerDown={keepFocus}
-              onMouseDown={keepFocus}
-              onClick={onClearReply}
-              className="text-muted-foreground pointer-coarse:size-11"
-            >
-              <XIcon aria-hidden="true" />
-            </Button>
-          </div>
+            replyTo={replyTo}
+            excerpt={replyExcerpt}
+            onClear={onClearReply}
+          />
         ) : null}
         {voiceOn ? (
           <RecordingBar
@@ -679,38 +564,7 @@ function ComposerForm({
             hold={hold}
           />
         ) : null}
-        {editing ? (
-          <>
-            <div id={barId} className="flex items-center gap-2 border-b px-3 py-1.5 text-xs">
-              <PencilIcon className="size-3.5 shrink-0 text-muted-foreground" aria-hidden="true" />
-              <span className="shrink-0 font-medium">{t("composer.editing")}</span>
-              <span className="min-w-0 flex-1 truncate text-muted-foreground">{editing.text}</span>
-              <Button
-                type="button"
-                variant="ghost"
-                size="icon-xs"
-                aria-label={t("composer.cancelEdit")}
-                onClick={leaveEdit}
-              >
-                <XIcon aria-hidden="true" />
-              </Button>
-            </div>
-            {editing.attachments.length > 0 ? (
-              // The files of the message stay as they are: only its text changes.
-              <ul className="flex flex-wrap gap-1.5 px-3 pt-2.5">
-                {editing.attachments.map((a) => (
-                  <li
-                    key={a.id}
-                    className="inline-flex max-w-full items-center gap-1 rounded-md border bg-muted px-2 py-0.5 text-xs"
-                  >
-                    <PaperclipIcon className="size-3 shrink-0" aria-hidden="true" />
-                    <span className="truncate">{a.name}</span>
-                  </li>
-                ))}
-              </ul>
-            ) : null}
-          </>
-        ) : null}
+        {editing ? <EditBar id={barId} message={editing} onLeave={leaveEdit} /> : null}
         {!editing && files.length > 0 && !voiceOn ? (
           <AttachmentPreviews
             files={attached}
