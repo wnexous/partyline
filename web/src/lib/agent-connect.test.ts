@@ -23,7 +23,7 @@ describe("agent connect commands (WIZ-01)", () => {
     expect(RELEASES_URL).toBe("https://github.com/wnexous/partyline/releases");
   });
 
-  it("lists the six harnesses with their start command and delivery", () => {
+  it("lists the seven harnesses with their start command and delivery", () => {
     expect(HARNESSES.map((h) => [h.title, h.start, h.delivery])).toEqual([
       ["Claude Code", "partyline claude", "push"],
       ["OpenCode", "partyline opencode", "push"],
@@ -31,6 +31,7 @@ describe("agent connect commands (WIZ-01)", () => {
       ["omp", "partyline omp", "push"],
       ["Codex", "partyline codex", "turn"],
       ["Gemini", "partyline gemini", "turn"],
+      ["Antigravity", "partyline agy", "turn"],
     ]);
   });
 });

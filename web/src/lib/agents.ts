@@ -6,6 +6,7 @@ const HARNESS_LABELS: Record<string, string> = {
   omp: "oh-my-pi",
   codex: "Codex",
   gemini: "Gemini",
+  antigravity: "Antigravity",
 };
 
 /** The harness's readable name; unknown harnesses ("agent") get undefined. */
