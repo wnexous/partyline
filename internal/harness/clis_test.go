@@ -397,10 +397,127 @@ func TestGeminiRegistersAndRemoves(t *testing.T) {
 	requireMissing(t, settings+".partyline.bak")
 }
 
+const agyHooksOrig = "{\n  \"lint\": {\n    \"PostToolUse\": [{\"matcher\": \"run_command\", \"hooks\": [{\"command\": \"./lint.sh\"}]}]\n  }\n}\n"
+
+const agyMCPOrig = "{\n  \"mcpServers\": {\n    \"other\": {\"command\": \"o\", \"disabled\": false}\n  }\n}\n"
+
+const agyHandler = `{"type":"command","command":"/opt/bin/partyline hook antigravity-stop","timeout":30}`
+
+// agyCLI emulates `agy mcp add/remove` on the global mcp_config.json: add writes (or replaces)
+// the server, remove deletes it and fails when it is missing, like the real CLI.
+func agyCLI(t *testing.T, config string) func(string) ([]byte, error) {
+	return func(line string) ([]byte, error) {
+		d, _, err := readDoc(config)
+		require.NoError(t, err)
+		switch {
+		case strings.HasPrefix(line, "agy mcp add "):
+			require.NoError(t, d.set(server{Command: testBinary, Args: []string{"channel", "--tools-only", "--harness", "antigravity"}}, "mcpServers", "partyline"))
+		case strings.HasPrefix(line, "agy mcp remove "):
+			ok, err := d.del("mcpServers", "partyline")
+			require.NoError(t, err)
+			if !ok {
+				return []byte(`Error: MCP server "partyline" not found`), errors.New("exit status 1")
+			}
+		}
+		require.NoError(t, os.WriteFile(config, d.data, 0o644))
+		return nil, nil
+	}
+}
+
+// HAR-01, HAR-02, HAR-04 (Antigravity): `agy mcp add partyline <abs> channel --tools-only
+// --harness antigravity` (global ~/.gemini/config/mcp_config.json) and a Stop hook under the hook
+// name "partyline" in ~/.gemini/config/hooks.json, next to the hooks already there; applying again
+// updates in place and uninstall gives back both original files.
+func TestAntigravityRegistersAndRemoves(t *testing.T) {
+	env, cli := testEnv(t, nil)
+	mcp := filepath.Join(env.Home, ".gemini", "config", "mcp_config.json")
+	hooks := filepath.Join(env.Home, ".gemini", "config", "hooks.json")
+	writeFile(t, mcp, agyMCPOrig)
+	writeFile(t, hooks, agyHooksOrig)
+	cli.handle = agyCLI(t, mcp)
+	r := registrar(t, env, "antigravity")
+	require.Equal(t, "Antigravity", r.Title())
+	require.True(t, r.Detected())
+	add := "agy mcp add partyline /opt/bin/partyline channel --tools-only --harness antigravity"
+	require.Equal(t, []string{"run: " + add, "edit ~/.gemini/config/hooks.json: add to partyline.Stop " + agyHandler}, r.Plan())
+	require.Empty(t, r.RemovePlan(context.Background()), "nothing registered yet")
+
+	require.NoError(t, r.Apply(context.Background()))
+	require.Equal(t, []string{add}, cli.calls)
+	require.Equal(t, decode(t, `[`+agyHandler+`]`), jsonAt(t, hooks, "partyline", "Stop"))
+	require.NotNil(t, jsonAt(t, hooks, "lint", "PostToolUse"), "the other hook is kept")
+	require.NotNil(t, jsonAt(t, mcp, "mcpServers", "other"), "the other server is kept")
+	require.FileExists(t, hooks+".partyline.bak")
+	entries, err := r.Entries(context.Background())
+	require.NoError(t, err)
+	require.Equal(t, []Entry{
+		{What: "MCP server in ~/.gemini/config/mcp_config.json", Binary: testBinary},
+		{What: "Stop hook in ~/.gemini/config/hooks.json", Binary: testBinary},
+	}, entries)
+
+	require.NoError(t, r.Apply(context.Background()))
+	require.Len(t, jsonAt(t, hooks, "partyline", "Stop"), 1, "applying again does not duplicate the hook")
+
+	require.Equal(t, []string{"run: agy mcp remove partyline", "edit ~/.gemini/config/hooks.json: remove the Partyline Stop hook"}, r.RemovePlan(context.Background()))
+	cli.calls = nil
+	require.NoError(t, r.Remove(context.Background()))
+	require.Equal(t, []string{"agy mcp remove partyline"}, cli.calls)
+	require.Equal(t, agyMCPOrig, readFile(t, mcp))
+	require.Equal(t, agyHooksOrig, readFile(t, hooks))
+	requireMissing(t, hooks+".partyline.bak")
+
+	// Nothing registered: remove runs no CLI and touches nothing.
+	cli.calls = nil
+	require.NoError(t, r.Remove(context.Background()))
+	require.Empty(t, cli.calls)
+}
+
+// HAR-04: with no hooks.json of the user's, setup creates one and uninstall deletes it again.
+func TestAntigravityCreatesAndDeletesHooksFile(t *testing.T) {
+	env, cli := testEnv(t, nil)
+	mcp := filepath.Join(env.Home, ".gemini", "config", "mcp_config.json")
+	hooks := filepath.Join(env.Home, ".gemini", "config", "hooks.json")
+	cli.handle = func(_ string) ([]byte, error) {
+		writeFile(t, mcp, `{"mcpServers":{"partyline":{"command":"/opt/bin/partyline","args":["channel","--tools-only","--harness","antigravity"],"disabled":false}}}`)
+		return nil, nil
+	}
+	r := registrar(t, env, "antigravity")
+	require.NoError(t, r.Apply(context.Background()))
+	require.Equal(t, decode(t, `[`+agyHandler+`]`), jsonAt(t, hooks, "partyline", "Stop"))
+	cli.handle = func(_ string) ([]byte, error) { return nil, os.Remove(mcp) }
+	require.NoError(t, r.Remove(context.Background()))
+	requireMissing(t, hooks)
+}
+
+// A hook of the user's under the name "partyline" that is not Partyline's stays when the Stop
+// hook is added and removed; a registration of another binary path is replaced in place.
+func TestAntigravityKeepsForeignStopHandlers(t *testing.T) {
+	env, cli := testEnv(t, nil)
+	mcp := filepath.Join(env.Home, ".gemini", "config", "mcp_config.json")
+	hooks := filepath.Join(env.Home, ".gemini", "config", "hooks.json")
+	const orig = `{"partyline":{"Stop":[{"command":"./mine.sh"},{"command":"/opt/bin/partylinex hook antigravity-stop"}]}}`
+	writeFile(t, hooks, orig)
+	cli.handle = agyCLI(t, mcp)
+	r := registrar(t, env, "antigravity")
+	require.NoError(t, r.Apply(context.Background()))
+	require.Len(t, jsonAt(t, hooks, "partyline", "Stop"), 3)
+	require.NoError(t, r.Remove(context.Background()))
+	require.JSONEq(t, orig, readFile(t, hooks))
+}
+
+// setup --always writes the flag into the server and the hook command.
+func TestAntigravityAlways(t *testing.T) {
+	env, _ := testEnv(t, nil)
+	env.Always = true
+	plan := strings.Join(registrar(t, env, "antigravity").Plan(), "\n")
+	require.Contains(t, plan, "/opt/bin/partyline channel --tools-only --harness antigravity --always")
+	require.Contains(t, plan, "/opt/bin/partyline hook antigravity-stop --always")
+}
+
 // Edge case (HAR-02): a hooks or settings file that is not valid JSON is not touched, no CLI
 // runs, and the parse error names the file.
 func TestInvalidHarnessFileIsNotTouched(t *testing.T) {
-	for id, rel := range map[string]string{"codex": ".codex/hooks.json", "gemini": ".gemini/settings.json"} {
+	for id, rel := range map[string]string{"codex": ".codex/hooks.json", "gemini": ".gemini/settings.json", "antigravity": ".gemini/config/hooks.json"} {
 		t.Run(id, func(t *testing.T) {
 			env, cli := testEnv(t, nil)
 			path := filepath.Join(env.Home, rel)
@@ -511,5 +628,16 @@ func TestToolsOnlyEntriesWithoutHarnessFlagStayOwned(t *testing.T) {
 		require.Equal(t, []Entry{{What: "MCP server in ~/.gemini/settings.json", Binary: testBinary}}, entries)
 		require.NoError(t, r.Remove(context.Background()))
 		require.Equal(t, []string{"gemini mcp remove -s user partyline"}, cli.calls)
+	})
+	t.Run("antigravity", func(t *testing.T) {
+		env, cli := testEnv(t, nil)
+		config := filepath.Join(env.Home, ".gemini", "config", "mcp_config.json")
+		writeFile(t, config, `{"mcpServers":{"partyline":{"command":"/opt/bin/partyline","args":["channel","--tools-only"],"disabled":false}}}`)
+		r := registrar(t, env, "antigravity")
+		entries, err := r.Entries(context.Background())
+		require.NoError(t, err)
+		require.Equal(t, []Entry{{What: "MCP server in ~/.gemini/config/mcp_config.json", Binary: testBinary}}, entries)
+		require.NoError(t, r.Remove(context.Background()))
+		require.Equal(t, []string{"agy mcp remove partyline"}, cli.calls)
 	})
 }

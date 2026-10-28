@@ -1,5 +1,5 @@
 // Package harness registers Partyline in the coding agents ("harnesses") installed on a
-// machine (HAR-01, HAR-02, HAR-04): Claude Code, Codex CLI and Gemini CLI through their own
+// machine (HAR-01, HAR-02, HAR-04): Claude Code, Codex CLI, Gemini CLI and Antigravity through their own
 // CLIs, OpenCode, pi and omp by editing their config files. Every registration runs the
 // partyline binary by its absolute path and keeps the harness's other settings as they were.
 package harness
@@ -88,7 +88,7 @@ type Entry struct {
 
 // Registrar registers Partyline in one harness.
 type Registrar interface {
-	// ID is the short name used by --harness (claude, codex, gemini, opencode, pi, omp).
+	// ID is the short name used by --harness (claude, codex, gemini, antigravity, opencode, pi, omp).
 	ID() string
 	// Title is the harness's display name.
 	Title() string
@@ -115,6 +115,7 @@ func All(env Env) []Registrar {
 		&claude{env: env},
 		&codex{env: env},
 		&gemini{env: env},
+		&antigravity{env: env},
 		newOpenCode(env),
 		newPi(env),
 		newOmp(env),

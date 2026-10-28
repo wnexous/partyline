@@ -12,12 +12,14 @@ import (
 const (
 	CodexStopHook        = "codex-stop"
 	GeminiAfterAgentHook = "gemini-after-agent"
+	AntigravityStopHook  = "antigravity-stop"
 )
 
-// Hook timeouts: Codex counts seconds, Gemini milliseconds.
+// Hook timeouts: Codex and Antigravity count seconds, Gemini milliseconds.
 const (
-	codexHookTimeoutSec = 30
-	geminiHookTimeoutMs = 30000
+	codexHookTimeoutSec       = 30
+	geminiHookTimeoutMs       = 30000
+	antigravityHookTimeoutSec = 30
 )
 
 // --- Claude Code ---------------------------------------------------------------------
@@ -340,6 +342,115 @@ func (g *gemini) Entries(context.Context) ([]Entry, error) {
 	return out, nil
 }
 
+// --- Antigravity CLI ---------------------------------------------------------------
+
+// antigravity registers the tools with `agy mcp add` (~/.gemini/config/mcp_config.json, the
+// global configuration; adding a name that exists updates it), as `channel --tools-only
+// --harness antigravity` like Codex and Gemini, and a Stop hook in the global
+// ~/.gemini/config/hooks.json under the hook name "partyline". The Stop event is flat: its
+// array holds the handlers directly.
+type antigravity struct{ env Env }
+
+func (a *antigravity) ID() string     { return "antigravity" }
+func (a *antigravity) Title() string  { return "Antigravity" }
+func (a *antigravity) Detected() bool { _, err := a.env.lookPath("agy"); return err == nil }
+
+func (a *antigravity) configDir() string { return filepath.Join(a.env.Home, ".gemini", "config") }
+
+func (a *antigravity) mcpPath() string   { return filepath.Join(a.configDir(), "mcp_config.json") }
+func (a *antigravity) hooksPath() string { return filepath.Join(a.configDir(), "hooks.json") }
+
+func (a *antigravity) addArgs() []string {
+	return append([]string{"mcp", "add", ServerName, a.env.Binary, "channel", "--tools-only", "--harness", a.ID()}, a.env.alwaysArgs()...)
+}
+
+func (a *antigravity) hookHandler() any {
+	return orderedObject{
+		{"type", "command"},
+		{"command", a.env.hookCommand(AntigravityStopHook)},
+		{"timeout", antigravityHookTimeoutSec},
+	}
+}
+
+// antigravityHookKeys is the array the hook handler lives in: the Stop event of the hook
+// named after the server.
+var antigravityHookKeys = []string{ServerName, "Stop"}
+
+func (a *antigravity) Plan() []string {
+	return []string{
+		"run: agy " + strings.Join(a.addArgs(), " "),
+		fmt.Sprintf("edit %s: add to partyline.Stop %s", a.env.tildePath(a.hooksPath()), marshal(a.hookHandler(), false, "")),
+	}
+}
+
+func (a *antigravity) Apply(ctx context.Context) error {
+	if _, _, err := readDoc(a.hooksPath()); err != nil {
+		return err
+	}
+	if _, err := a.env.writeTarget(a.hooksPath()); err != nil {
+		return err
+	}
+	if err := a.env.runCLI(ctx, "agy", a.addArgs()...); err != nil {
+		return err
+	}
+	return a.env.upsertHookGroup(a.hooksPath(), a.hookHandler(), AntigravityStopHook, antigravityHookKeys...)
+}
+
+func (a *antigravity) mcpCommand() (string, error) {
+	d, _, err := readDoc(a.mcpPath())
+	if err != nil {
+		return "", err
+	}
+	return stringAt(d, "mcpServers", ServerName, "command")
+}
+
+func (a *antigravity) RemovePlan(context.Context) []string {
+	var plan []string
+	if cmd, _ := a.mcpCommand(); cmd != "" {
+		plan = append(plan, "run: agy mcp remove "+ServerName)
+	}
+	if bins, _ := a.env.hookBinaries(a.hooksPath(), AntigravityStopHook, antigravityHookKeys...); len(bins) > 0 {
+		plan = append(plan, fmt.Sprintf("edit %s: remove the Partyline Stop hook", a.env.tildePath(a.hooksPath())))
+	}
+	return plan
+}
+
+func (a *antigravity) Remove(ctx context.Context) error {
+	cmd, err := a.mcpCommand()
+	if err != nil {
+		return err
+	}
+	if cmd != "" {
+		if err := a.env.runCLI(ctx, "agy", "mcp", "remove", ServerName); err != nil {
+			return err
+		}
+	}
+	return a.env.removeHookGroups(a.hooksPath(), AntigravityStopHook, antigravityHookKeys...)
+}
+
+// Backups lists the backup of hooks.json, the one file setup edits itself; agy writes
+// mcp_config.json.
+func (a *antigravity) Backups() []string { return []string{a.hooksPath() + backupSuffix} }
+
+func (a *antigravity) Entries(context.Context) ([]Entry, error) {
+	var out []Entry
+	cmd, err := a.mcpCommand()
+	if err != nil {
+		return nil, err
+	}
+	if cmd != "" {
+		out = append(out, Entry{What: "MCP server in " + a.env.tildePath(a.mcpPath()), Binary: cmd})
+	}
+	bins, err := a.env.hookBinaries(a.hooksPath(), AntigravityStopHook, antigravityHookKeys...)
+	if err != nil {
+		return nil, err
+	}
+	for _, b := range bins {
+		out = append(out, Entry{What: "Stop hook in " + a.env.tildePath(a.hooksPath()), Binary: b})
+	}
+	return out, nil
+}
+
 // --- shared hook-file helpers ---------------------------------------------------------
 
 // stringAt returns the string at keys of d, or "".
@@ -355,16 +466,21 @@ func stringAt(d *docEdit, keys ...string) (string, error) {
 	return s, nil
 }
 
-// ownsGroup reports whether a hook group (a {"hooks": [{"command": …}]} object) holds a hook
-// with the exact command setup writes for this binary.
+// ownsGroup reports whether a hook entry holds a hook with the exact command setup writes for
+// this binary: a group (a {"hooks": [{"command": …}]} object) or a flat handler (a
+// {"command": …} object, Antigravity's Stop event).
 func (e Env) ownsGroup(raw []byte, hook string) bool {
 	var group struct {
-		Hooks []struct {
+		Command string `json:"command"`
+		Hooks   []struct {
 			Command string `json:"command"`
 		} `json:"hooks"`
 	}
 	if json.Unmarshal(raw, &group) != nil {
 		return false
+	}
+	if group.Command != "" && e.ownsHook(group.Command, hook) {
+		return true
 	}
 	for _, h := range group.Hooks {
 		if e.ownsHook(h.Command, hook) {
