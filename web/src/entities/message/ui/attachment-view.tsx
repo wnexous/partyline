@@ -1,5 +1,5 @@
 import { FileIcon } from "lucide-react";
-import { isAudio } from "@/lib/voice";
+import { isAudio } from "../lib/voice";
 import type { Attachment } from "@/shared/api/types.gen";
 import { useI18n } from "@/shared/i18n";
 import { formatBytes } from "@/shared/lib/bytes";

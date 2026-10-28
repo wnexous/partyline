@@ -1,7 +1,10 @@
 /*
- * Voice messages, the parts that need no browser (VOI-01..VOI-08): which format to record in, what
- * to call the file, how long it was, and what a refused microphone means.
+ * Voice messages, the parts of recording that need no browser (VOI-01..VOI-08): which format to
+ * record in, what to call the file, and what a refused microphone means. The recorder hook and the
+ * microphone controls use them; the time and the length text are the message entity's.
  */
+
+import { mimeBaseType } from "@/entities/message";
 
 /** A recording stops by itself here and waits to be sent (VOI-05). */
 export const MAX_RECORDING_MS = 10 * 60_000;
@@ -23,8 +26,6 @@ export function pickRecorderMime(isTypeSupported: (type: string) => boolean): st
   return RECORDER_MIMES.find((type) => isTypeSupported(type));
 }
 
-const baseType = (mime: string) => (mime.split(";")[0] ?? "").trim().toLowerCase();
-
 const EXTENSIONS: Record<string, string> = {
   "audio/webm": "webm",
   "audio/ogg": "ogg",
@@ -39,28 +40,7 @@ const pad = (n: number, width = 2) => String(n).padStart(width, "0");
 export function voiceFileName(mime: string, at: Date = new Date()): string {
   const day = `${at.getFullYear()}-${pad(at.getMonth() + 1)}-${pad(at.getDate())}`;
   const time = `${pad(at.getHours())}${pad(at.getMinutes())}${pad(at.getSeconds())}`;
-  return `voice-message-${day}-${time}.${EXTENSIONS[baseType(mime)] ?? "audio"}`;
-}
-
-const VOICE_NAME = /^voice-message-\d{4}-\d{2}-\d{2}-\d{6}\.[a-z0-9]+$/;
-
-/** True for the file a recording makes: the list of conversations names such a message. */
-export const isVoiceName = (name: string) => VOICE_NAME.test(name);
-
-/** The preview of a conversation for a message that is only a recording: `[voice-message-….webm]`. */
-export function isVoicePreview(text: string): boolean {
-  const name = /^\[(.+)\]$/.exec(text)?.[1];
-  return name !== undefined && isVoiceName(name);
-}
-
-/** An audio type, whatever parameters (`;codecs=opus`) the recorder added to it. */
-export const isAudio = (mime: string) => baseType(mime).startsWith("audio/");
-
-/** `m:ss`, the seconds always two digits and the fraction dropped; minutes keep counting past an hour. */
-export function formatDuration(seconds: number): string {
-  if (!Number.isFinite(seconds) || seconds < 0) return "0:00";
-  const whole = Math.floor(seconds);
-  return `${Math.floor(whole / 60)}:${pad(whole % 60)}`;
+  return `voice-message-${day}-${time}.${EXTENSIONS[mimeBaseType(mime)] ?? "audio"}`;
 }
 
 /** Why the microphone could not be had: refused, not there, in use, or anything else (VOI-06). */

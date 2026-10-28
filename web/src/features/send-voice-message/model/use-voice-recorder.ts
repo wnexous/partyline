@@ -7,8 +7,8 @@ import {
   pickRecorderMime,
   type VoiceFailure,
   voiceFileName,
-} from "@/lib/voice";
-import { normalizeWebm } from "@/lib/webm-duration";
+} from "../lib/voice";
+import { normalizeWebm } from "../lib/webm-duration";
 
 /*
  * The recorder behind the microphone button (VOI-01..VOI-06). It asks for the microphone, records

@@ -1,7 +1,7 @@
 import { act, renderHook } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { useVoiceRecorder } from "@/hooks/use-voice-recorder";
-import { MAX_RECORDING_MS } from "@/lib/voice";
+import { useVoiceRecorder } from "../model/use-voice-recorder";
+import { MAX_RECORDING_MS } from "../lib/voice";
 import { type FakeMicrophone, FakeRecorder, stubMicrophone } from "@/test/recorder";
 
 /*

@@ -1,7 +1,8 @@
 import { ChevronLeftIcon, MicIcon, SendHorizontalIcon } from "lucide-react";
 import { type PointerEvent, type Ref, useEffect, useRef } from "react";
-import type { VoicePhase } from "@/hooks/use-voice-recorder";
-import { formatDuration, HOLD_MS, SLIDE_CANCEL_PX } from "@/lib/voice";
+import { formatDuration } from "@/entities/message";
+import { HOLD_MS, SLIDE_CANCEL_PX } from "../lib/voice";
+import type { VoicePhase } from "../model/use-voice-recorder";
 import { useI18n } from "@/shared/i18n";
 import { cn } from "@/shared/lib/utils";
 import { Button } from "@/shared/ui/primitives/button";

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { normalizeWebm } from "@/lib/webm-duration";
+import { normalizeWebm } from "./webm-duration";
 
 /*
  * The real timeline and length of a WebM (VOI-08). The tests build the containers byte by byte, in

@@ -28,7 +28,6 @@ import {
   mentionCandidates,
   mentionOptionId,
 } from "@/features/mention-autocomplete";
-import { type HoldState, MicButton, RecordingBar } from "@/components/voice-controls";
 import { useMe } from "@/entities/account";
 import {
   authorDisplayName,
@@ -37,9 +36,8 @@ import {
   usePostMessage,
 } from "@/entities/message";
 import { useDraft, useDraftStore, useEditDraft } from "@/features/send-message";
-import { useVoiceRecorder } from "@/hooks/use-voice-recorder";
+import { type HoldState, MicButton, RecordingBar, type VoiceFailure, useVoiceRecorder } from "@/features/send-voice-message";
 import { textLength } from "@/lib/schemas";
-import type { VoiceFailure } from "@/lib/voice";
 import { isApiError } from "@/shared/api/client";
 import {
   ErrorCodeCounterpartDisabled,

@@ -14,3 +14,4 @@ export * from "./ui/image-viewer";
 export * from "./ui/lazy-markdown";
 export * from "./ui/reply-context";
 export * from "./ui/trust-badge";
+export * from "./lib/voice";

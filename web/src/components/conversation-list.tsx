@@ -16,7 +16,7 @@ import { NewConversationDialog } from "@/components/new-conversation-dialog";
 import { NewGroupDialog } from "@/components/new-group-dialog";
 import { inOrg, useCurrentOrg } from "@/entities/organization";
 import { ConversationAvatar, conversationMatches, useConversations } from "@/entities/room";
-import { isVoicePreview } from "@/lib/voice";
+import { isVoicePreview } from "@/entities/message";
 import type { Conversation } from "@/shared/api/types.gen";
 import { useI18n, useT } from "@/shared/i18n";
 import { useTouchFirst } from "@/shared/lib/device";

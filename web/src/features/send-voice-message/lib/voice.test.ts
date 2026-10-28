@@ -1,14 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import {
-  canRecord,
-  formatDuration,
-  isAudio,
-  isVoiceName,
-  isVoicePreview,
-  micFailure,
-  pickRecorderMime,
-  voiceFileName,
-} from "@/lib/voice";
+import { formatDuration, isAudio, isVoiceName, isVoicePreview } from "@/entities/message";
+import { canRecord, micFailure, pickRecorderMime, voiceFileName } from "./voice";
 
 /*
  * Voice messages, the parts that need no browser (VOI-01, VOI-04, VOI-06, VOI-07): which format to
