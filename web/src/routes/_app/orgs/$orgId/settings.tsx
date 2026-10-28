@@ -3,11 +3,31 @@ import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import { useEffect, useId, useRef, useState } from "react";
 import { useForm } from "react-hook-form";
 import { toast } from "sonner";
-import { FormAlert, TextField } from "@/shared/ui/molecules/form-fields";
 import { OrgAvatar } from "@/components/org-avatar";
+import { PhotoEditor } from "@/components/photo-editor";
+import {
+  useDeleteOrg,
+  useMe,
+  useOrg,
+  useRemoveFromOrg,
+  useRemoveOrgAvatar,
+  useUpdateOrg,
+  useUploadOrgAvatar,
+} from "@/lib/api/queries";
+import { ownedThings, PermissionAdmin } from "@/lib/orgs";
+import { type UpdateOrgForm, updateOrgSchema } from "@/lib/schemas";
+import { isApiError } from "@/shared/api/client";
+import {
+  ErrorCodeLastAdmin,
+  ErrorCodeOrganizationNotEmpty,
+  type Organization,
+  type UpdateOrganizationRequest,
+} from "@/shared/api/types.gen";
+import { useI18n, useT } from "@/shared/i18n";
+import { applyFieldErrors } from "@/shared/lib/forms";
+import { FormAlert, TextField } from "@/shared/ui/molecules/form-fields";
 import { PageHeader } from "@/shared/ui/molecules/page-header";
 import { PageSection as Section } from "@/shared/ui/molecules/page-section";
-import { PhotoEditor } from "@/components/photo-editor";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -20,26 +40,6 @@ import {
 } from "@/shared/ui/primitives/alert-dialog";
 import { Button } from "@/shared/ui/primitives/button";
 import { Form } from "@/shared/ui/primitives/form";
-import { isApiError } from "@/shared/api/client";
-import {
-  useDeleteOrg,
-  useMe,
-  useOrg,
-  useRemoveFromOrg,
-  useRemoveOrgAvatar,
-  useUpdateOrg,
-  useUploadOrgAvatar,
-} from "@/lib/api/queries";
-import {
-  ErrorCodeLastAdmin,
-  ErrorCodeOrganizationNotEmpty,
-  type Organization,
-  type UpdateOrganizationRequest,
-} from "@/shared/api/types.gen";
-import { applyFieldErrors } from "@/shared/lib/forms";
-import { useI18n, useT } from "@/shared/i18n";
-import { ownedThings, PermissionAdmin } from "@/lib/orgs";
-import { type UpdateOrgForm, updateOrgSchema } from "@/lib/schemas";
 
 export const Route = createFileRoute("/_app/orgs/$orgId/settings")({
   component: OrgSettingsPage,

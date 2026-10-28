@@ -1,8 +1,8 @@
 import { screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import type { CreatedToken, Token } from "@/shared/api/types.gen";
 import { useLiveStore } from "@/lib/live/store";
+import type { CreatedToken, Token } from "@/shared/api/types.gen";
 import { apiError, json, mockApi } from "@/test/fetch";
 import { makeMe } from "@/test/fixtures";
 import { renderRoute } from "@/test/render";

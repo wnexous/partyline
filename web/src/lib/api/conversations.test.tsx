@@ -2,9 +2,10 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { act, renderHook, waitFor } from "@testing-library/react";
 import type { ReactNode } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { ApiError } from "@/shared/api/client";
+import type { Conversation, IntelligenceProfile, Me, Message, Room } from "@/shared/api/types.gen";
 import { apiError, json, mockApi } from "@/test/fetch";
 import { makeConversation, makeIntelligence, makeMe, makeMessage, makeRoom } from "@/test/fixtures";
-import { ApiError } from "@/shared/api/client";
 import type { MessagePages } from "./queries";
 import {
   queryKeys,
@@ -20,7 +21,6 @@ import {
   useUpdateRoom,
   useUploadAvatar,
 } from "./queries";
-import type { Conversation, IntelligenceProfile, Me, Message, Room } from "@/shared/api/types.gen";
 
 /*
  * The hooks of the messenger's data layer: what each one sends, and what it leaves in the cache

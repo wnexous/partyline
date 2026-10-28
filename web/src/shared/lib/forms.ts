@@ -1,7 +1,7 @@
 import type { FieldValues, Path, UseFormSetError } from "react-hook-form";
+import { validationVars } from "@/lib/schemas";
 import { isApiError } from "@/shared/api/client";
 import { dictionaries, type MessageKey, type Translate } from "@/shared/i18n";
-import { validationVars } from "@/lib/schemas";
 
 /** Renders a field error: schema errors carry i18n keys, server errors carry plain text. */
 export function errorText(t: Translate, message: string | undefined): string {

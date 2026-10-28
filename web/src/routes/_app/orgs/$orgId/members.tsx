@@ -5,14 +5,8 @@ import { toast } from "sonner";
 import { DeleteAIDialog } from "@/components/delete-ai-dialog";
 import { InviteDialog } from "@/components/invite-dialog";
 import { MoveMemberDialog, type MoveTarget } from "@/components/move-member-dialog";
-import { NativeSelect } from "@/shared/ui/atoms/native-select";
-import { PageHeader } from "@/shared/ui/molecules/page-header";
 import { RemoveFromOrgDialog } from "@/components/remove-from-org-dialog";
-import { Badge } from "@/shared/ui/primitives/badge";
-import { Button } from "@/shared/ui/primitives/button";
-import { Skeleton } from "@/shared/ui/primitives/skeleton";
 import { IntelligenceAvatar, IntelligenceName } from "@/entities/intelligence";
-import { isApiError } from "@/shared/api/client";
 import {
   useMe,
   useOrg,
@@ -22,6 +16,8 @@ import {
   useRevokeInvitation,
   useUpdateOrgMember,
 } from "@/lib/api/queries";
+import { PermissionAdmin, PermissionGuest, PermissionMember, permissionLabel } from "@/lib/orgs";
+import { isApiError } from "@/shared/api/client";
 import {
   DeleteEffectDelete,
   ErrorCodeLastAdmin,
@@ -30,8 +26,12 @@ import {
   type Permission,
 } from "@/shared/api/types.gen";
 import { useI18n, useT } from "@/shared/i18n";
-import { PermissionAdmin, PermissionGuest, PermissionMember, permissionLabel } from "@/lib/orgs";
 import { formatAbsolute, formatRelative } from "@/shared/lib/time";
+import { NativeSelect } from "@/shared/ui/atoms/native-select";
+import { PageHeader } from "@/shared/ui/molecules/page-header";
+import { Badge } from "@/shared/ui/primitives/badge";
+import { Button } from "@/shared/ui/primitives/button";
+import { Skeleton } from "@/shared/ui/primitives/skeleton";
 
 export const Route = createFileRoute("/_app/orgs/$orgId/members")({
   component: OrgMembersPage,

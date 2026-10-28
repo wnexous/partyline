@@ -1,8 +1,8 @@
 import { act, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import type { IntelligenceProfile, SessionInfo } from "@/shared/api/types.gen";
 import { useLiveStore } from "@/lib/live/store";
+import type { IntelligenceProfile, SessionInfo } from "@/shared/api/types.gen";
 import { json, mockApi } from "@/test/fetch";
 import {
   makeAI,

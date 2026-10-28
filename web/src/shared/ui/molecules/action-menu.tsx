@@ -1,5 +1,7 @@
 import { type LucideIcon, XIcon } from "lucide-react";
 import { Fragment, type ReactNode, useRef } from "react";
+import { useT } from "@/shared/i18n";
+import { cn } from "@/shared/lib/utils";
 import { Button } from "@/shared/ui/primitives/button";
 import {
   DropdownMenu,
@@ -16,8 +18,6 @@ import {
   SheetHeader,
   SheetTitle,
 } from "@/shared/ui/primitives/sheet";
-import { useT } from "@/shared/i18n";
-import { cn } from "@/shared/lib/utils";
 
 /*
  * What a row's actions look like once they are open (ACT-01, ACT-02, ACT-06). A touch device gets

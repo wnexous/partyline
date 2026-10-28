@@ -1,8 +1,8 @@
 import { SearchIcon } from "lucide-react";
-import { Button } from "@/shared/ui/primitives/button";
-import { Tooltip, TooltipContent, TooltipTrigger } from "@/shared/ui/primitives/tooltip";
 import { useT } from "@/shared/i18n";
 import { cn } from "@/shared/lib/utils";
+import { Button } from "@/shared/ui/primitives/button";
+import { Tooltip, TooltipContent, TooltipTrigger } from "@/shared/ui/primitives/tooltip";
 
 /** True when the shortcut should read ⌘K (Apple platforms) rather than Ctrl K. */
 export function isApplePlatform(): boolean {

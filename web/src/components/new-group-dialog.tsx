@@ -4,8 +4,31 @@ import { SearchIcon, XIcon } from "lucide-react";
 import { type ReactNode, useEffect, useId, useMemo, useState } from "react";
 import { useForm } from "react-hook-form";
 import { PickableMeta } from "@/components/contact-meta";
-import { FormAlert, TextField } from "@/shared/ui/molecules/form-fields";
 import { OrgSelect } from "@/components/org-select";
+import { IntelligenceAvatar, IntelligenceName } from "@/entities/intelligence";
+import { useCurrentOrg } from "@/hooks/use-current-org";
+import { useOrgUsers } from "@/hooks/use-org-users";
+import { useContacts, useCreateGroup } from "@/lib/api/queries";
+import { type Pickable, pickableList } from "@/lib/contacts";
+import { matchesTerms } from "@/lib/conversations";
+import { useLiveStore } from "@/lib/live/store";
+import { canCreateGroupsIn } from "@/lib/orgs";
+import { withContactPresence } from "@/lib/presence";
+import { type CreateGroupForm, createGroupSchema } from "@/lib/schemas";
+import { isApiError } from "@/shared/api/client";
+import {
+  ErrorCodeMembersRefused,
+  ErrorCodeOrganizationRequired,
+  MaxGroupMembers,
+  type RefusedMember,
+  type RefusedReason,
+  RefusedReasonNotOrgMember,
+  RefusedReasonPerson,
+} from "@/shared/api/types.gen";
+import { useT } from "@/shared/i18n";
+import { isCoarsePointer } from "@/shared/lib/device";
+import { applyFieldErrors } from "@/shared/lib/forms";
+import { FormAlert, TextField } from "@/shared/ui/molecules/form-fields";
 import { Button } from "@/shared/ui/primitives/button";
 import { Checkbox } from "@/shared/ui/primitives/checkbox";
 import {
@@ -20,29 +43,6 @@ import {
 import { Form } from "@/shared/ui/primitives/form";
 import { Input } from "@/shared/ui/primitives/input";
 import { Skeleton } from "@/shared/ui/primitives/skeleton";
-import { IntelligenceAvatar, IntelligenceName } from "@/entities/intelligence";
-import { useCurrentOrg } from "@/hooks/use-current-org";
-import { useOrgUsers } from "@/hooks/use-org-users";
-import { isApiError } from "@/shared/api/client";
-import { useContacts, useCreateGroup } from "@/lib/api/queries";
-import {
-  ErrorCodeMembersRefused,
-  ErrorCodeOrganizationRequired,
-  MaxGroupMembers,
-  type RefusedMember,
-  type RefusedReason,
-  RefusedReasonNotOrgMember,
-  RefusedReasonPerson,
-} from "@/shared/api/types.gen";
-import { type Pickable, pickableList } from "@/lib/contacts";
-import { matchesTerms } from "@/lib/conversations";
-import { applyFieldErrors } from "@/shared/lib/forms";
-import { useT } from "@/shared/i18n";
-import { useLiveStore } from "@/lib/live/store";
-import { canCreateGroupsIn } from "@/lib/orgs";
-import { withContactPresence } from "@/lib/presence";
-import { type CreateGroupForm, createGroupSchema } from "@/lib/schemas";
-import { isCoarsePointer } from "@/shared/lib/device";
 
 /*
  * "New group" (LAY-04): a name, the organization it belongs to, and the members that join, AIs and
@@ -59,7 +59,11 @@ export function NewGroupDialog({ trigger }: { trigger: ReactNode }) {
   return (
     <Dialog open={open} onOpenChange={setOpen}>
       <DialogTrigger asChild>{trigger}</DialogTrigger>
-      <DialogContent className="flex max-h-[min(44rem,calc(100dvh-2rem))] flex-col gap-0 p-0 sm:max-w-lg" closeLabel={t("common.close")} touchFirst={isCoarsePointer()}>
+      <DialogContent
+        className="flex max-h-[min(44rem,calc(100dvh-2rem))] flex-col gap-0 p-0 sm:max-w-lg"
+        closeLabel={t("common.close")}
+        touchFirst={isCoarsePointer()}
+      >
         <DialogHeader className="border-b px-5 pt-5 pb-4 text-left">
           <DialogTitle>{t("newGroup.title")}</DialogTitle>
           <DialogDescription>{t("newGroup.body")}</DialogDescription>

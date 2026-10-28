@@ -1,9 +1,9 @@
 import { screen } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { ConnectorStatusBadge } from "@/components/connector-status";
-import { LiveIndicator } from "@/shared/ui/molecules/live-status";
-import { StatusDot } from "@/shared/ui/atoms/status-dot";
 import { useLiveStore } from "@/lib/live/store";
+import { StatusDot } from "@/shared/ui/atoms/status-dot";
+import { LiveIndicator } from "@/shared/ui/molecules/live-status";
 import { renderWithProviders } from "@/test/render";
 
 /*

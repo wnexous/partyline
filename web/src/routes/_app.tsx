@@ -2,24 +2,24 @@ import { createFileRoute, Outlet, redirect, useRouterState } from "@tanstack/rea
 import { SearchIcon } from "lucide-react";
 import { useEffect } from "react";
 import { AppSidebar } from "@/components/app-sidebar";
-import { BackToConversations } from "@/shared/ui/molecules/back-link";
-import { Wordmark } from "@/shared/ui/atoms/brand";
 import { CommandMenu } from "@/components/command-menu";
-import { LiveBanner } from "@/shared/ui/molecules/live-status";
 import { OrgSwitcher } from "@/components/org-switcher";
 import { ProfilePanel } from "@/components/profile-panel";
-import { Button } from "@/shared/ui/primitives/button";
-import { SidebarInset, SidebarProvider } from "@/shared/ui/primitives/sidebar";
-import { useIsMobile } from "@/shared/lib/device";
-import { useVisualViewport } from "@/shared/lib/use-visual-viewport";
-import { isApiError } from "@/shared/api/client";
 import { meQuery, useMe } from "@/lib/api/queries";
-import { isLocale, useT } from "@/shared/i18n";
 import { startLive } from "@/lib/live";
-import { useDisconnected } from "@/shared/lib/use-disconnected";
 import { useLiveStore } from "@/lib/live/store";
 import { ensurePushSubscription } from "@/lib/push/register";
 import { LOCALE_KEY, readStorage } from "@/lib/theme";
+import { isApiError } from "@/shared/api/client";
+import { isLocale, useT } from "@/shared/i18n";
+import { useIsMobile } from "@/shared/lib/device";
+import { useDisconnected } from "@/shared/lib/use-disconnected";
+import { useVisualViewport } from "@/shared/lib/use-visual-viewport";
+import { Wordmark } from "@/shared/ui/atoms/brand";
+import { BackToConversations } from "@/shared/ui/molecules/back-link";
+import { LiveBanner } from "@/shared/ui/molecules/live-status";
+import { Button } from "@/shared/ui/primitives/button";
+import { SidebarInset, SidebarProvider } from "@/shared/ui/primitives/sidebar";
 
 export const Route = createFileRoute("/_app")({
   // Every page under _app needs a session: unknown users go to login and come back (UI-02).
@@ -74,32 +74,32 @@ function AppLayout() {
         toggleSidebar: t("nav.toggleSidebar"),
       }}
     >
-    <div className="flex min-h-svh w-full">
-      <a
-        href="#main"
-        className="sr-only z-50 rounded-md bg-primary px-3 py-2 text-sm font-medium text-primary-foreground focus:not-sr-only focus:fixed focus:top-3 focus:left-3 focus:px-3 focus:py-2 focus-visible:ring-[3px] focus-visible:ring-ring/70"
-      >
-        {t("nav.skip")}
-      </a>
-      {isMobile ? null : <AppSidebar me={me} />}
-      {/*
+      <div className="flex min-h-svh w-full">
+        <a
+          href="#main"
+          className="sr-only z-50 rounded-md bg-primary px-3 py-2 text-sm font-medium text-primary-foreground focus:not-sr-only focus:fixed focus:top-3 focus:left-3 focus:px-3 focus:py-2 focus-visible:ring-[3px] focus-visible:ring-ring/70"
+        >
+          {t("nav.skip")}
+        </a>
+        {isMobile ? null : <AppSidebar me={me} />}
+        {/*
         Full-height pages (a conversation, the phone's list) mark themselves with data-fill and scroll
         inside. They are as tall as the visual viewport (`--app-height`, below the page's top by
         `--app-top`), which the on-screen keyboard shrinks in every browser; `100dvh` stands in until
         it is known (KBD-01, KBD-05).
       */}
-      <SidebarInset
-        id="main"
-        tabIndex={-1}
-        className="min-w-0 outline-none has-[[data-fill]]:top-[var(--app-top,0px)] has-[[data-fill]]:h-[var(--app-height,100dvh)] has-[[data-fill]]:overflow-hidden"
-      >
-        <MobileBar />
-        <LiveBanner disconnected={useDisconnected()} />
-        <Outlet />
-      </SidebarInset>
-      <CommandMenu me={me} />
-      <ProfilePanel />
-    </div>
+        <SidebarInset
+          id="main"
+          tabIndex={-1}
+          className="min-w-0 outline-none has-[[data-fill]]:top-[var(--app-top,0px)] has-[[data-fill]]:h-[var(--app-height,100dvh)] has-[[data-fill]]:overflow-hidden"
+        >
+          <MobileBar />
+          <LiveBanner disconnected={useDisconnected()} />
+          <Outlet />
+        </SidebarInset>
+        <CommandMenu me={me} />
+        <ProfilePanel />
+      </div>
     </SidebarProvider>
   );
 }

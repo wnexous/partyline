@@ -4,6 +4,14 @@ import { type ReactNode, type RefObject, useEffect, useLayoutEffect, useRef } fr
 import { ConnectorStatusBadge, useConnectorState } from "@/components/connector-status";
 import { ConversationAvatar } from "@/components/conversation-avatar";
 import { platformLabel } from "@/components/message-item";
+import { useProfilePanel } from "@/hooks/use-profile-panel";
+import { useAgents, useConnectors, useConversations } from "@/lib/api/queries";
+import { useLiveStore } from "@/lib/live/store";
+import { NAV_GROUPS } from "@/lib/nav";
+import { type Connector, type Me, RoleAdmin } from "@/shared/api/types.gen";
+import { useT } from "@/shared/i18n";
+import { isCoarsePointer } from "@/shared/lib/device";
+import { cn } from "@/shared/lib/utils";
 import { StatusDot } from "@/shared/ui/atoms/status-dot";
 import {
   Command,
@@ -13,15 +21,12 @@ import {
   CommandItem,
   CommandList,
 } from "@/shared/ui/primitives/command";
-import { Dialog, DialogContent, DialogDescription, DialogTitle } from "@/shared/ui/primitives/dialog";
-import { useProfilePanel } from "@/hooks/use-profile-panel";
-import { useAgents, useConnectors, useConversations } from "@/lib/api/queries";
-import { type Connector, type Me, RoleAdmin } from "@/shared/api/types.gen";
-import { useT } from "@/shared/i18n";
-import { useLiveStore } from "@/lib/live/store";
-import { NAV_GROUPS } from "@/lib/nav";
-import { cn } from "@/shared/lib/utils";
-import { isCoarsePointer } from "@/shared/lib/device";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogTitle,
+} from "@/shared/ui/primitives/dialog";
 
 /*
  * Command palette (UI-22): Ctrl/Cmd+K from anywhere in the app jumps to a conversation, a connector
@@ -59,7 +64,9 @@ export function CommandMenu({ me }: { me: Me }) {
       <DialogContent
         showCloseButton={false}
         className="top-[12%] translate-y-0 gap-0 overflow-hidden p-0 sm:top-[18%] sm:max-w-xl"
-       closeLabel={t("common.close")} touchFirst={isCoarsePointer()}>
+        closeLabel={t("common.close")}
+        touchFirst={isCoarsePointer()}
+      >
         <DialogTitle className="sr-only">{t("palette.title")}</DialogTitle>
         <DialogDescription className="sr-only">{t("palette.description")}</DialogDescription>
         {/* Mounted only while open: lists load on demand and the search starts empty. */}
@@ -145,17 +152,15 @@ function PaletteBody({
                 icon={<ContactRoundIcon aria-hidden="true" />}
                 label={agent.intelligence.display_name}
                 hint={`@${agent.intelligence.handle}`}
-                trailing={
-                  (() => {
-                    const online = presence[agent.id]?.online ?? agent.online;
-                    return (
-                      <StatusDot
-                        online={online}
-                        label={online ? t("presence.online") : t("presence.offline")}
-                      />
-                    );
-                  })()
-                }
+                trailing={(() => {
+                  const online = presence[agent.id]?.online ?? agent.online;
+                  return (
+                    <StatusDot
+                      online={online}
+                      label={online ? t("presence.online") : t("presence.offline")}
+                    />
+                  );
+                })()}
               />
             ))}
           </CommandGroup>

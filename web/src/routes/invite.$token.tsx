@@ -4,17 +4,17 @@ import { LinkIcon } from "lucide-react";
 import { useState } from "react";
 import { useForm } from "react-hook-form";
 import { AuthLayout } from "@/components/auth-layout";
+import { useAcceptInvite, useInviteInfo } from "@/lib/api/queries";
+import { type AcceptInviteForm, acceptInviteSchema } from "@/lib/schemas";
+import { isApiError } from "@/shared/api/client";
+import { type InviteInfo, PasswordMinLength, RoleAdmin } from "@/shared/api/types.gen";
+import { useI18n } from "@/shared/i18n";
+import { applyFieldErrors } from "@/shared/lib/forms";
 import { EmptyState } from "@/shared/ui/molecules/empty-state";
 import { FormAlert, TextField } from "@/shared/ui/molecules/form-fields";
 import { Button } from "@/shared/ui/primitives/button";
 import { Form } from "@/shared/ui/primitives/form";
 import { Skeleton } from "@/shared/ui/primitives/skeleton";
-import { isApiError } from "@/shared/api/client";
-import { useAcceptInvite, useInviteInfo } from "@/lib/api/queries";
-import { type InviteInfo, PasswordMinLength, RoleAdmin } from "@/shared/api/types.gen";
-import { applyFieldErrors } from "@/shared/lib/forms";
-import { useI18n } from "@/shared/i18n";
-import { type AcceptInviteForm, acceptInviteSchema } from "@/lib/schemas";
 
 export const Route = createFileRoute("/invite/$token")({
   component: InvitePage,

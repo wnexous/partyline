@@ -12,22 +12,22 @@ import { ConnectAgentDialog } from "@/components/connect-agent-dialog";
 import { AIMeta } from "@/components/contact-meta";
 import { ContactRow } from "@/components/contact-row";
 import { DeleteAIDialog } from "@/components/delete-ai-dialog";
-import { EmptyState } from "@/shared/ui/molecules/empty-state";
 import { MergeAIDialog } from "@/components/merge-ai-dialog";
 import { MessageButton } from "@/components/message-button";
-import { PageHeader } from "@/shared/ui/molecules/page-header";
 import { PeopleGroup } from "@/components/people-group";
+import { useContacts } from "@/lib/api/queries";
+import { aiText, filterOrgs, mergeTargets, onlineCount } from "@/lib/contacts";
+import { matchesTerms } from "@/lib/conversations";
+import { useLiveStore } from "@/lib/live/store";
+import { withContactPresence } from "@/lib/presence";
+import type { AIContact, Contacts, IntelligenceRef } from "@/shared/api/types.gen";
+import { useI18n } from "@/shared/i18n";
+import { useDebouncedValue } from "@/shared/lib/use-debounced-value";
+import { EmptyState } from "@/shared/ui/molecules/empty-state";
+import { PageHeader } from "@/shared/ui/molecules/page-header";
 import { Button } from "@/shared/ui/primitives/button";
 import { Input } from "@/shared/ui/primitives/input";
 import { Skeleton } from "@/shared/ui/primitives/skeleton";
-import { useDebouncedValue } from "@/shared/lib/use-debounced-value";
-import { useContacts } from "@/lib/api/queries";
-import type { AIContact, Contacts, IntelligenceRef } from "@/shared/api/types.gen";
-import { aiText, filterOrgs, mergeTargets, onlineCount } from "@/lib/contacts";
-import { matchesTerms } from "@/lib/conversations";
-import { useI18n } from "@/shared/i18n";
-import { useLiveStore } from "@/lib/live/store";
-import { withContactPresence } from "@/lib/presence";
 
 export const Route = createFileRoute("/_app/contacts/")({
   component: ContactsPage,

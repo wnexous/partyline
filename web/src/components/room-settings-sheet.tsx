@@ -3,9 +3,21 @@ import { useNavigate } from "@tanstack/react-router";
 import { type ReactNode, useId, useState } from "react";
 import { type ControllerRenderProps, useForm } from "react-hook-form";
 import { toast } from "sonner";
-import { FieldError, FormAlert, TextField } from "@/shared/ui/molecules/form-fields";
 import { GroupAvatar } from "@/components/group-avatar";
 import { PhotoEditor } from "@/components/photo-editor";
+import {
+  useDeleteRoom,
+  useRemoveRoomAvatar,
+  useUpdateRoom,
+  useUploadRoomAvatar,
+} from "@/lib/api/queries";
+import { type RoomSettingsForm, roomSettingsSchema, textLength } from "@/lib/schemas";
+import { isApiError } from "@/shared/api/client";
+import { MaxRoomInstructions, type Room, type UpdateRoomRequest } from "@/shared/api/types.gen";
+import { useI18n } from "@/shared/i18n";
+import { applyFieldErrors } from "@/shared/lib/forms";
+import { cn } from "@/shared/lib/utils";
+import { FieldError, FormAlert, TextField } from "@/shared/ui/molecules/form-fields";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -38,18 +50,6 @@ import {
   SheetTrigger,
 } from "@/shared/ui/primitives/sheet";
 import { Textarea } from "@/shared/ui/primitives/textarea";
-import { isApiError } from "@/shared/api/client";
-import {
-  useDeleteRoom,
-  useRemoveRoomAvatar,
-  useUpdateRoom,
-  useUploadRoomAvatar,
-} from "@/lib/api/queries";
-import { MaxRoomInstructions, type Room, type UpdateRoomRequest } from "@/shared/api/types.gen";
-import { applyFieldErrors } from "@/shared/lib/forms";
-import { useI18n } from "@/shared/i18n";
-import { type RoomSettingsForm, roomSettingsSchema, textLength } from "@/lib/schemas";
-import { cn } from "@/shared/lib/utils";
 
 /**
  * Room settings for managers: the group's photo (GAV-06), name, description, instructions for

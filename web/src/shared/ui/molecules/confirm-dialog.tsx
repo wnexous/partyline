@@ -1,4 +1,5 @@
 import type { ReactNode } from "react";
+import { useT } from "@/shared/i18n";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -9,7 +10,6 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/shared/ui/primitives/alert-dialog";
-import { useT } from "@/shared/i18n";
 
 /*
  * The question before something that cannot be taken back (ACT-04): an alert dialog that names

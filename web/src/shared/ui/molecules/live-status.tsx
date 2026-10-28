@@ -42,7 +42,11 @@ export function LiveIndicator({
  * region stays mounted and only its content changes: screen readers skip regions that are
  * inserted together with their text.
  */
-export function LiveBanner({ disconnected }: { /** True once the socket has been down past the grace period. */ disconnected: boolean }) {
+export function LiveBanner({
+  disconnected,
+}: {
+  /** True once the socket has been down past the grace period. */ disconnected: boolean;
+}) {
   const t = useT();
   return (
     <div role="status" aria-live="polite">

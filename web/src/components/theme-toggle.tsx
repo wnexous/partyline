@@ -1,4 +1,7 @@
 import { MonitorIcon, MoonIcon, SunIcon } from "lucide-react";
+import { useLiveStore } from "@/lib/live/store";
+import type { ThemePreference } from "@/lib/theme";
+import { useT } from "@/shared/i18n";
 import { Button } from "@/shared/ui/primitives/button";
 import {
   DropdownMenu,
@@ -8,9 +11,6 @@ import {
   DropdownMenuRadioItem,
   DropdownMenuTrigger,
 } from "@/shared/ui/primitives/dropdown-menu";
-import { useT } from "@/shared/i18n";
-import { useLiveStore } from "@/lib/live/store";
-import type { ThemePreference } from "@/lib/theme";
 
 const OPTIONS = [
   { value: "system", icon: MonitorIcon, label: "theme.system" },

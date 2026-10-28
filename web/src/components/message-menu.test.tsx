@@ -9,9 +9,9 @@ import {
   messageActionSet,
 } from "@/components/message-menu";
 import { MessageTimeline } from "@/components/message-timeline";
-import type { Message } from "@/shared/api/types.gen";
 import { handleLiveEvent } from "@/lib/live/handlers";
 import { useLiveStore } from "@/lib/live/store";
+import type { Message } from "@/shared/api/types.gen";
 import { json, mockApi } from "@/test/fetch";
 import { makeMessage } from "@/test/fixtures";
 import { finger, HOLD, longPress, mouseDevice, touchDevice, wait } from "@/test/gestures";

@@ -4,8 +4,12 @@ import { CheckCheckIcon, CopyIcon, Trash2Icon } from "lucide-react";
 import { afterEach, beforeEach, describe, expect, it, type Mock, vi } from "vitest";
 import { axe } from "vitest-axe";
 import * as matchers from "vitest-axe/matchers";
-import { ActionMenu, type ActionMenuProps, type MenuAction } from "@/shared/ui/molecules/action-menu";
 import { I18nProvider } from "@/shared/i18n";
+import {
+  ActionMenu,
+  type ActionMenuProps,
+  type MenuAction,
+} from "@/shared/ui/molecules/action-menu";
 
 expect.extend(matchers);
 

@@ -1,8 +1,8 @@
 import { CheckIcon, CopyIcon } from "lucide-react";
 import { useEffect, useId, useState } from "react";
-import { Button } from "@/shared/ui/primitives/button";
 import { useT } from "@/shared/i18n";
 import { cn } from "@/shared/lib/utils";
+import { Button } from "@/shared/ui/primitives/button";
 
 /*
  * Copyable data: commands, configs, secrets and links. Values render in JetBrains Mono (data,

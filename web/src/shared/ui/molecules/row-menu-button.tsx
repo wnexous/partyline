@@ -1,6 +1,6 @@
 import { EllipsisIcon } from "lucide-react";
-import { Button } from "@/shared/ui/primitives/button";
 import { cn } from "@/shared/lib/utils";
+import { Button } from "@/shared/ui/primitives/button";
 
 /*
  * The "⋯" that opens a row's actions with a mouse (ACT-02). It hangs on the row's corner and shows

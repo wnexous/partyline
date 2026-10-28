@@ -9,6 +9,8 @@ import {
   UsersIcon,
   WaypointsIcon,
 } from "lucide-react";
+import { isAdminOf, type MyOrg, permissionLabel } from "@/lib/orgs";
+import { type MessageKey, useT } from "@/shared/i18n";
 import { Button } from "@/shared/ui/primitives/button";
 import {
   DropdownMenu,
@@ -18,8 +20,6 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/shared/ui/primitives/dropdown-menu";
-import { type MessageKey, useT } from "@/shared/i18n";
-import { isAdminOf, type MyOrg, permissionLabel } from "@/lib/orgs";
 
 /*
  * The organization's entry (SET-09, SET-11): the pages of the organization the switcher shows,

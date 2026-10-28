@@ -1,7 +1,7 @@
 import { SearchIcon, XIcon } from "lucide-react";
 import { useRef } from "react";
-import { Input } from "@/shared/ui/primitives/input";
 import { useT } from "@/shared/i18n";
+import { Input } from "@/shared/ui/primitives/input";
 
 /**
  * The sidebar's search box (LAY-03): filters the conversation list as the user types, by the

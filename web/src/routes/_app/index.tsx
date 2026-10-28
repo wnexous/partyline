@@ -1,10 +1,10 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { MessagesSquareIcon } from "lucide-react";
 import { MessengerPanel } from "@/components/app-sidebar";
-import { EmptyState } from "@/shared/ui/molecules/empty-state";
-import { useIsMobile } from "@/shared/lib/device";
 import { useMe } from "@/lib/api/queries";
 import { useT } from "@/shared/i18n";
+import { useIsMobile } from "@/shared/lib/device";
+import { EmptyState } from "@/shared/ui/molecules/empty-state";
 
 export const Route = createFileRoute("/_app/")({
   component: HomePage,

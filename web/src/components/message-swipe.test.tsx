@@ -1,8 +1,8 @@
 import { act, fireEvent, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { MessageTimeline } from "@/components/message-timeline";
-import type { Message } from "@/shared/api/types.gen";
 import { useLiveStore } from "@/lib/live/store";
+import type { Message } from "@/shared/api/types.gen";
 import { json, mockApi } from "@/test/fetch";
 import { makeMessage } from "@/test/fixtures";
 import { finger, HOLD, mouseDevice, touchDevice, wait } from "@/test/gestures";

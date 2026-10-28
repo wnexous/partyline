@@ -3,8 +3,8 @@ import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { RoomSettingsSheet } from "@/components/room-settings-sheet";
 import { queryKeys, useRoom } from "@/lib/api/queries";
-import type { Room } from "@/shared/api/types.gen";
 import { useLiveStore } from "@/lib/live/store";
+import type { Room } from "@/shared/api/types.gen";
 import { apiError, json, mockApi } from "@/test/fetch";
 import { makeRoom } from "@/test/fixtures";
 import { LoadedImage } from "@/test/image";
@@ -15,7 +15,10 @@ vi.mock("sonner", () => ({ toast }));
 
 /** The resize/decode step is mocked here; its own tests live in shared/lib/avatar.test.ts. */
 const prepareAvatar = vi.hoisted(() => vi.fn((file: File) => Promise.resolve<Blob>(file)));
-vi.mock("@/shared/lib/avatar", async (importOriginal) => ({ ...(await importOriginal<Record<string, unknown>>()), prepareAvatar }));
+vi.mock("@/shared/lib/avatar", async (importOriginal) => ({
+  ...(await importOriginal<Record<string, unknown>>()),
+  prepareAvatar,
+}));
 
 /*
  * Room settings after AD-015 (CID-22): a room is a conversation of intelligences, so there is no

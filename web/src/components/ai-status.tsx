@@ -1,8 +1,8 @@
-import { StatusDot } from "@/shared/ui/atoms/status-dot";
 import { appLabelOf, useIsOnline } from "@/entities/intelligence";
 import { useIntelligence } from "@/lib/api/queries";
 import { useT } from "@/shared/i18n";
 import { cn } from "@/shared/lib/utils";
+import { StatusDot } from "@/shared/ui/atoms/status-dot";
 
 /**
  * Whether an AI is online and the app it runs in (Claude Code, OpenCode…), from its profile and
@@ -31,7 +31,11 @@ export function AiStatusLine({
         className,
       )}
     >
-      <StatusDot online={online} label={online ? t("presence.online") : t("presence.offline")} withLabel />
+      <StatusDot
+        online={online}
+        label={online ? t("presence.online") : t("presence.offline")}
+        withLabel
+      />
       {app ? <span className={appClassName}>{app}</span> : null}
     </span>
   );

@@ -7,9 +7,9 @@ import {
   XIcon,
 } from "lucide-react";
 import { useEffect, useState } from "react";
-import { Button } from "@/shared/ui/primitives/button";
 import { type FileKind, FileKindImage } from "@/shared/api/types.gen";
 import { useI18n } from "@/shared/i18n";
+import { Button } from "@/shared/ui/primitives/button";
 
 /*
  * What the composer is about to send (UI-07): one card per picked, pasted or dropped file. An image

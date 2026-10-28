@@ -1,7 +1,7 @@
 import type { ReactNode } from "react";
-import { Wordmark } from "@/shared/ui/atoms/brand";
 import { LanguageSwitch } from "@/components/language-switch";
 import { ThemeToggle } from "@/components/theme-toggle";
+import { Wordmark } from "@/shared/ui/atoms/brand";
 
 /**
  * Public pages (setup, login, invite): one form on the paper, the page's purpose pasted above

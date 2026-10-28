@@ -13,7 +13,6 @@ import {
 } from "lucide-react";
 import { type ReactNode, useId, useState } from "react";
 import { DeleteAIDialog } from "@/components/delete-ai-dialog";
-import { EmptyState } from "@/shared/ui/molecules/empty-state";
 import { EndSessionDialog } from "@/components/end-session-dialog";
 import { MembershipSummary } from "@/components/membership-summary";
 import { MergeAIDialog } from "@/components/merge-ai-dialog";
@@ -22,13 +21,12 @@ import { platformLabel } from "@/components/message-item";
 import { ProfileConversations } from "@/components/profile-conversations";
 import { ProfileEditor } from "@/components/profile-editor";
 import { RemoveFromOrgDialog } from "@/components/remove-from-org-dialog";
-import { StatusDot } from "@/shared/ui/atoms/status-dot";
-import { Button } from "@/shared/ui/primitives/button";
-import { Skeleton } from "@/shared/ui/primitives/skeleton";
 import { IntelligenceAvatar, IntelligenceName, YouBadge } from "@/entities/intelligence";
 import { harnessLabel } from "@/lib/agents";
-import { isApiError } from "@/shared/api/client";
 import { contactsQuery, useIntelligence, useMe } from "@/lib/api/queries";
+import { mergeTargets } from "@/lib/contacts";
+import { useLiveStore } from "@/lib/live/store";
+import { isApiError } from "@/shared/api/client";
 import {
   type AIDetail,
   type IntelligenceProfile,
@@ -37,10 +35,12 @@ import {
   type PersonDetail,
   type ProfileMembership,
 } from "@/shared/api/types.gen";
-import { mergeTargets } from "@/lib/contacts";
 import { useI18n, useT } from "@/shared/i18n";
-import { useLiveStore } from "@/lib/live/store";
 import { formatAbsolute, formatRelative } from "@/shared/lib/time";
+import { StatusDot } from "@/shared/ui/atoms/status-dot";
+import { EmptyState } from "@/shared/ui/molecules/empty-state";
+import { Button } from "@/shared/ui/primitives/button";
+import { Skeleton } from "@/shared/ui/primitives/skeleton";
 
 export const Route = createFileRoute("/_app/contacts/$id")({
   component: ProfilePage,
@@ -384,7 +384,11 @@ function AIDetails({ ai, id }: { ai: AIDetail; id: string }) {
       <Row label={t("profile.app")}>
         <span className="inline-flex flex-wrap items-center gap-x-3 gap-y-1">
           {app ? <span>{app}</span> : null}
-          <StatusDot online={online} label={online ? t("presence.online") : t("presence.offline")} withLabel />
+          <StatusDot
+            online={online}
+            label={online ? t("presence.online") : t("presence.offline")}
+            withLabel
+          />
           {online ? null : lastSeen ? (
             <span className="font-mono text-xs tabular" title={formatAbsolute(lastSeen, locale)}>
               {t("contacts.lastSeen", { time: formatRelative(lastSeen, locale) })}

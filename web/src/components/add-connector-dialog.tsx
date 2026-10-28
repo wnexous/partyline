@@ -1,9 +1,22 @@
 import { useNavigate } from "@tanstack/react-router";
 import { useId, useState } from "react";
-import { CodeBlock } from "@/shared/ui/molecules/copy-field";
 import { OrgSelect } from "@/components/org-select";
 import { ConnectorForm } from "@/components/schema-form";
 import { SecretOnceDialog } from "@/components/secret-once-dialog";
+import { useCurrentOrg } from "@/hooks/use-current-org";
+import { useConnectorKinds, useCreateConnector } from "@/lib/api/queries";
+import { isAdminOf } from "@/lib/orgs";
+import { isApiError } from "@/shared/api/client";
+import {
+  type Connector,
+  type ConnectorKind,
+  HeaderSignature,
+  HeaderTimestamp,
+} from "@/shared/api/types.gen";
+import { type Translate, useT } from "@/shared/i18n";
+import { isCoarsePointer } from "@/shared/lib/device";
+import { cn } from "@/shared/lib/utils";
+import { CodeBlock } from "@/shared/ui/molecules/copy-field";
 import {
   Dialog,
   DialogContent,
@@ -13,19 +26,6 @@ import {
 } from "@/shared/ui/primitives/dialog";
 import { RadioGroup, RadioGroupItem } from "@/shared/ui/primitives/radio-group";
 import { Skeleton } from "@/shared/ui/primitives/skeleton";
-import { useCurrentOrg } from "@/hooks/use-current-org";
-import { isApiError } from "@/shared/api/client";
-import { useConnectorKinds, useCreateConnector } from "@/lib/api/queries";
-import {
-  type Connector,
-  type ConnectorKind,
-  HeaderSignature,
-  HeaderTimestamp,
-} from "@/shared/api/types.gen";
-import { type Translate, useT } from "@/shared/i18n";
-import { isAdminOf } from "@/lib/orgs";
-import { cn } from "@/shared/lib/utils";
-import { isCoarsePointer } from "@/shared/lib/device";
 
 /** Secrets the server generated for a new connector, with the labels of their fields. */
 interface Generated {
@@ -70,7 +70,11 @@ export function AddConnectorDialog({
   return (
     <>
       <Dialog open={open} onOpenChange={onOpenChange}>
-        <DialogContent className="flex max-h-[calc(100dvh-2rem)] flex-col gap-0 p-0 sm:max-w-lg" closeLabel={t("common.close")} touchFirst={isCoarsePointer()}>
+        <DialogContent
+          className="flex max-h-[calc(100dvh-2rem)] flex-col gap-0 p-0 sm:max-w-lg"
+          closeLabel={t("common.close")}
+          touchFirst={isCoarsePointer()}
+        >
           <DialogHeader className="border-b px-5 pt-5 pb-4 text-left">
             <DialogTitle>{t("connectors.addTitle")}</DialogTitle>
             <DialogDescription>{t("connectors.addBody")}</DialogDescription>

@@ -16,6 +16,7 @@ import {
   queryKeys,
   trimActivity,
 } from "@/lib/api/queries";
+import { knowsAI } from "@/lib/contacts";
 import type {
   ActivityItem,
   Agent,
@@ -30,7 +31,6 @@ import type {
   RoomMember,
   RoomRef,
 } from "@/shared/api/types.gen";
-import { knowsAI } from "@/lib/contacts";
 import type { LiveState } from "./store";
 
 /*

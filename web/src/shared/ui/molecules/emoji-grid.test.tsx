@@ -3,8 +3,8 @@ import userEvent from "@testing-library/user-event";
 import { describe, expect, it, vi } from "vitest";
 import { axe } from "vitest-axe";
 import * as matchers from "vitest-axe/matchers";
-import { EmojiGrid } from "@/shared/ui/molecules/emoji-grid";
 import { I18nProvider } from "@/shared/i18n";
+import { EmojiGrid } from "@/shared/ui/molecules/emoji-grid";
 
 // The grid takes its emoji as props; the values below stand in for realistic picker input
 // (the reaction constants stay in lib/reactions until the picker moves in a later task).
@@ -59,6 +59,7 @@ const MORE_REACTIONS = [
   "😡",
 ] as const;
 const PICKER_COLUMNS = 8;
+
 import { render } from "@testing-library/react";
 
 expect.extend(matchers);
@@ -68,7 +69,6 @@ expect.extend(matchers);
  * with the arrows, and tells which of them the viewer used already.
  */
 
-
 function grid(
   over: Partial<{
     reacted: string[];
@@ -77,16 +77,19 @@ function grid(
   }> = {},
 ) {
   const onPick = over.onPick ?? vi.fn();
-  const utils = render(<I18nProvider locale="en">
-    <EmojiGrid
-      emojis={MORE_REACTIONS}
-      columns={PICKER_COLUMNS}
-      reacted={over.reacted ?? []}
-      onPick={onPick}
-      label="Pick a reaction"
-      size={over.size ?? "pointer"}
-    />,
-  </I18nProvider>);
+  const utils = render(
+    <I18nProvider locale="en">
+      <EmojiGrid
+        emojis={MORE_REACTIONS}
+        columns={PICKER_COLUMNS}
+        reacted={over.reacted ?? []}
+        onPick={onPick}
+        label="Pick a reaction"
+        size={over.size ?? "pointer"}
+      />
+      ,
+    </I18nProvider>,
+  );
   return { ...utils, onPick };
 }
 const button = (emoji: string) => screen.getByRole("button", { name: `React with ${emoji}` });

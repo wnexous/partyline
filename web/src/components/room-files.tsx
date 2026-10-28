@@ -10,15 +10,15 @@ import {
 } from "lucide-react";
 import { useMemo, useRef, useState } from "react";
 import { formatBytes, INLINE_IMAGES } from "@/components/message-item";
-import { Button } from "@/shared/ui/primitives/button";
-import { Skeleton } from "@/shared/ui/primitives/skeleton";
-import { ToggleGroup, ToggleGroupItem } from "@/shared/ui/primitives/toggle-group";
 import { IntelligenceName } from "@/entities/intelligence";
 import { attachmentUrl, type FileFilter, useRoomFiles } from "@/lib/api/queries";
 import type { FileKind, RoomFile } from "@/shared/api/types.gen";
 import { type MessageKey, useI18n } from "@/shared/i18n";
 import { formatAbsolute, formatRelative } from "@/shared/lib/time";
 import { cn } from "@/shared/lib/utils";
+import { Button } from "@/shared/ui/primitives/button";
+import { Skeleton } from "@/shared/ui/primitives/skeleton";
+import { ToggleGroup, ToggleGroupItem } from "@/shared/ui/primitives/toggle-group";
 
 /*
  * The room's files (FILES-04..06): everything shared in the room, newest first, so a document

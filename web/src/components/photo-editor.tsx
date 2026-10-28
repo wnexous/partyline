@@ -1,11 +1,11 @@
 import { type ChangeEvent, type ReactNode, useEffect, useId, useRef, useState } from "react";
 import { toast } from "sonner";
-import { Button, buttonVariants } from "@/shared/ui/primitives/button";
 import { isApiError } from "@/shared/api/client";
 import { ErrorCodeAvatarInvalid } from "@/shared/api/types.gen";
-import { prepareAvatar } from "@/shared/lib/avatar";
 import { type Translate, useT } from "@/shared/i18n";
+import { prepareAvatar } from "@/shared/lib/avatar";
 import { cn } from "@/shared/lib/utils";
+import { Button, buttonVariants } from "@/shared/ui/primitives/button";
 
 const PHOTO_TYPES = "image/png,image/jpeg,image/webp";
 

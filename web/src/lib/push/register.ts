@@ -1,6 +1,6 @@
+import { activeRegistration } from "@/lib/push/subscription";
 import { api } from "@/shared/api/client";
 import type { PushKey, PushSubscriptionRequest } from "@/shared/api/types.gen";
-import { activeRegistration } from "@/lib/push/subscription";
 
 /*
  * The page's half of the push setup (PUSH-19, PUSH-28): register the worker that shows the

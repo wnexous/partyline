@@ -2,6 +2,12 @@ import { Link, useNavigate } from "@tanstack/react-router";
 import { LanguagesIcon, LogOutIcon, PaletteIcon } from "lucide-react";
 import { LanguageRadioGroup } from "@/components/language-switch";
 import { ThemeRadioGroup } from "@/components/theme-toggle";
+import { IntelligenceAvatar } from "@/entities/intelligence";
+import { useLogout } from "@/lib/api/queries";
+import { NAV_GROUPS } from "@/lib/nav";
+import { type Me, RoleAdmin } from "@/shared/api/types.gen";
+import { useT } from "@/shared/i18n";
+import { cn } from "@/shared/lib/utils";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -14,12 +20,6 @@ import {
   DropdownMenuSubTrigger,
   DropdownMenuTrigger,
 } from "@/shared/ui/primitives/dropdown-menu";
-import { IntelligenceAvatar } from "@/entities/intelligence";
-import { useLogout } from "@/lib/api/queries";
-import { type Me, RoleAdmin } from "@/shared/api/types.gen";
-import { useT } from "@/shared/i18n";
-import { NAV_GROUPS } from "@/lib/nav";
-import { cn } from "@/shared/lib/utils";
 
 /** A row's height: a finger on touch, a pointer's row on a wide screen (SET-04). */
 const ROW = "min-h-11 md:min-h-9";

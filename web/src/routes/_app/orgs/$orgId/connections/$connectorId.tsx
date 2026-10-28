@@ -10,13 +10,37 @@ import {
 import { type ReactNode, useEffect, useId, useState } from "react";
 import { toast } from "sonner";
 import { ConnectorStatusBadge, useConnectorState } from "@/components/connector-status";
+import { chatTitle, platformLabel } from "@/components/message-item";
+import { NamedSentence } from "@/components/profile-link";
+import { ConnectorForm } from "@/components/schema-form";
+import {
+  useConnector,
+  useConnectorChats,
+  useConnectorKinds,
+  useContacts,
+  useDeleteConnector,
+  useOrg,
+  useRefreshChats,
+  useUpdateConnector,
+} from "@/lib/api/queries";
+import { allAIs } from "@/lib/contacts";
+import { isApiError } from "@/shared/api/client";
+import {
+  type Connector,
+  type ConnectorDeliver,
+  ConnectorDeliverAll,
+  ConnectorDeliverDMs,
+  ConnectorDeliverGroups,
+  type ConnectorKind,
+  LevelManage,
+  type UpdateConnectorRequest,
+} from "@/shared/api/types.gen";
+import { type MessageKey, useI18n, useT } from "@/shared/i18n";
+import { formatAbsolute, formatRelative } from "@/shared/lib/time";
+import { NativeSelect } from "@/shared/ui/atoms/native-select";
 import { CodeBlock } from "@/shared/ui/molecules/copy-field";
 import { EmptyState } from "@/shared/ui/molecules/empty-state";
 import { FormAlert } from "@/shared/ui/molecules/form-fields";
-import { chatTitle, platformLabel } from "@/components/message-item";
-import { NativeSelect } from "@/shared/ui/atoms/native-select";
-import { NamedSentence } from "@/components/profile-link";
-import { ConnectorForm } from "@/components/schema-form";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -39,30 +63,6 @@ import {
 } from "@/shared/ui/primitives/sheet";
 import { Skeleton } from "@/shared/ui/primitives/skeleton";
 import { Switch } from "@/shared/ui/primitives/switch";
-import { isApiError } from "@/shared/api/client";
-import {
-  useConnector,
-  useConnectorChats,
-  useConnectorKinds,
-  useContacts,
-  useDeleteConnector,
-  useOrg,
-  useRefreshChats,
-  useUpdateConnector,
-} from "@/lib/api/queries";
-import {
-  type Connector,
-  type ConnectorDeliver,
-  ConnectorDeliverAll,
-  ConnectorDeliverDMs,
-  ConnectorDeliverGroups,
-  type ConnectorKind,
-  LevelManage,
-  type UpdateConnectorRequest,
-} from "@/shared/api/types.gen";
-import { allAIs } from "@/lib/contacts";
-import { type MessageKey, useI18n, useT } from "@/shared/i18n";
-import { formatAbsolute, formatRelative } from "@/shared/lib/time";
 
 export const Route = createFileRoute("/_app/orgs/$orgId/connections/$connectorId")({
   component: ConnectorPage,

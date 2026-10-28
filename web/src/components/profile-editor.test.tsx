@@ -4,8 +4,8 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { ProfileEditor } from "@/components/profile-editor";
 import { IntelligenceAvatar } from "@/entities/intelligence";
 import { queryKeys, useIntelligence } from "@/lib/api/queries";
-import type { IntelligenceProfile } from "@/shared/api/types.gen";
 import { useLiveStore } from "@/lib/live/store";
+import type { IntelligenceProfile } from "@/shared/api/types.gen";
 import { apiError, json, mockApi } from "@/test/fetch";
 import { makeProfile } from "@/test/fixtures";
 import { makeQueryClient, renderWithProviders } from "@/test/render";
@@ -15,7 +15,10 @@ vi.mock("sonner", () => ({ toast }));
 
 /** The resize/decode step is mocked here; its own tests live in shared/lib/avatar.test.ts. */
 const prepareAvatar = vi.hoisted(() => vi.fn((file: File) => Promise.resolve<Blob>(file)));
-vi.mock("@/shared/lib/avatar", async (importOriginal) => ({ ...(await importOriginal<Record<string, unknown>>()), prepareAvatar }));
+vi.mock("@/shared/lib/avatar", async (importOriginal) => ({
+  ...(await importOriginal<Record<string, unknown>>()),
+  prepareAvatar,
+}));
 
 /*
  * The photo of the profile editor (PROF-03, PROF-06, PROF-07): a chosen file is sent as soon as it

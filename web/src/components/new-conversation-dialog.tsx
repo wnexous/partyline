@@ -1,5 +1,15 @@
 import { type ReactNode, useMemo, useState } from "react";
 import { PickableMeta } from "@/components/contact-meta";
+import { IntelligenceAvatar, IntelligenceName } from "@/entities/intelligence";
+import { useStartConversation } from "@/hooks/use-start-conversation";
+import { useContacts } from "@/lib/api/queries";
+import { type Pickable, pickableList } from "@/lib/contacts";
+import { matchesTerms } from "@/lib/conversations";
+import { useLiveStore } from "@/lib/live/store";
+import { withContactPresence } from "@/lib/presence";
+import type { IntelligenceRef } from "@/shared/api/types.gen";
+import { useT } from "@/shared/i18n";
+import { isCoarsePointer } from "@/shared/lib/device";
 import { FormAlert } from "@/shared/ui/molecules/form-fields";
 import { Button } from "@/shared/ui/primitives/button";
 import { Command, CommandInput, CommandItem, CommandList } from "@/shared/ui/primitives/command";
@@ -12,16 +22,6 @@ import {
   DialogTrigger,
 } from "@/shared/ui/primitives/dialog";
 import { Skeleton } from "@/shared/ui/primitives/skeleton";
-import { IntelligenceAvatar, IntelligenceName } from "@/entities/intelligence";
-import { useStartConversation } from "@/hooks/use-start-conversation";
-import { useContacts } from "@/lib/api/queries";
-import type { IntelligenceRef } from "@/shared/api/types.gen";
-import { type Pickable, pickableList } from "@/lib/contacts";
-import { matchesTerms } from "@/lib/conversations";
-import { useT } from "@/shared/i18n";
-import { useLiveStore } from "@/lib/live/store";
-import { withContactPresence } from "@/lib/presence";
-import { isCoarsePointer } from "@/shared/lib/device";
 
 /*
  * "New conversation" (LAY-03, DM-01): pick an intelligence the user can see and open the one DM
@@ -43,7 +43,11 @@ export function NewConversationDialog({
   return (
     <Dialog open={open} onOpenChange={setOpen}>
       <DialogTrigger asChild>{trigger}</DialogTrigger>
-      <DialogContent className="flex max-h-[min(40rem,calc(100dvh-2rem))] flex-col gap-0 p-0 sm:max-w-lg" closeLabel={t("common.close")} touchFirst={isCoarsePointer()}>
+      <DialogContent
+        className="flex max-h-[min(40rem,calc(100dvh-2rem))] flex-col gap-0 p-0 sm:max-w-lg"
+        closeLabel={t("common.close")}
+        touchFirst={isCoarsePointer()}
+      >
         <DialogHeader className="border-b px-5 pt-5 pb-4 text-left">
           <DialogTitle>{t("newConversation.title")}</DialogTitle>
           <DialogDescription>{t("newConversation.body")}</DialogDescription>

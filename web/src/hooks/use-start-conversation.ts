@@ -1,7 +1,7 @@
 import { useNavigate } from "@tanstack/react-router";
 import { useState } from "react";
-import { isApiError } from "@/shared/api/client";
 import { useOpenDM } from "@/lib/api/queries";
+import { isApiError } from "@/shared/api/client";
 import {
   ErrorCodeContactNotFound,
   ErrorCodeNoRouteToPerson,

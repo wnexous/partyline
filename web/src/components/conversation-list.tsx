@@ -13,24 +13,23 @@ import {
   type ConversationMenuTarget,
   hasConversationActions,
 } from "@/components/conversation-menu";
-
-import { EmptyState } from "@/shared/ui/molecules/empty-state";
 import { NewConversationDialog } from "@/components/new-conversation-dialog";
 import { NewGroupDialog } from "@/components/new-group-dialog";
+import { useCurrentOrg } from "@/hooks/use-current-org";
+import { useConversations } from "@/lib/api/queries";
+import { conversationMatches } from "@/lib/conversations";
+import { inOrg } from "@/lib/orgs";
+import { isVoicePreview } from "@/lib/voice";
+import type { Conversation } from "@/shared/api/types.gen";
+import { useI18n, useT } from "@/shared/i18n";
+import { useTouchFirst } from "@/shared/lib/device";
+import { formatAbsolute, formatListTime } from "@/shared/lib/time";
+import { useLongPress } from "@/shared/lib/use-long-press";
+import { cn } from "@/shared/lib/utils";
+import { EmptyState } from "@/shared/ui/molecules/empty-state";
 import { RowMenuButton } from "@/shared/ui/molecules/row-menu-button";
 import { Button } from "@/shared/ui/primitives/button";
 import { Skeleton } from "@/shared/ui/primitives/skeleton";
-import { useCurrentOrg } from "@/hooks/use-current-org";
-import { useTouchFirst } from "@/shared/lib/device";
-import { useLongPress } from "@/shared/lib/use-long-press";
-import { useConversations } from "@/lib/api/queries";
-import type { Conversation } from "@/shared/api/types.gen";
-import { conversationMatches } from "@/lib/conversations";
-import { useI18n, useT } from "@/shared/i18n";
-import { inOrg } from "@/lib/orgs";
-import { formatAbsolute, formatListTime } from "@/shared/lib/time";
-import { cn } from "@/shared/lib/utils";
-import { isVoicePreview } from "@/lib/voice";
 
 /*
  * The sidebar's conversation list (LAY-01, DM-06): direct messages and groups together, newest

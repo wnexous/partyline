@@ -1,7 +1,12 @@
 import { type FormEvent, useId, useState } from "react";
 import { toast } from "sonner";
-import { FormAlert } from "@/shared/ui/molecules/form-fields";
+import { useMergeAgent } from "@/lib/api/queries";
+import { isApiError } from "@/shared/api/client";
+import { ErrorCodeIdentityOnline, type IntelligenceRef } from "@/shared/api/types.gen";
+import { useT } from "@/shared/i18n";
+import { isCoarsePointer } from "@/shared/lib/device";
 import { NativeSelect } from "@/shared/ui/atoms/native-select";
+import { FormAlert } from "@/shared/ui/molecules/form-fields";
 import { Button } from "@/shared/ui/primitives/button";
 import {
   Dialog,
@@ -11,11 +16,6 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/shared/ui/primitives/dialog";
-import { isApiError } from "@/shared/api/client";
-import { useMergeAgent } from "@/lib/api/queries";
-import { ErrorCodeIdentityOnline, type IntelligenceRef } from "@/shared/api/types.gen";
-import { useT } from "@/shared/i18n";
-import { isCoarsePointer } from "@/shared/lib/device";
 
 /*
  * Merge one of the caller's AIs into another one (MRG-01, MRG-02): the one picked keeps

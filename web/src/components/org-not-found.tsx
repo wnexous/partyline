@@ -1,8 +1,8 @@
 import { Link } from "@tanstack/react-router";
 import { CompassIcon } from "lucide-react";
+import { useT } from "@/shared/i18n";
 import { EmptyState } from "@/shared/ui/molecules/empty-state";
 import { Button } from "@/shared/ui/primitives/button";
-import { useT } from "@/shared/i18n";
 
 /**
  * What a non-member gets for any page of an organization (CHART-02): it does not exist for them. The

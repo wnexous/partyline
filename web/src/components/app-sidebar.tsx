@@ -2,22 +2,22 @@ import { Link } from "@tanstack/react-router";
 import { MessageSquarePlusIcon, UsersRoundIcon } from "lucide-react";
 import { useState } from "react";
 import { AccountMenu } from "@/components/account-menu";
-import { Wordmark } from "@/shared/ui/atoms/brand";
 import { ConversationList } from "@/components/conversation-list";
 import { ConversationSearch } from "@/components/conversation-search";
-import { LiveIndicator } from "@/shared/ui/molecules/live-status";
 import { NewConversationDialog } from "@/components/new-conversation-dialog";
 import { NewGroupDialog } from "@/components/new-group-dialog";
 import { OrgSwitcher } from "@/components/org-switcher";
-import { useLiveStore } from "@/lib/live/store";
 import { OrganizationMenu } from "@/components/organization-menu";
-import { SearchButton } from "@/shared/ui/molecules/search-button";
-import { Button } from "@/shared/ui/primitives/button";
-import { SidebarContent, SidebarFooter, SidebarHeader } from "@/shared/ui/primitives/sidebar";
 import { useCurrentOrg } from "@/hooks/use-current-org";
+import { useLiveStore } from "@/lib/live/store";
 import type { Me } from "@/shared/api/types.gen";
 import { useT } from "@/shared/i18n";
 import { cn } from "@/shared/lib/utils";
+import { Wordmark } from "@/shared/ui/atoms/brand";
+import { LiveIndicator } from "@/shared/ui/molecules/live-status";
+import { SearchButton } from "@/shared/ui/molecules/search-button";
+import { Button } from "@/shared/ui/primitives/button";
+import { SidebarContent, SidebarFooter, SidebarHeader } from "@/shared/ui/primitives/sidebar";
 
 /** The wide-screen column: the messenger panel beside the page, as tall as the window. */
 export function AppSidebar({ me }: { me: Me }) {
@@ -72,7 +72,10 @@ export function MessengerPanel({ me, screen = false }: { me: Me; screen?: boolea
       </SidebarContent>
 
       <SidebarFooter className="border-t border-sidebar-border px-4 py-2.5">
-        <LiveIndicator status={useLiveStore((s) => s.status)} className="text-sidebar-foreground/80" />
+        <LiveIndicator
+          status={useLiveStore((s) => s.status)}
+          className="text-sidebar-foreground/80"
+        />
       </SidebarFooter>
     </div>
   );

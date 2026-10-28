@@ -2,11 +2,11 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { act, renderHook, waitFor } from "@testing-library/react";
 import type { ReactNode } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import type { ActivityItem, Message, Reaction } from "@/shared/api/types.gen";
 import { apiError, json, mockApi } from "@/test/fetch";
 import { makeMessage } from "@/test/fixtures";
 import type { MessagePages } from "./queries";
 import { applyReactions, queryKeys, useToggleReaction } from "./queries";
-import type { ActivityItem, Message, Reaction } from "@/shared/api/types.gen";
 
 /*
  * What a tap on a reaction sends and leaves in the cache (RCT-01, RCT-03, RCT-08): the reaction shows at once,

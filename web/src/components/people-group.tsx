@@ -2,12 +2,12 @@ import { ChevronRightIcon } from "lucide-react";
 import { useId, useState } from "react";
 import { ContactRow } from "@/components/contact-row";
 import { platformLabel } from "@/components/message-item";
-import { Button } from "@/shared/ui/primitives/button";
-import { Skeleton } from "@/shared/ui/primitives/skeleton";
 import { usePeople } from "@/lib/api/queries";
 import type { PeopleGroup as PeopleGroupData } from "@/shared/api/types.gen";
 import { useI18n } from "@/shared/i18n";
 import { cn } from "@/shared/lib/utils";
+import { Button } from "@/shared/ui/primitives/button";
+import { Skeleton } from "@/shared/ui/primitives/skeleton";
 
 /*
  * The people one connector has seen (CONT-01), closed until asked: a connector can have seen

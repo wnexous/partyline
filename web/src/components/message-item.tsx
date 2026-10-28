@@ -17,12 +17,10 @@ import { ProfileLink } from "@/components/profile-link";
 import { QuestionBubble } from "@/components/question-bubble";
 import { ReactionToolbar } from "@/components/reaction-bar";
 import { ReactionChips } from "@/components/reaction-chips";
-import { RowMenuButton } from "@/shared/ui/molecules/row-menu-button";
-import { Tooltip, TooltipContent, TooltipTrigger } from "@/shared/ui/primitives/tooltip";
 import { IntelligenceAvatar, IntelligenceName } from "@/entities/intelligence";
-import { useLongPress } from "@/shared/lib/use-long-press";
 import { useSwipeReply } from "@/hooks/use-swipe-reply";
 import { attachmentUrl } from "@/lib/api/queries";
+import { isAudio } from "@/lib/voice";
 import type {
   Attachment,
   AuthorKind,
@@ -32,8 +30,10 @@ import type {
 } from "@/shared/api/types.gen";
 import { type MessageKey, type Translate, useI18n } from "@/shared/i18n";
 import { formatAbsolute, formatClock } from "@/shared/lib/time";
+import { useLongPress } from "@/shared/lib/use-long-press";
 import { cn } from "@/shared/lib/utils";
-import { isAudio } from "@/lib/voice";
+import { RowMenuButton } from "@/shared/ui/molecules/row-menu-button";
+import { Tooltip, TooltipContent, TooltipTrigger } from "@/shared/ui/primitives/tooltip";
 
 const Markdown = lazy(() => import("@/components/markdown"));
 

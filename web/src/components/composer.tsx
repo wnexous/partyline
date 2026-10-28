@@ -20,7 +20,6 @@ import {
   useRef,
   useState,
 } from "react";
-import { AttachmentPreviews } from "@/shared/ui/molecules/attachment-preview";
 import {
   type MentionCandidate,
   MentionSuggestions,
@@ -30,13 +29,14 @@ import {
   mentionOptionId,
 } from "@/components/mention-suggestions";
 import { authorDisplayName } from "@/components/message-item";
-import { Button } from "@/shared/ui/primitives/button";
 import { type HoldState, MicButton, RecordingBar } from "@/components/voice-controls";
 import { useDraft, useDraftStore, useEditDraft } from "@/features/send-message";
-import { useEnterSends } from "@/shared/lib/device";
 import { useVoiceRecorder } from "@/hooks/use-voice-recorder";
-import { isApiError } from "@/shared/api/client";
 import { useEditMessage, useMe, usePostMessage } from "@/lib/api/queries";
+import { messageExcerpt } from "@/lib/message-excerpt";
+import { textLength } from "@/lib/schemas";
+import type { VoiceFailure } from "@/lib/voice";
+import { isApiError } from "@/shared/api/client";
 import {
   ErrorCodeCounterpartDisabled,
   type Level,
@@ -47,10 +47,10 @@ import {
   type RoomMember,
 } from "@/shared/api/types.gen";
 import { type MessageKey, type Translate, useI18n } from "@/shared/i18n";
-import { messageExcerpt } from "@/lib/message-excerpt";
-import { textLength } from "@/lib/schemas";
+import { useEnterSends } from "@/shared/lib/device";
 import { cn } from "@/shared/lib/utils";
-import type { VoiceFailure } from "@/lib/voice";
+import { AttachmentPreviews } from "@/shared/ui/molecules/attachment-preview";
+import { Button } from "@/shared/ui/primitives/button";
 
 /*
  * Message composer (UI-07). Enter sends the trimmed text and Shift+Enter adds a line, with a mouse

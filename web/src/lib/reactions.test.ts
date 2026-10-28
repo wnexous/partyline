@@ -1,5 +1,4 @@
 import { describe, expect, it } from "vitest";
-import { MaxMessageEmoji, type Reaction } from "@/shared/api/types.gen";
 import {
   atReactionLimit,
   MORE_REACTIONS,
@@ -8,6 +7,7 @@ import {
   reactedWith,
   withReaction,
 } from "@/lib/reactions";
+import { MaxMessageEmoji, type Reaction } from "@/shared/api/types.gen";
 
 /*
  * The emoji a message can be reacted with, and what one reaction does to the list a message carries

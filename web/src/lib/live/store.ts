@@ -1,6 +1,4 @@
 import { create } from "zustand";
-import type { ConnectorStatus, Identity } from "@/shared/api/types.gen";
-import { detectLocale, isLocale, type Locale } from "@/shared/i18n";
 import { CURRENT_ORG_KEY } from "@/lib/orgs";
 import {
   LOCALE_KEY,
@@ -10,6 +8,8 @@ import {
   type ThemePreference,
   writeStorage,
 } from "@/lib/theme";
+import type { ConnectorStatus, Identity } from "@/shared/api/types.gen";
+import { detectLocale, isLocale, type Locale } from "@/shared/i18n";
 
 /*
  * Client-only state: the live connection, presence and connector status pushed by the socket,

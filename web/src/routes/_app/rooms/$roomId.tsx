@@ -11,14 +11,12 @@ import {
 } from "lucide-react";
 import { useEffect, useState } from "react";
 import { toast } from "sonner";
-import { BackToConversations } from "@/shared/ui/molecules/back-link";
 import { Composer, canPost } from "@/components/composer";
 import {
   ConversationHeader,
   conversationTitle,
   historyPlatform,
 } from "@/components/conversation-header";
-import { EmptyState } from "@/shared/ui/molecules/empty-state";
 import { MemberPicker } from "@/components/member-picker";
 import { platformName } from "@/components/message-item";
 import {
@@ -28,6 +26,23 @@ import {
 } from "@/components/message-timeline";
 import { RoomFiles } from "@/components/room-files";
 import { RoomSettingsSheet } from "@/components/room-settings-sheet";
+import { useDraft, useDraftStore } from "@/features/send-message";
+import { useMarkRoomRead } from "@/hooks/use-mark-room-read";
+import { useOpenConversation } from "@/hooks/use-open-conversation";
+import { postMessageKey, useMe, useResumeRoom, useRoom, useRoomMembers } from "@/lib/api/queries";
+import { isApiError } from "@/shared/api/client";
+import {
+  ConversationKindDM,
+  type IntelligenceRef,
+  LevelManage,
+  type Message,
+  type Room,
+  type RoomMember,
+} from "@/shared/api/types.gen";
+import { useI18n, useT } from "@/shared/i18n";
+import { useIsMobile } from "@/shared/lib/device";
+import { BackToConversations } from "@/shared/ui/molecules/back-link";
+import { EmptyState } from "@/shared/ui/molecules/empty-state";
 import { Button } from "@/shared/ui/primitives/button";
 import {
   Sheet,
@@ -38,21 +53,6 @@ import {
 } from "@/shared/ui/primitives/sheet";
 import { Skeleton } from "@/shared/ui/primitives/skeleton";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/shared/ui/primitives/tabs";
-import { useDraft, useDraftStore } from "@/features/send-message";
-import { useMarkRoomRead } from "@/hooks/use-mark-room-read";
-import { useIsMobile } from "@/shared/lib/device";
-import { useOpenConversation } from "@/hooks/use-open-conversation";
-import { isApiError } from "@/shared/api/client";
-import { postMessageKey, useMe, useResumeRoom, useRoom, useRoomMembers } from "@/lib/api/queries";
-import {
-  ConversationKindDM,
-  type IntelligenceRef,
-  LevelManage,
-  type Message,
-  type Room,
-  type RoomMember,
-} from "@/shared/api/types.gen";
-import { useI18n, useT } from "@/shared/i18n";
 import { MemberPanel } from "@/widgets/member-panel";
 
 export const Route = createFileRoute("/_app/rooms/$roomId")({

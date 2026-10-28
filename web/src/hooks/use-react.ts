@@ -1,11 +1,11 @@
 import { useQueryClient } from "@tanstack/react-query";
 import { useCallback } from "react";
 import { toast } from "sonner";
-import { isApiError } from "@/shared/api/client";
 import { readReactions, useToggleReaction } from "@/lib/api/queries";
+import { atReactionLimit, reactedWith } from "@/lib/reactions";
+import { isApiError } from "@/shared/api/client";
 import { ErrorCodeReactionLimit, MaxMessageEmoji, type Message } from "@/shared/api/types.gen";
 import { useT } from "@/shared/i18n";
-import { atReactionLimit, reactedWith } from "@/lib/reactions";
 
 /*
  * What a tap on a reaction does in a conversation (RCT-01, RCT-04, RCT-08): the viewer reacts with the emoji or,

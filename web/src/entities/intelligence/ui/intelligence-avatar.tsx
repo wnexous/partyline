@@ -1,7 +1,7 @@
-import { Avatar, AvatarFallback, AvatarImage } from "@/shared/ui/primitives/avatar";
 import type { IntelligenceRef } from "@/shared/api/types.gen";
 import { avatarTone, initials } from "@/shared/lib/avatar";
 import { cn } from "@/shared/lib/utils";
+import { Avatar, AvatarFallback, AvatarImage } from "@/shared/ui/primitives/avatar";
 
 /*
  * An intelligence's face (PROF-08): its uploaded image, or initials on a soft tint picked from the

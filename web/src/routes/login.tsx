@@ -3,14 +3,14 @@ import { createFileRoute, redirect, useNavigate } from "@tanstack/react-router";
 import { useState } from "react";
 import { useForm } from "react-hook-form";
 import { AuthLayout } from "@/components/auth-layout";
+import { setupStatusQuery, useLogin } from "@/lib/api/queries";
+import { type LoginForm, loginSchema } from "@/lib/schemas";
+import { isApiError } from "@/shared/api/client";
+import { type Translate, useT } from "@/shared/i18n";
+import { safeRedirect } from "@/shared/lib/forms";
 import { FormAlert, TextField } from "@/shared/ui/molecules/form-fields";
 import { Button } from "@/shared/ui/primitives/button";
 import { Form } from "@/shared/ui/primitives/form";
-import { isApiError } from "@/shared/api/client";
-import { setupStatusQuery, useLogin } from "@/lib/api/queries";
-import { safeRedirect } from "@/shared/lib/forms";
-import { type Translate, useT } from "@/shared/i18n";
-import { type LoginForm, loginSchema } from "@/lib/schemas";
 
 export interface LoginSearch {
   /** In-app location to return to after login (UI-02). */

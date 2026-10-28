@@ -3,9 +3,9 @@ import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { axe } from "vitest-axe";
 import * as matchers from "vitest-axe/matchers";
-import type { ChartMember, IntelligenceRef, Organization, OrgChart } from "@/shared/api/types.gen";
 import { handleLiveEvent } from "@/lib/live/handlers";
 import { useLiveStore } from "@/lib/live/store";
+import type { ChartMember, IntelligenceRef, Organization, OrgChart } from "@/shared/api/types.gen";
 import { apiError, json, mockApi } from "@/test/fetch";
 import {
   makeAI,

@@ -8,6 +8,11 @@ import {
 } from "lucide-react";
 import { type KeyboardEvent, type PointerEvent, useEffect, useRef, useState } from "react";
 import { isViewableImage } from "@/components/message-item";
+import { attachmentUrl } from "@/lib/api/queries";
+import type { Attachment, Message } from "@/shared/api/types.gen";
+import { useI18n } from "@/shared/i18n";
+import { isCoarsePointer } from "@/shared/lib/device";
+import { cn } from "@/shared/lib/utils";
 import { Button } from "@/shared/ui/primitives/button";
 import {
   Dialog,
@@ -17,11 +22,6 @@ import {
   DialogTitle,
 } from "@/shared/ui/primitives/dialog";
 import { Skeleton } from "@/shared/ui/primitives/skeleton";
-import { attachmentUrl } from "@/lib/api/queries";
-import type { Attachment, Message } from "@/shared/api/types.gen";
-import { useI18n } from "@/shared/i18n";
-import { cn } from "@/shared/lib/utils";
-import { isCoarsePointer } from "@/shared/lib/device";
 
 /*
  * The image viewer (IMG-01..IMG-06): an image attachment opens in a dialog inside the app instead

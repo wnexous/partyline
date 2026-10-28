@@ -1,5 +1,14 @@
 import { useState } from "react";
 import { toast } from "sonner";
+import { useRemoveFromOrg } from "@/lib/api/queries";
+import { isApiError } from "@/shared/api/client";
+import {
+  ErrorCodeHomeOrganization,
+  ErrorCodeLastAdmin,
+  type IntelligenceRef,
+  type ProfileMembership,
+} from "@/shared/api/types.gen";
+import { useT } from "@/shared/i18n";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -10,15 +19,6 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/shared/ui/primitives/alert-dialog";
-import { isApiError } from "@/shared/api/client";
-import { useRemoveFromOrg } from "@/lib/api/queries";
-import {
-  ErrorCodeHomeOrganization,
-  ErrorCodeLastAdmin,
-  type IntelligenceRef,
-  type ProfileMembership,
-} from "@/shared/api/types.gen";
-import { useT } from "@/shared/i18n";
 
 /**
  * Asks before taking an identity out of one organization (POS-05, POS-06): it leaves the

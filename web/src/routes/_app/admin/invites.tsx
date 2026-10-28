@@ -2,9 +2,22 @@ import { createFileRoute } from "@tanstack/react-router";
 import { MailPlusIcon, PlusIcon } from "lucide-react";
 import { useId, useMemo, useState } from "react";
 import { toast } from "sonner";
+import { SecretOnceDialog } from "@/components/secret-once-dialog";
+import { useAdminInvites, useCreateInvite, useRevokeInvite } from "@/lib/api/queries";
+import {
+  type CreatedInvite,
+  type Invite,
+  type InviteStatus,
+  type Role,
+  RoleAdmin,
+  RoleMember,
+} from "@/shared/api/types.gen";
+import { type MessageKey, useI18n, useT } from "@/shared/i18n";
+import { isCoarsePointer } from "@/shared/lib/device";
+import { formatAbsolute, formatRelative } from "@/shared/lib/time";
+import { cn } from "@/shared/lib/utils";
 import { EmptyState } from "@/shared/ui/molecules/empty-state";
 import { PageHeader } from "@/shared/ui/molecules/page-header";
-import { SecretOnceDialog } from "@/components/secret-once-dialog";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -26,19 +39,6 @@ import {
 } from "@/shared/ui/primitives/dialog";
 import { RadioGroup, RadioGroupItem } from "@/shared/ui/primitives/radio-group";
 import { Skeleton } from "@/shared/ui/primitives/skeleton";
-import { useAdminInvites, useCreateInvite, useRevokeInvite } from "@/lib/api/queries";
-import {
-  type CreatedInvite,
-  type Invite,
-  type InviteStatus,
-  type Role,
-  RoleAdmin,
-  RoleMember,
-} from "@/shared/api/types.gen";
-import { type MessageKey, useI18n, useT } from "@/shared/i18n";
-import { formatAbsolute, formatRelative } from "@/shared/lib/time";
-import { cn } from "@/shared/lib/utils";
-import { isCoarsePointer } from "@/shared/lib/device";
 
 export const Route = createFileRoute("/_app/admin/invites")({
   component: AdminInvitesPage,
@@ -230,7 +230,11 @@ function CreateInviteDialog({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-md" closeLabel={t("common.close")} touchFirst={isCoarsePointer()}>
+      <DialogContent
+        className="sm:max-w-md"
+        closeLabel={t("common.close")}
+        touchFirst={isCoarsePointer()}
+      >
         <DialogHeader>
           <DialogTitle>{t("invites.new")}</DialogTitle>
           <DialogDescription>{t("invites.newBody")}</DialogDescription>
