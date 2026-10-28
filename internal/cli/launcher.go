@@ -227,6 +227,15 @@ func launch(ctx context.Context, l launcher, args []string, io stdio) int {
 	if takingOver {
 		set["PARTYLINE_TAKEOVER"] = "1"
 	}
+	if slices.Contains(pushedHarnesses, l.id) {
+		// The tools half of this harness has to act as the session its listen process holds: both get one
+		// live id, minted here for the process exec keeps (liveEnvVar, SESS-45).
+		pid := io.pid
+		if pid == nil {
+			pid = os.Getpid
+		}
+		set[liveEnvVar] = strconv.Itoa(pid()) + ":" + channel.NewLiveID()
+	}
 	for name, v := range map[string]string{launchOrgVar: place.org, launchPositionVar: place.position, launchParentVar: place.parent} {
 		if v != "" {
 			set[name] = v
@@ -242,7 +251,7 @@ func launch(ctx context.Context, l launcher, args []string, io stdio) int {
 	}
 	for _, k := range []string{
 		folderEnvVar, mainFolderVar, "PARTYLINE_HARNESS", "PARTYLINE_TAKEOVER", "PARTYLINE_AGENT",
-		launchOrgVar, launchPositionVar, launchParentVar,
+		launchOrgVar, launchPositionVar, launchParentVar, liveEnvVar,
 	} {
 		if v, ok := set[k]; ok {
 			env = append(env, k+"="+v)
@@ -275,7 +284,12 @@ func launch(ctx context.Context, l launcher, args []string, io stdio) int {
 // replaces with its own.
 var consumedVars = []string{
 	"PARTYLINE_TAKEOVER", mainFolderVar, orgEnvVar, positionEnvVar, parentEnvVar, launchOrgVar, launchPositionVar, launchParentVar,
+	liveEnvVar, // the live id of the session this launch may itself run in is never the new session's
 }
+
+// pushedHarnesses are the harnesses whose messages come from a separate `partyline listen` process and whose
+// tools run in another one (`channel --tools-only`): pi and OpenCode. They share one live id (liveEnvVar).
+var pushedHarnesses = []string{"opencode", "pi"}
 
 // launchFolder is the canonical folder of the session being started: the launcher's working
 // directory, never an inherited PARTYLINE_FOLDER (the new session runs where it was started).

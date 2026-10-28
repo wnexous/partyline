@@ -309,11 +309,11 @@ func TestASelfDeliveryIsAcknowledgedWhenItsSessionEnds(t *testing.T) {
 	principal.ExpectNone(400 * time.Millisecond)
 }
 
-// SESS-38: a message the AI's session writes reaches no session of that AI when it names no label,
+// SESS-38: a message the AI's session writes reaches no session of that AI when it names no label or mention,
 // the writing session's own label, or a label with no live session; no frame and no row either.
 func TestASessionsMessageDoesNotComeBackToItsOwnSessions(t *testing.T) {
 	cases := []struct{ name, text string }{
-		{"no label", "@atlas do Y"},
+		{"no mention", "do Y"},
 		{"its own label", "@atlas:wt do Z"},
 		{"a label with no live session", "@atlas:gone do W"},
 	}

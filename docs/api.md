@@ -235,7 +235,11 @@ worktree's tools-only process holds no live channel: `GET /agent/pending` answer
 (`items`, `platform` and `dropped` empty or 0) at once, honouring no `wait`, without reading or
 advancing a cursor and without deleting a delivery row, because nothing is addressed to its label
 and the principal's queue is the only one. The same process's `wait_for_messages` tool reads
-nothing and says once that it only writes and reads history.
+nothing and says once that it only writes and reads history. `GET /agent/pending` answers 409 (`conflict`,
+"messages are pushed to this agent's session") to an unlabelled reader of the AI's folder while the principal is
+live, and also to the tools half of pi and OpenCode (`X-Partyline-Harness` `pi` or `opencode`) that is not tied to a
+live session, while the AI has any live session: their messages are pushed over the WebSocket by their `listen`
+process, and with the live id of that process the reader is that session (an empty page).
 
 ### Questions and answers
 
@@ -419,7 +423,7 @@ none still works, with the defaults.
 | `X-Partyline-Machine`, `X-Partyline-Folder` | The computer and the canonical folder (percent-encoded with `url.PathEscape`). With the token's user they identify the AI; inside a linked git worktree the folder stays the session's own folder and the AI comes from `X-Partyline-MainFolder`. |
 | `X-Partyline-MainFolder` | The canonical folder of the repository's main worktree, percent-encoded, sent only by a session in a linked git worktree (when `git rev-parse --git-common-dir` and `--git-dir` differ); the CLI sends it only when no `X-Partyline-Parent` is given, so an explicit child AI keeps its own folder. The AI is resolved from the owner, the machine and this folder, and a new AI is named after it. A value that is not a canonical absolute path (not absolute, a `.` or `..` segment, a trailing separator, a NUL, over 1024 bytes, or bad percent-encoding) is 422 `folder_invalid` on `main_folder` and creates nothing; a value equal to `X-Partyline-Folder` counts as absent. |
 | `X-Partyline-Harness`, `X-Partyline-Home`, `X-Partyline-Adopt`, `X-Partyline-Features` | The app, the home folder, the AI to adopt and the opt-in features. |
-| `X-Partyline-Live` | The id of the process that holds the agent WebSocket (`[A-Za-z0-9_-]`, 16 to 64 characters). A reconnect with it keeps the session's label and start time. On an agent route it names the live session whose label the message is authored with (`author_label`); a value that matches no live session of the AI is ignored and the folder decides. |
+| `X-Partyline-Live` | The id of the process that holds the agent WebSocket (`[A-Za-z0-9_-]`, 16 to 64 characters). A reconnect with it keeps the session's label and start time. The tools-only server of pi and OpenCode sends the id of the `listen` process of its session (`PARTYLINE_LIVE`), so its calls are that session's. On an agent route it names the live session whose label the message is authored with (`author_label`); a value that matches no live session of the AI is ignored and the folder decides. |
 | `X-Partyline-Takeover` | `1` asks the agent WebSocket to take over the AI: the new connection becomes the **principal** session and the old principal is closed with 4002 `taken_over`. It is ignored for a worktree or parallel label, which always gets a session of its own. |
 | `X-Partyline-Org` | The organization a **new** AI joins (`--org`, `PARTYLINE_ORG`): an address or an id. Without it, the creator's default organization. An existing AI keeps its home organization: another one is 409 `organization_mismatch`. |
 | `X-Partyline-Position` | The position the AI holds there (`--position`, `PARTYLINE_POSITION`): its name, percent-encoded. On a new AI it must be below the creator's position, unless the creator is an admin of the organization. On an existing AI it moves it when the token's user is an admin there, or manages the AI and holds a position above the new one; otherwise 403. Asking for the position the AI already holds changes nothing, and starting without one never clears it. |

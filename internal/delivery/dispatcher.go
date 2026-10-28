@@ -170,6 +170,12 @@ func (d *AgentDispatcher) selfTargets(ctx context.Context, q *db.Queries, view d
 	var out []selfTarget
 	seen := map[string]bool{}
 	for _, text := range []string{prevText, view.Text} {
+		// A labelled session that mentions its AI by the bare @handle reaches the principal (SESS-49); the
+		// principal itself never receives its own message.
+		if view.AuthorLabel != "" && !seen[PrincipalTarget] && MentionsPrincipal(text, profile.Handle) {
+			seen[PrincipalTarget] = true
+			out = append(out, selfTarget{agentID: view.AuthorID, label: PrincipalTarget})
+		}
 		label := SessionLabel(text, profile.Handle)
 		if label == "" || label == view.AuthorLabel || seen[label] {
 			continue

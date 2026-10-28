@@ -48,6 +48,11 @@ type Options struct {
 	// messages from `partyline listen` (PUSH-02). The tools act as the AI of the folder like any
 	// process started there.
 	ToolsOnly bool
+	// LiveID is, for a tools-only process, the id of the `partyline listen` process of the same pi or
+	// OpenCode session (SESS-45): sent as X-Partyline-Live with every call, so the server resolves the
+	// session the tools act as. Empty for Codex and Gemini, which hold no such process; the full channel
+	// ignores it and uses its own.
+	LiveID string
 	// Harness is the harness id sent on connect; HarnessOmp also switches the MCP
 	// instructions to OmpInstructions. Empty means Claude Code for the full channel and an
 	// unknown harness ("agent") for a tools-only one.
@@ -93,13 +98,17 @@ func Run(ctx context.Context, o Options) error {
 	if id.Harness == "" && !o.ToolsOnly {
 		id.Harness = HarnessClaude
 	}
+	if o.ToolsOnly {
+		id.LiveID = o.LiveID
+	}
 
 	instructions := Instructions
 	switch {
 	case o.ToolsOnly:
 		instructions = ToolsOnlyInstructions
-		if isLinkedWorktree(id) {
-			// Only a linked-worktree tools-only process has no live channel; it is told so (SESS-06).
+		if isLinkedWorktree(id) && id.LiveID == "" {
+			// Only a linked-worktree tools-only process without a listen process has no live channel; it is
+			// told so (SESS-06). The tools half of pi and OpenCode has one: its listen process holds it.
 			instructions += "\n" + WorktreeToolsOnlyNote
 		}
 	case o.Harness == HarnessOmp:

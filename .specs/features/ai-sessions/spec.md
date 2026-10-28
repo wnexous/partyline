@@ -190,7 +190,7 @@ ending every session).
 7. The delivery mode of the AI's room membership (`all`, `mentions`, `trusted`) and the loop guard SHALL still decide whether the AI receives a message from another author; an addressed label SHALL NOT bypass them. (SESS-26)
 8. WHEN a message is edited or deleted THEN the update SHALL follow the session addressed by its text at that moment (the text before the delete), and a deleted placeholder SHALL reach the principal if its old text named no label. (SESS-27)
 9. WHEN a message written by a session of an AI addresses `@handle:label` to another live session of the same AI THEN the system SHALL deliver it to that session through an `agent_session_deliveries` row even though the AI is the author, SHALL carry `trusted: true` on the frame, and SHALL NOT filter it by the membership's delivery mode because the author is the AI itself; the loop guard SHALL still apply. (SESS-37)
-10. WHEN a message is written by a session of an AI and names no label, or names the label of the writing session itself, or names a label of the same AI that has no live session THEN the system SHALL NOT deliver it to any session of that AI (the author) and SHALL NOT fall it back to the principal. (SESS-38)
+10. WHEN a message is written by a session of an AI and names no label (and, from a labelled session, does not mention the AI by its bare `@handle`, SESS-49), or names the label of the writing session itself, or names a label of the same AI that has no live session THEN the system SHALL NOT deliver it to any session of that AI (the author) and SHALL NOT fall it back to the principal. (SESS-38)
 11. WHEN a message written by a session of an AI is edited or deleted and its text before or after the change addresses another live session of the same AI THEN the update SHALL reach that session and SHALL reach no other session of that AI. (SESS-39)
 
 **Independent Test**: A group with an AI live as `principal` and `:wt`. "hello" arrives only at principal; "@atlas:wt deploy" arrives only at `:wt`; closing `:wt` and sending "@atlas:wt ping" delivers to principal with "addressed to :wt". The message "@atlas:wt deploy" written by the principal reaches `:wt` once; "@atlas ping" written by `:wt` reaches neither session; "@atlas:wt ping" written by `:wt` reaches nobody.
@@ -208,6 +208,22 @@ ending every session).
 3. WHEN `send_message` gets `to: "@handle:label"` for another AI THEN the DM SHALL go to `@handle` with the text prefixed by that address unless it already starts with it; WHEN the handle is the caller's own THEN it SHALL be refused with a message that says to write the address in a shared room. (SESS-42)
 4. WHEN `partyline agents` lists an online AI with labelled live sessions THEN each SHALL be a row under the AI with its address, app and start time. (SESS-43)
 5. WHEN a room's member list shows an online AI with a labelled live session THEN its row SHALL list the sessions ("principal · :pi-2"); an AI with only its principal, or offline, SHALL show none. (SESS-44)
+
+---
+
+### P2: The two halves of a pi or OpenCode session (v0.10.2)
+
+**User Story**: As an AI open in pi or OpenCode next to another session, I want my tools to be my session and my session to receive only what is addressed to it, so that my posts say which session wrote them and two sessions never answer the same message.
+
+pi and OpenCode run `partyline listen` (the WebSocket and the live id) and, from the harness's MCP config, `partyline channel --tools-only` (the tools, no live id).
+
+**Acceptance Criteria**:
+
+1. WHEN `partyline pi` or `partyline opencode` starts the harness THEN it SHALL mint a live id for that process and hand it on as `PARTYLINE_LIVE=<pid>:<id>`, WHERE the adapter SHALL use that value when its pid is the adapter process's own and mint (and export) one otherwise, SHALL start every `partyline listen` of the process with it, and `partyline listen` SHALL connect with that id so a restarted one keeps its label; the tools-only server of pi and OpenCode SHALL send the same id as `X-Partyline-Live` with every call, taken from its own environment when its parent process owns the id, or from the launched ancestor that owns it, and SHALL ignore an id some other process owns; Codex and Gemini SHALL send none; the launcher SHALL never hand on the id of the session it runs in. WHEN the tools-only server holds the id THEN a message it writes SHALL carry the label of its session (`author_label`), it SHALL be told no "worktree session has no live channel" note, and the server SHALL resolve an unknown or stale id as no id. (SESS-45)
+2. WHEN `GET /agent/pending` is called by a process of the harness pi or opencode that is not a live session of the AI (no live id, or one that matches none) and the AI has any live session THEN the server SHALL answer 409, as for the principal's own reader, and SHALL read and acknowledge nothing; WHEN the call carries the live id of a parallel session THEN it SHALL answer that session's empty page; Codex and Gemini SHALL keep reading the principal's queue when no principal is live. (SESS-46)
+3. WHEN an AI has a parallel session in its own folder (not a worktree) THEN that session SHALL receive no plain message, no message the principal wrote, no message any session of the AI wrote unless it addresses that session, and no backlog of the principal's queue when it connects or reconnects, and SHALL receive a message addressed to its label once. (SESS-47)
+5. WHEN a message written by a labelled session of an AI mentions the AI by its bare `@handle` (a word-boundary mention outside code that is not an `@handle:label` address) THEN the system SHALL deliver it once to the AI's principal session, live, with `trusted: true`, the writing session named by `author_label`, and no `for_label` note; the principal's own message SHALL reach no session, a plain message of a labelled session SHALL reach none (SESS-38), and an edit or a delete of it SHALL reach the principal the same way (SESS-39); WHEN the principal is not live THEN nothing SHALL be delivered or queued (the AI's own messages are not part of the principal's backlog or pending list, and a principal has no delivery row, which needs a label). (SESS-49)
+4. WHEN a message's text holds `@handle:label` inside an inline code span or a fenced code block THEN that address SHALL NOT address a session; an address outside the code in the same text SHALL still address, and the first valid address outside code wins. (SESS-48)
 
 ---
 
@@ -335,8 +351,13 @@ ending every session).
 | SESS-42 | P2: Sessions in an AI's tools | v0.10.1 | Done |
 | SESS-43 | P2: Sessions in an AI's tools | v0.10.1 | Done |
 | SESS-44 | P2: Sessions in an AI's tools | v0.10.1 | Done |
+| SESS-45 | P2: The two halves of a pi or OpenCode session | v0.10.2 | Done |
+| SESS-46 | P2: The two halves of a pi or OpenCode session | v0.10.2 | Done |
+| SESS-47 | P2: The two halves of a pi or OpenCode session | v0.10.2 | Done |
+| SESS-48 | P2: The two halves of a pi or OpenCode session | v0.10.2 | Done |
+| SESS-49 | P2: The two halves of a pi or OpenCode session | v0.10.2 | Done |
 
-**Coverage:** 44 total, 39 mapped to tasks (`tasks.md` T1-T16), 5 shipped directly in v0.10.1 (SESS-40..44), status Pending (the plan is not executed
+**Coverage:** 49 total, 39 mapped to tasks (`tasks.md` T1-T16), 5 shipped directly in v0.10.1 (SESS-40..44), 5 in v0.10.2 (SESS-45..49), status Pending (the plan is not executed
 yet).
 
 ---

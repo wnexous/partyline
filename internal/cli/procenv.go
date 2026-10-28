@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strconv"
 	"strings"
 )
@@ -32,12 +33,44 @@ const (
 	launchParentVar   = "PARTYLINE_LAUNCH_PARENT"
 )
 
+// liveEnvVar carries, to the processes of a pi or OpenCode session, the live id of that session as
+// "<pid>:<id>": the pid of the harness process that owns the id and the id itself (22 characters of
+// [A-Za-z0-9_-], channel.NewLiveID). `partyline pi` and `partyline opencode` mint it for the process they
+// start (exec keeps the pid), and the adapter mints it when the launcher did not or the pid is not its own.
+// `partyline listen` connects with that id, and the tools-only process of the same harness sends it with
+// every call, so the server knows the tools act as the session that listen holds (SESS-45). The pid ties
+// the id to one harness process: a harness started by a tool of this one inherits the variable, and a value
+// whose pid is not the parent of the reading process (or, from an ancestor's environment, that ancestor) is
+// ignored, so two sessions never share an id.
+const liveEnvVar = "PARTYLINE_LIVE"
+
+// liveIDPattern is the shape of a live id the server accepts (dto.HeaderLive).
+var liveIDPattern = regexp.MustCompile(`^[A-Za-z0-9_-]{16,64}$`)
+
+// parseLive splits a PARTYLINE_LIVE value into its owner pid and the live id.
+func parseLive(v string) (pid int, id string, ok bool) {
+	p, id, found := strings.Cut(strings.TrimSpace(v), ":")
+	pid, err := strconv.Atoi(p)
+	if !found || err != nil || pid <= 0 || !liveIDPattern.MatchString(id) {
+		return 0, "", false
+	}
+	return pid, id, true
+}
+
+// sessionLiveID is the live id of the pi or OpenCode session this process belongs to: the id of
+// PARTYLINE_LIVE, as returned by withLauncherEnv, which keeps the variable only when its owner is the
+// parent of this process or the launched ancestor it came from. Empty when there is none.
+func sessionLiveID(io stdio) string {
+	_, id, _ := parseLive(io.getenv(liveEnvVar))
+	return id
+}
+
 // launcherVars are the variables `partyline <harness>` sets for its session (see launch).
 // PARTYLINE_TAKEOVER is the one a launcher sets when the user agreed to take the AI's live
 // session over; the PARTYLINE_LAUNCH_* ones carry what the session asked for.
 var launcherVars = []string{
 	folderEnvVar, mainFolderVar, "PARTYLINE_HARNESS", "PARTYLINE_TAKEOVER", "PARTYLINE_AGENT",
-	launchOrgVar, launchPositionVar, launchParentVar,
+	launchOrgVar, launchPositionVar, launchParentVar, liveEnvVar,
 }
 
 // maxAncestors is how many processes, starting at the parent, the lookup reads.
@@ -71,6 +104,10 @@ func ancestorLauncherEnv(procRoot string, pid int) map[string]string {
 	for i := 0; i < maxAncestors && pid > 1; i++ {
 		if block, err := os.ReadFile(filepath.Join(procRoot, strconv.Itoa(pid), "environ")); err == nil {
 			if vars := launcherEnviron(block); vars[folderEnvVar] != "" {
+				// The id belongs to the process that owns it: this ancestor's environment is only its own.
+				if owner, _, ok := parseLive(vars[liveEnvVar]); !ok || owner != pid {
+					delete(vars, liveEnvVar)
+				}
 				return vars
 			}
 		}
@@ -107,6 +144,7 @@ func procLauncherEnv() map[string]string { return ancestorLauncherEnv("/proc", o
 // win. A session started with `partyline <harness>` thus keeps its folder and harness in its
 // tools-only channel even when the harness strips the server's environment.
 func withLauncherEnv(io stdio) stdio {
+	io = ownLiveOnly(io)
 	if io.launcherEnv == nil || strings.TrimSpace(io.getenv(folderEnvVar)) != "" {
 		return io
 	}
@@ -120,6 +158,27 @@ func withLauncherEnv(io stdio) stdio {
 			return v
 		}
 		return vars[k]
+	}
+	return io
+}
+
+// ownLiveOnly returns io with PARTYLINE_LIVE read only when its owner is the parent of this process: the
+// harness process that started it. A value inherited from a harness further up belongs to another session.
+func ownLiveOnly(io stdio) stdio {
+	own := io.getenv
+	ppid := io.ppid
+	if ppid == nil {
+		ppid = os.Getppid
+	}
+	io.getenv = func(k string) string {
+		v := own(k)
+		if k != liveEnvVar || v == "" {
+			return v
+		}
+		if owner, _, ok := parseLive(v); ok && owner == ppid() {
+			return v
+		}
+		return ""
 	}
 	return io
 }

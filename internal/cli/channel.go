@@ -198,9 +198,15 @@ func channelCmd(ctx context.Context, args []string, io stdio) int {
 	if *harness != "" {
 		c.id.Harness = *harness
 	}
+	// The tools half of pi and OpenCode acts as the session its listen process holds: it sends that
+	// process's live id (SESS-45). Codex and Gemini have no listen process and send none.
+	var liveID string
+	if *toolsOnly && slices.Contains(pushedHarnesses, c.id.Harness) {
+		liveID = sessionLiveID(io)
+	}
 	err := channel.Run(ctx, channel.Options{
 		URL: c.url, Token: c.token, Machine: c.id.Machine, Folder: c.id.Folder, MainFolder: c.id.MainFolder,
-		Home: c.id.Home, Adopt: c.id.Adopt,
+		Home: c.id.Home, Adopt: c.id.Adopt, LiveID: liveID,
 		Org: c.id.Org, Position: c.id.Position, Parent: c.id.Parent,
 		Harness: c.id.Harness, Version: buildVersion(), ToolsOnly: *toolsOnly, Takeover: c.takeover,
 		Stdin: io.stdin, Stdout: io.stdout, Stderr: io.stderr,
@@ -231,7 +237,7 @@ func listenCmd(ctx context.Context, args []string, io stdio) int {
 	}
 	err := channel.Listen(ctx, channel.ListenOptions{
 		URL: c.url, Token: c.token, Machine: c.id.Machine, Folder: c.id.Folder, MainFolder: c.id.MainFolder,
-		Home: c.id.Home, Harness: c.id.Harness, Adopt: c.id.Adopt,
+		Home: c.id.Home, Harness: c.id.Harness, Adopt: c.id.Adopt, LiveID: sessionLiveID(withLauncherEnv(io)),
 		Org: c.id.Org, Position: c.id.Position, Parent: c.id.Parent,
 		Takeover: c.takeover, Stdin: io.stdin, Stdout: io.stdout, Stderr: io.stderr,
 	})
