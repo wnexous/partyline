@@ -13,8 +13,6 @@ import (
 	"time"
 
 	"github.com/stretchr/testify/require"
-
-	"github.com/wnexous/partyline/internal/api/dto"
 )
 
 // fakeProc writes a /proc-like tree: for each pid its stat line (parent ppid) and, when env is
@@ -45,12 +43,12 @@ func (f fakeProc) add(pid, ppid int, comm string, env []string) {
 // PARTYLINE_POSITION and PARTYLINE_PARENT, which the launcher consumes) are left out.
 func TestLauncherEnvironKeepsOnlyLauncherVariables(t *testing.T) {
 	block := []byte("PATH=/usr/bin\x00PARTYLINE_FOLDER=/work/my notes\x00PARTYLINE_TOKEN=pl_agent_secret\x00" +
-		"PARTYLINE_URL=https://pl.example\x00PARTYLINE_HARNESS=codex\x00PARTYLINE_TAKEOVER=1\x00PARTYLINE_SESSION=pl-old\x00" +
+		"PARTYLINE_URL=https://pl.example\x00PARTYLINE_HARNESS=pi\x00PARTYLINE_TAKEOVER=1\x00PARTYLINE_SESSION=pl-old\x00" +
 		"PARTYLINE_PROJECT=Old\x00PARTYLINE_AGENT=\x00NOEQUALS\x00PARTYLINE_FOLDERX=no\x00" +
 		"PARTYLINE_LAUNCH_ORG=acme\x00PARTYLINE_LAUNCH_POSITION=Lead developer\x00PARTYLINE_LAUNCH_PARENT=@lead\x00" +
 		"PARTYLINE_ORG=globex\x00PARTYLINE_POSITION=Director\x00PARTYLINE_PARENT=@boss\x00PARTYLINE_LAUNCH_X=no\x00")
 	require.Equal(t, map[string]string{
-		"PARTYLINE_FOLDER": "/work/my notes", "PARTYLINE_HARNESS": "codex", "PARTYLINE_TAKEOVER": "1",
+		"PARTYLINE_FOLDER": "/work/my notes", "PARTYLINE_HARNESS": "pi", "PARTYLINE_TAKEOVER": "1",
 		"PARTYLINE_LAUNCH_ORG": "acme", "PARTYLINE_LAUNCH_POSITION": "Lead developer", "PARTYLINE_LAUNCH_PARENT": "@lead",
 	}, launcherEnviron(block))
 	require.Empty(t, launcherEnviron([]byte("PARTYLINE_LAUNCH_ORG=\x00PARTYLINE_LAUNCH_POSITION=  \x00")), "empty values are left out")
@@ -62,13 +60,13 @@ func TestLauncherEnvironKeepsOnlyLauncherVariables(t *testing.T) {
 // after maxAncestors processes and at pid 1.
 func TestAncestorLauncherEnvNearestWins(t *testing.T) {
 	proc := newFakeProc(t)
-	launched := []string{"PARTYLINE_FOLDER=/work/near", "PARTYLINE_HARNESS=codex", "PARTYLINE_AGENT=old-bot", "PARTYLINE_TOKEN=x"}
-	proc.add(40, 30, "codex", []string{"HOME=/home/a", "PATH=/usr/bin"}) // MCP server parent: stripped
-	proc.add(30, 20, "node (wrapper)", nil)                              // unreadable environment
+	launched := []string{"PARTYLINE_FOLDER=/work/near", "PARTYLINE_HARNESS=pi", "PARTYLINE_AGENT=old-bot", "PARTYLINE_TOKEN=x"}
+	proc.add(40, 30, "pi", []string{"HOME=/home/a", "PATH=/usr/bin"}) // MCP server parent: stripped
+	proc.add(30, 20, "node (wrapper)", nil)                           // unreadable environment
 	proc.add(20, 10, "node", launched)
 	proc.add(10, 1, "bash", []string{"PARTYLINE_FOLDER=/work/outer", "PARTYLINE_HARNESS=claude"})
 
-	require.Equal(t, map[string]string{"PARTYLINE_FOLDER": "/work/near", "PARTYLINE_HARNESS": "codex", "PARTYLINE_AGENT": "old-bot"},
+	require.Equal(t, map[string]string{"PARTYLINE_FOLDER": "/work/near", "PARTYLINE_HARNESS": "pi", "PARTYLINE_AGENT": "old-bot"},
 		ancestorLauncherEnv(proc.root, 40), "the nearest launched ancestor wins, past a stripped and an unreadable one")
 	require.Equal(t, map[string]string{"PARTYLINE_FOLDER": "/work/outer", "PARTYLINE_HARNESS": "claude"},
 		ancestorLauncherEnv(proc.root, 10))
@@ -83,7 +81,7 @@ func TestAncestorLauncherEnvNearestWins(t *testing.T) {
 	require.NotNil(t, ancestorLauncherEnv(deep.root, 49))
 
 	none := newFakeProc(t)
-	none.add(60, 1, "codex", []string{"PATH=/usr/bin", "PARTYLINE_FOLDER="})
+	none.add(60, 1, "pi", []string{"PATH=/usr/bin", "PARTYLINE_FOLDER="})
 	require.Nil(t, ancestorLauncherEnv(none.root, 60), "no ancestor with a folder")
 	require.Nil(t, ancestorLauncherEnv(filepath.Join(none.root, "missing"), 60), "no /proc (macOS, Windows)")
 }
@@ -97,11 +95,11 @@ func TestAncestorLauncherEnvReadsRealProc(t *testing.T) {
 	sleep, err := exec.LookPath("sleep")
 	require.NoError(t, err)
 	cmd := exec.Command(sleep, "30")
-	cmd.Env = []string{"PATH=/usr/bin:/bin", "PARTYLINE_FOLDER=/work/child", "PARTYLINE_HARNESS=gemini", "PARTYLINE_TOKEN=pl_agent_secret"}
+	cmd.Env = []string{"PATH=/usr/bin:/bin", "PARTYLINE_FOLDER=/work/child", "PARTYLINE_HARNESS=pi", "PARTYLINE_TOKEN=pl_agent_secret"}
 	require.NoError(t, cmd.Start())
 	t.Cleanup(func() { _ = cmd.Process.Kill(); _ = cmd.Wait() })
 
-	want := map[string]string{"PARTYLINE_FOLDER": "/work/child", "PARTYLINE_HARNESS": "gemini"}
+	want := map[string]string{"PARTYLINE_FOLDER": "/work/child", "PARTYLINE_HARNESS": "pi"}
 	// Until the child has exec'd, /proc shows the environment it inherited.
 	require.Eventually(t, func() bool {
 		return reflect.DeepEqual(want, ancestorLauncherEnv("/proc", cmd.Process.Pid))
@@ -113,7 +111,7 @@ func TestAncestorLauncherEnvReadsRealProc(t *testing.T) {
 // are missing, and only when PARTYLINE_FOLDER itself is missing.
 func TestWithLauncherEnv(t *testing.T) {
 	ancestor := map[string]string{
-		"PARTYLINE_FOLDER": "/work/anc", "PARTYLINE_HARNESS": "codex", "PARTYLINE_TAKEOVER": "1", "PARTYLINE_AGENT": "anc-bot",
+		"PARTYLINE_FOLDER": "/work/anc", "PARTYLINE_HARNESS": "pi", "PARTYLINE_TAKEOVER": "1", "PARTYLINE_AGENT": "anc-bot",
 		"PARTYLINE_LAUNCH_ORG": "acme", "PARTYLINE_LAUNCH_POSITION": "Worktrees",
 	}
 	std := func(own map[string]string) stdio {
@@ -121,7 +119,7 @@ func TestWithLauncherEnv(t *testing.T) {
 	}
 
 	got := withLauncherEnv(std(map[string]string{"PARTYLINE_AGENT": "own-bot", "PARTYLINE_URL": "http://x"}))
-	require.Equal(t, []string{"/work/anc", "codex", "1", "own-bot", "http://x", ""},
+	require.Equal(t, []string{"/work/anc", "pi", "1", "own-bot", "http://x", ""},
 		[]string{got.getenv("PARTYLINE_FOLDER"), got.getenv("PARTYLINE_HARNESS"), got.getenv("PARTYLINE_TAKEOVER"),
 			got.getenv("PARTYLINE_AGENT"), got.getenv("PARTYLINE_URL"), got.getenv("PARTYLINE_TOKEN")})
 
@@ -139,23 +137,15 @@ func TestWithLauncherEnv(t *testing.T) {
 	require.Empty(t, got.getenv("PARTYLINE_FOLDER"), "no ancestor lookup")
 }
 
-// AID-01, AID-07: Codex starts its MCP servers with a filtered environment, so the tools-only
-// channel of a `partyline codex` session lacks PARTYLINE_FOLDER and PARTYLINE_HARNESS, and its
+// AID-01, AID-07: a harness may start its MCP servers with a filtered environment, so the tools-only
+// channel of a `partyline pi` session lacks PARTYLINE_FOLDER and PARTYLINE_HARNESS, and its
 // working directory is not the session's folder. It takes them from the launched ancestor:
-// its AI is the one of the session's folder with the session's harness, and the session's Stop
-// hook (environment intact, or stripped too and recovered the same way) acts as that same AI.
+// its AI is the one of the session's folder with the session's harness.
 // Two such sessions keep two AIs and nothing else is created.
 func TestStrippedToolsOnlyChannelRecoversLauncherVariables(t *testing.T) {
 	e := newChannelEnv(t)
 	launched := func(folder string) map[string]string {
-		return map[string]string{"PARTYLINE_FOLDER": folder, "PARTYLINE_HARNESS": "codex"}
-	}
-	full := func(folder string) map[string]string {
-		env := e.vars()
-		for k, v := range launched(folder) {
-			env[k] = v
-		}
-		return env
+		return map[string]string{"PARTYLINE_FOLDER": folder, "PARTYLINE_HARNESS": "pi"}
 	}
 	call := func(c *mcpClient) {
 		t.Helper()
@@ -170,24 +160,12 @@ func TestStrippedToolsOnlyChannelRecoversLauncherVariables(t *testing.T) {
 	initialize(two)
 	call(two)
 
-	first := e.registered(t, "/work/one")
-	require.Equal(t, "codex", first.AI.App, "the harness comes from the launched ancestor")
-	room1 := e.room(t, dto.CreateRoomRequest{Name: "One"}, first.ID)
-	msg1 := e.post(t, room1.ID, "for the first session")
-	room2 := e.room(t, dto.CreateRoomRequest{Name: "Two"}, e.registered(t, "/work/two").ID)
-	msg2 := e.post(t, room2.ID, "for the second session")
-
-	_, out, errOut := runHook("codex-stop", `{"cwd":"/work/elsewhere"}`, full("/work/one"))
-	require.Contains(t, out, `message_id=\"`+msg1.ID+`\"`, "the first session's hook acts as its tools' AI: %s", errOut)
-	require.NotContains(t, out, msg2.ID)
-	_, out, errOut = runHookWith("codex-stop", `{"cwd":"/work/elsewhere"}`, e.vars(), launched("/work/two"))
-	require.Contains(t, out, `message_id=\"`+msg2.ID+`\"`, "a stripped hook recovers its session too: %s", errOut)
-	require.NotContains(t, out, msg1.ID)
-
+	require.Equal(t, "pi", e.registered(t, "/work/one").AI.App, "the harness comes from the launched ancestor")
+	require.NotEqual(t, e.registered(t, "/work/one").ID, e.registered(t, "/work/two").ID)
 	require.Equal(t, []string{"/work/one", "/work/two"}, e.folders(t), "one AI per session folder")
 }
 
-// ORG-04, POS-07 (AD-020): Codex starts its MCP servers with a filtered environment, so what the session asked
+// ORG-04, POS-07 (AD-020): a harness may start its MCP servers with a filtered environment, so what the session asked
 // for with --org and --position reaches the tools-only channel through the launched ancestor
 // (PARTYLINE_LAUNCH_*), like the folder does: the AI it registers is created in that organization holding that
 // position. The ancestor's user-facing PARTYLINE_ORG, which the launcher consumes, is not what it sends.
@@ -198,7 +176,7 @@ func TestStrippedToolsOnlyChannelRecoversThePlacement(t *testing.T) {
 	e.env.AddPosition(acme.ID, "Worktrees", acme.PositionID)
 
 	launched := map[string]string{
-		"PARTYLINE_FOLDER": "/work/placed", "PARTYLINE_HARNESS": "codex",
+		"PARTYLINE_FOLDER": "/work/placed", "PARTYLINE_HARNESS": "pi",
 		"PARTYLINE_LAUNCH_ORG": "acme", "PARTYLINE_LAUNCH_POSITION": "Worktrees", "PARTYLINE_ORG": "no-such-organization",
 	}
 	c := startChannelWith(t, []string{"--tools-only"}, e.vars(), "/tmp/src/other", launched)
@@ -227,12 +205,12 @@ func TestToolsOnlyChannelWithoutLauncherOrAncestorIsIdle(t *testing.T) {
 // session, and falls back on its own working directory for the folder.
 func TestStrippedToolsOnlyChannelWithItsHarnessUsesItsWorkingDirectory(t *testing.T) {
 	e := newChannelEnv(t)
-	c := startChannelWith(t, []string{"--tools-only"}, e.launched("codex"), "/work/plain", map[string]string{})
+	c := startChannelWith(t, []string{"--tools-only"}, e.launched("pi"), "/work/plain", map[string]string{})
 	initialize(c)
 	c.send(map[string]any{"jsonrpc": "2.0", "id": 3, "method": "tools/call", "params": map[string]any{"name": "list_rooms", "arguments": map[string]any{}}})
 	require.Equal(t, false, c.next()["result"].(map[string]any)["isError"])
 	require.Equal(t, []string{"/work/plain"}, e.folders(t))
-	require.Equal(t, "codex", e.registered(t, "/work/plain").AI.App)
+	require.Equal(t, "pi", e.registered(t, "/work/plain").AI.App)
 }
 
 // SESS-51: the harness session id of a process is PARTYLINE_HARNESS_SESSION, else Claude Code's own

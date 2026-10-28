@@ -34,7 +34,7 @@ func resultLinesOf(out, title string) []string {
 func TestSetupMenuAppliesTheChecklist(t *testing.T) {
 	home, opts := loggedInSetup(t)
 	calls := &harnessCalls{}
-	opts.lookPath = installed("claude", "gemini", "pi", "omp")
+	opts.lookPath = installed("claude", "opencode", "pi", "omp")
 	opts.run = calls.run
 	opts.terminal = true
 
@@ -47,27 +47,25 @@ func TestSetupMenuAppliesTheChecklist(t *testing.T) {
 	require.FileExists(t, piConfig)
 	require.FileExists(t, ompConfig)
 
-	// Detected harnesses are pre-selected. Move to pi and deselect it: claude and gemini are
+	// Detected harnesses are pre-selected. Move to pi and deselect it: claude and opencode are
 	// registered, pi is removed, omp stays exactly as it was.
-	opts.stdin = "jjjjj \r"
+	opts.stdin = "jj \r"
 	calls = &harnessCalls{}
 	opts.run = calls.run
 	r := runSetup(t, opts)
 	require.Equal(t, 0, r.code, "stderr: %s", r.stderr)
-	require.Equal(t, []string{claudeAdd, geminiAdd}, mutationCalls(calls.calls()), "CLI-04: only the changed harnesses")
+	require.Equal(t, []string{claudeAdd}, mutationCalls(calls.calls()), "CLI-04: only the changed harnesses (OpenCode is a file)")
+	require.FileExists(t, filepath.Join(home, ".config", "opencode", "opencode.json"))
 
 	rows := menuRows(r.stdout)
 	require.Contains(t, rows, "> [ ] pi  installed · registered", "deselected: %v", rows)
 	require.Contains(t, rows, "  [x] Claude Code  installed · not registered")
 	require.Contains(t, rows, "  [x] oh-my-pi (omp)  installed · registered")
 	require.Contains(t, r.stdout, "✓ Claude Code: registered\n")
-	require.Contains(t, r.stdout, "✓ Gemini CLI: registered\n")
+	require.Contains(t, r.stdout, "✓ OpenCode: registered\n")
 	require.Contains(t, r.stdout, "✓ pi: removed\n")
 	require.Contains(t, r.stdout, "✓ oh-my-pi (omp): already registered\n", "an untouched registered harness still gets its line")
-	require.Contains(t, r.stdout, "- Codex CLI: not registered\n")
-	require.Contains(t, r.stdout, "- OpenCode: not registered\n")
-	require.Contains(t, r.stdout, "- Antigravity: not registered\n")
-	for _, title := range []string{"Claude Code", "Codex CLI", "Gemini CLI", "Antigravity", "OpenCode", "pi", "oh-my-pi (omp)"} {
+	for _, title := range []string{"Claude Code", "OpenCode", "pi", "oh-my-pi (omp)"} {
 		require.Len(t, resultLinesOf(r.stdout, title), 1, "one result line for %s", title)
 	}
 	require.True(t, strings.HasSuffix(r.stdout, "\nStart a session with partyline claude.\n"), r.stdout)
@@ -115,7 +113,7 @@ func TestSetupMenuAllChecksOnlyInstalledHarnesses(t *testing.T) {
 	require.Equal(t, 0, r.code, "stderr: %s", r.stderr)
 	require.Equal(t, []string{claudeAdd}, mutationCalls(calls.calls()), "only the installed harness is registered")
 	require.Contains(t, r.stdout, "✓ Claude Code: registered\n")
-	require.Contains(t, r.stdout, "- Codex CLI: not registered\n")
+	require.Contains(t, r.stdout, "- OpenCode: not registered\n")
 	require.Empty(t, r.stderr)
 }
 
@@ -129,14 +127,13 @@ func TestSetupMenuExitsNonZeroWhenAHarnessFails(t *testing.T) {
 		}
 		return nil, nil
 	}}
-	opts.lookPath, opts.run = installed("claude", "gemini"), calls.run
+	opts.lookPath, opts.run = installed("claude", "opencode"), calls.run
 	opts.terminal = true
 	opts.stdin = "\r" // the detected harnesses start checked
 	r := runSetup(t, opts)
 	require.Equal(t, 1, r.code, "a failed apply is not a success")
 	require.Contains(t, r.stderr, "✗ Claude Code: ")
-	require.Contains(t, r.stdout, "✓ Gemini CLI: registered\n", "the others are still applied")
-	require.Contains(t, mutationCalls(calls.calls()), geminiAdd)
+	require.Contains(t, r.stdout, "✓ OpenCode: registered\n", "the others are still applied")
 	require.NotContains(t, r.stdout, "Claude Code: registered")
 }
 
@@ -178,35 +175,33 @@ func TestSetupNonTerminalSelectionFlags(t *testing.T) {
 	t.Run("harness", func(t *testing.T) {
 		_, opts := loggedInSetup(t)
 		calls := &harnessCalls{}
-		opts.lookPath, opts.run = installed("claude", "gemini"), calls.run
-		r := runSetup(t, opts, "--harness", "gemini", "--yes")
+		opts.lookPath, opts.run = installed("claude", "pi"), calls.run
+		r := runSetup(t, opts, "--harness", "pi", "--yes")
 		require.Equal(t, 0, r.code, "stderr: %s", r.stderr)
-		require.Equal(t, []string{geminiAdd}, calls.calls())
-		require.Contains(t, r.stdout, "✓ Gemini CLI: registered")
+		require.Empty(t, calls.calls(), "pi is a file")
+		require.Contains(t, r.stdout, "✓ pi: registered")
 	})
 
 	t.Run("all detected", func(t *testing.T) {
 		_, opts := loggedInSetup(t)
 		calls := &harnessCalls{}
-		opts.lookPath, opts.run = installed("claude", "gemini"), calls.run
+		opts.lookPath, opts.run = installed("claude", "pi"), calls.run
 		r := runSetup(t, opts, "--all-detected", "--yes")
 		require.Equal(t, 0, r.code, "stderr: %s", r.stderr)
-		require.Equal(t, []string{claudeAdd, geminiAdd}, calls.calls())
+		require.Equal(t, []string{claudeAdd}, calls.calls())
 		require.Contains(t, r.stdout, "✓ Claude Code: registered")
-		require.Contains(t, r.stdout, "✓ Gemini CLI: registered")
+		require.Contains(t, r.stdout, "✓ pi: registered")
 	})
 
 	t.Run("remove", func(t *testing.T) {
 		home, opts := loggedInSetup(t)
-		settings := filepath.Join(home, ".gemini", "settings.json")
-		require.NoError(t, os.MkdirAll(filepath.Dir(settings), 0o755))
-		require.NoError(t, os.WriteFile(settings, []byte(`{"mcpServers":{"partyline":{"command":"`+testBinary+`","args":["channel"]}}}`), 0o644))
+		require.NoError(t, os.WriteFile(filepath.Join(home, ".claude.json"), []byte(`{"mcpServers":{"partyline":{"command":"`+testBinary+`","args":["channel"]}}}`), 0o644))
 		calls := &harnessCalls{}
-		opts.lookPath, opts.run = installed("gemini"), calls.run
-		r := runSetup(t, opts, "--remove", "gemini", "--yes")
+		opts.lookPath, opts.run = installed("claude"), calls.run
+		r := runSetup(t, opts, "--remove", "claude", "--yes")
 		require.Equal(t, 0, r.code, "stderr: %s", r.stderr)
-		require.Equal(t, []string{"gemini mcp remove -s user partyline"}, calls.calls())
-		require.Contains(t, r.stdout, "✓ Gemini CLI: removed")
+		require.Equal(t, []string{"claude mcp remove --scope user partyline"}, calls.calls())
+		require.Contains(t, r.stdout, "✓ Claude Code: removed")
 	})
 }
 

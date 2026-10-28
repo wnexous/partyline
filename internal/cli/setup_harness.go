@@ -35,7 +35,7 @@ func harnessEnv(io stdio) (harness.Env, error) {
 	}, nil
 }
 
-// namedHarnesses returns the registrars named in list ("claude,codex"); an empty list and
+// namedHarnesses returns the registrars named in list ("claude,pi"); an empty list and
 // "none" select nothing. setup uses this for --harness and --remove, where an unset flag must
 // not fall back to the detected harnesses.
 func namedHarnesses(env harness.Env, list string) ([]harness.Registrar, error) {
@@ -45,7 +45,7 @@ func namedHarnesses(env harness.Env, list string) ([]harness.Registrar, error) {
 	return selectHarnesses(env, list)
 }
 
-// selectHarnesses returns the registrars named in list ("claude,codex"), or every detected
+// selectHarnesses returns the registrars named in list ("claude,pi"), or every detected
 // one when list is empty; "none" selects nothing.
 func selectHarnesses(env harness.Env, list string) ([]harness.Registrar, error) {
 	all := harness.All(env)
@@ -71,6 +71,9 @@ func selectHarnesses(env harness.Env, list string) ([]harness.Registrar, error) 
 	var out []harness.Registrar
 	for _, id := range strings.Split(list, ",") {
 		r, ok := byID[strings.TrimSpace(id)]
+		if message, removed := removedHarnessMessage(id); removed && !ok {
+			return nil, errors.New(message)
+		}
 		if !ok {
 			return nil, fmt.Errorf("unknown harness %q (known: %s)", strings.TrimSpace(id), strings.Join(ids, ", "))
 		}
@@ -112,6 +115,23 @@ func harnessStates(ctx context.Context, regs []harness.Registrar) []harnessState
 	return states
 }
 
+// cleanLegacy removes what older versions of Partyline registered in Codex, Gemini CLI and Antigravity,
+// which are no longer supported (AD-035), and says so in one line per harness. It is idempotent: with
+// nothing left it prints nothing. A failure is a warning on stderr; it never stops setup. It reports
+// whether it removed anything.
+func cleanLegacy(ctx context.Context, env harness.Env, io stdio) (removed bool) {
+	for _, r := range env.CleanLegacy(ctx) {
+		if r.Removed {
+			removed = true
+			fmt.Fprintf(io.stdout, "Removed the old Partyline setup for %s (no longer supported)\n", r.Title)
+		}
+		if r.Err != nil {
+			fmt.Fprintf(io.stderr, "partyline setup: could not remove the old Partyline setup for %s (no longer supported): %v\n", r.Title, r.Err)
+		}
+	}
+	return removed
+}
+
 // maybeSetupMenu opens the checklist right after login when this is a terminal and no
 // harness is registered yet (CLI-02).
 func maybeSetupMenu(ctx context.Context, io stdio) int {
@@ -122,6 +142,7 @@ func maybeSetupMenu(ctx context.Context, io stdio) int {
 	if err != nil {
 		return 0
 	}
+	cleanLegacy(ctx, env, io)
 	states := harnessStates(ctx, harness.All(env))
 	for _, s := range states {
 		if s.registered {
@@ -169,7 +190,7 @@ func setupMenu(ctx context.Context, states []harnessState, keepBackups bool, io 
 // menu (CLI-05). Registered harnesses that are not named stay as they are.
 func applyHarnessFlags(ctx context.Context, regs []harness.Registrar, register, remove []harness.Registrar, keepBackups bool, io stdio) int {
 	if len(register) == 0 && len(remove) == 0 {
-		fmt.Fprintln(io.stdout, "No supported harness found (Claude Code, Codex CLI, Gemini CLI, Antigravity, OpenCode, pi, omp).")
+		fmt.Fprintln(io.stdout, "No supported harness found (Claude Code, OpenCode, pi, omp).")
 		fmt.Fprintln(io.stdout, "Register one later with: partyline setup --harness <name>, then start it with partyline <name>")
 		return 0
 	}
@@ -220,7 +241,7 @@ func applyHarnessFlags(ctx context.Context, regs []harness.Registrar, register, 
 		settleBackups(regs, earlier, keepBackups, io)
 	}
 	if first != "" {
-		fmt.Fprintf(io.stdout, "\nStart a session with partyline %s.\n", launcherCommand(first))
+		fmt.Fprintf(io.stdout, "\nStart a session with partyline %s.\n", first)
 	}
 	if !ok {
 		return 1
@@ -269,7 +290,7 @@ func applyHarnessSelection(ctx context.Context, states []harnessState, selected 
 func nameFirstLauncher(states []harnessState, registered []bool, io stdio) {
 	for i, s := range states {
 		if i < len(registered) && registered[i] {
-			fmt.Fprintf(io.stdout, "\nStart a session with partyline %s.\n", launcherCommand(s.reg.ID()))
+			fmt.Fprintf(io.stdout, "\nStart a session with partyline %s.\n", s.reg.ID())
 			return
 		}
 	}
@@ -360,6 +381,10 @@ func uninstall(ctx context.Context, f setupFlags, io stdio) int {
 	p := newPrompter(io)
 	code := 0
 	removed := false
+	if f.harness == "" {
+		// The old setup of the harnesses that are no longer supported goes too (AD-035).
+		removed = cleanLegacy(ctx, env, io)
+	}
 	for _, r := range regs {
 		plan := r.RemovePlan(ctx)
 		if len(plan) == 0 {

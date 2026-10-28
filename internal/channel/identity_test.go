@@ -294,9 +294,9 @@ func everyConnectionSendsTheIdentity(t *testing.T, id Identity) {
 			Org: id.Org, Position: id.Position, Parent: id.Parent, ToolsOnly: true, TempDir: t.TempDir(), timing: fastTiming,
 		})
 		s.handshake()
-		s.send(map[string]any{"jsonrpc": "2.0", "id": 9, "method": "tools/call", "params": map[string]any{"name": "wait_for_messages", "arguments": map[string]any{"timeout_seconds": 0}}})
+		s.send(map[string]any{"jsonrpc": "2.0", "id": 9, "method": "tools/call", "params": map[string]any{"name": "list_rooms", "arguments": map[string]any{}}})
 		call := nextRequest(t, reqs)
-		require.Equal(t, "/api/v1/agent/pending", call.path)
+		require.Equal(t, "/api/v1/agent/rooms", call.path)
 		requireIdentity(t, call, id)
 		select {
 		case r := <-reqs:
@@ -321,19 +321,5 @@ func everyConnectionSendsTheIdentity(t *testing.T, id Identity) {
 		require.Equal(t, first.header.Get(dto.HeaderLive), second.header.Get(dto.HeaderLive))
 		cancel()
 		require.NoError(t, <-done)
-	})
-
-	t.Run("pending", func(t *testing.T) {
-		url, reqs := recordingServer(t)
-		_, err := Pending(context.Background(), PendingOptions{URL: url, Token: "pl_agent_x", Identity: id})
-		require.NoError(t, err)
-		call := nextRequest(t, reqs)
-		require.Equal(t, "/api/v1/agent/pending", call.path)
-		requireIdentity(t, call, id)
-		select {
-		case r := <-reqs:
-			require.Failf(t, "unexpected request: the hook registers nothing first", "%s", r.path)
-		case <-time.After(100 * time.Millisecond):
-		}
 	})
 }

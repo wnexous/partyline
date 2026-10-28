@@ -28,7 +28,7 @@ func framingCases(t *testing.T) []framingCase {
 	return cases
 }
 
-// PUSH-06 (Go side, used by wait_for_messages and the turn-end hooks): the same texts the
+// PUSH-06 (Go side): the same texts the
 // TypeScript adapters produce, from the shared cases in integrations/testdata/framing.json.
 func TestFrameMatchesTheAdapters(t *testing.T) {
 	for _, c := range framingCases(t) {
@@ -38,10 +38,10 @@ func TestFrameMatchesTheAdapters(t *testing.T) {
 	}
 }
 
-// CID-10: the record the polling harnesses frame for the notice of dropped platform messages is the one
-// the shared case holds, so the adapters that frame a notice of the same shape produce the same text.
+// CID-10: the record of the notice of dropped platform messages is the one the shared case holds, so the
+// adapters that frame a notice of the same shape produce the same text.
 func TestNoticeRecordIsTheNotificationWithItsContent(t *testing.T) {
-	n := dto.AgentNoticeFrame{Type: dto.AgentFrameTypeNotice, Text: droppedNotice2}
+	n := dto.AgentNoticeFrame{Type: dto.AgentFrameTypeNotice, Text: dto.DroppedNotice(2)}
 	r, f := NoticeRecord(n), FormatNotice(n)
 	require.Equal(t, f.Content, r["content"])
 	for k, v := range f.Meta {

@@ -29,7 +29,7 @@ const MaxFolderLength = 1024
 const MachineTouchInterval = time.Minute
 
 // SeenTouchInterval is how often a tools-only call stamps its AI's last_seen_at (SESS-50): an AI used only
-// through Codex, Gemini or Antigravity holds no socket, so its calls are the only sign of life it gives.
+// through a tools call alone (no WebSocket) holds no socket, so its calls are the only sign of life it gives.
 const SeenTouchInterval = time.Minute
 
 // FolderID is what a session tells the server about itself on every connection and tool call:
@@ -68,7 +68,8 @@ type FolderID struct {
 // folder and the position are percent-encoded (url.PathEscape), the machine, harness, the name to
 // adopt, the organization and the parent are plain. A folder that is not valid percent-encoding is
 // 422 folder_invalid, and a position that is not is 422 position_unknown; a home folder that is not
-// is ignored. A missing header reads as empty, and so does a blank one. The result is not validated:
+// is ignored. A harness that is no longer supported (codex, gemini, antigravity) is 410 harness_removed,
+// on the WebSocket and on every agent route (AD-035). A missing header reads as empty, and so does a blank one. The result is not validated:
 // ResolveFolder and LookupFolder do that (an empty folder is 422 folder_required).
 func FolderIDFromHeader(h http.Header) (FolderID, error) {
 	folder, err := url.PathUnescape(h.Get(dto.HeaderFolder))
@@ -86,6 +87,12 @@ func FolderIDFromHeader(h http.Header) (FolderID, error) {
 	position, err := url.PathUnescape(h.Get(dto.HeaderPosition))
 	if err != nil {
 		return FolderID{}, folderError(dto.ErrorCodePositionUnknown, "position", "the position is not valid percent-encoding")
+	}
+	if label, removed := RemovedHarness(h.Get(dto.HeaderHarness)); removed {
+		return FolderID{}, &httpx.Error{
+			Status: http.StatusGone, Code: dto.ErrorCodeHarnessRemoved,
+			Message: label + " is no longer supported by Partyline; use Claude Code, pi, OpenCode or omp",
+		}
 	}
 	return FolderID{
 		Machine: h.Get(dto.HeaderMachine), Folder: folder, MainFolder: mainFolder, Home: home,
@@ -237,7 +244,7 @@ func (r *Registry) touchMachine(ctx context.Context, ownerID, hostname, home str
 // on first sight with the folder's name (AID-01, AID-02, AID-03). A session in a linked git
 // worktree resolves the AI of the main worktree instead (FolderID.MainFolder, SESS-01, SESS-06).
 // Any harness opened in that folder resolves the same identity, and its app follows the harness:
-// always for a live session (live), and for a tools-only call (Codex, the tools half of pi and
+// always for a live session (live), and for a tools-only call (the tools half of pi and
 // OpenCode) only while nobody is connected, so a tool call never relabels a live session (AID-04).
 //
 // When the folder has no identity yet, the owner's unlinked identity (one of v0.3, without a
@@ -279,7 +286,7 @@ func (r *Registry) ResolveFolder(ctx context.Context, ownerID string, id FolderI
 }
 
 // TouchSeen stamps last_seen_at of an AI whose request came without a socket (the HTTP calls of a tools-only
-// process: a tool call, a pending read, a hook), at most once per SeenTouchInterval per AI and only while the
+// process: a tool call or a pending read), at most once per SeenTouchInterval per AI and only while the
 // AI has no live session: a live session stamps it when it connects and when it ends. It is not presence: the
 // AI stays offline, so the pushes, the 409 of a principal's reader and the "also open elsewhere" notice are
 // unchanged, and `partyline agents` shows "Nm ago" (SESS-50). A failed write is not worth failing the call over.

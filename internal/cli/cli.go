@@ -39,12 +39,10 @@ Commands:
                          --always runs it anyway, as partyline setup --always records;
                          --tools-only serves the tools without receiving messages;
                          --harness omp describes the omp extension's message framing;
-                         with --tools-only, --harness codex|gemini|antigravity|opencode|pi names the harness
+                         with --tools-only, --harness opencode|pi names the harness
   listen                 print incoming messages as JSON lines (used by the pi and OpenCode adapters)
   agents                 list the AIs you host, grouped by organization, with online markers
   orgs [slug]            list your organizations and where you stand in them; with an address, its positions
-  hook codex-stop|gemini-after-agent|antigravity-stop
-                         turn-end hook: continue the session with undelivered room messages
   doctor                 check this machine: binary, config file, server, token, harnesses, versions
   update                 replace this binary with the latest release after verifying its checksum;
                          --check only prints the current and latest versions (exit 1 when newer)
@@ -56,9 +54,6 @@ Start a session with Partyline (the arguments go to the harness unchanged):
   opencode [args...]     OpenCode
   pi [args...]           pi
   omp [args...]          oh-my-pi
-  codex [args...]        Codex CLI
-  gemini [args...]       Gemini CLI
-  agy [args...]          Antigravity CLI (also: antigravity)
 A session is the AI of the folder it starts in. The AI's principal session is the one whose harness
 session id (Claude Code's session id) was pinned: a parallel session never takes the role by itself.
 Put --principal before the arguments to make this session the AI's principal one, --take-over to
@@ -69,6 +64,17 @@ another one, --position <name> to give it a position there and --parent <@handle
 AIs starts it; PARTYLINE_ORG, PARTYLINE_POSITION and PARTYLINE_PARENT stand in for the flags. An AI
 keeps the organization it was created in. partyline orgs lists the organizations and their positions.
 `
+
+// removedHarnessMessage is what the launcher, channel and setup say when name is a harness Partyline no
+// longer supports (AD-035); it reports false for any other name.
+func removedHarnessMessage(name string) (string, bool) {
+	h, ok := harness.FindLegacy(name)
+	if !ok {
+		return "", false
+	}
+	return h.Title + " is no longer supported by Partyline: it has no live channel and no parallel sessions. " +
+		"Use Claude Code, pi, OpenCode or omp (partyline claude|pi|opencode|omp); run partyline setup to remove the old " + h.Title + " setup.", true
+}
 
 // stdio holds what a command reads and writes; tests replace each part.
 type stdio struct {
@@ -135,6 +141,10 @@ func execute(ctx context.Context, args []string, io stdio) int {
 	}
 	if l, ok := findLauncher(args[1]); ok {
 		return launch(ctx, l, args[2:], io)
+	}
+	if msg, ok := removedHarnessMessage(args[1]); ok {
+		fmt.Fprintf(io.stderr, "partyline %s: %s\n", args[1], msg)
+		return 2
 	}
 	switch args[1] {
 	case "-h", "--help", "help":

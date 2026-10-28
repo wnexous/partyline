@@ -2,124 +2,21 @@ package cli
 
 import (
 	"context"
-	"encoding/json"
-	"flag"
 	"fmt"
-	goio "io"
-	"strings"
-	"time"
+	"slices"
 
-	"github.com/wnexous/partyline/internal/channel"
-	"github.com/wnexous/partyline/internal/cliconfig"
+	"github.com/wnexous/partyline/internal/harness"
 )
 
-// hookTimeout bounds the pending-messages request of a turn-end hook.
-const hookTimeout = 10 * time.Second
-
-// hookDecisions is the "keep going" decision of each harness's turn-end hook (TURN-02): Codex
-// CLI's Stop hook blocks the stop, Gemini CLI's AfterAgent hook denies the response, Antigravity's
-// Stop hook continues the loop; all take the reason as the next prompt.
-var hookDecisions = map[string]string{
-	"codex-stop":         "block",
-	"gemini-after-agent": "deny",
-	"antigravity-stop":   "continue",
-}
-
-// antigravityPreamble opens the reason of Antigravity's Stop hook. The hook has no field the person sees
-// (Antigravity's Stop result is decision and reason, and the reason is only injected for the model), so the
-// reason itself tells the model what happened and what not to do: its last answer is already on screen, so
-// it must not be repeated, and a one-line note at the end is the person's only sign of the exchange.
-const antigravityPreamble = "[Partyline] New message(s) arrived after your last answer. Handle them with the partyline tools (reply, send_message). Do not repeat your previous answer; when done, end with one short line saying what you did."
-
-// hookCmd runs `partyline hook codex-stop|gemini-after-agent|antigravity-stop`: it reads the hook input (JSON
-// with the session's cwd) from stdin, takes the agent's undelivered room messages and platform
-// events (the messages that arrived on the connections it operates), and the count of the platform
-// messages the server dropped, and prints the harness's decision to continue with them as the
-// reason, or {} (stop as usual) when there is nothing. Problems are reported on stderr and never
-// block the harness.
-func hookCmd(ctx context.Context, args []string, io stdio) int {
-	if len(args) < 1 || hookDecisions[args[0]] == "" {
-		fmt.Fprintln(io.stderr, "usage: partyline hook codex-stop|gemini-after-agent|antigravity-stop")
+// hookCmd runs `partyline hook <name>` for the turn-end hooks that Partyline wrote into Codex CLI, Gemini
+// CLI and Antigravity before they stopped being supported (AD-035). It does nothing and lets the
+// harness stop as usual ({}), so a hook that `partyline setup` has not removed yet does not fail at
+// the end of every turn. Any other name is a usage error.
+func hookCmd(_ context.Context, args []string, io stdio) int {
+	if len(args) < 1 || !slices.Contains(harness.LegacyHooks, args[0]) {
+		fmt.Fprintln(io.stderr, "partyline hook: the turn-end hooks are gone with the harnesses they served; run partyline setup to remove the old ones")
 		return 2
 	}
-	name := args[0]
-	fs := flag.NewFlagSet("hook", flag.ContinueOnError)
-	fs.SetOutput(io.stderr)
-	always := fs.Bool("always", false, "run even without PARTYLINE_HARNESS, which only `partyline <harness>` sets (partyline setup --always)")
-	if err := fs.Parse(args[1:]); err != nil {
-		return 2
-	}
-	decision := hookDecisions[name]
-	allow := func() int {
-		fmt.Fprintln(io.stdout, "{}")
-		return 0
-	}
-	// Only a session the launcher started joins Partyline (PARTYLINE_HARNESS, which a harness
-	// that strips the hook's environment still has on a launched ancestor) or one installed
-	// with `partyline setup --always`. Anything else allows the stop without touching the
-	// server, so a plain Codex or Gemini session creates no AI (launch-only).
-	io = withLauncherEnv(io)
-	if !*always && strings.TrimSpace(io.getenv("PARTYLINE_HARNESS")) == "" {
-		return allow()
-	}
-	var in struct {
-		Cwd string `json:"cwd"`
-		// Antigravity's hook input has no cwd (the hook runs in the directory of hooks.json): it
-		// names the workspaces, and why the loop stopped.
-		WorkspacePaths    []string `json:"workspacePaths"`
-		TerminationReason string   `json:"terminationReason"`
-	}
-	data, _ := readAllLimited(io.stdin, 1<<20)
-	_ = json.Unmarshal(data, &in)
-	// Only a turn that ended normally continues with messages: a cancelled, failed or exhausted
-	// Antigravity loop stops (an empty reason is a harness that does not send one).
-	if name == "antigravity-stop" && in.TerminationReason != "" && in.TerminationReason != "NO_TOOL_CALL" {
-		return allow()
-	}
-	if in.Cwd == "" && len(in.WorkspacePaths) > 0 {
-		in.Cwd = in.WorkspacePaths[0]
-	}
-
-	creds, err := cliconfig.Resolve(cliconfig.Config{}, io.getenv)
-	if err != nil {
-		fmt.Fprintln(io.stderr, "partyline hook:", err)
-		return allow()
-	}
-	if creds.URL == "" || creds.Token == "" {
-		fmt.Fprintln(io.stderr, "partyline hook: not configured; run partyline setup")
-		return allow()
-	}
-	// The AI of the folder the session works in, like every other process started there:
-	// PARTYLINE_FOLDER (set by the launcher; a harness that strips the hook's environment loses
-	// it, and it comes from the nearest launched ancestor, withLauncherEnv), else the cwd the
-	// harness reports on stdin, else this process's working directory (AID-07).
-	hio := io
-	if in.Cwd != "" {
-		hio.getwd = func() (string, error) { return in.Cwd, nil }
-	}
-	ctx, cancel := context.WithTimeout(ctx, hookTimeout)
-	defer cancel()
-	pending, err := channel.Pending(ctx, channel.PendingOptions{URL: creds.URL, Token: creds.Token, Identity: sessionIdentity("", hio)})
-	if err != nil {
-		fmt.Fprintln(io.stderr, "partyline hook:", err)
-		return allow()
-	}
-	reason := channel.FramePending(pending)
-	if reason == "" {
-		return allow()
-	}
-	if name == "antigravity-stop" {
-		reason = antigravityPreamble + "\n\n" + reason
-	}
-	enc := json.NewEncoder(io.stdout)
-	enc.SetEscapeHTML(false)
-	_ = enc.Encode(map[string]string{"decision": decision, "reason": reason})
+	fmt.Fprintln(io.stdout, "{}")
 	return 0
-}
-
-func readAllLimited(r goio.Reader, n int64) ([]byte, error) {
-	if r == nil {
-		return nil, nil
-	}
-	return goio.ReadAll(goio.LimitReader(r, n))
 }

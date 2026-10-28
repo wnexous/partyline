@@ -443,6 +443,19 @@
 - **Status**: active
 - **Amends**: AD-032 (the label `""` is the pinned session's, not the first connection's; SESS-11, SESS-13).
 
+### AD-035
+- **Decision**: Partyline supports only harnesses with 100% compatibility: a live push channel and parallel sessions. Those are Claude Code, pi, OpenCode and omp. Codex CLI (`codex`), Gemini CLI (`gemini`) and Antigravity CLI (`antigravity`, launcher `agy`) are removed. They were "tools-only": no live connection, messages only at the end of a turn or through `wait_for_messages`, and no parallel sessions.
+  - **Removed**: the launchers and their registrars (MCP config writers, hooks, `agy` allow rules), the interactive setup entries and detection, the turn-end hooks (`partyline hook …` is now a no-op that allows the stop, so a hook that setup has not removed yet does not fail every turn), the `wait_for_messages` tool and its client (`channel.Pending`, `FramePending`, `FrameAll`), the web connect tabs and the "at turn end" copy.
+  - **Kept**: the tools-only server of pi and OpenCode (`channel --tools-only` paired with `listen`, and the worktree note for a tools process without a live id), `TouchSeen` (the tools half of pi and OpenCode, and any tools-only call, is still a sign of life), the harness labels `Codex`, `Gemini` and `Antigravity` for display (an AI created with one keeps its row, history, rooms and app label). `GET /agent/pending` and `Gateway.Pending` stay for now: nothing supported calls them, but about a dozen server tests read through them what an AI would be handed; dropping them is a follow-up with those tests.
+  - **Cleanup**: `partyline setup` and `setup --uninstall` remove what older versions wrote for the three, once and idempotently, with one line per harness (`Removed the old Partyline setup for Codex (no longer supported)`): the `partyline` MCP server that runs `channel --tools-only` (`codex mcp remove` and `agy mcp remove` when installed, the JSON entry for Gemini), the hook groups whose command is exactly the one setup wrote for the binary, and the `mcp(partyline/…)` rules of agy. Foreign entries stay; a broken file is a warning, not a failure.
+  - **Refusal**: a connect or call with `X-Partyline-Harness: codex|gemini|antigravity|agy` is `410 harness_removed` with `<Harness> is no longer supported by Partyline; use Claude Code, pi, OpenCode or omp`, in `FolderIDFromHeader`, so on the WebSocket and every agent route. `partyline codex|gemini|agy|antigravity`, `channel --harness codex…` and `setup --harness codex` print the same words and exit 2.
+- **Reason**: The owner decided that a harness is supported only when it can be pushed to and can run next to another session of the same AI. The three had neither, and each delivery rule (the principal's queue, the worktree reader, the pending long poll) carried a special case for them.
+- **Trade-off**: Users of those three lose Partyline in them; they migrate by opening the same folder with `partyline claude` or `partyline pi`, which is the same AI. The history of their AIs stays readable.
+- **Scope**: harness (legacy cleanup), cli (launcher, setup, channel, hook, help), channel (run, instructions, frame), agents (`RemovedHarness`, `FolderIDFromHeader`), api/dto (`harness_removed`), web (connect-agent), docs (agents, api, README), spec `harness-onboarding` contract notes.
+- **Date**: 2026-10-28
+- **Status**: active
+- **Amends**: AD-033 and AD-034 (the tools-only reader of Codex, Gemini and Antigravity no longer exists, and neither does their lack of a harness session id), harness-onboarding HAR-01..HAR-05 and TURN-01, TURN-02 (they described those three), and the intelligences spec's SES-50 (the tools-only sign of life now serves pi and OpenCode).
+
 ## Handoff
 
 - **Feature**: organizations

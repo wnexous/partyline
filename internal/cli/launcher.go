@@ -15,7 +15,6 @@ import (
 	"strings"
 	"time"
 
-	"github.com/wnexous/partyline/internal/agents"
 	"github.com/wnexous/partyline/internal/api/dto"
 	"github.com/wnexous/partyline/internal/channel"
 	"github.com/wnexous/partyline/internal/cliconfig"
@@ -36,52 +35,27 @@ var claudeChannelArgs = []string{"--dangerously-load-development-channels", "ser
 // a server that does not answer by then is ignored, so it never holds a person up.
 const launcherSessionTimeout = 2 * time.Second
 
-// launcher is one `partyline <harness>` command (HAR-03): the harness binary (named like the
-// registrar id unless bin names it, as Antigravity's `agy`) and the arguments put before the user's.
-// live is whether the harness opens a live session; those can take the AI over (claude, opencode, pi,
-// omp). Codex, Gemini and Antigravity use the tools only (design Spec issue 6).
+// launcher is one `partyline <harness>` command (HAR-03): the harness binary (named like the id)
+// and the arguments put before the user's. Every harness Partyline supports opens a live session, so
+// each can take the AI over (claude, opencode, pi, omp).
 type launcher struct {
 	id    string
-	bin   string
 	extra []string
-	live  bool
-	// hint is the one line printed when the session starts, for a harness whose messages do not arrive as
-	// they come in.
-	hint string
 }
 
-// binary is the program the launcher starts: bin, else the harness id.
-func (l launcher) binary() string {
-	if l.bin != "" {
-		return l.bin
-	}
-	return l.id
-}
+// binary is the program the launcher starts: the harness id.
+func (l launcher) binary() string { return l.id }
 
 // launchers are the harnesses `partyline <id>` starts, in the order --help lists them.
 var launchers = []launcher{
-	{id: "claude", extra: claudeChannelArgs, live: true},
-	{id: "opencode", live: true},
-	{id: "pi", live: true},
-	{id: "omp", live: true},
-	{id: "codex"},
-	{id: "gemini"},
-	{id: "antigravity", bin: "agy", hint: "messages arrive at the end of a turn, or while the session runs wait_for_messages"},
+	{id: "claude", extra: claudeChannelArgs},
+	{id: "opencode"},
+	{id: "pi"},
+	{id: "omp"},
 }
 
 // launcherAliases are other spellings of a launcher id.
-var launcherAliases = map[string]string{"claudecode": "claude", "claude-code": "claude", "agy": "antigravity"}
-
-// launcherCommand is the command that starts harness id (`partyline <command>`): the short one when
-// the launcher has its own binary name (agy for Antigravity), else the id.
-func launcherCommand(id string) string {
-	for _, l := range launchers {
-		if l.id == id && l.bin != "" {
-			return l.bin
-		}
-	}
-	return id
-}
+var launcherAliases = map[string]string{"claudecode": "claude", "claude-code": "claude"}
 
 // findLauncher returns the launcher a command name selects.
 func findLauncher(name string) (launcher, bool) {
@@ -184,7 +158,7 @@ func placementOf(opts launcherOptions, io stdio) launchPlacement {
 // the canonical folder it runs in, PARTYLINE_MAIN_FOLDER to the main worktree of a linked one (the
 // session resolves the AI of the repository from it, SESS-01; a --parent launch sets none, SESS-09) and
 // PARTYLINE_HARNESS to the harness id, which the session's partyline processes read so that the channel,
-// listen, the tools-only server and the hooks of one session act as the same AI (HAR-03, AID-07), and
+// listen and the tools-only server of one session act as the same AI (HAR-03, AID-07), and
 // PARTYLINE_AGENT set from --as to adopt that identity (MIG-02). What the AI asks for - --org,
 // --position and --parent, else PARTYLINE_ORG,
 // PARTYLINE_POSITION and PARTYLINE_PARENT - is consumed: those variables are removed from the harness's
@@ -193,12 +167,11 @@ func placementOf(opts launcherOptions, io stdio) launchPlacement {
 // variables the launcher itself inherited from a session it runs in are replaced, never read: a nested
 // launch is another AI. When a placement is asked for the server is asked first whether the start would
 // be refused, and a refusal is printed and exits 1 without starting anything. A harness that opens a
-// live session (claude, opencode, pi, omp) never asks anything: it starts as another session of the AI,
+// live session never asks anything: it starts as another session of the AI,
 // which the channel announces (SESS-15, SESS-16), or takes the AI over with PARTYLINE_TAKEOVER=1 when
 // --take-over or PARTYLINE_TAKEOVER=1 gave the consent (SESS-13), or makes the session the AI's principal
-// one with PARTYLINE_PRINCIPAL=1 when --principal or PARTYLINE_PRINCIPAL=1 asked for it (SESS-57). Codex, Gemini and Antigravity use the tools only
-// and only announce the live session. Without the binary it exits 127; when Partyline is not
-// registered in the harness it warns once and starts anyway.
+// one with PARTYLINE_PRINCIPAL=1 when --principal or PARTYLINE_PRINCIPAL=1 asked for it (SESS-57). Without the
+// binary it exits 127; when Partyline is not registered in the harness it warns once and starts anyway.
 func launch(ctx context.Context, l launcher, args []string, io stdio) int {
 	opts, err := launcherFlags(args)
 	if err != nil {
@@ -231,20 +204,9 @@ func launch(ctx context.Context, l launcher, args []string, io stdio) int {
 		fmt.Fprintln(io.stderr, projectIgnored(l.id))
 	}
 
-	takingOver, principal := false, false
-	if l.live {
-		principal = opts.principal || strings.TrimSpace(io.getenv(principalEnvVar)) == "1"
-		// Without --take-over the harness connects as another session: there is nothing to ask (SESS-16).
-		takingOver = opts.takeOver || strings.TrimSpace(io.getenv("PARTYLINE_TAKEOVER")) == "1"
-	} else {
-		if opts.principal {
-			fmt.Fprintf(io.stderr, "partyline %s: --principal is ignored: %s has no live session, only tools\n", l.id, title)
-		}
-		announceToolsOnly(lookup, io)
-	}
-	if l.hint != "" {
-		fmt.Fprintf(io.stderr, "partyline %s: %s\n", l.id, l.hint)
-	}
+	principal := opts.principal || strings.TrimSpace(io.getenv(principalEnvVar)) == "1"
+	// Without --take-over the harness connects as another session: there is nothing to ask (SESS-16).
+	takingOver := opts.takeOver || strings.TrimSpace(io.getenv("PARTYLINE_TAKEOVER")) == "1"
 
 	environ := io.environ
 	if environ == nil {
@@ -350,41 +312,6 @@ func launchMainFolder(folder, parent string) string {
 	return ""
 }
 
-// announceToolsOnly prints the one informational line of Codex, Gemini and Antigravity when the folder's AI
-// has a live session elsewhere (design Spec issue 6): those harnesses use the tools only, so
-// there is nothing to take over.
-func announceToolsOnly(lookup func() sessionLookup, io stdio) {
-	res := lookup()
-	state := res.state
-	if !res.ok || !state.Online {
-		return
-	}
-	fmt.Fprintf(io.stderr, "%s is also open in another session (%s); this session uses tools only\n",
-		sessionName(state), openWhere(state, io))
-}
-
-// openWhere describes the live session in the tools-only line's parentheses: its readable app and the
-// start in the person's local time.
-func openWhere(state dto.SessionState, io stdio) string {
-	since := time.Now()
-	if state.ConnectedAt != nil {
-		since = *state.ConnectedAt
-	}
-	loc := time.Local
-	if io.now != nil {
-		loc = io.now().Location()
-	}
-	return fmt.Sprintf("%s, since %s", agents.HarnessLabel(state.App), since.In(loc).Format("15:04"))
-}
-
-// sessionName is the AI's display name for the tools-only line.
-func sessionName(state dto.SessionState) string {
-	if state.Intelligence != nil && strings.TrimSpace(state.Intelligence.DisplayName) != "" {
-		return state.Intelligence.DisplayName
-	}
-	return "This intelligence"
-}
-
 // sessionLookup is what GET /agent/session told the launcher. ok is false when the launcher has no
 // credentials or the server could not answer, which starts the harness anyway. refusal is the
 // server's message when it refused the placement the launch asked for (403, 409 or 422), empty for any other
@@ -396,7 +323,7 @@ type sessionLookup struct {
 }
 
 // newSessionLookup returns the launch's one question to the server (ORG-05, SESS-06): the first call asks,
-// the others repeat the answer, so a placement check and the tools-only line share one request.
+// the others repeat the answer.
 func newSessionLookup(ctx context.Context, l launcher, as string, place launchPlacement, io stdio) func() sessionLookup {
 	var res sessionLookup
 	asked := false

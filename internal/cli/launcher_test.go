@@ -35,7 +35,6 @@ type launchMachine struct {
 	hostname string
 	cwd      string
 	onPath   map[string]bool
-	codex    bool // `codex mcp get partyline` finds the server
 	environ  []string
 	getenv   map[string]string
 	// input is an answer a launch must never read any more (SESS-16); terminals lists the file
@@ -119,12 +118,6 @@ func (m *launchMachine) register(t *testing.T, id string) {
 	switch id {
 	case "claude":
 		write(".claude.json", `{"mcpServers":{"partyline":{"command":"`+launchBinary+`","args":["channel"]}}}`)
-	case "gemini":
-		write(".gemini/settings.json", `{"mcpServers":{"partyline":{"command":"`+launchBinary+`","args":["channel","--tools-only"]}}}`)
-	case "codex":
-		m.codex = true
-	case "antigravity":
-		write(".gemini/config/mcp_config.json", `{"mcpServers":{"partyline":{"command":"`+launchBinary+`","args":["channel","--tools-only","--harness","antigravity"],"disabled":false}}}`)
 	default: // the file harnesses write their own entry
 		env := harness.Env{Home: m.home, Binary: launchBinary, Version: "dev", Getenv: func(string) string { return "" }}
 		for _, r := range harness.All(env) {
@@ -172,15 +165,8 @@ func (m *launchMachine) run(t *testing.T, args ...string) launchRun {
 			return "", errors.New("not found")
 		},
 		runHarness: func(_ context.Context, name string, a ...string) ([]byte, error) {
-			line := name + " " + strings.Join(a, " ")
-			if line != "codex mcp get partyline --json" {
-				t.Errorf("unexpected harness CLI call: %s", line)
-				return nil, errors.New("unexpected")
-			}
-			if m.codex {
-				return []byte(`{"name":"partyline","transport":{"type":"stdio","command":"` + launchBinary + `"}}`), nil
-			}
-			return []byte("Error: No MCP server named 'partyline' found."), errors.New("exit status 1")
+			t.Errorf("unexpected harness CLI call: %s %s", name, strings.Join(a, " "))
+			return nil, errors.New("unexpected")
 		},
 		binaryVersion: func(_ context.Context, path string) (string, error) {
 			if m.version == nil {
@@ -225,8 +211,6 @@ func TestLaunchersExecTheHarness(t *testing.T) {
 		{"opencode", "opencode", []string{"opencode", "--resume", "abc", "-p", "hi there", "--", "--help"}},
 		{"pi", "pi", []string{"pi", "--resume", "abc", "-p", "hi there", "--", "--help"}},
 		{"omp", "omp", []string{"omp", "--resume", "abc", "-p", "hi there", "--", "--help"}},
-		{"codex", "codex", []string{"codex", "--resume", "abc", "-p", "hi there", "--", "--help"}},
-		{"gemini", "gemini", []string{"gemini", "--resume", "abc", "-p", "hi there", "--", "--help"}},
 	}
 	for _, c := range cases {
 		t.Run(c.command, func(t *testing.T) {
@@ -267,8 +251,6 @@ func TestLauncherWithoutTheHarness(t *testing.T) {
 		"opencode":    "partyline opencode: OpenCode is not installed (install it, then run partyline setup)\n",
 		"pi":          "partyline pi: pi is not installed (install it, then run partyline setup)\n",
 		"omp":         "partyline omp: oh-my-pi (omp) is not installed (install it, then run partyline setup)\n",
-		"codex":       "partyline codex: Codex CLI is not installed (install it, then run partyline setup)\n",
-		"gemini":      "partyline gemini: Gemini CLI is not installed (install it, then run partyline setup)\n",
 	}
 	for command, want := range cases {
 		t.Run(command, func(t *testing.T) {
@@ -290,8 +272,6 @@ func TestLauncherWarnsWhenNotRegistered(t *testing.T) {
 		"opencode": "partyline opencode: Partyline is not registered in OpenCode; run partyline setup --harness opencode. Starting anyway.\n",
 		"pi":       "partyline pi: Partyline is not registered in pi; run partyline setup --harness pi. Starting anyway.\n",
 		"omp":      "partyline omp: Partyline is not registered in oh-my-pi (omp); run partyline setup --harness omp. Starting anyway.\n",
-		"codex":    "partyline codex: Partyline is not registered in Codex CLI; run partyline setup --harness codex. Starting anyway.\n",
-		"gemini":   "partyline gemini: Partyline is not registered in Gemini CLI; run partyline setup --harness gemini. Starting anyway.\n",
 	}
 	for id, want := range cases {
 		t.Run(id, func(t *testing.T) {
@@ -392,9 +372,10 @@ func TestHelpListsTheLaunchers(t *testing.T) {
 				"  claude [args...]       Claude Code with the Partyline channel loaded (also: claudecode, claude-code)\n"+
 				"  opencode [args...]     OpenCode\n"+
 				"  pi [args...]           pi\n"+
-				"  omp [args...]          oh-my-pi\n"+
-				"  codex [args...]        Codex CLI\n"+
-				"  gemini [args...]       Gemini CLI\n")
+				"  omp [args...]          oh-my-pi\n")
+			for _, removed := range []string{"codex", "gemini", "agy", "Codex", "Gemini", "Antigravity", "wait_for_messages", "partyline hook"} {
+				require.NotContains(t, out.String(), removed)
+			}
 		})
 	}
 }
@@ -571,38 +552,6 @@ func TestLauncherGivesUpOnASlowServer(t *testing.T) {
 	require.NotContains(t, r.env, "PARTYLINE_TAKEOVER=1")
 	require.GreaterOrEqual(t, elapsed, 1900*time.Millisecond, "the launcher waited for the 2 s timeout")
 	require.Less(t, elapsed, 10*time.Second, "the launcher did not wait much longer than 2 s")
-}
-
-// Spec issue 6: Codex and Gemini open no live session, so their launchers never take over; they
-// print one informational line when the AI is live elsewhere and start.
-func TestToolsOnlyLaunchersAnnounceTheLiveSession(t *testing.T) {
-	since := time.Date(2026, 10, 21, 12, 30, 0, 0, time.UTC)
-	const want = "Atlas is also open in another session (Claude Code, since "
-	for _, command := range []string{"codex", "gemini"} {
-		for _, takeOver := range []bool{false, true} {
-			name := command
-			if takeOver {
-				name += " with --take-over"
-			}
-			t.Run(name, func(t *testing.T) {
-				m := newLaunchMachine(t)
-				m.onPath[command] = true
-				m.register(t, command)
-				m.terminals = map[int]bool{0: true, 2: true}
-				m.answerSession(t, sessionState("Atlas", "claude", since), nil)
-				args := []string{command}
-				if takeOver {
-					args = append(args, "--take-over")
-				}
-
-				r := m.run(t, args...)
-				require.Equal(t, 7, r.code, r.stderr)
-				require.True(t, r.execed, "the tools-only session starts")
-				require.Equal(t, want+since.In(time.Local).Format("15:04")+"); this session uses tools only\n", r.stderr)
-				require.NotContains(t, r.env, "PARTYLINE_TAKEOVER=1", "a tools-only session takes nothing over")
-			})
-		}
-	}
 }
 
 // SESS-13, SESS-16: --take-over is the whole consent: the launcher starts the harness with
@@ -864,13 +813,13 @@ func TestBinaryMajor(t *testing.T) {
 }
 
 // SESS-45: a launch gives its pi or OpenCode session a new live id and never hands on the one of the
-// session it runs in; Claude Code, Codex and Gemini get none, whatever they inherit.
+// session it runs in; Claude Code and omp get none, whatever they inherit.
 func TestLauncherNeverHandsOnAnotherSessionsLiveID(t *testing.T) {
 	inherited := liveEnvVar + "=999:AAAAAAAAAAAAAAAAAAAAAA"
 	for _, tc := range []struct {
 		command string
 		wantOwn bool
-	}{{"pi", true}, {"opencode", true}, {"claude", false}, {"codex", false}, {"gemini", false}, {"omp", false}} {
+	}{{"pi", true}, {"opencode", true}, {"claude", false}, {"omp", false}} {
 		t.Run(tc.command, func(t *testing.T) {
 			m := newLaunchMachine(t)
 			m.environ = append(m.environ, inherited)
@@ -893,76 +842,26 @@ func TestLauncherNeverHandsOnAnotherSessionsLiveID(t *testing.T) {
 	}
 }
 
-// HAR-03 (Antigravity): `partyline agy` and `partyline antigravity` start the `agy` binary with the user's
-// arguments unchanged and PARTYLINE_HARNESS=antigravity (the id the server knows), no live id; without agy on
-// PATH they exit 127 naming Antigravity, and without a registration they warn with the harness id.
-func TestAntigravityLauncher(t *testing.T) {
-	require.Equal(t, "partyline antigravity: messages arrive at the end of a turn, or while the session runs wait_for_messages\n", antigravityHint)
-	user := []string{"--continue", "--dangerously-skip-permissions", "--add-dir", "/work/other", "-i", "hi there"}
-	for _, command := range []string{"agy", "antigravity"} {
+// AD-035: Codex, Gemini and Antigravity are no longer supported. Their launchers are gone: `partyline codex`,
+// `gemini`, `agy` and `antigravity` say so in one line, point at the supported harnesses and at setup, start
+// nothing and exit 2, even with the harness installed.
+func TestRemovedHarnessLaunchersSayTheyAreGone(t *testing.T) {
+	titles := map[string]string{"codex": "Codex", "gemini": "Gemini", "agy": "Antigravity", "antigravity": "Antigravity"}
+	for command, title := range titles {
 		t.Run(command, func(t *testing.T) {
 			m := newLaunchMachine(t)
-			m.onPath["agy"] = true
-			m.register(t, "antigravity")
-
-			r := m.run(t, append([]string{command}, user...)...)
-			require.Equal(t, 7, r.code, r.stderr)
-			require.Equal(t, antigravityHint, r.stderr, "one hint line, nothing else")
-			require.True(t, r.execed)
-			require.Equal(t, "/usr/local/bin/agy", r.path)
-			require.Equal(t, append([]string{"agy"}, user...), r.argv)
-			require.Equal(t, []string{"HOME=" + m.home, "PATH=/usr/local/bin:/usr/bin", "LANG=C.UTF-8", "PARTYLINE_FOLDER=/work/acme", "PARTYLINE_HARNESS=antigravity"}, r.env)
+			m.onPath[command] = true
+			r := m.run(t, command, "--resume", "abc")
+			require.Equal(t, 2, r.code)
+			require.False(t, r.execed, "nothing starts")
+			require.Equal(t, "partyline "+command+": "+title+" is no longer supported by Partyline: it has no live channel and no parallel sessions. "+
+				"Use Claude Code, pi, OpenCode or omp (partyline claude|pi|opencode|omp); run partyline setup to remove the old "+title+" setup.\n", r.stderr)
 		})
-
-		t.Run(command+" without agy", func(t *testing.T) {
-			m := newLaunchMachine(t)
-			r := m.run(t, command, "--version")
-			require.Equal(t, 127, r.code)
-			require.Equal(t, "partyline antigravity: Antigravity is not installed (install it, then run partyline setup)\n", r.stderr)
-			require.False(t, r.execed)
-		})
-
-		t.Run(command+" not registered", func(t *testing.T) {
-			m := newLaunchMachine(t)
-			m.onPath["agy"] = true
-			r := m.run(t, command)
-			require.Equal(t, "partyline antigravity: Partyline is not registered in Antigravity; run partyline setup --harness antigravity. Starting anyway.\n"+antigravityHint, r.stderr)
-			require.True(t, r.execed)
-		})
-	}
-}
-
-// Spec issue 6: Antigravity opens no live session either: its launcher never takes over and prints the
-// informational line when the AI is live elsewhere.
-func TestAntigravityLauncherAnnouncesTheLiveSession(t *testing.T) {
-	since := time.Date(2026, 10, 21, 12, 30, 0, 0, time.UTC)
-	m := newLaunchMachine(t)
-	m.onPath["agy"] = true
-	m.register(t, "antigravity")
-	m.terminals = map[int]bool{0: true, 2: true}
-	m.answerSession(t, sessionState("Atlas", "claude", since), nil)
-
-	r := m.run(t, "agy", "--take-over")
-	require.Equal(t, 7, r.code, r.stderr)
-	require.True(t, r.execed)
-	require.Equal(t, "Atlas is also open in another session (Claude Code, since "+since.In(time.Local).Format("15:04")+"); this session uses tools only\n"+antigravityHint, r.stderr)
-	require.NotContains(t, r.env, "PARTYLINE_TAKEOVER=1")
-	require.Empty(t, envValues(r.env, liveEnvVar))
-}
-
-// antigravityHint is the line `partyline agy` prints at start; the other launchers print none.
-const antigravityHint = "partyline antigravity: messages arrive at the end of a turn, or while the session runs wait_for_messages\n"
-
-// The hint is Antigravity's alone: Claude Code, pi, OpenCode, omp, Codex and Gemini start silent.
-func TestOnlyAntigravityLauncherPrintsAHint(t *testing.T) {
-	for _, l := range launchers {
-		require.Equal(t, l.id == "antigravity", l.hint != "", l.id)
 	}
 }
 
 // SESS-57: --principal (among the leading flags) and PARTYLINE_PRINCIPAL=1 make the launch ask for the
-// principal role: the session's processes get PARTYLINE_PRINCIPAL=1 and the harness never sees the flag. A
-// harness with no live session says the flag does nothing.
+// principal role: the session's processes get PARTYLINE_PRINCIPAL=1 and the harness never sees the flag.
 func TestLauncherAsksForThePrincipalRole(t *testing.T) {
 	for name, setup := range map[string]func(m *launchMachine){
 		"flag": func(m *launchMachine) { m.getenv = map[string]string{} },

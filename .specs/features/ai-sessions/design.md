@@ -965,7 +965,6 @@ have to change), and the same path handles a process that never comes back: the 
 | pi | `ctx.sessionManager.getSessionId()` in the extension, passed to `listen` as `PARTYLINE_HARNESS_SESSION` | read defensively (an absent or malformed id is none); not verifiable without pi in the build environment |
 | OpenCode | none | one `listen` per plugin instance serves whichever conversation is active, so no id names the listener |
 | omp | none | the channel is started by omp from `mcp.json`; `PARTYLINE_HARNESS_SESSION` is honoured if a wrapper sets it |
-| Codex, Gemini, Antigravity | none | tools only, no live session |
 
 ### Tests
 
@@ -1001,7 +1000,7 @@ the docs task (T13) updates.
 
 ## Proposal: polled sessions for tools-only harnesses (not built)
 
-Status: proposal, 2026-10-28, from the Antigravity (`agy`) field test. Nothing here is implemented.
+Status: proposal, 2026-10-28, from the Antigravity (`agy`) field test. Nothing here is implemented, and it is dropped: Codex, Gemini and Antigravity are no longer supported (AD-035).
 
 **The gap.** A session of a tools-only harness (Codex, Gemini, Antigravity) holds no socket. Opened in the
 folder of an AI whose principal is live elsewhere, it cannot become a labelled parallel session like pi,

@@ -28,13 +28,8 @@ describe("connect an agent (WIZ-01)", () => {
     { tab: "OpenCode", start: "partyline opencode" },
     { tab: "pi", start: "partyline pi" },
     { tab: "omp", start: "partyline omp" },
-    { tab: "Codex", start: "partyline codex" },
-    { tab: "Gemini", start: "partyline gemini" },
-    { tab: "Antigravity", start: "partyline agy" },
   ];
   const PUSH = "Room messages arrive in the running session as they come in.";
-  const TURN_END =
-    "Messages arrive when it finishes its current turn, or when it calls wait_for_messages.";
 
   async function openWizard(routes: Parameters<typeof mockApi>[0] = {}) {
     const api = mockApi({
@@ -83,10 +78,23 @@ describe("connect an agent (WIZ-01)", () => {
       await user.click(within(tabs).getByRole("tab", { name: h.tab }));
       const panel = within(dialog).getByRole("tabpanel");
       expect(code(panel, "Start command")).toBe(h.start);
-      const turnEnd = h.tab === "Codex" || h.tab === "Gemini" || h.tab === "Antigravity";
-      expect(within(panel).getByText(turnEnd ? TURN_END : PUSH)).toBeInTheDocument();
-      expect(within(panel).queryByText(turnEnd ? PUSH : TURN_END)).toBeNull();
+      expect(within(panel).getByText(PUSH)).toBeInTheDocument();
     }
+  });
+
+  it("offers only the four harnesses with a live channel (AD-035)", async () => {
+    const { dialog } = await openWizard();
+    const tabs = within(dialog).getByRole("tablist", { name: "Harness" });
+    const names = within(tabs)
+      .getAllByRole("tab")
+      .map((tab) => tab.textContent);
+    expect(names).toEqual(["Claude Code", "OpenCode", "pi", "omp"]);
+    for (const gone of ["Codex", "Gemini", "Antigravity"]) {
+      expect(within(tabs).queryByRole("tab", { name: gone })).toBeNull();
+    }
+    expect(dialog.textContent).not.toMatch(
+      /wait_for_messages|partyline codex|partyline gemini|partyline agy/,
+    );
   });
 
   it("explains Claude Code's channel confirmation with a link to its guide", async () => {
@@ -128,17 +136,8 @@ describe("connect an agent (WIZ-01)", () => {
     expect(JSON.parse(code(dialog, "~/.omp/agent/mcp.json"))).toEqual({
       mcpServers: { partyline: { command: "partyline", args: ["channel", "--harness", "omp"] } },
     });
-    await user.click(within(tabs).getByRole("tab", { name: "Codex" }));
-    expect(code(dialog, "~/.codex/config.toml")).toBe(
-      '[mcp_servers.partyline]\ncommand = "partyline"\nargs = ["channel", "--tools-only"]',
-    );
-    await user.click(within(tabs).getByRole("tab", { name: "Gemini" }));
-    const gemini = code(dialog, "~/.gemini/settings.json");
-    expect(JSON.parse(gemini)).toEqual({
-      mcpServers: { partyline: { command: "partyline", args: ["channel", "--tools-only"] } },
-    });
     // No credential is ever inlined in a manual entry.
-    for (const text of [JSON.stringify(claude), gemini]) {
+    for (const text of [JSON.stringify(claude), code(dialog, "~/.omp/agent/mcp.json")]) {
       expect(text).not.toMatch(/token|PARTYLINE_|pl_agent|https?:/i);
     }
     expect(within(dialog).getByText("partyline setup --token").tagName).toBe("CODE");

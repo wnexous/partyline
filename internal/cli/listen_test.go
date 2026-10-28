@@ -230,7 +230,7 @@ func TestListenRefusesConfigFileNot0600(t *testing.T) {
 // folder is created by its first call, never comes online, and messages are not pushed to it.
 func TestChannelToolsOnlyOpensNoSocket(t *testing.T) {
 	e := newChannelEnv(t)
-	c := startChannel(t, []string{"--tools-only"}, e.launched("codex"), "/work/codex-box")
+	c := startChannel(t, []string{"--tools-only"}, e.launched("pi"), "/work/pi-box")
 	initialize(c)
 	callListRooms := func(id int) string {
 		t.Helper()
@@ -244,7 +244,7 @@ func TestChannelToolsOnlyOpensNoSocket(t *testing.T) {
 
 	require.Empty(t, e.folders(t), "nothing is created before a tool is called")
 	callListRooms(5)
-	agent := e.registered(t, "/work/codex-box")
+	agent := e.registered(t, "/work/pi-box")
 	room := e.room(t, dto.CreateRoomRequest{Name: "Builds"}, agent.ID)
 	require.Contains(t, callListRooms(6), "Builds")
 

@@ -71,8 +71,8 @@ func TestAParallelSessionOfTheSameFolderReceivesOnlyWhatAddressesIt(t *testing.T
 
 // SESS-46: the tools half of pi and OpenCode holds no socket; its messages are pushed by the listen
 // process. When the principal is not live but a parallel session is, it must not read (and thereby
-// take) the principal's queue: a plain message stays for the principal. Codex and Gemini, which have no
-// listen process, keep reading it. With the live id of the parallel session it is that session: empty.
+// take) the principal's queue: a plain message stays for the principal. A harness that is not one of them keeps
+// reading it. With the live id of the parallel session it is that session: empty.
 func TestTheToolsHalfOfAListenHarnessNeverTakesThePrincipalsQueue(t *testing.T) {
 	f := newSessionFixture(t)
 	principal, _, _, s := f.sameFolderPair(t)
@@ -93,9 +93,9 @@ func TestTheToolsHalfOfAListenHarnessNeverTakesThePrincipalsQueue(t *testing.T) 
 	require.Equal(t, http.StatusOK, asSession.Status, asSession.Body)
 	require.Empty(t, testkit.Decode[dto.List[dto.AgentMessage]](asSession).Items)
 
-	codex := tools
-	codex.Harness = "codex"
-	r = f.token.AsFolder(codex).Get("/api/v1/agent/pending")
+	other := tools
+	other.Harness = "omp"
+	r = f.token.AsFolder(other).Get("/api/v1/agent/pending")
 	require.Equal(t, http.StatusOK, r.Status, r.Body)
 	items := testkit.Decode[dto.List[dto.AgentMessage]](r).Items
 	require.Len(t, items, 1)

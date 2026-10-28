@@ -696,7 +696,7 @@ func TestToolUpdateProfileOnlyChangesTheCallingAI(t *testing.T) {
 	c.carol.Get("/api/v1/intelligences/"+c.agentID).RequireError(http.StatusNotFound, dto.ErrorCodeNotFound)
 }
 
-// AID-04 with the new tools: the tools-only server (Codex, Gemini, the tools half of pi and
+// AID-04 with the new tools: the tools-only server (the tools half of pi and
 // OpenCode) lists them and runs them as the AI of its folder without a live session of its own.
 func TestToolsOnlyServerRunsTheConversationTools(t *testing.T) {
 	c := newCast(t)

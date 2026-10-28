@@ -20,7 +20,7 @@ var (
 func testItems() []MenuItem {
 	return []MenuItem{
 		{Title: "Claude Code", Installed: true, Registered: false, Selected: true},
-		{Title: "Codex CLI", Installed: true, Registered: true},
+		{Title: "OpenCode", Installed: true, Registered: true},
 		{Title: "pi", Installed: false},
 	}
 }
@@ -70,7 +70,7 @@ func TestMenuKeys(t *testing.T) {
 func TestMenuAllLeavesItemsThatAreNotInstalledAsTheyWere(t *testing.T) {
 	items := []MenuItem{
 		{Title: "Claude Code", Installed: true},
-		{Title: "Codex CLI"},
+		{Title: "OpenCode"},
 		{Title: "pi", Registered: true, Selected: true},
 	}
 	selected, ok, _ := runMenu(t, items, "a\r", 80)
@@ -80,7 +80,7 @@ func TestMenuAllLeavesItemsThatAreNotInstalledAsTheyWere(t *testing.T) {
 	selected, _, _ = runMenu(t, items, "aa\r", 80)
 	require.Equal(t, []bool{false, false, true}, selected, "a again clears the installed items only")
 
-	selected, _, _ = runMenu(t, []MenuItem{{Title: "Codex CLI"}, {Title: "pi", Registered: true, Selected: true}}, "a\r", 80)
+	selected, _, _ = runMenu(t, []MenuItem{{Title: "OpenCode"}, {Title: "pi", Registered: true, Selected: true}}, "a\r", 80)
 	require.Equal(t, []bool{false, true}, selected, "nothing is installed: a changes nothing")
 }
 
@@ -160,7 +160,7 @@ func TestMenuRendersRowsAndPreSelection(t *testing.T) {
 	rows := menuRows(out)
 	require.Len(t, rows, 3)
 	require.Equal(t, "> [x] Claude Code  installed · not registered", rows[0])
-	require.Equal(t, "  [ ] Codex CLI  installed · registered", rows[1])
+	require.Equal(t, "  [ ] OpenCode  installed · registered", rows[1])
 	require.Equal(t, "  [ ] pi  not installed · not registered", rows[2])
 }
 
@@ -194,7 +194,7 @@ func TestMenuRedrawsWithANSISequences(t *testing.T) {
 func TestMenuNarrowWidthOneRowPerItem(t *testing.T) {
 	items := []MenuItem{
 		{Title: "Claude Code", Installed: true, Registered: true, Selected: true},
-		{Title: "Codex CLI", Installed: true, Registered: false},
+		{Title: "OpenCode", Installed: true, Registered: false},
 		{Title: "OpenCode", Installed: false, Registered: false},
 	}
 	_, ok, out := runMenu(t, items, "\r", 30)
@@ -202,7 +202,7 @@ func TestMenuNarrowWidthOneRowPerItem(t *testing.T) {
 	rows := menuRows(out)
 	require.Len(t, rows, len(items))
 	require.True(t, strings.HasPrefix(rows[0], "> [x] Claude Code"))
-	require.True(t, strings.HasPrefix(rows[1], "  [ ] Codex CLI"))
+	require.True(t, strings.HasPrefix(rows[1], "  [ ] OpenCode"))
 	require.True(t, strings.HasPrefix(rows[2], "  [ ] OpenCode"))
 	for _, row := range rows {
 		require.LessOrEqual(t, len([]rune(row)), 30, "row %q is wider than the terminal", row)

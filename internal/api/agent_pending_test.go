@@ -20,18 +20,18 @@ import (
 type pendingEnv struct {
 	env    *testkit.Env
 	alice  *testkit.Client
-	agent  *testkit.Client // agent token acting as the AI of the folder /work/codex-box
+	agent  *testkit.Client // agent token acting as the AI of the folder /work/tools-box
 	room   dto.Room
 	id     string // the agent's id
 	member string // its room member id
 }
 
-// newPendingEnv registers codex-box over REST (no WebSocket) and makes it a member of a room.
+// newPendingEnv registers tools-box over REST (no WebSocket) and makes it a member of a room.
 func newPendingEnv(t *testing.T) pendingEnv {
 	t.Helper()
 	env := testkit.New(t)
 	alice := env.NewUser("alice")
-	agent := alice.Token(dto.TokenKindAgent, "laptop").AsAgent("codex-box")
+	agent := alice.Token(dto.TokenKindAgent, "laptop").AsAgent("tools-box")
 	info := testkit.Decode[dto.AgentInfo](agent.Post("/api/v1/agent/register", nil).RequireStatus(http.StatusOK))
 	room := testkit.Decode[dto.Room](alice.Post("/api/v1/rooms", dto.CreateRoomRequest{Name: "Builds"}).RequireStatus(http.StatusCreated))
 	member := testkit.Decode[dto.RoomMember](alice.Post("/api/v1/rooms/"+room.ID+"/members", dto.AddMemberRequest{Kind: dto.MemberKindAgent, MemberID: info.ID}).RequireStatus(http.StatusCreated))
@@ -98,10 +98,10 @@ func TestAgentPendingFollowsDeliveryMode(t *testing.T) {
 // the second call does not return it again.
 func TestAgentPendingReturnsAFallbackOnce(t *testing.T) {
 	e := newPendingEnv(t)
-	conn, resp := e.agent.DialAgent("codex-box")
+	conn, resp := e.agent.DialAgent("tools-box")
 	require.NotNil(t, conn, "upgrade refused: %d", resp.Status)
 	conn.Welcome(wsWait)
-	m := e.post(t, "@codex-box:claude-2 hello")
+	m := e.post(t, "@tools-box:claude-2 hello")
 	got := conn.Message(wsWait)
 	require.Equal(t, m.ID, got.Message.ID)
 	require.Equal(t, "claude-2", got.ForLabel, "the principal reads the note")
@@ -118,14 +118,14 @@ func TestAgentPendingReturnsAFallbackOnce(t *testing.T) {
 // SESS-24: a delivery row still owned by a live label is not in the principal's pending queue.
 func TestAgentPendingSkipsAPendingLabelsMessage(t *testing.T) {
 	e := newPendingEnv(t)
-	principal, resp := e.agent.DialAgent("codex-box")
+	principal, resp := e.agent.DialAgent("tools-box")
 	require.NotNil(t, principal, "upgrade refused: %d", resp.Status)
 	principal.Welcome(wsWait)
-	parallel, resp := e.agent.DialAgent("codex-box")
+	parallel, resp := e.agent.DialAgent("tools-box")
 	require.NotNil(t, parallel, "upgrade refused: %d", resp.Status)
 	require.Equal(t, "claude-2", parallel.Welcome(wsWait).Session.Label)
 
-	m := e.post(t, "@codex-box:claude-2 hello")
+	m := e.post(t, "@tools-box:claude-2 hello")
 	require.Equal(t, m.ID, parallel.Message(wsWait).Message.ID)
 	a, err := e.env.App.Agents.ByID(context.Background(), e.id)
 	require.NoError(t, err)
@@ -173,7 +173,7 @@ func TestAgentPendingRejectsBadWait(t *testing.T) {
 // takes nothing.
 func TestAgentPendingRefusesPushedSessions(t *testing.T) {
 	e := newPendingEnv(t)
-	conn, resp := e.agent.DialAgent("codex-box")
+	conn, resp := e.agent.DialAgent("tools-box")
 	require.NotNil(t, conn, "upgrade refused: %d", resp.Status)
 	conn.Welcome(wsWait)
 	err := e.agent.Get("/api/v1/agent/pending").RequireError(http.StatusConflict, dto.ErrorCodeConflict)
@@ -190,7 +190,7 @@ func TestAgentPendingAuth(t *testing.T) {
 	require.Empty(t, fresh.Items)
 	require.Len(t, ownedAIs(t, e.alice), before+1, "the call created the AI of the unseen folder")
 	e.alice.Token(dto.TokenKindUser, "cli").Get("/api/v1/agent/pending").RequireError(http.StatusForbidden, dto.ErrorCodeForbidden)
-	e.env.Anon().AsAgent("codex-box").Get("/api/v1/agent/pending").RequireError(http.StatusUnauthorized, dto.ErrorCodeUnauthorized)
+	e.env.Anon().AsAgent("tools-box").Get("/api/v1/agent/pending").RequireError(http.StatusUnauthorized, dto.ErrorCodeUnauthorized)
 }
 
 // worktreePendingEnv is an AI of /repo with a live principal session, a room, and the tools-only

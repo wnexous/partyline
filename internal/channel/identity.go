@@ -28,7 +28,7 @@ type Identity struct {
 	MainFolder string
 	// Home is the canonical home folder of the user; the tree shows folders under it as "~".
 	Home string
-	// Harness is the harness id (claude, opencode, pi, omp, codex, gemini, antigravity); empty is unknown.
+	// Harness is the harness id (claude, opencode, pi, omp); empty is unknown.
 	Harness string
 	// LiveID is the id of the process that holds the agent WebSocket, sent as X-Partyline-Live on
 	// every call so the server can record the session a message came from (SESS-29). Empty for a
@@ -113,3 +113,8 @@ func NewLiveID() string {
 	}
 	return base64.RawURLEncoding.EncodeToString(b[:])
 }
+
+// isLinkedWorktree is whether the process runs in a linked git worktree: it sent a main folder
+// different from its own (SESS-01). Only a tools-only process there, without a listen process, has no live
+// channel (SESS-06).
+func isLinkedWorktree(id Identity) bool { return id.MainFolder != "" && id.MainFolder != id.Folder }

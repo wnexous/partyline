@@ -11,19 +11,19 @@ import (
 	"github.com/wnexous/partyline/internal/testkit"
 )
 
-// DM-05, TURN-01: an AI whose session holds no socket (a tools-only harness such as Antigravity)
+// DM-05, TURN-01: an AI whose session holds no socket (a tools-only call, no WebSocket)
 // talks to an AI with a live principal in a DM: the message it writes - the first one and the reply
 // to a message it was sent - reaches the principal over its socket,
 // tools-only AI at its next pending read.
 func TestToolsOnlyAIsDMReachesTheLivePrincipal(t *testing.T) {
 	f := newAIEnv(t)
-	agy := testkit.Folder{Machine: testkit.Machine, Path: "/work/agy", Harness: "antigravity"}
-	agyTok := f.aliceTok.AsFolder(agy)
+	tools := testkit.Folder{Machine: testkit.Machine, Path: "/work/tools", Harness: "omp"}
+	toolsTok := f.aliceTok.AsFolder(tools)
 	atlas, resp := f.aliceTok.DialAgent("atlas")
 	require.NotNil(t, atlas, "upgrade refused: %d %s", resp.Status, resp.Body)
 	atlasID := atlas.Welcome(wsWait).Agent.ID
 
-	first := testkit.Decode[dto.Message](sendDM(agyTok, atlasID, "hello from agy").RequireStatus(http.StatusCreated))
+	first := testkit.Decode[dto.Message](sendDM(toolsTok, atlasID, "hello from tools").RequireStatus(http.StatusCreated))
 	got := atlas.Message(wsWait)
 	require.Equal(t, first.ID, got.Message.ID, "the tools-only AI's DM reaches the principal's socket")
 	require.Equal(t, dto.ConversationKindDM, got.Room.Kind)
@@ -32,12 +32,12 @@ func TestToolsOnlyAIsDMReachesTheLivePrincipal(t *testing.T) {
 	// The principal answers; the tools-only AI reads it at its next pending call.
 	answer := testkit.Decode[dto.Message](f.aliceTok.AsAgent("atlas").
 		Post("/api/v1/agent/messages/"+first.ID+"/reply", dto.ReplyRequest{Text: "welcome"}).RequireStatus(http.StatusCreated))
-	pending := testkit.Decode[dto.List[dto.AgentMessage]](agyTok.Get("/api/v1/agent/pending").RequireStatus(http.StatusOK))
+	pending := testkit.Decode[dto.List[dto.AgentMessage]](toolsTok.Get("/api/v1/agent/pending").RequireStatus(http.StatusOK))
 	require.Len(t, pending.Items, 1)
 	require.Equal(t, answer.ID, pending.Items[0].Message.ID)
 
 	// The tools-only AI replies to that message with the reply tool; the principal hears it.
-	reply := testkit.Decode[dto.Message](agyTok.
+	reply := testkit.Decode[dto.Message](toolsTok.
 		Post("/api/v1/agent/messages/"+answer.ID+"/reply", dto.ReplyRequest{Text: "thanks"}).RequireStatus(http.StatusCreated))
 	back := atlas.Message(wsWait)
 	require.Equal(t, reply.ID, back.Message.ID, "the reply reaches the principal")
@@ -49,7 +49,7 @@ func TestToolsOnlyAIsDMReachesTheLivePrincipal(t *testing.T) {
 // is not the principal.
 func TestToolsOnlyAIsDMWaitsForThePrincipalWhenOnlyAParallelSessionIsLive(t *testing.T) {
 	f := newAIEnv(t)
-	agyTok := f.aliceTok.AsFolder(testkit.Folder{Machine: testkit.Machine, Path: "/work/agy", Harness: "antigravity"})
+	toolsTok := f.aliceTok.AsFolder(testkit.Folder{Machine: testkit.Machine, Path: "/work/tools", Harness: "omp"})
 	principal, resp := f.aliceTok.DialAgent("atlas")
 	require.NotNil(t, principal, "upgrade refused: %d %s", resp.Status, resp.Body)
 	atlasID := principal.Welcome(wsWait).Agent.ID
@@ -62,7 +62,7 @@ func TestToolsOnlyAIsDMWaitsForThePrincipalWhenOnlyAParallelSessionIsLive(t *tes
 		return len(s.Sessions) == 1 && s.Sessions[0].Label != ""
 	}, wsWait, 20*time.Millisecond, "only the parallel session is left")
 
-	dm := testkit.Decode[dto.Message](sendDM(agyTok, atlasID, "are you there?").RequireStatus(http.StatusCreated))
+	dm := testkit.Decode[dto.Message](sendDM(toolsTok, atlasID, "are you there?").RequireStatus(http.StatusCreated))
 	parallel.ExpectNone(300 * time.Millisecond)
 
 	again, resp := f.aliceTok.DialAgent("atlas")

@@ -1,5 +1,5 @@
 import { Link } from "@tanstack/react-router";
-import { ArrowUpRightIcon, ChevronRightIcon, HourglassIcon, RadioTowerIcon } from "lucide-react";
+import { ArrowUpRightIcon, ChevronRightIcon, RadioTowerIcon } from "lucide-react";
 import { type ReactNode, useEffect, useState } from "react";
 import { useMe } from "@/entities/account";
 import { onlineOf, useAgents, usePresenceStore } from "@/entities/intelligence";
@@ -130,13 +130,11 @@ function Wizard({ onDone }: { onDone: () => void }) {
 /** One line on how room messages reach a session of this harness. */
 function Expectation({ harness }: { harness: Harness }) {
   const t = useT();
-  const push = harness.delivery === "push";
-  const Icon = push ? RadioTowerIcon : HourglassIcon;
   return (
     <div className="space-y-1.5 text-xs">
       <p className="flex gap-2">
-        <Icon className="mt-px size-3.5 shrink-0 text-foreground" aria-hidden="true" />
-        <span>{push ? t("connect.push") : t("connect.turnEnd")}</span>
+        <RadioTowerIcon className="mt-px size-3.5 shrink-0 text-foreground" aria-hidden="true" />
+        <span>{t("connect.push")}</span>
       </p>
       {harness.id === "claude" ? (
         <p>
@@ -169,11 +167,7 @@ function Advanced({ harness }: { harness: Harness }) {
         </p>
         <CodeBlock label={harness.manual.file} value={harness.manual.entry} />
         <p className="text-xs">
-          {harness.id === "claude"
-            ? t("connect.advancedClaude")
-            : harness.delivery === "push"
-              ? t("connect.advancedPush")
-              : t("connect.advancedTurn")}
+          {harness.id === "claude" ? t("connect.advancedClaude") : t("connect.advancedPush")}
         </p>
         <p className="text-xs">
           <WithCommand text={t("connect.advancedToken")} command="partyline setup --token" />{" "}

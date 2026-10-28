@@ -87,8 +87,7 @@ func TestFormatPlatformRoomNameAndContent(t *testing.T) {
 	require.Equal(t, "", FormatPlatform(dto.PlatformEvent{ID: "x"}).Content)
 }
 
-// A platform record frames like any message: the framing code that wait_for_messages, the turn-end
-// hooks and the adapters share shows the sender, the platform and chat, the trust and the ids.
+// A platform record frames like any message: the framing code that the adapters share shows the sender, the platform and chat, the trust and the ids.
 func TestPlatformRecordFramesLikeAMessage(t *testing.T) {
 	record := func(e dto.PlatformEvent) map[string]string {
 		n := FormatPlatform(e)
@@ -102,6 +101,17 @@ func TestPlatformRecordFramesLikeAMessage(t *testing.T) {
 		"look at this\n[attachment 01HFILE: photo.png, image/png]</partyline>\n"+DataLine, Frame(record(groupEvent)))
 	require.Equal(t, "<partyline room=\"Telegram · André\" chat=\"André\" platform=\"telegram\" from=\"André\" trusted=\"true\" message_id=\"01HITEM2\" connection_id=\"01HCONN2\" chat_id=\"01HCHAT2\">"+
 		"pode publicar</partyline>\n"+TrustedLine, Frame(record(directEvent)))
+}
+
+// PlatformRecord is the record of a platform event: the keys of its notification plus the content.
+func TestPlatformRecordIsTheNotificationWithItsContent(t *testing.T) {
+	r := PlatformRecord(groupEvent)
+	n := FormatPlatform(groupEvent)
+	require.Equal(t, n.Content, r["content"])
+	for k, v := range n.Meta {
+		require.Equal(t, v, r[k], k)
+	}
+	require.Len(t, r, len(n.Meta)+1)
 }
 
 // platformChan is the channel fixture plus a WhatsApp connection of alice's with a group and a
