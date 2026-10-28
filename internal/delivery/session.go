@@ -21,7 +21,7 @@ var sessionLabelPattern = regexp.MustCompile(dto.SessionLabelPattern)
 // boundary: the end of the text or a character that is none of a-z, A-Z, 0-9, "-", ".", "/" and ":", so
 // "@atlas:wt.example.com" and "@atlas:wt/x" are not addresses, and neither is "/@atlas:wt". An invalid or over-long label is not an address, so the scan continues, and the
 // first valid address wins. An address inside code - an inline code span between backticks or a fenced
-// code block - is an example of an address, not one: that part of the text is not read (blankCode, SESS-49).
+// code block - is an example of an address, not one: that part of the text is not read (blankCode, SESS-48).
 func SessionLabel(text, handle string) string {
 	if handle == "" {
 		return ""

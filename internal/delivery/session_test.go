@@ -65,7 +65,7 @@ func TestWantsStillCountsALabelledMention(t *testing.T) {
 	require.True(t, Wants(prefs, Delivered{Text: "@atlas:wt ship it"}))
 }
 
-// SESS-49: an address inside code is an example, not an address: an inline code span and a fenced code
+// SESS-48: an address inside code is an example, not an address: an inline code span and a fenced code
 // block are not read, and the text around them still addresses.
 func TestSessionLabelIgnoresCode(t *testing.T) {
 	cases := []struct {

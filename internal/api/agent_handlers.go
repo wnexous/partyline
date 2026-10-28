@@ -301,7 +301,7 @@ var errPushedSession = httpx.NewError(http.StatusConflict, dto.ErrorCodeConflict
 // its label's messages are the principal's, so it gets an empty page (items, platform events and
 // dropped count) at once, without waiting, and takes nothing (SESS-06). The tools half of pi and
 // OpenCode, which cannot be tied to a session, gets the same 409 while the AI has any live session: its
-// messages are pushed by its listen process (SESS-47).
+// messages are pushed by its listen process (SESS-46).
 func (s *server) agentPending(w http.ResponseWriter, r *http.Request, p authn.Principal) error {
 	wait := 0
 	if v := r.URL.Query().Get("wait"); v != "" {
@@ -335,7 +335,7 @@ func (s *server) agentPending(w http.ResponseWriter, r *http.Request, p authn.Pr
 	// The tools half of pi and OpenCode is not a session of its own: its messages are pushed by its listen
 	// process. When it cannot be tied to that process (an older adapter, a stale live id) and the AI has a
 	// live session, it is told the same instead of being handed the principal's queue, which a parallel
-	// session would then answer in the principal's place while the principal never sees it (SESS-47).
+	// session would then answer in the principal's place while the principal never sees it (SESS-46).
 	if label == "" && agents.PushedHarness(folder.Harness) && len(s.Agents.Sessions(a.ID)) > 0 {
 		return errPushedSession
 	}

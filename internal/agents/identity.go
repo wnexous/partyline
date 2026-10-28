@@ -45,7 +45,7 @@ func HarnessID(v string) string {
 }
 
 // PushedHarness reports whether a harness gets its messages pushed by a separate `partyline listen`
-// process (pi and OpenCode): the tools half it runs holds no socket and never reads a queue (SESS-47).
+// process (pi and OpenCode): the tools half it runs holds no socket and never reads a queue (SESS-46).
 func PushedHarness(v string) bool {
 	id := HarnessID(v)
 	return id == "pi" || id == "opencode"

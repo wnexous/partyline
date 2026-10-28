@@ -34,7 +34,7 @@ func (f *sessionFixture) sameFolderPair(t *testing.T) (principal, second *testki
 	return principal, second, p, s
 }
 
-// SESS-48: a parallel session in the AI's own folder (not a worktree) never receives a plain message,
+// SESS-47: a parallel session in the AI's own folder (not a worktree) never receives a plain message,
 // the principal's own plain message or the AI's own message of any session; a message that addresses
 // it reaches it alone. A reconnect of the parallel session brings no principal backlog either.
 func TestAParallelSessionOfTheSameFolderReceivesOnlyWhatAddressesIt(t *testing.T) {
@@ -69,7 +69,7 @@ func TestAParallelSessionOfTheSameFolderReceivesOnlyWhatAddressesIt(t *testing.T
 	again.ExpectNone(600 * time.Millisecond)
 }
 
-// SESS-47: the tools half of pi and OpenCode holds no socket; its messages are pushed by the listen
+// SESS-46: the tools half of pi and OpenCode holds no socket; its messages are pushed by the listen
 // process. When the principal is not live but a parallel session is, it must not read (and thereby
 // take) the principal's queue: a plain message stays for the principal. Codex and Gemini, which have no
 // listen process, keep reading it. With the live id of the parallel session it is that session: empty.
@@ -100,4 +100,22 @@ func TestTheToolsHalfOfAListenHarnessNeverTakesThePrincipalsQueue(t *testing.T) 
 	items := testkit.Decode[dto.List[dto.AgentMessage]](r).Items
 	require.Len(t, items, 1)
 	require.Equal(t, plain.ID, items[0].Message.ID)
+}
+
+// SESS-48: an address written as an example in code reaches the principal as a plain message, with no
+// note, and no parallel session; the same address written outside code reaches its session.
+func TestAnAddressInCodeIsNotDeliveredToItsSession(t *testing.T) {
+	f := newSessionFixture(t)
+	principal, second, _, _ := f.sameFolderPair(t)
+
+	example := f.post(t, "to reach a session write `@atlas:pi-2` or\n```\n@atlas:pi-2 hello\n```")
+	frame := principal.Message(time.Minute)
+	require.Equal(t, example.ID, frame.Message.ID)
+	require.Empty(t, frame.ForLabel, "no label was addressed: no note")
+	second.ExpectNone(400 * time.Millisecond)
+	require.Empty(t, f.rows(t, "pi-2"))
+
+	real := f.post(t, "`@atlas:other` is gone, ask @atlas:pi-2")
+	require.Equal(t, real.ID, second.Message(time.Minute).Message.ID)
+	principal.ExpectNone(300 * time.Millisecond)
 }

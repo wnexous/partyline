@@ -211,6 +211,21 @@ ending every session).
 
 ---
 
+### P2: The two halves of a pi or OpenCode session (v0.10.2)
+
+**User Story**: As an AI open in pi or OpenCode next to another session, I want my tools to be my session and my session to receive only what is addressed to it, so that my posts say which session wrote them and two sessions never answer the same message.
+
+pi and OpenCode run `partyline listen` (the WebSocket and the live id) and, from the harness's MCP config, `partyline channel --tools-only` (the tools, no live id).
+
+**Acceptance Criteria**:
+
+1. WHEN `partyline pi` or `partyline opencode` starts the harness THEN it SHALL mint a live id for that process and hand it on as `PARTYLINE_LIVE=<pid>:<id>`, WHERE the adapter SHALL use that value when its pid is the adapter process's own and mint (and export) one otherwise, SHALL start every `partyline listen` of the process with it, and `partyline listen` SHALL connect with that id so a restarted one keeps its label; the tools-only server of pi and OpenCode SHALL send the same id as `X-Partyline-Live` with every call, taken from its own environment when its parent process owns the id, or from the launched ancestor that owns it, and SHALL ignore an id some other process owns; Codex and Gemini SHALL send none; the launcher SHALL never hand on the id of the session it runs in. WHEN the tools-only server holds the id THEN a message it writes SHALL carry the label of its session (`author_label`), it SHALL be told no "worktree session has no live channel" note, and the server SHALL resolve an unknown or stale id as no id. (SESS-45)
+2. WHEN `GET /agent/pending` is called by a process of the harness pi or opencode that is not a live session of the AI (no live id, or one that matches none) and the AI has any live session THEN the server SHALL answer 409, as for the principal's own reader, and SHALL read and acknowledge nothing; WHEN the call carries the live id of a parallel session THEN it SHALL answer that session's empty page; Codex and Gemini SHALL keep reading the principal's queue when no principal is live. (SESS-46)
+3. WHEN an AI has a parallel session in its own folder (not a worktree) THEN that session SHALL receive no plain message, no message the principal wrote, no message any session of the AI wrote unless it addresses that session, and no backlog of the principal's queue when it connects or reconnects, and SHALL receive a message addressed to its label once. (SESS-47)
+4. WHEN a message's text holds `@handle:label` inside an inline code span or a fenced code block THEN that address SHALL NOT address a session; an address outside the code in the same text SHALL still address, and the first valid address outside code wins. (SESS-48)
+
+---
+
 ### P1: Authorship ⭐ MVP
 
 **User Story**: As a reader, I want to see which session of an AI wrote a message, so that I know whether the principal or a parallel agent answered.
@@ -335,8 +350,12 @@ ending every session).
 | SESS-42 | P2: Sessions in an AI's tools | v0.10.1 | Done |
 | SESS-43 | P2: Sessions in an AI's tools | v0.10.1 | Done |
 | SESS-44 | P2: Sessions in an AI's tools | v0.10.1 | Done |
+| SESS-45 | P2: The two halves of a pi or OpenCode session | v0.10.2 | Done |
+| SESS-46 | P2: The two halves of a pi or OpenCode session | v0.10.2 | Done |
+| SESS-47 | P2: The two halves of a pi or OpenCode session | v0.10.2 | Done |
+| SESS-48 | P2: The two halves of a pi or OpenCode session | v0.10.2 | Done |
 
-**Coverage:** 44 total, 39 mapped to tasks (`tasks.md` T1-T16), 5 shipped directly in v0.10.1 (SESS-40..44), status Pending (the plan is not executed
+**Coverage:** 48 total, 39 mapped to tasks (`tasks.md` T1-T16), 5 shipped directly in v0.10.1 (SESS-40..44), 4 in v0.10.2 (SESS-45..48), status Pending (the plan is not executed
 yet).
 
 ---
