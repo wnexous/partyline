@@ -19,18 +19,18 @@ func TestToolsOnlyAIsDMReachesTheLivePrincipal(t *testing.T) {
 	f := newAIEnv(t)
 	agy := testkit.Folder{Machine: testkit.Machine, Path: "/work/agy", Harness: "antigravity"}
 	agyTok := f.aliceTok.AsFolder(agy)
-	nexous, resp := f.aliceTok.DialAgent("nexous")
-	require.NotNil(t, nexous, "upgrade refused: %d %s", resp.Status, resp.Body)
-	nexousID := nexous.Welcome(wsWait).Agent.ID
+	atlas, resp := f.aliceTok.DialAgent("atlas")
+	require.NotNil(t, atlas, "upgrade refused: %d %s", resp.Status, resp.Body)
+	atlasID := atlas.Welcome(wsWait).Agent.ID
 
-	first := testkit.Decode[dto.Message](sendDM(agyTok, nexousID, "hello from agy").RequireStatus(http.StatusCreated))
-	got := nexous.Message(wsWait)
+	first := testkit.Decode[dto.Message](sendDM(agyTok, atlasID, "hello from agy").RequireStatus(http.StatusCreated))
+	got := atlas.Message(wsWait)
 	require.Equal(t, first.ID, got.Message.ID, "the tools-only AI's DM reaches the principal's socket")
 	require.Equal(t, dto.ConversationKindDM, got.Room.Kind)
-	nexous.Ack(first.ID)
+	atlas.Ack(first.ID)
 
 	// The principal answers; the tools-only AI reads it at its next pending call.
-	answer := testkit.Decode[dto.Message](f.aliceTok.AsAgent("nexous").
+	answer := testkit.Decode[dto.Message](f.aliceTok.AsAgent("atlas").
 		Post("/api/v1/agent/messages/"+first.ID+"/reply", dto.ReplyRequest{Text: "welcome"}).RequireStatus(http.StatusCreated))
 	pending := testkit.Decode[dto.List[dto.AgentMessage]](agyTok.Get("/api/v1/agent/pending").RequireStatus(http.StatusOK))
 	require.Len(t, pending.Items, 1)
@@ -39,7 +39,7 @@ func TestToolsOnlyAIsDMReachesTheLivePrincipal(t *testing.T) {
 	// The tools-only AI replies to that message with the reply tool; the principal hears it.
 	reply := testkit.Decode[dto.Message](agyTok.
 		Post("/api/v1/agent/messages/"+answer.ID+"/reply", dto.ReplyRequest{Text: "thanks"}).RequireStatus(http.StatusCreated))
-	back := nexous.Message(wsWait)
+	back := atlas.Message(wsWait)
 	require.Equal(t, reply.ID, back.Message.ID, "the reply reaches the principal")
 }
 
@@ -50,22 +50,22 @@ func TestToolsOnlyAIsDMReachesTheLivePrincipal(t *testing.T) {
 func TestToolsOnlyAIsDMWaitsForThePrincipalWhenOnlyAParallelSessionIsLive(t *testing.T) {
 	f := newAIEnv(t)
 	agyTok := f.aliceTok.AsFolder(testkit.Folder{Machine: testkit.Machine, Path: "/work/agy", Harness: "antigravity"})
-	principal, resp := f.aliceTok.DialAgent("nexous")
+	principal, resp := f.aliceTok.DialAgent("atlas")
 	require.NotNil(t, principal, "upgrade refused: %d %s", resp.Status, resp.Body)
-	nexousID := principal.Welcome(wsWait).Agent.ID
-	parallel, resp := f.aliceTok.DialAgent("nexous")
+	atlasID := principal.Welcome(wsWait).Agent.ID
+	parallel, resp := f.aliceTok.DialAgent("atlas")
 	require.NotNil(t, parallel, "upgrade refused: %d %s", resp.Status, resp.Body)
 	require.NotEmpty(t, parallel.Welcome(wsWait).Session.Label, "the second process is a labelled session")
 	principal.Close()
 	require.Eventually(t, func() bool {
-		s := testkit.Decode[dto.SessionState](f.aliceTok.AsAgent("nexous").Get("/api/v1/agent/session").RequireStatus(http.StatusOK))
+		s := testkit.Decode[dto.SessionState](f.aliceTok.AsAgent("atlas").Get("/api/v1/agent/session").RequireStatus(http.StatusOK))
 		return len(s.Sessions) == 1 && s.Sessions[0].Label != ""
 	}, wsWait, 20*time.Millisecond, "only the parallel session is left")
 
-	dm := testkit.Decode[dto.Message](sendDM(agyTok, nexousID, "are you there?").RequireStatus(http.StatusCreated))
+	dm := testkit.Decode[dto.Message](sendDM(agyTok, atlasID, "are you there?").RequireStatus(http.StatusCreated))
 	parallel.ExpectNone(300 * time.Millisecond)
 
-	again, resp := f.aliceTok.DialAgent("nexous")
+	again, resp := f.aliceTok.DialAgent("atlas")
 	require.NotNil(t, again, "upgrade refused: %d %s", resp.Status, resp.Body)
 	require.Empty(t, again.Welcome(wsWait).Session.Label, "the principal label is free again")
 	require.Equal(t, dm.ID, again.Message(wsWait).Message.ID, "the waiting DM is the new principal's")
