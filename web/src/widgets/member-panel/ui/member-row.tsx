@@ -5,6 +5,7 @@ import {
   AiStatusLine,
   canMessage,
   IntelligenceRow,
+  PrincipalOfflineLine,
   SessionList,
   useIntelligence,
   useIsOnline,
@@ -12,6 +13,7 @@ import {
 import type { PersonRow } from "@/entities/room-member";
 import { memberSettingsSummary } from "@/entities/room-member";
 import { MemberSettings } from "@/features/edit-member-settings";
+import { MakePrincipalButton } from "@/features/make-principal";
 import { useStartConversation } from "@/features/start-conversation";
 import { useI18n } from "@/shared/i18n";
 import { useTouchFirst } from "@/shared/lib/device";
@@ -74,16 +76,33 @@ export function MemberRow({
       </>
     );
     sessions = (
-      <SessionList
-        sessions={row.sessions}
-        online={online}
-        testId={`member-sessions-${row.rowId}`}
-      />
+      <>
+        <SessionList
+          sessions={row.sessions}
+          online={online}
+          testId={`member-sessions-${row.rowId}`}
+        />
+        <PrincipalOfflineLine
+          since={member.principal_offline_since}
+          online={online}
+          testId={`member-principal-offline-${row.rowId}`}
+        />
+        {/* Only an AI with a parallel session has anything to make principal. */}
+        {online && (row.sessions ?? []).some((s) => s.label !== "") ? (
+          <MakePrincipalActions id={row.id} name={row.name} />
+        ) : null}
+      </>
     );
   } else if (isAI) {
     // A DM participant is only a profile: its status and sessions come from the AI's own profile.
     meta = <AiStatusLine id={row.id} className="flex" />;
-    sessions = <ParticipantSessions id={row.id} testId={`participant-sessions-${row.rowId}`} />;
+    sessions = (
+      <ParticipantSessions
+        id={row.id}
+        name={row.name}
+        testId={`participant-sessions-${row.rowId}`}
+      />
+    );
   }
 
   // PDM-04: nobody messages herself.
@@ -122,10 +141,46 @@ export function MemberRow({
 }
 
 /** The sessions of a DM's AI, read from its profile since a participant carries none. */
-function ParticipantSessions({ id, testId }: { id: string; testId: string }) {
+function ParticipantSessions({ id, name, testId }: { id: string; name: string; testId: string }) {
   const ai = useIntelligence(id).data?.ai;
   const online = useIsOnline(id, ai?.online);
-  return <SessionList sessions={ai?.sessions} online={online} testId={testId} />;
+  return (
+    <>
+      <SessionList sessions={ai?.sessions} online={online} testId={testId} />
+      <PrincipalOfflineLine
+        since={ai?.principal_offline_since}
+        online={online}
+        testId={`${testId}-principal-offline`}
+      />
+      {online ? <MakePrincipalActions id={id} name={name} /> : null}
+    </>
+  );
+}
+
+/**
+ * "Make principal" for each live parallel session of an AI that can be one (SESS-59), for whoever manages
+ * the AI: the profile says so (`can_end_session`), so nothing shows for anyone else.
+ */
+function MakePrincipalActions({ id, name }: { id: string; name: string }) {
+  const profile = useIntelligence(id).data;
+  if (!profile?.can_end_session) return null;
+  const candidates = (profile.ai?.sessions ?? []).filter(
+    (s) => s.label !== "" && s.can_be_principal,
+  );
+  if (candidates.length === 0) return null;
+  return (
+    <span className="flex flex-wrap gap-1.5">
+      {candidates.map((s) => (
+        <MakePrincipalButton
+          key={s.label}
+          agentId={id}
+          name={name}
+          label={s.label}
+          testId={`make-principal-${id}-${s.label}`}
+        />
+      ))}
+    </span>
+  );
 }
 
 /**

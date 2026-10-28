@@ -215,6 +215,63 @@ describe("member sessions (SESS-44)", () => {
   });
 });
 
+describe("member principal (SESS-59, SESS-61)", () => {
+  const at = "2026-10-28T14:05:00Z";
+  const awayMember = makeMember({
+    id: "mb-atlas",
+    member_id: "a1",
+    name: "Atlas",
+    intelligence: atlas,
+    online: true,
+    principal_offline_since: "2026-10-28T14:00:00Z",
+    sessions: [{ label: "pi-2", harness: "pi", connected_at: at, can_be_principal: true }],
+  });
+  const profile = (managed: boolean): IntelligenceProfile =>
+    makeProfile({
+      ...atlas,
+      can_end_session: managed,
+      ai: {
+        owner: makeIntelligence(),
+        folder: "/home/dev/atlas",
+        folder_label: "~/atlas",
+        app: "pi",
+        online: true,
+        sessions: [{ label: "pi-2", harness: "pi", connected_at: at, can_be_principal: true }],
+        my_level: "manage",
+      },
+    });
+
+  it("says the principal is offline and offers Make principal to whoever manages the AI", async () => {
+    const { calls } = mockApi({
+      "GET /me": json(200, makeMe()),
+      "GET /intelligences/a1": json(200, profile(true)),
+      "POST /agents/a1/principal": () => new Response(null, { status: 204 }),
+    });
+    const user = userEvent.setup();
+    renderWithRouter(
+      <MemberPanel roomId="r1" members={[awayMember]} canManage={false} loading={false} />,
+    );
+    expect(await screen.findByTestId("member-principal-offline-mb-atlas")).toHaveTextContent(
+      /^Principal offline since/,
+    );
+    await user.click(
+      await screen.findByRole("button", { name: "Make :pi-2 the principal session of Atlas" }),
+    );
+    await waitFor(() => expect(calls.filter((c) => c.method === "POST")).toHaveLength(1));
+    expect(calls.find((c) => c.method === "POST")?.body).toEqual({ label: "pi-2" });
+  });
+
+  it("offers nothing to whoever does not manage the AI, but still says the principal is away", async () => {
+    mockApi({ "GET /me": json(200, makeMe()), "GET /intelligences/a1": json(200, profile(false)) });
+    renderWithRouter(
+      <MemberPanel roomId="r1" members={[awayMember]} canManage={false} loading={false} />,
+    );
+    expect(await screen.findByTestId("member-principal-offline-mb-atlas")).toBeInTheDocument();
+    await waitFor(() => expect(screen.getByTestId("member-sessions-mb-atlas")).toBeInTheDocument());
+    expect(screen.queryByRole("button", { name: /Make :pi-2/ })).toBeNull();
+  });
+});
+
 describe("member panel, loading and empty states", () => {
   it("shows a skeleton while the members load, for a group and for a DM alike", () => {
     mockApi({ "GET /me": json(200, makeMe()) });
