@@ -17,10 +17,7 @@ import {
   type Position,
 } from "@/shared/api/types.gen";
 import { useT } from "@/shared/i18n";
-import { isCoarsePointer } from "@/shared/lib/device";
 import { applyFieldErrors } from "@/shared/lib/forms";
-import { FormAlert, SelectField, TextField } from "@/shared/ui/molecules/form-fields";
-import { Button } from "@/shared/ui/primitives/button";
 import {
   Dialog,
   DialogContent,
@@ -28,7 +25,9 @@ import {
   DialogFooter,
   DialogHeader,
   DialogTitle,
-} from "@/shared/ui/primitives/dialog";
+} from "@/shared/ui/molecules/dialog";
+import { FormAlert, SelectField, TextField } from "@/shared/ui/molecules/form-fields";
+import { Button } from "@/shared/ui/primitives/button";
 import { Form } from "@/shared/ui/primitives/form";
 
 /**
@@ -56,11 +55,7 @@ export function InviteDialog({
   const t = useT();
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent
-        className="max-h-[calc(100dvh-2rem)] overflow-y-auto"
-        closeLabel={t("common.close")}
-        touchFirst={isCoarsePointer()}
-      >
+      <DialogContent className="max-h-[calc(100dvh-2rem)] overflow-y-auto">
         <DialogHeader>
           <DialogTitle>{t("orgs.inviteTitle", { org: org.name })}</DialogTitle>
           <DialogDescription>

@@ -42,6 +42,14 @@ import { CodeBlock } from "@/shared/ui/molecules/copy-field";
 import { EmptyState } from "@/shared/ui/molecules/empty-state";
 import { FormAlert } from "@/shared/ui/molecules/form-fields";
 import {
+  Sheet,
+  SheetContent,
+  SheetDescription,
+  SheetHeader,
+  SheetTitle,
+  SheetTrigger,
+} from "@/shared/ui/molecules/sheet";
+import {
   AlertDialog,
   AlertDialogAction,
   AlertDialogCancel,
@@ -53,14 +61,6 @@ import {
   AlertDialogTrigger,
 } from "@/shared/ui/primitives/alert-dialog";
 import { Button } from "@/shared/ui/primitives/button";
-import {
-  Sheet,
-  SheetContent,
-  SheetDescription,
-  SheetHeader,
-  SheetTitle,
-  SheetTrigger,
-} from "@/shared/ui/primitives/sheet";
 import { Skeleton } from "@/shared/ui/primitives/skeleton";
 import { Switch } from "@/shared/ui/primitives/switch";
 
@@ -379,7 +379,7 @@ function ConnectorSettingsSheet({
           <Settings2Icon aria-hidden="true" />
         </Button>
       </SheetTrigger>
-      <SheetContent className="w-full gap-0 sm:max-w-md" closeLabel={t("common.close")}>
+      <SheetContent className="w-full gap-0 sm:max-w-md">
         <SheetHeader className="border-b">
           <SheetTitle>{t("connector.settings")}</SheetTitle>
           <SheetDescription>{t("connector.settingsBody")}</SheetDescription>

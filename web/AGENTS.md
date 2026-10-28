@@ -36,6 +36,8 @@ A slice has optional segments `ui/` (components), `model/` (hooks, stores, pure 
 4. `shared/ui/primitives` imports only other primitives, `shared/lib/utils` and packages (no i18n,
    no hooks; a label it needs, like "Close", is a prop). `atoms` import primitives and
    `shared/lib`, never molecules. `molecules` import atoms, primitives, `shared/lib`, `shared/i18n`.
+   App code takes dialogs and sheets from `shared/ui/molecules/dialog` and `.../sheet`, which fill
+   in the translated close label and the touch-first focus rule; never from the primitives.
 5. Tests (`*.test.ts(x)`) and `src/test/**` are exempt from rules 2 and 3 (they still follow the
    layer order). Tests stay next to the file they test.
 6. Legacy: anything may import legacy during the migration and legacy may import anything, but

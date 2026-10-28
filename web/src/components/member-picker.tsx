@@ -12,8 +12,7 @@ import { useLiveStore } from "@/lib/live/store";
 import { withContactPresence } from "@/lib/presence";
 import type { MemberKind, RoomMember } from "@/shared/api/types.gen";
 import { useI18n } from "@/shared/i18n";
-import { isCoarsePointer, useAutoFocus } from "@/shared/lib/device";
-import { Button } from "@/shared/ui/primitives/button";
+import { useAutoFocus } from "@/shared/lib/device";
 import {
   Dialog,
   DialogContent,
@@ -21,7 +20,8 @@ import {
   DialogHeader,
   DialogTitle,
   DialogTrigger,
-} from "@/shared/ui/primitives/dialog";
+} from "@/shared/ui/molecules/dialog";
+import { Button } from "@/shared/ui/primitives/button";
 import { Input } from "@/shared/ui/primitives/input";
 import { Skeleton } from "@/shared/ui/primitives/skeleton";
 
@@ -48,11 +48,7 @@ export function MemberPicker({
   return (
     <Dialog open={open} onOpenChange={setOpen}>
       <DialogTrigger asChild>{trigger}</DialogTrigger>
-      <DialogContent
-        className="flex max-h-[min(40rem,calc(100dvh-2rem))] flex-col gap-0 p-0 sm:max-w-lg"
-        closeLabel={t("common.close")}
-        touchFirst={isCoarsePointer()}
-      >
+      <DialogContent className="flex max-h-[min(40rem,calc(100dvh-2rem))] flex-col gap-0 p-0 sm:max-w-lg">
         <DialogHeader className="border-b px-5 pt-5 pb-4 text-left">
           <DialogTitle>{t("picker.title")}</DialogTitle>
           <DialogDescription>{t("picker.body")}</DialogDescription>

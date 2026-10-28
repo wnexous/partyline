@@ -14,7 +14,6 @@ import {
   HeaderTimestamp,
 } from "@/shared/api/types.gen";
 import { type Translate, useT } from "@/shared/i18n";
-import { isCoarsePointer } from "@/shared/lib/device";
 import { cn } from "@/shared/lib/utils";
 import { CodeBlock } from "@/shared/ui/molecules/copy-field";
 import {
@@ -23,7 +22,7 @@ import {
   DialogDescription,
   DialogHeader,
   DialogTitle,
-} from "@/shared/ui/primitives/dialog";
+} from "@/shared/ui/molecules/dialog";
 import { RadioGroup, RadioGroupItem } from "@/shared/ui/primitives/radio-group";
 import { Skeleton } from "@/shared/ui/primitives/skeleton";
 
@@ -70,11 +69,7 @@ export function AddConnectorDialog({
   return (
     <>
       <Dialog open={open} onOpenChange={onOpenChange}>
-        <DialogContent
-          className="flex max-h-[calc(100dvh-2rem)] flex-col gap-0 p-0 sm:max-w-lg"
-          closeLabel={t("common.close")}
-          touchFirst={isCoarsePointer()}
-        >
+        <DialogContent className="flex max-h-[calc(100dvh-2rem)] flex-col gap-0 p-0 sm:max-w-lg">
           <DialogHeader className="border-b px-5 pt-5 pb-4 text-left">
             <DialogTitle>{t("connectors.addTitle")}</DialogTitle>
             <DialogDescription>{t("connectors.addBody")}</DialogDescription>

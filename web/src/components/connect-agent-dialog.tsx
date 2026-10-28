@@ -14,11 +14,9 @@ import {
 import { useAgents, useMe } from "@/lib/api/queries";
 import { useLiveStore } from "@/lib/live/store";
 import { useT } from "@/shared/i18n";
-import { isCoarsePointer } from "@/shared/lib/device";
 import { cn } from "@/shared/lib/utils";
 import { StatusDot } from "@/shared/ui/atoms/status-dot";
 import { CodeBlock } from "@/shared/ui/molecules/copy-field";
-import { Button } from "@/shared/ui/primitives/button";
 import {
   Dialog,
   DialogContent,
@@ -26,7 +24,8 @@ import {
   DialogFooter,
   DialogHeader,
   DialogTitle,
-} from "@/shared/ui/primitives/dialog";
+} from "@/shared/ui/molecules/dialog";
+import { Button } from "@/shared/ui/primitives/button";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/shared/ui/primitives/tabs";
 
 /*
@@ -52,11 +51,7 @@ export function ConnectAgentDialog({
   const t = useT();
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent
-        className="flex max-h-[calc(100dvh-2rem)] flex-col gap-0 p-0 sm:max-w-2xl"
-        closeLabel={t("common.close")}
-        touchFirst={isCoarsePointer()}
-      >
+      <DialogContent className="flex max-h-[calc(100dvh-2rem)] flex-col gap-0 p-0 sm:max-w-2xl">
         <DialogHeader className="border-b px-5 pt-5 pb-4 text-left">
           <DialogTitle>{t("connect.title")}</DialogTitle>
           <DialogDescription>{t("connect.body")}</DialogDescription>

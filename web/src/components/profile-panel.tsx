@@ -18,8 +18,8 @@ import { useT } from "@/shared/i18n";
 import { useIsMobile } from "@/shared/lib/device";
 import { cn } from "@/shared/lib/utils";
 import { StatusDot } from "@/shared/ui/atoms/status-dot";
+import { Sheet, SheetClose, SheetContent, SheetTitle } from "@/shared/ui/molecules/sheet";
 import { Button } from "@/shared/ui/primitives/button";
-import { Sheet, SheetClose, SheetContent, SheetTitle } from "@/shared/ui/primitives/sheet";
 import { Skeleton } from "@/shared/ui/primitives/skeleton";
 
 /*

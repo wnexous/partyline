@@ -19,6 +19,15 @@ import { applyFieldErrors } from "@/shared/lib/forms";
 import { cn } from "@/shared/lib/utils";
 import { FieldError, FormAlert, TextField } from "@/shared/ui/molecules/form-fields";
 import {
+  Sheet,
+  SheetContent,
+  SheetDescription,
+  SheetFooter,
+  SheetHeader,
+  SheetTitle,
+  SheetTrigger,
+} from "@/shared/ui/molecules/sheet";
+import {
   AlertDialog,
   AlertDialogAction,
   AlertDialogCancel,
@@ -40,15 +49,6 @@ import {
   useFormField,
 } from "@/shared/ui/primitives/form";
 import { Input } from "@/shared/ui/primitives/input";
-import {
-  Sheet,
-  SheetContent,
-  SheetDescription,
-  SheetFooter,
-  SheetHeader,
-  SheetTitle,
-  SheetTrigger,
-} from "@/shared/ui/primitives/sheet";
 import { Textarea } from "@/shared/ui/primitives/textarea";
 
 /**
@@ -63,7 +63,7 @@ export function RoomSettingsSheet({ room, trigger }: { room: Room; trigger: Reac
   return (
     <Sheet open={open} onOpenChange={setOpen}>
       <SheetTrigger asChild>{trigger}</SheetTrigger>
-      <SheetContent className="w-full gap-0 sm:max-w-md" closeLabel={t("common.close")}>
+      <SheetContent className="w-full gap-0 sm:max-w-md">
         <SheetHeader className="border-b">
           <SheetTitle>{t("settings.title")}</SheetTitle>
           <SheetDescription>{t("settings.body")}</SheetDescription>

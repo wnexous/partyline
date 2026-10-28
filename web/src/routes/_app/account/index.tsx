@@ -49,15 +49,10 @@ import {
   type Session,
 } from "@/shared/api/types.gen";
 import { LOCALES, type MessageKey, type Translate, useI18n, useT } from "@/shared/i18n";
-import { isCoarsePointer } from "@/shared/lib/device";
 import { applyFieldErrors } from "@/shared/lib/forms";
 import { formatAbsolute, formatRelative } from "@/shared/lib/time";
 import { cn } from "@/shared/lib/utils";
 import { NativeSelect } from "@/shared/ui/atoms/native-select";
-import { FormAlert, TextField } from "@/shared/ui/molecules/form-fields";
-import { PageHeader } from "@/shared/ui/molecules/page-header";
-import { PageSection as Section } from "@/shared/ui/molecules/page-section";
-import { Button } from "@/shared/ui/primitives/button";
 import {
   Dialog,
   DialogContent,
@@ -66,7 +61,11 @@ import {
   DialogHeader,
   DialogTitle,
   DialogTrigger,
-} from "@/shared/ui/primitives/dialog";
+} from "@/shared/ui/molecules/dialog";
+import { FormAlert, TextField } from "@/shared/ui/molecules/form-fields";
+import { PageHeader } from "@/shared/ui/molecules/page-header";
+import { PageSection as Section } from "@/shared/ui/molecules/page-section";
+import { Button } from "@/shared/ui/primitives/button";
 import { Form } from "@/shared/ui/primitives/form";
 import { RadioGroup, RadioGroupItem } from "@/shared/ui/primitives/radio-group";
 import { Skeleton } from "@/shared/ui/primitives/skeleton";
@@ -744,7 +743,7 @@ function DeleteAccountSection() {
             {t("account.deleteOpen")}
           </Button>
         </DialogTrigger>
-        <DialogContent closeLabel={t("common.close")} touchFirst={isCoarsePointer()}>
+        <DialogContent>
           <DialogHeader>
             <DialogTitle>{t("account.deleteTitle")}</DialogTitle>
             <DialogDescription>{t("account.deleteDialogBody")}</DialogDescription>

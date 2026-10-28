@@ -10,9 +10,14 @@ import { useLiveStore } from "@/lib/live/store";
 import { NAV_GROUPS } from "@/lib/nav";
 import { type Connector, type Me, RoleAdmin } from "@/shared/api/types.gen";
 import { useT } from "@/shared/i18n";
-import { isCoarsePointer } from "@/shared/lib/device";
 import { cn } from "@/shared/lib/utils";
 import { StatusDot } from "@/shared/ui/atoms/status-dot";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogTitle,
+} from "@/shared/ui/molecules/dialog";
 import {
   Command,
   CommandEmpty,
@@ -21,12 +26,6 @@ import {
   CommandItem,
   CommandList,
 } from "@/shared/ui/primitives/command";
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogTitle,
-} from "@/shared/ui/primitives/dialog";
 
 /*
  * Command palette (UI-22): Ctrl/Cmd+K from anywhere in the app jumps to a conversation, a connector
@@ -64,8 +63,6 @@ export function CommandMenu({ me }: { me: Me }) {
       <DialogContent
         showCloseButton={false}
         className="top-[12%] translate-y-0 gap-0 overflow-hidden p-0 sm:top-[18%] sm:max-w-xl"
-        closeLabel={t("common.close")}
-        touchFirst={isCoarsePointer()}
       >
         <DialogTitle className="sr-only">{t("palette.title")}</DialogTitle>
         <DialogDescription className="sr-only">{t("palette.description")}</DialogDescription>

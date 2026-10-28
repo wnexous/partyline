@@ -7,10 +7,7 @@ import { useCreateOrg } from "@/lib/api/queries";
 import { type CreateOrgForm, createOrgSchema } from "@/lib/schemas";
 import { isApiError } from "@/shared/api/client";
 import { useT } from "@/shared/i18n";
-import { isCoarsePointer } from "@/shared/lib/device";
 import { applyFieldErrors } from "@/shared/lib/forms";
-import { FormAlert, TextField } from "@/shared/ui/molecules/form-fields";
-import { Button } from "@/shared/ui/primitives/button";
 import {
   Dialog,
   DialogContent,
@@ -18,7 +15,9 @@ import {
   DialogFooter,
   DialogHeader,
   DialogTitle,
-} from "@/shared/ui/primitives/dialog";
+} from "@/shared/ui/molecules/dialog";
+import { FormAlert, TextField } from "@/shared/ui/molecules/form-fields";
+import { Button } from "@/shared/ui/primitives/button";
 import { Form } from "@/shared/ui/primitives/form";
 
 /**
@@ -37,7 +36,7 @@ export function NewOrgDialog({
   const t = useT();
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent closeLabel={t("common.close")} touchFirst={isCoarsePointer()}>
+      <DialogContent>
         <DialogHeader>
           <DialogTitle>{t("orgs.new")}</DialogTitle>
           <DialogDescription>{t("orgs.newBody")}</DialogDescription>

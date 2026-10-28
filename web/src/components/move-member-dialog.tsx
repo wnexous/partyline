@@ -5,10 +5,7 @@ import { movablePositions, type PositionOption } from "@/lib/org-chart";
 import { isApiError } from "@/shared/api/client";
 import type { Position } from "@/shared/api/types.gen";
 import { useI18n, useT } from "@/shared/i18n";
-import { isCoarsePointer } from "@/shared/lib/device";
 import { NativeSelect } from "@/shared/ui/atoms/native-select";
-import { Alert, AlertDescription } from "@/shared/ui/primitives/alert";
-import { Button } from "@/shared/ui/primitives/button";
 import {
   Dialog,
   DialogContent,
@@ -16,7 +13,9 @@ import {
   DialogFooter,
   DialogHeader,
   DialogTitle,
-} from "@/shared/ui/primitives/dialog";
+} from "@/shared/ui/molecules/dialog";
+import { Alert, AlertDescription } from "@/shared/ui/primitives/alert";
+import { Button } from "@/shared/ui/primitives/button";
 import { Label } from "@/shared/ui/primitives/label";
 
 /** Who is being moved, and where they sit now (`""` for no position). */
@@ -53,7 +52,7 @@ export function MoveMemberDialog({
   const t = useT();
   return (
     <Dialog open={target !== null} onOpenChange={(open) => (open ? null : onClose())}>
-      <DialogContent closeLabel={t("common.close")} touchFirst={isCoarsePointer()}>
+      <DialogContent>
         {target ? (
           <MoveForm
             orgId={orgId}

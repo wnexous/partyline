@@ -26,11 +26,7 @@ import {
   RefusedReasonPerson,
 } from "@/shared/api/types.gen";
 import { useT } from "@/shared/i18n";
-import { isCoarsePointer } from "@/shared/lib/device";
 import { applyFieldErrors } from "@/shared/lib/forms";
-import { FormAlert, TextField } from "@/shared/ui/molecules/form-fields";
-import { Button } from "@/shared/ui/primitives/button";
-import { Checkbox } from "@/shared/ui/primitives/checkbox";
 import {
   Dialog,
   DialogContent,
@@ -39,7 +35,10 @@ import {
   DialogHeader,
   DialogTitle,
   DialogTrigger,
-} from "@/shared/ui/primitives/dialog";
+} from "@/shared/ui/molecules/dialog";
+import { FormAlert, TextField } from "@/shared/ui/molecules/form-fields";
+import { Button } from "@/shared/ui/primitives/button";
+import { Checkbox } from "@/shared/ui/primitives/checkbox";
 import { Form } from "@/shared/ui/primitives/form";
 import { Input } from "@/shared/ui/primitives/input";
 import { Skeleton } from "@/shared/ui/primitives/skeleton";
@@ -59,11 +58,7 @@ export function NewGroupDialog({ trigger }: { trigger: ReactNode }) {
   return (
     <Dialog open={open} onOpenChange={setOpen}>
       <DialogTrigger asChild>{trigger}</DialogTrigger>
-      <DialogContent
-        className="flex max-h-[min(44rem,calc(100dvh-2rem))] flex-col gap-0 p-0 sm:max-w-lg"
-        closeLabel={t("common.close")}
-        touchFirst={isCoarsePointer()}
-      >
+      <DialogContent className="flex max-h-[min(44rem,calc(100dvh-2rem))] flex-col gap-0 p-0 sm:max-w-lg">
         <DialogHeader className="border-b px-5 pt-5 pb-4 text-left">
           <DialogTitle>{t("newGroup.title")}</DialogTitle>
           <DialogDescription>{t("newGroup.body")}</DialogDescription>

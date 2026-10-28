@@ -11,16 +11,15 @@ import { isViewableImage } from "@/components/message-item";
 import { attachmentUrl } from "@/lib/api/queries";
 import type { Attachment, Message } from "@/shared/api/types.gen";
 import { useI18n } from "@/shared/i18n";
-import { isCoarsePointer } from "@/shared/lib/device";
 import { cn } from "@/shared/lib/utils";
-import { Button } from "@/shared/ui/primitives/button";
 import {
   Dialog,
   DialogClose,
   DialogContent,
   DialogDescription,
   DialogTitle,
-} from "@/shared/ui/primitives/dialog";
+} from "@/shared/ui/molecules/dialog";
+import { Button } from "@/shared/ui/primitives/button";
 import { Skeleton } from "@/shared/ui/primitives/skeleton";
 
 /*
@@ -193,7 +192,6 @@ export function ImageViewer({
       <DialogContent
         ref={content}
         showCloseButton={false}
-        touchFirst={isCoarsePointer()}
         onKeyDown={onKeyDown}
         // Focus starts on the dialog itself: Escape and the arrows work at once, and no action is
         // one stray Enter away.

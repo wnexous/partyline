@@ -43,14 +43,14 @@ import { useI18n, useT } from "@/shared/i18n";
 import { useIsMobile } from "@/shared/lib/device";
 import { BackToConversations } from "@/shared/ui/molecules/back-link";
 import { EmptyState } from "@/shared/ui/molecules/empty-state";
-import { Button } from "@/shared/ui/primitives/button";
 import {
   Sheet,
   SheetContent,
   SheetDescription,
   SheetHeader,
   SheetTitle,
-} from "@/shared/ui/primitives/sheet";
+} from "@/shared/ui/molecules/sheet";
+import { Button } from "@/shared/ui/primitives/button";
 import { Skeleton } from "@/shared/ui/primitives/skeleton";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/shared/ui/primitives/tabs";
 import { MemberPanel } from "@/widgets/member-panel";
@@ -251,7 +251,7 @@ function RoomPage() {
       ) : null}
       {isMobile ? (
         <Sheet open={sheetOpen} onOpenChange={setSheetOpen}>
-          <SheetContent className="w-[min(22rem,100vw)] gap-0 p-0" closeLabel={t("common.close")}>
+          <SheetContent className="w-[min(22rem,100vw)] gap-0 p-0">
             <SheetHeader className="sr-only">
               <SheetTitle>{panelLabel}</SheetTitle>
               <SheetDescription>{title}</SheetDescription>
