@@ -38,6 +38,11 @@ export interface Agent {
    * Sessions are the AI's live sessions, the principal ("") first; absent while it is offline.
    */
   sessions?: SessionInfo[];
+  /**
+   * PrincipalOfflineSince is when the principal session left while another session is live; absent
+   * when the principal is live or the AI is offline (SESS-61).
+   */
+  principal_offline_since?: string /* RFC 3339 */;
 }
 /**
  * MaxAgentDisplayName is the longest agent display name in characters (ID-04).
@@ -306,6 +311,19 @@ export interface SessionInfo {
   label: string;
   harness: string;
   connected_at: string /* RFC 3339 */;
+  /**
+   * CanBePrincipal tells whether the session sent a harness session id, which is what the principal
+   * role is pinned to: only such a session can be made the principal (SESS-59).
+   */
+  can_be_principal?: boolean;
+}
+/**
+ * MakePrincipalRequest is the body of POST /agents/{id}/principal: the label of the live session to make
+ * the AI's principal ("" is the current principal, which it pins). Whoever manages the AI may send it
+ * (SESS-59).
+ */
+export interface MakePrincipalRequest {
+  label: string;
 }
 /**
  * SessionState is GET /agent/session: what the server knows about the AI of the machine and
@@ -516,6 +534,11 @@ export const MaxPageSize = 100;
  */
 export const SecretMask = "********";
 /**
+ * HarnessSessionPattern is the shape of a harness session id (HeaderHarnessSession): 1 to 128
+ * characters of [A-Za-z0-9._:-], starting with a letter or a digit.
+ */
+export const HarnessSessionPattern = `^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}\$`;
+/**
  * HeaderHarness is the launcher's harness id (claude, opencode, pi, omp, codex, gemini, antigravity).
  */
 export const HeaderHarness = "X-Partyline-Harness";
@@ -548,6 +571,19 @@ export const HeaderHome = "X-Partyline-Home";
  * session of the AI (SES-02).
  */
 export const HeaderLive = "X-Partyline-Live";
+/**
+ * HeaderHarnessSession is the harness's own id of the conversation the session belongs to
+ * (Claude Code's session id, pi's session id), matching HarnessSessionPattern. It stays the same
+ * when the conversation is resumed in a new process, so the server can tell which session is the
+ * AI's principal one and keep a parallel session's label (SESS-50, SESS-54). Sent only by a client
+ * whose harness has one; a malformed value is refused with 422 and the field harness_session.
+ */
+export const HeaderHarnessSession = "X-Partyline-Harness-Session";
+/**
+ * HeaderPrincipal set to "1" on the agent WebSocket makes the session the AI's principal one and
+ * pins its harness session id (`partyline <harness> --principal`, SESS-57).
+ */
+export const HeaderPrincipal = "X-Partyline-Principal";
 /**
  * HeaderTakeover set to "1" on the agent WebSocket takes over the AI's live session from
  * another process instead of being refused with identity_busy (SES-02).
@@ -1691,6 +1727,11 @@ export interface AIDetail {
    */
   sessions: SessionInfo[];
   /**
+   * PrincipalOfflineSince is when the principal session left while another session is live; absent
+   * when the principal is live or the AI is offline (SESS-61).
+   */
+  principal_offline_since?: string /* RFC 3339 */;
+  /**
    * MyLevel is manage for whoever manages the AI in an organization they share with it (and the AI itself)
    * and use for whoever only sees it.
    */
@@ -2562,6 +2603,11 @@ export interface RoomMember {
    * (SESS-33). Absent for other members and for an AI with no live session.
    */
   sessions?: SessionInfo[];
+  /**
+   * PrincipalOfflineSince is set for agent members whose principal session left while another session is
+   * live (SESS-61).
+   */
+  principal_offline_since?: string /* RFC 3339 */;
   /**
    * Owner is set for agent members: the username of the agent's owner.
    */
