@@ -400,3 +400,53 @@ func TestSameProcessReplacesItsSocket(t *testing.T) {
 	require.Equal(t, []string{"claude-2"}, labelsOf(p.presence.Sessions(p.agent.ID)))
 	require.Empty(t, drain(p.events), "a reconnect is no session change")
 }
+
+// SESS-19, SESS-24: Kick gives every session it closes to the end hook, after the AI is offline, so the
+// rows each connection owned can be swept; Drop, for an AI whose row is gone, never calls it.
+func TestKickHandsEachClosedSessionToTheEndHook(t *testing.T) {
+	p, _ := newPresenceFixture(t)
+	first, second := &fakeSession{}, &fakeSession{}
+	_, _ = p.attachLabeled(t, first, "claude", "process-one", "", false)
+	_, _ = p.attachLabeled(t, second, "pi", "process-two", "wt", false)
+
+	var mu sync.Mutex
+	var ended []Session
+	var onlineWhenCalled []bool
+	p.presence.OnEnded(func(_ context.Context, agentID string, s Session) {
+		mu.Lock()
+		defer mu.Unlock()
+		require.Equal(t, p.agent.ID, agentID)
+		ended = append(ended, s)
+		onlineWhenCalled = append(onlineWhenCalled, p.presence.Online(agentID))
+	})
+	p.presence.Kick(context.Background(), p.agent.ID, CloseTakenOver, "ended")
+	require.ElementsMatch(t, []Session{first, second}, ended)
+	require.Equal(t, []bool{false, false}, onlineWhenCalled)
+
+	ended = nil
+	third := &fakeSession{}
+	_, _ = p.attachLabeled(t, third, "claude", "process-three", "", false)
+	p.presence.Drop(p.agent.ID, CloseDeleted, ReasonDeleted)
+	require.Empty(t, ended, "a dropped AI has no rows to sweep and never waits for the database")
+}
+
+// SESS-14: a process holds its live id while one of its sockets is attached; the lookup finds the
+// session of an owner and the replaced socket's end owns nothing.
+func TestPresenceHoldsALiveIDWhileOneOfItsSocketsIsAttached(t *testing.T) {
+	p, _ := newPresenceFixture(t)
+	first, again := &fakeSession{}, &fakeSession{}
+	_, _ = p.attachLabeled(t, first, "claude", "P", "wt", false)
+	require.True(t, p.presence.HoldsLive(p.agent.ID, "P"))
+	require.False(t, p.presence.HoldsLive(p.agent.ID, "other"))
+	require.False(t, p.presence.HoldsLive(p.agent.ID, ""), "no live id is held by anyone")
+
+	_, _ = p.attachLabeled(t, again, "claude", "P", "wt", false)
+	require.False(t, p.presence.Detach(context.Background(), p.agent.ID, first), "the replaced socket is no longer a session")
+	require.True(t, p.presence.HoldsLive(p.agent.ID, "P"), "the new socket holds it")
+	got, ok := p.presence.Find(p.agent.ID, func(s Session) bool { return s == again })
+	require.True(t, ok)
+	require.Same(t, again, got)
+
+	require.True(t, p.presence.Detach(context.Background(), p.agent.ID, again))
+	require.False(t, p.presence.HoldsLive(p.agent.ID, "P"))
+}

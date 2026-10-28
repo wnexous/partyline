@@ -254,3 +254,52 @@ acknowledged rows and the AI's own messages. The gateway still calls the old lab
 (`ReleaseSessionDelivery` is the old deleting ack under its new name, `DeleteSessionDelivery`,
 `FallBackSessionDeliveries`, `DeleteSelfSessionDeliveries`) with unchanged behaviour until the next task
 wires `internal/agents` to the owned rows and removes them; design.md still describes the deleting ack.
+
+# Contract Notes (from fix0100-b: delivery ownership in the gateway)
+
+The rest of the design stands, except that [The delivery rows](design.md#the-delivery-rows) is superseded
+by the owner-keyed rows of migration 0027: a row is never deleted by an acknowledgement (it becomes a
+tombstone with `acked_at`), every pending row is owned by the live id of the connection it was pushed to,
+and the label-keyed queries (`ReleaseSessionDelivery`, `DeleteSessionDelivery`, `FallBackSessionDeliveries`,
+`DeleteSelfSessionDeliveries`) no longer exist.
+
+- **A parallel session has no backlog.** `Gateway.backlog` reads the principal's cursor queue and the
+  fallback list for the principal only. A labelled connection gets `ListOwnedPending(agent, its owner key)`,
+  written without the delivery-mode filter and without the note. The old behaviour (a labelled session
+  receiving the principal's unacknowledged messages) answered one message twice;
+  `TestALabelledSessionAckDoesNotMoveTheAICursor` asserted it and now asserts the opposite.
+- **The owner key.** `conn.owner` is the connection's live id; a client that sent none gets a random key
+  that no other connection can hold (`anon:<hex>`), so two clients without a live id never sweep each
+  other. The empty owner stays the owner of a row born fallen back, and `fallBackOwned("")` is a no-op.
+- **One end for every way a connection ends.** The handler's deferred step runs `connectionEnded`:
+  `Presence.Detach` (a no-op after a takeover, a reconnect or a Kick) and then `FallBackOwnedDeliveries`
+  for the connection's owner, unless the same live id is attached again (`Presence.HoldsLive`), in which
+  case the new socket receives the rows from its backlog. `Presence.Kick` also hands every session it
+  closes to a hook (`Presence.OnEnded`, set by `NewGateway`) so the rows fall back before `Kick` returns;
+  `Drop` does not (the AI's row is gone and `Drop` never waits for the database). Both are idempotent.
+- **The life lock.** Attach and the end step of one AI serialize on a striped mutex (`Gateway.lifeLock`),
+  so a connection that takes a label right after the old one detached cannot be given a row that the old
+  connection's sweep then takes. Pushes do not take it, except to sweep a stale owner (below).
+- **A push that races an ending connection.** `Push` writes the row and then routes by the row as it
+  is (`deliverOwned`): acknowledged, nothing; fallen back, the principal with the note; pending, the
+  connection that owns it, or, when none is attached, a sweep of that owner under the life lock and a push
+  of the rows it returns to the principal. A retried push therefore follows the first row.
+- **No sequence filter for sessions that have no cursor.** The live loop dropped any push at or below the
+  cursor the backlog reported, which would have lost a labelled session's row (its sequence says nothing
+  about the principal's cursor) and a fallback pushed live below the principal's cursor. A labelled
+  connection, and any frame carrying `for_label`, is deduplicated by message id against what the
+  connection already wrote (`conn.delivered`); the plain messages of the principal keep the cursor rule.
+- **`Pending` and the cursor.** A fallback row's sequence never moves the cursor (the design said so:
+  "never a fallback `seq`"), and the cursor is advanced only to a value above the current one. The
+  advance was already a `MAX` in SQL, so the "backwards" case did not happen in practice; the case that
+  did differ is a fallback above everything the cursor stream holds, which used to become the cursor.
+- **`PushUpdate` by the row.** The row decides only when its label is the update's target; an edit that
+  names another label than the row's is routed by liveness as before. A self-authored update is
+  unchanged (SESS-39).
+- **`pushToSelfSession`** returns without a row when the target is the message's own `author_label`
+  (the dispatcher already skips it; this is the gateway's own guard).
+- **Tests changed because the spec changes the behaviour they asserted:**
+  `TestALabelledSessionAckDoesNotMoveTheAICursor` (no backlog for the labelled session),
+  `TestALabelledMessageFallsBackWhenItsSessionEnds` (the late ack passes the owner and `acked_at`; the
+  principal's ack leaves a tombstone instead of deleting) and `TestASelfDeliveryIsDeletedWhenItsSessionEnds`
+  (renamed `...IsAcknowledgedWhenItsSessionEnds`: the row is acknowledged, not deleted).

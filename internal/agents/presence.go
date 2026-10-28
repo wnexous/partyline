@@ -87,6 +87,47 @@ type Presence struct {
 	mu       sync.Mutex
 	sessions map[string]map[string]presenceEntry // AI id -> label -> entry
 	retired  map[string]map[string]retiredLabel  // AI id -> live id -> remembered label
+	// ended runs for each session Kick closes, after the AI is offline and the sockets are closed: the
+	// gateway sweeps the delivery rows that connection owned. Set before the first connection; nil leaves
+	// the sweep to the connection's own end.
+	ended func(ctx context.Context, agentID string, s Session)
+}
+
+// OnEnded makes f run for every session Kick ends, once its socket is closed (nil clears it). A session
+// that ends alone is Detach's concern: its connection sweeps itself.
+func (p *Presence) OnEnded(f func(ctx context.Context, agentID string, s Session)) {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	p.ended = f
+}
+
+// HoldsLive reports whether a live session of the agent belongs to the process liveID: a process that
+// reconnected replaced its socket, so the connection it left owns no end.
+func (p *Presence) HoldsLive(agentID, liveID string) bool {
+	if liveID == "" {
+		return false
+	}
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	for _, e := range p.sessions[agentID] {
+		if e.liveID == liveID {
+			return true
+		}
+	}
+	return false
+}
+
+// Find returns the agent's live session for which match is true, if any. match runs under the presence
+// lock and must not call back into Presence.
+func (p *Presence) Find(agentID string, match func(Session) bool) (Session, bool) {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	for _, e := range p.sessions[agentID] {
+		if match(e.session) {
+			return e.session, true
+		}
+	}
+	return nil, false
 }
 
 // NewPresence returns an empty Presence. now defaults to time.Now.
@@ -234,7 +275,7 @@ func (p *Presence) SessionLabel(agentID, liveID string) (string, bool) {
 
 // Detach removes s when it is still one of the agent's live sessions and remembers its label for a
 // reconnect of its process; the agent goes offline when the last session ends. It reports whether s was
-// the current session (false after a takeover or a reconnect), which the end-of-session sweep needs.
+// the current session (false after a takeover, a reconnect or a Kick).
 func (p *Presence) Detach(ctx context.Context, agentID string, s Session) bool {
 	return p.detach(ctx, agentID, s, true)
 }
@@ -324,6 +365,7 @@ func (p *Presence) end(ctx context.Context, agentID string, code websocket.Statu
 	if forget {
 		delete(p.retired, agentID)
 	}
+	ended := p.ended
 	p.mu.Unlock()
 	// The AI is offline before any socket is closed, so a close that panics cannot leave a live entry.
 	defer func() {
@@ -331,6 +373,13 @@ func (p *Presence) end(ctx context.Context, agentID string, code websocket.Statu
 			_ = p.touch(ctx, agentID) // best effort: the agent row may be gone already
 		}
 		p.bus.Publish(events.AgentPresence{AgentID: agentID, OwnerID: ownerID, Online: false})
+		// Each connection that was closed gives back what it owned. Drop is for an AI whose row is
+		// gone (its delivery rows went with it) and never waits for the database.
+		if ended != nil && stamp {
+			for _, e := range entries {
+				ended(ctx, agentID, e.session)
+			}
+		}
 	}()
 	for _, e := range entries {
 		e.session.Close(code, reason)

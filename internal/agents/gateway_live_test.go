@@ -211,15 +211,20 @@ func TestALabelledSessionAckDoesNotMoveTheAICursor(t *testing.T) {
 	m := testkit.Decode[dto.Message](alice.Post("/api/v1/rooms/"+room.ID+"/messages", dto.PostMessageRequest{Text: "for the principal"}).RequireStatus(http.StatusCreated))
 	require.Equal(t, m.ID, principal.Message(time.Minute).Message.ID, "the dispatcher pushes it to the principal")
 
-	// The labelled session reads the same message from its backlog and acknowledges it.
+	// The labelled session has no backlog: the principal's unacknowledged message is not its own.
 	second, resp := tok.DialFolder(testkit.FolderOf("builder"))
 	require.NotNil(t, second, "upgrade refused: %d %s", resp.Status, resp.Body)
 	require.Equal(t, "claude-2", second.Welcome(time.Minute).Session.Label)
-	require.Equal(t, m.ID, second.Message(time.Minute).Message.ID)
-	second.Ack(m.ID)
+	second.ExpectNone(400 * time.Millisecond)
+
+	// A message addressed to it reaches it, and its acknowledgement moves nothing of the AI's.
+	addressed := testkit.Decode[dto.Message](alice.Post("/api/v1/rooms/"+room.ID+"/messages", dto.PostMessageRequest{Text: "@builder:claude-2 for the session"}).RequireStatus(http.StatusCreated))
+	require.Equal(t, addressed.ID, second.Message(time.Minute).Message.ID)
+	second.Ack(addressed.ID)
 	second.ExpectNone(300 * time.Millisecond)
 	_, err := env.App.Store.R().GetAgentCursor(ctx, db.GetAgentCursorParams{AgentID: id, RoomID: room.ID})
 	require.ErrorIs(t, err, sql.ErrNoRows, "a labelled ack leaves no cursor row")
+	principal.ExpectNone(300 * time.Millisecond)
 
 	principal.Ack(m.ID)
 	require.Eventually(t, func() bool {

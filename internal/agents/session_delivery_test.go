@@ -2,12 +2,14 @@ package agents_test
 
 import (
 	"context"
+	"database/sql"
 	"net/http"
 	"testing"
 	"time"
 
 	"github.com/stretchr/testify/require"
 
+	"github.com/wnexous/partyline/internal/agents"
 	"github.com/wnexous/partyline/internal/api/dto"
 	"github.com/wnexous/partyline/internal/store/db"
 	"github.com/wnexous/partyline/internal/testkit"
@@ -119,15 +121,19 @@ func TestALabelledMessageFallsBackWhenItsSessionEnds(t *testing.T) {
 	var acked int64
 	require.NoError(t, f.env.App.Store.WithTx(context.Background(), func(q *db.Queries) error {
 		var err error
-		acked, err = q.AckSessionDelivery(context.Background(), db.AckSessionDeliveryParams{MessageID: m.ID, AgentID: f.agentID})
+		acked, err = q.AckSessionDelivery(context.Background(), db.AckSessionDeliveryParams{
+			AckedAt: sql.NullInt64{Int64: time.Now().UnixMilli(), Valid: true}, MessageID: m.ID, AgentID: f.agentID, OwnerLive: row.OwnerLive,
+		})
 		return err
 	}))
 	require.Zero(t, acked)
-	require.Len(t, f.rows(t, "claude-2"), 1)
+	require.False(t, f.waitRow(t, "claude-2", m.ID).AckedAt.Valid)
 
 	principal.Ack(m.ID)
-	require.Eventually(t, func() bool { return len(f.rows(t, "claude-2")) == 0 }, 5*time.Second, 10*time.Millisecond,
-		"the principal's acknowledgement consumes the fallback")
+	require.Eventually(t, func() bool {
+		rows := f.rows(t, "claude-2")
+		return len(rows) == 1 && rows[0].AckedAt.Valid && rows[0].FellBackAt.Valid
+	}, 5*time.Second, 10*time.Millisecond, "the principal's acknowledgement consumes the fallback and leaves a tombstone")
 }
 
 // SESS-22: a label with no live session is the principal's from the start, with the note.
@@ -279,9 +285,10 @@ func TestASessionsMessageReachesItsLiveSibling(t *testing.T) {
 	require.False(t, row.FellBackAt.Valid, "the live sibling owns the message")
 }
 
-// SESS-38: a delivery row of the AI's own message is deleted when its session ends before
-// acknowledging it, and the principal never receives it as a fallback.
-func TestASelfDeliveryIsDeletedWhenItsSessionEnds(t *testing.T) {
+// SESS-38: a delivery row of the AI's own message is acknowledged (it stays as a tombstone, never
+// deleted) when its session ends before acknowledging it, and the principal never receives it as a
+// fallback.
+func TestASelfDeliveryIsAcknowledgedWhenItsSessionEnds(t *testing.T) {
 	f := newSessionFixture(t)
 	principal := f.dial(t)
 	f.settle(t, principal)
@@ -293,8 +300,11 @@ func TestASelfDeliveryIsDeletedWhenItsSessionEnds(t *testing.T) {
 	require.False(t, f.waitRow(t, "wt", m.ID).FellBackAt.Valid)
 
 	sibling.Close()
-	require.Eventually(t, func() bool { return len(f.rows(t, "wt")) == 0 }, 5*time.Second, 10*time.Millisecond,
-		"the row of the AI's own message is dropped, not fallen back")
+	require.Eventually(t, func() bool {
+		rows := f.rows(t, "wt")
+		return len(rows) == 1 && rows[0].AckedAt.Valid
+	}, 5*time.Second, 10*time.Millisecond, "the row of the AI's own message is acknowledged, not fallen back")
+	require.False(t, f.rows(t, "wt")[0].FellBackAt.Valid)
 	principal.ExpectNone(400 * time.Millisecond)
 }
 
@@ -347,4 +357,325 @@ func TestAnEditAndADeleteOfASessionsMessageReachItsLiveSibling(t *testing.T) {
 	deleted := sibling.Deleted(time.Minute)
 	require.Equal(t, m.ID, deleted.Message.ID)
 	principal.ExpectNone(400 * time.Millisecond)
+}
+
+// dialWorktreeAs opens the AI's :wt session as the process live.
+func (f *sessionFixture) dialWorktreeAs(t *testing.T, live string) *testkit.AgentConn {
+	t.Helper()
+	folder := worktreeFolder()
+	folder.Live = live
+	conn, resp := f.token.DialFolder(folder)
+	require.NotNil(t, conn, "upgrade refused: %d %s", resp.Status, resp.Body)
+	conn.Welcome(time.Minute)
+	t.Cleanup(conn.Close)
+	return conn
+}
+
+// rowOf reads the delivery row of a message.
+func (f *sessionFixture) rowOf(t *testing.T, messageID string) db.AgentSessionDelivery {
+	t.Helper()
+	row, err := f.env.App.Store.R().GetSessionDelivery(context.Background(), db.GetSessionDeliveryParams{MessageID: messageID, AgentID: f.agentID})
+	require.NoError(t, err)
+	return row
+}
+
+// waitSessionGone waits until no live session of the AI has the label.
+func (f *sessionFixture) waitSessionGone(t *testing.T, label string) {
+	t.Helper()
+	require.Eventually(t, func() bool {
+		_, ok := f.env.App.Presence.SessionByLabel(f.agentID, label)
+		return !ok
+	}, 5*time.Second, 10*time.Millisecond)
+}
+
+// ownPending writes a pending row for a message as if it had been pushed to the connection owner.
+func (f *sessionFixture) ownPending(t *testing.T, messageID, label, owner string) {
+	t.Helper()
+	require.NoError(t, f.env.App.Store.WithTx(context.Background(), func(q *db.Queries) error {
+		return q.CreateSessionDelivery(context.Background(), db.CreateSessionDeliveryParams{
+			MessageID: messageID, AgentID: f.agentID, Label: label, OwnerLive: owner, CreatedAt: time.Now().UnixMilli(),
+		})
+	}))
+}
+
+// SESS-17, SESS-24: a parallel session has no cursor and no backlog. The principal's unacknowledged
+// plain message is not delivered to it, and the principal still receives it.
+func TestAParallelSessionGetsNoPrincipalBacklog(t *testing.T) {
+	f := newSessionFixture(t)
+	principal := f.dial(t)
+	f.settle(t, principal)
+	m := f.post(t, "plain for the principal")
+	require.Equal(t, m.ID, principal.Message(time.Minute).Message.ID)
+
+	_, parallel := f.dialWorktree(t)
+	parallel.ExpectNone(700 * time.Millisecond)
+	require.Empty(t, f.rows(t, "wt"))
+
+	principal.Close()
+	f.waitPrincipalGone(t)
+	again := f.dial(t)
+	require.Equal(t, m.ID, again.Message(time.Minute).Message.ID, "the principal's queue kept it")
+}
+
+// SESS-24: the acknowledgement of a labelled session leaves a tombstone, so the principal's next
+// backlog does not contain the message, and nothing is deleted.
+func TestALabelledAckKeepsTheMessageOutOfThePrincipalsBacklog(t *testing.T) {
+	f := newSessionFixture(t)
+	principal := f.dial(t)
+	f.settle(t, principal)
+	_, sibling := f.dialWorktree(t)
+	f.settle(t, sibling)
+
+	m := f.post(t, "@atlas:wt hello")
+	require.Equal(t, m.ID, sibling.Message(time.Minute).Message.ID)
+	sibling.Ack(m.ID)
+	require.Eventually(t, func() bool { return f.rowOf(t, m.ID).AckedAt.Valid }, 5*time.Second, 10*time.Millisecond)
+	row := f.rowOf(t, m.ID)
+	require.False(t, row.FellBackAt.Valid)
+
+	principal.Close()
+	f.waitPrincipalGone(t)
+	again := f.dial(t)
+	again.ExpectNone(500 * time.Millisecond)
+	require.Len(t, f.rows(t, "wt"), 1, "the tombstone stays")
+}
+
+// SESS-24: only the connection that owns a pending row acknowledges it, even when another one holds
+// the same label.
+func TestAnAckOfAnotherConnectionsRowIsIgnored(t *testing.T) {
+	f := newSessionFixture(t)
+	principal := f.dial(t)
+	f.settle(t, principal)
+	other := testkit.NewLiveID()
+	mine := f.dialWorktreeAs(t, testkit.NewLiveID())
+	f.settle(t, mine)
+
+	m := f.post(t, "@atlas:wt on a row the new connection owns")
+	require.Equal(t, m.ID, mine.Message(time.Minute).Message.ID)
+	mine.Ack(m.ID)
+	require.Eventually(t, func() bool { return f.rowOf(t, m.ID).AckedAt.Valid }, 5*time.Second, 10*time.Millisecond)
+
+	foreign := f.post(t, "plain, with a row another connection owns")
+	require.Equal(t, foreign.ID, principal.Message(time.Minute).Message.ID)
+	f.ownPending(t, foreign.ID, "wt", other)
+	mine.Ack(foreign.ID)
+	mine.ExpectNone(400 * time.Millisecond)
+	row := f.rowOf(t, foreign.ID)
+	require.False(t, row.AckedAt.Valid, "the ack of a connection that does not own the row changes nothing")
+	require.False(t, row.FellBackAt.Valid)
+}
+
+// SESS-24: the sweep of a connection that ends is keyed by the connection, not by the label. A row a
+// newer connection owns (a different live id, the same label) is not touched by the old one's end, and
+// that connection receives it from its own backlog.
+func TestTheEndOfAnOldConnectionLeavesTheRowsOfANewOneAlone(t *testing.T) {
+	f := newSessionFixture(t)
+	principal := f.dial(t)
+	f.settle(t, principal)
+	oldLive, newLive := testkit.NewLiveID(), testkit.NewLiveID()
+	old := f.dialWorktreeAs(t, oldLive)
+	f.settle(t, old)
+
+	r := f.post(t, "@atlas:wt for the connection that comes next")
+	require.Equal(t, r.ID, old.Message(time.Minute).Message.ID)
+	own := f.post(t, "plain row the old connection does not own")
+	require.Equal(t, own.ID, principal.Message(time.Minute).Message.ID)
+	f.ownPending(t, own.ID, "wt", newLive)
+
+	old.Close()
+	f.waitSessionGone(t, "wt")
+	principal.Message(time.Minute) // the old connection's own row fell back
+	principal.ExpectNone(400 * time.Millisecond)
+	require.False(t, f.rowOf(t, own.ID).FellBackAt.Valid, "the old sweep did not touch the new owner's row")
+	require.True(t, f.rowOf(t, r.ID).FellBackAt.Valid, "its own unacknowledged row fell back")
+
+	fresh := f.dialWorktreeAs(t, newLive)
+	require.Equal(t, own.ID, fresh.Message(time.Minute).Message.ID, "the new connection receives the row it owns")
+}
+
+// SESS-19, SESS-24: ending the AI's sessions (Kick) sweeps each connection it closes: a pending
+// labelled row falls back, and the principal receives it with the note on its next connect.
+func TestAKickFallsBackThePendingLabelledRows(t *testing.T) {
+	f := newSessionFixture(t)
+	principal := f.dial(t)
+	f.settle(t, principal)
+	_, sibling := f.dialWorktree(t)
+	f.settle(t, sibling)
+	m := f.post(t, "@atlas:wt hello")
+	require.Equal(t, m.ID, sibling.Message(time.Minute).Message.ID)
+
+	f.env.App.Presence.Kick(context.Background(), f.agentID, agents.CloseTakenOver, "ended")
+	require.Eventually(t, func() bool { return f.rowOf(t, m.ID).FellBackAt.Valid }, 5*time.Second, 10*time.Millisecond,
+		"the row fell back")
+
+	again := f.dial(t)
+	got := again.Message(time.Minute)
+	require.Equal(t, m.ID, got.Message.ID)
+	require.Equal(t, "wt", got.ForLabel)
+}
+
+// SESS-14, SESS-24: the same process reconnecting replaces its socket without a sweep: nothing falls
+// back, and the new socket receives the row it still owns again.
+func TestTheSameLiveIDReconnectingGetsItsUnackedRowAgain(t *testing.T) {
+	f := newSessionFixture(t)
+	principal := f.dial(t)
+	f.settle(t, principal)
+	live := testkit.NewLiveID()
+	first := f.dialWorktreeAs(t, live)
+	f.settle(t, first)
+	m := f.post(t, "@atlas:wt unacknowledged")
+	require.Equal(t, m.ID, first.Message(time.Minute).Message.ID)
+
+	second := f.dialWorktreeAs(t, live)
+	require.Equal(t, m.ID, second.Message(time.Minute).Message.ID, "the new socket receives its own unacknowledged row")
+	principal.ExpectNone(500 * time.Millisecond)
+	row := f.rowOf(t, m.ID)
+	require.False(t, row.FellBackAt.Valid, "nothing fell back")
+	require.False(t, row.AckedAt.Valid)
+
+	second.Ack(m.ID)
+	require.Eventually(t, func() bool { return f.rowOf(t, m.ID).AckedAt.Valid }, 5*time.Second, 10*time.Millisecond)
+}
+
+// SESS-27: an edit of a message whose row fell back reaches the principal only, even when a newer
+// session holds the same label.
+func TestAnEditOfAFallenBackMessageReachesThePrincipalOnly(t *testing.T) {
+	f := newSessionFixture(t)
+	principal := f.dial(t)
+	f.settle(t, principal)
+	old := f.dialWorktreeAs(t, testkit.NewLiveID())
+	f.settle(t, old)
+	m := f.post(t, "@atlas:wt first")
+	require.Equal(t, m.ID, old.Message(time.Minute).Message.ID)
+	old.Close()
+	require.Equal(t, m.ID, principal.Message(time.Minute).Message.ID)
+
+	newer := f.dialWorktreeAs(t, testkit.NewLiveID())
+	f.settle(t, newer)
+	f.edit(t, m.ID, "@atlas:wt second")
+	frame := principal.Edited(time.Minute)
+	require.Equal(t, m.ID, frame.Message.ID)
+	require.Equal(t, "wt", frame.ForLabel)
+	newer.ExpectNone(500 * time.Millisecond)
+}
+
+// SESS-27: an edit of a message a live session owns reaches its owner connection; once the session
+// acknowledged it, the edit still reaches the label while it is live.
+func TestAnEditFollowsTheOwnerOfThePendingRow(t *testing.T) {
+	f := newSessionFixture(t)
+	principal := f.dial(t)
+	f.settle(t, principal)
+	owner := f.dialWorktreeAs(t, testkit.NewLiveID())
+	f.settle(t, owner)
+	m := f.post(t, "@atlas:wt first")
+	require.Equal(t, m.ID, owner.Message(time.Minute).Message.ID)
+
+	f.edit(t, m.ID, "@atlas:wt second")
+	require.Equal(t, m.ID, owner.Edited(time.Minute).Message.ID)
+	principal.ExpectNone(400 * time.Millisecond)
+
+	owner.Ack(m.ID)
+	require.Eventually(t, func() bool { return f.rowOf(t, m.ID).AckedAt.Valid }, 5*time.Second, 10*time.Millisecond)
+	f.edit(t, m.ID, "@atlas:wt third")
+	require.Equal(t, m.ID, owner.Edited(time.Minute).Message.ID, "acknowledged by its label: the label is live")
+	principal.ExpectNone(400 * time.Millisecond)
+}
+
+// SESS-27: an edit of a message the label acknowledged reaches nobody once that label is gone.
+func TestAnEditOfAnAcknowledgedMessageReachesNobodyWhenTheLabelIsGone(t *testing.T) {
+	f := newSessionFixture(t)
+	principal := f.dial(t)
+	f.settle(t, principal)
+	owner := f.dialWorktreeAs(t, testkit.NewLiveID())
+	f.settle(t, owner)
+	m := f.post(t, "@atlas:wt first")
+	require.Equal(t, m.ID, owner.Message(time.Minute).Message.ID)
+	owner.Ack(m.ID)
+	require.Eventually(t, func() bool { return f.rowOf(t, m.ID).AckedAt.Valid }, 5*time.Second, 10*time.Millisecond)
+	owner.Close()
+	f.waitSessionGone(t, "wt")
+
+	f.edit(t, m.ID, "@atlas:wt second")
+	principal.ExpectNone(600 * time.Millisecond)
+}
+
+// SESS-38: the gateway never hands a session its own message, whatever the dispatcher asks: a push
+// that names the writing session's own label delivers nothing and writes no row.
+func TestAPushToTheAuthorsOwnLabelDeliversNothing(t *testing.T) {
+	f := newSessionFixture(t)
+	principal := f.dial(t)
+	f.settle(t, principal)
+	folder, sibling := f.dialWorktree(t)
+	f.settle(t, sibling)
+	m := f.postFrom(t, folder, "hello")
+	require.Equal(t, "wt", m.AuthorLabel)
+
+	msg, err := f.env.App.Gateway.Message(context.Background(), m.ID)
+	require.NoError(t, err)
+	require.False(t, f.env.App.Gateway.Push(f.agentID, "wt", dto.AgentMessage{Room: dto.RoomRef{ID: f.room.ID, Name: "Support"}, Trusted: true, Message: msg}))
+	sibling.ExpectNone(500 * time.Millisecond)
+	principal.ExpectNone(200 * time.Millisecond)
+	require.Empty(t, f.rows(t, "wt"))
+}
+
+// pending reads the principal's queue the way a tools-only reader does.
+func (f *sessionFixture) pending(t *testing.T) []dto.AgentMessage {
+	t.Helper()
+	a, err := f.env.App.Store.R().GetAgent(context.Background(), f.agentID)
+	require.NoError(t, err)
+	out, err := f.env.App.Gateway.Pending(context.Background(), a, "", 20)
+	require.NoError(t, err)
+	return out
+}
+
+func (f *sessionFixture) cursor(t *testing.T) (int64, error) {
+	t.Helper()
+	return f.env.App.Store.R().GetAgentCursor(context.Background(), db.GetAgentCursorParams{AgentID: f.agentID, RoomID: f.room.ID})
+}
+
+// SESS-24: a Pending call that returns only a fallback row never moves the principal's cursor, whether
+// the fallback is below it (it was jumped over by a later acknowledgement) or above everything the
+// cursor stream holds.
+func TestPendingWithOnlyAFallbackKeepsTheCursor(t *testing.T) {
+	t.Run("below the cursor", func(t *testing.T) {
+		f := newSessionFixture(t)
+		principal := f.dial(t)
+		f.settle(t, principal)
+		fallback := f.post(t, "@atlas:wt addressed to no live session")
+		require.Equal(t, fallback.ID, principal.Message(time.Minute).Message.ID)
+		later := f.post(t, "plain, acknowledged first")
+		require.Equal(t, later.ID, principal.Message(time.Minute).Message.ID)
+		principal.Ack(later.ID)
+		require.Eventually(t, func() bool {
+			seq, err := f.cursor(t)
+			return err == nil && seq == later.Seq
+		}, 5*time.Second, 10*time.Millisecond)
+		principal.Close()
+		f.waitPrincipalGone(t)
+
+		got := f.pending(t)
+		require.Len(t, got, 1)
+		require.Equal(t, fallback.ID, got[0].Message.ID)
+		require.Equal(t, "wt", got[0].ForLabel)
+		seq, err := f.cursor(t)
+		require.NoError(t, err)
+		require.Equal(t, later.Seq, seq, "the cursor did not move")
+		require.True(t, f.rowOf(t, fallback.ID).AckedAt.Valid, "the read consumed the fallback and left a tombstone")
+		require.Empty(t, f.pending(t))
+	})
+	t.Run("above the cursor stream", func(t *testing.T) {
+		f := newSessionFixture(t)
+		principal := f.dial(t)
+		f.settle(t, principal)
+		fallback := f.post(t, "@atlas:wt addressed to no live session")
+		require.Equal(t, fallback.ID, principal.Message(time.Minute).Message.ID)
+		principal.Close()
+		f.waitPrincipalGone(t)
+
+		got := f.pending(t)
+		require.Len(t, got, 1)
+		require.Equal(t, fallback.ID, got[0].Message.ID)
+		_, err := f.cursor(t)
+		require.ErrorIs(t, err, sql.ErrNoRows, "a fallback's sequence never becomes the cursor")
+	})
 }

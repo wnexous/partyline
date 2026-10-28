@@ -59,37 +59,6 @@ ORDER BY seq ASC, id ASC;
 -- edit or a delete; sql.ErrNoRows when the message was never pushed to a label.
 SELECT * FROM agent_session_deliveries WHERE message_id = ? AND agent_id = ?;
 
--- Legacy queries below keep the callers of internal/agents compiling until the gateway is wired to the
--- owned rows; they are label-keyed and delete rows, so nothing new may use them.
-
--- name: DeleteSessionDelivery :exec
--- Deletes a fallen-back or unowned row: the principal's or a tools-only process's consumption.
-DELETE FROM agent_session_deliveries WHERE message_id = ? AND agent_id = ?;
-
--- name: ReleaseSessionDelivery :execrows
--- A live labelled session's acknowledgement by deletion, keyed by the AI only.
-DELETE FROM agent_session_deliveries
-WHERE message_id = ? AND agent_id = ? AND fell_back_at IS NULL;
-
--- name: FallBackSessionDeliveries :many
--- The label-keyed end-of-session sweep.
-UPDATE agent_session_deliveries SET fell_back_at = sqlc.arg(fell_back_at)
-WHERE agent_id = sqlc.arg(agent_id) AND label = sqlc.arg(label) AND fell_back_at IS NULL
-  AND NOT EXISTS (
-      SELECT 1 FROM messages m
-      WHERE m.id = agent_session_deliveries.message_id
-        AND m.author_kind = 'agent' AND m.author_id = sqlc.arg(agent_id))
-RETURNING message_id;
-
--- name: DeleteSelfSessionDeliveries :execrows
--- The label-keyed drop of the AI's own pending rows.
-DELETE FROM agent_session_deliveries
-WHERE agent_id = sqlc.arg(agent_id) AND label = sqlc.arg(label) AND fell_back_at IS NULL
-  AND EXISTS (
-      SELECT 1 FROM messages m
-      WHERE m.id = agent_session_deliveries.message_id
-        AND m.author_kind = 'agent' AND m.author_id = sqlc.arg(agent_id));
-
 -- name: ListSessionFallbacks :many
 -- The principal's fallback queue of one room: the messages whose delivery to a label was not
 -- acknowledged before that session ended, in the order they arrived. An acknowledged row is a tombstone
@@ -115,8 +84,8 @@ WHERE d.agent_id = sqlc.arg(agent_id) AND m.room_id = sqlc.arg(room_id)
 ORDER BY m.seq ASC;
 
 -- name: ListSessionDeliveriesByLabel :many
--- The delivery rows of one label, in the order they were created (the end-of-session sweep reads the ids
--- of a label through FallBackSessionDeliveries' RETURNING; this lists them for tests and diagnostics).
+-- The delivery rows of one label, in the order they were created (the end of a connection sweeps its own
+-- rows through FallBackOwnedDeliveries; this lists a label's rows for tests and diagnostics).
 SELECT * FROM agent_session_deliveries
 WHERE agent_id = ? AND label = ?
 ORDER BY created_at, message_id;
