@@ -20,6 +20,13 @@ import {
   useRef,
   useState,
 } from "react";
+import { useMe } from "@/entities/account";
+import {
+  authorDisplayName,
+  messageExcerpt,
+  useEditMessage,
+  usePostMessage,
+} from "@/entities/message";
 import {
   type MentionCandidate,
   MentionSuggestions,
@@ -28,15 +35,14 @@ import {
   mentionCandidates,
   mentionOptionId,
 } from "@/features/mention-autocomplete";
-import { useMe } from "@/entities/account";
-import {
-  authorDisplayName,
-  messageExcerpt,
-  useEditMessage,
-  usePostMessage,
-} from "@/entities/message";
 import { useDraft, useDraftStore, useEditDraft } from "@/features/send-message";
-import { type HoldState, MicButton, RecordingBar, type VoiceFailure, useVoiceRecorder } from "@/features/send-voice-message";
+import {
+  type HoldState,
+  MicButton,
+  RecordingBar,
+  useVoiceRecorder,
+  type VoiceFailure,
+} from "@/features/send-voice-message";
 import { textLength } from "@/lib/schemas";
 import { isApiError } from "@/shared/api/client";
 import {

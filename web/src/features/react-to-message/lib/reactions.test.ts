@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { atReactionLimit, reactedWith, withReaction } from "@/entities/message";
-import { MORE_REACTIONS, PICKER_COLUMNS, QUICK_REACTIONS } from "./reactions";
 import { MaxMessageEmoji, type Reaction } from "@/shared/api/types.gen";
+import { MORE_REACTIONS, PICKER_COLUMNS, QUICK_REACTIONS } from "./reactions";
 
 /*
  * The emoji a message can be reacted with, and what one reaction does to the list a message carries

@@ -2,8 +2,6 @@ import { QueryClientProvider } from "@tanstack/react-query";
 import { act, renderHook, waitFor } from "@testing-library/react";
 import type { ReactNode } from "react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { useReact } from "./use-react";
-import { MORE_REACTIONS } from "../lib/reactions";
 import type { MessagePages } from "@/shared/api/cache-types";
 import { queryKeys } from "@/shared/api/query-keys";
 import type { Message, Reaction } from "@/shared/api/types.gen";
@@ -12,6 +10,8 @@ import { I18nProvider } from "@/shared/i18n";
 import { apiError, json, mockApi } from "@/test/fetch";
 import { makeMessage } from "@/test/fixtures";
 import { makeQueryClient } from "@/test/render";
+import { MORE_REACTIONS } from "../lib/reactions";
+import { useReact } from "./use-react";
 
 // Only `toast` is ours; the rest of the module stays.
 const toast = vi.hoisted(() => Object.assign(vi.fn(), { error: vi.fn() }));

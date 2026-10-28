@@ -1,8 +1,8 @@
 import type { ReactNode } from "react";
-import { MORE_REACTIONS, PICKER_COLUMNS } from "../lib/reactions";
 import { useT } from "@/shared/i18n";
 import { EmojiGrid } from "@/shared/ui/molecules/emoji-grid";
 import { Popover, PopoverContent } from "@/shared/ui/primitives/popover";
+import { MORE_REACTIONS, PICKER_COLUMNS } from "../lib/reactions";
 
 /*
  * The larger set of emoji for a mouse (RCT-02): a popover with the grid, hung from whatever opened it. The

@@ -1,5 +1,5 @@
-import { isVoiceName } from "../lib/voice";
 import type { Message } from "@/shared/api/types.gen";
+import { isVoiceName } from "../lib/voice";
 
 /** A line is this many characters at most. */
 const MAX = 140;
