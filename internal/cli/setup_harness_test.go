@@ -66,6 +66,7 @@ const (
 	claudeAdd = "claude mcp add --scope user partyline -- " + testBinary + " channel"
 	codexAdd  = "codex mcp add partyline -- " + testBinary + " channel --tools-only --harness codex"
 	geminiAdd = "gemini mcp add -s user partyline " + testBinary + " channel --tools-only --harness gemini"
+	agyAdd    = "agy mcp add partyline " + testBinary + " channel --tools-only --harness antigravity"
 )
 
 // HAR-01, CLI-05: --harness registers exactly the named harness without a per-harness
@@ -319,4 +320,51 @@ func TestSetupRemovesItsBackups(t *testing.T) {
 		require.NoError(t, err)
 		require.Equal(t, "earlier\n", string(data))
 	})
+}
+
+// HAR-01, HAR-02, HAR-04 (Antigravity): `setup --harness antigravity` runs `agy mcp add` and writes the
+// Stop hook into ~/.gemini/config/hooks.json in the temp HOME; it names `partyline agy` as the launcher;
+// `setup --remove antigravity` takes both out again and leaves no file behind.
+func TestSetupRegistersAndRemovesAntigravity(t *testing.T) {
+	e := newChannelEnv(t)
+	home := t.TempDir()
+	calls := &harnessCalls{}
+	opts := setupOpts{env: map[string]string{"HOME": home}, lookPath: installed("claude", "agy"), run: calls.run}
+	r := runSetup(t, opts, "--url", e.env.URL, "--token", e.secret, "--yes", "--harness", "antigravity")
+	require.Equal(t, 0, r.code, "stderr: %s", r.stderr)
+	require.Equal(t, []string{agyAdd}, calls.calls())
+	require.Contains(t, r.stdout, "✓ Antigravity: registered")
+	require.True(t, strings.HasSuffix(r.stdout, "\nStart a session with partyline agy.\n"), r.stdout)
+	hooks, err := os.ReadFile(filepath.Join(home, ".gemini", "config", "hooks.json"))
+	require.NoError(t, err)
+	require.Contains(t, string(hooks), testBinary+" hook antigravity-stop")
+	require.Contains(t, string(hooks), `"Stop"`)
+
+	// The fake CLI writes nothing, so the MCP entry is put where agy keeps it for the removal.
+	mcp := filepath.Join(home, ".gemini", "config", "mcp_config.json")
+	require.NoError(t, os.WriteFile(mcp, []byte(`{"mcpServers":{"partyline":{"command":"`+testBinary+`","args":["channel","--tools-only","--harness","antigravity"]}}}`), 0o600))
+	calls = &harnessCalls{}
+	opts.run = calls.run
+	r = runSetup(t, opts, "--remove", "antigravity", "--yes")
+	require.Equal(t, 0, r.code, "stderr: %s", r.stderr)
+	require.Equal(t, []string{"agy mcp remove partyline"}, calls.calls())
+	require.Contains(t, r.stdout, "✓ Antigravity: removed")
+	require.NoFileExists(t, filepath.Join(home, ".gemini", "config", "hooks.json"))
+}
+
+// CLI-03: the setup checklist offers Antigravity, installed when `agy` is on PATH, and a detected
+// harness starts checked.
+func TestSetupMenuOffersAntigravity(t *testing.T) {
+	_, opts := loggedInSetup(t)
+	calls := &harnessCalls{}
+	opts.lookPath, opts.run = installed("agy"), calls.run
+	opts.terminal = true
+	opts.stdin = "\r"
+	r := runSetup(t, opts)
+	require.Equal(t, 0, r.code, "stderr: %s", r.stderr)
+	rows := menuRows(r.stdout)
+	require.Contains(t, rows, "  [x] Antigravity  installed · not registered", "rows: %v", rows)
+	require.Equal(t, []string{agyAdd}, mutationCalls(calls.calls()))
+	require.Contains(t, r.stdout, "✓ Antigravity: registered\n")
+	require.True(t, strings.HasSuffix(r.stdout, "\nStart a session with partyline agy.\n"), r.stdout)
 }

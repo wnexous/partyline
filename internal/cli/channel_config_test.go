@@ -155,5 +155,5 @@ func TestToolsOnlyChannelHarnessFlag(t *testing.T) {
 func TestToolsOnlyChannelHarnessFlagErrors(t *testing.T) {
 	code, _, errOut := run("channel", "--tools-only", "--harness", "claude")
 	require.Equal(t, 2, code)
-	require.Contains(t, errOut, `partyline channel: unknown --harness "claude" with --tools-only (known: codex, gemini, opencode, pi)`)
+	require.Contains(t, errOut, `partyline channel: unknown --harness "claude" with --tools-only (known: codex, gemini, antigravity, opencode, pi)`)
 }

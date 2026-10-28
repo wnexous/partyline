@@ -49,7 +49,7 @@ func TestSetupMenuAppliesTheChecklist(t *testing.T) {
 
 	// Detected harnesses are pre-selected. Move to pi and deselect it: claude and gemini are
 	// registered, pi is removed, omp stays exactly as it was.
-	opts.stdin = "jjjj \r"
+	opts.stdin = "jjjjj \r"
 	calls = &harnessCalls{}
 	opts.run = calls.run
 	r := runSetup(t, opts)
@@ -66,7 +66,8 @@ func TestSetupMenuAppliesTheChecklist(t *testing.T) {
 	require.Contains(t, r.stdout, "✓ oh-my-pi (omp): already registered\n", "an untouched registered harness still gets its line")
 	require.Contains(t, r.stdout, "- Codex CLI: not registered\n")
 	require.Contains(t, r.stdout, "- OpenCode: not registered\n")
-	for _, title := range []string{"Claude Code", "Codex CLI", "Gemini CLI", "OpenCode", "pi", "oh-my-pi (omp)"} {
+	require.Contains(t, r.stdout, "- Antigravity: not registered\n")
+	for _, title := range []string{"Claude Code", "Codex CLI", "Gemini CLI", "Antigravity", "OpenCode", "pi", "oh-my-pi (omp)"} {
 		require.Len(t, resultLinesOf(r.stdout, title), 1, "one result line for %s", title)
 	}
 	require.True(t, strings.HasSuffix(r.stdout, "\nStart a session with partyline claude.\n"), r.stdout)

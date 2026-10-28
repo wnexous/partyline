@@ -169,7 +169,7 @@ func setupMenu(ctx context.Context, states []harnessState, keepBackups bool, io 
 // menu (CLI-05). Registered harnesses that are not named stay as they are.
 func applyHarnessFlags(ctx context.Context, regs []harness.Registrar, register, remove []harness.Registrar, keepBackups bool, io stdio) int {
 	if len(register) == 0 && len(remove) == 0 {
-		fmt.Fprintln(io.stdout, "No supported harness found (Claude Code, Codex CLI, Gemini CLI, OpenCode, pi, omp).")
+		fmt.Fprintln(io.stdout, "No supported harness found (Claude Code, Codex CLI, Gemini CLI, Antigravity, OpenCode, pi, omp).")
 		fmt.Fprintln(io.stdout, "Register one later with: partyline setup --harness <name>, then start it with partyline <name>")
 		return 0
 	}
@@ -220,7 +220,7 @@ func applyHarnessFlags(ctx context.Context, regs []harness.Registrar, register, 
 		settleBackups(regs, earlier, keepBackups, io)
 	}
 	if first != "" {
-		fmt.Fprintf(io.stdout, "\nStart a session with partyline %s.\n", first)
+		fmt.Fprintf(io.stdout, "\nStart a session with partyline %s.\n", launcherCommand(first))
 	}
 	if !ok {
 		return 1
@@ -269,7 +269,7 @@ func applyHarnessSelection(ctx context.Context, states []harnessState, selected 
 func nameFirstLauncher(states []harnessState, registered []bool, io stdio) {
 	for i, s := range states {
 		if i < len(registered) && registered[i] {
-			fmt.Fprintf(io.stdout, "\nStart a session with partyline %s.\n", s.reg.ID())
+			fmt.Fprintf(io.stdout, "\nStart a session with partyline %s.\n", launcherCommand(s.reg.ID()))
 			return
 		}
 	}

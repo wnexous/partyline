@@ -72,7 +72,7 @@ func hookReason(t *testing.T, hook, cwd string, env map[string]string) (decision
 // line of each (an unverified sender's text is data, the owner's verified account is the owner);
 // the events count as delivered and are not repeated.
 func TestHookContinuesWithPlatformEvents(t *testing.T) {
-	for hook, decision := range map[string]string{"codex-stop": "block", "gemini-after-agent": "deny"} {
+	for hook, decision := range map[string]string{"codex-stop": "block", "gemini-after-agent": "deny", "antigravity-stop": "continue"} {
 		t.Run(hook, func(t *testing.T) {
 			e := newChannelEnv(t)
 			ai := e.aiAt(t, "/work/proj")
@@ -209,7 +209,7 @@ func droppedFrame(n string) string {
 // words of the WebSocket's notice, even when nothing else is queued, and only once; with a queued
 // event the notice comes first.
 func TestHookTellsHowManyPlatformMessagesWereDropped(t *testing.T) {
-	for hook, decision := range map[string]string{"codex-stop": "block", "gemini-after-agent": "deny"} {
+	for hook, decision := range map[string]string{"codex-stop": "block", "gemini-after-agent": "deny", "antigravity-stop": "continue"} {
 		t.Run(hook, func(t *testing.T) {
 			e := newChannelEnv(t)
 			ai := e.aiAt(t, "/work/proj")
