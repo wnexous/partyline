@@ -541,6 +541,27 @@ messages that arrive before the first session wait for it. pi and OpenCode deliv
 message it cannot hand over (no model selected yet, or the session refuses it) and retries in
 order, after 1 second doubling to 30 seconds and when the current turn ends.
 
+### OpenCode versions
+
+The OpenCode plugin works in OpenCode 1.4 and later and in OpenCode 2.x. One file serves both:
+its default export carries `server` (read by OpenCode 1) and `setup` (read by OpenCode 2, which
+refuses a plugin file without a default export that has an `id` and a `setup` or `effect`
+function: `Plugin must export a default definition with an id and an effect or setup function`).
+OpenCode 2 gets the messages through `ctx.session.prompt` as a follow-up queued behind the turn in
+progress, the same as `promptAsync` in OpenCode 1.
+
+A plugin file written by an older `partyline setup` loads in OpenCode 1 only. After installing a
+newer Partyline, run `partyline setup --harness opencode` (add `--always` if you set it up that
+way) to rewrite it; the first line of `~/.config/opencode/plugins/partyline.ts` names the
+Partyline version that wrote it. `partyline update` replaces the binary and leaves the plugin
+file alone.
+
+OpenCode 2 runs plugins in a background server shared by all its windows, and that server has the
+environment of whoever started it, not the `PARTYLINE_HARNESS` that `partyline opencode` sets. To
+have the plugin push messages into a window, start it with its own server:
+`partyline opencode --standalone` (OpenCode 2 only; OpenCode 1 does not know the flag). A window on the shared server still gets the tools; to push in
+every window of that server, register with `partyline setup --harness opencode --always`.
+
 ## Codex CLI and Gemini CLI
 
 Neither can be woken while idle and neither holds a live session. When a turn ends, the hook

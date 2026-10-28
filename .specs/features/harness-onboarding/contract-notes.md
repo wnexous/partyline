@@ -300,8 +300,10 @@ Binding for Phase 4 (web, real-harness UAT: T15-T17) and the Verifier.
   {triggerTurn: true, deliverAs: "followUp"})` (pi 1.0.4: idle + triggerTurn runs a turn,
   streaming + followUp queues). `session_shutdown` kills listen and cancels restarts.
   Verified in pi 1.0.4 RPC mode: the custom message is stored and starts a turn.
-- OpenCode (`opencode/partyline.ts`): exports only `PartylinePlugin` (OpenCode 1.18.32 calls
-  every export of a plugin file and throws on a non-function). Spawns listen in `directory`;
+- OpenCode (`opencode/partyline.ts`): exports `PartylinePlugin` and a default `{id, server,
+  setup}` (OpenCode 1.4+ reads the default's `server`; OpenCode 2 requires a default with `id` and
+  `setup`/`effect` and delivers with `ctx.session.prompt`; OpenCode before 1.4 called every export
+  and threw on a non-function, so it cannot load the plugin). Spawns listen in `directory`;
   each line → `client.session.promptAsync({path: {id}, body: {parts: [{type: "text", text}]}})`
   (falls back to `session.prompt` without awaiting the turn). Active session = last
   `session.created` (top level) / `session.status` / `session.idle` session id, never one with
