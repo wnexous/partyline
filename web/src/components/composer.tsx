@@ -27,7 +27,7 @@ import {
   mentionAt,
   mentionCandidates,
   mentionOptionId,
-} from "@/components/mention-suggestions";
+} from "@/features/mention-autocomplete";
 import { type HoldState, MicButton, RecordingBar } from "@/components/voice-controls";
 import { useMe } from "@/entities/account";
 import {
