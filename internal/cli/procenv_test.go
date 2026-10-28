@@ -235,7 +235,7 @@ func TestStrippedToolsOnlyChannelWithItsHarnessUsesItsWorkingDirectory(t *testin
 	require.Equal(t, "codex", e.registered(t, "/work/plain").AI.App)
 }
 
-// SESS-50: the harness session id of a process is PARTYLINE_HARNESS_SESSION, else Claude Code's own
+// SESS-51: the harness session id of a process is PARTYLINE_HARNESS_SESSION, else Claude Code's own
 // CLAUDE_CODE_SESSION_ID for Claude Code only, and only a value the server accepts; anything else is no id.
 func TestHarnessSessionID(t *testing.T) {
 	const uuid = "15cf4c1e-3a52-4a8e-9f6b-0123456789ab"

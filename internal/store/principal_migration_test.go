@@ -9,7 +9,7 @@ import (
 	"github.com/wnexous/partyline/internal/store/db"
 )
 
-// SESS-51 (data): migration 0028 adds agents.principal_session, ” for every AI that existed before it
+// SESS-52 (data): migration 0028 adds agents.principal_session, ” for every AI that existed before it
 // (no session pinned: the folder's first live session acts as the principal), and SetAgentPrincipalSession
 // pins and unpins a harness session id without touching the rest of the row.
 func TestMigration0028AddsThePinnedPrincipalSession(t *testing.T) {

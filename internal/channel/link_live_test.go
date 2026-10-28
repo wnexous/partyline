@@ -424,7 +424,7 @@ func TestChannelAnnouncesItsParallelSessionOnce(t *testing.T) {
 	}
 }
 
-// SESS-50, SESS-57: the harness session id is sent on every dial, and --principal on the first connection that
+// SESS-51, SESS-57: the harness session id is sent on every dial, and --principal on the first connection that
 // succeeds only, like the takeover: a reconnect never takes the role again.
 func TestLinkSendsTheHarnessSessionAndAsksForThePrincipalOnce(t *testing.T) {
 	var log dialLog
@@ -457,7 +457,7 @@ func TestLinkSendsTheHarnessSessionAndAsksForThePrincipalOnce(t *testing.T) {
 	}
 }
 
-// SESS-50: a session whose harness has no session id sends no header.
+// SESS-51: a session whose harness has no session id sends no header.
 func TestLinkSendsNoHarnessSessionWhenThereIsNone(t *testing.T) {
 	var log dialLog
 	base := refuseWith(t, &log, http.StatusServiceUnavailable, dto.ErrorCodeUnavailable, "later")

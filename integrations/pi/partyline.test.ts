@@ -105,12 +105,12 @@ describe("pi extension", () => {
 		expect(spawned[0].options.env?.PATH).toBe(process.env.PATH);
 	});
 
-	test("SESS-50: listen gets pi's session id as PARTYLINE_HARNESS_SESSION", () => {
+	test("SESS-51: listen gets pi's session id as PARTYLINE_HARNESS_SESSION", () => {
 		fakePi({ sessionId: "0199-abc_DEF.1:2" }).start();
 		expect(spawned[0].options.env?.PARTYLINE_HARNESS_SESSION).toBe("0199-abc_DEF.1:2");
 	});
 
-	test("SESS-50: a restarted listen keeps the session id", () => {
+	test("SESS-51: a restarted listen keeps the session id", () => {
 		const pi = fakePi({ sessionId: "pi-session-1" });
 		pi.start();
 		spawned[0].exit(1);
@@ -119,7 +119,7 @@ describe("pi extension", () => {
 		expect(spawned[1].options.env?.PARTYLINE_HARNESS_SESSION).toBe("pi-session-1");
 	});
 
-	test("SESS-50: no id, an unusable id or a pi without the API means no variable, never an inherited one", () => {
+	test("SESS-51: no id, an unusable id or a pi without the API means no variable, never an inherited one", () => {
 		const inherited = process.env.PARTYLINE_HARNESS_SESSION;
 		process.env.PARTYLINE_HARNESS_SESSION = "another-session";
 		try {

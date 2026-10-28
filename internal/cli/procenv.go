@@ -74,7 +74,7 @@ const principalEnvVar = "PARTYLINE_PRINCIPAL"
 
 // harnessSessionVar carries the harness's id of the conversation to the session's partyline processes. The
 // pi adapter sets it on the listen process it starts; Claude Code needs none, its channel process has
-// claudeSessionVar (SESS-50). Any other harness whose host can set an environment variable may use it.
+// claudeSessionVar (SESS-51). Any other harness whose host can set an environment variable may use it.
 const harnessSessionVar = "PARTYLINE_HARNESS_SESSION"
 
 // claudeSessionVar is the variable Claude Code puts in the environment of the processes it starts, among them
@@ -84,7 +84,7 @@ const claudeSessionVar = "CLAUDE_CODE_SESSION_ID"
 // harnessSessionPattern is the shape of a harness session id the server accepts (dto.HarnessSessionPattern).
 var harnessSessionPattern = regexp.MustCompile(dto.HarnessSessionPattern)
 
-// harnessSessionID is the harness's id of the conversation this process belongs to (SESS-50): harnessSessionVar
+// harnessSessionID is the harness's id of the conversation this process belongs to (SESS-51): harnessSessionVar
 // first, then, for Claude Code only (an empty harness is the full channel, which is Claude Code), claudeSessionVar (another harness started from a Claude Code tool inherits
 // it and must not send it). Empty when there is none or it is not an id the server accepts: such a session
 // then has no id, which only costs it the fixed principal role, never the connection.

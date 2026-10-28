@@ -73,7 +73,7 @@ func TestChannelTakesOverWithTheEnvironmentVariable(t *testing.T) {
 	require.False(t, isErr, text)
 }
 
-// SESS-50, SESS-52: the channel of a Claude Code session sends CLAUDE_CODE_SESSION_ID as its harness session
+// SESS-51, SESS-52: the channel of a Claude Code session sends CLAUDE_CODE_SESSION_ID as its harness session
 // id, and the first session of the AI pins it; a second channel with another id is a parallel session.
 func TestChannelSendsClaudeCodesSessionID(t *testing.T) {
 	e := newChannelEnv(t)

@@ -1,4 +1,4 @@
--- A fixed principal session (ai-sessions, SESS-50..SESS-66).
+-- A fixed principal session (ai-sessions, SESS-51..SESS-62).
 -- principal_session is the harness session id (Claude Code's CLAUDE_CODE_SESSION_ID, pi's session id)
 -- of the one session that holds the principal role ("") of the AI. It is stored, not derived from who
 -- connects first: a parallel session never takes the role by itself, only an explicit action changes it

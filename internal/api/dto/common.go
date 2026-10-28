@@ -59,7 +59,7 @@ const (
 	// HeaderHarnessSession is the harness's own id of the conversation the session belongs to
 	// (Claude Code's session id, pi's session id), matching HarnessSessionPattern. It stays the same
 	// when the conversation is resumed in a new process, so the server can tell which session is the
-	// AI's principal one and keep a parallel session's label (SESS-50, SESS-54). Sent only by a client
+	// AI's principal one and keep a parallel session's label (SESS-51, SESS-54). Sent only by a client
 	// whose harness has one; a malformed value is refused with 422 and the field harness_session.
 	HeaderHarnessSession = "X-Partyline-Harness-Session"
 	// HeaderPrincipal set to "1" on the agent WebSocket makes the session the AI's principal one and

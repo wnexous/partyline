@@ -107,7 +107,7 @@ describe("OpenCode plugin", () => {
 		expect(process.env.PARTYLINE_LIVE).toBe(live); // the MCP servers started later inherit it
 	});
 
-	test("SESS-50: OpenCode has no id for the listener, which serves whichever session is active: none is sent, and an inherited one is removed", async () => {
+	test("SESS-51: OpenCode has no id for the listener, which serves whichever session is active: none is sent, and an inherited one is removed", async () => {
 		const inherited = process.env.PARTYLINE_HARNESS_SESSION;
 		process.env.PARTYLINE_HARNESS_SESSION = "another-session";
 		try {

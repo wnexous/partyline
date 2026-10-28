@@ -477,7 +477,7 @@ type handshake struct {
 	label string
 	// takeover asks to take the AI's session over (SES-02).
 	takeover bool
-	// sessionID is the harness session id of the conversation the connection belongs to (SESS-50); empty
+	// sessionID is the harness session id of the conversation the connection belongs to (SESS-51); empty
 	// when the harness has none.
 	sessionID string
 	// principal asks for the principal role and pins the session (--principal, SESS-57).
@@ -496,7 +496,7 @@ var harnessSessionPattern = regexp.MustCompile(dto.HarnessSessionPattern)
 // [A-Za-z0-9._:-] starting with a letter or a digit (SESS-60).
 func ValidHarnessSession(id string) bool { return harnessSessionPattern.MatchString(id) }
 
-// HarnessSessionFromHeader reads the harness session id of a connection (SESS-50). Absent is fine, a client
+// HarnessSessionFromHeader reads the harness session id of a connection (SESS-51). Absent is fine, a client
 // whose harness has no session id sends none; one that is malformed is a 422 on the field harness_session, so
 // a typo never turns a session into a different one silently.
 func HarnessSessionFromHeader(h http.Header) (string, error) {
