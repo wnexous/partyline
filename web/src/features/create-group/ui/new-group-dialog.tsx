@@ -7,11 +7,9 @@ import {
   IntelligenceAvatar,
   IntelligenceName,
   type Pickable,
-  PickableMeta,
+  PickableRow,
   useContacts,
   usePickables,
-  usePresenceStore,
-  withContactPresence,
 } from "@/entities/intelligence";
 import { canCreateGroupsIn, OrgSelect, useCurrentOrg, useOrgUsers } from "@/entities/organization";
 import { useCreateGroup } from "@/entities/room";
@@ -78,7 +76,6 @@ function GroupForm({ onDone, onCancel }: { onDone: () => void; onCancel: () => v
   const contacts = useContacts();
   const create = useCreateGroup();
   const { org: current, orgs, loading: orgsLoading, select } = useCurrentOrg();
-  const presence = usePresenceStore((s) => s.presence);
   const filterId = useId();
   const [filter, setFilter] = useState("");
   // Ids in the order they were picked: the server adds the members in that order.
@@ -325,9 +322,6 @@ function GroupForm({ onDone, onCancel }: { onDone: () => void; onCancel: () => v
                       picked={picked}
                       flagged={flagged}
                       full={full}
-                      online={(p) =>
-                        p.ai ? withContactPresence(p.ai, presence[p.ref.id]).online : false
-                      }
                       onToggle={toggle}
                     />
                   </>
@@ -356,7 +350,6 @@ function Candidates({
   picked,
   flagged,
   full,
-  online,
   onToggle,
 }: {
   label: string;
@@ -364,7 +357,6 @@ function Candidates({
   picked: string[];
   flagged: Set<string>;
   full: boolean;
-  online: (p: Pickable) => boolean;
   onToggle: (id: string, on: boolean) => void;
 }) {
   const prefix = useId();
@@ -376,7 +368,6 @@ function Candidates({
         {items.map((p) => {
           const on = picked.includes(p.ref.id);
           const boxId = `${prefix}-box-${p.ref.id}`;
-          const metaId = `${prefix}-meta-${p.ref.id}`;
           return (
             <li key={p.ref.id}>
               <label
@@ -389,21 +380,15 @@ function Candidates({
                   checked={on}
                   disabled={full && !on}
                   aria-label={p.ref.display_name}
-                  aria-describedby={metaId}
                   aria-invalid={flagged.has(p.ref.id) || undefined}
                   onCheckedChange={(next) => onToggle(p.ref.id, next === true)}
                   className="mt-1.5"
                 />
-                <IntelligenceAvatar intelligence={p.ref} decorative />
-                <span className="min-w-0 flex-1">
-                  <IntelligenceName intelligence={p.ref} showHandle />
-                  <span
-                    id={metaId}
-                    className="mt-0.5 flex flex-wrap items-center gap-x-2 text-xs text-muted-foreground"
-                  >
-                    <PickableMeta pickable={p} online={online(p)} />
-                  </span>
-                </span>
+                <PickableRow
+                  pickable={p}
+                  as="div"
+                  className="min-w-0 flex-1 gap-3 p-0 hover:bg-transparent"
+                />
               </label>
             </li>
           );

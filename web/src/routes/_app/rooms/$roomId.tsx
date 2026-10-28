@@ -13,7 +13,6 @@ import { useEffect, useState } from "react";
 import { toast } from "sonner";
 import { Composer, canPost } from "@/components/composer";
 import { ConversationHeader } from "@/components/conversation-header";
-import { MemberPicker } from "@/components/member-picker";
 import {
   type MessageFocus,
   MessageTimeline,
@@ -33,6 +32,7 @@ import {
   useRoom,
 } from "@/entities/room";
 import { useRoomMembers } from "@/entities/room-member";
+import { MemberPicker } from "@/features/add-member";
 import { useDraft, useDraftStore } from "@/features/send-message";
 import { isApiError } from "@/shared/api/client";
 import {

@@ -1,12 +1,5 @@
 import { type ReactNode, useMemo, useState } from "react";
-import {
-  IntelligenceRow,
-  PickableMeta,
-  useContacts,
-  usePickables,
-  usePresenceStore,
-  withContactPresence,
-} from "@/entities/intelligence";
+import { PickableRow, useContacts, usePickables } from "@/entities/intelligence";
 import type { IntelligenceRef } from "@/shared/api/types.gen";
 import { useT } from "@/shared/i18n";
 import { matchesTerms } from "@/shared/lib/search";
@@ -59,7 +52,6 @@ export function NewConversationDialog({
 function ContactPicker({ initialQuery, onDone }: { initialQuery: string; onDone: () => void }) {
   const t = useT();
   const contacts = useContacts();
-  const presence = usePresenceStore((s) => s.presence);
   const conversation = useStartConversation();
   const [query, setQuery] = useState(initialQuery);
 
@@ -104,16 +96,9 @@ function ContactPicker({ initialQuery, onDone }: { initialQuery: string; onDone:
             onSelect={() => void pick(p.ref)}
             className="items-start gap-3 rounded-md px-2.5 py-2 data-[selected=true]:bg-tape/60 data-[selected=true]:text-tape-foreground"
           >
-            <IntelligenceRow
-              intelligence={p.ref}
+            <PickableRow
+              pickable={p}
               as="div"
-              profileLink={false}
-              meta={
-                <PickableMeta
-                  pickable={p}
-                  online={p.ai ? withContactPresence(p.ai, presence[p.ref.id]).online : false}
-                />
-              }
               className="min-w-0 flex-1 gap-3 p-0 hover:bg-transparent"
             />
           </CommandItem>

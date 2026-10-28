@@ -1,7 +1,6 @@
 import { screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { MemberPicker } from "@/components/member-picker";
 import { apiError, json, mockApi } from "@/test/fetch";
 import {
   makeAI,
@@ -16,6 +15,7 @@ import {
 } from "@/test/fixtures";
 import { useLiveStore } from "@/test/live-store";
 import { renderWithRouter } from "@/test/render";
+import { MemberPicker } from "./member-picker";
 
 /*
  * The add-member picker (UI-10, CID-20): a room holds users and AIs, so it offers exactly those.

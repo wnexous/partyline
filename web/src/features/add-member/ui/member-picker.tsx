@@ -2,16 +2,7 @@ import { Link } from "@tanstack/react-router";
 import { PlusIcon, SearchIcon } from "lucide-react";
 import { type ReactNode, useMemo, useState } from "react";
 import { toast } from "sonner";
-import {
-  IntelligenceAvatar,
-  IntelligenceName,
-  type Pickable,
-  PickableMeta,
-  useContacts,
-  usePickables,
-  usePresenceStore,
-  withContactPresence,
-} from "@/entities/intelligence";
+import { type Pickable, PickableRow, useContacts, usePickables } from "@/entities/intelligence";
 import { useOrgUsers } from "@/entities/organization";
 import { useRoom } from "@/entities/room";
 import { useAddMember } from "@/entities/room-member";
@@ -71,7 +62,6 @@ function PickerBody({ roomId, members }: { roomId: string; members: RoomMember[]
   const contacts = useContacts();
   const room = useRoom(roomId);
   const add = useAddMember(roomId);
-  const presence = usePresenceStore((s) => s.presence);
   const [query, setQuery] = useState("");
   const [adding, setAdding] = useState<string | null>(null);
 
@@ -137,14 +127,28 @@ function PickerBody({ roomId, members }: { roomId: string; members: RoomMember[]
           <ul aria-label={t("picker.contacts")}>
             {candidates.map((p) => {
               const kind = memberKindOf(p);
+              const busy = adding === `${kind}:${p.ref.id}`;
               return (
-                <PickableCandidate
+                // The name opens the profile panel (PRF-01) and covers the row; the Add button stays above.
+                <PickableRow
                   key={p.ref.id}
                   testId={`candidate-${kind}-${p.ref.id}`}
                   pickable={p}
-                  online={p.ai ? withContactPresence(p.ai, presence[p.ref.id]).online : false}
-                  busy={adding === `${kind}:${p.ref.id}`}
-                  onAdd={() => onAdd(kind, p.ref.id, p.ref.display_name)}
+                  profileLink
+                  className="items-center gap-3 px-5 py-2"
+                  action={
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      className="relative"
+                      disabled={busy}
+                      aria-label={t("picker.add", { name: p.ref.display_name })}
+                      onClick={() => onAdd(kind, p.ref.id, p.ref.display_name)}
+                    >
+                      <PlusIcon aria-hidden="true" />
+                      {t("picker.addShort")}
+                    </Button>
+                  }
                 />
               );
             })}
@@ -157,84 +161,3 @@ function PickerBody({ roomId, members }: { roomId: string; members: RoomMember[]
 
 /** What the server calls the member a pick becomes: the pick of an AI joins as an agent. */
 const memberKindOf = (p: Pickable): MemberKind => (p.ai ? "agent" : "user");
-
-/** An AI or a user the room can take in: avatar, name and handle, and where it lives. */
-function PickableCandidate({
-  testId,
-  pickable,
-  online,
-  busy,
-  onAdd,
-}: {
-  testId: string;
-  pickable: Pickable;
-  online: boolean;
-  busy: boolean;
-  onAdd: () => void;
-}) {
-  return (
-    <Candidate
-      testId={testId}
-      icon={<IntelligenceAvatar intelligence={pickable.ref} decorative />}
-      title={
-        // The name opens the profile panel (PRF-01) and covers the row, the Add button stays above.
-        <IntelligenceName
-          intelligence={pickable.ref}
-          showHandle
-          profileLink
-          stretch
-          className="text-sm"
-        />
-      }
-      name={pickable.ref.display_name}
-      meta={<PickableMeta pickable={pickable} online={online} />}
-      busy={busy}
-      onAdd={onAdd}
-    />
-  );
-}
-
-function Candidate({
-  testId,
-  icon,
-  title,
-  name,
-  meta,
-  busy,
-  onAdd,
-}: {
-  testId: string;
-  icon: ReactNode;
-  /** What the row shows as its name. */
-  title: ReactNode;
-  /** The plain name, for the add button's label. */
-  name: string;
-  meta: ReactNode;
-  busy: boolean;
-  onAdd: () => void;
-}) {
-  const { t } = useI18n();
-  return (
-    <li
-      data-testid={testId}
-      className="relative flex items-center gap-3 px-5 py-2 hover:bg-accent/40"
-    >
-      <span className="shrink-0">{icon}</span>
-      <div className="min-w-0 flex-1">
-        <p className="truncate text-sm font-medium">{title}</p>
-        <p className="flex flex-wrap items-center gap-x-2 text-xs text-muted-foreground">{meta}</p>
-      </div>
-      <Button
-        size="sm"
-        variant="outline"
-        className="relative"
-        disabled={busy}
-        aria-label={t("picker.add", { name })}
-        onClick={onAdd}
-      >
-        <PlusIcon aria-hidden="true" />
-        {t("picker.addShort")}
-      </Button>
-    </li>
-  );
-}

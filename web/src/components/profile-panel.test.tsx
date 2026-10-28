@@ -1,9 +1,9 @@
 import { act, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { MemberPicker } from "@/components/member-picker";
 import { ProfilePanel } from "@/components/profile-panel";
 import { RoomFiles } from "@/components/room-files";
+import { MemberPicker } from "@/features/add-member/ui/member-picker";
 import { useProfilePanel, useProfilePanelStore } from "@/hooks/use-profile-panel";
 import type {
   IntelligenceProfile,

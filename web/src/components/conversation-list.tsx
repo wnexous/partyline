@@ -12,9 +12,9 @@ import {
   type ConversationMenuTarget,
   hasConversationActions,
 } from "@/components/conversation-menu";
-import { NewGroupDialog } from "@/components/new-group-dialog";
 import { inOrg, useCurrentOrg } from "@/entities/organization";
 import { ConversationAvatar, conversationMatches, useConversations } from "@/entities/room";
+import { NewGroupDialog } from "@/features/create-group";
 import { NewConversationDialog } from "@/features/start-conversation";
 import { isVoicePreview } from "@/lib/voice";
 import type { Conversation } from "@/shared/api/types.gen";
