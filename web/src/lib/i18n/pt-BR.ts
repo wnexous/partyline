@@ -557,6 +557,7 @@ export const ptBR: Dictionary = {
   "room.membersToggle": "Membros ({count})",
   "room.participantsToggle": "Participantes ({count})",
   "participants.title": "Participantes",
+  "participants.empty": "Ninguém para mostrar nesta conversa.",
   "conversation.between": "{a} e {b}",
   "conversation.and": "e",
   "conversation.directMessage": "Mensagem direta",

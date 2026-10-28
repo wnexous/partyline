@@ -1,8 +1,5 @@
 import { GroupAvatar } from "@/components/group-avatar";
-import {
-  IntelligenceAvatar,
-  type IntelligenceAvatarProps,
-} from "@/components/intelligence/intelligence-avatar";
+import { IntelligenceAvatar, type IntelligenceAvatarProps } from "@/entities/intelligence";
 import type { Conversation } from "@/lib/api/types.gen";
 
 /**

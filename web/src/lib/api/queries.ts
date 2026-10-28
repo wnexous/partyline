@@ -584,9 +584,14 @@ export interface PostMessageInput extends PostMessageRequest {
 /** Identifies one room's posts, so the page can read the refusal of its own composer. */
 export const postMessageKey = (roomId: string) => ["post-message", roomId] as const;
 
-export function usePostMessage(roomId: string) {
+/**
+ * Posts a message. `onSent` runs when the post went through, also when the component that sent it
+ * is gone by then (the callbacks of `mutate` are not run for an unmounted observer).
+ */
+export function usePostMessage(roomId: string, onSent?: (input: PostMessageInput) => void) {
   return useMutation({
     mutationKey: postMessageKey(roomId),
+    onSuccess: (_message, input) => onSent?.(input),
     mutationFn: ({ files, ...req }: PostMessageInput) => {
       if (!files?.length) return api<Message>("POST", `/rooms/${roomId}/messages`, req);
       const form = new FormData();

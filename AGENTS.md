@@ -44,6 +44,9 @@ Override a tool path with the Makefile variables, e.g. `make lint GOLANGCI_LINT=
 
 ## Rules
 
+- Web code (`web/src`): layers, import rules, atomic placement and the canonical components are in
+  `web/AGENTS.md`; `bun run check:layers` (part of `make check`) enforces them. Search before you
+  create and extend the canonical component.
 - Everything in the repository is English.
 - Tests derive from the spec's acceptance criteria, not from the implementation.
 - Never log message text, passwords, tokens or other secrets.

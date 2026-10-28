@@ -20,7 +20,7 @@ import {
   useRef,
   useState,
 } from "react";
-import { type AttachedFile, AttachmentPreviews } from "@/components/attachment-preview";
+import { AttachmentPreviews } from "@/components/attachment-preview";
 import {
   type MentionCandidate,
   MentionSuggestions,
@@ -32,6 +32,7 @@ import {
 import { authorDisplayName } from "@/components/message-item";
 import { Button } from "@/components/ui/button";
 import { type HoldState, MicButton, RecordingBar } from "@/components/voice-controls";
+import { useDraft, useDraftStore, useEditDraft } from "@/features/send-message";
 import { useEnterSends } from "@/hooks/use-enter-sends";
 import { useVoiceRecorder } from "@/hooks/use-voice-recorder";
 import { isApiError } from "@/lib/api/client";
@@ -184,11 +185,28 @@ function ComposerForm({
   onEditDone?: () => void;
 }) {
   const { t, locale } = useI18n();
-  const post = usePostMessage(roomId);
+  // The voice recording being sent: its post only takes the reply back, never the typed draft.
+  const voiceFile = useRef<File | null>(null);
+  // A post that went through clears this conversation's draft, even when the person has already
+  // moved to another conversation (the composer is gone, the callbacks of `mutate` are not run).
+  const post = usePostMessage(roomId, (input) => {
+    const store = useDraftStore.getState();
+    const isVoice =
+      input.text === "" && input.files?.length === 1 && input.files[0] === voiceFile.current;
+    if (isVoice) store.setReply(roomId, null);
+    else store.clear(roomId);
+  });
   const save = useEditMessage(roomId);
-  const [text, setText] = useState("");
-  const [attached, setAttached] = useState<AttachedFile[]>([]);
-  const nextFileId = useRef(0);
+  // The draft lives in the store (WA-07), so it survives leaving the conversation; an edit has its
+  // own, per message, and never touches the one of the new message.
+  const draftStore = useDraftStore.getState();
+  const draft = useDraft(roomId);
+  const editId = editing?.id ?? null;
+  const editDraft = useEditDraft(editId);
+  const text = editing ? (editDraft ?? editing.text) : draft.text;
+  const setText = (value: string) =>
+    editing ? draftStore.setEditDraft(editing.id, value) : draftStore.setText(roomId, value);
+  const attached = draft.files;
   const files = useMemo(() => attached.map((a) => a.file), [attached]);
   // A file is being dragged over the composer: it says so and takes no drop until it leaves.
   const [dragging, setDragging] = useState(false);
@@ -231,17 +249,13 @@ function ComposerForm({
   const replyExcerpt = replyTo ? messageExcerpt(replyTo, t("player.voice")) : "";
   const shownError = voice.failure ? t(MIC_FAILURES[voice.failure]) : error;
 
-  // Editing a message (EDT-10): the box loads its text, and what was in it comes back when editing ends. This
-  // follows the message by its id, so a refreshed copy of the same message does not reset what is being typed.
+  // Editing a message (EDT-10): the box shows that message's text (or what was typed in it before),
+  // and the new-message draft comes back when editing ends. This follows the message by its id, so a
+  // refreshed copy of the same message does not reset what is being typed.
   const [shownEdit, setShownEdit] = useState<string | null>(null);
-  const [draft, setDraft] = useState("");
-  const editId = editing?.id ?? null;
   if (editId !== shownEdit) {
-    const loaded = editing ? editing.text : draft;
     setShownEdit(editId);
-    if (shownEdit === null) setDraft(text);
-    setText(loaded);
-    setCaret(loaded.length);
+    setCaret(text.length);
     setActiveIndex(0);
     setDismissedStart(null);
     setError(null);
@@ -363,6 +377,7 @@ function ComposerForm({
       return;
     }
     const run = voiceRun.current;
+    voiceFile.current = recorded.file;
     setError(null);
     post.mutate(
       { text: "", files: [recorded.file], ...(replyTo ? { reply_to: replyTo.id } : {}) },
@@ -404,14 +419,19 @@ function ComposerForm({
       },
       {
         onSuccess: () => {
-          setText("");
-          setAttached([]);
+          draftStore.clear(roomId);
           if (replyTo) onClearReply?.();
           textRef.current?.focus();
         },
         onError: (err) => setError(postErrorText(t, err)),
       },
     );
+  };
+
+  /** Leaves editing, dropping what was typed in the edit box. */
+  const leaveEdit = () => {
+    if (editing) draftStore.clearEditDraft(editing.id);
+    onEditDone?.();
   };
 
   const saveEdit = () => {
@@ -421,7 +441,7 @@ function ComposerForm({
       { id: editing.id, text: trimmed },
       {
         onSuccess: () => {
-          onEditDone?.();
+          leaveEdit();
           textRef.current?.focus();
         },
         onError: (err) => setError(editErrorText(t, err)),
@@ -496,11 +516,7 @@ function ComposerForm({
 
   const addFiles = (picked: readonly File[]) => {
     if (!picked.length) return;
-    const added = picked.map((file) => {
-      nextFileId.current += 1;
-      return { id: nextFileId.current, file };
-    });
-    setAttached((prev) => [...prev, ...added]);
+    draftStore.addFiles(roomId, picked);
     setAnnouncement(
       picked.length === 1
         ? t("composer.announceFileAttached")
@@ -585,7 +601,7 @@ function ComposerForm({
         // that is open closes first (it prevents the default of its Escape).
         if (editing && e.key === "Escape" && !e.defaultPrevented) {
           e.preventDefault();
-          onEditDone?.();
+          leaveEdit();
           return;
         }
         // Escape drops a recording, wherever focus is in the composer (VOI-05).
@@ -666,7 +682,7 @@ function ComposerForm({
                 variant="ghost"
                 size="icon-xs"
                 aria-label={t("composer.cancelEdit")}
-                onClick={onEditDone}
+                onClick={leaveEdit}
               >
                 <XIcon aria-hidden="true" />
               </Button>
@@ -690,7 +706,7 @@ function ComposerForm({
         {!editing && files.length > 0 && !voiceOn ? (
           <AttachmentPreviews
             files={attached}
-            onRemove={(id) => setAttached((prev) => prev.filter((x) => x.id !== id))}
+            onRemove={(id) => draftStore.removeFile(roomId, id)}
           />
         ) : null}
         {/* biome-ignore lint/a11y/useAriaPropsSupportedByRole: while the mention list is open the box has role combobox */}

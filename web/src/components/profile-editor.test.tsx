@@ -1,8 +1,8 @@
 import { screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { IntelligenceAvatar } from "@/components/intelligence/intelligence-avatar";
 import { ProfileEditor } from "@/components/profile-editor";
+import { IntelligenceAvatar } from "@/entities/intelligence";
 import { queryKeys, useIntelligence } from "@/lib/api/queries";
 import type { IntelligenceProfile } from "@/lib/api/types.gen";
 import { useLiveStore } from "@/lib/live/store";

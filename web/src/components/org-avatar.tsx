@@ -1,5 +1,5 @@
-import { avatarTone, initials } from "@/components/intelligence/intelligence-avatar";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
+import { avatarTone, initials } from "@/entities/intelligence";
 import { cn } from "@/lib/utils";
 
 /*

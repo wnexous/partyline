@@ -1,6 +1,5 @@
 import { Link, useNavigate } from "@tanstack/react-router";
 import { LanguagesIcon, LogOutIcon, PaletteIcon } from "lucide-react";
-import { IntelligenceAvatar } from "@/components/intelligence/intelligence-avatar";
 import { LanguageRadioGroup } from "@/components/language-switch";
 import { ThemeRadioGroup } from "@/components/theme-toggle";
 import {
@@ -15,6 +14,7 @@ import {
   DropdownMenuSubTrigger,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
+import { IntelligenceAvatar } from "@/entities/intelligence";
 import { useLogout } from "@/lib/api/queries";
 import { type Me, RoleAdmin } from "@/lib/api/types.gen";
 import { useT } from "@/lib/i18n";

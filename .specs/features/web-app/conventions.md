@@ -1,5 +1,7 @@
 # Web App Conventions (from web-app Phase 1)
 
+Where code lives (layers, import rules, canonical components): `web/AGENTS.md`.
+
 Binding for every later web task.
 
 ## Structure

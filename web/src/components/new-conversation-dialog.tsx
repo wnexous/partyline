@@ -1,8 +1,6 @@
 import { type ReactNode, useMemo, useState } from "react";
 import { PickableMeta } from "@/components/contact-meta";
 import { FormAlert } from "@/components/form-fields";
-import { IntelligenceAvatar } from "@/components/intelligence/intelligence-avatar";
-import { IntelligenceName } from "@/components/intelligence/intelligence-name";
 import { Button } from "@/components/ui/button";
 import { Command, CommandInput, CommandItem, CommandList } from "@/components/ui/command";
 import {
@@ -14,6 +12,7 @@ import {
   DialogTrigger,
 } from "@/components/ui/dialog";
 import { Skeleton } from "@/components/ui/skeleton";
+import { IntelligenceAvatar, IntelligenceName } from "@/entities/intelligence";
 import { useStartConversation } from "@/hooks/use-start-conversation";
 import { useContacts } from "@/lib/api/queries";
 import type { IntelligenceRef } from "@/lib/api/types.gen";

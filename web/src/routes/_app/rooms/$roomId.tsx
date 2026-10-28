@@ -9,7 +9,7 @@ import {
   Settings2Icon,
   UsersRoundIcon,
 } from "lucide-react";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { toast } from "sonner";
 import { BackToConversations } from "@/components/back-link";
 import { Composer, canPost } from "@/components/composer";
@@ -19,7 +19,6 @@ import {
   historyPlatform,
 } from "@/components/conversation-header";
 import { EmptyState } from "@/components/empty-state";
-import { MemberList } from "@/components/member-list";
 import { MemberPicker } from "@/components/member-picker";
 import { platformName } from "@/components/message-item";
 import {
@@ -27,7 +26,6 @@ import {
   MessageTimeline,
   useTimelineMessages,
 } from "@/components/message-timeline";
-import { ParticipantList } from "@/components/participant-list";
 import { RoomFiles } from "@/components/room-files";
 import { RoomSettingsSheet } from "@/components/room-settings-sheet";
 import { Button } from "@/components/ui/button";
@@ -40,6 +38,7 @@ import {
 } from "@/components/ui/sheet";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { useDraft, useDraftStore } from "@/features/send-message";
 import { useMarkRoomRead } from "@/hooks/use-mark-room-read";
 import { useIsMobile } from "@/hooks/use-mobile";
 import { useOpenConversation } from "@/hooks/use-open-conversation";
@@ -54,6 +53,7 @@ import {
   type RoomMember,
 } from "@/lib/api/types.gen";
 import { useI18n, useT } from "@/lib/i18n";
+import { MemberPanel } from "@/widgets/member-panel";
 
 export const Route = createFileRoute("/_app/rooms/$roomId")({
   component: RoomPage,
@@ -87,10 +87,17 @@ function RoomPage() {
   // The messages as the timeline has them now: a reply and an edit follow their message by id, so
   // an edit shows its new text and a deletion takes the action back (EDT-06, DLT-06).
   const messages = useTimelineMessages(roomId);
-  // The message the next one answers (ACT-07).
-  const [replyChoice, setReplyChoice] = useState<Message | null>(null);
-  const replyTo = liveMessage(replyChoice, messages);
-  if (replyChoice && replyTo === null) setReplyChoice(null);
+  // The message the next one answers (ACT-07). The choice is part of the room's draft, so it
+  // survives going to another conversation and back (WA-07); a message that is gone or was
+  // deleted is dropped, one the timeline has not loaded yet just waits for it.
+  const replyId = useDraft(roomId).replyTo;
+  const setReply = useDraftStore.getState().setReply;
+  const replyMessage = replyId ? messages.get(replyId) : undefined;
+  const replyTo = liveMessage(replyMessage ?? null, messages);
+  const replyDeleted = replyMessage?.deleted_at !== undefined;
+  useEffect(() => {
+    if (replyDeleted) setReply(roomId, null);
+  }, [replyDeleted, roomId, setReply]);
   // The message being edited in the composer (EDT-10).
   const [editChoice, setEditChoice] = useState<Message | null>(null);
   const editing = liveMessage(editChoice, messages);
@@ -112,7 +119,7 @@ function RoomPage() {
   const onEdit =
     canPost(r.my_level) && !historyOnly
       ? (message: Message) => {
-          setReplyChoice(null);
+          setReply(roomId, null);
           setEditChoice(message);
         }
       : undefined;
@@ -121,7 +128,7 @@ function RoomPage() {
     canPost(r.my_level) && !historyOnly
       ? (message: Message) => {
           setEditChoice(null);
-          setReplyChoice(message);
+          setReply(roomId, message.id);
         }
       : undefined;
   const memberList = members.data ?? [];
@@ -156,7 +163,7 @@ function RoomPage() {
       membersLabel={membersLabel}
       count={participantCount}
       canManage={canManage}
-      loading={members.isPending}
+      loading={!isDM && members.isPending}
       onOpenMessage={openInTimeline}
     />
   );
@@ -227,7 +234,7 @@ function RoomPage() {
             level={r.my_level}
             members={memberList}
             replyTo={replyTo}
-            onClearReply={() => setReplyChoice(null)}
+            onClearReply={() => setReply(roomId, null)}
             editing={editing}
             onEditDone={() => setEditChoice(null)}
           />
@@ -331,43 +338,18 @@ function SidePanel({
         ) : null}
       </div>
       <TabsContent value="members" className="flex min-h-0 flex-col rounded-none">
-        {participants ? (
-          <div className="min-h-0 flex-1 overflow-y-auto">
-            <ParticipantList participants={participants} />
-          </div>
-        ) : (
-          <MembersPanel roomId={roomId} members={members} canManage={canManage} loading={loading} />
-        )}
+        <MemberPanel
+          roomId={roomId}
+          members={members}
+          participants={participants}
+          canManage={canManage}
+          loading={loading}
+        />
       </TabsContent>
       <TabsContent value="files" className="flex min-h-0 flex-col rounded-none">
         <RoomFiles roomId={roomId} onOpenMessage={onOpenMessage} />
       </TabsContent>
     </Tabs>
-  );
-}
-
-function MembersPanel({
-  roomId,
-  members,
-  canManage,
-  loading,
-}: {
-  roomId: string;
-  members: RoomMember[];
-  canManage: boolean;
-  loading: boolean;
-}) {
-  return (
-    <div className="min-h-0 flex-1 overflow-y-auto">
-      {loading ? (
-        <div className="space-y-3 p-4" aria-hidden="true">
-          <Skeleton className="h-4 w-36" />
-          <Skeleton className="h-4 w-44" />
-        </div>
-      ) : (
-        <MemberList roomId={roomId} members={members} canManage={canManage} />
-      )}
-    </div>
   );
 }
 

@@ -553,6 +553,7 @@ export const en = {
   "room.membersToggle": "Members ({count})",
   "room.participantsToggle": "Participants ({count})",
   "participants.title": "Participants",
+  "participants.empty": "Nobody to show in this conversation.",
   "conversation.between": "{a} and {b}",
   "conversation.and": "and",
   "conversation.directMessage": "Direct message",

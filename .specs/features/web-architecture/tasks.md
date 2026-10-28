@@ -18,7 +18,11 @@ ticks its requirement ids here.
   `appLabelOf` (moving `intelligence-avatar`, `intelligence-name`, `you-badge` there);
   `entities/room-member/model` adapter; `widgets/member-panel` used for group AND DM (design §6).
   Tests: DM panel shows "principal · :pi-2" for an online AI with a parallel session.
-- Status: pending
+- Status: done. Ticked: WA-01 (skeleton), WA-05 (checker, baseline empty so far), WA-07, WA-08, WA-09.
+  Notes: the baseline starts empty (no existing code broke a rule; new slices import legacy, which
+  is allowed). A voice recording in progress or stopped is not kept in the draft yet (design §5
+  allows a stopped one as a file); everything else of §5 is in. The DM panel reads the sessions of
+  an AI from its profile (a participant carries none).
 
 ## T2 — shared layer (WA-04, WA-06 part)
 - `components/ui/*` → `shared/ui/primitives` (decouple dialog/sheet/sidebar from i18n and hooks;

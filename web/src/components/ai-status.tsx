@@ -1,7 +1,6 @@
 import { StatusDot } from "@/components/status-dot";
-import { harnessLabel } from "@/lib/agents";
+import { appLabelOf, useIsOnline } from "@/entities/intelligence";
 import { useIntelligence } from "@/lib/api/queries";
-import { useLiveStore } from "@/lib/live/store";
 import { cn } from "@/lib/utils";
 
 /**
@@ -19,10 +18,10 @@ export function AiStatusLine({
   appClassName?: string;
 }) {
   const profile = useIntelligence(id);
-  const live = useLiveStore((s) => s.presence[id]);
   const ai = profile.data?.ai;
+  const online = useIsOnline(id, ai?.online);
   if (!ai) return null;
-  const app = profile.data?.apps[0]?.label || harnessLabel(ai.app);
+  const app = appLabelOf({ app: ai.app, apps: profile.data?.apps });
   return (
     <span
       className={cn(
@@ -30,7 +29,7 @@ export function AiStatusLine({
         className,
       )}
     >
-      <StatusDot online={live?.online ?? ai.online} withLabel />
+      <StatusDot online={online} withLabel />
       {app ? <span className={appClassName}>{app}</span> : null}
     </span>
   );
