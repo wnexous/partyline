@@ -3,8 +3,6 @@ import { Link, useRouter } from "@tanstack/react-router";
 import { CompassIcon, Maximize2Icon, MessageSquareIcon, PencilIcon, XIcon } from "lucide-react";
 import { type MouseEvent, useEffect, useId, useState } from "react";
 import { toast } from "sonner";
-import { IntelligenceAvatar } from "@/components/intelligence/intelligence-avatar";
-import { YouBadge } from "@/components/intelligence/you-badge";
 import { MembershipSummary } from "@/components/membership-summary";
 import { platformName } from "@/components/message-item";
 import { PANEL_CONVERSATIONS, ProfileConversations } from "@/components/profile-conversations";
@@ -13,10 +11,10 @@ import { StatusDot } from "@/components/status-dot";
 import { Button } from "@/components/ui/button";
 import { Sheet, SheetClose, SheetContent, SheetTitle } from "@/components/ui/sheet";
 import { Skeleton } from "@/components/ui/skeleton";
+import { appLabelOf, IntelligenceAvatar, YouBadge } from "@/entities/intelligence";
 import { useIsMobile } from "@/hooks/use-mobile";
 import { useProfilePanelStore } from "@/hooks/use-profile-panel";
 import { useStartConversation } from "@/hooks/use-start-conversation";
-import { harnessLabel } from "@/lib/agents";
 import { isApiError } from "@/lib/api/client";
 import { intelligenceQuery, useMe } from "@/lib/api/queries";
 import { type IntelligenceProfile, IntelligenceRolePerson } from "@/lib/api/types.gen";
@@ -213,7 +211,7 @@ function ProfileCard({ profile }: { profile: IntelligenceProfile }) {
   const online = presence?.online ?? ai?.online ?? false;
   // Where it speaks from: the app an AI runs in, the platform a person writes from.
   const app = ai
-    ? profile.apps[0]?.label || harnessLabel(ai.app) || ai.app
+    ? appLabelOf({ app: ai.app, apps: profile.apps })
     : person
       ? platformName(person.connector.kind)
       : "";

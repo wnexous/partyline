@@ -12,8 +12,6 @@ import {
 } from "lucide-react";
 import { lazy, memo, Suspense } from "react";
 import { AudioPlayer } from "@/components/audio-player";
-import { IntelligenceAvatar } from "@/components/intelligence/intelligence-avatar";
-import { IntelligenceName } from "@/components/intelligence/intelligence-name";
 import type { MessageMenuTarget } from "@/components/message-menu";
 import { ProfileLink } from "@/components/profile-link";
 import { QuestionBubble } from "@/components/question-bubble";
@@ -21,6 +19,7 @@ import { ReactionToolbar } from "@/components/reaction-bar";
 import { ReactionChips } from "@/components/reaction-chips";
 import { RowMenuButton } from "@/components/row-menu-button";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
+import { IntelligenceAvatar, IntelligenceName } from "@/entities/intelligence";
 import { useLongPress } from "@/hooks/use-long-press";
 import { useSwipeReply } from "@/hooks/use-swipe-reply";
 import { attachmentUrl } from "@/lib/api/queries";

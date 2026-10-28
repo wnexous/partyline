@@ -3,8 +3,6 @@ import { useMemo, useState } from "react";
 import { useForm } from "react-hook-form";
 import { toast } from "sonner";
 import { FormAlert, SelectField, TextField } from "@/components/form-fields";
-import { IntelligenceAvatar } from "@/components/intelligence/intelligence-avatar";
-import { IntelligenceName } from "@/components/intelligence/intelligence-name";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -15,6 +13,7 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { Form } from "@/components/ui/form";
+import { IntelligenceAvatar, IntelligenceName } from "@/entities/intelligence";
 import { isApiError } from "@/lib/api/client";
 import { useContacts, useInviteToOrg } from "@/lib/api/queries";
 import {

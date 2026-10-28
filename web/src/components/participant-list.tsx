@@ -1,6 +1,5 @@
 import { AiStatusLine } from "@/components/ai-status";
-import { IntelligenceAvatar } from "@/components/intelligence/intelligence-avatar";
-import { IntelligenceName } from "@/components/intelligence/intelligence-name";
+import { IntelligenceAvatar, IntelligenceName } from "@/entities/intelligence";
 import { useMe } from "@/lib/api/queries";
 import type { IntelligenceRef } from "@/lib/api/types.gen";
 

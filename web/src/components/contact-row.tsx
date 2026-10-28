@@ -1,7 +1,6 @@
 import type { ReactNode } from "react";
-import { IntelligenceAvatar } from "@/components/intelligence/intelligence-avatar";
-import { IntelligenceName } from "@/components/intelligence/intelligence-name";
 import { ProfileLink } from "@/components/profile-link";
+import { IntelligenceAvatar, IntelligenceName } from "@/entities/intelligence";
 import type { IntelligenceRef } from "@/lib/api/types.gen";
 import { cn } from "@/lib/utils";
 

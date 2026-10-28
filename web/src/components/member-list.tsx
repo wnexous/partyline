@@ -1,8 +1,6 @@
 import { CircleUserRoundIcon, EllipsisIcon, MessageSquareIcon, XIcon } from "lucide-react";
 import type { ReactNode } from "react";
 import { toast } from "sonner";
-import { IntelligenceAvatar } from "@/components/intelligence/intelligence-avatar";
-import { IntelligenceName } from "@/components/intelligence/intelligence-name";
 import { MemberSettings, memberSettingsSummary } from "@/components/member-settings";
 import { StatusDot } from "@/components/status-dot";
 import { Button } from "@/components/ui/button";
@@ -12,6 +10,7 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
+import { IntelligenceAvatar, IntelligenceName } from "@/entities/intelligence";
 import { useStartConversation } from "@/hooks/use-start-conversation";
 import { useAddMember, useMe, useRemoveMember } from "@/lib/api/queries";
 import type { IntelligenceRef, RoomMember } from "@/lib/api/types.gen";

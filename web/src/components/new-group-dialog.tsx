@@ -5,8 +5,6 @@ import { type ReactNode, useEffect, useId, useMemo, useState } from "react";
 import { useForm } from "react-hook-form";
 import { PickableMeta } from "@/components/contact-meta";
 import { FormAlert, TextField } from "@/components/form-fields";
-import { IntelligenceAvatar } from "@/components/intelligence/intelligence-avatar";
-import { IntelligenceName } from "@/components/intelligence/intelligence-name";
 import { OrgSelect } from "@/components/org-select";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
@@ -22,6 +20,7 @@ import {
 import { Form } from "@/components/ui/form";
 import { Input } from "@/components/ui/input";
 import { Skeleton } from "@/components/ui/skeleton";
+import { IntelligenceAvatar, IntelligenceName } from "@/entities/intelligence";
 import { useCurrentOrg } from "@/hooks/use-current-org";
 import { useOrgUsers } from "@/hooks/use-org-users";
 import { isApiError } from "@/lib/api/client";

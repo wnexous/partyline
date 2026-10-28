@@ -1,16 +1,12 @@
 import { screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import {
-  avatarTone,
-  IntelligenceAvatar,
-  initials,
-} from "@/components/intelligence/intelligence-avatar";
-import { IntelligenceName } from "@/components/intelligence/intelligence-name";
-import { YouBadge } from "@/components/intelligence/you-badge";
 import type { IntelligenceRef } from "@/lib/api/types.gen";
 import { useLiveStore } from "@/lib/live/store";
 import { renderWithProviders } from "@/test/render";
+import { avatarTone, IntelligenceAvatar, initials } from "./intelligence-avatar";
+import { IntelligenceName } from "./intelligence-name";
+import { YouBadge } from "./you-badge";
 
 /** Synthetic intelligences; never real names or handles. */
 function makeIntelligence(over: Partial<IntelligenceRef> = {}): IntelligenceRef {

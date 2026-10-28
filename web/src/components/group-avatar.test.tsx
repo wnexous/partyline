@@ -1,7 +1,7 @@
 import { screen } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { GroupAvatar } from "@/components/group-avatar";
-import { avatarTone } from "@/components/intelligence/intelligence-avatar";
+import { avatarTone } from "@/entities/intelligence";
 import { groupFace } from "@/lib/conversations";
 import { useLiveStore } from "@/lib/live/store";
 import { LoadedImage } from "@/test/image";

@@ -480,7 +480,7 @@ describe("no colour bypasses the tokens", () => {
   });
 
   it("gives avatar fallbacks exactly the declared tints, as token classes", () => {
-    const avatar = read(here("../components/intelligence/intelligence-avatar.tsx"));
+    const avatar = read(here("../entities/intelligence/ui/intelligence-avatar.tsx"));
     const used = [...avatar.matchAll(/\bbg-tint-([a-z]+)\b/g)].map((m) => m[1]);
     expect([...new Set(used)].sort()).toEqual(Object.keys(TINT_HUES).sort());
     const inks = [...avatar.matchAll(/\btext-tint-([a-z]+)-foreground\b/g)].map((m) => m[1]);

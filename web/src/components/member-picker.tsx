@@ -3,8 +3,6 @@ import { PlusIcon, SearchIcon } from "lucide-react";
 import { type ReactNode, useMemo, useState } from "react";
 import { toast } from "sonner";
 import { PickableMeta } from "@/components/contact-meta";
-import { IntelligenceAvatar } from "@/components/intelligence/intelligence-avatar";
-import { IntelligenceName } from "@/components/intelligence/intelligence-name";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -16,6 +14,7 @@ import {
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Skeleton } from "@/components/ui/skeleton";
+import { IntelligenceAvatar, IntelligenceName } from "@/entities/intelligence";
 import { useAutoFocus } from "@/hooks/use-auto-focus";
 import { useOrgUsers } from "@/hooks/use-org-users";
 import { useAddMember, useContacts, useRoom } from "@/lib/api/queries";

@@ -1,8 +1,8 @@
-import { YouBadge } from "@/components/intelligence/you-badge";
 import { ProfileLink } from "@/components/profile-link";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import type { IntelligenceRef } from "@/lib/api/types.gen";
 import { cn } from "@/lib/utils";
+import { YouBadge } from "./you-badge";
 
 /*
  * A display name with its @handle (PROF-09). Display names are not unique, so the handle is what

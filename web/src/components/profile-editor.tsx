@@ -3,10 +3,10 @@ import { useEffect, useId, useRef, useState } from "react";
 import { useForm } from "react-hook-form";
 import { toast } from "sonner";
 import { FormAlert, TextAreaField, TextField } from "@/components/form-fields";
-import { IntelligenceAvatar } from "@/components/intelligence/intelligence-avatar";
 import { PhotoEditor } from "@/components/photo-editor";
 import { Button } from "@/components/ui/button";
 import { Form } from "@/components/ui/form";
+import { IntelligenceAvatar } from "@/entities/intelligence";
 import { isApiError } from "@/lib/api/client";
 import { useRemoveAvatar, useUpdateIntelligence, useUploadAvatar } from "@/lib/api/queries";
 import {

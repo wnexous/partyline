@@ -3,8 +3,6 @@ import { MoveRightIcon, Trash2Icon, UserMinusIcon, UserPlusIcon } from "lucide-r
 import { useId, useMemo, useState } from "react";
 import { toast } from "sonner";
 import { DeleteAIDialog } from "@/components/delete-ai-dialog";
-import { IntelligenceAvatar } from "@/components/intelligence/intelligence-avatar";
-import { IntelligenceName } from "@/components/intelligence/intelligence-name";
 import { InviteDialog } from "@/components/invite-dialog";
 import { MoveMemberDialog, type MoveTarget } from "@/components/move-member-dialog";
 import { NativeSelect } from "@/components/native-select";
@@ -13,6 +11,7 @@ import { RemoveFromOrgDialog } from "@/components/remove-from-org-dialog";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
+import { IntelligenceAvatar, IntelligenceName } from "@/entities/intelligence";
 import { isApiError } from "@/lib/api/client";
 import {
   useMe,

@@ -9,11 +9,11 @@ import {
   MessageSquareShareIcon,
 } from "lucide-react";
 import { useMemo, useRef, useState } from "react";
-import { IntelligenceName } from "@/components/intelligence/intelligence-name";
 import { formatBytes, INLINE_IMAGES } from "@/components/message-item";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
+import { IntelligenceName } from "@/entities/intelligence";
 import { attachmentUrl, type FileFilter, useRoomFiles } from "@/lib/api/queries";
 import type { FileKind, RoomFile } from "@/lib/api/types.gen";
 import { type MessageKey, useI18n } from "@/lib/i18n";

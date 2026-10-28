@@ -1,4 +1,4 @@
-import { IntelligenceAvatar } from "@/components/intelligence/intelligence-avatar";
+import { IntelligenceAvatar } from "@/entities/intelligence";
 import type { IntelligenceRef, RoomMember } from "@/lib/api/types.gen";
 import { useI18n } from "@/lib/i18n";
 import { cn } from "@/lib/utils";

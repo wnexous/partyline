@@ -3,8 +3,6 @@ import { MoveRightIcon, PencilRulerIcon, Trash2Icon, UserMinusIcon } from "lucid
 import { useMemo, useState } from "react";
 import { ChartTree, type TreeRowState } from "@/components/chart-tree";
 import { DeleteAIDialog } from "@/components/delete-ai-dialog";
-import { IntelligenceAvatar } from "@/components/intelligence/intelligence-avatar";
-import { YouBadge } from "@/components/intelligence/you-badge";
 import { MoveMemberDialog, type MoveTarget } from "@/components/move-member-dialog";
 import { OrgNotFound } from "@/components/org-not-found";
 import { PageHeader } from "@/components/page-header";
@@ -13,6 +11,7 @@ import { StatusDot } from "@/components/status-dot";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
+import { IntelligenceAvatar, YouBadge } from "@/entities/intelligence";
 import { isApiError } from "@/lib/api/client";
 import { useMe, useOrg, useOrgChart } from "@/lib/api/queries";
 import {

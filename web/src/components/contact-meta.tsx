@@ -1,5 +1,5 @@
 import { StatusDot } from "@/components/status-dot";
-import { harnessLabel } from "@/lib/agents";
+import { appLabelOf } from "@/entities/intelligence";
 import type { AIContact } from "@/lib/api/types.gen";
 import type { Pickable } from "@/lib/contacts";
 import { useI18n } from "@/lib/i18n";
@@ -13,7 +13,7 @@ import { formatAbsolute, formatRelative } from "@/lib/time";
  */
 export function AIMeta({ ai, lastSeen = false }: { ai: AIContact; lastSeen?: boolean }) {
   const { t, locale } = useI18n();
-  const app = ai.app ? (harnessLabel(ai.app) ?? ai.app) : "";
+  const app = ai.app ? appLabelOf(ai) : "";
   return (
     <>
       <StatusDot online={ai.online} withLabel />
