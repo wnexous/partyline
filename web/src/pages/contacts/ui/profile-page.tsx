@@ -22,7 +22,7 @@ import {
   SessionLabel,
   useIntelligence,
   useIsOnline,
-  usePresenceStore,
+  usePresenceEntry,
   YouBadge,
 } from "@/entities/intelligence";
 import { platformName } from "@/entities/message";
@@ -359,7 +359,7 @@ function Row({ label, children }: { label: string; children: ReactNode }) {
 function AIDetails({ ai, id }: { ai: AIDetail; id: string }) {
   const { t, locale } = useI18n();
   const online = useIsOnline(id, ai.online);
-  const presence = usePresenceStore((s) => s.presence[id]);
+  const presence = usePresenceEntry(id);
   const lastSeen = presence?.last_seen_at ?? ai.last_seen_at;
   const app = ai.app ? (harnessLabel(ai.app) ?? ai.app) : "";
   return (
