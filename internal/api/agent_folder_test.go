@@ -35,24 +35,24 @@ func TestAgentToolsCallActsAsTheFoldersAI(t *testing.T) {
 	env := testkit.New(t)
 	alice := env.NewUser("alice")
 	room := createRoom(alice, "Support")
-	codex := alice.Token(dto.TokenKindAgent, "laptop").AsFolder(testkit.Folder{
-		Machine: "devbox", Path: "/home/alice/acme", Home: "/home/alice", Harness: "codex",
+	tools := alice.Token(dto.TokenKindAgent, "laptop").AsFolder(testkit.Folder{
+		Machine: "devbox", Path: "/home/alice/acme", Home: "/home/alice", Harness: "omp",
 	})
 
 	require.Empty(t, ownedAIs(t, alice))
-	rooms := testkit.Decode[dto.List[dto.AgentRoom]](codex.Get("/api/v1/agent/rooms").RequireStatus(http.StatusOK))
+	rooms := testkit.Decode[dto.List[dto.AgentRoom]](tools.Get("/api/v1/agent/rooms").RequireStatus(http.StatusOK))
 	require.Empty(t, rooms.Items)
 
 	list := ownedAIs(t, alice)
 	require.Len(t, list, 1, "the first call creates the AI of the folder")
 	ai := list[0]
-	require.Equal(t, []any{"codex", "devbox", "Acme", false}, []any{ai.Harness, ai.Machine, ai.Intelligence.DisplayName, ai.Online})
+	require.Equal(t, []any{"omp", "devbox", "Acme", false}, []any{ai.Harness, ai.Machine, ai.Intelligence.DisplayName, ai.Online})
 	prof := profileOf(t, alice, ai.ID)
 	require.Equal(t, []any{dto.IntelligenceKindAI, "acme", "Acme"}, []any{prof.Kind, prof.Handle, prof.DisplayName})
-	require.Equal(t, []any{"/home/alice/acme", "~/acme", "codex"}, []any{prof.AI.Folder, prof.AI.FolderLabel, prof.AI.App})
+	require.Equal(t, []any{"/home/alice/acme", "~/acme", "omp"}, []any{prof.AI.Folder, prof.AI.FolderLabel, prof.AI.App})
 
 	alice.Post("/api/v1/rooms/"+room.ID+"/members", dto.AddMemberRequest{Kind: dto.MemberKindAgent, MemberID: ai.ID}).RequireStatus(http.StatusCreated)
-	m := testkit.Decode[dto.Message](codex.Post(agentRoomPath(room.ID, "/messages"), dto.PostMessageRequest{Text: "from the folder"}).RequireStatus(http.StatusCreated))
+	m := testkit.Decode[dto.Message](tools.Post(agentRoomPath(room.ID, "/messages"), dto.PostMessageRequest{Text: "from the folder"}).RequireStatus(http.StatusCreated))
 	require.Equal(t, []any{dto.AuthorKindAgent, ai.ID, alice.User.ID}, []any{m.AuthorKind, m.AuthorID, m.AuthorUserID})
 	require.Equal(t, []any{ai.ID, "acme", dto.IntelligenceRoleAI}, []any{m.Author.ID, m.Author.Handle, m.Author.Role})
 	require.Len(t, ownedAIs(t, alice), 1, "the same folder is the same AI")
@@ -69,14 +69,14 @@ func TestAgentToolsCallActsAsTheFoldersAI(t *testing.T) {
 }
 
 // AID-02: a WebSocket connection with the folder of an AI that tools already created resolves
-// the same id and sets the app; a later tools-only call (Codex) leaves a live session's app.
+// the same id and sets the app; a later tools-only call (omp) leaves a live session's app.
 func TestAgentWebSocketByFolderResolvesTheSameIdentity(t *testing.T) {
 	env := testkit.New(t)
 	alice := env.NewUser("alice")
 	tok := alice.Token(dto.TokenKindAgent, "laptop")
-	tools := tok.AsFolder(testkit.Folder{Machine: "devbox", Path: "/home/alice/acme", Harness: "codex"})
+	tools := tok.AsFolder(testkit.Folder{Machine: "devbox", Path: "/home/alice/acme", Harness: "omp"})
 	reg := testkit.Decode[dto.AgentInfo](tools.Post("/api/v1/agent/register", nil).RequireStatus(http.StatusOK))
-	require.Equal(t, "codex", aiApp(t, alice, reg.ID))
+	require.Equal(t, "omp", aiApp(t, alice, reg.ID))
 
 	conn, resp := tok.DialFolder(acme)
 	require.NotNil(t, conn, "upgrade refused: %d %s", resp.Status, resp.Body)
@@ -92,7 +92,7 @@ func TestAgentWebSocketByFolderResolvesTheSameIdentity(t *testing.T) {
 	conn.Close()
 	require.Eventually(t, func() bool { return !env.App.Presence.Online(reg.ID) }, wsWait, 20*time.Millisecond)
 	tools.Get("/api/v1/agent/rooms").RequireStatus(http.StatusOK)
-	require.Equal(t, "codex", aiApp(t, alice, reg.ID), "with nobody connected a tools-only call names the app")
+	require.Equal(t, "omp", aiApp(t, alice, reg.ID), "with nobody connected a tools-only call names the app")
 }
 
 // The welcome frame tells the channel who the AI is and who its owner is.
@@ -148,7 +148,7 @@ func TestAgentPendingByFolder(t *testing.T) {
 	alice := env.NewUser("alice")
 	room := createRoom(alice, "Support")
 	tok := alice.Token(dto.TokenKindAgent, "laptop")
-	tools := tok.AsFolder(testkit.Folder{Machine: "devbox", Path: "/home/alice/acme", Harness: "codex"})
+	tools := tok.AsFolder(testkit.Folder{Machine: "devbox", Path: "/home/alice/acme", Harness: "omp"})
 	reg := testkit.Decode[dto.AgentInfo](tools.Post("/api/v1/agent/register", nil).RequireStatus(http.StatusOK))
 	alice.Post("/api/v1/rooms/"+room.ID+"/members", dto.AddMemberRequest{Kind: dto.MemberKindAgent, MemberID: reg.ID}).RequireStatus(http.StatusCreated)
 
@@ -183,12 +183,12 @@ func TestAgentSessionReportsTheFoldersLiveState(t *testing.T) {
 	require.NoError(t, err)
 	require.Empty(t, machines, "and does not record the machine")
 
-	tools := tok.AsFolder(testkit.Folder{Machine: "devbox", Path: "/home/alice/acme", Harness: "codex"})
+	tools := tok.AsFolder(testkit.Folder{Machine: "devbox", Path: "/home/alice/acme", Harness: "omp"})
 	reg := testkit.Decode[dto.AgentInfo](tools.Post("/api/v1/agent/register", nil).RequireStatus(http.StatusOK))
 	s := session(tok, acme)
 	require.True(t, s.Exists)
 	require.False(t, s.Online)
-	require.Equal(t, "codex", s.App)
+	require.Equal(t, "omp", s.App)
 	require.Nil(t, s.ConnectedAt)
 	require.NotNil(t, s.Intelligence)
 	require.Equal(t, []any{reg.ID, "acme", "Acme", dto.IntelligenceRoleAI}, []any{s.Intelligence.ID, s.Intelligence.Handle, s.Intelligence.DisplayName, s.Intelligence.Role})

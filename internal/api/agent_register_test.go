@@ -18,10 +18,10 @@ import (
 func TestAgentRegisterWithoutSocket(t *testing.T) {
 	env := testkit.New(t)
 	alice := env.NewUser("alice")
-	tok := alice.Token(dto.TokenKindAgent, "laptop").AsFolder(testkit.Folder{Machine: "devbox", Path: "/work/Codex Box", Harness: "codex"})
+	tok := alice.Token(dto.TokenKindAgent, "laptop").AsFolder(testkit.Folder{Machine: "devbox", Path: "/work/Tools Box", Harness: "omp"})
 
 	info := testkit.Decode[dto.AgentInfo](tok.Post("/api/v1/agent/register", nil).RequireStatus(http.StatusOK))
-	require.Equal(t, "Codex Box", info.DisplayName, "the folder's name")
+	require.Equal(t, "Tools Box", info.DisplayName, "the folder's name")
 	require.Equal(t, "alice", info.Owner)
 	require.NotEmpty(t, info.ID)
 
@@ -30,7 +30,7 @@ func TestAgentRegisterWithoutSocket(t *testing.T) {
 	tok.Get("/api/v1/agent/rooms").RequireStatus(http.StatusOK)
 	list := ownedAIs(t, alice)
 	require.Len(t, list, 1, "registered once")
-	require.Equal(t, []any{info.ID, false, "codex"}, []any{list[0].ID, list[0].Online, list[0].Harness}, "and offline")
+	require.Equal(t, []any{info.ID, false, "omp"}, []any{list[0].ID, list[0].Online, list[0].Harness}, "and offline")
 }
 
 // PUSH-02: only agent tokens register agents.

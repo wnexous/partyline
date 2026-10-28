@@ -17,7 +17,7 @@ import (
 	"github.com/wnexous/partyline/internal/testkit"
 )
 
-// startPath is one way a session starts an AI: the live WebSocket, or a tools-only call (Codex, the tools
+// startPath is one way a session starts an AI: the live WebSocket, or a tools-only call (the tools
 // half of pi and OpenCode). Both resolve the folder and may be the first contact, so the placement rules
 // are tested on each (L-034).
 type startPath struct {

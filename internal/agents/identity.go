@@ -18,7 +18,9 @@ const (
 )
 
 // harnessLabels are the readable names of the known harnesses (ID-01). The keys are the
-// launcher ids (`partyline <harness>`).
+// launcher ids (`partyline <harness>`). codex, gemini and antigravity are no longer supported (AD-034): their
+// labels stay so that an AI created with one keeps its app name; a new session of one is refused
+// (RemovedHarness).
 var harnessLabels = map[string]string{
 	"claude":      "Claude Code",
 	"opencode":    "OpenCode",
@@ -31,7 +33,20 @@ var harnessLabels = map[string]string{
 }
 
 // harnessAliases map other launcher names to their harness id.
-var harnessAliases = map[string]string{"claudecode": "claude", "claude-code": "claude", "agy": "antigravity"}
+var harnessAliases = map[string]string{"claudecode": "claude", "claude-code": "claude"}
+
+// removedHarnesses are the harness ids, and other names for them, of the harnesses Partyline dropped (AD-034).
+var removedHarnesses = map[string]string{"codex": "codex", "gemini": "gemini", "antigravity": "antigravity", "agy": "antigravity"}
+
+// RemovedHarness returns the readable name of a harness Partyline no longer supports when a header value
+// names one ("Codex"), else "" and false.
+func RemovedHarness(v string) (label string, removed bool) {
+	id, ok := removedHarnesses[strings.ToLower(strings.TrimSpace(v))]
+	if !ok {
+		return "", false
+	}
+	return harnessLabels[id], true
+}
 
 // HarnessID returns the harness id for a header value: a known id or alias, else "agent".
 func HarnessID(v string) string {

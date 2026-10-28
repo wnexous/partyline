@@ -55,7 +55,7 @@ func aiAtIn(t *testing.T, env *testkit.Env, owner *testkit.Client, orgID, name, 
 
 // contactsFixture extends the people fixture with AIs. alice owns, on the machine devbox (home
 // /home/alice): Atlas (~/atlas, Claude Code, online), Notes (~/atlas/notes, OpenCode) and Lab
-// (~/c/d/lab, Codex, seen once and offline); on notebook: Dev (~, Claude Code). Old is a v0.3
+// (~/c/d/lab, Codex (a harness since dropped), seen once and offline); on notebook: Dev (~, Claude Code). Old is a v0.3
 // identity without a folder. bob's AIs Bobby and Secret and carol's Public are in their owners' own
 // organizations, which alice does not belong to.
 type contactsFixture struct {
@@ -78,7 +78,7 @@ func newContactsFixture(t *testing.T) *contactsFixture {
 	f.public = aiAt(t, f.env, f.carol, "Public", "public", "carols-pc", "/srv/public", "/home/carol", "claude")
 
 	// Lab connects once and leaves; Atlas stays online.
-	lab, resp := f.alice.Token(dto.TokenKindAgent, "devbox").DialFolder(testkit.Folder{Machine: "devbox", Path: "/home/alice/c/d/lab", Home: "/home/alice", Harness: "codex"})
+	lab, resp := f.alice.Token(dto.TokenKindAgent, "devbox").DialFolder(testkit.Folder{Machine: "devbox", Path: "/home/alice/c/d/lab", Home: "/home/alice"}) // no harness named: Lab keeps its Codex app
 	require.NotNil(t, lab, "upgrade refused: %d", resp.Status)
 	lab.Welcome(wsWait)
 	lab.Close()

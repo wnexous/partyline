@@ -118,7 +118,7 @@ func TestResolveFolderCreatesTheIdentityOnceForAnyHarness(t *testing.T) {
 	require.Equal(t, "Acme", f.intelligence(t, first.ID).DisplayName, "reconnecting keeps the profile")
 }
 
-// AID-02: a tools-only call (Codex, the tools half of pi/OpenCode) must not relabel a live
+// AID-02: a tools-only call (the tools half of pi/OpenCode) must not relabel a live
 // session, but names the app while nobody is connected; a call that names no harness leaves it.
 func TestResolveFolderHarnessRules(t *testing.T) {
 	f := newFixture(t)
@@ -131,7 +131,7 @@ func TestResolveFolderHarnessRules(t *testing.T) {
 
 	session := &fakeSession{}
 	_, _ = f.presence.AttachLabeled(ctx, live, session, "claude", "process-one", "", false)
-	id.Harness = "codex"
+	id.Harness = "omp"
 	tools, err := f.reg.ResolveFolder(ctx, alice.UserID, id, false)
 	require.NoError(t, err)
 	require.Equal(t, live.ID, tools.ID)
@@ -141,14 +141,14 @@ func TestResolveFolderHarnessRules(t *testing.T) {
 	require.True(t, f.presence.Detach(ctx, live.ID, session))
 	tools, err = f.reg.ResolveFolder(ctx, alice.UserID, id, false)
 	require.NoError(t, err)
-	require.Equal(t, "codex", tools.Harness, "with nobody connected a tools-only call names the app")
-	require.Equal(t, "codex", f.storedAgent(t, live.ID).Harness)
+	require.Equal(t, "omp", tools.Harness, "with nobody connected a tools-only call names the app")
+	require.Equal(t, "omp", f.storedAgent(t, live.ID).Harness)
 
 	for _, isLive := range []bool{false, true} {
 		id.Harness = ""
 		same, err := f.reg.ResolveFolder(ctx, alice.UserID, id, isLive)
 		require.NoError(t, err)
-		require.Equal(t, "codex", same.Harness, "no harness named (live=%v): the app stays", isLive)
+		require.Equal(t, "omp", same.Harness, "no harness named (live=%v): the app stays", isLive)
 	}
 
 	id.Harness = "claude-code"
@@ -170,7 +170,7 @@ func TestAttachSetsTheAppAndToolsOnlyCallsNeverOverwriteIt(t *testing.T) {
 	ctx := context.Background()
 	alice := f.user(t, "alice")
 
-	a, err := f.reg.ResolveFolder(ctx, alice.UserID, FolderID{Machine: "devbox", Folder: "/work/acme", Harness: "codex"}, false)
+	a, err := f.reg.ResolveFolder(ctx, alice.UserID, FolderID{Machine: "devbox", Folder: "/work/acme", Harness: "omp"}, false)
 	require.NoError(t, err)
 	holder := &fakeSession{}
 	_, err = f.reg.Attach(ctx, a, holder, "claude", "process-one-aaaaaaaa", "", false)
@@ -183,7 +183,7 @@ func TestAttachSetsTheAppAndToolsOnlyCallsNeverOverwriteIt(t *testing.T) {
 
 	// A tools-only call that has seen nobody connected and is about to write the app while a
 	// session attaches: the live session's app wins, whichever way the two interleave.
-	b, err := f.reg.ResolveFolder(ctx, alice.UserID, FolderID{Machine: "devbox", Folder: "/work/race", Harness: "codex"}, false)
+	b, err := f.reg.ResolveFolder(ctx, alice.UserID, FolderID{Machine: "devbox", Folder: "/work/race", Harness: "omp"}, false)
 	require.NoError(t, err)
 	paused, resume, attached := make(chan struct{}), make(chan struct{}), make(chan struct{})
 	var attachErr error
@@ -201,7 +201,7 @@ func TestAttachSetsTheAppAndToolsOnlyCallsNeverOverwriteIt(t *testing.T) {
 	}
 	done := make(chan error, 1)
 	go func() {
-		_, err := f.reg.ResolveFolder(ctx, alice.UserID, FolderID{Machine: "devbox", Folder: "/work/race", Harness: "gemini"}, false)
+		_, err := f.reg.ResolveFolder(ctx, alice.UserID, FolderID{Machine: "devbox", Folder: "/work/race", Harness: "pi"}, false)
 		done <- err
 	}()
 	select {
@@ -493,7 +493,7 @@ func TestResolveFolderConcurrentResolvesCreateOneIdentity(t *testing.T) {
 	const n = 16
 	ids := make([]string, n)
 	errs := parallel(n, func(i int) error {
-		harness := []string{"claude", "opencode", "codex", "pi"}[i%4]
+		harness := []string{"claude", "opencode", "omp", "pi"}[i%4]
 		a, err := f.reg.ResolveFolder(ctx, alice.UserID, FolderID{Machine: "devbox", Folder: "/work/acme", Harness: harness}, i%2 == 0)
 		ids[i] = a.ID
 		return err

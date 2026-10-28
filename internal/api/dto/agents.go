@@ -12,7 +12,7 @@ type Agent struct {
 	// Intelligence is the AI's profile: the display name people read, its @handle and avatar.
 	Intelligence IntelligenceRef `json:"intelligence"`
 	Description  string          `json:"description"`
-	Harness      string          `json:"harness"` // claude, opencode, pi, omp, codex, gemini, antigravity or agent
+	Harness      string          `json:"harness"` // claude, opencode, pi, omp, agent, or codex, gemini or antigravity for an AI created before they were dropped
 	Machine      string          `json:"machine"` // the session's hostname; empty when unknown
 	// Organization is the AI's home organization (ORG-02); absent for an AI that has none.
 	Organization *ContactOrg `json:"organization,omitempty"`
@@ -279,7 +279,7 @@ type AgentNoticeFrame struct {
 
 // DroppedNotice is the text that tells an AI how many of its platform messages the server dropped, for
 // being older than 7 days or over the bound of 5,000 queued (CID-10). The WebSocket notice and the
-// output of the harnesses that poll (the turn-end hooks and wait_for_messages) share it.
+// answer of GET /agent/pending share it.
 func DroppedNotice(n int64) string {
 	return fmt.Sprintf("%d platform messages were dropped (older than 7 days or over 5,000 queued)", n)
 }
@@ -334,7 +334,9 @@ type AgentPlatformAckFrame struct {
 	ItemID string         `json:"item_id"`
 }
 
-// AgentPending is the answer of GET /agent/pending?platform=1 (CID-06): the undelivered room
+// AgentPending is the answer of GET /agent/pending?platform=1 (CID-06). No supported harness polls it any
+// more (the turn-end hooks and wait_for_messages went with Codex, Gemini and Antigravity, AD-034); it is
+// kept only because the server tests read through it what an AI would be handed. It holds the undelivered room
 // messages, exactly as the call without the parameter returns them (a List of AgentMessage), and
 // the AI's queued platform events, oldest first, at most 20 per call like the room messages. Both
 // lists count as delivered once returned: the platform events lose their text (CID-09).

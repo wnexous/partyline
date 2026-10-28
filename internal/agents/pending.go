@@ -24,7 +24,7 @@ type pendingMessage struct {
 // Pending returns the oldest messages after the agent's cursors that its delivery modes want,
 // room by room (paused rooms excepted), at most limit, and moves the cursors past everything
 // it looked at: the returned messages count as delivered. It serves harnesses that cannot hold
-// the WebSocket (wait_for_messages, turn-end hooks). Fallen-back messages are merged into the
+// the WebSocket (GET /agent/pending; no supported harness uses it, AD-034). Fallen-back messages are merged into the
 // same sequence order with their note, are returned without the delivery filter, and their rows
 // are acknowledged by this read: they stay as tombstones (SESS-22, SESS-24). The cursor follows the
 // cursor messages only: a fallback's sequence never moves it, and it never moves backwards.

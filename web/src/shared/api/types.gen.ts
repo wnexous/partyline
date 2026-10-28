@@ -14,7 +14,7 @@ export interface Agent {
    */
   intelligence: IntelligenceRef;
   description: string;
-  harness: string; // claude, opencode, pi, omp, codex, gemini, antigravity or agent
+  harness: string; // claude, opencode, pi, omp, agent, or codex, gemini or antigravity for an AI created before they were dropped
   machine: string; // the session's hostname; empty when unknown
   /**
    * Organization is the AI's home organization (ORG-02); absent for an AI that has none.
@@ -428,7 +428,9 @@ export interface AgentPlatformAckFrame {
   item_id: string;
 }
 /**
- * AgentPending is the answer of GET /agent/pending?platform=1 (CID-06): the undelivered room
+ * AgentPending is the answer of GET /agent/pending?platform=1 (CID-06). No supported harness polls it any
+ * more (the turn-end hooks and wait_for_messages went with Codex, Gemini and Antigravity, AD-034); it is
+ * kept only because the server tests read through it what an AI would be handed. It holds the undelivered room
  * messages, exactly as the call without the parameter returns them (a List of AgentMessage), and
  * the AI's queued platform events, oldest first, at most 20 per call like the room messages. Both
  * lists count as delivered once returned: the platform events lose their text (CID-09).
@@ -516,7 +518,8 @@ export const MaxPageSize = 100;
  */
 export const SecretMask = "********";
 /**
- * HeaderHarness is the launcher's harness id (claude, opencode, pi, omp, codex, gemini, antigravity).
+ * HeaderHarness is the launcher's harness id (claude, opencode, pi, omp). A request from a harness that is no
+ * longer supported (codex, gemini, antigravity) is refused with 410 ErrorCodeHarnessRemoved.
  */
 export const HeaderHarness = "X-Partyline-Harness";
 /**
@@ -656,6 +659,12 @@ export const ErrorCodeUnsupported = "unsupported";
 export const ErrorCodeFolderRequired = "folder_required"; // 422
 export const ErrorCodeFolderInvalid = "folder_invalid"; // 422
 /**
+ * ErrorCodeHarnessRemoved is a session of a harness Partyline no longer supports (codex, gemini or
+ * antigravity, from a CLI that still launches them): 410 on any agent route and on the WebSocket, with the
+ * message "<Harness> is no longer supported by Partyline; use Claude Code, pi, OpenCode or omp" (AD-034).
+ */
+export const ErrorCodeHarnessRemoved = "harness_removed"; // 410
+/**
  * ErrorCodePositionUnknown is a start (--position) that names a position the organization does not
  * have (422, field position, POS-07).
  */
@@ -743,7 +752,7 @@ export const ErrorCodeAlreadyAnswered = "already_answered";
 /**
  * Error codes and the HTTP status they come with.
  */
-export type ErrorCode = typeof ErrorCodeInvalid | typeof ErrorCodeUnauthorized | typeof ErrorCodeForbidden | typeof ErrorCodeNotFound | typeof ErrorCodeConflict | typeof ErrorCodeGone | typeof ErrorCodeTooLarge | typeof ErrorCodeRateLimited | typeof ErrorCodeInternal | typeof ErrorCodeUnavailable | typeof ErrorCodeHandleTaken | typeof ErrorCodeAvatarInvalid | typeof ErrorCodeLastInstanceAdmin | typeof ErrorCodeLastAdmin | typeof ErrorCodeHomeOrganization | typeof ErrorCodeAlreadyMember | typeof ErrorCodeNotOperator | typeof ErrorCodeUnknownChat | typeof ErrorCodeUnsupported | typeof ErrorCodeFolderRequired | typeof ErrorCodeFolderInvalid | typeof ErrorCodePositionUnknown | typeof ErrorCodeOrganizationMismatch | typeof ErrorCodeIdentityBusy | typeof ErrorCodeDMMembersFixed | typeof ErrorCodeReactionLimit | typeof ErrorCodeDMSelf | typeof ErrorCodeContactNotFound | typeof ErrorCodeNoRouteToPerson | typeof ErrorCodeHistoryOnly | typeof ErrorCodeCounterpartDisabled | typeof ErrorCodeChatsNotMembers | typeof ErrorCodeMembersRefused | typeof ErrorCodeOrganizationRequired | typeof ErrorCodeOrganizationNotEmpty | typeof ErrorCodePositionCycle | typeof ErrorCodeIdentityOnline | typeof ErrorCodeAlreadyAnswered;
+export type ErrorCode = typeof ErrorCodeInvalid | typeof ErrorCodeUnauthorized | typeof ErrorCodeForbidden | typeof ErrorCodeNotFound | typeof ErrorCodeConflict | typeof ErrorCodeGone | typeof ErrorCodeTooLarge | typeof ErrorCodeRateLimited | typeof ErrorCodeInternal | typeof ErrorCodeUnavailable | typeof ErrorCodeHandleTaken | typeof ErrorCodeAvatarInvalid | typeof ErrorCodeLastInstanceAdmin | typeof ErrorCodeLastAdmin | typeof ErrorCodeHomeOrganization | typeof ErrorCodeAlreadyMember | typeof ErrorCodeNotOperator | typeof ErrorCodeUnknownChat | typeof ErrorCodeUnsupported | typeof ErrorCodeFolderRequired | typeof ErrorCodeFolderInvalid | typeof ErrorCodeHarnessRemoved | typeof ErrorCodePositionUnknown | typeof ErrorCodeOrganizationMismatch | typeof ErrorCodeIdentityBusy | typeof ErrorCodeDMMembersFixed | typeof ErrorCodeReactionLimit | typeof ErrorCodeDMSelf | typeof ErrorCodeContactNotFound | typeof ErrorCodeNoRouteToPerson | typeof ErrorCodeHistoryOnly | typeof ErrorCodeCounterpartDisabled | typeof ErrorCodeChatsNotMembers | typeof ErrorCodeMembersRefused | typeof ErrorCodeOrganizationRequired | typeof ErrorCodeOrganizationNotEmpty | typeof ErrorCodePositionCycle | typeof ErrorCodeIdentityOnline | typeof ErrorCodeAlreadyAnswered;
 /**
  * ErrorBody is the envelope of every error response.
  */

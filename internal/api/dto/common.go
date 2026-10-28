@@ -31,7 +31,8 @@ const (
 
 // HTTP headers and multipart field names that are part of the contract.
 const (
-	// HeaderHarness is the launcher's harness id (claude, opencode, pi, omp, codex, gemini, antigravity).
+	// HeaderHarness is the launcher's harness id (claude, opencode, pi, omp). A request from a harness that is no
+	// longer supported (codex, gemini, antigravity) is refused with 410 ErrorCodeHarnessRemoved.
 	HeaderHarness = "X-Partyline-Harness"
 	// HeaderMachine is the session's hostname.
 	HeaderMachine = "X-Partyline-Machine"
@@ -130,6 +131,10 @@ const (
 	// (not absolute or canonical, a NUL, longer than 1024 bytes) (AID-05).
 	ErrorCodeFolderRequired ErrorCode = "folder_required" // 422
 	ErrorCodeFolderInvalid  ErrorCode = "folder_invalid"  // 422
+	// ErrorCodeHarnessRemoved is a session of a harness Partyline no longer supports (codex, gemini or
+	// antigravity, from a CLI that still launches them): 410 on any agent route and on the WebSocket, with the
+	// message "<Harness> is no longer supported by Partyline; use Claude Code, pi, OpenCode or omp" (AD-034).
+	ErrorCodeHarnessRemoved ErrorCode = "harness_removed" // 410
 	// ErrorCodePositionUnknown is a start (--position) that names a position the organization does not
 	// have (422, field position, POS-07).
 	ErrorCodePositionUnknown ErrorCode = "position_unknown"
