@@ -1,7 +1,7 @@
 # Web architecture: Feature-Sliced Design + Atomic Design
 
-Status: Specify done, Design done (`design.md`), Tasks in `tasks.md`. Audit of the starting point in
-`audit.md` (2026-10-28).
+Status: Done. Specify, Design (`design.md`) and Tasks (`tasks.md`, T1 to T6) are all done; the
+starting point is in `audit.md` (2026-10-28), the end state in `tasks.md` (T6 audit).
 
 ## Problem
 

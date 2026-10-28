@@ -16,9 +16,10 @@ import {
 import { QuestionBubble } from "@/features/answer-question";
 import type { Message, RoomMember } from "@/shared/api/types.gen";
 import { type MessageKey, useI18n } from "@/shared/i18n";
-import { formatAbsolute, formatClock } from "@/shared/lib/time";
+import { formatAbsolute } from "@/shared/lib/time";
 import { useLongPress } from "@/shared/lib/use-long-press";
 import { cn } from "@/shared/lib/utils";
+import { RelativeTime } from "@/shared/ui/atoms/relative-time";
 import { RowMenuButton } from "@/shared/ui/molecules/row-menu-button";
 import { useSwipeReply } from "../model/use-swipe-reply";
 import type { MessageMenuTarget } from "./message-menu";
@@ -129,13 +130,12 @@ export const MessageItem = memo(function MessageItem({
   // A deleted message is a placeholder (DLT-10): its author and time stay, nothing it said does.
   const deleted = message.deleted_at !== undefined;
   const time = (
-    <time
-      dateTime={message.created_at}
-      title={formatAbsolute(message.created_at, locale)}
+    <RelativeTime
+      value={message.created_at}
+      locale={locale}
+      format="clock"
       className="font-mono text-[0.7rem] text-muted-foreground tabular"
-    >
-      {formatClock(message.created_at, locale)}
-    </time>
+    />
   );
   // The time, and "edited" after it for a message whose text was changed (EDT-10); the title says when.
   const stamp = (

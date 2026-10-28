@@ -1,10 +1,17 @@
 import type { ReactNode } from "react";
-import { formatAbsolute, formatClock, formatFull, formatRelative } from "@/shared/lib/time";
+import {
+  formatAbsolute,
+  formatClock,
+  formatFull,
+  formatListTime,
+  formatRelative,
+} from "@/shared/lib/time";
 import { cn } from "@/shared/lib/utils";
 
 /*
  * A moment as the app shows it: "5 min ago" by default, with the absolute time in a tooltip, in a
- * `<time>` element so the instant is machine-readable too. `format="clock"` shows the clock,
+ * `<time>` element so the instant is machine-readable too. `format="clock"` shows the clock, `format="list"` the
+ * day label or the clock of a list row (`formatListTime`),
  * `format="date"` the long date and time (no tooltip: it is already absolute).
  *
  * `children` builds a sentence around the time: `<RelativeTime value={iso} locale={locale}>
@@ -21,16 +28,18 @@ export function RelativeTime({
   /** The instant, as an ISO string. */
   value: string;
   locale: string;
-  format?: "relative" | "clock" | "date";
+  format?: "relative" | "clock" | "list" | "date";
   children?: (time: string) => ReactNode;
   className?: string;
 }) {
   const text =
     format === "clock"
       ? formatClock(value, locale)
-      : format === "date"
-        ? formatFull(value, locale)
-        : formatRelative(value, locale);
+      : format === "list"
+        ? formatListTime(value, locale)
+        : format === "date"
+          ? formatFull(value, locale)
+          : formatRelative(value, locale);
   const title = format === "date" ? undefined : formatAbsolute(value, locale);
   return (
     <time dateTime={value} title={title} className={cn(className)}>

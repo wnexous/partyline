@@ -32,12 +32,15 @@ const FIRST_SEGMENT_LAYERS = new Set<string>([
   "entities",
   "shared",
 ]);
+/** The flat folders of the migration (T6 deleted them): no file may live in them, nor be imported. */
 const LEGACY_DIRS = new Set(["components", "hooks", "lib"]);
+/** Dialogs and sheets outside shared/ui come from the molecules, which fill in the labels. */
+const DIALOG_PRIMITIVES = new Set(["dialog", "sheet"]);
 const SKIPPED = new Set(["routeTree.gen", "shared/api/types.gen"]);
 
 export interface Place {
-  /** `legacy` is components/, hooks/, lib/; `test` is src/test; `other` is anything unclassified. */
-  layer: Layer | "legacy" | "test" | "other";
+  /** `test` is src/test; `other` is anything unclassified (the deleted legacy folders included). */
+  layer: Layer | "test" | "other";
   /** The slice name, for the sliced layers. */
   slice?: string;
   /** The path inside the slice (or inside `shared`), without extension. */
@@ -69,7 +72,6 @@ export function classify(rel: string): Place {
   if (parts.length === 1 && (first === "main" || first === "router")) {
     return { layer: "app", rest: parts };
   }
-  if (LEGACY_DIRS.has(first)) return { layer: "legacy", rest: parts };
   return { layer: "other", rest: parts };
 }
 
@@ -138,13 +140,20 @@ export function checkImport(fromRel: string, toRel: string, isTest: boolean): Ru
   const broken: Rule[] = [];
   if (from.layer === "test" || to.layer === "test") return broken;
   if (SKIPPED.has(toRel)) return broken;
+  if (LEGACY_DIRS.has(toRel.split("/")[0] ?? "")) {
+    broken.push({
+      rule: "legacy-removed",
+      message: "components/, hooks/ and lib/ are gone: import the layer that owns the code",
+    });
+    return broken;
+  }
   const name = (p: Place) => (p.slice ? `${p.layer}/${p.slice}` : p.layer);
 
   const fromRank = from.layer in RANK ? RANK[from.layer as Layer] : null;
   const toRank = to.layer in RANK ? RANK[to.layer as Layer] : null;
   const sameSlice = from.layer === to.layer && from.slice === to.slice;
 
-  // Layer order. Legacy is below nothing and above nothing: anything may import it.
+  // Layer order.
   if (fromRank !== null && toRank !== null && toRank < fromRank) {
     broken.push({
       rule: "layer-order",
@@ -186,6 +195,21 @@ export function checkImport(fromRel: string, toRel: string, isTest: boolean): Ru
     }
   }
 
+  // Dialogs and sheets are the molecules outside shared/ui (the primitives only inside it).
+  const inSharedUi = from.layer === "shared" && from.rest[0] === "ui";
+  const primitive =
+    to.layer === "shared" &&
+    to.rest[0] === "ui" &&
+    to.rest[1] === "primitives" &&
+    DIALOG_PRIMITIVES.has(to.rest[2] ?? "");
+  if (primitive && !inSharedUi) {
+    broken.push({
+      rule: "primitive-dialog",
+      message:
+        "import the dialog or sheet from shared/ui/molecules (it fills in the close label and focus rule)",
+    });
+  }
+
   // shared/ui sub-layers.
   const sub = sharedUiSub(from);
   if (sub === "primitives") {
@@ -224,6 +248,15 @@ export function checkFile(fileRel: string, source: string): Violation[] {
   if (SKIPPED.has(base) || base.startsWith("test/")) return [];
   const isTest = isTestFile(fileRel);
   const out: Violation[] = [];
+  if (LEGACY_DIRS.has(base.split("/")[0] ?? "")) {
+    out.push({
+      file: `src/${fileRel}`,
+      line: 1,
+      rule: "legacy-removed",
+      message: "components/, hooks/ and lib/ are gone: put the code in its layer",
+      target: `src/${base}`,
+    });
+  }
   for (const { specifier, line } of extractImports(source)) {
     const target = resolveSpecifier(fileRel, specifier);
     if (target === null) continue;

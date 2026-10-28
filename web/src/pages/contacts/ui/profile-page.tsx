@@ -19,9 +19,10 @@ import {
   IntelligenceName,
   MembershipSummary,
   mergeTargets,
+  SessionLabel,
   useIntelligence,
   useIsOnline,
-  usePresenceStore,
+  usePresenceEntry,
   YouBadge,
 } from "@/entities/intelligence";
 import { platformName } from "@/entities/message";
@@ -33,6 +34,7 @@ import {
   MergeAIDialog,
   RemoveFromOrgDialog,
 } from "@/features/manage-org-member";
+import { MessageButton } from "@/features/start-conversation";
 import { isApiError } from "@/shared/api/client";
 import {
   type AIDetail,
@@ -50,7 +52,6 @@ import { PageSection } from "@/shared/ui/molecules/page-section";
 import { PanelSkeleton } from "@/shared/ui/molecules/panel-skeleton";
 import { Button } from "@/shared/ui/primitives/button";
 import { Skeleton } from "@/shared/ui/primitives/skeleton";
-import { MessageButton } from "@/widgets/conversation-timeline";
 import { ProfileConversations } from "@/widgets/profile-panel";
 
 const routeApi = getRouteApi("/_app/contacts/$id");
@@ -217,12 +218,10 @@ function ProfileView({ profile }: { profile: IntelligenceProfile }) {
                 key={`:${session.label}`}
                 className="flex flex-wrap items-baseline gap-x-2 gap-y-1 px-4 py-3 text-sm"
               >
-                <span
-                  data-testid="session-label"
-                  className="min-w-0 font-mono text-xs [overflow-wrap:anywhere]"
-                >
-                  {session.label ? `:${session.label}` : t("profile.sessionPrincipal")}
-                </span>
+                <SessionLabel
+                  label={session.label}
+                  className="min-w-0 text-xs [overflow-wrap:anywhere]"
+                />
                 <span className="min-w-0 text-muted-foreground [overflow-wrap:anywhere]">
                   {harnessLabel(session.harness) ?? session.harness}
                 </span>
@@ -360,7 +359,7 @@ function Row({ label, children }: { label: string; children: ReactNode }) {
 function AIDetails({ ai, id }: { ai: AIDetail; id: string }) {
   const { t, locale } = useI18n();
   const online = useIsOnline(id, ai.online);
-  const presence = usePresenceStore((s) => s.presence[id]);
+  const presence = usePresenceEntry(id);
   const lastSeen = presence?.last_seen_at ?? ai.last_seen_at;
   const app = ai.app ? (harnessLabel(ai.app) ?? ai.app) : "";
   return (

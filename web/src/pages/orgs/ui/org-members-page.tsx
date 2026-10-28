@@ -229,7 +229,7 @@ function MembersTable({
       </thead>
       <tbody className="max-xl:block">
         {members.map((m) => (
-          <MemberRow
+          <OrgMemberRow
             key={m.intelligence.id}
             nameId={`${prefix}-${m.intelligence.id}`}
             orgId={orgId}
@@ -248,7 +248,7 @@ function MembersTable({
   );
 }
 
-function MemberRow({
+function OrgMemberRow({
   nameId,
   orgId,
   orgName,

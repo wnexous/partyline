@@ -6,27 +6,27 @@ Binding for every later web task.
 
 ## Structure
 - Authenticated pages: `src/routes/_app/...`; public pages at `src/routes` top level. Tests co-located `*.test.ts(x)` (router ignores them).
-- Placeholders to replace: overview, rooms, agents, connectors, identities, tokens, settings, admin/users. `_app/admin/route.tsx` already renders the 403 page for members. New nav entries must be added to the allowed set in `NAV_GROUPS` (`components/app-sidebar.tsx`).
+- Placeholders to replace: overview, rooms, agents, connectors, identities, tokens, settings, admin/users. `_app/admin/route.tsx` already renders the 403 page for members. New nav entries must be added to the allowed set in `NAV_GROUPS` (`widgets/app-sidebar/ui/app-sidebar.tsx`).
 
 ## Tests
 - `src/test/render.tsx` (`renderRoute(path)` mounts the real router), `src/test/fetch.ts` (`mockApi({"GET /me": json(...)})`, `apiError`), `src/test/fixtures.ts` (`makeMessage`, `makeMe`; synthetic only), `src/test/fake-socket.ts`.
-- Page tests mock live: `vi.mock("@/lib/live", () => ({ startLive: vi.fn(() => () => {}) }))`.
+- Page tests mock live: `vi.mock("@/app/live", () => ({ startLive: vi.fn(() => () => {}) }))`.
 
 ## Data
-- `lib/api/queries.ts`: reads `useX`, mutations `useVerbX`, loader options `xQuery()`, keys from `queryKeys`. Lists cached as plain arrays.
+- `entities/<noun>/api/`: reads `useX`, mutations `useVerbX`, loader options `xQuery()`, keys from `shared/api/query-keys`. Lists cached as plain arrays.
 - Room timeline: infinite query, first page newest, items within a page oldest first (client sorts each page; cursor = lowest seq as `before_seq`).
 - `usePostMessage` does not write to the cache; the live `room.message` event appends.
-- `lib/live/{socket,handlers,store}.ts`; zustand store: status, outage start, presence, connector status, last linked identity, theme, locale, palette open.
+- `app/live` (socket, `startLive`, the dispatcher, catch-up); each entity's `model/live.ts` patches its own caches. Zustand stores by owner: `shared/api/socket-store` (status, outage), `shared/lib/prefs-store` (theme, locale, palette), `entities/intelligence/model/presence-store`, `entities/connector/model/state-store`, `entities/account/model/linked-identity-store`, `entities/room/model/open-room-store`, `entities/organization/model/current-org-store`.
 
 ## i18n
 - `en.ts` defines flat `area.thing` keys; `pt-BR.ts` must match exactly (parity test). Use `useT()` / `useI18n()`. Form errors are i18n keys rendered via `errorText`.
 
 ## Forms
-- react-hook-form + zod; `TextField`, `FieldError`, `FormAlert` from `components/form-fields.tsx`; `applyFieldErrors` maps 422 reasons; `safeRedirect` keeps redirects internal.
+- react-hook-form + zod; `TextField`, `FieldError`, `FormAlert` from `shared/ui/molecules/form-fields.tsx`; `applyFieldErrors` maps 422 reasons; `safeRedirect` keeps redirects internal.
 
 ## Design language (`src/index.css`, `DESIGN.md`, `PRODUCT.md`, `.impeccable/`)
 - Neutral base with a little colour (owner's briefs, 2026-10-23): surfaces and ink are greys (white paper, black ink, grey sidebar). Colour is a small fixed vocabulary: one dusty-indigo accent (`primary`, `link`, `ring`, and the tinted `tape`/`tape-strong` for live and selected, `bg-ai` for the AI badge), a quiet green for presence (`bg-online`), the muted `destructive` red for errors and destructive actions, and soft avatar tints (`bg-tint-*`, warm for people, cool for AIs, picked by `avatarTone`). There are no `success`, `warning` or `info` tokens: state keeps its shape (filled vs hollow dots, outlines, dashes, an inverted banner) and its word, so colour is never the only signal (`DESIGN.md`).
-- Colour never bypasses the tokens: no hex, `rgb()`/`oklch()` literals or Tailwind palette classes in components, and a fill and its ink flip together with the theme, so write `bg-tape text-tape-foreground` without `dark:` colours. Focus halos are `ring-ring/70`. `src/lib/palette.test.ts` pins the neutral surfaces, the hue budget, the WCAG AA pairs, the favicon and the `theme-color` hex (`THEME_COLORS`, `index.html`).
+- Colour never bypasses the tokens: no hex, `rgb()`/`oklch()` literals or Tailwind palette classes in components, and a fill and its ink flip together with the theme, so write `bg-tape text-tape-foreground` without `dark:` colours. Focus halos are `ring-ring/70`. `src/shared/lib/palette.test.ts` pins the neutral surfaces, the hue budget, the WCAG AA pairs, the favicon and the `theme-color` hex (`THEME_COLORS`, `index.html`).
 - `label-caps` for small section labels; `.tabular` for numbers. `animate-tape-settle` highlights new live messages; `animate-line-pulse` for connection dots.
 - Archivo for UI; JetBrains Mono only for data (seq, times, tokens, commands). Shared: `PageHeader`, `EmptyState`, status pages (403, not found, error).
 - No inline scripts (CSP `default-src 'self'`): theme pre-paint via `/theme-init.js`.
@@ -39,7 +39,7 @@ Binding for every later web task.
 
 ## Structure and shared components
 - Full-height pages put `data-fill` on their root; `_app.tsx` then bounds the inset (`h-svh`, no page scroll) so the page scrolls inside. The room page uses it.
-- Reuse: `StatusDot` (agent presence, `withLabel`), `VisibilityLabel` / `VISIBILITY` (room-visibility.tsx), `platformLabel(kind)`, `TrustBadge` / `chatTrust`, `formatBytes` (message-item.tsx), `formatRelative` / `formatAbsolute` / `formatClock` (`lib/time.ts`).
+- Reuse: `StatusDot` (agent presence, `withLabel`), `platformName(kind)` (`entities/message/model/platform.ts`), `TrustBadge` / `chatTrust`, `formatBytes` (`shared/lib/bytes.ts`), `formatRelative` / `formatAbsolute` / `formatClock` (`shared/lib/time.ts`), `RelativeTime` for every moment.
 - `SharingDialog kind={"rooms"|"agents"|"connectors"} id name owner trigger`: rooms grant view/post/manage (public view|post); agents and connectors grant `use` only. T11/T12 wire it with `kind="agents"` / `"connectors"`; gate the trigger on `my_level === "manage"`.
 - Dialog/sheet bodies mount only while open (`{open ? <Body/> : null}`) so queries (users, agents, chats, sharing) run on demand and forms start fresh.
 - Destructive member actions use a sonner toast with Undo instead of a confirm dialog.
@@ -73,9 +73,9 @@ Binding for every later web task.
   close it), `ConnectorForm` + `connectorFormSchema` + `connectorFormDefaults` (`schema-form.tsx`),
   `ConnectorStatusBadge` + `useConnectorState` (`connector-status.tsx`), `RouteChatDialog`,
   `ConnectAgentDialog`, `AddConnectorDialog`, `useChooseLocale(syncAccount)` (`language-switch.tsx`).
-- Destructive confirmations use `ui/alert-dialog.tsx` (added; role `alertdialog`): delete connector,
+- Destructive confirmations use `shared/ui/molecules/confirm-dialog` (role `alertdialog`): delete connector,
   remove identity, revoke token/invite, disable account. The agents page delete still uses `Dialog`.
-- `lib/agent-connect.ts` builds the `.mcp.json` entry and holds the launch, install, releases and docs
+- `features/connect-agent/lib/agent-connect.ts` builds the `.mcp.json` entry and holds the launch, install, releases and docs
   constants; the wizard reads `window.location.origin`.
 - Detail pages (`/connectors/$connectorId`) use a back link + title header and a left-aligned
   `max-w-3xl` body; 404 renders an `EmptyState` "not on your line".
@@ -120,14 +120,14 @@ Binding for every later web task.
 - Dashboard (`routes/_app/index.tsx`): switchboard (agents, connectors) beside the wire (recent
   activity). Panels are `section aria-labelledby` with a `label-caps` h2; empty states inside a
   titled section pass `headingLevel="h3"` to `EmptyState`.
-- `lib/presence.ts`: `withPresence`, `byLiveness`, `AgentView` (agents page and dashboard).
-- `message-item.tsx` also exports `AUTHOR_KIND` (icon, label, tile per author kind) and
+- `entities/intelligence/model/presence.ts`: `onlineOf`, `withContactPresence`, `useIsOnline` (the one online rule).
+- `entities/message/model/author.ts` exports `AUTHOR_KIND` (icon, label, tile per author kind) and
   `contentKindLabel(kind)` for text-less messages.
-- Command palette: `components/command-menu.tsx` (mounted once in `_app.tsx`, Ctrl/Cmd+K, open flag
-  `paletteOpen` in the live store, body mounts only while open). `components/search-button.tsx`
+- Command palette: `widgets/command-palette/ui/command-menu.tsx` (mounted once in `_app.tsx`, Ctrl/Cmd+K, open flag
+  `paletteOpen` in the live store, body mounts only while open). `shared/ui/molecules/search-button.tsx`
   opens it from the sidebar; the mobile top bar has an icon button. Pages come from `NAV_GROUPS`,
   so a new nav entry appears in the palette too.
-- Destructive confirmations: always `ui/alert-dialog.tsx` (role `alertdialog`, action styled
+- Destructive confirmations: always `shared/ui/molecules/confirm-dialog` (role `alertdialog`, action styled
   `bg-destructive text-white hover:bg-destructive/90`, `e.preventDefault()` then close on success).
   Member removal keeps the undo toast.
 - The shell has a skip link to `<main id="main">` (`SidebarInset`).
@@ -147,7 +147,7 @@ Binding for every later web task.
 - No `transition-all`: list the properties. Overlays and scrolling lists use `overscroll-contain`.
 - English copy uses typographic apostrophes (’); tests asserting such copy must use them too.
 - `translate="no"` on the wordmark and code blocks; `theme-color` metas follow the theme
-  (`THEME_COLORS` in `lib/theme.ts`).
+  (`THEME_COLORS` in `shared/lib/theme.ts`).
 
 ## Tests
 - Query-cache-driven UI updates after a live event render on the next tick: wrap the assertion in
@@ -157,11 +157,11 @@ Binding for every later web task.
 # Additions from web-app Phase 5 (validation fixes, iteration 1)
 
 ## Behaviour
-- Message length counts Unicode code points like the server (`textLength()` in `lib/schemas.ts`,
+- Message length counts Unicode code points like the server (`textLength()` in `shared/lib/validation.ts`,
   Go's rune count). Never use `text.length` against `MaxTextLength`.
 - `detectLocale` walks `navigator.languages` in order and takes the first supported one (`pt*` →
   pt-BR, `en*` → en); English when none matches.
-- Focus on mount only with a fine pointer: `useAutoFocus()` (`hooks/use-auto-focus.ts`) gates
+- Focus on mount only with a fine pointer: `useAutoFocus()` (`shared/lib/device.ts`) gates
   `autoFocus` (TextField applies it, so pass `autoFocus` freely); `DialogContent` focuses the dialog
   itself instead of its first field when `(pointer: coarse)` matches. New raw `<Input autoFocus>`
   must use the hook.
@@ -197,11 +197,11 @@ Binding for every later web task.
 ## Live socket and session end
 - Close 1008 (`CLOSE_SESSION_REVOKED`, "session revoked"): `createLiveSocket` stops (no reconnect) and
   calls `onSessionEnded`; `startLive` clears the query cache and calls `notifyUnauthorized()`
-  (`lib/api/client.ts`), the same handler a 401 runs → `/login?redirect=<current>`.
+  (`shared/api/client.ts`), the same handler a 401 runs → `/login?redirect=<current>`.
 - Close 1013 ("session check failed") and every other code: normal reconnect with backoff.
 - `FakeSocket.drop(code = 1006, reason)` passes a close event; `close()` sends 1000.
 - `src/routes/live-session.test.tsx` drives the real socket in the shell by stubbing the global
-  `WebSocket` with `FakeSocket` (no `vi.mock("@/lib/live")` there).
+  `WebSocket` with `FakeSocket` (no `vi.mock("@/app/live")` there).
 
 ## Connectors
 - `AddConnectorDialog`: a create response with `generated_secrets` closes the add dialog and opens
@@ -218,7 +218,7 @@ Binding for every later web task.
 
 ## i18n
 - The pairing dialog (connectors fix T28) and every Phase 6 string have pt-BR entries; the parity
-  test (`lib/i18n/i18n.test.tsx`) passes. Keys equal in both locales are cognates or names
+  test (`shared/i18n/i18n.test.tsx`) passes. Keys equal in both locales are cognates or names
   (`Chats`, `Online`, `Admin`, `GitHub Releases`).
 
 ## DTO gaps for the backend

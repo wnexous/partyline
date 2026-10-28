@@ -20,3 +20,6 @@ export const usePresenceStore = create<PresenceState>()((set) => ({
   setPresence: (agentId, presence) =>
     set((s) => ({ presence: { ...s.presence, [agentId]: presence } })),
 }));
+
+/** One identity's presence entry, as the socket last said it (undefined until it says). */
+export const usePresenceEntry = (id: string) => usePresenceStore((s) => s.presence[id]);

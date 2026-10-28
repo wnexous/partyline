@@ -3,9 +3,9 @@ import { memo } from "react";
 import { isVoicePreview } from "@/entities/message/@x/room";
 import type { Conversation } from "@/shared/api/types.gen";
 import { useI18n, useT } from "@/shared/i18n";
-import { formatAbsolute, formatListTime } from "@/shared/lib/time";
 import { useLongPress } from "@/shared/lib/use-long-press";
 import { cn } from "@/shared/lib/utils";
+import { RelativeTime } from "@/shared/ui/atoms/relative-time";
 import { RowMenuButton } from "@/shared/ui/molecules/row-menu-button";
 import { hasConversationActions } from "../model/conversation-rules";
 import { ConversationAvatar } from "./conversation-avatar";
@@ -82,9 +82,10 @@ export const ConversationRow = memo(function ConversationRow({
               {c.title}
             </span>
             {last ? (
-              <time
-                dateTime={last.created_at}
-                title={formatAbsolute(last.created_at, locale)}
+              <RelativeTime
+                value={last.created_at}
+                locale={locale}
+                format="list"
                 className={cn(
                   "shrink-0 font-mono text-[0.7rem] tabular",
                   // An unread row wears the accent twice: its count and its time.
@@ -92,9 +93,7 @@ export const ConversationRow = memo(function ConversationRow({
                   // The "⋯" takes the time's place while the row is hovered or has focus.
                   withButton && "group-focus-within/row:opacity-0 group-hover/row:opacity-0",
                 )}
-              >
-                {formatListTime(last.created_at, locale)}
-              </time>
+              />
             ) : null}
           </div>
           <div className="flex items-center gap-2">

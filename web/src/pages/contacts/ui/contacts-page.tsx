@@ -20,6 +20,7 @@ import {
 } from "@/entities/intelligence";
 import { ConnectAgentDialog } from "@/features/connect-agent";
 import { DeleteAIDialog, MergeAIDialog } from "@/features/manage-org-member";
+import { MessageButton } from "@/features/start-conversation";
 import type { AIContact, Contacts, IntelligenceRef } from "@/shared/api/types.gen";
 import { useI18n } from "@/shared/i18n";
 import { matchesTerms } from "@/shared/lib/search";
@@ -30,7 +31,6 @@ import { PageHeader } from "@/shared/ui/molecules/page-header";
 import { PageSection } from "@/shared/ui/molecules/page-section";
 import { Button } from "@/shared/ui/primitives/button";
 import { Input } from "@/shared/ui/primitives/input";
-import { MessageButton } from "@/widgets/conversation-timeline";
 import { PeopleGroup } from "@/widgets/people-group";
 
 /*

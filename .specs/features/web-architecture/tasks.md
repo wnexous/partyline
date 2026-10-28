@@ -165,15 +165,49 @@ ticks its requirement ids here.
 - Status: done
 
 ## T5 — widgets + pages (WA-01, WA-06 part)
-- Left after T4a and T4b: the contacts profile sections into `widgets/profile-panel` (see T4b notes).
+- Left after T4a and T4b: the contacts profile sections into `widgets/profile-panel` (see the notes below).
 - widgets: app-sidebar, conversation-list, conversation-header, conversation-timeline,
   member-panel (from T1), profile-panel (also used by contacts.$id), command-palette, org-chart,
   room-files, room-settings.
 - pages: every route file becomes a thin wiring of a page slice; split account (sections →
   features), connector page, tokens, identities, org members/chart (one org member row).
-- Status: pending (what T4a left is listed under T4)
+- Status: done. Notes:
+  - Profile sections (contacts `profile-page` vs `widgets/profile-panel`), decided: the pieces that
+    are the same thing are already one component: `ProfileConversations` (both), `MembershipSummary`
+    (both), `StatusDot`, `IntelligenceAvatar`, `YouBadge`, `IntelligenceName`, and now
+    `SessionLabel` (the page's session rows). The rest stays in each, on purpose: the page's
+    header carries its actions and the panel's title is the dialog's accessible name (`SheetTitle`);
+    the page's membership rows carry the removal actions; the page's App row reads the harness
+    label only while the panel reads `appLabelOf` (server label first), and unifying the two would
+    change visible text; the page's sessions list is a detailed table, not the one-line
+    `SessionList`.
+  - MessageButton is in `features/start-conversation`. `conversation-actions.test.tsx` is in
+    `routes/_app` (it drives the app from `/`); `presence-colours.test.tsx` is split beside
+    `StatusDot`, `ConnectorStatusBadge` and `LiveIndicator`; `messageTextSchema` (unused) is in
+    `features/send-message/model/schema.ts`.
+  - Audit (T6): fixed: the conversation list row and the message time are `RelativeTime` (new
+    `format="list"`); the second `MemberRow` is `OrgMemberRow`; the profile reads presence through
+    `usePresenceEntry`. Listed, not changed (a visible change, or a different rule that needs a
+    decision): `shared/ui/atoms/face` base (org-avatar and intelligence-avatar keep two PIXELS maps);
+    inline `@handle` spans outside IntelligenceName (conversation-header, chart-row, mention
+    suggestions, account menu, profile header and panel, merge dialog and connector page sentences,
+    admin users: a username, not an intelligence); hand-built `DialogContent` shells in pages and
+    features that are not the form shell (invites, tokens, identities, add-connector, member picker,
+    new conversation, new group, connect agent, delete account, command menu, image viewer);
+    `NativeSelect` with a hand-made `Label` outside `form-fields` (connector, org members, org
+    positions, devices, merge AI, default org, org-select); the page's App row rule (harness only)
+    versus `appLabelOf`; `contacts-page` reads the whole presence map for its rows (the rule itself
+    is the pure `withContactPresence`); `ConversationFace` and `ConversationAvatar` are two names in
+    one file (the face is the picture, the avatar takes a conversation); the composer's and login's
+    `formError` state is form state, not the error-text rule; `question-bubble`'s own check is not
+    the message permission (different author rule); the edited-time `title` is a text on a span,
+    not a time. DropdownMenu outside shared/ui: the account, org, language, theme menus and the
+    reaction menu are app menus, not row menus (no row menu bypasses ActionMenu).
+  - Strict (T6): `components/`, `hooks/`, `lib/` are deleted; the checker has no legacy layer (a
+    file in or an import of them fails `legacy-removed`), the baseline is empty with its stale check,
+    and `primitive-dialog` keeps the dialog and sheet primitives inside `shared/ui`.
 
 ## T6 — strict (WA-05)
 - Delete `components/`, `hooks/`, `lib/`; baseline empty and the legacy layer removed from the
   checker; final doc pass. Optional: split i18n dictionaries by domain.
-- Status: pending
+- Status: done (see the T5 notes for the audit and what stayed).

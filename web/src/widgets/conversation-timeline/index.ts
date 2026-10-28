@@ -1,5 +1,4 @@
 export { HistoryNotice } from "./ui/history-notice";
-export { MessageButton } from "./ui/message-button";
 export { MessageItem } from "./ui/message-item";
 export {
   hasMessageActions,
