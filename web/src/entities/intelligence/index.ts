@@ -1,4 +1,9 @@
+export * from "./api/agents";
+export * from "./api/contacts";
+export * from "./api/profile";
 export { appLabelOf } from "./lib/app-label";
+export * from "./lib/profile";
+export * from "./model/cache";
 export { useIsOnline, withContactPresence } from "./model/presence";
 export {
   avatarTone,

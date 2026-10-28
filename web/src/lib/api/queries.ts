@@ -1,464 +1,37 @@
 import {
-  infiniteQueryOptions,
-  keepPreviousData,
   type QueryClient,
   queryOptions,
-  useInfiniteQuery,
   useMutation,
   useQuery,
   useQueryClient,
 } from "@tanstack/react-query";
-import { withIntelligence, withoutAI } from "@/lib/contacts";
-import { type MeWithDefaultOrg, toMyOrgs } from "@/lib/orgs";
+import { toMyOrgs } from "@/lib/orgs";
 import { putAvatarImage } from "@/shared/api/avatar-upload";
-import type { MessagePages, PeoplePages } from "@/shared/api/cache-types";
 import { api, isApiError } from "@/shared/api/client";
 import { items } from "@/shared/api/list";
 import { queryKeys } from "@/shared/api/query-keys";
 import {
-  type AcceptInviteRequest,
-  type ActivityItem,
-  type AdminUser,
-  type Agent,
-  type AuditEntry,
-  type ChangePasswordRequest,
   type Chat,
   type Connector,
   type ConnectorKind,
-  type Contacts,
-  type Conversation,
   type CreateConnectorRequest,
-  type CreatedInvite,
-  type CreatedToken,
   type CreateInvitationRequest,
-  type CreateInviteRequest,
   type CreateOrganizationRequest,
   type CreatePositionRequest,
-  type CreateTokenRequest,
-  DefaultActivityLimit,
-  DefaultPeoplePage,
-  type DeleteAccountRequest,
-  type DeviceRequest,
   ErrorCodeAlreadyMember,
-  type Identity,
-  type IntelligenceProfile,
-  type IntelligenceRef,
   type Invitation,
-  type Invite,
-  type InviteInfo,
   type List,
-  type LoginRequest,
   type Me,
-  type MergeAgentRequest,
-  type Message,
   type MovePreview,
   type Organization,
   type OrgChart,
   type OrgMember,
-  type Page,
-  type PairingCode,
-  type PairingRequest,
   type Position,
-  type PushKey,
-  type PushSubscription,
-  type PushSubscriptionRequest,
-  type PushTest,
-  type Room,
-  type RoomMember,
-  type Session,
-  type SetupRequest,
-  type SetupStatus,
-  type Token,
   type UpdateConnectorRequest,
-  type UpdateMeRequest,
   type UpdateOrganizationRequest,
   type UpdateOrgMemberRequest,
   type UpdatePositionRequest,
-  type UpdateProfileRequest,
-  type UpdateUserRequest,
-  type User,
 } from "@/shared/api/types.gen";
-
-export const meQuery = () =>
-  queryOptions({
-    queryKey: queryKeys.me,
-    queryFn: () => api<Me>("GET", "/me", undefined, { skipAuthRedirect: true }),
-    staleTime: 60_000,
-    retry: false,
-  });
-
-export const setupStatusQuery = () =>
-  queryOptions({
-    queryKey: queryKeys.setupStatus,
-    queryFn: () => api<SetupStatus>("GET", "/setup/status"),
-    staleTime: 0,
-  });
-
-export const inviteQuery = (token: string) =>
-  queryOptions({
-    queryKey: queryKeys.invite(token),
-    queryFn: () => api<InviteInfo>("GET", `/invites/${encodeURIComponent(token)}`),
-    retry: false,
-  });
-
-export const useMe = () => useQuery(meQuery());
-
-export const useSetupStatus = () => useQuery(setupStatusQuery());
-
-export const useInviteInfo = (token: string) => useQuery(inviteQuery(token));
-
-/** Stores the logged-in user and drops every cached resource of a previous session. */
-function startSession(qc: QueryClient, me: Me) {
-  qc.removeQueries({ predicate: (q) => q.queryKey[0] !== "me" });
-  qc.setQueryData(queryKeys.me, me);
-}
-
-export function useSetup() {
-  const qc = useQueryClient();
-  return useMutation({
-    mutationFn: (req: SetupRequest) => api<Me>("POST", "/setup", req, { skipAuthRedirect: true }),
-    onSuccess: (me) => {
-      qc.setQueryData<SetupStatus>(queryKeys.setupStatus, { needs_setup: false });
-      startSession(qc, me);
-    },
-  });
-}
-
-export function useLogin() {
-  const qc = useQueryClient();
-  return useMutation({
-    mutationFn: (req: LoginRequest) =>
-      api<Me>("POST", "/auth/login", req, { skipAuthRedirect: true }),
-    onSuccess: (me) => startSession(qc, me),
-  });
-}
-
-export function useLogout() {
-  const qc = useQueryClient();
-  return useMutation({
-    mutationFn: () => api<void>("POST", "/auth/logout", undefined, { skipAuthRedirect: true }),
-    onSettled: () => qc.clear(),
-  });
-}
-
-export function useAcceptInvite(token: string) {
-  const qc = useQueryClient();
-  return useMutation({
-    mutationFn: (req: AcceptInviteRequest) =>
-      api<Me>("POST", `/invites/${encodeURIComponent(token)}/accept`, req, {
-        skipAuthRedirect: true,
-      }),
-    onSuccess: (me) => startSession(qc, me),
-  });
-}
-
-export function useUpdateMe() {
-  const qc = useQueryClient();
-  return useMutation({
-    mutationFn: (req: UpdateMeRequest) => api<Me>("PATCH", "/me", req),
-    onSuccess: (me) => qc.setQueryData(queryKeys.me, me),
-  });
-}
-
-export function useChangePassword() {
-  return useMutation({
-    mutationFn: (req: ChangePasswordRequest) => api<void>("POST", "/me/password", req),
-  });
-}
-
-/**
- * Chooses the organization new AIs join when they are started without --org (ORG-04). The server
- * answers 403 for one the account does not belong to. `me` carries the default, so the cached
- * account is updated once the server has accepted it.
- */
-export function useSetDefaultOrg() {
-  const qc = useQueryClient();
-  return useMutation({
-    mutationFn: (orgId: string) => api<unknown>("PUT", "/me/default-org", { org_id: orgId }),
-    onSuccess: (_, orgId) =>
-      qc.setQueryData<MeWithDefaultOrg>(
-        queryKeys.me,
-        (old) => old && { ...old, default_org_id: orgId },
-      ),
-  });
-}
-
-/**
- * Deletes the caller's own account (POS-06). The password proves who asks; a wrong one is a 422 on
- * its field, and the last active instance admin gets 409 `last_instance_admin`. The server ends the
- * session with the account, so nothing cached is kept.
- */
-export function useDeleteAccount() {
-  const qc = useQueryClient();
-  return useMutation({
-    mutationFn: (req: DeleteAccountRequest) => api<void>("DELETE", "/me", req),
-    onSuccess: () => qc.clear(),
-  });
-}
-
-export const useSessions = () =>
-  useQuery({
-    queryKey: queryKeys.sessions,
-    queryFn: () => api<List<Session>>("GET", "/me/sessions").then(items),
-  });
-
-export function useRevokeSession() {
-  const qc = useQueryClient();
-  return useMutation({
-    mutationFn: (id: string) => api<void>("DELETE", `/me/sessions/${id}`),
-    onSuccess: () => qc.invalidateQueries({ queryKey: queryKeys.sessions }),
-  });
-}
-
-/**
- * The instance's VAPID public key. It is not read on mount: only pressing Enable needs it, so the
- * query starts disabled and Settings calls `refetch` (PUSH-18).
- */
-export const usePushKey = () =>
-  useQuery({
-    queryKey: queryKeys.pushKey,
-    queryFn: () => api<PushKey>("GET", "/push/key"),
-    enabled: false,
-    staleTime: Number.POSITIVE_INFINITY,
-  });
-
-/** Stores this browser's subscription; the same endpoint again updates its row (PUSH-03). */
-export function useSubscribePush() {
-  return useMutation({
-    mutationFn: (req: PushSubscriptionRequest) =>
-      api<PushSubscription>("POST", "/push/subscriptions", req),
-  });
-}
-
-/** Removes this browser's row; an endpoint the server does not know is a 404 (PUSH-05). */
-export function useUnsubscribePush() {
-  return useMutation({
-    mutationFn: (endpoint: string) => api<void>("DELETE", "/push/subscriptions", { endpoint }),
-  });
-}
-
-/** Queues one test notification per subscription and answers how many it took (PUSH-15). */
-export function useTestPush() {
-  return useMutation({ mutationFn: () => api<PushTest>("POST", "/push/test") });
-}
-
-export const useUsers = () =>
-  useQuery({
-    queryKey: queryKeys.users,
-    queryFn: () => api<List<User>>("GET", "/users").then(items),
-  });
-
-/** Every token of the user, revoked ones included: the tokens page decides what to show. */
-export const useTokens = () =>
-  useQuery({
-    queryKey: queryKeys.tokens,
-    queryFn: () =>
-      api<List<Token>>("GET", "/tokens", undefined, { query: { include_revoked: true } }).then(
-        items,
-      ),
-  });
-
-export function useCreateToken() {
-  const qc = useQueryClient();
-  return useMutation({
-    mutationFn: (req: CreateTokenRequest) => api<CreatedToken>("POST", "/tokens", req),
-    onSuccess: () => qc.invalidateQueries({ queryKey: queryKeys.tokens }),
-  });
-}
-
-/** Deletes a revoked token for good (TOKH-02); the row leaves the cached list at once. */
-export function usePurgeToken() {
-  const qc = useQueryClient();
-  return useMutation({
-    mutationFn: (id: string) => api<void>("DELETE", `/tokens/${id}/purge`),
-    onSuccess: (_, id) => {
-      qc.setQueryData<Token[]>(queryKeys.tokens, (old) => old?.filter((t) => t.id !== id));
-      qc.invalidateQueries({ queryKey: queryKeys.tokens });
-    },
-  });
-}
-
-export function useRevokeToken() {
-  const qc = useQueryClient();
-  return useMutation({
-    mutationFn: (id: string) => api<void>("DELETE", `/tokens/${id}`),
-    onSuccess: () => qc.invalidateQueries({ queryKey: queryKeys.tokens }),
-  });
-}
-
-export const intelligenceQuery = (id: string) =>
-  queryOptions({
-    queryKey: queryKeys.intelligence(id),
-    queryFn: () => api<IntelligenceProfile>("GET", `/intelligences/${id}`),
-  });
-
-export const useIntelligence = (id: string) => useQuery(intelligenceQuery(id));
-
-/** The summary every list shows, taken from a full profile. */
-function refOfProfile(p: IntelligenceProfile): IntelligenceRef {
-  return {
-    id: p.id,
-    kind: p.kind,
-    role: p.role,
-    display_name: p.display_name,
-    handle: p.handle,
-    avatar_url: p.avatar_url,
-    platform: p.platform,
-  };
-}
-
-/** Applies `fn` to every cached message; a page or timeline it changes nothing in stays as it is. */
-function mapCachedMessages(qc: QueryClient, fn: (roomId: string, m: Message) => Message) {
-  for (const [key, data] of qc.getQueriesData<MessagePages>({ queryKey: ["rooms"] })) {
-    if (key.length !== 3 || key[2] !== "messages" || !data) continue;
-    const roomId = String(key[1]);
-    const pages = data.pages.map((page) => {
-      const items = page.items.map((m) => fn(roomId, m));
-      return items.some((m, i) => m !== page.items[i]) ? { ...page, items } : page;
-    });
-    if (pages.some((page, i) => page !== data.pages[i])) {
-      qc.setQueryData<MessagePages>(key, { ...data, pages });
-    }
-  }
-}
-
-/**
- * Shows an intelligence's new summary (name, handle, avatar) in every cached place it appears:
- * the sidebar, timelines, member lists, DM headers, the profile page and the account's own data
- * (PROF-03). The live `intelligence.changed` event and the profile mutations both call it.
- */
-export function patchIntelligence(qc: QueryClient, ref: IntelligenceRef) {
-  qc.setQueryData<IntelligenceProfile>(queryKeys.intelligence(ref.id), (old) =>
-    old
-      ? {
-          ...old,
-          kind: ref.kind,
-          role: ref.role,
-          display_name: ref.display_name,
-          handle: ref.handle,
-          avatar_url: ref.avatar_url,
-          platform: ref.platform,
-        }
-      : old,
-  );
-  qc.setQueryData<Me>(queryKeys.me, (old) =>
-    old?.intelligence?.id === ref.id
-      ? { ...old, display_name: ref.display_name, intelligence: ref }
-      : old,
-  );
-  // A DM is titled by its counterpart. Group previews and member names hold the old name too:
-  // the server's list is the source for them.
-  qc.setQueryData<Conversation[]>(queryKeys.conversations, (old) =>
-    old?.map((c) =>
-      c.counterpart?.id === ref.id ? { ...c, title: ref.display_name, counterpart: ref } : c,
-    ),
-  );
-  qc.invalidateQueries({ queryKey: queryKeys.conversations, exact: true });
-
-  // A name an owner set for an AI in a room (GRP-04) keeps showing there: the message carries
-  // the shown name, so the room's members tell which rows must keep it.
-  mapCachedMessages(qc, (roomId, m) => {
-    if (m.author.id !== ref.id) return m;
-    const members = qc.getQueryData<RoomMember[]>(queryKeys.roomMembers(roomId));
-    const inRoomName = members?.some((mb) => mb.intelligence?.id === ref.id && mb.display_name);
-    return inRoomName
-      ? { ...m, author: { ...ref, display_name: m.author.display_name } }
-      : { ...m, author_name: ref.display_name, author: ref };
-  });
-
-  for (const [key, data] of qc.getQueriesData<RoomMember[] | Room>({ queryKey: ["rooms"] })) {
-    if (key.length === 3 && key[2] === "members" && Array.isArray(data)) {
-      if (!data.some((mb) => mb.intelligence?.id === ref.id)) continue;
-      qc.setQueryData<RoomMember[]>(
-        key,
-        data.map((mb) =>
-          mb.intelligence?.id === ref.id
-            ? { ...mb, name: ref.display_name, intelligence: ref }
-            : mb,
-        ),
-      );
-    } else if (key.length === 2 && data && !Array.isArray(data)) {
-      qc.setQueryData<Room>(key, withParticipant(data, ref));
-    }
-  }
-  qc.setQueryData<Room[]>(queryKeys.rooms, (old) => old?.map((r) => withParticipant(r, ref)));
-
-  // The contacts page, the pickers and the connectors that name this intelligence as operator.
-  qc.setQueryData<Contacts>(queryKeys.contacts, (old) => old && withIntelligence(old, ref));
-  for (const [key, data] of qc.getQueriesData<PeoplePages>({ queryKey: ["contacts", "people"] })) {
-    if (!data?.pages.some((page) => page.items.some((p) => p.id === ref.id))) continue;
-    qc.setQueryData<PeoplePages>(key, {
-      ...data,
-      pages: data.pages.map((page) => ({
-        ...page,
-        items: page.items.map((p) => (p.id === ref.id ? ref : p)),
-      })),
-    });
-  }
-  patchOperator(qc, ref);
-}
-
-/** Shows the operator's new summary on the cached connectors that name it (ACC-01). */
-function patchOperator(qc: QueryClient, ref: IntelligenceRef) {
-  qc.setQueryData<Connector[]>(queryKeys.connectors, (old) =>
-    old?.some((c) => c.operator?.id === ref.id)
-      ? old.map((c) => (c.operator?.id === ref.id ? { ...c, operator: ref } : c))
-      : old,
-  );
-  for (const [key, c] of qc.getQueriesData<Connector>({ queryKey: queryKeys.connectors })) {
-    if (key.length === 2 && c?.operator?.id === ref.id) {
-      qc.setQueryData<Connector>(key, { ...c, operator: ref });
-    }
-  }
-}
-
-/** The room with `ref` in place of the DM participant that has its id. */
-function withParticipant(room: Room, ref: IntelligenceRef): Room {
-  if (!room.participants?.some((p) => p.id === ref.id)) return room;
-  return { ...room, participants: room.participants.map((p) => (p.id === ref.id ? ref : p)) };
-}
-
-/** A profile the server answered with: cached, and shown everywhere the intelligence appears. */
-function storeProfile(qc: QueryClient, profile: IntelligenceProfile) {
-  qc.setQueryData(queryKeys.intelligence(profile.id), profile);
-  patchIntelligence(qc, refOfProfile(profile));
-}
-
-/** Edits display name, handle and bio (PROF-03, PROF-05); 409 `handle_taken` on a taken handle. */
-export function useUpdateIntelligence(id: string) {
-  const qc = useQueryClient();
-  return useMutation({
-    mutationFn: (req: UpdateProfileRequest) =>
-      api<IntelligenceProfile>("PATCH", `/intelligences/${id}`, req),
-    onSuccess: (profile) => storeProfile(qc, profile),
-  });
-}
-
-/** Uploads an avatar: the image file goes as the raw body (PROF-07); 422 `avatar_invalid`. */
-export function useUploadAvatar(id: string) {
-  const qc = useQueryClient();
-  return useMutation({
-    mutationFn: (image: Blob) =>
-      putAvatarImage<IntelligenceProfile>(`/intelligences/${id}/avatar`, image),
-    onSuccess: (profile) => storeProfile(qc, profile),
-  });
-}
-
-/** Removes the avatar: the initials show again everywhere. */
-export function useRemoveAvatar(id: string) {
-  const qc = useQueryClient();
-  return useMutation({
-    mutationFn: () => api<void>("DELETE", `/intelligences/${id}/avatar`),
-    onSuccess: () => {
-      const cached = qc.getQueryData<IntelligenceProfile>(queryKeys.intelligence(id));
-      if (cached) {
-        const { avatar_url: _removed, ...rest } = cached;
-        storeProfile(qc, rest);
-      }
-      qc.invalidateQueries({ queryKey: queryKeys.intelligence(id), exact: true });
-    },
-  });
-}
 
 export const orgsQuery = () =>
   queryOptions({
@@ -767,154 +340,6 @@ export const useAcceptInvitation = () => useAnswerInvitation("accept");
 
 export const useDeclineInvitation = () => useAnswerInvitation("decline");
 
-/** Everyone the caller can reach, grouped as the contacts page shows them (GET /contacts). */
-export const contactsQuery = () =>
-  queryOptions({
-    queryKey: queryKeys.contacts,
-    queryFn: ({ signal }) => api<Contacts>("GET", "/contacts", undefined, { signal }),
-  });
-
-export const useContacts = () => useQuery(contactsQuery());
-
-/**
- * The people of one connector in name order, a page at a time; the cursor is the id of the last
- * person of the page before. `q` searches names, handles and account ids on the server, and the
- * previous search stays on screen while the next one loads.
- */
-export const peopleQuery = (connectorId: string, q = "") =>
-  infiniteQueryOptions({
-    queryKey: queryKeys.people(connectorId, q),
-    queryFn: ({ pageParam, signal }) =>
-      api<Page<IntelligenceRef>>("GET", "/contacts/people", undefined, {
-        query: {
-          connector_id: connectorId,
-          q: q || undefined,
-          after: pageParam,
-          limit: DefaultPeoplePage,
-        },
-        signal,
-      }),
-    initialPageParam: undefined as string | undefined,
-    getNextPageParam: (page: Page<IntelligenceRef>) =>
-      page.has_more ? page.items.at(-1)?.id : undefined,
-  });
-
-export const usePeople = (connectorId: string, q = "", enabled = true) =>
-  useInfiniteQuery({ ...peopleQuery(connectorId, q), enabled, placeholderData: keepPreviousData });
-
-/** Feed entries requested, then kept in the dashboard feed in total and at most per room. */
-export const ACTIVITY_FETCH = DefaultActivityLimit;
-
-export const ACTIVITY_SIZE = 8;
-
-export const ACTIVITY_PER_ROOM = 3;
-
-/** Newest message first; seq breaks ties inside a room. */
-export function newestFirst(a: ActivityItem, b: ActivityItem): number {
-  const diff = Date.parse(b.message.created_at) - Date.parse(a.message.created_at);
-  return diff !== 0 ? diff : b.message.seq - a.message.seq;
-}
-
-/**
- * Shapes the dashboard feed: newest first, no duplicate ids, at most ACTIVITY_PER_ROOM messages
- * per room (one busy room must not hide the others), at most ACTIVITY_SIZE in total.
- */
-export function trimActivity(entries: ActivityItem[]): ActivityItem[] {
-  const seen = new Set<string>();
-  const perRoom = new Map<string, number>();
-  const out: ActivityItem[] = [];
-  for (const entry of [...entries].sort(newestFirst)) {
-    const m = entry.message;
-    if (seen.has(m.id)) continue;
-    const n = perRoom.get(m.room_id) ?? 0;
-    if (n >= ACTIVITY_PER_ROOM) continue;
-    seen.add(m.id);
-    perRoom.set(m.room_id, n + 1);
-    out.push(entry);
-    if (out.length === ACTIVITY_SIZE) break;
-  }
-  return out;
-}
-
-/**
- * The dashboard feed: latest messages across the rooms the user can see, newest first, from
- * one `GET /activity` request. Live room.message events keep it current (lib/live/handlers.ts).
- */
-export const activityQuery = () =>
-  queryOptions({
-    queryKey: queryKeys.activity,
-    queryFn: ({ signal }) =>
-      api<List<ActivityItem>>("GET", "/activity", undefined, {
-        query: { limit: ACTIVITY_FETCH },
-        signal,
-      }).then((list) => trimActivity(list.items)),
-  });
-
-export const useActivity = () => useQuery(activityQuery());
-
-export const agentsQuery = () =>
-  queryOptions({
-    queryKey: queryKeys.agents,
-    queryFn: () => api<List<Agent>>("GET", "/agents").then(items),
-  });
-
-export const useAgents = () => useQuery(agentsQuery());
-
-/**
- * Merges an AI into another one of the caller's (MRG-01): the survivor keeps its groups, DMs,
- * history, cursors, organizations and connectors, and the AI in `from` is deleted. Refused with 409
- * `identity_online` while `from` has a live session (MRG-02).
- */
-export function useMergeAgent() {
-  const qc = useQueryClient();
-  return useMutation({
-    mutationFn: ({ from, into }: { from: string; into: string }) =>
-      api<Agent>("POST", `/agents/${from}/merge`, { into } satisfies MergeAgentRequest),
-    onSuccess: (_, { from }) => {
-      // The AI is gone from the flat lists at once; the tree, the conversations and the rooms it
-      // was in are the server's to rebuild.
-      qc.setQueryData<Contacts>(queryKeys.contacts, (old) => old && withoutAI(old, from));
-      qc.invalidateQueries({ queryKey: queryKeys.contacts, exact: true });
-      qc.invalidateQueries({ queryKey: queryKeys.conversations, exact: true });
-      qc.invalidateQueries({ queryKey: queryKeys.rooms });
-      // Its profile is marked stale without a refetch: the row that shows it is about to leave.
-      qc.invalidateQueries({ queryKey: queryKeys.intelligence(from), refetchType: "none" });
-    },
-  });
-}
-
-export function useDeleteAgent() {
-  const qc = useQueryClient();
-  return useMutation({
-    mutationFn: (id: string) => api<void>("DELETE", `/agents/${id}`),
-    onSuccess: (_, id) => {
-      qc.invalidateQueries({ queryKey: queryKeys.agents });
-      // The AI leaves the members and the chart of every organization it was in.
-      qc.invalidateQueries({ queryKey: queryKeys.orgs });
-      // Gone from the flat lists at once; the server rebuilds the tree (TREE-06). The profile is
-      // marked stale without a refetch: the page showing it is about to leave.
-      qc.setQueryData<Contacts>(queryKeys.contacts, (old) => old && withoutAI(old, id));
-      qc.invalidateQueries({ queryKey: queryKeys.contacts, exact: true });
-      qc.invalidateQueries({ queryKey: queryKeys.intelligence(id), refetchType: "none" });
-    },
-  });
-}
-
-/**
- * Ends an AI's live session (POS-04): the AI is not deleted and may connect again. Whether it is
- * online is the live presence's to say; the profile is marked stale to read the new state.
- */
-export function useEndSession() {
-  const qc = useQueryClient();
-  return useMutation({
-    mutationFn: (id: string) => api<void>("DELETE", `/agents/${id}/session`),
-    onSuccess: (_, id) => {
-      qc.invalidateQueries({ queryKey: queryKeys.intelligence(id), exact: true });
-      qc.invalidateQueries({ queryKey: queryKeys.agents });
-    },
-  });
-}
-
 /**
  * Takes an identity out of an organization (POS-05, POS-06): it leaves the organization's groups
  * and its position there, and nothing else changes. The identity's profile lists its
@@ -1009,92 +434,68 @@ export function useRefreshChats(id: string) {
   });
 }
 
-export const useIdentities = () =>
-  useQuery({
-    queryKey: queryKeys.identities,
-    queryFn: () => api<List<Identity>>("GET", "/identities").then(items),
-  });
-
-export function useStartPairing() {
-  return useMutation({
-    // A code is bound to the connector it is requested for (IDN-01, IDN-02).
-    mutationFn: (connectorId: string) =>
-      api<PairingCode>("POST", "/identities/pairing", {
-        connector_id: connectorId,
-      } satisfies PairingRequest),
-  });
-}
-
-export function useDeleteIdentity() {
-  const qc = useQueryClient();
-  return useMutation({
-    mutationFn: (id: string) => api<void>("DELETE", `/identities/${id}`),
-    onSuccess: () => qc.invalidateQueries({ queryKey: queryKeys.identities }),
-  });
-}
-
-export const useAdminUsers = () =>
-  useQuery({
-    queryKey: queryKeys.adminUsers,
-    queryFn: () => api<List<AdminUser>>("GET", "/admin/users").then(items),
-  });
-
-export function useUpdateUser() {
-  const qc = useQueryClient();
-  return useMutation({
-    mutationFn: ({ id, ...req }: UpdateUserRequest & { id: string }) =>
-      api<AdminUser>("PATCH", `/admin/users/${id}`, req),
-    onSuccess: (user) =>
-      qc.setQueryData<AdminUser[]>(queryKeys.adminUsers, (old) =>
-        old?.map((u) => (u.id === user.id ? user : u)),
-      ),
-  });
-}
-
-export const useAdminInvites = () =>
-  useQuery({
-    queryKey: queryKeys.adminInvites,
-    queryFn: () => api<List<Invite>>("GET", "/admin/invites").then(items),
-  });
-
-export function useCreateInvite() {
-  const qc = useQueryClient();
-  return useMutation({
-    mutationFn: (req: CreateInviteRequest) => api<CreatedInvite>("POST", "/admin/invites", req),
-    onSuccess: () => qc.invalidateQueries({ queryKey: queryKeys.adminInvites }),
-  });
-}
-
-export function useRevokeInvite() {
-  const qc = useQueryClient();
-  return useMutation({
-    mutationFn: (id: string) => api<void>("DELETE", `/admin/invites/${id}`),
-    onSuccess: () => qc.invalidateQueries({ queryKey: queryKeys.adminInvites }),
-  });
-}
-
-export const useAudit = () =>
-  useInfiniteQuery({
-    queryKey: queryKeys.adminAudit,
-    queryFn: ({ pageParam, signal }) =>
-      api<Page<AuditEntry>>("GET", "/admin/audit", undefined, {
-        query: { before: pageParam },
-        signal,
-      }),
-    initialPageParam: undefined as string | undefined,
-    getNextPageParam: (page) => (page.has_more ? page.items.at(-1)?.id : undefined),
-  });
-
-export type DeviceAction = "lookup" | "approve" | "deny";
-
-/** Looks up, approves or denies the request with a typed code; answers the request. */
-export function useDeviceAction() {
-  return useMutation({
-    mutationFn: ({ action, code }: { action: DeviceAction; code: string }) =>
-      api<DeviceRequest>("POST", `/devices/${action}`, { code }),
-  });
-}
-
+export type { DeviceAction } from "@/entities/account";
+export {
+  ACTIVITY_FETCH,
+  ACTIVITY_PER_ROOM,
+  ACTIVITY_SIZE,
+  activityQuery,
+  inviteQuery,
+  meQuery,
+  newestFirst,
+  setupStatusQuery,
+  trimActivity,
+  useAcceptInvite,
+  useActivity,
+  useAdminInvites,
+  useAdminUsers,
+  useAudit,
+  useChangePassword,
+  useCreateInvite,
+  useCreateToken,
+  useDeleteAccount,
+  useDeleteIdentity,
+  useDeviceAction,
+  useIdentities,
+  useInviteInfo,
+  useLogin,
+  useLogout,
+  useMe,
+  usePurgeToken,
+  usePushKey,
+  useRevokeInvite,
+  useRevokeSession,
+  useRevokeToken,
+  useSessions,
+  useSetDefaultOrg,
+  useSetup,
+  useSetupStatus,
+  useStartPairing,
+  useSubscribePush,
+  useTestPush,
+  useTokens,
+  useUnsubscribePush,
+  useUpdateMe,
+  useUpdateUser,
+  useUsers,
+} from "@/entities/account";
+export {
+  agentsQuery,
+  contactsQuery,
+  intelligenceQuery,
+  patchIntelligence,
+  peopleQuery,
+  useAgents,
+  useContacts,
+  useDeleteAgent,
+  useEndSession,
+  useIntelligence,
+  useMergeAgent,
+  usePeople,
+  useRemoveAvatar,
+  useUpdateIntelligence,
+  useUploadAvatar,
+} from "@/entities/intelligence";
 export type { PostMessageInput, ReactionToggle } from "@/entities/message";
 export {
   applyMessageUpdate,
