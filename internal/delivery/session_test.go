@@ -64,3 +64,36 @@ func TestWantsStillCountsALabelledMention(t *testing.T) {
 	prefs := MemberPrefs{Delivery: dto.DeliveryModeMentions, Handle: "atlas"}
 	require.True(t, Wants(prefs, Delivered{Text: "@atlas:wt ship it"}))
 }
+
+// SESS-49: an address inside code is an example, not an address: an inline code span and a fenced code
+// block are not read, and the text around them still addresses.
+func TestSessionLabelIgnoresCode(t *testing.T) {
+	cases := []struct {
+		name string
+		text string
+		want string
+	}{
+		{"inline code", "ex.: `@atlas:claude-2`", ""},
+		{"inline code with text around it", "write `@atlas:wt` to address it", ""},
+		{"double backtick span holding a backtick", "use ``@atlas:wt` `` as the address", ""},
+		{"address outside, example inside", "`@atlas:old` is gone, ask @atlas:wt", "wt"},
+		{"address before the code", "@atlas:wt see `@atlas:other`", "wt"},
+		{"fenced block", "run:\n```\n@atlas:wt do X\n```\nthanks", ""},
+		{"fenced block with a language", "```sh\n@atlas:wt\n```", ""},
+		{"tilde fence", "~~~\n@atlas:wt\n~~~\n", ""},
+		{"fence closed by a longer fence", "````\n```\n@atlas:wt\n````\n@atlas:real", "real"},
+		{"unclosed fence runs to the end", "```\n@atlas:wt", ""},
+		{"address after a closed fence", "```\n@atlas:old\n```\n@atlas:wt", "wt"},
+		{"indented fence", "   ```\n@atlas:wt\n   ```", ""},
+		{"unclosed backtick is literal", "a ` @atlas:wt", "wt"},
+		{"escaped backtick is literal", "\\`@atlas:wt`", "wt"},
+		{"span of a different length does not close", "``@atlas:wt` x", "wt"},
+		{"fence char in the middle of a line is no fence", "x ``` @atlas:wt", "wt"},
+		{"backticks around the whole label boundary", "`@atlas:wt`.", ""},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			require.Equal(t, c.want, SessionLabel(c.text, "atlas"))
+		})
+	}
+}
