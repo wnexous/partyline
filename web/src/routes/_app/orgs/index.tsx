@@ -2,7 +2,6 @@ import { createFileRoute, Link } from "@tanstack/react-router";
 import { BuildingIcon, PlusIcon } from "lucide-react";
 import { useId, useState } from "react";
 import { toast } from "sonner";
-import { NewOrgDialog } from "@/components/new-org-dialog";
 import { useMe } from "@/entities/account";
 import {
   type MyOrg,
@@ -14,6 +13,7 @@ import {
   useMyInvitations,
   useOrgs,
 } from "@/entities/organization";
+import { NewOrgDialog } from "@/features/create-org";
 import { isApiError } from "@/shared/api/client";
 import { ErrorCodeAlreadyMember, type Invitation } from "@/shared/api/types.gen";
 import { type MessageKey, type Translate, useI18n, useT } from "@/shared/i18n";

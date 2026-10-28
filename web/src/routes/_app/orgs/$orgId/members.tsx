@@ -2,7 +2,6 @@ import { createFileRoute } from "@tanstack/react-router";
 import { UserPlusIcon } from "lucide-react";
 import { useId, useMemo, useState } from "react";
 import { toast } from "sonner";
-import { InviteDialog } from "@/components/invite-dialog";
 import { useMe } from "@/entities/account";
 import { IntelligenceAvatar, IntelligenceName } from "@/entities/intelligence";
 import {
@@ -18,6 +17,7 @@ import {
   useRevokeInvitation,
   useUpdateOrgMember,
 } from "@/entities/organization";
+import { InviteDialog } from "@/features/invite-to-org";
 import {
   DeleteAIDialog,
   MoveMemberDialog,
