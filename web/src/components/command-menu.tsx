@@ -1,8 +1,7 @@
 import { useNavigate } from "@tanstack/react-router";
 import { ContactRoundIcon, PlugZapIcon } from "lucide-react";
 import { type ReactNode, type RefObject, useEffect, useLayoutEffect, useRef } from "react";
-import { ConnectorStatusBadge, useConnectorState } from "@/components/connector-status";
-import { useConnectors } from "@/entities/connector";
+import { ConnectorStatusBadge, useConnectorState, useConnectors } from "@/entities/connector";
 import { onlineOf, useAgents, usePresenceStore } from "@/entities/intelligence";
 import { platformName } from "@/entities/message";
 import { ConversationAvatar, useConversations } from "@/entities/room";

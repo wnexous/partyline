@@ -9,12 +9,13 @@ import {
 } from "lucide-react";
 import { useEffect, useId, useState } from "react";
 import { toast } from "sonner";
-import { ConnectorStatusBadge, useConnectorState } from "@/components/connector-status";
 import { ConnectorForm } from "@/components/schema-form";
 import {
+  ConnectorStatusBadge,
   useConnector,
   useConnectorChats,
   useConnectorKinds,
+  useConnectorState,
   useDeleteConnector,
   useRefreshChats,
   useUpdateConnector,
