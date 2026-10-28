@@ -127,6 +127,10 @@ type Registry struct {
 	// machines is the last sighting written per machine (touchMachine), guarded by machinesMu.
 	machinesMu sync.Mutex
 	machines   map[machineKey]machineSeen
+
+	// seen is when each AI's last tools-only call stamped its last_seen_at (touchSeen), guarded by seenMu.
+	seenMu sync.Mutex
+	seen   map[string]time.Time
 }
 
 // NewRegistry returns a Registry.
@@ -142,6 +146,7 @@ func NewRegistry(d Deps) *Registry {
 		posts: newPostLimiter(PostLimit, PostWindow, d.Now), creates: newPostLimiter(CreateLimit, CreateWindow, d.Now),
 		newChats: newPostLimiter(NewChatLimit, NewChatWindow, d.Now),
 		machines: map[machineKey]machineSeen{},
+		seen:     map[string]time.Time{},
 	}
 }
 
