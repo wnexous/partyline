@@ -6,16 +6,8 @@ import { isApiError } from "@/shared/api/client";
 import type { Position } from "@/shared/api/types.gen";
 import { useI18n, useT } from "@/shared/i18n";
 import { NativeSelect } from "@/shared/ui/atoms/native-select";
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from "@/shared/ui/molecules/dialog";
+import { FormDialog } from "@/shared/ui/molecules/form-dialog";
 import { Alert, AlertDescription } from "@/shared/ui/primitives/alert";
-import { Button } from "@/shared/ui/primitives/button";
 import { Label } from "@/shared/ui/primitives/label";
 
 /** Who is being moved, and where they sit now (`""` for no position). */
@@ -49,27 +41,17 @@ export function MoveMemberDialog({
   viewer: { admin: boolean; positionId?: string };
   onClose: () => void;
 }) {
-  const t = useT();
-  return (
-    <Dialog open={target !== null} onOpenChange={(open) => (open ? null : onClose())}>
-      <DialogContent>
-        {target ? (
-          <MoveForm
-            orgId={orgId}
-            orgName={orgName}
-            target={target}
-            positions={positions}
-            viewer={viewer}
-            onClose={onClose}
-          />
-        ) : (
-          <DialogHeader>
-            <DialogTitle>{t("orgs.move")}</DialogTitle>
-          </DialogHeader>
-        )}
-      </DialogContent>
-    </Dialog>
-  );
+  // Mounted only while a member is being moved: every opening starts from where they are now.
+  return target ? (
+    <MoveForm
+      orgId={orgId}
+      orgName={orgName}
+      target={target}
+      positions={positions}
+      viewer={viewer}
+      onClose={onClose}
+    />
+  ) : null;
 }
 
 function MoveForm({
@@ -144,13 +126,18 @@ function MoveForm({
   };
 
   return (
-    <form onSubmit={submit} className="space-y-4">
-      <DialogHeader>
-        <DialogTitle>{t("orgs.moveTitle", { name: target.name })}</DialogTitle>
-        <DialogDescription>
-          {t("orgs.moveBody", { name: target.name, org: orgName })}
-        </DialogDescription>
-      </DialogHeader>
+    <FormDialog
+      open
+      onOpenChange={(open) => {
+        if (!open) onClose();
+      }}
+      title={t("orgs.moveTitle", { name: target.name })}
+      description={t("orgs.moveBody", { name: target.name, org: orgName })}
+      onSubmit={submit}
+      submitLabel={t("orgs.move")}
+      submitDisabled={update.isPending || value === target.positionId}
+      pending={update.isPending}
+    >
       <div className="grid gap-2">
         <Label htmlFor={`${id}-position`}>{t("orgs.movePosition")}</Label>
         <NativeSelect
@@ -177,14 +164,6 @@ function MoveForm({
           {error}
         </p>
       ) : null}
-      <DialogFooter>
-        <Button type="button" variant="outline" onClick={onClose}>
-          {t("common.cancel")}
-        </Button>
-        <Button type="submit" disabled={update.isPending || value === target.positionId}>
-          {t("orgs.move")}
-        </Button>
-      </DialogFooter>
-    </form>
+    </FormDialog>
   );
 }
