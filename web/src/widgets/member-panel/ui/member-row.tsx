@@ -12,7 +12,7 @@ import {
 } from "@/entities/intelligence";
 import type { PersonRow } from "@/entities/room-member";
 import { memberSettingsSummary } from "@/entities/room-member";
-import { useStartConversation } from "@/hooks/use-start-conversation";
+import { useStartConversation } from "@/features/start-conversation";
 import { useI18n } from "@/shared/i18n";
 import { useTouchFirst } from "@/shared/lib/device";
 import { StatusDot } from "@/shared/ui/atoms/status-dot";

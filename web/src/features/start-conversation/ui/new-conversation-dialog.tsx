@@ -1,15 +1,12 @@
 import { type ReactNode, useMemo, useState } from "react";
 import {
-  IntelligenceAvatar,
-  IntelligenceName,
-  type Pickable,
+  IntelligenceRow,
   PickableMeta,
   useContacts,
   usePickables,
   usePresenceStore,
   withContactPresence,
 } from "@/entities/intelligence";
-import { useStartConversation } from "@/hooks/use-start-conversation";
 import type { IntelligenceRef } from "@/shared/api/types.gen";
 import { useT } from "@/shared/i18n";
 import { matchesTerms } from "@/shared/lib/search";
@@ -25,6 +22,7 @@ import { FormAlert } from "@/shared/ui/molecules/form-fields";
 import { Button } from "@/shared/ui/primitives/button";
 import { Command, CommandInput, CommandItem, CommandList } from "@/shared/ui/primitives/command";
 import { Skeleton } from "@/shared/ui/primitives/skeleton";
+import { useStartConversation } from "../model/use-start-conversation";
 
 /*
  * "New conversation" (LAY-03, DM-01): pick an intelligence the user can see and open the one DM
@@ -98,13 +96,27 @@ function ContactPicker({ initialQuery, onDone }: { initialQuery: string; onDone:
         className="max-h-none min-h-0 flex-1 px-1.5 py-1.5"
       >
         {found.map((p) => (
-          <ContactRow
+          <CommandItem
             key={p.ref.id}
-            pickable={p}
-            online={p.ai ? withContactPresence(p.ai, presence[p.ref.id]).online : false}
+            value={p.ref.id}
+            data-testid={`contact-${p.ref.id}`}
             disabled={conversation.pending}
-            onPick={pick}
-          />
+            onSelect={() => void pick(p.ref)}
+            className="items-start gap-3 rounded-md px-2.5 py-2 data-[selected=true]:bg-tape/60 data-[selected=true]:text-tape-foreground"
+          >
+            <IntelligenceRow
+              intelligence={p.ref}
+              as="div"
+              profileLink={false}
+              meta={
+                <PickableMeta
+                  pickable={p}
+                  online={p.ai ? withContactPresence(p.ai, presence[p.ref.id]).online : false}
+                />
+              }
+              className="min-w-0 flex-1 gap-3 p-0 hover:bg-transparent"
+            />
+          </CommandItem>
         ))}
       </CommandList>
 
@@ -140,36 +152,5 @@ function ContactPicker({ initialQuery, onDone }: { initialQuery: string; onDone:
         </div>
       )}
     </Command>
-  );
-}
-
-function ContactRow({
-  pickable,
-  online,
-  disabled,
-  onPick,
-}: {
-  pickable: Pickable;
-  online: boolean;
-  disabled: boolean;
-  onPick: (target: IntelligenceRef) => void;
-}) {
-  const { ref } = pickable;
-  return (
-    <CommandItem
-      value={ref.id}
-      data-testid={`contact-${ref.id}`}
-      disabled={disabled}
-      onSelect={() => onPick(ref)}
-      className="items-start gap-3 rounded-md px-2.5 py-2 data-[selected=true]:bg-tape/60 data-[selected=true]:text-tape-foreground"
-    >
-      <IntelligenceAvatar intelligence={ref} decorative />
-      <div className="min-w-0 flex-1">
-        <IntelligenceName intelligence={ref} showHandle />
-        <p className="mt-0.5 flex flex-wrap items-center gap-x-2 text-xs text-muted-foreground">
-          <PickableMeta pickable={pickable} online={online} />
-        </p>
-      </div>
-    </CommandItem>
   );
 }

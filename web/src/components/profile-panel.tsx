@@ -16,8 +16,8 @@ import {
   YouBadge,
 } from "@/entities/intelligence";
 import { platformName } from "@/entities/message";
+import { useStartConversation } from "@/features/start-conversation";
 import { useProfilePanelStore } from "@/hooks/use-profile-panel";
-import { useStartConversation } from "@/hooks/use-start-conversation";
 import { isApiError } from "@/shared/api/client";
 import type { IntelligenceProfile } from "@/shared/api/types.gen";
 import { useT } from "@/shared/i18n";
