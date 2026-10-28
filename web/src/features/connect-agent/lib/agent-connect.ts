@@ -20,17 +20,17 @@ export function installCommand(origin: string): string {
   return `curl -fsSL ${origin.replace(/\/+$/, "")}/install.sh | sh`;
 }
 
-export type HarnessId = "claude" | "opencode" | "pi" | "omp" | "codex" | "gemini" | "antigravity";
-
-/** push: messages reach the running session; turn: at turn end or through wait_for_messages. */
-export type Delivery = "push" | "turn";
+/**
+ * Only harnesses with a live push channel and parallel sessions are supported. Codex, Gemini and
+ * Antigravity were dropped (AD-034); AIs created with them keep their rows and their old label.
+ */
+export type HarnessId = "claude" | "opencode" | "pi" | "omp";
 
 export interface Harness {
   id: HarnessId;
   title: string;
   /** Command that starts a session in a project folder: the launcher `partyline <id>`. */
   start: string;
-  delivery: Delivery;
   /** Manual registration: the file to edit and the entry to merge into it. */
   manual: { file: string; entry: string };
 }
@@ -52,7 +52,6 @@ export const HARNESSES: readonly Harness[] = [
     id: "claude",
     title: "Claude Code",
     start: "partyline claude",
-    delivery: "push",
     manual: {
       file: ".mcp.json",
       entry: json({ mcpServers: { partyline: { command: "partyline", args: channel } } }),
@@ -62,7 +61,6 @@ export const HARNESSES: readonly Harness[] = [
     id: "opencode",
     title: "OpenCode",
     start: "partyline opencode",
-    delivery: "push",
     manual: {
       file: "~/.config/opencode/opencode.json",
       entry: json({
@@ -76,7 +74,6 @@ export const HARNESSES: readonly Harness[] = [
     id: "pi",
     title: "pi",
     start: "partyline pi",
-    delivery: "push",
     manual: {
       file: "~/.pi/agent/mcp.json",
       entry: json({ mcpServers: { partyline: { command: "partyline", args: toolsOnly } } }),
@@ -86,40 +83,9 @@ export const HARNESSES: readonly Harness[] = [
     id: "omp",
     title: "omp",
     start: "partyline omp",
-    delivery: "push",
     manual: {
       file: "~/.omp/agent/mcp.json",
       entry: json({ mcpServers: { partyline: { command: "partyline", args: ompChannel } } }),
-    },
-  },
-  {
-    id: "codex",
-    title: "Codex",
-    start: "partyline codex",
-    delivery: "turn",
-    manual: {
-      file: "~/.codex/config.toml",
-      entry: '[mcp_servers.partyline]\ncommand = "partyline"\nargs = ["channel", "--tools-only"]',
-    },
-  },
-  {
-    id: "gemini",
-    title: "Gemini",
-    start: "partyline gemini",
-    delivery: "turn",
-    manual: {
-      file: "~/.gemini/settings.json",
-      entry: json({ mcpServers: { partyline: { command: "partyline", args: toolsOnly } } }),
-    },
-  },
-  {
-    id: "antigravity",
-    title: "Antigravity",
-    start: "partyline agy",
-    delivery: "turn",
-    manual: {
-      file: "~/.gemini/config/mcp_config.json",
-      entry: json({ mcpServers: { partyline: { command: "partyline", args: toolsOnly } } }),
     },
   },
 ];

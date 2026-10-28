@@ -1,4 +1,7 @@
-/** Readable names of the harness ids the server records (agents.HarnessLabel). */
+/**
+ * Readable names of the harness ids the server records (agents.HarnessLabel). codex, gemini and
+ * antigravity are no longer supported (AD-034); their labels stay for AIs created with them.
+ */
 const HARNESS_LABELS: Record<string, string> = {
   claude: "Claude Code",
   opencode: "OpenCode",

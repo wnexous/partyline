@@ -185,16 +185,11 @@ test("connect an agent shows the install and setup commands and each harness's s
 
   // Every harness starts with its launcher, with one line on how messages reach it.
   const PUSH = "Room messages arrive in the running session as they come in.";
-  const TURN_END =
-    "Messages arrive when it finishes its current turn, or when it calls wait_for_messages.";
   const harnesses: [tab: string, start: string, delivery: string, manual: string][] = [
     ["Claude Code", "partyline claude", PUSH, ".mcp.json"],
     ["OpenCode", "partyline opencode", PUSH, "~/.config/opencode/opencode.json"],
     ["pi", "partyline pi", PUSH, "~/.pi/agent/mcp.json"],
     ["omp", "partyline omp", PUSH, "~/.omp/agent/mcp.json"],
-    ["Codex", "partyline codex", TURN_END, "~/.codex/config.toml"],
-    ["Gemini", "partyline gemini", TURN_END, "~/.gemini/settings.json"],
-    ["Antigravity", "partyline agy", TURN_END, "~/.gemini/config/mcp_config.json"],
   ];
   const tabs = dialog.getByRole("tablist", { name: "Harness" });
   await expect(tabs.getByRole("tab")).toHaveText(harnesses.map(([tab]) => tab));

@@ -628,8 +628,6 @@ export const en = {
   "connect.harness": "Harness",
   "connect.startLabel": "Start command",
   "connect.push": "Room messages arrive in the running session as they come in.",
-  "connect.turnEnd":
-    "Messages arrive when it finishes its current turn, or when it calls wait_for_messages.",
   "connect.confirmNote":
     "Claude Code shows a confirmation screen at startup, because development channels are a research preview. Confirm it once.",
   "connect.docs": "Claude Code guide",
@@ -640,8 +638,6 @@ export const en = {
     "Then start Claude Code with partyline claude, so it loads the development channel.",
   "connect.advancedPush":
     "Pushed messages also need the extension that setup installs; without it the session only has the tools.",
-  "connect.advancedTurn":
-    "Messages at turn end also need the hook that setup adds; without it, use wait_for_messages.",
   "connect.advancedToken": "No browser on that machine? Run {cmd} with an agent token from",
   "connect.waiting": "Waiting for a session to connect…",
   "connect.online": "{name} is online",

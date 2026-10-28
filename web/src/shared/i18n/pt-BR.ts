@@ -631,8 +631,6 @@ export const ptBR: Dictionary = {
   "connect.harness": "Harness",
   "connect.startLabel": "Comando de início",
   "connect.push": "As mensagens das salas chegam na sessão em andamento assim que são enviadas.",
-  "connect.turnEnd":
-    "As mensagens chegam quando ele termina o turno atual, ou quando chama wait_for_messages.",
   "connect.confirmNote":
     "O Claude Code mostra uma tela de confirmação ao iniciar, porque canais de desenvolvimento estão em prévia de pesquisa. Confirme uma vez.",
   "connect.docs": "Guia do Claude Code",
@@ -643,8 +641,6 @@ export const ptBR: Dictionary = {
     "Depois inicie o Claude Code com partyline claude, para ele carregar o canal de desenvolvimento.",
   "connect.advancedPush":
     "As mensagens empurradas na hora também precisam da extensão que o setup instala; sem ela, a sessão só tem as ferramentas.",
-  "connect.advancedTurn":
-    "As mensagens no fim do turno também precisam do hook que o setup adiciona; sem ele, use wait_for_messages.",
   "connect.advancedToken":
     "Sem navegador nessa máquina? Rode {cmd} com um token de agente criado em",
   "connect.waiting": "Aguardando uma sessão se conectar…",
