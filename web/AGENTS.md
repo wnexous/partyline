@@ -85,7 +85,7 @@ Fix the import instead (move the code down a layer, or go through the index).
 | Conversation face | `entities/room/ui/conversation-avatar` | inline copy in conversation-header (§1.E) |
 | Org avatar | `entities/organization/ui/org-avatar` on a shared `shared/ui/atoms/face` base with the tint/initials from `shared/lib/avatar` | duplicated PIXELS map (§1.F) |
 | Sessions of an AI | `entities/intelligence/ui/session-list` + `session-label` | member-list line, contacts.$id list, message "via :label" (§1.A) |
-| Online state | `entities/intelligence/model` `useIsOnline(id, fallback)` (+ pure `withContactPresence`) | 12 sites, 3 rules (§1.C) |
+| Online state | `entities/intelligence/model/presence` `useIsOnline(id, fallback)` (+ pure `onlineOf`, `withContactPresence`) | 12 sites, 3 rules (§1.C) |
 | App label of an AI | `entities/intelligence/lib` `appLabelOf(profileOrAi)`: server label, then harness label, then raw id | 3 rules (§1.D) |
 | Presence/status dots | `shared/ui/atoms/status-dot` (variants online/connecting/error/stopped) | connector-status DOT map, LiveIndicator dot (§1.C) |
 | Confirmation | `shared/ui/molecules/confirm-dialog` (`open`, `onClose`, `title`, `body`, `confirmLabel`, `destructive`, `pending`, `onConfirm`) | 14 hand-built AlertDialogs (§1.G) |
@@ -95,11 +95,11 @@ Fix the import instead (move the code down a layer, or go through the index).
 | Row menu | `ActionMenu` + `RowMenuButton` | member-list raw DropdownMenu (§1.I) |
 | Form fields / choice groups | `form-fields` (`TextField`, `TextAreaField`, `SelectField`), `ChoiceGroup` molecule | hand-made Label+NativeSelect/Input, 5 choice groups (§1.J) |
 | Section shell | `PageSection` | 3 local `Section` helpers (§1.K) |
-| Org member row + removal rule | `features/manage-org-member/ui/org-member-actions` + `entities/organization/model` `removalOf(member)`, `isAdminOf` | 2 MemberRow, inline admin checks (§1.L, 2.e) |
+| Org member row + removal rule | `features/manage-org-member/ui/org-member-actions` + `entities/organization/model/removal` `removalOf(member)`, `entities/organization/lib/orgs` `isAdminOf` | 2 MemberRow, inline admin checks (§1.L, 2.e) |
 | Time | `shared/ui/atoms/relative-time` (`<time title=absolute>relative</time>`), day labels only in `shared/lib/time` | ~11 hand-written pairs, 2 day-label rules (§1.N) |
-| Message helpers | `entities/message/model` (`authorDisplayName`, `chatTrust`, `platformName`, `chatTitle`) | helpers inside message-item (cycle with message-menu) (§1.O, 2.d) |
+| Message helpers | `entities/message/model` (`authorDisplayName`, `chatTrust`, `platformName`, `chatTitle`); `canMessage` in `entities/intelligence/model/rules` | helpers inside message-item (cycle with message-menu) (§1.O, 2.d) |
 | Device predicates | `shared/lib/device` (`isNarrow`/`useIsMobile`, `isCoarsePointer`, `isTouchFirst`) | 3 files (§1.Q) |
-| Pickable candidates | `entities/intelligence/model` `usePickables({ orgId })` | 3 wirings (§1.P) |
+| Pickable candidates | `entities/intelligence/model/pickables` `usePickables({ orgId })` | 3 wirings (§1.P) |
 | Composer draft | `features/send-message/model/draft-store` (zustand, per room: text, files, replyTo; edit drafts per message id) | local useState + keyed remount (§4) |
 
 
