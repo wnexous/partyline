@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { useLiveStore } from "./store";
+import { useLiveStore } from "@/test/live-store";
 
 /*
  * The store's outage clock (UI-06): when the live socket has not been open since. The banner

@@ -2,7 +2,7 @@ import { Link } from "@tanstack/react-router";
 import { ArrowUpRightIcon, ChevronRightIcon, HourglassIcon, RadioTowerIcon } from "lucide-react";
 import { type ReactNode, useEffect, useState } from "react";
 import { useMe } from "@/entities/account";
-import { useAgents } from "@/entities/intelligence";
+import { useAgents, usePresenceStore } from "@/entities/intelligence";
 import {
   CLAUDE_CODE_DOCS_URL,
   CONFIG_FILE,
@@ -13,7 +13,6 @@ import {
   RELEASES_URL,
   SETUP_COMMAND,
 } from "@/lib/agent-connect";
-import { useLiveStore } from "@/lib/live/store";
 import { useT } from "@/shared/i18n";
 import { cn } from "@/shared/lib/utils";
 import { StatusDot } from "@/shared/ui/atoms/status-dot";
@@ -241,7 +240,7 @@ function AgentArrival() {
   const t = useT();
   const me = useMe().data;
   const agents = useAgents().data;
-  const presence = useLiveStore((s) => s.presence);
+  const presence = usePresenceStore((s) => s.presence);
   const [before, setBefore] = useState<ReadonlySet<string> | null>(null);
 
   const mine = me && agents ? agents.filter((a) => a.owner.id === me.id) : undefined;

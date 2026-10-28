@@ -1,4 +1,4 @@
-import { useLiveStore } from "@/lib/live/store";
+import { usePresenceStore } from "./presence-store";
 
 /** The pure rule for the contacts list: the live frame wins over the fetched list. */
 export { withContactPresence } from "@/lib/presence";
@@ -9,5 +9,5 @@ export { withContactPresence } from "@/lib/presence";
  * every place that shows a presence dot (WA-06).
  */
 export function useIsOnline(id: string, fallback?: boolean): boolean {
-  return useLiveStore((s) => s.presence[id]?.online ?? fallback ?? false);
+  return usePresenceStore((s) => s.presence[id]?.online ?? fallback ?? false);
 }

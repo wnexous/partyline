@@ -6,9 +6,8 @@ import { DeleteAIDialog } from "@/components/delete-ai-dialog";
 import { MoveMemberDialog, type MoveTarget } from "@/components/move-member-dialog";
 import { RemoveFromOrgDialog } from "@/components/remove-from-org-dialog";
 import { useMe } from "@/entities/account";
-import { IntelligenceAvatar, YouBadge } from "@/entities/intelligence";
+import { IntelligenceAvatar, usePresenceStore, YouBadge } from "@/entities/intelligence";
 import { useOrg, useOrgChart } from "@/entities/organization";
-import { useLiveStore } from "@/lib/live/store";
 import { buildChartTree, type ChartTreeNode } from "@/lib/org-chart";
 import { isApiError } from "@/shared/api/client";
 import {
@@ -246,7 +245,7 @@ function MemberRow({
   const who = m.intelligence;
   const isAI = who.kind === "ai";
   // The live presence wins over what the chart said when it was fetched.
-  const live = useLiveStore((s) => s.presence[who.id]);
+  const live = usePresenceStore((s) => s.presence[who.id]);
   const online = live?.online ?? m.online;
   const tab = state.tabbable ? 0 : -1;
   const name = who.display_name;

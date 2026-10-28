@@ -40,8 +40,9 @@ import {
   makeProfile,
   makeRoom,
 } from "@/test/fixtures";
-import { catchUp, handleLiveEvent, type LiveActions } from "./handlers";
-import { useLiveStore } from "./store";
+import { useLiveStore } from "@/test/live-store";
+import { catchUp } from "./catch-up";
+import { handleLiveEvent, type LiveActions } from "./dispatch";
 
 function seedTimeline(qc: QueryClient, roomId: string, seqs: number[]) {
   const data: MessagePages = {

@@ -31,7 +31,7 @@ export function fetchMessages(
 
 /**
  * Room timeline: pages[0] is the newest page; fetchNextPage loads older messages. Items inside
- * each page are oldest first. Live events append to pages[0] (lib/live/handlers.ts).
+ * each page are oldest first. Live events append to pages[0] (app/live/dispatch.ts).
  */
 export const roomMessagesQuery = (roomId: string) =>
   infiniteQueryOptions({

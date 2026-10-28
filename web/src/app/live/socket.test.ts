@@ -6,9 +6,9 @@ import { setUnauthorizedHandler } from "@/shared/api/client";
 import { queryKeys } from "@/shared/api/query-keys";
 import { FakeSocket } from "@/test/fake-socket";
 import { makeMe, makeMessage, makeRoom } from "@/test/fixtures";
+import { useLiveStore } from "@/test/live-store";
 import { startLive } from "./index";
 import { backoffDelay, createLiveSocket, liveUrl } from "./socket";
-import { useLiveStore } from "./store";
 
 /** Makes the document report `state` and fires the event the browser fires when it changes. */
 function setTabState(state: "visible" | "hidden") {

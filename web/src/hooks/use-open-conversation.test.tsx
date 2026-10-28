@@ -1,6 +1,6 @@
 import { act, renderHook } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { useLiveStore } from "@/lib/live/store";
+import { useLiveStore } from "@/test/live-store";
 import { useOpenConversation } from "./use-open-conversation";
 
 /*

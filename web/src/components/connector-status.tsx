@@ -1,4 +1,4 @@
-import { useLiveStore } from "@/lib/live/store";
+import { useConnectorStateStore } from "@/entities/connector";
 import type { Connector, ConnectorStatus } from "@/shared/api/types.gen";
 import { type MessageKey, useT } from "@/shared/i18n";
 import { cn } from "@/shared/lib/utils";
@@ -24,7 +24,7 @@ const DOT: Record<ConnectorStatus, string> = {
 
 /** Status and last error, live from connector.status events when one arrived. */
 export function useConnectorState(connector: Connector) {
-  const live = useLiveStore((s) => s.connectors[connector.id]);
+  const live = useConnectorStateStore((s) => s.connectors[connector.id]);
   return {
     status: live?.status ?? connector.status,
     lastError: live ? live.last_error : connector.last_error,

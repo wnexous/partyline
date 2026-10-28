@@ -2,9 +2,9 @@ import { screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { ConnectorForm, type ConnectorFormValues } from "@/components/schema-form";
-import { useLiveStore } from "@/lib/live/store";
 import { SecretMask } from "@/shared/api/types.gen";
 import { makeConnectorKind } from "@/test/fixtures";
+import { useLiveStore } from "@/test/live-store";
 import { renderWithProviders } from "@/test/render";
 
 beforeEach(() => useLiveStore.setState({ locale: "en" }));

@@ -4,16 +4,16 @@ import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { axe } from "vitest-axe";
 import * as matchers from "vitest-axe/matchers";
-import { handleLiveEvent } from "@/lib/live/handlers";
-import { useLiveStore } from "@/lib/live/store";
+import { handleLiveEvent } from "@/app/live/dispatch";
 import { CURRENT_ORG_KEY } from "@/lib/orgs";
 import { apiError, json, mockApi } from "@/test/fetch";
 import { makeAI, makeIntelligence, makeInvitation, makeMe, makeOrg } from "@/test/fixtures";
+import { useLiveStore } from "@/test/live-store";
 import { renderRoute } from "@/test/render";
 
 expect.extend(matchers);
 
-vi.mock("@/lib/live", () => ({ startLive: vi.fn(() => () => {}) }));
+vi.mock("@/app/live", () => ({ startLive: vi.fn(() => () => {}) }));
 
 /*
  * The organizations page (T40: ORG-01, OMEM-01, OMEM-02, OMEM-07): the viewer's organizations,

@@ -3,8 +3,7 @@ import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { axe } from "vitest-axe";
 import * as matchers from "vitest-axe/matchers";
-import { handleLiveEvent } from "@/lib/live/handlers";
-import { useLiveStore } from "@/lib/live/store";
+import { handleLiveEvent } from "@/app/live/dispatch";
 import type { AIDetail, Contacts, SessionInfo } from "@/shared/api/types.gen";
 import { apiError, json, mockApi } from "@/test/fetch";
 import {
@@ -19,12 +18,13 @@ import {
   makeRoom,
 } from "@/test/fixtures";
 import { stubLayout } from "@/test/layout";
+import { useLiveStore } from "@/test/live-store";
 import { renderRoute } from "@/test/render";
 import { bob, lia, liam, oldHelper, sampleContacts } from "@/test/sample-contacts";
 
 expect.extend(matchers);
 
-vi.mock("@/lib/live", () => ({ startLive: vi.fn(() => () => {}) }));
+vi.mock("@/app/live", () => ({ startLive: vi.fn(() => () => {}) }));
 
 /*
  * The contacts page (CONT-01, AD-016, AD-022): the AIs of the user's organizations, group by

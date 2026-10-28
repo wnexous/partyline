@@ -1,10 +1,10 @@
 import { screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { useLiveStore } from "@/lib/live/store";
 import { queryKeys } from "@/shared/api/query-keys";
 import { FakeSocket } from "@/test/fake-socket";
 import { json, mockApi } from "@/test/fetch";
 import { makeAI, makeAIContact, makeContacts, makeMe, makeOrgAIs } from "@/test/fixtures";
+import { useLiveStore } from "@/test/live-store";
 import { renderRoute } from "@/test/render";
 
 /*

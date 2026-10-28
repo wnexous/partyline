@@ -15,10 +15,9 @@ import { DeleteAIDialog } from "@/components/delete-ai-dialog";
 import { MergeAIDialog } from "@/components/merge-ai-dialog";
 import { MessageButton } from "@/components/message-button";
 import { PeopleGroup } from "@/components/people-group";
-import { useContacts } from "@/entities/intelligence";
+import { useContacts, usePresenceStore } from "@/entities/intelligence";
 import { aiText, filterOrgs, mergeTargets, onlineCount } from "@/lib/contacts";
 import { matchesTerms } from "@/lib/conversations";
-import { useLiveStore } from "@/lib/live/store";
 import { withContactPresence } from "@/lib/presence";
 import type { AIContact, Contacts, IntelligenceRef } from "@/shared/api/types.gen";
 import { useI18n } from "@/shared/i18n";
@@ -51,7 +50,7 @@ const isEmpty = (c: Contacts) =>
 function ContactsPage() {
   const { t } = useI18n();
   const contacts = useContacts();
-  const presence = useLiveStore((s) => s.presence);
+  const presence = usePresenceStore((s) => s.presence);
   const [filter, setFilter] = useState("");
   const [connecting, setConnecting] = useState(false);
   const [deleting, setDeleting] = useState<IntelligenceRef | null>(null);

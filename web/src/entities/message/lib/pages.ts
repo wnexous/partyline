@@ -51,3 +51,25 @@ export function findMessage(data: MessagePages | undefined, id: string): Message
   }
   return undefined;
 }
+
+/**
+ * Inserts messages into the newest page, keeping seq order and dropping known ids/seqs. Used for
+ * live frames and for the catch-up after a reconnect.
+ */
+export function mergeMessages(data: MessagePages | undefined, incoming: Message[]) {
+  if (!data || data.pages.length === 0) return data;
+  const known = new Set<string>();
+  const knownSeq = new Set<number>();
+  for (const page of data.pages) {
+    for (const m of page.items) {
+      known.add(m.id);
+      knownSeq.add(m.seq);
+    }
+  }
+  const fresh = incoming.filter((m) => !known.has(m.id) && !knownSeq.has(m.seq));
+  if (fresh.length === 0) return data;
+  const [newest, ...older] = data.pages;
+  if (!newest) return data;
+  const items = [...newest.items, ...fresh].sort((a, b) => a.seq - b.seq);
+  return { ...data, pages: [{ ...newest, items }, ...older] };
+}

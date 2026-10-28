@@ -5,7 +5,6 @@ import { MemberPicker } from "@/components/member-picker";
 import { ProfilePanel } from "@/components/profile-panel";
 import { RoomFiles } from "@/components/room-files";
 import { useProfilePanel, useProfilePanelStore } from "@/hooks/use-profile-panel";
-import { useLiveStore } from "@/lib/live/store";
 import type {
   IntelligenceProfile,
   ProfileMembership,
@@ -28,11 +27,12 @@ import {
   makeRoom,
 } from "@/test/fixtures";
 import { stubLayout } from "@/test/layout";
+import { useLiveStore } from "@/test/live-store";
 import { stubViewport } from "@/test/media";
 import { renderRoute, renderWithRouter } from "@/test/render";
 import { sampleContacts } from "@/test/sample-contacts";
 
-vi.mock("@/lib/live", () => ({ startLive: vi.fn(() => () => {}) }));
+vi.mock("@/app/live", () => ({ startLive: vi.fn(() => () => {}) }));
 
 /*
  * The profile panel (PRF-01..PRF-06): clicking an identity anywhere opens its profile beside the

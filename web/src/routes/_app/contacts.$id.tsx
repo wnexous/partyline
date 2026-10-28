@@ -26,11 +26,11 @@ import {
   IntelligenceAvatar,
   IntelligenceName,
   useIntelligence,
+  usePresenceStore,
   YouBadge,
 } from "@/entities/intelligence";
 import { harnessLabel } from "@/lib/agents";
 import { mergeTargets } from "@/lib/contacts";
-import { useLiveStore } from "@/lib/live/store";
 import { isApiError } from "@/shared/api/client";
 import {
   type AIDetail,
@@ -136,7 +136,7 @@ function ProfileView({ profile }: { profile: IntelligenceProfile }) {
   const [merging, setMerging] = useState(false);
   const [ending, setEnding] = useState(false);
   const [removing, setRemoving] = useState<ProfileMembership | null>(null);
-  const presence = useLiveStore((s) => s.presence[profile.id]);
+  const presence = usePresenceStore((s) => s.presence[profile.id]);
   const own = me?.intelligence.id === profile.id;
   const isPerson = profile.role === IntelligenceRolePerson;
   const manages = profile.ai?.my_level === LevelManage;
@@ -357,7 +357,7 @@ function Row({ label, children }: { label: string; children: ReactNode }) {
 /** Where an AI lives and how it is doing: host, app and state, folder and the viewer's access. */
 function AIDetails({ ai, id }: { ai: AIDetail; id: string }) {
   const { t, locale } = useI18n();
-  const presence = useLiveStore((s) => s.presence[id]);
+  const presence = usePresenceStore((s) => s.presence[id]);
   const online = presence?.online ?? ai.online;
   const lastSeen = presence?.last_seen_at ?? ai.last_seen_at;
   const app = ai.app ? (harnessLabel(ai.app) ?? ai.app) : "";

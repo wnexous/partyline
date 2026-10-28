@@ -3,13 +3,17 @@ import { PlusIcon, SearchIcon } from "lucide-react";
 import { type ReactNode, useMemo, useState } from "react";
 import { toast } from "sonner";
 import { PickableMeta } from "@/components/contact-meta";
-import { IntelligenceAvatar, IntelligenceName, useContacts } from "@/entities/intelligence";
+import {
+  IntelligenceAvatar,
+  IntelligenceName,
+  useContacts,
+  usePresenceStore,
+} from "@/entities/intelligence";
 import { useRoom } from "@/entities/room";
 import { useAddMember } from "@/entities/room-member";
 import { useOrgUsers } from "@/hooks/use-org-users";
 import { type Pickable, pickableList } from "@/lib/contacts";
 import { matchesTerms } from "@/lib/conversations";
-import { useLiveStore } from "@/lib/live/store";
 import { withContactPresence } from "@/lib/presence";
 import type { MemberKind, RoomMember } from "@/shared/api/types.gen";
 import { useI18n } from "@/shared/i18n";
@@ -66,7 +70,7 @@ function PickerBody({ roomId, members }: { roomId: string; members: RoomMember[]
   const contacts = useContacts();
   const room = useRoom(roomId);
   const add = useAddMember(roomId);
-  const presence = useLiveStore((s) => s.presence);
+  const presence = usePresenceStore((s) => s.presence);
   const [query, setQuery] = useState("");
   const [adding, setAdding] = useState<string | null>(null);
 

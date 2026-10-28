@@ -1,5 +1,5 @@
+import type { SocketStatus } from "@/shared/api/socket-store";
 import type { LiveEvent } from "@/shared/api/types.gen";
-import type { SocketStatus } from "./store";
 
 /*
  * The live WebSocket (GET /api/v1/live, cookie auth). Reconnects forever with exponential

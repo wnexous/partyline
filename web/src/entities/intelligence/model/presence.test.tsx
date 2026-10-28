@@ -1,6 +1,6 @@
 import { act, renderHook } from "@testing-library/react";
 import { beforeEach, describe, expect, it } from "vitest";
-import { useLiveStore } from "@/lib/live/store";
+import { useLiveStore } from "@/test/live-store";
 import { useIsOnline } from "./presence";
 
 beforeEach(() => useLiveStore.setState({ presence: {} }));

@@ -1,14 +1,14 @@
 import { screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { useLiveStore } from "@/lib/live/store";
 import { json, mockApi } from "@/test/fetch";
 import { makeConversation, makeMe, makeOrg, makeRoom } from "@/test/fixtures";
 import { stubLayout } from "@/test/layout";
+import { useLiveStore } from "@/test/live-store";
 import { stubViewport } from "@/test/media";
 import { renderRoute } from "@/test/render";
 
-vi.mock("@/lib/live", () => ({ startLive: vi.fn(() => () => {}) }));
+vi.mock("@/app/live", () => ({ startLive: vi.fn(() => () => {}) }));
 
 /*
  * The messenger shell (LAY-01, LAY-05, LAY-06): a conversation sidebar beside the page on wide

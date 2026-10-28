@@ -1,5 +1,5 @@
 import { useEffect } from "react";
-import { useLiveStore } from "@/lib/live/store";
+import { useOpenRoomStore } from "@/entities/room";
 import { useDocumentVisible } from "@/shared/lib/use-document-visible";
 
 /**
@@ -8,7 +8,7 @@ import { useDocumentVisible } from "@/shared/lib/use-document-visible";
  */
 export function useOpenConversation(roomId: string): void {
   const visible = useDocumentVisible();
-  const setOpenRoom = useLiveStore((s) => s.setOpenRoom);
+  const setOpenRoom = useOpenRoomStore((s) => s.setOpenRoom);
   useEffect(() => {
     if (!visible) return;
     setOpenRoom(roomId);

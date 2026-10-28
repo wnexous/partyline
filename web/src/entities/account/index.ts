@@ -6,3 +6,5 @@ export * from "./api/push";
 export * from "./api/session";
 export * from "./api/tokens";
 export * from "./lib/activity";
+export * from "./model/linked-identity-store";
+export * from "./model/live";

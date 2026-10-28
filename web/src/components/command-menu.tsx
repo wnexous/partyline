@@ -5,13 +5,13 @@ import { ConnectorStatusBadge, useConnectorState } from "@/components/connector-
 import { ConversationAvatar } from "@/components/conversation-avatar";
 import { platformLabel } from "@/components/message-item";
 import { useConnectors } from "@/entities/connector";
-import { useAgents } from "@/entities/intelligence";
+import { useAgents, usePresenceStore } from "@/entities/intelligence";
 import { useConversations } from "@/entities/room";
 import { useProfilePanel } from "@/hooks/use-profile-panel";
-import { useLiveStore } from "@/lib/live/store";
 import { NAV_GROUPS } from "@/lib/nav";
 import { type Connector, type Me, RoleAdmin } from "@/shared/api/types.gen";
 import { useT } from "@/shared/i18n";
+import { usePrefsStore } from "@/shared/lib/prefs-store";
 import { cn } from "@/shared/lib/utils";
 import { StatusDot } from "@/shared/ui/atoms/status-dot";
 import {
@@ -37,8 +37,8 @@ import {
 
 export function CommandMenu({ me }: { me: Me }) {
   const t = useT();
-  const open = useLiveStore((s) => s.paletteOpen);
-  const setOpen = useLiveStore((s) => s.setPaletteOpen);
+  const open = usePrefsStore((s) => s.paletteOpen);
+  const setOpen = usePrefsStore((s) => s.setPaletteOpen);
 
   // What had focus before the palette: the profile panel a contact opens gives focus back to it.
   const before = useRef<HTMLElement | null>(null);
@@ -54,7 +54,7 @@ export function CommandMenu({ me }: { me: Me }) {
         return;
       }
       e.preventDefault();
-      setOpen(!useLiveStore.getState().paletteOpen);
+      setOpen(!usePrefsStore.getState().paletteOpen);
     };
     document.addEventListener("keydown", onKeyDown);
     return () => document.removeEventListener("keydown", onKeyDown);
@@ -90,7 +90,7 @@ function PaletteBody({
   const conversations = useConversations();
   const agents = useAgents();
   const connectors = useConnectors();
-  const presence = useLiveStore((s) => s.presence);
+  const presence = usePresenceStore((s) => s.presence);
 
   const go = (to: string, params?: Record<string, string>) => {
     onDone();

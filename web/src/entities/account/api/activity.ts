@@ -6,7 +6,7 @@ import { ACTIVITY_FETCH, trimActivity } from "../lib/activity";
 
 /**
  * The dashboard feed: latest messages across the rooms the user can see, newest first, from
- * one `GET /activity` request. Live room.message events keep it current (lib/live/handlers.ts).
+ * one `GET /activity` request. Live room.message events keep it current (app/live/dispatch.ts).
  */
 export const activityQuery = () =>
   queryOptions({

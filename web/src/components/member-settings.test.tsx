@@ -2,10 +2,10 @@ import { screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { MemberSettings } from "@/components/member-settings";
-import { useLiveStore } from "@/lib/live/store";
 import type { RoomMember } from "@/shared/api/types.gen";
 import { apiError, json, mockApi } from "@/test/fetch";
 import { makeMember } from "@/test/fixtures";
+import { useLiveStore } from "@/test/live-store";
 import { renderWithProviders } from "@/test/render";
 
 /*

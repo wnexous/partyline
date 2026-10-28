@@ -3,19 +3,19 @@ import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { axe } from "vitest-axe";
 import * as matchers from "vitest-axe/matchers";
+import { handleLiveEvent } from "@/app/live/dispatch";
 import {
   hasMessageActions,
   type MessageCapabilities,
   messageActionSet,
 } from "@/components/message-menu";
 import { MessageTimeline } from "@/components/message-timeline";
-import { handleLiveEvent } from "@/lib/live/handlers";
-import { useLiveStore } from "@/lib/live/store";
 import type { Message } from "@/shared/api/types.gen";
 import { json, mockApi } from "@/test/fetch";
 import { makeMessage } from "@/test/fixtures";
 import { finger, HOLD, longPress, mouseDevice, touchDevice, wait } from "@/test/gestures";
 import { stubLayout } from "@/test/layout";
+import { useLiveStore } from "@/test/live-store";
 import { renderWithRouter } from "@/test/render";
 
 expect.extend(matchers);

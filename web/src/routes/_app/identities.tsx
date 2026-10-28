@@ -3,10 +3,14 @@ import { CircleCheckIcon, FingerprintIcon, LinkIcon, TimerOffIcon, XIcon } from 
 import { useEffect, useId, useState } from "react";
 import { toast } from "sonner";
 import { platformLabel } from "@/components/message-item";
-import { useDeleteIdentity, useIdentities, useStartPairing } from "@/entities/account";
+import {
+  useDeleteIdentity,
+  useIdentities,
+  useLinkedIdentityStore,
+  useStartPairing,
+} from "@/entities/account";
 import { useConnectors } from "@/entities/connector";
 import { useMyOrgs } from "@/entities/organization";
-import { useLiveStore } from "@/lib/live/store";
 import type { Connector, Identity, PairingCode } from "@/shared/api/types.gen";
 import { useI18n, useT } from "@/shared/i18n";
 import { formatAbsolute } from "@/shared/lib/time";
@@ -194,8 +198,8 @@ function PairingBody({ onDone }: { onDone: () => void }) {
   const connectors = useConnectors();
   const [picked, setPicked] = useState<Connector | null>(null);
   // Only an identity linked after the dialog opened counts as this pairing's result.
-  const [baseline] = useState(() => useLiveStore.getState().lastLinkedIdentity);
-  const latest = useLiveStore((s) => s.lastLinkedIdentity);
+  const [baseline] = useState(() => useLinkedIdentityStore.getState().lastLinkedIdentity);
+  const latest = useLinkedIdentityStore((s) => s.lastLinkedIdentity);
   const linked = latest && latest !== baseline ? latest : null;
 
   if (linked) {

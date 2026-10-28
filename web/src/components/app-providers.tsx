@@ -1,13 +1,13 @@
 import { type QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { type ReactNode, useEffect } from "react";
-import { useLiveStore } from "@/lib/live/store";
 import { applyTheme } from "@/lib/theme";
 import { I18nProvider } from "@/shared/i18n";
+import { usePrefsStore } from "@/shared/lib/prefs-store";
 import { TooltipProvider } from "@/shared/ui/primitives/tooltip";
 
 /** Applies the theme preference and follows the system scheme while it is "system" (UI-23). */
 function useThemeSync() {
-  const theme = useLiveStore((s) => s.theme);
+  const theme = usePrefsStore((s) => s.theme);
   useEffect(() => {
     applyTheme(theme);
     if (theme !== "system" || typeof window.matchMedia !== "function") return;
@@ -26,7 +26,7 @@ export function AppProviders({
   queryClient: QueryClient;
   children: ReactNode;
 }) {
-  const locale = useLiveStore((s) => s.locale);
+  const locale = usePrefsStore((s) => s.locale);
   useThemeSync();
   useEffect(() => {
     document.documentElement.lang = locale;

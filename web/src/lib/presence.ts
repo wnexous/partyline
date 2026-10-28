@@ -1,4 +1,4 @@
-import type { Presence } from "@/lib/live/store";
+import type { Presence } from "@/entities/intelligence";
 import type { AIContact } from "@/shared/api/types.gen";
 
 /**

@@ -2,9 +2,9 @@ import { screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { MoveMemberDialog, type MoveTarget } from "@/components/move-member-dialog";
-import { useLiveStore } from "@/lib/live/store";
 import { json, mockApi } from "@/test/fetch";
 import { makeAI, makeIntelligence, makePosition } from "@/test/fixtures";
+import { useLiveStore } from "@/test/live-store";
 import { renderWithProviders } from "@/test/render";
 
 /*

@@ -1,14 +1,14 @@
 import { act, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { useLiveStore } from "@/lib/live/store";
 import { apiError, json, mockApi } from "@/test/fetch";
 import { makeContacts, makeConversation, makeMe, makeRoom } from "@/test/fixtures";
 import { stubLayout } from "@/test/layout";
+import { useLiveStore } from "@/test/live-store";
 import { renderRoute } from "@/test/render";
 import { atlas, sampleContacts as contacts } from "@/test/sample-contacts";
 
-vi.mock("@/lib/live", () => ({ startLive: vi.fn(() => () => {}) }));
+vi.mock("@/app/live", () => ({ startLive: vi.fn(() => () => {}) }));
 
 /*
  * "New conversation" (LAY-03, DM-01): pick any intelligence the user can see and open the one DM

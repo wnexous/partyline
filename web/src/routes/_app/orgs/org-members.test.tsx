@@ -3,8 +3,7 @@ import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { axe } from "vitest-axe";
 import * as matchers from "vitest-axe/matchers";
-import { handleLiveEvent } from "@/lib/live/handlers";
-import { useLiveStore } from "@/lib/live/store";
+import { handleLiveEvent } from "@/app/live/dispatch";
 import type { Organization, OrgMember } from "@/shared/api/types.gen";
 import { apiError, json, mockApi } from "@/test/fetch";
 import {
@@ -20,11 +19,12 @@ import {
   makeOrgChart,
   makeOrgMember,
 } from "@/test/fixtures";
+import { useLiveStore } from "@/test/live-store";
 import { renderRoute } from "@/test/render";
 
 expect.extend(matchers);
 
-vi.mock("@/lib/live", () => ({ startLive: vi.fn(() => () => {}) }));
+vi.mock("@/app/live", () => ({ startLive: vi.fn(() => () => {}) }));
 
 /*
  * The members of an organization and who may invite and manage them (T42: OMEM-01, OMEM-03,

@@ -8,13 +8,13 @@ import {
   MessageMenu,
   type MessageMenuTarget,
 } from "@/components/message-menu";
-import { useLiveStore } from "@/lib/live/store";
 import type { MessagePages } from "@/shared/api/cache-types";
 import { queryKeys } from "@/shared/api/query-keys";
 import type { Message } from "@/shared/api/types.gen";
 import { apiError, json, mockApi } from "@/test/fetch";
 import { makeMessage } from "@/test/fixtures";
 import { touchDevice } from "@/test/gestures";
+import { useLiveStore } from "@/test/live-store";
 import { makeQueryClient, renderWithProviders } from "@/test/render";
 
 /*

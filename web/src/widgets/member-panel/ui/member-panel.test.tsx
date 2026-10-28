@@ -1,7 +1,6 @@
 import { act, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { useLiveStore } from "@/lib/live/store";
 import type { IntelligenceProfile, SessionInfo } from "@/shared/api/types.gen";
 import { json, mockApi } from "@/test/fetch";
 import {
@@ -12,6 +11,7 @@ import {
   makePerson,
   makeProfile,
 } from "@/test/fixtures";
+import { useLiveStore } from "@/test/live-store";
 import { renderWithProviders, renderWithRouter } from "@/test/render";
 import { MemberPanel } from "./member-panel";
 

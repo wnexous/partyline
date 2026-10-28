@@ -26,7 +26,7 @@ import { ToggleGroup, ToggleGroupItem } from "@/shared/ui/primitives/toggle-grou
  * The room's files (FILES-04..06): everything shared in the room, newest first, so a document
  * from last week is a filter and a glance away instead of a long scroll. Files the server could
  * not store stay listed (so nobody wonders whether they were sent) but carry no link. Live
- * room.message events prepend new files into the cached pages (lib/live/handlers.ts).
+ * room.message events prepend new files into the cached pages (app/live/dispatch.ts).
  */
 
 const FILTERS: { value: FileFilter; label: MessageKey }[] = [

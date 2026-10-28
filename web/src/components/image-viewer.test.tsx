@@ -3,11 +3,11 @@ import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { collectImages } from "@/components/image-viewer";
 import { MessageTimeline } from "@/components/message-timeline";
-import { useLiveStore } from "@/lib/live/store";
 import type { Attachment, Message } from "@/shared/api/types.gen";
 import { apiError, json, mockApi } from "@/test/fetch";
 import { makeMessage } from "@/test/fixtures";
 import { stubLayout } from "@/test/layout";
+import { useLiveStore } from "@/test/live-store";
 import { stubViewport } from "@/test/media";
 import { renderWithRouter } from "@/test/render";
 

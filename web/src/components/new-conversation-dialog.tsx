@@ -1,10 +1,14 @@
 import { type ReactNode, useMemo, useState } from "react";
 import { PickableMeta } from "@/components/contact-meta";
-import { IntelligenceAvatar, IntelligenceName, useContacts } from "@/entities/intelligence";
+import {
+  IntelligenceAvatar,
+  IntelligenceName,
+  useContacts,
+  usePresenceStore,
+} from "@/entities/intelligence";
 import { useStartConversation } from "@/hooks/use-start-conversation";
 import { type Pickable, pickableList } from "@/lib/contacts";
 import { matchesTerms } from "@/lib/conversations";
-import { useLiveStore } from "@/lib/live/store";
 import { withContactPresence } from "@/lib/presence";
 import type { IntelligenceRef } from "@/shared/api/types.gen";
 import { useT } from "@/shared/i18n";
@@ -56,7 +60,7 @@ export function NewConversationDialog({
 function ContactPicker({ initialQuery, onDone }: { initialQuery: string; onDone: () => void }) {
   const t = useT();
   const contacts = useContacts();
-  const presence = useLiveStore((s) => s.presence);
+  const presence = usePresenceStore((s) => s.presence);
   const conversation = useStartConversation();
   const [query, setQuery] = useState(initialQuery);
 

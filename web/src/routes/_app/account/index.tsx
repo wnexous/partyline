@@ -21,7 +21,6 @@ import {
 } from "@/entities/account";
 import { useIntelligence } from "@/entities/intelligence";
 import { useMyOrgs } from "@/entities/organization";
-import { useLiveStore } from "@/lib/live/store";
 import { defaultOrgIdOf } from "@/lib/orgs";
 import {
   activeRegistration,
@@ -50,6 +49,7 @@ import {
 } from "@/shared/api/types.gen";
 import { LOCALES, type MessageKey, type Translate, useI18n, useT } from "@/shared/i18n";
 import { applyFieldErrors } from "@/shared/lib/forms";
+import { usePrefsStore } from "@/shared/lib/prefs-store";
 import { NativeSelect } from "@/shared/ui/atoms/native-select";
 import { RelativeTime } from "@/shared/ui/atoms/relative-time";
 import { ChoiceGroup } from "@/shared/ui/molecules/choice-group";
@@ -143,8 +143,8 @@ const THEMES: { value: ThemePreference; icon: typeof SunIcon; label: MessageKey 
 function AppearanceSection() {
   const { t, locale } = useI18n();
   const id = useId();
-  const theme = useLiveStore((s) => s.theme);
-  const setTheme = useLiveStore((s) => s.setTheme);
+  const theme = usePrefsStore((s) => s.theme);
+  const setTheme = usePrefsStore((s) => s.setTheme);
   const chooseLocale = useChooseLocale(true);
 
   return (

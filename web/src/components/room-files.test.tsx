@@ -1,12 +1,13 @@
 import { act, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { catchUp } from "@/app/live/catch-up";
+import { handleLiveEvent } from "@/app/live/dispatch";
 import { RoomFiles } from "@/components/room-files";
-import { catchUp, handleLiveEvent } from "@/lib/live/handlers";
-import { useLiveStore } from "@/lib/live/store";
 import type { RoomFile } from "@/shared/api/types.gen";
 import { apiError, json, mockApi } from "@/test/fetch";
 import { makeAI, makeIntelligence, makeMessage, makePerson } from "@/test/fixtures";
+import { useLiveStore } from "@/test/live-store";
 import { renderWithRouter } from "@/test/render";
 
 function makeFile(over: Partial<RoomFile> = {}): RoomFile {

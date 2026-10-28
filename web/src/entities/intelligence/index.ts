@@ -4,7 +4,9 @@ export * from "./api/profile";
 export { appLabelOf } from "./lib/app-label";
 export * from "./lib/profile";
 export * from "./model/cache";
+export * from "./model/live";
 export { useIsOnline, withContactPresence } from "./model/presence";
+export * from "./model/presence-store";
 export {
   avatarTone,
   IntelligenceAvatar,

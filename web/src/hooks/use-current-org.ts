@@ -1,8 +1,7 @@
 import type { QueryClient } from "@tanstack/react-query";
 import { useMemo } from "react";
 import { meQuery, useMe } from "@/entities/account";
-import { orgsQuery, useMyOrgs } from "@/entities/organization";
-import { useLiveStore } from "@/lib/live/store";
+import { orgsQuery, useCurrentOrgStore, useMyOrgs } from "@/entities/organization";
 import { defaultOrgIdOf, type MyOrg, resolveCurrentOrg, toMyOrgs } from "@/lib/orgs";
 
 const NO_ORGS: MyOrg[] = [];
@@ -28,8 +27,8 @@ export interface CurrentOrg {
 export function useCurrentOrg(): CurrentOrg {
   const mine = useMyOrgs();
   const me = useMe().data;
-  const pickedId = useLiveStore((s) => s.currentOrgId);
-  const select = useLiveStore((s) => s.setCurrentOrg);
+  const pickedId = useCurrentOrgStore((s) => s.currentOrgId);
+  const select = useCurrentOrgStore((s) => s.setCurrentOrg);
   const orgs = mine.data ?? NO_ORGS;
   const defaultId = defaultOrgIdOf(me);
   const org = useMemo(
@@ -49,6 +48,6 @@ export async function currentOrgId(queryClient: QueryClient): Promise<string | u
     queryClient.ensureQueryData(meQuery()),
     queryClient.ensureQueryData(orgsQuery()),
   ]);
-  const pickedId = useLiveStore.getState().currentOrgId;
+  const pickedId = useCurrentOrgStore.getState().currentOrgId;
   return resolveCurrentOrg(toMyOrgs(orgs), pickedId, defaultOrgIdOf(me))?.id;
 }

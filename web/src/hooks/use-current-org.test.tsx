@@ -2,10 +2,10 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { act, renderHook, waitFor } from "@testing-library/react";
 import type { ReactNode } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { useLiveStore } from "@/lib/live/store";
 import { CURRENT_ORG_KEY, type MeWithDefaultOrg } from "@/lib/orgs";
 import { apiError, json, mockApi } from "@/test/fetch";
 import { makeMe, makeOrg } from "@/test/fixtures";
+import { useLiveStore } from "@/test/live-store";
 import { useCurrentOrg } from "./use-current-org";
 
 /*
@@ -141,7 +141,7 @@ describe("where the pick is kept", () => {
   it("is read from this browser when the app starts", async () => {
     window.localStorage.setItem(CURRENT_ORG_KEY, "o2");
     vi.resetModules();
-    const { useLiveStore: fresh } = await import("@/lib/live/store");
+    const { useLiveStore: fresh } = await import("@/test/live-store");
     expect(fresh.getState().currentOrgId).toBe("o2");
   });
 
@@ -150,7 +150,7 @@ describe("where the pick is kept", () => {
       throw new DOMException("denied", "SecurityError");
     });
     vi.resetModules();
-    const { useLiveStore: fresh } = await import("@/lib/live/store");
+    const { useLiveStore: fresh } = await import("@/test/live-store");
     expect(fresh.getState().currentOrgId).toBeNull();
 
     // The hook of this run starts from the same empty pick and lands on the account's default.

@@ -3,12 +3,12 @@ import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { RoomSettingsSheet } from "@/components/room-settings-sheet";
 import { useRoom } from "@/entities/room";
-import { useLiveStore } from "@/lib/live/store";
 import { queryKeys } from "@/shared/api/query-keys";
 import type { Room } from "@/shared/api/types.gen";
 import { apiError, json, mockApi } from "@/test/fetch";
 import { makeRoom } from "@/test/fixtures";
 import { LoadedImage } from "@/test/image";
+import { useLiveStore } from "@/test/live-store";
 import { makeQueryClient, renderWithRouter } from "@/test/render";
 
 const toast = vi.hoisted(() => Object.assign(vi.fn(), { success: vi.fn(), error: vi.fn() }));

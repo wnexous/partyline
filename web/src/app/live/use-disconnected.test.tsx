@@ -1,10 +1,10 @@
 import { QueryClient } from "@tanstack/react-query";
 import { act, renderHook } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { startLive } from "@/lib/live";
-import { useLiveStore } from "@/lib/live/store";
+import { useDisconnected } from "@/shared/lib/use-disconnected";
 import { FakeSocket } from "@/test/fake-socket";
-import { useDisconnected } from "./use-disconnected";
+import { useLiveStore } from "@/test/live-store";
+import { startLive } from "./index";
 
 /*
  * The banner before the UI admits the live line is down (UI-06). A tab that comes back gets a

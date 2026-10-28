@@ -5,13 +5,17 @@ import { type ReactNode, useEffect, useId, useMemo, useState } from "react";
 import { useForm } from "react-hook-form";
 import { PickableMeta } from "@/components/contact-meta";
 import { OrgSelect } from "@/components/org-select";
-import { IntelligenceAvatar, IntelligenceName, useContacts } from "@/entities/intelligence";
+import {
+  IntelligenceAvatar,
+  IntelligenceName,
+  useContacts,
+  usePresenceStore,
+} from "@/entities/intelligence";
 import { useCreateGroup } from "@/entities/room";
 import { useCurrentOrg } from "@/hooks/use-current-org";
 import { useOrgUsers } from "@/hooks/use-org-users";
 import { type Pickable, pickableList } from "@/lib/contacts";
 import { matchesTerms } from "@/lib/conversations";
-import { useLiveStore } from "@/lib/live/store";
 import { canCreateGroupsIn } from "@/lib/orgs";
 import { withContactPresence } from "@/lib/presence";
 import { type CreateGroupForm, createGroupSchema } from "@/lib/schemas";
@@ -76,7 +80,7 @@ function GroupForm({ onDone, onCancel }: { onDone: () => void; onCancel: () => v
   const contacts = useContacts();
   const create = useCreateGroup();
   const { org: current, orgs, loading: orgsLoading, select } = useCurrentOrg();
-  const presence = useLiveStore((s) => s.presence);
+  const presence = usePresenceStore((s) => s.presence);
   const filterId = useId();
   const [filter, setFilter] = useState("");
   // Ids in the order they were picked: the server adds the members in that order.

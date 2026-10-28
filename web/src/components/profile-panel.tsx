@@ -12,11 +12,11 @@ import {
   appLabelOf,
   IntelligenceAvatar,
   intelligenceQuery,
+  usePresenceStore,
   YouBadge,
 } from "@/entities/intelligence";
 import { useProfilePanelStore } from "@/hooks/use-profile-panel";
 import { useStartConversation } from "@/hooks/use-start-conversation";
-import { useLiveStore } from "@/lib/live/store";
 import { isApiError } from "@/shared/api/client";
 import { type IntelligenceProfile, IntelligenceRolePerson } from "@/shared/api/types.gen";
 import { useT } from "@/shared/i18n";
@@ -211,7 +211,7 @@ function ProfileCard({ profile }: { profile: IntelligenceProfile }) {
   const orgsId = useId();
   const conversationsId = useId();
   const me = useMe().data;
-  const presence = useLiveStore((state) => state.presence[profile.id]);
+  const presence = usePresenceStore((state) => state.presence[profile.id]);
   const { ai, person } = profile;
   const online = presence?.online ?? ai?.online ?? false;
   // Where it speaks from: the app an AI runs in, the platform a person writes from.
