@@ -44,6 +44,13 @@ func HarnessID(v string) string {
 	return DefaultHarness
 }
 
+// PushedHarness reports whether a harness gets its messages pushed by a separate `partyline listen`
+// process (pi and OpenCode): the tools half it runs holds no socket and never reads a queue (SESS-47).
+func PushedHarness(v string) bool {
+	id := HarnessID(v)
+	return id == "pi" || id == "opencode"
+}
+
 // HarnessLabel is the readable name of a harness id ("Claude Code"); unknown ids read "Agent".
 func HarnessLabel(id string) string {
 	if l, ok := harnessLabels[id]; ok {
