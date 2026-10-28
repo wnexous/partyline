@@ -1,9 +1,9 @@
-import { appLabelOf } from "@/entities/intelligence";
-import type { Pickable } from "@/lib/contacts";
 import type { AIContact } from "@/shared/api/types.gen";
 import { useI18n } from "@/shared/i18n";
 import { RelativeTime } from "@/shared/ui/atoms/relative-time";
 import { StatusDot } from "@/shared/ui/atoms/status-dot";
+import { appLabelOf } from "../lib/app-label";
+import type { Pickable } from "../lib/contacts";
 
 /**
  * What tells one AI from another beside its name: whether it is online (and, with `lastSeen`,

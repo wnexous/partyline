@@ -1,7 +1,5 @@
 import type { ReactNode } from "react";
-import { AiStatusLine } from "@/components/ai-status";
-import { ProfileLink } from "@/components/profile-link";
-import { IntelligenceName } from "@/entities/intelligence";
+import { AiStatusLine, IntelligenceName, ProfileLink } from "@/entities/intelligence";
 import { ConversationFace, conversationTitle, counterpartOf } from "@/entities/room";
 import { ConversationKindDM, type Room } from "@/shared/api/types.gen";
 import { useT } from "@/shared/i18n";

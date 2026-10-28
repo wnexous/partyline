@@ -13,7 +13,6 @@ import {
 import { type ReactNode, useState } from "react";
 import { DeleteAIDialog } from "@/components/delete-ai-dialog";
 import { EndSessionDialog } from "@/components/end-session-dialog";
-import { MembershipSummary } from "@/components/membership-summary";
 import { MergeAIDialog } from "@/components/merge-ai-dialog";
 import { MessageButton } from "@/components/message-button";
 import { ProfileConversations } from "@/components/profile-conversations";
@@ -22,15 +21,17 @@ import { RemoveFromOrgDialog } from "@/components/remove-from-org-dialog";
 import { useMe } from "@/entities/account";
 import {
   contactsQuery,
+  harnessLabel,
   IntelligenceAvatar,
   IntelligenceName,
+  MembershipSummary,
+  mergeTargets,
   useIntelligence,
+  useIsOnline,
   usePresenceStore,
   YouBadge,
 } from "@/entities/intelligence";
 import { platformName } from "@/entities/message";
-import { harnessLabel } from "@/lib/agents";
-import { mergeTargets } from "@/lib/contacts";
 import { isApiError } from "@/shared/api/client";
 import {
   type AIDetail,
@@ -136,7 +137,7 @@ function ProfileView({ profile }: { profile: IntelligenceProfile }) {
   const [merging, setMerging] = useState(false);
   const [ending, setEnding] = useState(false);
   const [removing, setRemoving] = useState<ProfileMembership | null>(null);
-  const presence = usePresenceStore((s) => s.presence[profile.id]);
+  const online = useIsOnline(profile.id, profile.ai?.online);
   const own = me?.intelligence.id === profile.id;
   const isPerson = profile.role === IntelligenceRolePerson;
   const manages = profile.ai?.my_level === LevelManage;
@@ -146,7 +147,7 @@ function ProfileView({ profile }: { profile: IntelligenceProfile }) {
   const mergeCandidates = contacts.data ? mergeTargets(contacts.data, profile.id) : [];
   const canMerge = manages && mergeCandidates.length > 0;
   // There is a session to end only while the AI is connected.
-  const canEnd = profile.can_end_session && (presence?.online ?? profile.ai?.online ?? false);
+  const canEnd = profile.can_end_session && online;
 
   return (
     <div className="mx-auto w-full max-w-3xl space-y-8 px-4 py-5 md:px-8 md:py-8">
@@ -357,8 +358,8 @@ function Row({ label, children }: { label: string; children: ReactNode }) {
 /** Where an AI lives and how it is doing: host, app and state, folder and the viewer's access. */
 function AIDetails({ ai, id }: { ai: AIDetail; id: string }) {
   const { t, locale } = useI18n();
+  const online = useIsOnline(id, ai.online);
   const presence = usePresenceStore((s) => s.presence[id]);
-  const online = presence?.online ?? ai.online;
   const lastSeen = presence?.last_seen_at ?? ai.last_seen_at;
   const app = ai.app ? (harnessLabel(ai.app) ?? ai.app) : "";
   return (

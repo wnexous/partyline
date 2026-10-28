@@ -1,7 +1,6 @@
 import { ChevronRightIcon } from "lucide-react";
 import { useId, useState } from "react";
-import { ContactRow } from "@/components/contact-row";
-import { usePeople } from "@/entities/intelligence";
+import { ContactRow, usePeople } from "@/entities/intelligence";
 import { platformName } from "@/entities/message";
 import type { PeopleGroup as PeopleGroupData } from "@/shared/api/types.gen";
 import { useI18n } from "@/shared/i18n";

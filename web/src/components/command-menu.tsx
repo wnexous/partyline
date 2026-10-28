@@ -3,7 +3,7 @@ import { ContactRoundIcon, PlugZapIcon } from "lucide-react";
 import { type ReactNode, type RefObject, useEffect, useLayoutEffect, useRef } from "react";
 import { ConnectorStatusBadge, useConnectorState } from "@/components/connector-status";
 import { useConnectors } from "@/entities/connector";
-import { useAgents, usePresenceStore } from "@/entities/intelligence";
+import { onlineOf, useAgents, usePresenceStore } from "@/entities/intelligence";
 import { platformName } from "@/entities/message";
 import { ConversationAvatar, useConversations } from "@/entities/room";
 import { useProfilePanel } from "@/hooks/use-profile-panel";
@@ -151,7 +151,7 @@ function PaletteBody({
                 label={agent.intelligence.display_name}
                 hint={`@${agent.intelligence.handle}`}
                 trailing={(() => {
-                  const online = presence[agent.id]?.online ?? agent.online;
+                  const online = onlineOf(presence, agent.id, agent.online);
                   return (
                     <StatusDot
                       online={online}

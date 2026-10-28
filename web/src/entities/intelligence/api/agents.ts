@@ -1,9 +1,9 @@
 import { queryOptions, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { withoutAI } from "@/lib/contacts";
 import { api } from "@/shared/api/client";
 import { items } from "@/shared/api/list";
 import { queryKeys } from "@/shared/api/query-keys";
 import type { Agent, Contacts, List, MergeAgentRequest } from "@/shared/api/types.gen";
+import { withoutAI } from "../lib/contacts";
 
 export const agentsQuery = () =>
   queryOptions({

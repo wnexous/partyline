@@ -1,14 +1,15 @@
 import { type ReactNode, useMemo, useState } from "react";
-import { PickableMeta } from "@/components/contact-meta";
 import {
   IntelligenceAvatar,
   IntelligenceName,
+  type Pickable,
+  PickableMeta,
   useContacts,
+  usePickables,
   usePresenceStore,
+  withContactPresence,
 } from "@/entities/intelligence";
 import { useStartConversation } from "@/hooks/use-start-conversation";
-import { type Pickable, pickableList } from "@/lib/contacts";
-import { withContactPresence } from "@/lib/presence";
 import type { IntelligenceRef } from "@/shared/api/types.gen";
 import { useT } from "@/shared/i18n";
 import { matchesTerms } from "@/shared/lib/search";
@@ -66,10 +67,7 @@ function ContactPicker({ initialQuery, onDone }: { initialQuery: string; onDone:
 
   const text = query.trim();
 
-  const picks = useMemo(
-    () => (contacts.data ? pickableList(contacts.data) : null),
-    [contacts.data],
-  );
+  const picks = usePickables({});
   const found = useMemo(
     () => (picks ?? []).filter((p) => matchesTerms(p.haystack, text)),
     [picks, text],

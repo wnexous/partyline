@@ -10,7 +10,6 @@ import {
 import { useEffect, useId, useState } from "react";
 import { toast } from "sonner";
 import { ConnectorStatusBadge, useConnectorState } from "@/components/connector-status";
-import { NamedSentence } from "@/components/profile-link";
 import { ConnectorForm } from "@/components/schema-form";
 import {
   useConnector,
@@ -20,10 +19,9 @@ import {
   useRefreshChats,
   useUpdateConnector,
 } from "@/entities/connector";
-import { useContacts } from "@/entities/intelligence";
+import { allAIs, NamedSentence, useContacts } from "@/entities/intelligence";
 import { chatTitle, platformName } from "@/entities/message";
 import { useOrg } from "@/entities/organization";
-import { allAIs } from "@/lib/contacts";
 import { isApiError } from "@/shared/api/client";
 import {
   type Connector,

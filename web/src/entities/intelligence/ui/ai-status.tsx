@@ -1,7 +1,9 @@
-import { appLabelOf, useIntelligence, useIsOnline } from "@/entities/intelligence";
 import { useT } from "@/shared/i18n";
 import { cn } from "@/shared/lib/utils";
 import { StatusDot } from "@/shared/ui/atoms/status-dot";
+import { useIntelligence } from "../api/profile";
+import { appLabelOf } from "../lib/app-label";
+import { useIsOnline } from "../model/presence";
 
 /**
  * Whether an AI is online and the app it runs in (Claude Code, OpenCode…), from its profile and

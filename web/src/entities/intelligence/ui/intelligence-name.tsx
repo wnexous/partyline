@@ -1,7 +1,7 @@
-import { ProfileLink } from "@/components/profile-link";
 import type { IntelligenceRef } from "@/shared/api/types.gen";
 import { cn } from "@/shared/lib/utils";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/shared/ui/primitives/tooltip";
+import { ProfileLink } from "./profile-link";
 import { YouBadge } from "./you-badge";
 
 /*

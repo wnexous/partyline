@@ -1,5 +1,4 @@
 import type { QueryClient } from "@tanstack/react-query";
-import { withIntelligence } from "@/lib/contacts";
 import type { MessagePages, PeoplePages } from "@/shared/api/cache-types";
 import { queryKeys } from "@/shared/api/query-keys";
 import type {
@@ -13,6 +12,7 @@ import type {
   Room,
   RoomMember,
 } from "@/shared/api/types.gen";
+import { withIntelligence } from "../lib/contacts";
 
 /** Applies `fn` to every cached message; a page or timeline it changes nothing in stays as it is. */
 function mapCachedMessages(qc: QueryClient, fn: (roomId: string, m: Message) => Message) {

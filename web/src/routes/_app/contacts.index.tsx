@@ -9,15 +9,21 @@ import {
 } from "lucide-react";
 import { useMemo, useState } from "react";
 import { ConnectAgentDialog } from "@/components/connect-agent-dialog";
-import { AIMeta } from "@/components/contact-meta";
-import { ContactRow } from "@/components/contact-row";
 import { DeleteAIDialog } from "@/components/delete-ai-dialog";
 import { MergeAIDialog } from "@/components/merge-ai-dialog";
 import { MessageButton } from "@/components/message-button";
 import { PeopleGroup } from "@/components/people-group";
-import { useContacts, usePresenceStore } from "@/entities/intelligence";
-import { aiText, filterOrgs, mergeTargets, onlineCount } from "@/lib/contacts";
-import { withContactPresence } from "@/lib/presence";
+import {
+  AIMeta,
+  aiText,
+  ContactRow,
+  filterOrgs,
+  mergeTargets,
+  onlineCount,
+  useContacts,
+  usePresenceStore,
+  withContactPresence,
+} from "@/entities/intelligence";
 import type { AIContact, Contacts, IntelligenceRef } from "@/shared/api/types.gen";
 import { useI18n } from "@/shared/i18n";
 import { matchesTerms } from "@/shared/lib/search";

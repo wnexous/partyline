@@ -2,18 +2,19 @@ import { Link } from "@tanstack/react-router";
 import { PlusIcon, SearchIcon } from "lucide-react";
 import { type ReactNode, useMemo, useState } from "react";
 import { toast } from "sonner";
-import { PickableMeta } from "@/components/contact-meta";
 import {
   IntelligenceAvatar,
   IntelligenceName,
+  type Pickable,
+  PickableMeta,
   useContacts,
+  usePickables,
   usePresenceStore,
+  withContactPresence,
 } from "@/entities/intelligence";
 import { useRoom } from "@/entities/room";
 import { useAddMember } from "@/entities/room-member";
 import { useOrgUsers } from "@/hooks/use-org-users";
-import { type Pickable, pickableList } from "@/lib/contacts";
-import { withContactPresence } from "@/lib/presence";
 import type { MemberKind, RoomMember } from "@/shared/api/types.gen";
 import { useI18n } from "@/shared/i18n";
 import { useAutoFocus } from "@/shared/lib/device";
@@ -77,11 +78,8 @@ function PickerBody({ roomId, members }: { roomId: string; members: RoomMember[]
   const taken = useMemo(() => new Set(members.map((m) => `${m.kind}:${m.member_id}`)), [members]);
   // A room that does not load leaves the AIs unscoped: the server decides who may join.
   const orgId = room.data?.org_id;
-  const { users: orgUsers, loading: usersLoading } = useOrgUsers(orgId);
-  const picks = useMemo(
-    () => (contacts.data ? pickableList(contacts.data, orgId, orgUsers) : null),
-    [contacts.data, orgId, orgUsers],
-  );
+  const { loading: usersLoading } = useOrgUsers(orgId);
+  const picks = usePickables({ orgId });
   const candidates = (picks ?? []).filter(
     (p) => !taken.has(`${memberKindOf(p)}:${p.ref.id}`) && matchesTerms(p.haystack, query),
   );

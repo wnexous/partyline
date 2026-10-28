@@ -1,8 +1,8 @@
 import type { QueryClient } from "@tanstack/react-query";
-import { knowsAI } from "@/lib/contacts";
 import { patchList } from "@/shared/api/patch-list";
 import { queryKeys } from "@/shared/api/query-keys";
 import type { Agent, Contacts, LiveEvent } from "@/shared/api/types.gen";
+import { knowsAI } from "../lib/contacts";
 import type { Presence } from "./presence-store";
 
 /*

@@ -1,11 +1,10 @@
 import { BanIcon, InfoIcon, ReplyIcon } from "lucide-react";
 import { memo, Suspense } from "react";
 import type { MessageMenuTarget } from "@/components/message-menu";
-import { ProfileLink } from "@/components/profile-link";
 import { QuestionBubble } from "@/components/question-bubble";
 import { ReactionToolbar } from "@/components/reaction-bar";
 import { ReactionChips } from "@/components/reaction-chips";
-import { IntelligenceAvatar, IntelligenceName } from "@/entities/intelligence";
+import { IntelligenceAvatar, IntelligenceName, ProfileLink } from "@/entities/intelligence";
 import {
   AttachmentView,
   AUTHOR_KIND,

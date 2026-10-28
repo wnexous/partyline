@@ -1,4 +1,4 @@
-import { harnessLabel } from "@/lib/agents";
+import { harnessLabel } from "./agents";
 
 /**
  * The name of the app an AI runs in (Claude Code, OpenCode…): the label the server sends for the

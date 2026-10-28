@@ -1,9 +1,10 @@
 import { MessageSquareIcon, XIcon } from "lucide-react";
 import { useRef, useState } from "react";
 import { toast } from "sonner";
-import { AiStatusLine } from "@/components/ai-status";
 import { MemberSettings, memberSettingsSummary } from "@/components/member-settings";
 import {
+  AiStatusLine,
+  canMessage,
   IntelligenceRow,
   SessionList,
   useIntelligence,
@@ -85,10 +86,11 @@ export function MemberRow({
   }
 
   // PDM-04: nobody messages herself.
-  const canMessage = !!member && !(row.kind === "user" && row.id === viewerId);
+  const canMessageRow =
+    !!member && canMessage(viewerId ?? "", { id: row.id, role: row.kind === "ai" ? "ai" : "user" });
   const actions = group ? (
     <>
-      {canMessage ? <MessagePrivately row={row} /> : null}
+      {canMessageRow ? <MessagePrivately row={row} /> : null}
       {group.canManage && member && isAI ? (
         <MemberSettings roomId={group.roomId} member={member} />
       ) : null}
