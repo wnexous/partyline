@@ -3,7 +3,7 @@ import { PlusIcon, SlidersHorizontalIcon, XIcon } from "lucide-react";
 import { type FormEvent, type KeyboardEvent, useId, useState } from "react";
 import { useForm } from "react-hook-form";
 import { toast } from "sonner";
-import { useUpdateMember } from "@/entities/room-member";
+import { memberChanges, useUpdateMember } from "@/entities/room-member";
 import {
   keywordError,
   type MemberSettingsForm,
@@ -18,7 +18,6 @@ import {
   DeliveryModeTrusted,
   MaxMemberKeywords,
   type RoomMember,
-  type UpdateMemberRequest,
 } from "@/shared/api/types.gen";
 import { type MessageKey, useI18n } from "@/shared/i18n";
 import { isCoarsePointer } from "@/shared/lib/device";
@@ -63,14 +62,6 @@ const DELIVERY: { mode: DeliveryMode; label: MessageKey; hint: MessageKey }[] = 
   },
 ];
 
-/** The short, non-default settings of an agent member, for the member row. */
-export function memberSettingsSummary(m: RoomMember): MessageKey[] {
-  const out: MessageKey[] = [];
-  if (m.delivery === DeliveryModeMentions) out.push("memberSettings.mentionsOnly");
-  if (m.delivery === DeliveryModeTrusted) out.push("memberSettings.trustedOnly");
-  return out;
-}
-
 export function MemberSettings({ roomId, member }: { roomId: string; member: RoomMember }) {
   const { t } = useI18n();
   const [open, setOpen] = useState(false);
@@ -104,15 +95,6 @@ export function MemberSettings({ roomId, member }: { roomId: string; member: Roo
       </PopoverContent>
     </Popover>
   );
-}
-
-function changes(m: RoomMember, v: MemberSettingsForm): UpdateMemberRequest {
-  const req: UpdateMemberRequest = {};
-  const name = v.display_name.trim();
-  if (name !== m.display_name) req.display_name = name;
-  if (v.delivery !== m.delivery) req.delivery = v.delivery;
-  if (v.keywords.join("\n") !== m.keywords.join("\n")) req.keywords = v.keywords;
-  return req;
 }
 
 function SettingsForm({
@@ -157,7 +139,7 @@ function SettingsForm({
 
   const onSubmit = form.handleSubmit((values) => {
     setFormError(null);
-    const req = changes(member, values);
+    const req = memberChanges(member, values);
     if (Object.keys(req).length === 0) {
       onDone();
       return;

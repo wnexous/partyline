@@ -1,7 +1,7 @@
 import type { ReactNode } from "react";
 import { toast } from "sonner";
 import { useMe } from "@/entities/account";
-import { type PersonRow, toPersonRow, useAddMember, useRemoveMember } from "@/entities/room-member";
+import { useAddMember, useRemoveMember, visibleRows } from "@/entities/room-member";
 import type { IntelligenceRef, RoomMember } from "@/shared/api/types.gen";
 import { useI18n } from "@/shared/i18n";
 import { PanelSkeleton } from "@/shared/ui/molecules/panel-skeleton";
@@ -37,9 +37,7 @@ export function MemberPanel({
   const add = useAddMember(roomId);
 
   const isDM = participants !== undefined;
-  const rows = (participants ?? members)
-    .map((source) => toPersonRow(source))
-    .filter((row): row is PersonRow => row !== null);
+  const rows = visibleRows(participants ?? members);
 
   const onRemove = (member: RoomMember) => {
     const name = member.name;
