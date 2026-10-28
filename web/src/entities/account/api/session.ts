@@ -5,7 +5,7 @@ import {
   useQuery,
   useQueryClient,
 } from "@tanstack/react-query";
-import type { MeWithDefaultOrg } from "@/lib/orgs";
+import type { MeWithDefaultOrg } from "@/entities/organization/@x/account";
 import { api } from "@/shared/api/client";
 import { items } from "@/shared/api/list";
 import { queryKeys } from "@/shared/api/query-keys";

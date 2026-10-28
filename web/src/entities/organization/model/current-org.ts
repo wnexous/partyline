@@ -1,8 +1,9 @@
 import type { QueryClient } from "@tanstack/react-query";
 import { useMemo } from "react";
-import { meQuery, useMe } from "@/entities/account";
-import { orgsQuery, useCurrentOrgStore, useMyOrgs } from "@/entities/organization";
-import { defaultOrgIdOf, type MyOrg, resolveCurrentOrg, toMyOrgs } from "@/lib/orgs";
+import { meQuery, useMe } from "@/entities/account/@x/organization";
+import { orgsQuery, useMyOrgs } from "../api/organizations";
+import { defaultOrgIdOf, type MyOrg, resolveCurrentOrg, toMyOrgs } from "../lib/orgs";
+import { useCurrentOrgStore } from "./current-org-store";
 
 const NO_ORGS: MyOrg[] = [];
 

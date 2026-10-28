@@ -8,9 +8,14 @@ import {
   inviteCandidates,
   useContacts,
 } from "@/entities/intelligence";
-import { useInviteToOrg } from "@/entities/organization";
+import {
+  PermissionAdmin,
+  PermissionGuest,
+  PermissionMember,
+  permissionLabel,
+  useInviteToOrg,
+} from "@/entities/organization";
 import { positionOptions } from "@/lib/org-chart";
-import { PermissionAdmin, PermissionGuest, PermissionMember, permissionLabel } from "@/lib/orgs";
 import { type InviteFormValues, inviteSchema } from "@/lib/schemas";
 import { isApiError } from "@/shared/api/client";
 import {

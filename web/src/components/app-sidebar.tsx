@@ -8,7 +8,7 @@ import { NewConversationDialog } from "@/components/new-conversation-dialog";
 import { NewGroupDialog } from "@/components/new-group-dialog";
 import { OrgSwitcher } from "@/components/org-switcher";
 import { OrganizationMenu } from "@/components/organization-menu";
-import { useCurrentOrg } from "@/hooks/use-current-org";
+import { useCurrentOrg } from "@/entities/organization";
 import { useSocketStore } from "@/shared/api/socket-store";
 import type { Me } from "@/shared/api/types.gen";
 import { useT } from "@/shared/i18n";

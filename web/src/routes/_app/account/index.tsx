@@ -20,8 +20,7 @@ import {
   useUpdateMe,
 } from "@/entities/account";
 import { useIntelligence } from "@/entities/intelligence";
-import { useMyOrgs } from "@/entities/organization";
-import { defaultOrgIdOf } from "@/lib/orgs";
+import { defaultOrgIdOf, useMyOrgs } from "@/entities/organization";
 import {
   activeRegistration,
   applicationServerKey,

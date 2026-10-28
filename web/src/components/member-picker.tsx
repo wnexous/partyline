@@ -12,9 +12,9 @@ import {
   usePresenceStore,
   withContactPresence,
 } from "@/entities/intelligence";
+import { useOrgUsers } from "@/entities/organization";
 import { useRoom } from "@/entities/room";
 import { useAddMember } from "@/entities/room-member";
-import { useOrgUsers } from "@/hooks/use-org-users";
 import type { MemberKind, RoomMember } from "@/shared/api/types.gen";
 import { useI18n } from "@/shared/i18n";
 import { useAutoFocus } from "@/shared/lib/device";

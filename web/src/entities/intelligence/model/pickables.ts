@@ -1,5 +1,5 @@
 import { useMemo } from "react";
-import { useOrgUsers } from "@/hooks/use-org-users";
+import { useOrgUsers } from "@/entities/organization/@x/intelligence";
 import { useContacts } from "../api/contacts";
 import { type Pickable, pickableList } from "../lib/contacts";
 

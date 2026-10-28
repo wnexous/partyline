@@ -4,7 +4,7 @@ import { Avatar, AvatarFallback, AvatarImage } from "@/shared/ui/primitives/avat
 
 /*
  * An organization's face: the picture its admins gave it, or initials on a grey picked from the
- * design tokens by a hash of its id (the same greys the intelligences use). It is a rounded
+ * design tokens by a hash of its id (the same tints the intelligences use). It is a rounded
  * square where a person or an AI is a circle, so a list that mixes them tells them apart.
  */
 

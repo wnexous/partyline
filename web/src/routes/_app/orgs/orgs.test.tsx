@@ -5,7 +5,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { axe } from "vitest-axe";
 import * as matchers from "vitest-axe/matchers";
 import { handleLiveEvent } from "@/app/live/dispatch";
-import { CURRENT_ORG_KEY } from "@/lib/orgs";
+import { CURRENT_ORG_KEY } from "@/entities/organization";
 import { apiError, json, mockApi } from "@/test/fetch";
 import { makeAI, makeIntelligence, makeInvitation, makeMe, makeOrg } from "@/test/fixtures";
 import { useLiveStore } from "@/test/live-store";

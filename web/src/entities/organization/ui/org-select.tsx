@@ -1,7 +1,7 @@
 import { useId } from "react";
-import type { MyOrg } from "@/lib/orgs";
 import { NativeSelect } from "@/shared/ui/atoms/native-select";
 import { Label } from "@/shared/ui/primitives/label";
+import type { MyOrg } from "../lib/orgs";
 
 /**
  * The organization a new resource goes to (ORG-03): the ones the viewer may add to, and a line on

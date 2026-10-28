@@ -32,6 +32,7 @@ import {
   YouBadge,
 } from "@/entities/intelligence";
 import { platformName } from "@/entities/message";
+import { removalOf } from "@/entities/organization";
 import { isApiError } from "@/shared/api/client";
 import {
   type AIDetail,
@@ -312,13 +313,13 @@ function MembershipRow({
   onRemove: () => void;
 }) {
   const t = useT();
-  const home = m.delete_effect === "delete";
+  const removal = removalOf(m);
   return (
     <li aria-label={m.org_name}>
       <div className="flex flex-wrap items-center gap-x-4 gap-y-2 px-4 py-3">
         <MembershipSummary membership={m} />
-        {m.can_delete ? (
-          home ? (
+        {removal ? (
+          removal === "delete" ? (
             <Button
               variant="outline"
               size="sm"

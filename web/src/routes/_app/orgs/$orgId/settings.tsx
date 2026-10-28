@@ -3,10 +3,12 @@ import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import { useEffect, useId, useRef, useState } from "react";
 import { useForm } from "react-hook-form";
 import { toast } from "sonner";
-import { OrgAvatar } from "@/components/org-avatar";
 import { PhotoEditor } from "@/components/photo-editor";
 import { useMe } from "@/entities/account";
 import {
+  isAdminOf,
+  OrgAvatar,
+  ownedThings,
   useDeleteOrg,
   useOrg,
   useRemoveFromOrg,
@@ -14,7 +16,6 @@ import {
   useUpdateOrg,
   useUploadOrgAvatar,
 } from "@/entities/organization";
-import { ownedThings, PermissionAdmin } from "@/lib/orgs";
 import { type UpdateOrgForm, updateOrgSchema } from "@/lib/schemas";
 import { isApiError } from "@/shared/api/client";
 import {
@@ -47,7 +48,7 @@ function OrgSettingsPage() {
   // The layout has loaded it and shows the failures.
   const org = useOrg(orgId).data;
   if (!org) return null;
-  const admin = org.permission === PermissionAdmin;
+  const admin = isAdminOf(org);
   return (
     <>
       <PageHeader

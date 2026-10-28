@@ -1,5 +1,4 @@
 import { queryOptions, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { toMyOrgs } from "@/lib/orgs";
 import { putAvatarImage } from "@/shared/api/avatar-upload";
 import { api } from "@/shared/api/client";
 import { items } from "@/shared/api/list";
@@ -11,6 +10,7 @@ import type {
   OrgMember,
   UpdateOrganizationRequest,
 } from "@/shared/api/types.gen";
+import { toMyOrgs } from "../lib/orgs";
 import { invalidateOrganizations, storeOrg } from "../model/cache";
 
 export const orgsQuery = () =>

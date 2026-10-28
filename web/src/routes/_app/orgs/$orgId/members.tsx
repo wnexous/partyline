@@ -9,6 +9,12 @@ import { RemoveFromOrgDialog } from "@/components/remove-from-org-dialog";
 import { useMe } from "@/entities/account";
 import { IntelligenceAvatar, IntelligenceName } from "@/entities/intelligence";
 import {
+  isAdminOf,
+  PermissionAdmin,
+  PermissionGuest,
+  PermissionMember,
+  permissionLabel,
+  removalOf,
   useOrg,
   useOrgChart,
   useOrgInvitations,
@@ -16,10 +22,8 @@ import {
   useRevokeInvitation,
   useUpdateOrgMember,
 } from "@/entities/organization";
-import { PermissionAdmin, PermissionGuest, PermissionMember, permissionLabel } from "@/lib/orgs";
 import { isApiError } from "@/shared/api/client";
 import {
-  DeleteEffectDelete,
   ErrorCodeLastAdmin,
   type Invitation,
   type OrgMember,
@@ -78,7 +82,7 @@ function OrgMembersPage() {
   const [deleting, setDeleting] = useState<OrgMember | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
 
-  const admin = org?.permission === PermissionAdmin;
+  const admin = !!org && isAdminOf(org);
   const positions = useMemo(
     () => (chart.data?.positions ?? []).map(({ id, name, parent_id }) => ({ id, name, parent_id })),
     [chart.data],
@@ -349,7 +353,7 @@ function MemberRow({
               {t("orgs.move")}
             </Button>
           ) : null}
-          {m.can_delete && m.delete_effect === DeleteEffectDelete ? (
+          {removalOf(m) === "delete" ? (
             <Button
               variant="outline"
               size="sm"
@@ -361,7 +365,7 @@ function MemberRow({
               {t("orgs.deleteMember")}
             </Button>
           ) : null}
-          {m.can_delete && m.delete_effect !== DeleteEffectDelete ? (
+          {removalOf(m) === "remove" ? (
             <Button
               variant="outline"
               size="sm"

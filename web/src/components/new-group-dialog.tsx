@@ -3,7 +3,6 @@ import { useNavigate } from "@tanstack/react-router";
 import { SearchIcon, XIcon } from "lucide-react";
 import { type ReactNode, useEffect, useId, useMemo, useState } from "react";
 import { useForm } from "react-hook-form";
-import { OrgSelect } from "@/components/org-select";
 import {
   IntelligenceAvatar,
   IntelligenceName,
@@ -14,10 +13,8 @@ import {
   usePresenceStore,
   withContactPresence,
 } from "@/entities/intelligence";
+import { canCreateGroupsIn, OrgSelect, useCurrentOrg, useOrgUsers } from "@/entities/organization";
 import { useCreateGroup } from "@/entities/room";
-import { useCurrentOrg } from "@/hooks/use-current-org";
-import { useOrgUsers } from "@/hooks/use-org-users";
-import { canCreateGroupsIn } from "@/lib/orgs";
 import { type CreateGroupForm, createGroupSchema } from "@/lib/schemas";
 import { isApiError } from "@/shared/api/client";
 import {

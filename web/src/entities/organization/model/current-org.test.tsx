@@ -2,11 +2,11 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { act, renderHook, waitFor } from "@testing-library/react";
 import type { ReactNode } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { CURRENT_ORG_KEY, type MeWithDefaultOrg } from "@/lib/orgs";
 import { apiError, json, mockApi } from "@/test/fetch";
 import { makeMe, makeOrg } from "@/test/fixtures";
 import { useLiveStore } from "@/test/live-store";
-import { useCurrentOrg } from "./use-current-org";
+import { CURRENT_ORG_KEY, type MeWithDefaultOrg } from "../lib/orgs";
+import { useCurrentOrg } from "./current-org";
 
 /*
  * The organization the app is about (ORG-02, OMEM-03): the viewer's organizations from their own

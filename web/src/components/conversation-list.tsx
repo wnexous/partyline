@@ -14,9 +14,8 @@ import {
 } from "@/components/conversation-menu";
 import { NewConversationDialog } from "@/components/new-conversation-dialog";
 import { NewGroupDialog } from "@/components/new-group-dialog";
+import { inOrg, useCurrentOrg } from "@/entities/organization";
 import { ConversationAvatar, conversationMatches, useConversations } from "@/entities/room";
-import { useCurrentOrg } from "@/hooks/use-current-org";
-import { inOrg } from "@/lib/orgs";
 import { isVoicePreview } from "@/lib/voice";
 import type { Conversation } from "@/shared/api/types.gen";
 import { useI18n, useT } from "@/shared/i18n";

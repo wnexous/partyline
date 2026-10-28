@@ -7,12 +7,11 @@ import { MoveMemberDialog, type MoveTarget } from "@/components/move-member-dial
 import { RemoveFromOrgDialog } from "@/components/remove-from-org-dialog";
 import { useMe } from "@/entities/account";
 import { IntelligenceAvatar, useIsOnline, YouBadge } from "@/entities/intelligence";
-import { useOrg, useOrgChart } from "@/entities/organization";
+import { removalOf, useOrg, useOrgChart } from "@/entities/organization";
 import { buildChartTree, type ChartTreeNode } from "@/lib/org-chart";
 import { isApiError } from "@/shared/api/client";
 import {
   type ChartMember,
-  DeleteEffectDelete,
   type IntelligenceRef,
   PermissionAdmin,
   PermissionGuest,
@@ -248,8 +247,8 @@ function MemberRow({
   const online = useIsOnline(who.id, m.online);
   const tab = state.tabbable ? 0 : -1;
   const name = who.display_name;
-  const deletes = m.can_delete && m.delete_effect === DeleteEffectDelete;
-  const removes = m.can_delete && m.delete_effect !== DeleteEffectDelete;
+  const deletes = removalOf(m) === "delete";
+  const removes = removalOf(m) === "remove";
 
   return (
     <div className="flex min-w-0 flex-1 flex-wrap items-center gap-x-2 gap-y-1">

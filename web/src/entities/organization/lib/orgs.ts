@@ -73,7 +73,7 @@ export function toMyOrgs(orgs: readonly Organization[]): MyOrg[] {
 }
 
 /** Admins look after the organization: its connections among other things (ORG-03, OMEM-04). */
-export const isAdminOf = (org: MyOrg) => org.permission === PermissionAdmin;
+export const isAdminOf = (org: { permission: string }) => org.permission === PermissionAdmin;
 
 /** Members and admins create groups; a guest takes part in the ones it is added to (OMEM-04). */
 export const canCreateGroupsIn = (org: MyOrg) =>
