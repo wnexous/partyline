@@ -28,7 +28,7 @@ type Identity struct {
 	MainFolder string
 	// Home is the canonical home folder of the user; the tree shows folders under it as "~".
 	Home string
-	// Harness is the harness id (claude, opencode, pi, omp, codex, gemini); empty is unknown.
+	// Harness is the harness id (claude, opencode, pi, omp, codex, gemini, antigravity); empty is unknown.
 	Harness string
 	// LiveID is the id of the process that holds the agent WebSocket, sent as X-Partyline-Live on
 	// every call so the server can record the session a message came from (SESS-29). Empty for a

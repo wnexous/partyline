@@ -14,7 +14,7 @@ export interface Agent {
    */
   intelligence: IntelligenceRef;
   description: string;
-  harness: string; // claude, opencode, pi, omp, codex, gemini or agent
+  harness: string; // claude, opencode, pi, omp, codex, gemini, antigravity or agent
   machine: string; // the session's hostname; empty when unknown
   /**
    * Organization is the AI's home organization (ORG-02); absent for an AI that has none.
@@ -516,7 +516,7 @@ export const MaxPageSize = 100;
  */
 export const SecretMask = "********";
 /**
- * HeaderHarness is the launcher's harness id (claude, opencode, pi, omp, codex, gemini).
+ * HeaderHarness is the launcher's harness id (claude, opencode, pi, omp, codex, gemini, antigravity).
  */
 export const HeaderHarness = "X-Partyline-Harness";
 /**

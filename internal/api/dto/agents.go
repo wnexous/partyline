@@ -12,7 +12,7 @@ type Agent struct {
 	// Intelligence is the AI's profile: the display name people read, its @handle and avatar.
 	Intelligence IntelligenceRef `json:"intelligence"`
 	Description  string          `json:"description"`
-	Harness      string          `json:"harness"` // claude, opencode, pi, omp, codex, gemini or agent
+	Harness      string          `json:"harness"` // claude, opencode, pi, omp, codex, gemini, antigravity or agent
 	Machine      string          `json:"machine"` // the session's hostname; empty when unknown
 	// Organization is the AI's home organization (ORG-02); absent for an AI that has none.
 	Organization *ContactOrg `json:"organization,omitempty"`
