@@ -15,8 +15,8 @@ import {
   useUpdateOrg,
   useUploadOrgAvatar,
 } from "@/entities/organization";
+import { type UpdateOrgForm, updateOrgSchema } from "@/features/create-org";
 import { PhotoEditor } from "@/features/edit-profile";
-import { type UpdateOrgForm, updateOrgSchema } from "@/lib/schemas";
 import { isApiError } from "@/shared/api/client";
 import {
   ErrorCodeLastAdmin,

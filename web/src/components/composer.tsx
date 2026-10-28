@@ -38,7 +38,6 @@ import {
 } from "@/entities/message";
 import { useDraft, useDraftStore, useEditDraft } from "@/features/send-message";
 import { useVoiceRecorder } from "@/hooks/use-voice-recorder";
-import { textLength } from "@/lib/schemas";
 import type { VoiceFailure } from "@/lib/voice";
 import { isApiError } from "@/shared/api/client";
 import {
@@ -53,6 +52,7 @@ import {
 import { type MessageKey, type Translate, useI18n } from "@/shared/i18n";
 import { useEnterSends } from "@/shared/lib/device";
 import { cn } from "@/shared/lib/utils";
+import { textLength } from "@/shared/lib/validation";
 import { AttachmentPreviews } from "@/shared/ui/molecules/attachment-preview";
 import { Button } from "@/shared/ui/primitives/button";
 

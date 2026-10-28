@@ -4,7 +4,6 @@ import { useId, useState } from "react";
 import { useForm } from "react-hook-form";
 import { toast } from "sonner";
 import { useDeleteAccount } from "@/entities/account";
-import { type DeleteAccountForm, deleteAccountSchema } from "@/lib/schemas";
 import { isApiError } from "@/shared/api/client";
 import { formFailureText } from "@/shared/api/error-text";
 import { ErrorCodeLastInstanceAdmin } from "@/shared/api/types.gen";
@@ -23,6 +22,7 @@ import { FormAlert, TextField } from "@/shared/ui/molecules/form-fields";
 import { PageSection as Section } from "@/shared/ui/molecules/page-section";
 import { Button } from "@/shared/ui/primitives/button";
 import { Form } from "@/shared/ui/primitives/form";
+import { type DeleteAccountForm, deleteAccountSchema } from "../model/schema";
 
 /**
  * Deleting one's own account (POS-06): the password proves who asks, and the dialog says what

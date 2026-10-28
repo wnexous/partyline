@@ -5,7 +5,6 @@ import { useForm } from "react-hook-form";
 import { useLogin } from "@/entities/account";
 import { LanguageSwitch } from "@/features/change-language";
 import { ThemeToggle } from "@/features/toggle-theme";
-import { type LoginForm, loginSchema } from "@/lib/schemas";
 import { isApiError } from "@/shared/api/client";
 import { type Translate, useT } from "@/shared/i18n";
 import { safeRedirect } from "@/shared/lib/forms";
@@ -13,6 +12,7 @@ import { AuthFrame } from "@/shared/ui/molecules/auth-frame";
 import { FormAlert, TextField } from "@/shared/ui/molecules/form-fields";
 import { Button } from "@/shared/ui/primitives/button";
 import { Form } from "@/shared/ui/primitives/form";
+import { type LoginForm, loginSchema } from "../model/schema";
 
 const routeApi = getRouteApi("/login");
 

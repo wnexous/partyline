@@ -8,7 +8,6 @@ import {
   useUpdateIntelligence,
   useUploadAvatar,
 } from "@/entities/intelligence";
-import { type ProfileEditForm, profileEditSchema } from "@/lib/schemas";
 import { isApiError } from "@/shared/api/client";
 import {
   ErrorCodeHandleTaken,
@@ -21,6 +20,7 @@ import { applyFieldErrors } from "@/shared/lib/forms";
 import { FormAlert, TextAreaField, TextField } from "@/shared/ui/molecules/form-fields";
 import { Button } from "@/shared/ui/primitives/button";
 import { Form } from "@/shared/ui/primitives/form";
+import { type ProfileEditForm, profileEditSchema } from "../model/schema";
 import { PhotoEditor } from "./photo-editor";
 
 /*

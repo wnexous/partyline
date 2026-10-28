@@ -1,13 +1,9 @@
 import { describe, expect, it } from "vitest";
-import {
-  acceptInviteSchema,
-  loginSchema,
-  normalizeHandle,
-  passwordSchema,
-  profileEditSchema,
-  setupSchema,
-  usernameSchema,
-} from "./schemas";
+import { profileEditSchema } from "@/features/edit-profile/model/schema";
+import { loginSchema } from "@/pages/auth/model/schema";
+import { acceptInviteSchema } from "@/pages/invite/model/schema";
+import { setupSchema } from "@/pages/setup/model/schema";
+import { normalizeHandle, passwordSchema, usernameSchema } from "@/shared/lib/validation";
 
 const firstMessage = (r: { success: boolean; error?: { issues: { message: string }[] } }) =>
   r.error?.issues[0]?.message;

@@ -13,7 +13,6 @@ import {
 } from "@/entities/intelligence";
 import { canCreateGroupsIn, OrgSelect, useCurrentOrg, useOrgUsers } from "@/entities/organization";
 import { useCreateGroup } from "@/entities/room";
-import { type CreateGroupForm, createGroupSchema } from "@/lib/schemas";
 import { isApiError } from "@/shared/api/client";
 import {
   ErrorCodeMembersRefused,
@@ -42,6 +41,7 @@ import { Checkbox } from "@/shared/ui/primitives/checkbox";
 import { Form } from "@/shared/ui/primitives/form";
 import { Input } from "@/shared/ui/primitives/input";
 import { Skeleton } from "@/shared/ui/primitives/skeleton";
+import { type CreateGroupForm, createGroupSchema } from "../model/schema";
 
 /*
  * "New group" (LAY-04): a name, the organization it belongs to, and the members that join, AIs and

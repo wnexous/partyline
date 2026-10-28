@@ -11,12 +11,13 @@ import {
   useUploadRoomAvatar,
 } from "@/entities/room";
 import { PhotoEditor } from "@/features/edit-profile";
-import { type RoomSettingsForm, roomSettingsSchema, textLength } from "@/lib/schemas";
+import { type RoomSettingsForm, roomSettingsSchema } from "@/features/edit-room";
 import { isApiError } from "@/shared/api/client";
 import { MaxRoomInstructions, type Room, type UpdateRoomRequest } from "@/shared/api/types.gen";
 import { useI18n } from "@/shared/i18n";
 import { applyFieldErrors } from "@/shared/lib/forms";
 import { cn } from "@/shared/lib/utils";
+import { textLength } from "@/shared/lib/validation";
 import { ConfirmDialog } from "@/shared/ui/molecules/confirm-dialog";
 import { FieldError, FormAlert, TextField } from "@/shared/ui/molecules/form-fields";
 import {

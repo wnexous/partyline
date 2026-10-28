@@ -16,7 +16,6 @@ import {
   positionOptions,
   useInviteToOrg,
 } from "@/entities/organization";
-import { type InviteFormValues, inviteSchema } from "@/lib/schemas";
 import { isApiError } from "@/shared/api/client";
 import {
   ErrorCodeAlreadyMember,
@@ -30,6 +29,7 @@ import { applyFieldErrors } from "@/shared/lib/forms";
 import { FormDialog } from "@/shared/ui/molecules/form-dialog";
 import { FormAlert, SelectField, TextField } from "@/shared/ui/molecules/form-fields";
 import { Form } from "@/shared/ui/primitives/form";
+import { type InviteFormValues, inviteSchema } from "../model/schema";
 
 /**
  * Invites someone to the organization by @handle (OMEM-01). An admin gives any permission and

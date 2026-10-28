@@ -23,7 +23,7 @@ function sources(dir: string): string[] {
 }
 
 describe("focus rings", () => {
-  const files = sources(here(".."));
+  const files = sources(here("../.."));
 
   it("finds the sources it scans", () => {
     expect(files.length).toBeGreaterThan(100);
@@ -37,7 +37,7 @@ describe("focus rings", () => {
           /\boutline-none\b/.test(line) &&
           /\bfocus(?:-visible)?:outline-\d/.test(line) &&
           !/\bfocus(?:-visible)?:ring/.test(line)
-            ? [`${file.replace(`${here("..")}/`, "src/")}:${index + 1}`]
+            ? [`${file.replace(`${here("../..")}/`, "src/")}:${index + 1}`]
             : [],
         ),
     );

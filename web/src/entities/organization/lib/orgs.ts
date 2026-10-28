@@ -14,7 +14,7 @@ import type { MessageKey, Translate } from "@/shared/i18n";
  */
 
 /** The longest an organization's name may be (ORG-01) and a position's (POS-01), in characters. */
-export const MaxOrgNameLength = 100;
+export { MaxOrgNameLength } from "@/shared/lib/validation";
 export const MaxPositionNameLength = 60;
 /** The longest an organization's address (slug) may be, and its shape: groups of a-z0-9 joined by single hyphens. */
 export const MaxOrgSlugLength = 40;

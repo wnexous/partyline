@@ -3,7 +3,6 @@ import { useId, useState } from "react";
 import { useForm } from "react-hook-form";
 import { toast } from "sonner";
 import { useChangePassword } from "@/entities/account";
-import { type ChangePasswordForm, changePasswordSchema } from "@/lib/schemas";
 import { formFailureText } from "@/shared/api/error-text";
 import { PasswordMinLength } from "@/shared/api/types.gen";
 import { useT } from "@/shared/i18n";
@@ -12,6 +11,7 @@ import { FormAlert, TextField } from "@/shared/ui/molecules/form-fields";
 import { PageSection as Section } from "@/shared/ui/molecules/page-section";
 import { Button } from "@/shared/ui/primitives/button";
 import { Form } from "@/shared/ui/primitives/form";
+import { type ChangePasswordForm, changePasswordSchema } from "../model/schema";
 
 export function PasswordSection() {
   const t = useT();

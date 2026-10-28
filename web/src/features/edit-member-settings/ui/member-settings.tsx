@@ -3,8 +3,7 @@ import { SlidersHorizontalIcon } from "lucide-react";
 import { type FormEvent, useId, useState } from "react";
 import { useForm } from "react-hook-form";
 import { toast } from "sonner";
-import { memberChanges, useUpdateMember } from "@/entities/room-member";
-import { keywordError, type MemberSettingsForm, memberSettingsSchema } from "@/lib/schemas";
+import { type MemberSettingsForm, memberChanges, useUpdateMember } from "@/entities/room-member";
 import { isApiError } from "@/shared/api/client";
 import {
   type DeliveryMode,
@@ -30,6 +29,7 @@ import {
 import { Input } from "@/shared/ui/primitives/input";
 import { Popover, PopoverContent, PopoverTrigger } from "@/shared/ui/primitives/popover";
 import { RadioGroup, RadioGroupItem } from "@/shared/ui/primitives/radio-group";
+import { keywordError, memberSettingsSchema } from "../model/schema";
 import { KeywordsField } from "./keywords-field";
 
 /*

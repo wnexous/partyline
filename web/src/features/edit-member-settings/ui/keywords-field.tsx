@@ -1,9 +1,9 @@
 import { PlusIcon, XIcon } from "lucide-react";
 import { type KeyboardEvent, useId } from "react";
-import { validationVars } from "@/lib/schemas";
 import { MaxMemberKeywords } from "@/shared/api/types.gen";
 import { type MessageKey, useI18n } from "@/shared/i18n";
 import { errorText } from "@/shared/lib/forms";
+import { validationVars } from "@/shared/lib/validation";
 import { FieldError } from "@/shared/ui/molecules/form-fields";
 import { Button } from "@/shared/ui/primitives/button";
 import {

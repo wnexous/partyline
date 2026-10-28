@@ -3,13 +3,13 @@ import { useState } from "react";
 import { useForm } from "react-hook-form";
 import { toast } from "sonner";
 import { useCreateOrg, useCurrentOrg } from "@/entities/organization";
-import { type CreateOrgForm, createOrgSchema } from "@/lib/schemas";
 import { isApiError } from "@/shared/api/client";
 import { useT } from "@/shared/i18n";
 import { applyFieldErrors } from "@/shared/lib/forms";
 import { FormDialog } from "@/shared/ui/molecules/form-dialog";
 import { FormAlert, TextField } from "@/shared/ui/molecules/form-fields";
 import { Form } from "@/shared/ui/primitives/form";
+import { type CreateOrgForm, createOrgSchema } from "../model/schema";
 
 /**
  * "New organization" (ORG-01): a name of 1 to 100 characters. The creator becomes its admin and the

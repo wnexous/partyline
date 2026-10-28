@@ -5,7 +5,6 @@ import { useForm } from "react-hook-form";
 import { useSetup } from "@/entities/account";
 import { LanguageSwitch } from "@/features/change-language";
 import { ThemeToggle } from "@/features/toggle-theme";
-import { type SetupForm, setupSchema } from "@/lib/schemas";
 import { isApiError } from "@/shared/api/client";
 import { PasswordMinLength } from "@/shared/api/types.gen";
 import { useT } from "@/shared/i18n";
@@ -14,6 +13,7 @@ import { AuthFrame } from "@/shared/ui/molecules/auth-frame";
 import { FormAlert, TextField } from "@/shared/ui/molecules/form-fields";
 import { Button } from "@/shared/ui/primitives/button";
 import { Form } from "@/shared/ui/primitives/form";
+import { type SetupForm, setupSchema } from "../model/schema";
 
 const FIELDS = ["token", "username", "password", "display_name"] as const;
 

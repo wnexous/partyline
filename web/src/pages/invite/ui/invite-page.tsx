@@ -6,7 +6,6 @@ import { useForm } from "react-hook-form";
 import { useAcceptInvite, useInviteInfo } from "@/entities/account";
 import { LanguageSwitch } from "@/features/change-language";
 import { ThemeToggle } from "@/features/toggle-theme";
-import { type AcceptInviteForm, acceptInviteSchema } from "@/lib/schemas";
 import { isApiError } from "@/shared/api/client";
 import { type InviteInfo, PasswordMinLength, RoleAdmin } from "@/shared/api/types.gen";
 import { useI18n } from "@/shared/i18n";
@@ -18,6 +17,7 @@ import { FormAlert, TextField } from "@/shared/ui/molecules/form-fields";
 import { Button } from "@/shared/ui/primitives/button";
 import { Form } from "@/shared/ui/primitives/form";
 import { Skeleton } from "@/shared/ui/primitives/skeleton";
+import { type AcceptInviteForm, acceptInviteSchema } from "../model/schema";
 
 const routeApi = getRouteApi("/invite/$token");
 

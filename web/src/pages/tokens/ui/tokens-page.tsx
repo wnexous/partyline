@@ -5,7 +5,6 @@ import { useId, useMemo, useState } from "react";
 import { Controller, useForm } from "react-hook-form";
 import { toast } from "sonner";
 import { useCreateToken, usePurgeToken, useRevokeToken, useTokens } from "@/entities/account";
-import { type CreateTokenForm, createTokenSchema, TOKEN_EXPIRY_DAYS } from "@/lib/schemas";
 import { isApiError } from "@/shared/api/client";
 import {
   type CreatedToken,
@@ -36,6 +35,7 @@ import { Form } from "@/shared/ui/primitives/form";
 import { RadioGroup, RadioGroupItem } from "@/shared/ui/primitives/radio-group";
 import { Skeleton } from "@/shared/ui/primitives/skeleton";
 import { Switch } from "@/shared/ui/primitives/switch";
+import { type CreateTokenForm, createTokenSchema, TOKEN_EXPIRY_DAYS } from "../model/schema";
 
 const DAY = 86_400_000;
 
