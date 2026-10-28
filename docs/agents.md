@@ -557,10 +557,15 @@ Partyline version that wrote it. `partyline update` replaces the binary and leav
 file alone.
 
 OpenCode 2 runs plugins in a background server shared by all its windows, and that server has the
-environment of whoever started it, not the `PARTYLINE_HARNESS` that `partyline opencode` sets. To
-have the plugin push messages into a window, start it with its own server:
-`partyline opencode --standalone` (OpenCode 2 only; OpenCode 1 does not know the flag). A window on the shared server still gets the tools; to push in
-every window of that server, register with `partyline setup --harness opencode --always`.
+environment of whoever started it, not the `PARTYLINE_HARNESS` that `partyline opencode` sets. So
+when the OpenCode it launches reports version 2 or later (`opencode --version`, read once with a
+3-second limit), `partyline opencode` adds `--standalone`, which gives the window a private server
+that inherits the environment and runs one `partyline listen` for its folder. It does not add the
+flag when you already passed `--standalone` or `--server`, when the first argument is an OpenCode
+subcommand (`run`, `serve`, …) or when the version cannot be read; OpenCode 1 never gets it, since
+it does not know the flag. A window on the shared server (started without the launcher) still has
+the tools; to push into every window of that server, register with
+`partyline setup --harness opencode --always`.
 
 ## Codex CLI and Gemini CLI
 

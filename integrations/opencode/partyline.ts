@@ -16,7 +16,8 @@
 //
 // OpenCode 2 runs plugins in its background server. That process has the environment of
 // whoever started it, so the launcher's PARTYLINE_HARNESS reaches the plugin only when the server
-// belongs to the window (`partyline opencode --standalone`); otherwise use `partyline setup --always`.
+// belongs to the window (`partyline opencode` starts OpenCode 2 with --standalone); otherwise use
+// `partyline setup --always`.
 
 import { spawn } from "node:child_process";
 
