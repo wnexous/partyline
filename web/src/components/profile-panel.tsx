@@ -3,17 +3,23 @@ import { Link, useRouter } from "@tanstack/react-router";
 import { CompassIcon, Maximize2Icon, MessageSquareIcon, PencilIcon, XIcon } from "lucide-react";
 import { type MouseEvent, useEffect, useId, useState } from "react";
 import { toast } from "sonner";
-import { MembershipSummary } from "@/components/membership-summary";
-import { platformName } from "@/components/message-item";
 import { PANEL_CONVERSATIONS, ProfileConversations } from "@/components/profile-conversations";
-import { opensElsewhere } from "@/components/profile-link";
-import { appLabelOf, IntelligenceAvatar, YouBadge } from "@/entities/intelligence";
+import { useMe } from "@/entities/account";
+import {
+  appLabelOf,
+  canMessage,
+  IntelligenceAvatar,
+  intelligenceQuery,
+  MembershipSummary,
+  opensElsewhere,
+  useIsOnline,
+  YouBadge,
+} from "@/entities/intelligence";
+import { platformName } from "@/entities/message";
 import { useProfilePanelStore } from "@/hooks/use-profile-panel";
 import { useStartConversation } from "@/hooks/use-start-conversation";
-import { intelligenceQuery, useMe } from "@/lib/api/queries";
-import { useLiveStore } from "@/lib/live/store";
 import { isApiError } from "@/shared/api/client";
-import { type IntelligenceProfile, IntelligenceRolePerson } from "@/shared/api/types.gen";
+import type { IntelligenceProfile } from "@/shared/api/types.gen";
 import { useT } from "@/shared/i18n";
 import { useIsMobile } from "@/shared/lib/device";
 import { cn } from "@/shared/lib/utils";
@@ -206,9 +212,8 @@ function ProfileCard({ profile }: { profile: IntelligenceProfile }) {
   const orgsId = useId();
   const conversationsId = useId();
   const me = useMe().data;
-  const presence = useLiveStore((state) => state.presence[profile.id]);
   const { ai, person } = profile;
-  const online = presence?.online ?? ai?.online ?? false;
+  const online = useIsOnline(profile.id, ai?.online);
   // Where it speaks from: the app an AI runs in, the platform a person writes from.
   const app = ai
     ? appLabelOf({ app: ai.app, apps: profile.apps })
@@ -310,7 +315,7 @@ function ProfileActions({ profile }: { profile: IntelligenceProfile }) {
   const t = useT();
   const me = useMe().data;
   const own = me?.intelligence.id === profile.id;
-  const canMessage = !own && profile.role !== IntelligenceRolePerson;
+  const canMessageThem = canMessage(me?.intelligence.id ?? "", profile);
   const canEdit = own && profile.can_edit;
   // A click that opens the page in a new tab leaves this tab, and its panel, as it was.
   const dismiss = (event: MouseEvent) => {
@@ -319,16 +324,20 @@ function ProfileActions({ profile }: { profile: IntelligenceProfile }) {
 
   return (
     <div className="flex shrink-0 flex-col gap-2 border-t px-5 py-4">
-      {canMessage ? <MessageAction profile={profile} /> : null}
+      {canMessageThem ? <MessageAction profile={profile} /> : null}
       {canEdit ? (
-        <Button asChild variant={canMessage ? "outline" : "default"} className={BUTTON}>
+        <Button asChild variant={canMessageThem ? "outline" : "default"} className={BUTTON}>
           <Link to="/contacts/$id" params={{ id: profile.id }} onClick={dismiss}>
             <PencilIcon aria-hidden="true" />
             {t("profile.edit")}
           </Link>
         </Button>
       ) : null}
-      <Button asChild variant={canMessage || canEdit ? "outline" : "default"} className={BUTTON}>
+      <Button
+        asChild
+        variant={canMessageThem || canEdit ? "outline" : "default"}
+        className={BUTTON}
+      >
         <Link to="/contacts/$id" params={{ id: profile.id }} onClick={dismiss}>
           <Maximize2Icon aria-hidden="true" />
           {t("profilePanel.openFull")}

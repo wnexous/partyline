@@ -2,15 +2,15 @@ import { createFileRoute, Link } from "@tanstack/react-router";
 import { CircleCheckIcon, FingerprintIcon, LinkIcon, TimerOffIcon, XIcon } from "lucide-react";
 import { useEffect, useId, useState } from "react";
 import { toast } from "sonner";
-import { platformLabel } from "@/components/message-item";
 import {
-  useConnectors,
   useDeleteIdentity,
   useIdentities,
-  useMyOrgs,
+  useLinkedIdentityStore,
   useStartPairing,
-} from "@/lib/api/queries";
-import { useLiveStore } from "@/lib/live/store";
+} from "@/entities/account";
+import { useConnectors } from "@/entities/connector";
+import { platformName } from "@/entities/message";
+import { useMyOrgs } from "@/entities/organization";
 import type { Connector, Identity, PairingCode } from "@/shared/api/types.gen";
 import { useI18n, useT } from "@/shared/i18n";
 import { formatAbsolute } from "@/shared/lib/time";
@@ -104,7 +104,7 @@ function IdentityRow({ identity, onRemove }: { identity: Identity; onRemove: () 
         <p className="flex min-w-0 items-center gap-2">
           <span className="truncate font-semibold tracking-[-0.01em]">{identity.display}</span>
           <span className="shrink-0 rounded-[3px] border px-1.5 py-px text-[0.7rem] text-muted-foreground">
-            {platformLabel(identity.connector_kind)}
+            {platformName(identity.connector_kind)}
           </span>
         </p>
         <p className="mt-0.5 flex min-w-0 flex-wrap gap-x-3 text-xs text-muted-foreground">
@@ -198,8 +198,8 @@ function PairingBody({ onDone }: { onDone: () => void }) {
   const connectors = useConnectors();
   const [picked, setPicked] = useState<Connector | null>(null);
   // Only an identity linked after the dialog opened counts as this pairing's result.
-  const [baseline] = useState(() => useLiveStore.getState().lastLinkedIdentity);
-  const latest = useLiveStore((s) => s.lastLinkedIdentity);
+  const [baseline] = useState(() => useLinkedIdentityStore.getState().lastLinkedIdentity);
+  const latest = useLinkedIdentityStore((s) => s.lastLinkedIdentity);
   const linked = latest && latest !== baseline ? latest : null;
 
   if (linked) {
@@ -209,7 +209,7 @@ function PairingBody({ onDone }: { onDone: () => void }) {
           <CircleCheckIcon className="size-8 text-foreground" aria-hidden="true" />
           <p className="font-semibold">{t("pairing.linked", { name: linked.display })}</p>
           <p className="text-sm text-muted-foreground">
-            {t("pairing.linkedBody", { platform: platformLabel(linked.connector_kind) })}
+            {t("pairing.linkedBody", { platform: platformName(linked.connector_kind) })}
           </p>
         </div>
         <div className="flex justify-end">
@@ -283,9 +283,7 @@ function ConnectorChoice({
   // organizations are not known the platform alone is named.
   const kindOf = (c: Connector) => {
     const org = orgs?.find((o) => o.id === c.org_id)?.name;
-    return org
-      ? t("pairing.inOrg", { platform: platformLabel(c.kind), org })
-      : platformLabel(c.kind);
+    return org ? t("pairing.inOrg", { platform: platformName(c.kind), org }) : platformName(c.kind);
   };
   return (
     <div className="space-y-4">
@@ -346,7 +344,7 @@ function PairingCodeView({
       <span>
         {t("pairing.through", {
           connector: connector.name,
-          platform: platformLabel(connector.kind),
+          platform: platformName(connector.kind),
         })}
       </span>
       {onChangeConnector ? (

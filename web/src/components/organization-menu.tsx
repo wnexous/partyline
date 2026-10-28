@@ -9,7 +9,7 @@ import {
   UsersIcon,
   WaypointsIcon,
 } from "lucide-react";
-import { isAdminOf, type MyOrg, permissionLabel } from "@/lib/orgs";
+import { isAdminOf, type MyOrg, permissionLabel } from "@/entities/organization";
 import { type MessageKey, useT } from "@/shared/i18n";
 import { Button } from "@/shared/ui/primitives/button";
 import {

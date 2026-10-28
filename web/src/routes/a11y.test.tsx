@@ -3,7 +3,6 @@ import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { axe } from "vitest-axe";
 import * as matchers from "vitest-axe/matchers";
-import { useLiveStore } from "@/lib/live/store";
 import { json, mockApi } from "@/test/fetch";
 import {
   makeAgent,
@@ -23,13 +22,14 @@ import {
   makeRoom,
 } from "@/test/fixtures";
 import { stubLayout } from "@/test/layout";
+import { useLiveStore } from "@/test/live-store";
 import { stubViewport } from "@/test/media";
 import { renderRoute } from "@/test/render";
 import { lia, oldHelper, sampleContacts } from "@/test/sample-contacts";
 
 expect.extend(matchers);
 
-vi.mock("@/lib/live", () => ({ startLive: vi.fn(() => () => {}) }));
+vi.mock("@/app/live", () => ({ startLive: vi.fn(() => () => {}) }));
 
 /*
  * Automated accessibility checks (UI-24) on the messenger shell (home, phone home, account menu),

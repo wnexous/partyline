@@ -1,142 +1,35 @@
-import {
-  BanIcon,
-  CornerDownRightIcon,
-  FileIcon,
-  InfoIcon,
-  type LucideIcon,
-  MessageCircleIcon,
-  ReplyIcon,
-  ShieldAlertIcon,
-  ShieldCheckIcon,
-  UserIcon,
-} from "lucide-react";
-import { lazy, memo, Suspense } from "react";
-import { AudioPlayer } from "@/components/audio-player";
+import { BanIcon, InfoIcon, ReplyIcon } from "lucide-react";
+import { memo, Suspense } from "react";
 import type { MessageMenuTarget } from "@/components/message-menu";
-import { ProfileLink } from "@/components/profile-link";
 import { QuestionBubble } from "@/components/question-bubble";
 import { ReactionToolbar } from "@/components/reaction-bar";
 import { ReactionChips } from "@/components/reaction-chips";
-import { IntelligenceAvatar, IntelligenceName } from "@/entities/intelligence";
+import { IntelligenceAvatar, IntelligenceName, ProfileLink } from "@/entities/intelligence";
+import {
+  AttachmentView,
+  AUTHOR_KIND,
+  authorDisplayName,
+  authorProfile,
+  chatTitle,
+  chatTrust,
+  LazyMarkdown,
+  platformName,
+  ReplyContext,
+  TrustBadge,
+} from "@/entities/message";
 import { useSwipeReply } from "@/hooks/use-swipe-reply";
-import { attachmentUrl } from "@/lib/api/queries";
-import { isAudio } from "@/lib/voice";
-import type {
-  Attachment,
-  AuthorKind,
-  IntelligenceRef,
-  Message,
-  RoomMember,
-} from "@/shared/api/types.gen";
-import { type MessageKey, type Translate, useI18n } from "@/shared/i18n";
+import type { Message, RoomMember } from "@/shared/api/types.gen";
+import { type MessageKey, useI18n } from "@/shared/i18n";
 import { formatAbsolute, formatClock } from "@/shared/lib/time";
 import { useLongPress } from "@/shared/lib/use-long-press";
 import { cn } from "@/shared/lib/utils";
 import { RowMenuButton } from "@/shared/ui/molecules/row-menu-button";
-import { Tooltip, TooltipContent, TooltipTrigger } from "@/shared/ui/primitives/tooltip";
-
-const Markdown = lazy(() => import("@/components/markdown"));
 
 /*
  * One timeline row (UI-05). Message content is data: plain text for people and chats, Markdown
  * without raw HTML for agents (UI-09). Chat senders always carry their trust badge, because that
  * is what tells a human whether agents will act on the text.
  */
-
-/*
- * AIs and users read alike (AD-024): neither is named by its kind, for the eye or for assistive
- * technology, and one with no profile to draw a face from gets the same plain tile. Only a chat
- * sender and the system are named, because that says where the text came from.
- */
-const UNRESOLVED_TILE = "bg-secondary text-foreground ring-1 ring-border ring-inset";
-
-export const AUTHOR_KIND: Record<
-  AuthorKind,
-  { icon: LucideIcon; label: MessageKey | null; tile: string }
-> = {
-  agent: { icon: UserIcon, label: null, tile: UNRESOLVED_TILE },
-  chat: {
-    icon: MessageCircleIcon,
-    label: "message.kind.chat",
-    tile: "bg-tape text-tape-foreground",
-  },
-  user: { icon: UserIcon, label: null, tile: UNRESOLVED_TILE },
-  system: { icon: InfoIcon, label: "message.kind.system", tile: "bg-muted text-muted-foreground" },
-};
-
-const PLATFORMS: Record<string, string> = {
-  telegram: "Telegram",
-  whatsapp: "WhatsApp",
-  discord: "Discord",
-  webhook: "Webhook",
-};
-
-export const platformLabel = (kind?: string) => (kind ? (PLATFORMS[kind] ?? kind) : "");
-
-/** A platform's display name; kinds without a known label are capitalized, like the server's. */
-export function platformName(kind?: string): string {
-  const label = platformLabel(kind);
-  return label.charAt(0).toUpperCase() + label.slice(1);
-}
-
-/**
- * A chat's name (CTX-07): its title, else "<Platform> chat", matching the names the server gives
- * rooms routed from untitled chats (connectors.PlatformLabel).
- */
-export function chatTitle(t: Translate, title: string | undefined, platform?: string): string {
-  const trimmed = title?.trim();
-  if (trimmed) return trimmed;
-  const name = platformName(platform);
-  return name ? t("chat.untitled", { platform: name }) : t("message.kind.chat");
-}
-
-/** Images the server serves inline (others download); SVG is excluded on purpose. */
-export const INLINE_IMAGES = new Set(["image/png", "image/jpeg", "image/gif", "image/webp"]);
-/** An image the timeline shows inline and the viewer can open: stored, and one the server serves inline. */
-export const isViewableImage = (a: Attachment) =>
-  a.status === "stored" && INLINE_IMAGES.has(a.mime);
-/** Reserved box for inline images (Attachment has no width/height). */
-const IMAGE_BOX = { width: 320, height: 240 } as const;
-const IMAGE_BOX_RATIO = "4 / 3";
-
-export type Trust = "trusted" | "verified" | "untrusted";
-
-// SPEC_DEVIATION: dto.Message has no `trusted` flag (trust is recipient-relative, computed per
-// agent). Reason: the web viewer derives it from author_user_id: empty → untrusted for every
-// agent; the viewer's id → trusted by the viewer's agents; another user → verified (only theirs).
-/**
- * Trust of a chat message from the viewer's side (AD-006): the server resolves the author to a
- * user only for verified chat identities. Verified as the viewer → the viewer's agents trust it.
- */
-export function chatTrust(message: Message, meId: string): Trust {
-  if (!message.author_user_id) return "untrusted";
-  return message.author_user_id === meId ? "trusted" : "verified";
-}
-
-/**
- * The intelligence a row shows as its author (PROF-03, PROF-09): a user or an AI always; a chat
- * sender only once it resolved to a person or to the viewer's own account (GRP-03, PEOP-02).
- * Unattributed senders keep the generic chat tile. The name is the one the timeline shows, so a
- * name an owner set for an AI in the room (GRP-04) wins over its profile name.
- */
-function authorProfile(message: Message): IntelligenceRef | null {
-  const author = message.author;
-  if (!author?.id) return null;
-  const known =
-    message.author_kind === "user" ||
-    message.author_kind === "agent" ||
-    (message.author_kind === "chat" &&
-      (author.role === "person" || author.id === message.author_user_id));
-  if (!known) return null;
-  return { ...author, display_name: message.author_name || author.display_name };
-}
-
-export function authorDisplayName(message: Message): string {
-  if (message.author_kind === "chat") {
-    return message.sender_name || message.sender_id || message.author_name;
-  }
-  return message.author_name;
-}
 
 const CONTENT_KIND: Partial<Record<Message["kind"], MessageKey>> = {
   image: "message.content.image",
@@ -281,7 +174,7 @@ export const MessageItem = memo(function MessageItem({
   }
 
   const chatMember = message.author_kind === "chat" ? members?.get(message.author_id ?? "") : null;
-  const platform = platformLabel(chatMember?.connector_kind);
+  const platform = platformName(chatMember?.connector_kind);
   const profile = authorProfile(message);
 
   return (
@@ -423,7 +316,7 @@ export const MessageItem = memo(function MessageItem({
             <DeletedPlaceholder />
           ) : message.author_kind === "agent" && message.text ? (
             <Suspense fallback={<PlainText text={message.text} />}>
-              <Markdown text={message.text} />
+              <LazyMarkdown text={message.text} />
             </Suspense>
           ) : (
             <MessageText message={message} />
@@ -500,166 +393,3 @@ function MessageText({ message }: { message: Message }) {
  * Trust has no hue to lean on, so the badges differ by shape as well as by icon and word: trusted
  * is a filled tape chip, verified is outlined, untrusted is dashed (nothing vouches for it).
  */
-const TRUST: Record<
-  Trust,
-  { icon: LucideIcon; label: MessageKey; hint: MessageKey; className: string }
-> = {
-  trusted: {
-    icon: ShieldCheckIcon,
-    label: "message.trusted",
-    hint: "message.trustedHint",
-    className: "bg-tape text-tape-foreground ring-1 ring-tape-strong/50 ring-inset",
-  },
-  verified: {
-    icon: ShieldCheckIcon,
-    label: "message.verified",
-    hint: "message.verifiedHint",
-    className: "text-foreground ring-1 ring-tape-strong/50 ring-inset",
-  },
-  untrusted: {
-    icon: ShieldAlertIcon,
-    label: "message.untrusted",
-    hint: "message.untrustedHint",
-    className: "text-foreground outline-1 -outline-offset-1 outline-tape-strong outline-dashed",
-  },
-};
-
-export function TrustBadge({ trust }: { trust: Trust }) {
-  const { t } = useI18n();
-  const cfg = TRUST[trust];
-  return (
-    <Tooltip>
-      <TooltipTrigger asChild>
-        <span
-          className={cn(
-            "inline-flex items-center gap-1 self-center rounded-[3px] px-1.5 py-px text-[0.7rem] font-semibold",
-            cfg.className,
-          )}
-        >
-          <cfg.icon className="size-3" aria-hidden="true" />
-          <span>{t(cfg.label)}</span>
-          <span className="sr-only">. {t(cfg.hint)}</span>
-        </span>
-      </TooltipTrigger>
-      <TooltipContent className="max-w-64 text-pretty">{t(cfg.hint)}</TooltipContent>
-    </Tooltip>
-  );
-}
-
-function ReplyContext({
-  target,
-  onJumpTo,
-}: {
-  target: Message | null;
-  onJumpTo?: (id: string) => void;
-}) {
-  const { t } = useI18n();
-  const body = target ? (
-    <>
-      <span className="font-medium text-foreground/80">{authorDisplayName(target)}</span>{" "}
-      {target.deleted_at !== undefined ? (
-        <span className="truncate italic">{t("message.deleted")}</span>
-      ) : (
-        <span className="truncate">{target.text || ""}</span>
-      )}
-    </>
-  ) : (
-    <span>{t("message.replyMissing")}</span>
-  );
-  const className =
-    "my-0.5 flex max-w-full min-w-0 items-center gap-1.5 truncate text-left text-xs text-muted-foreground";
-  return target && onJumpTo ? (
-    <button
-      type="button"
-      data-testid="reply-context"
-      className={cn(className, "rounded-sm hover:text-foreground focus-visible:outline-2")}
-      onClick={() => onJumpTo(target.id)}
-      aria-label={t("message.replyTo", { name: authorDisplayName(target) })}
-    >
-      <CornerDownRightIcon className="size-3 shrink-0" aria-hidden="true" />
-      {body}
-    </button>
-  ) : (
-    <p data-testid="reply-context" className={className}>
-      <CornerDownRightIcon className="size-3 shrink-0" aria-hidden="true" />
-      {body}
-    </p>
-  );
-}
-
-export function formatBytes(size: number, locale: string): string {
-  const units = ["B", "KB", "MB", "GB"];
-  let value = size;
-  let unit = 0;
-  while (value >= 1024 && unit < units.length - 1) {
-    value /= 1024;
-    unit += 1;
-  }
-  const digits = unit === 0 || value >= 10 ? 0 : 1;
-  return `${new Intl.NumberFormat(locale, { maximumFractionDigits: digits }).format(value)} ${units[unit]}`;
-}
-
-function AttachmentView({
-  attachment: a,
-  onOpenImage,
-}: {
-  attachment: Attachment;
-  onOpenImage: (attachmentId: string) => void;
-}) {
-  const { t, locale } = useI18n();
-  const url = attachmentUrl(a.id);
-  if (a.status !== "stored") {
-    return (
-      <span className="inline-flex max-w-full items-center gap-1.5 rounded-md border border-dashed px-2 py-1 text-xs text-muted-foreground">
-        <FileIcon className="size-3.5 shrink-0" aria-hidden="true" />
-        <span className="truncate">{a.name}</span>
-        <span>
-          ·{" "}
-          {a.status === "too_large"
-            ? t("message.attachmentTooLarge")
-            : t("message.attachmentUnavailable")}
-        </span>
-      </span>
-    );
-  }
-  if (INLINE_IMAGES.has(a.mime)) {
-    return (
-      // The image opens in the viewer inside the app (IMG-01), which hands focus back to this
-      // button (`data-attachment-id` finds it again).
-      <button
-        type="button"
-        data-attachment-id={a.id}
-        aria-haspopup="dialog"
-        aria-label={t("message.openImage", { name: a.name })}
-        onClick={() => onOpenImage(a.id)}
-        // Attachment carries no pixel size: a fixed 4:3 box keeps the row height stable while the
-        // image loads (no layout shift, steady virtualizer measurements).
-        className="inline-block w-80 max-w-full cursor-zoom-in overflow-hidden rounded-md border bg-muted align-top shadow-xs"
-        style={{ aspectRatio: IMAGE_BOX_RATIO }}
-      >
-        <img
-          src={url}
-          alt={a.name}
-          width={IMAGE_BOX.width}
-          height={IMAGE_BOX.height}
-          loading="lazy"
-          decoding="async"
-          className="block size-full object-contain"
-        />
-      </button>
-    );
-  }
-  // A recording or any audio file plays in the row (VOI-07); the player falls back to a download.
-  if (isAudio(a.mime)) return <AudioPlayer attachment={a} />;
-  return (
-    <a
-      href={url}
-      download={a.name}
-      className="inline-flex max-w-full items-center gap-1.5 rounded-md border bg-card px-2 py-1 text-xs shadow-xs transition-colors hover:bg-accent"
-    >
-      <FileIcon className="size-3.5 shrink-0 text-muted-foreground" aria-hidden="true" />
-      <span className="truncate font-medium">{a.name}</span>
-      <span className="font-mono text-muted-foreground tabular">{formatBytes(a.size, locale)}</span>
-    </a>
-  );
-}

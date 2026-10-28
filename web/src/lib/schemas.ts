@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { isOrgSlug, MaxOrgNameLength, normalizeSlug } from "@/entities/organization";
 import {
   DeliveryModeAll,
   DeliveryModeMentions,
@@ -15,7 +16,6 @@ import {
   UsernamePattern,
 } from "@/shared/api/types.gen";
 import type { MessageKey } from "@/shared/i18n";
-import { isOrgSlug, MaxOrgNameLength, normalizeSlug } from "./orgs";
 
 /*
  * Form schemas built from the generated contract constants (AD-003), so the web app validates

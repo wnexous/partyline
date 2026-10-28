@@ -3,8 +3,7 @@ import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { axe } from "vitest-axe";
 import * as matchers from "vitest-axe/matchers";
-import { handleLiveEvent } from "@/lib/live/handlers";
-import { useLiveStore } from "@/lib/live/store";
+import { handleLiveEvent } from "@/app/live/dispatch";
 import type { ChartMember, IntelligenceRef, Organization, OrgChart } from "@/shared/api/types.gen";
 import { apiError, json, mockApi } from "@/test/fetch";
 import {
@@ -16,11 +15,12 @@ import {
   makeOrg,
   makeOrgChart,
 } from "@/test/fixtures";
+import { useLiveStore } from "@/test/live-store";
 import { renderRoute } from "@/test/render";
 
 expect.extend(matchers);
 
-vi.mock("@/lib/live", () => ({ startLive: vi.fn(() => () => {}) }));
+vi.mock("@/app/live", () => ({ startLive: vi.fn(() => () => {}) }));
 
 /*
  * The org chart page (T44: CHART-01, CHART-02, CHART-03, CHART-04): the positions as a tree with

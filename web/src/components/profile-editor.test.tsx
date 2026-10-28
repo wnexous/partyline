@@ -2,12 +2,12 @@ import { screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { ProfileEditor } from "@/components/profile-editor";
-import { IntelligenceAvatar } from "@/entities/intelligence";
-import { queryKeys, useIntelligence } from "@/lib/api/queries";
-import { useLiveStore } from "@/lib/live/store";
+import { IntelligenceAvatar, useIntelligence } from "@/entities/intelligence";
+import { queryKeys } from "@/shared/api/query-keys";
 import type { IntelligenceProfile } from "@/shared/api/types.gen";
 import { apiError, json, mockApi } from "@/test/fetch";
 import { makeProfile } from "@/test/fixtures";
+import { useLiveStore } from "@/test/live-store";
 import { makeQueryClient, renderWithProviders } from "@/test/render";
 
 const toast = vi.hoisted(() => Object.assign(vi.fn(), { success: vi.fn(), error: vi.fn() }));

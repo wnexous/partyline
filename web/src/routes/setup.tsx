@@ -3,7 +3,7 @@ import { createFileRoute, redirect, useNavigate } from "@tanstack/react-router";
 import { useState } from "react";
 import { useForm } from "react-hook-form";
 import { AuthLayout } from "@/components/auth-layout";
-import { setupStatusQuery, useSetup } from "@/lib/api/queries";
+import { setupStatusQuery, useSetup } from "@/entities/account";
 import { type SetupForm, setupSchema } from "@/lib/schemas";
 import { isApiError } from "@/shared/api/client";
 import { PasswordMinLength } from "@/shared/api/types.gen";

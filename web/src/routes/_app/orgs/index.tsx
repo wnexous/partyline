@@ -3,16 +3,17 @@ import { BuildingIcon, PlusIcon } from "lucide-react";
 import { useId, useState } from "react";
 import { toast } from "sonner";
 import { NewOrgDialog } from "@/components/new-org-dialog";
-import { OrgAvatar } from "@/components/org-avatar";
-import { useCurrentOrg } from "@/hooks/use-current-org";
+import { useMe } from "@/entities/account";
 import {
-  useAcceptInvitation,
-  useDeclineInvitation,
-  useMe,
+  type MyOrg,
+  OrgAvatar,
+  PermissionGuest,
+  permissionLabel,
+  useAnswerInvitation,
+  useCurrentOrg,
   useMyInvitations,
   useOrgs,
-} from "@/lib/api/queries";
-import { type MyOrg, PermissionGuest, permissionLabel } from "@/lib/orgs";
+} from "@/entities/organization";
 import { isApiError } from "@/shared/api/client";
 import { ErrorCodeAlreadyMember, type Invitation } from "@/shared/api/types.gen";
 import { type MessageKey, type Translate, useI18n, useT } from "@/shared/i18n";
@@ -221,8 +222,8 @@ function InvitationItem({ invitation: inv }: { invitation: Invitation }) {
   const { t, locale } = useI18n();
   const sentenceId = useId();
   const me = useMe().data;
-  const accept = useAcceptInvitation();
-  const decline = useDeclineInvitation();
+  const accept = useAnswerInvitation("accept");
+  const decline = useAnswerInvitation("decline");
   const forMe = inv.invitee.id === me?.intelligence.id;
   const who = forMe ? t("orgs.you") : inv.invitee.display_name;
   const pending = accept.isPending || decline.isPending;

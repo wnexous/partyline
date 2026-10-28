@@ -1,9 +1,7 @@
 import { createFileRoute, Link, Outlet, useRouter } from "@tanstack/react-router";
 import { ArrowLeftIcon } from "lucide-react";
 import { useEffect } from "react";
-import { OrgAvatar } from "@/components/org-avatar";
-import { useOrg } from "@/lib/api/queries";
-import { PermissionAdmin, permissionLabel } from "@/lib/orgs";
+import { isAdminOf, OrgAvatar, permissionLabel, useOrg } from "@/entities/organization";
 import { isApiError } from "@/shared/api/client";
 import type { Organization } from "@/shared/api/types.gen";
 import { useT } from "@/shared/i18n";
@@ -125,7 +123,7 @@ function OrgBar({ org }: { org: Organization }) {
         <Link to="/orgs/$orgId/members" params={{ orgId: org.id }} className={TAB}>
           {t("orgs.tabMembers")}
         </Link>
-        {org.permission === PermissionAdmin ? (
+        {isAdminOf(org) ? (
           <Link to="/orgs/$orgId/positions" params={{ orgId: org.id }} className={TAB}>
             {t("orgs.tabPositions")}
           </Link>

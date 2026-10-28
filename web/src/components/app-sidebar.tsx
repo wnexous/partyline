@@ -8,10 +8,11 @@ import { NewConversationDialog } from "@/components/new-conversation-dialog";
 import { NewGroupDialog } from "@/components/new-group-dialog";
 import { OrgSwitcher } from "@/components/org-switcher";
 import { OrganizationMenu } from "@/components/organization-menu";
-import { useCurrentOrg } from "@/hooks/use-current-org";
-import { useLiveStore } from "@/lib/live/store";
+import { useCurrentOrg } from "@/entities/organization";
+import { useSocketStore } from "@/shared/api/socket-store";
 import type { Me } from "@/shared/api/types.gen";
 import { useT } from "@/shared/i18n";
+import { usePrefsStore } from "@/shared/lib/prefs-store";
 import { cn } from "@/shared/lib/utils";
 import { Wordmark } from "@/shared/ui/atoms/brand";
 import { LiveIndicator } from "@/shared/ui/molecules/live-status";
@@ -57,7 +58,7 @@ export function MessengerPanel({ me, screen = false }: { me: Me; screen?: boolea
             <Wordmark />
           </Link>
           <div className="flex items-center">
-            <SearchButton onOpen={() => useLiveStore.getState().setPaletteOpen(true)} />
+            <SearchButton onOpen={() => usePrefsStore.getState().setPaletteOpen(true)} />
             <AccountMenu me={me} />
           </div>
         </div>
@@ -73,7 +74,7 @@ export function MessengerPanel({ me, screen = false }: { me: Me; screen?: boolea
 
       <SidebarFooter className="border-t border-sidebar-border px-4 py-2.5">
         <LiveIndicator
-          status={useLiveStore((s) => s.status)}
+          status={useSocketStore((s) => s.status)}
           className="text-sidebar-foreground/80"
         />
       </SidebarFooter>

@@ -3,15 +3,15 @@ import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { axe } from "vitest-axe";
 import * as matchers from "vitest-axe/matchers";
-import { useLiveStore } from "@/lib/live/store";
 import type { Organization } from "@/shared/api/types.gen";
 import { apiError, json, mockApi } from "@/test/fetch";
 import { makeMe, makeOrg, makeOrgChart } from "@/test/fixtures";
+import { useLiveStore } from "@/test/live-store";
 import { renderRoute } from "@/test/render";
 
 expect.extend(matchers);
 
-vi.mock("@/lib/live", () => ({ startLive: vi.fn(() => () => {}) }));
+vi.mock("@/app/live", () => ({ startLive: vi.fn(() => () => {}) }));
 // The photo is resized by its own unit tests; the page tests the upload flow itself.
 vi.mock("@/shared/lib/avatar", async (importOriginal) => ({
   ...(await importOriginal<Record<string, unknown>>()),

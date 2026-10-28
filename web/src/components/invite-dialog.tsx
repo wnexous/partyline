@@ -2,11 +2,20 @@ import { zodResolver } from "@hookform/resolvers/zod";
 import { useMemo, useState } from "react";
 import { useForm } from "react-hook-form";
 import { toast } from "sonner";
-import { IntelligenceAvatar, IntelligenceName } from "@/entities/intelligence";
-import { useContacts, useInviteToOrg } from "@/lib/api/queries";
-import { inviteCandidates } from "@/lib/contacts";
+import {
+  IntelligenceAvatar,
+  IntelligenceName,
+  inviteCandidates,
+  useContacts,
+} from "@/entities/intelligence";
+import {
+  PermissionAdmin,
+  PermissionGuest,
+  PermissionMember,
+  permissionLabel,
+  useInviteToOrg,
+} from "@/entities/organization";
 import { positionOptions } from "@/lib/org-chart";
-import { PermissionAdmin, PermissionGuest, PermissionMember, permissionLabel } from "@/lib/orgs";
 import { type InviteFormValues, inviteSchema } from "@/lib/schemas";
 import { isApiError } from "@/shared/api/client";
 import {

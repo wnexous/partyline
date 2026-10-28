@@ -5,14 +5,13 @@ import { ChartTree, type TreeRowState } from "@/components/chart-tree";
 import { DeleteAIDialog } from "@/components/delete-ai-dialog";
 import { MoveMemberDialog, type MoveTarget } from "@/components/move-member-dialog";
 import { RemoveFromOrgDialog } from "@/components/remove-from-org-dialog";
-import { IntelligenceAvatar, YouBadge } from "@/entities/intelligence";
-import { useMe, useOrg, useOrgChart } from "@/lib/api/queries";
-import { useLiveStore } from "@/lib/live/store";
+import { useMe } from "@/entities/account";
+import { IntelligenceAvatar, useIsOnline, YouBadge } from "@/entities/intelligence";
+import { removalOf, useOrg, useOrgChart } from "@/entities/organization";
 import { buildChartTree, type ChartTreeNode } from "@/lib/org-chart";
 import { isApiError } from "@/shared/api/client";
 import {
   type ChartMember,
-  DeleteEffectDelete,
   type IntelligenceRef,
   PermissionAdmin,
   PermissionGuest,
@@ -245,12 +244,11 @@ function MemberRow({
   const who = m.intelligence;
   const isAI = who.kind === "ai";
   // The live presence wins over what the chart said when it was fetched.
-  const live = useLiveStore((s) => s.presence[who.id]);
-  const online = live?.online ?? m.online;
+  const online = useIsOnline(who.id, m.online);
   const tab = state.tabbable ? 0 : -1;
   const name = who.display_name;
-  const deletes = m.can_delete && m.delete_effect === DeleteEffectDelete;
-  const removes = m.can_delete && m.delete_effect !== DeleteEffectDelete;
+  const deletes = removalOf(m) === "delete";
+  const removes = removalOf(m) === "remove";
 
   return (
     <div className="flex min-w-0 flex-1 flex-wrap items-center gap-x-2 gap-y-1">

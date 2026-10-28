@@ -1,6 +1,8 @@
 import { Link } from "@tanstack/react-router";
 import { ArrowUpRightIcon, ChevronRightIcon, HourglassIcon, RadioTowerIcon } from "lucide-react";
 import { type ReactNode, useEffect, useState } from "react";
+import { useMe } from "@/entities/account";
+import { onlineOf, useAgents, usePresenceStore } from "@/entities/intelligence";
 import {
   CLAUDE_CODE_DOCS_URL,
   CONFIG_FILE,
@@ -11,8 +13,6 @@ import {
   RELEASES_URL,
   SETUP_COMMAND,
 } from "@/lib/agent-connect";
-import { useAgents, useMe } from "@/lib/api/queries";
-import { useLiveStore } from "@/lib/live/store";
 import { useT } from "@/shared/i18n";
 import { cn } from "@/shared/lib/utils";
 import { StatusDot } from "@/shared/ui/atoms/status-dot";
@@ -240,19 +240,18 @@ function AgentArrival() {
   const t = useT();
   const me = useMe().data;
   const agents = useAgents().data;
-  const presence = useLiveStore((s) => s.presence);
+  const presence = usePresenceStore((s) => s.presence);
   const [before, setBefore] = useState<ReadonlySet<string> | null>(null);
 
   const mine = me && agents ? agents.filter((a) => a.owner.id === me.id) : undefined;
-  const online = (id: string, fallback: boolean) => presence[id]?.online ?? fallback;
 
   useEffect(() => {
     if (before || !mine) return;
-    setBefore(new Set(mine.filter((a) => online(a.id, a.online)).map((a) => a.id)));
+    setBefore(new Set(mine.filter((a) => onlineOf(presence, a.id, a.online)).map((a) => a.id)));
   });
 
   const arrived = before
-    ? mine?.find((a) => !before.has(a.id) && online(a.id, a.online))
+    ? mine?.find((a) => !before.has(a.id) && onlineOf(presence, a.id, a.online))
     : undefined;
 
   return (

@@ -1,12 +1,12 @@
 import { useEffect, useState } from "react";
-import { useLiveStore } from "@/lib/live/store";
+import { useSocketStore } from "@/shared/api/socket-store";
 
 /** Grace period before the UI admits the live line is down (UI-06). */
 export const DISCONNECTED_GRACE_MS = 2_000;
 
 /** True once the live socket has been down for longer than `graceMs` (retries included). */
 export function useDisconnected(graceMs = DISCONNECTED_GRACE_MS): boolean {
-  const since = useLiveStore((s) => s.offlineSince);
+  const since = useSocketStore((s) => s.offlineSince);
   const [elapsed, setElapsed] = useState(false);
 
   useEffect(() => {

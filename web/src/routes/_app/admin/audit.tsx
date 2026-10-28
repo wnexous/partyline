@@ -1,6 +1,6 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { ScrollTextIcon } from "lucide-react";
-import { useAudit } from "@/lib/api/queries";
+import { useAudit } from "@/entities/account";
 import type { AuditEntry } from "@/shared/api/types.gen";
 import { useI18n, useT } from "@/shared/i18n";
 import { RelativeTime } from "@/shared/ui/atoms/relative-time";

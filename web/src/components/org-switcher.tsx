@@ -2,11 +2,16 @@ import { Link } from "@tanstack/react-router";
 import { BuildingIcon, ChevronsUpDownIcon, PlusIcon } from "lucide-react";
 import { useId, useMemo, useState } from "react";
 import { NewOrgDialog } from "@/components/new-org-dialog";
-import { OrgAvatar } from "@/components/org-avatar";
 import { OrgPageItems } from "@/components/organization-menu";
-import { useCurrentOrg } from "@/hooks/use-current-org";
-import { useConversations } from "@/lib/api/queries";
-import { type MyOrg, permissionLabel, unreadByOrg, unreadOutsideOrg } from "@/lib/orgs";
+import {
+  type MyOrg,
+  OrgAvatar,
+  permissionLabel,
+  unreadByOrg,
+  unreadOutsideOrg,
+  useCurrentOrg,
+} from "@/entities/organization";
+import { useConversations } from "@/entities/room";
 import { type Translate, useT } from "@/shared/i18n";
 import { cn } from "@/shared/lib/utils";
 import { Button } from "@/shared/ui/primitives/button";

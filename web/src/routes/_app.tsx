@@ -1,18 +1,18 @@
 import { createFileRoute, Outlet, redirect, useRouterState } from "@tanstack/react-router";
 import { SearchIcon } from "lucide-react";
 import { useEffect } from "react";
+import { startLive } from "@/app/live";
 import { AppSidebar } from "@/components/app-sidebar";
 import { CommandMenu } from "@/components/command-menu";
 import { OrgSwitcher } from "@/components/org-switcher";
 import { ProfilePanel } from "@/components/profile-panel";
-import { meQuery, useMe } from "@/lib/api/queries";
-import { startLive } from "@/lib/live";
-import { useLiveStore } from "@/lib/live/store";
+import { meQuery, useMe } from "@/entities/account";
 import { ensurePushSubscription } from "@/lib/push/register";
 import { LOCALE_KEY, readStorage } from "@/lib/theme";
 import { isApiError } from "@/shared/api/client";
 import { isLocale, useT } from "@/shared/i18n";
 import { useIsMobile } from "@/shared/lib/device";
+import { usePrefsStore } from "@/shared/lib/prefs-store";
 import { useDisconnected } from "@/shared/lib/use-disconnected";
 import { useVisualViewport } from "@/shared/lib/use-visual-viewport";
 import { Wordmark } from "@/shared/ui/atoms/brand";
@@ -59,9 +59,9 @@ function AppLayout() {
 
   // A browser without its own language choice starts in the account's language.
   useEffect(() => {
-    const live = useLiveStore.getState();
-    if (readStorage(LOCALE_KEY) === null && isLocale(me.locale) && me.locale !== live.locale) {
-      live.setLocale(me.locale);
+    const prefs = usePrefsStore.getState();
+    if (readStorage(LOCALE_KEY) === null && isLocale(me.locale) && me.locale !== prefs.locale) {
+      prefs.setLocale(me.locale);
     }
   }, [me.locale]);
 
@@ -126,7 +126,7 @@ function MobileBar() {
           size="icon"
           className="size-11"
           aria-label={t("palette.open")}
-          onClick={() => useLiveStore.getState().setPaletteOpen(true)}
+          onClick={() => usePrefsStore.getState().setPaletteOpen(true)}
         >
           <SearchIcon aria-hidden="true" />
         </Button>

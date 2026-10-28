@@ -2,10 +2,9 @@ import { createFileRoute, Link } from "@tanstack/react-router";
 import { ChevronRightIcon, PlugZapIcon, PlusIcon } from "lucide-react";
 import { useMemo, useState } from "react";
 import { AddConnectorDialog } from "@/components/add-connector-dialog";
-import { ConnectorStatusBadge, useConnectorState } from "@/components/connector-status";
-import { platformLabel } from "@/components/message-item";
-import { useConnectors, useOrg } from "@/lib/api/queries";
-import { isAdminOf } from "@/lib/orgs";
+import { ConnectorStatusBadge, useConnectorState, useConnectors } from "@/entities/connector";
+import { platformName } from "@/entities/message";
+import { isAdminOf, useOrg } from "@/entities/organization";
 import type { Connector } from "@/shared/api/types.gen";
 import { useT } from "@/shared/i18n";
 import { EmptyState } from "@/shared/ui/molecules/empty-state";
@@ -124,7 +123,7 @@ function ConnectorRow({ orgId, connector: c }: { orgId: string; connector: Conne
         <span className="flex min-w-0 items-center gap-2">
           <span className="truncate font-semibold tracking-[-0.01em]">{c.name}</span>
           <span className="shrink-0 rounded-[3px] border px-1.5 py-px text-[0.7rem] text-muted-foreground">
-            {platformLabel(c.kind)}
+            {platformName(c.kind)}
           </span>
         </span>
         <ChevronRightIcon

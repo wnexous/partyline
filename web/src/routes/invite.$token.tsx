@@ -4,7 +4,7 @@ import { LinkIcon } from "lucide-react";
 import { useState } from "react";
 import { useForm } from "react-hook-form";
 import { AuthLayout } from "@/components/auth-layout";
-import { useAcceptInvite, useInviteInfo } from "@/lib/api/queries";
+import { useAcceptInvite, useInviteInfo } from "@/entities/account";
 import { type AcceptInviteForm, acceptInviteSchema } from "@/lib/schemas";
 import { isApiError } from "@/shared/api/client";
 import { type InviteInfo, PasswordMinLength, RoleAdmin } from "@/shared/api/types.gen";

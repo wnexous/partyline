@@ -7,7 +7,7 @@ import {
   TimerOffIcon,
 } from "lucide-react";
 import { type FormEvent, type ReactNode, useEffect, useId, useState } from "react";
-import { useDeviceAction } from "@/lib/api/queries";
+import { useDeviceAction } from "@/entities/account";
 import { isApiError } from "@/shared/api/client";
 import type { DeviceRequest } from "@/shared/api/types.gen";
 import { type Translate, useI18n, useT } from "@/shared/i18n";

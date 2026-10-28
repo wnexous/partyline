@@ -4,13 +4,13 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { axe } from "vitest-axe";
 import * as matchers from "vitest-axe/matchers";
 import { MessageTimeline } from "@/components/message-timeline";
-import { useLiveStore } from "@/lib/live/store";
 import { QUICK_REACTIONS } from "@/lib/reactions";
 import type { Message, Reaction } from "@/shared/api/types.gen";
 import { json, mockApi } from "@/test/fetch";
 import { makeMessage } from "@/test/fixtures";
 import { finger, HOLD, longPress, mouseDevice, touchDevice, wait } from "@/test/gestures";
 import { stubLayout } from "@/test/layout";
+import { useLiveStore } from "@/test/live-store";
 import { renderWithRouter } from "@/test/render";
 
 expect.extend(matchers);
@@ -195,7 +195,7 @@ describe("the chips under a message (RCT-01)", () => {
   it("follow the live frame of someone else's reaction, in place", async () => {
     const { queryClient } = renderTimeline([ana(1), ana(2)]);
     await screen.findByText("ana says 2");
-    const { handleLiveEvent } = await import("@/lib/live/handlers");
+    const { handleLiveEvent } = await import("@/app/live/dispatch");
     act(() =>
       handleLiveEvent(queryClient, useLiveStore.getState(), {
         type: "room.reactions",

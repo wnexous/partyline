@@ -60,7 +60,46 @@ ticks its requirement ids here.
 - Break the message-item ↔ message-menu cycle (message helpers to `entities/message/model`);
   `conversationTitle`, `historyPlatform` to `entities/room/model`; `removalOf`, `isAdminOf`
   adopted at every site; `usePickables`.
-- Status: pending
+- Status: done. Notes (what moved, what stayed):
+  - api: `lib/api/queries.ts` is gone. Keys in `shared/api/query-keys`; cache shapes (MessagePages,
+    FilePages, PeoplePages, FileFilter) in `shared/api/cache-types`; `items` in `shared/api/list`;
+    avatar upload in `shared/api/avatar-upload`. Entities own their api: room, message,
+    intelligence (profile, contacts, agents), organization (orgs, chart, invitations), connector,
+    account (session, push, tokens, admin, identities, devices, activity), room-member. Cross-entity
+    needs go through `@x` files (room→message, message→room, intelligence→room/organization,
+    organization→account/intelligence, account→organization).
+  - `useAcceptInvitation`/`useDeclineInvitation` removed: `useAnswerInvitation(verb)`.
+  - live: `lib/live` is gone. `app/live` holds the socket, `startLive`, the dispatcher
+    (`dispatch.ts`) and catch-up. Each entity's `model/live.ts` patches its own caches. The store
+    is split by owner: `shared/api/socket-store` (status, outage), `shared/lib/prefs-store` (theme,
+    locale, palette), `entities/intelligence/model/presence-store`, `entities/connector/model/state-store`,
+    `entities/account/model/linked-identity-store`, `entities/room/model/open-room-store`,
+    `entities/organization/model/current-org-store`. `test/live-store.ts` is a facade for tests.
+  - message: helpers in `entities/message/model` (author, platform, excerpt in lib), TrustBadge,
+    AttachmentView, ReplyContext, AudioPlayer, ImageViewer, Markdown (`LazyMarkdown`) in
+    `entities/message/ui`. `formatBytes` in `shared/lib/bytes`. `platformLabel` is gone: one
+    `platformName`. `components/question-bubble.tsx` is NOT split (it has answering logic: T4).
+  - room: conversations, avatar (`ConversationFace`/`ConversationAvatar`; `GroupAvatar` deleted,
+    `shape="square"` on IntelligenceAvatar), `conversationTitle`, `historyPlatform`,
+    `isHistoryOnly`, `useMarkRoomRead` (manual) and `useAutoMarkRoomRead` (effect).
+    `conversation-header` (a widget) stays in components/ and uses the entity pieces.
+  - intelligence: ai-status, contact-meta, contact-row, profile-link, membership-summary, presence,
+    agents, contacts (lib), `usePickables`, `canMessage`. Presence sites use `useIsOnline`; the
+    contact rows of the three pickers (member-picker, new-group, new-conversation) and the contacts
+    list keep `withContactPresence` (the same rule, pure) until T4 splits their rows.
+    `usePickables` gates on the org's users loading: member-picker now waits for them like
+    new-group does (instance users are no longer listed first while the org's load).
+  - organization: lib/orgs (one `permissionLabel`, used by membership-summary too), current-org and
+    org-users hooks, org-avatar, org-select, `removalOf` (chart, members, contacts.$id), `isAdminOf`
+    (positions, org route, settings, members).
+  - connector: connector-status (its dot is a `StatusDot` variant; the dot classes live once in
+    `STATUS_DOT_CLASS`), the connector form schema (`connectorFormSchema`, `connectorFormDefaults`,
+    `ConfigValue`) out of schema-form. `lib/schemas.ts` had no connector part; nothing moved from it.
+  - room-member: `memberSettingsSummary`, `memberChanges`, `visibleRows` (member panel).
+  - Skipped or partial: `question-bubble.tsx` (answering logic, T4); the `ConversationHeader`
+    widget (T5). Legacy `components/`, `hooks/`, `lib/` still hold features and widgets (T4, T5).
+  - Visible behaviour changes: none intended. Two deliberate ones: unknown platform kinds show
+    capitalised (one `platformName`), and the member picker waits for the org's users (above).
 
 ## T4 — features (WA-06 part)
 - send-message (composer split: form, attachments, edit bar), mention-autocomplete,

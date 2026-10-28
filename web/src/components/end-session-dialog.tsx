@@ -1,5 +1,5 @@
 import { toast } from "sonner";
-import { useEndSession } from "@/lib/api/queries";
+import { useEndSession } from "@/entities/intelligence";
 import type { IntelligenceRef } from "@/shared/api/types.gen";
 import { useT } from "@/shared/i18n";
 import { ConfirmDialog } from "@/shared/ui/molecules/confirm-dialog";

@@ -1,15 +1,15 @@
 import { useNavigate } from "@tanstack/react-router";
 import { ContactRoundIcon, PlugZapIcon } from "lucide-react";
 import { type ReactNode, type RefObject, useEffect, useLayoutEffect, useRef } from "react";
-import { ConnectorStatusBadge, useConnectorState } from "@/components/connector-status";
-import { ConversationAvatar } from "@/components/conversation-avatar";
-import { platformLabel } from "@/components/message-item";
+import { ConnectorStatusBadge, useConnectorState, useConnectors } from "@/entities/connector";
+import { onlineOf, useAgents, usePresenceStore } from "@/entities/intelligence";
+import { platformName } from "@/entities/message";
+import { ConversationAvatar, useConversations } from "@/entities/room";
 import { useProfilePanel } from "@/hooks/use-profile-panel";
-import { useAgents, useConnectors, useConversations } from "@/lib/api/queries";
-import { useLiveStore } from "@/lib/live/store";
 import { NAV_GROUPS } from "@/lib/nav";
 import { type Connector, type Me, RoleAdmin } from "@/shared/api/types.gen";
 import { useT } from "@/shared/i18n";
+import { usePrefsStore } from "@/shared/lib/prefs-store";
 import { cn } from "@/shared/lib/utils";
 import { StatusDot } from "@/shared/ui/atoms/status-dot";
 import {
@@ -35,8 +35,8 @@ import {
 
 export function CommandMenu({ me }: { me: Me }) {
   const t = useT();
-  const open = useLiveStore((s) => s.paletteOpen);
-  const setOpen = useLiveStore((s) => s.setPaletteOpen);
+  const open = usePrefsStore((s) => s.paletteOpen);
+  const setOpen = usePrefsStore((s) => s.setPaletteOpen);
 
   // What had focus before the palette: the profile panel a contact opens gives focus back to it.
   const before = useRef<HTMLElement | null>(null);
@@ -52,7 +52,7 @@ export function CommandMenu({ me }: { me: Me }) {
         return;
       }
       e.preventDefault();
-      setOpen(!useLiveStore.getState().paletteOpen);
+      setOpen(!usePrefsStore.getState().paletteOpen);
     };
     document.addEventListener("keydown", onKeyDown);
     return () => document.removeEventListener("keydown", onKeyDown);
@@ -88,7 +88,7 @@ function PaletteBody({
   const conversations = useConversations();
   const agents = useAgents();
   const connectors = useConnectors();
-  const presence = useLiveStore((s) => s.presence);
+  const presence = usePresenceStore((s) => s.presence);
 
   const go = (to: string, params?: Record<string, string>) => {
     onDone();
@@ -150,7 +150,7 @@ function PaletteBody({
                 label={agent.intelligence.display_name}
                 hint={`@${agent.intelligence.handle}`}
                 trailing={(() => {
-                  const online = presence[agent.id]?.online ?? agent.online;
+                  const online = onlineOf(presence, agent.id, agent.online);
                   return (
                     <StatusDot
                       online={online}
@@ -203,11 +203,11 @@ function ConnectorItem({ connector: c, onSelect }: { connector: Connector; onSel
   return (
     <PaletteItem
       value={`connector:${c.id}`}
-      keywords={[c.name, platformLabel(c.kind)]}
+      keywords={[c.name, platformName(c.kind)]}
       onSelect={onSelect}
       icon={<PlugZapIcon aria-hidden="true" />}
       label={c.name}
-      hint={platformLabel(c.kind)}
+      hint={platformName(c.kind)}
       trailing={<ConnectorStatusBadge status={status} enabled={c.enabled} />}
     />
   );

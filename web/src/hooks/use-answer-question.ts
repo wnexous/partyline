@@ -1,7 +1,7 @@
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
-import { queryKeys } from "@/lib/api/queries";
 import { api, isApiError } from "@/shared/api/client";
+import { queryKeys } from "@/shared/api/query-keys";
 import {
   type AnswerSubmission,
   ErrorCodeAlreadyAnswered,

@@ -1,11 +1,9 @@
 import { useNavigate } from "@tanstack/react-router";
 import { useId, useState } from "react";
-import { OrgSelect } from "@/components/org-select";
 import { ConnectorForm } from "@/components/schema-form";
 import { SecretOnceDialog } from "@/components/secret-once-dialog";
-import { useCurrentOrg } from "@/hooks/use-current-org";
-import { useConnectorKinds, useCreateConnector } from "@/lib/api/queries";
-import { isAdminOf } from "@/lib/orgs";
+import { useConnectorKinds, useCreateConnector } from "@/entities/connector";
+import { isAdminOf, OrgSelect, useCurrentOrg } from "@/entities/organization";
 import { isApiError } from "@/shared/api/client";
 import {
   type Connector,

@@ -2,7 +2,6 @@ import { screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { MemberPicker } from "@/components/member-picker";
-import { useLiveStore } from "@/lib/live/store";
 import { apiError, json, mockApi } from "@/test/fetch";
 import {
   makeAI,
@@ -15,6 +14,7 @@ import {
   makeOrgMember,
   makeRoom,
 } from "@/test/fixtures";
+import { useLiveStore } from "@/test/live-store";
 import { renderWithRouter } from "@/test/render";
 
 /*

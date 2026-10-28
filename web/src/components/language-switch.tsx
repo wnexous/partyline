@@ -1,7 +1,7 @@
 import { LanguagesIcon } from "lucide-react";
-import { useUpdateMe } from "@/lib/api/queries";
-import { useLiveStore } from "@/lib/live/store";
+import { useUpdateMe } from "@/entities/account";
 import { isLocale, LOCALES, type Locale, useT } from "@/shared/i18n";
+import { usePrefsStore } from "@/shared/lib/prefs-store";
 import { Button } from "@/shared/ui/primitives/button";
 import {
   DropdownMenu,
@@ -23,7 +23,7 @@ export const LOCALE_NAMES: Record<Locale, string> = {
  * the account (PATCH /me) so other browsers start in it. The account write is best effort.
  */
 export function useChooseLocale(syncAccount: boolean) {
-  const setLocale = useLiveStore((s) => s.setLocale);
+  const setLocale = usePrefsStore((s) => s.setLocale);
   const updateMe = useUpdateMe();
   return (value: string) => {
     if (!isLocale(value)) return;
@@ -33,7 +33,7 @@ export function useChooseLocale(syncAccount: boolean) {
 }
 
 export function LanguageRadioGroup({ syncAccount = false }: { syncAccount?: boolean }) {
-  const locale = useLiveStore((s) => s.locale);
+  const locale = usePrefsStore((s) => s.locale);
   const choose = useChooseLocale(syncAccount);
   return (
     <DropdownMenuRadioGroup value={locale} onValueChange={choose}>

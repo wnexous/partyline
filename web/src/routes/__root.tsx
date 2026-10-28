@@ -1,9 +1,9 @@
 import { createRootRouteWithContext, Outlet, useRouter } from "@tanstack/react-router";
 import { useEffect } from "react";
-import { queryKeys } from "@/lib/api/queries";
-import { useLiveStore } from "@/lib/live/store";
 import type { RouterContext } from "@/router";
 import { setUnauthorizedHandler } from "@/shared/api/client";
+import { queryKeys } from "@/shared/api/query-keys";
+import { usePrefsStore } from "@/shared/lib/prefs-store";
 import { CrashPage, NotFoundPage } from "@/shared/ui/molecules/status-pages";
 import { Toaster } from "@/shared/ui/primitives/sonner";
 
@@ -22,7 +22,7 @@ export const Route = createRootRouteWithContext<RouterContext>()({
 function RootLayout() {
   const router = useRouter();
   const { queryClient } = Route.useRouteContext();
-  const theme = useLiveStore((s) => s.theme);
+  const theme = usePrefsStore((s) => s.theme);
 
   // A 401 during use (expired or revoked session) sends the user to login and back (UI-02).
   useEffect(

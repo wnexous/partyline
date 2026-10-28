@@ -1,6 +1,6 @@
 import { type FormEvent, useId, useState } from "react";
 import { toast } from "sonner";
-import { useMergeAgent } from "@/lib/api/queries";
+import { useMergeAgent } from "@/entities/intelligence";
 import { isApiError } from "@/shared/api/client";
 import { ErrorCodeIdentityOnline, type IntelligenceRef } from "@/shared/api/types.gen";
 import { useT } from "@/shared/i18n";

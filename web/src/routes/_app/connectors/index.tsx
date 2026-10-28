@@ -1,5 +1,5 @@
 import { createFileRoute, redirect } from "@tanstack/react-router";
-import { currentOrgId } from "@/hooks/use-current-org";
+import { currentOrgId } from "@/entities/organization";
 
 /*
  * Connections moved under the organization that owns them (SET-06): an old `/connectors` bookmark

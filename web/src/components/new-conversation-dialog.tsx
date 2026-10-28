@@ -1,14 +1,18 @@
 import { type ReactNode, useMemo, useState } from "react";
-import { PickableMeta } from "@/components/contact-meta";
-import { IntelligenceAvatar, IntelligenceName } from "@/entities/intelligence";
+import {
+  IntelligenceAvatar,
+  IntelligenceName,
+  type Pickable,
+  PickableMeta,
+  useContacts,
+  usePickables,
+  usePresenceStore,
+  withContactPresence,
+} from "@/entities/intelligence";
 import { useStartConversation } from "@/hooks/use-start-conversation";
-import { useContacts } from "@/lib/api/queries";
-import { type Pickable, pickableList } from "@/lib/contacts";
-import { matchesTerms } from "@/lib/conversations";
-import { useLiveStore } from "@/lib/live/store";
-import { withContactPresence } from "@/lib/presence";
 import type { IntelligenceRef } from "@/shared/api/types.gen";
 import { useT } from "@/shared/i18n";
+import { matchesTerms } from "@/shared/lib/search";
 import {
   Dialog,
   DialogContent,
@@ -57,16 +61,13 @@ export function NewConversationDialog({
 function ContactPicker({ initialQuery, onDone }: { initialQuery: string; onDone: () => void }) {
   const t = useT();
   const contacts = useContacts();
-  const presence = useLiveStore((s) => s.presence);
+  const presence = usePresenceStore((s) => s.presence);
   const conversation = useStartConversation();
   const [query, setQuery] = useState(initialQuery);
 
   const text = query.trim();
 
-  const picks = useMemo(
-    () => (contacts.data ? pickableList(contacts.data) : null),
-    [contacts.data],
-  );
+  const picks = usePickables({});
   const found = useMemo(
     () => (picks ?? []).filter((p) => matchesTerms(p.haystack, text)),
     [picks, text],

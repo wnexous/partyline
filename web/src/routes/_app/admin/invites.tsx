@@ -3,7 +3,7 @@ import { MailPlusIcon, PlusIcon } from "lucide-react";
 import { useId, useMemo, useState } from "react";
 import { toast } from "sonner";
 import { SecretOnceDialog } from "@/components/secret-once-dialog";
-import { useAdminInvites, useCreateInvite, useRevokeInvite } from "@/lib/api/queries";
+import { useAdminInvites, useCreateInvite, useRevokeInvite } from "@/entities/account";
 import {
   type CreatedInvite,
   type Invite,

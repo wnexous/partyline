@@ -1,13 +1,13 @@
 import { screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { useLiveStore } from "@/lib/live/store";
 import { json, mockApi } from "@/test/fetch";
 import { makeContacts, makeMe } from "@/test/fixtures";
+import { useLiveStore } from "@/test/live-store";
 import { stubPointer } from "@/test/media";
 import { renderRoute } from "@/test/render";
 
-vi.mock("@/lib/live", () => ({ startLive: vi.fn(() => () => {}) }));
+vi.mock("@/app/live", () => ({ startLive: vi.fn(() => () => {}) }));
 
 // UI-24: on phones, focusing a field on mount pops the on-screen keyboard over the form.
 // Fields focus themselves only with a fine pointer (mouse, trackpad).

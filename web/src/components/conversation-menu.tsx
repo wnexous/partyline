@@ -2,8 +2,10 @@ import { useNavigate, useRouter } from "@tanstack/react-router";
 import { CheckCheckIcon, LogOutIcon, Trash2Icon, UserRoundIcon } from "lucide-react";
 import { useRef, useState } from "react";
 import { toast } from "sonner";
+import { useMe } from "@/entities/account";
+import { useDeleteRoom, useLeaveRoom, useMarkRoomRead } from "@/entities/room";
+import { useRoomMembers } from "@/entities/room-member";
 import { useProfilePanel } from "@/hooks/use-profile-panel";
-import { useDeleteRoom, useLeaveRoom, useMarkRead, useMe, useRoomMembers } from "@/lib/api/queries";
 import {
   type Conversation,
   ConversationKindDM,
@@ -86,7 +88,6 @@ export function ConversationMenu({
   const profile = useProfilePanel();
   const router = useRouter();
   const navigate = useNavigate();
-  const markRead = useMarkRead();
   const remove = useDeleteRoom();
   const leave = useLeaveRoom();
   const me = useMe().data?.id;
@@ -96,6 +97,7 @@ export function ConversationMenu({
   if (target) last.current = target;
   const shown = last.current;
   const c = shown?.conversation;
+  const { markRead } = useMarkRoomRead(c?.id ?? "");
   const manages = c !== undefined && managesGroup(c);
   // Leaving a group is taking the viewer's own member row out, so the row has to be looked up.
   const members = useRoomMembers(c?.id ?? "", target !== null && c?.kind !== ConversationKindDM);
@@ -134,10 +136,9 @@ export function ConversationMenu({
         label: t("actions.markRead"),
         icon: CheckCheckIcon,
         onSelect: () =>
-          markRead.mutate(
-            { roomId: c.id },
-            { onError: () => toast.error(t("actions.markReadFailed", { name: c.title })) },
-          ),
+          markRead({
+            onError: () => toast.error(t("actions.markReadFailed", { name: c.title })),
+          }),
       });
     }
     if (c.kind === ConversationKindDM && c.counterpart) {

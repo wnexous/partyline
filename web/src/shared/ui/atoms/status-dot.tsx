@@ -1,14 +1,30 @@
 import { cn } from "@/shared/lib/utils";
 
+/**
+ * The look of a status dot, one per state: an agent's presence (online or stopped) and a
+ * connector's status (connected, connecting, error, stopped) share it.
+ */
+export const STATUS_DOT_CLASS = {
+  online: "animate-line-pulse bg-online",
+  connecting: "animate-pulse bg-muted-foreground",
+  error: "bg-destructive",
+  stopped: "border border-muted-foreground bg-transparent",
+} as const;
+
+export type StatusVariant = keyof typeof STATUS_DOT_CLASS;
+
 /** Agent presence: a filled, pulsing green dot when online, a hollow grey ring when offline. */
 export function StatusDot({
   online,
+  variant,
   label,
   withLabel = false,
   className,
   labelClassName,
 }: {
   online: boolean;
+  /** The state to draw; without it the dot is online or stopped, as `online` says. */
+  variant?: StatusVariant;
   /** The accessible label ("Online"/"Offline"): the caller translates it. */
   label: string;
   withLabel?: boolean;
@@ -22,7 +38,7 @@ export function StatusDot({
         aria-hidden="true"
         className={cn(
           "size-2 shrink-0 rounded-full",
-          online ? "animate-line-pulse bg-online" : "border border-muted-foreground bg-transparent",
+          STATUS_DOT_CLASS[variant ?? (online ? "online" : "stopped")],
         )}
       />
       {withLabel ? (

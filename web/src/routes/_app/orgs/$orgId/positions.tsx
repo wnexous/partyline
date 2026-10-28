@@ -3,14 +3,15 @@ import { NetworkIcon, PlusIcon, SquarePenIcon, Trash2Icon } from "lucide-react";
 import { useId, useMemo, useState } from "react";
 import { toast } from "sonner";
 import {
+  isAdminOf,
+  MaxPositionNameLength,
   useCreatePosition,
   useDeletePosition,
   useOrg,
   useOrgChart,
   useUpdatePosition,
-} from "@/lib/api/queries";
+} from "@/entities/organization";
 import { descendantsOf, type PositionNode, positionOptions, positionTree } from "@/lib/org-chart";
-import { MaxPositionNameLength, PermissionAdmin } from "@/lib/orgs";
 import { isApiError } from "@/shared/api/client";
 import {
   type ChartPosition,
@@ -66,7 +67,7 @@ function OrgPositionsPage() {
   const options = useMemo(() => positionOptions(positions ?? []), [positions]);
 
   if (!org) return null;
-  if (org.permission !== PermissionAdmin) {
+  if (!isAdminOf(org)) {
     return <Navigate to="/orgs/$orgId/chart" params={{ orgId: org.id }} replace />;
   }
 

@@ -1,33 +1,9 @@
 import type { ReactNode } from "react";
-import { AiStatusLine } from "@/components/ai-status";
-import { GroupAvatar } from "@/components/group-avatar";
-import { ProfileLink } from "@/components/profile-link";
-import { IntelligenceAvatar, IntelligenceName } from "@/entities/intelligence";
-import { counterpartOf } from "@/lib/conversations";
+import { AiStatusLine, IntelligenceName, ProfileLink } from "@/entities/intelligence";
+import { ConversationFace, conversationTitle, counterpartOf } from "@/entities/room";
 import { ConversationKindDM, type Room } from "@/shared/api/types.gen";
-import { type Translate, useT } from "@/shared/i18n";
+import { useT } from "@/shared/i18n";
 import { BackToConversations } from "@/shared/ui/molecules/back-link";
-
-/** What a conversation is called: a group by its name, a DM by the other participant. */
-export function conversationTitle(room: Room, viewerId: string, t: Translate): string {
-  if (room.kind !== ConversationKindDM) return room.name;
-  const other = counterpartOf(room, viewerId);
-  if (other) return other.display_name;
-  // A DM seen through an AI (its owner or a grantee) names both sides.
-  const [a, b] = room.participants;
-  return a && b ? t("conversation.between", { a: a.display_name, b: b.display_name }) : "";
-}
-
-/**
- * The platform of a DM with an external person, which is read-only history now (CID-21): null for
- * every other conversation and empty when the person carries no platform. People answer through
- * the connection that holds them, never in partyline.
- */
-export function historyPlatform(room: Room): string | null {
-  if (room.kind !== ConversationKindDM) return null;
-  const person = room.participants.find((p) => p.role === "person");
-  return person ? (person.platform ?? "") : null;
-}
 
 /**
  * The conversation page's header: avatar and title; for a DM the counterpart's @handle and, for
@@ -69,10 +45,15 @@ export function ConversationHeader({
           aria-label={t("message.openProfile", { name: face.display_name })}
           className="shrink-0 rounded-full focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring"
         >
-          <IntelligenceAvatar intelligence={face} size="lg" decorative />
+          <ConversationFace
+            counterpart={face}
+            group={{ id: room.id, name: room.name, avatarUrl: room.avatar_url }}
+            size="lg"
+            decorative
+          />
         </ProfileLink>
       ) : (
-        <GroupAvatar
+        <ConversationFace
           group={{ id: room.id, name: room.name, avatarUrl: room.avatar_url }}
           size="lg"
           decorative

@@ -1,8 +1,7 @@
 import { act, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { handleLiveEvent } from "@/lib/live/handlers";
-import { useLiveStore } from "@/lib/live/store";
+import { handleLiveEvent } from "@/app/live/dispatch";
 import { type Connector, SecretMask } from "@/shared/api/types.gen";
 import { apiError, json, mockApi } from "@/test/fetch";
 import {
@@ -16,11 +15,12 @@ import {
   makeOrgChart,
   makeProfile,
 } from "@/test/fixtures";
+import { useLiveStore } from "@/test/live-store";
 import { viewerIn } from "@/test/orgs";
 import { renderRoute } from "@/test/render";
 import { sampleContacts } from "@/test/sample-contacts";
 
-vi.mock("@/lib/live", () => ({ startLive: vi.fn(() => () => {}) }));
+vi.mock("@/app/live", () => ({ startLive: vi.fn(() => () => {}) }));
 
 const me = makeMe();
 const telegram = makeConnectorKind();

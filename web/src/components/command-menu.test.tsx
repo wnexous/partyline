@@ -1,7 +1,6 @@
 import { screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { useLiveStore } from "@/lib/live/store";
 import { json, mockApi } from "@/test/fetch";
 import {
   makeAgent,
@@ -12,9 +11,10 @@ import {
   makeProfile,
 } from "@/test/fixtures";
 import { LoadedImage } from "@/test/image";
+import { useLiveStore } from "@/test/live-store";
 import { renderRoute } from "@/test/render";
 
-vi.mock("@/lib/live", () => ({ startLive: vi.fn(() => () => {}) }));
+vi.mock("@/app/live", () => ({ startLive: vi.fn(() => () => {}) }));
 
 beforeEach(() => useLiveStore.setState({ locale: "en", paletteOpen: false }));
 afterEach(() => vi.unstubAllGlobals());

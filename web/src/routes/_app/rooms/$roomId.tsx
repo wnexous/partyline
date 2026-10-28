@@ -12,13 +12,8 @@ import {
 import { useEffect, useState } from "react";
 import { toast } from "sonner";
 import { Composer, canPost } from "@/components/composer";
-import {
-  ConversationHeader,
-  conversationTitle,
-  historyPlatform,
-} from "@/components/conversation-header";
+import { ConversationHeader } from "@/components/conversation-header";
 import { MemberPicker } from "@/components/member-picker";
-import { platformName } from "@/components/message-item";
 import {
   type MessageFocus,
   MessageTimeline,
@@ -26,10 +21,19 @@ import {
 } from "@/components/message-timeline";
 import { RoomFiles } from "@/components/room-files";
 import { RoomSettingsSheet } from "@/components/room-settings-sheet";
+import { useMe } from "@/entities/account";
+import { platformName, postMessageKey } from "@/entities/message";
+import {
+  conversationTitle,
+  historyPlatform,
+  isHistoryOnly,
+  useAutoMarkRoomRead,
+  useOpenConversation,
+  useResumeRoom,
+  useRoom,
+} from "@/entities/room";
+import { useRoomMembers } from "@/entities/room-member";
 import { useDraft, useDraftStore } from "@/features/send-message";
-import { useMarkRoomRead } from "@/hooks/use-mark-room-read";
-import { useOpenConversation } from "@/hooks/use-open-conversation";
-import { postMessageKey, useMe, useResumeRoom, useRoom, useRoomMembers } from "@/lib/api/queries";
 import { isApiError } from "@/shared/api/client";
 import {
   ConversationKindDM,
@@ -67,7 +71,7 @@ function RoomPage() {
   const me = useMe().data;
   const isMobile = useIsMobile();
   useOpenConversation(roomId);
-  useMarkRoomRead(roomId);
+  useAutoMarkRoomRead(roomId);
   // A post refused as history (CID-21): the DM held a person the room data did not reveal.
   const refusedAsHistory = useMutationState({
     filters: { mutationKey: postMessageKey(roomId) },
@@ -113,7 +117,7 @@ function RoomPage() {
   const isDM = r.kind === ConversationKindDM;
   const canManage = !isDM && r.my_level === LevelManage;
   const history = historyPlatform(r);
-  const historyOnly = history !== null || refusedAsHistory;
+  const historyOnly = isHistoryOnly(r, refusedAsHistory);
   // Edit needs a composer to edit in; a conversation that is history changes no more (EDT-05, DLT-03).
   // A message is answered or edited, one at a time: choosing either lets the other go.
   const onEdit =

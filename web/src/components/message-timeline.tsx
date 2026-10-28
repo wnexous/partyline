@@ -3,7 +3,6 @@ import { useVirtualizer } from "@tanstack/react-virtual";
 import { ArrowDownIcon, MessagesSquareIcon } from "lucide-react";
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
-import { collectImages, ImageViewer } from "@/components/image-viewer";
 import { MessageItem } from "@/components/message-item";
 import {
   hasMessageActions,
@@ -12,9 +11,9 @@ import {
   type MessageMenuTarget,
   messageActionSet,
 } from "@/components/message-menu";
+import { collectImages, ImageViewer, useRoomMessages } from "@/entities/message";
 import { useReact } from "@/hooks/use-react";
 import { useStickToEnd } from "@/hooks/use-stick-to-end";
-import { useRoomMessages } from "@/lib/api/queries";
 import type { Message, Page, RoomMember } from "@/shared/api/types.gen";
 import { useI18n } from "@/shared/i18n";
 import { useTouchFirst } from "@/shared/lib/device";

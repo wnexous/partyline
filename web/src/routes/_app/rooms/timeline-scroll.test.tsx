@@ -1,15 +1,15 @@
 import { act, fireEvent, screen } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { handleLiveEvent } from "@/lib/live/handlers";
-import { useLiveStore } from "@/lib/live/store";
+import { handleLiveEvent } from "@/app/live/dispatch";
 import { createAppRouter } from "@/router";
 import type { Message } from "@/shared/api/types.gen";
 import { json, mockApi } from "@/test/fetch";
 import { makeConversation, makeMe, makeMessage, makeRoom } from "@/test/fixtures";
 import { stubLayout } from "@/test/layout";
+import { useLiveStore } from "@/test/live-store";
 import { makeQueryClient, renderRoute } from "@/test/render";
 
-vi.mock("@/lib/live", () => ({ startLive: vi.fn(() => () => {}) }));
+vi.mock("@/app/live", () => ({ startLive: vi.fn(() => () => {}) }));
 
 /*
  * Where a conversation opens (UI-26). The timeline is virtualized and pinned to the end: opening any

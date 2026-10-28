@@ -1,9 +1,9 @@
 import { screen, within } from "@testing-library/react";
 import { beforeEach, describe, expect, it } from "vitest";
 import { MessageItem } from "@/components/message-item";
-import { useLiveStore } from "@/lib/live/store";
 import type { Message } from "@/shared/api/types.gen";
 import { makeIntelligence, makeMessage } from "@/test/fixtures";
+import { useLiveStore } from "@/test/live-store";
 import { renderWithRouter } from "@/test/render";
 
 /*

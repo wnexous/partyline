@@ -3,8 +3,12 @@ import { useEffect, useId, useRef, useState } from "react";
 import { useForm } from "react-hook-form";
 import { toast } from "sonner";
 import { PhotoEditor } from "@/components/photo-editor";
-import { IntelligenceAvatar } from "@/entities/intelligence";
-import { useRemoveAvatar, useUpdateIntelligence, useUploadAvatar } from "@/lib/api/queries";
+import {
+  IntelligenceAvatar,
+  useRemoveAvatar,
+  useUpdateIntelligence,
+  useUploadAvatar,
+} from "@/entities/intelligence";
 import { type ProfileEditForm, profileEditSchema } from "@/lib/schemas";
 import { isApiError } from "@/shared/api/client";
 import {

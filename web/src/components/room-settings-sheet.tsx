@@ -3,14 +3,14 @@ import { useNavigate } from "@tanstack/react-router";
 import { type ReactNode, useId, useState } from "react";
 import { type ControllerRenderProps, useForm } from "react-hook-form";
 import { toast } from "sonner";
-import { GroupAvatar } from "@/components/group-avatar";
 import { PhotoEditor } from "@/components/photo-editor";
 import {
+  ConversationFace,
   useDeleteRoom,
   useRemoveRoomAvatar,
   useUpdateRoom,
   useUploadRoomAvatar,
-} from "@/lib/api/queries";
+} from "@/entities/room";
 import { type RoomSettingsForm, roomSettingsSchema, textLength } from "@/lib/schemas";
 import { isApiError } from "@/shared/api/client";
 import { MaxRoomInstructions, type Room, type UpdateRoomRequest } from "@/shared/api/types.gen";
@@ -195,7 +195,7 @@ function RoomPhoto({ room }: { room: Room }) {
   return (
     <PhotoEditor
       face={
-        <GroupAvatar
+        <ConversationFace
           group={{ id: room.id, name: room.name, avatarUrl: room.avatar_url }}
           size="xl"
           decorative

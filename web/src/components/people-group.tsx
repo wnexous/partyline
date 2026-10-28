@@ -1,8 +1,7 @@
 import { ChevronRightIcon } from "lucide-react";
 import { useId, useState } from "react";
-import { ContactRow } from "@/components/contact-row";
-import { platformLabel } from "@/components/message-item";
-import { usePeople } from "@/lib/api/queries";
+import { ContactRow, usePeople } from "@/entities/intelligence";
+import { platformName } from "@/entities/message";
 import type { PeopleGroup as PeopleGroupData } from "@/shared/api/types.gen";
 import { useI18n } from "@/shared/i18n";
 import { cn } from "@/shared/lib/utils";
@@ -29,9 +28,7 @@ export function PeopleGroup({ group, query }: { group: PeopleGroupData; query: s
   const title = (
     <>
       <span className="min-w-0 truncate font-semibold">{connector.name}</span>
-      <span className="shrink-0 text-xs text-muted-foreground">
-        {platformLabel(connector.kind)}
-      </span>
+      <span className="shrink-0 text-xs text-muted-foreground">{platformName(connector.kind)}</span>
       <span className="ml-auto shrink-0 font-mono text-xs text-muted-foreground tabular">
         {count === 1 ? t("contacts.peopleOne") : t("contacts.peopleMany", { count })}
       </span>

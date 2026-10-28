@@ -1,7 +1,7 @@
 import { MonitorIcon, MoonIcon, SunIcon } from "lucide-react";
-import { useLiveStore } from "@/lib/live/store";
 import type { ThemePreference } from "@/lib/theme";
 import { useT } from "@/shared/i18n";
+import { usePrefsStore } from "@/shared/lib/prefs-store";
 import { Button } from "@/shared/ui/primitives/button";
 import {
   DropdownMenu,
@@ -21,8 +21,8 @@ const OPTIONS = [
 /** Radio items for the color scheme; used in the account menu and the theme button. */
 export function ThemeRadioGroup() {
   const t = useT();
-  const theme = useLiveStore((s) => s.theme);
-  const setTheme = useLiveStore((s) => s.setTheme);
+  const theme = usePrefsStore((s) => s.theme);
+  const setTheme = usePrefsStore((s) => s.setTheme);
   return (
     <DropdownMenuRadioGroup value={theme} onValueChange={(v) => setTheme(v as ThemePreference)}>
       {OPTIONS.map(({ value, icon: Icon, label }) => (

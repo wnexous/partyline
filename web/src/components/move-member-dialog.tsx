@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { useForm } from "react-hook-form";
 import { toast } from "sonner";
-import { useOrgMovePreview, useUpdateOrgMember } from "@/lib/api/queries";
+import { useOrgMovePreview, useUpdateOrgMember } from "@/entities/organization";
 import { movablePositions, type PositionOption } from "@/lib/org-chart";
 import { isApiError } from "@/shared/api/client";
 import type { Position } from "@/shared/api/types.gen";

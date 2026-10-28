@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { toast } from "sonner";
-import { useRemoveFromOrg } from "@/lib/api/queries";
+import { useRemoveFromOrg } from "@/entities/organization";
 import { isApiError } from "@/shared/api/client";
 import {
   ErrorCodeHomeOrganization,

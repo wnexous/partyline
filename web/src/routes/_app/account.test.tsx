@@ -1,16 +1,16 @@
 import { act, fireEvent, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { useLiveStore } from "@/lib/live/store";
 import { LOCALE_KEY, THEME_KEY } from "@/lib/theme";
 import type { Session } from "@/shared/api/types.gen";
 import { apiError, json, mockApi } from "@/test/fetch";
 import { makeMe, makeProfile } from "@/test/fixtures";
+import { useLiveStore } from "@/test/live-store";
 import { memberIn, viewerIn } from "@/test/orgs";
 import { PUSH_AUTH, PUSH_ENDPOINT, PUSH_P256DH, PUSH_SERVER_KEY, stubPush } from "@/test/push";
 import { renderRoute } from "@/test/render";
 
-vi.mock("@/lib/live", () => ({ startLive: vi.fn(() => () => {}) }));
+vi.mock("@/app/live", () => ({ startLive: vi.fn(() => () => {}) }));
 
 const me = makeMe();
 const profile = makeProfile({ ...me.intelligence, can_edit: true });

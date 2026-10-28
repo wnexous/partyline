@@ -4,17 +4,17 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { axe } from "vitest-axe";
 import * as matchers from "vitest-axe/matchers";
 import { useProfilePanelStore } from "@/hooks/use-profile-panel";
-import { useLiveStore } from "@/lib/live/store";
 import type { Conversation, RoomMember } from "@/shared/api/types.gen";
 import { json, mockApi } from "@/test/fetch";
 import { makeConversation, makeIntelligence, makeMe, makeMember, makeRoom } from "@/test/fixtures";
 import { finger, HOLD, longPress, mouseDevice, touchDevice, wait } from "@/test/gestures";
 import { stubLayout } from "@/test/layout";
+import { useLiveStore } from "@/test/live-store";
 import { renderRoute } from "@/test/render";
 
 expect.extend(matchers);
 
-vi.mock("@/lib/live", () => ({ startLive: vi.fn(() => () => {}) }));
+vi.mock("@/app/live", () => ({ startLive: vi.fn(() => () => {}) }));
 const toast = vi.hoisted(() => Object.assign(vi.fn(), { error: vi.fn() }));
 // Only `toast` is ours: the root route still draws the real <Toaster>.
 vi.mock("sonner", async (importOriginal) => ({

@@ -1,8 +1,8 @@
 import { screen, within } from "@testing-library/react";
 import { beforeEach, describe, expect, it } from "vitest";
-import { useLiveStore } from "@/lib/live/store";
 import { json, mockApi } from "@/test/fetch";
 import { makeAI, makeMe } from "@/test/fixtures";
+import { useLiveStore } from "@/test/live-store";
 import { renderWithRouter } from "@/test/render";
 import { IntelligenceRow } from "./intelligence-row";
 

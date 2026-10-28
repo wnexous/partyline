@@ -3,17 +3,18 @@ import { useNavigate } from "@tanstack/react-router";
 import { SearchIcon, XIcon } from "lucide-react";
 import { type ReactNode, useEffect, useId, useMemo, useState } from "react";
 import { useForm } from "react-hook-form";
-import { PickableMeta } from "@/components/contact-meta";
-import { OrgSelect } from "@/components/org-select";
-import { IntelligenceAvatar, IntelligenceName } from "@/entities/intelligence";
-import { useCurrentOrg } from "@/hooks/use-current-org";
-import { useOrgUsers } from "@/hooks/use-org-users";
-import { useContacts, useCreateGroup } from "@/lib/api/queries";
-import { type Pickable, pickableList } from "@/lib/contacts";
-import { matchesTerms } from "@/lib/conversations";
-import { useLiveStore } from "@/lib/live/store";
-import { canCreateGroupsIn } from "@/lib/orgs";
-import { withContactPresence } from "@/lib/presence";
+import {
+  IntelligenceAvatar,
+  IntelligenceName,
+  type Pickable,
+  PickableMeta,
+  useContacts,
+  usePickables,
+  usePresenceStore,
+  withContactPresence,
+} from "@/entities/intelligence";
+import { canCreateGroupsIn, OrgSelect, useCurrentOrg, useOrgUsers } from "@/entities/organization";
+import { useCreateGroup } from "@/entities/room";
 import { type CreateGroupForm, createGroupSchema } from "@/lib/schemas";
 import { isApiError } from "@/shared/api/client";
 import {
@@ -27,6 +28,7 @@ import {
 } from "@/shared/api/types.gen";
 import { useT } from "@/shared/i18n";
 import { applyFieldErrors } from "@/shared/lib/forms";
+import { matchesTerms } from "@/shared/lib/search";
 import {
   Dialog,
   DialogContent,
@@ -76,7 +78,7 @@ function GroupForm({ onDone, onCancel }: { onDone: () => void; onCancel: () => v
   const contacts = useContacts();
   const create = useCreateGroup();
   const { org: current, orgs, loading: orgsLoading, select } = useCurrentOrg();
-  const presence = useLiveStore((s) => s.presence);
+  const presence = usePresenceStore((s) => s.presence);
   const filterId = useId();
   const [filter, setFilter] = useState("");
   // Ids in the order they were picked: the server adds the members in that order.
@@ -99,12 +101,9 @@ function GroupForm({ onDone, onCancel }: { onDone: () => void; onCancel: () => v
     creatable[0];
   const guestEverywhere = orgs.length > 0 && creatable.length === 0;
   const orgId = org?.id;
-  const { users: orgUsers, loading: usersLoading } = useOrgUsers(orgId);
+  const { loading: usersLoading } = useOrgUsers(orgId);
   // Nothing is offered until the organization's users are known, so the instance's are not listed first.
-  const all = useMemo(
-    () => (contacts.data && !usersLoading ? pickableList(contacts.data, orgId, orgUsers) : null),
-    [contacts.data, orgId, orgUsers, usersLoading],
-  );
+  const all = usePickables({ orgId });
   const byId = useMemo(() => new Map((all ?? []).map((p) => [p.ref.id, p])), [all]);
   const text = filter.trim();
   const found = (all ?? []).filter((p) => matchesTerms(p.haystack, text));
