@@ -262,23 +262,23 @@ func TestTheFrameCarriesTheJSONAsOneAttribute(t *testing.T) {
 // a principal message carries none. A message of the receiving AI's own other session is marked.
 func TestFormatNamesTheWritingSession(t *testing.T) {
 	m := sample()
-	m.Message.AuthorKind, m.Message.AuthorName = dto.AuthorKindAgent, "Nexous"
-	m.Message.Author = dto.IntelligenceRef{ID: "ai1", Handle: "nexous"}
+	m.Message.AuthorKind, m.Message.AuthorName = dto.AuthorKindAgent, "Atlas"
+	m.Message.Author = dto.IntelligenceRef{ID: "ai1", Handle: "atlas"}
 
 	principal := Format(m)
 	require.NotContains(t, principal.Meta, "author_session")
 	require.NotContains(t, principal.Meta, "from_own_session")
-	require.Contains(t, Frame(Record(m)), `from="Nexous" trusted`)
+	require.Contains(t, Frame(Record(m)), `from="Atlas" trusted`)
 
 	m.Message.AuthorLabel = "pi-2"
 	n := Format(m)
 	require.Equal(t, "pi-2", n.Meta["author_session"])
-	require.Equal(t, "Nexous", n.Meta["author"])
+	require.Equal(t, "Atlas", n.Meta["author"])
 	require.NotContains(t, n.Meta, "from_own_session", "unknown receiver, nothing marked")
-	require.Contains(t, Frame(Record(m)), `from="Nexous (via :pi-2)" author_session="pi-2" trusted`)
+	require.Contains(t, Frame(Record(m)), `from="Atlas (via :pi-2)" author_session="pi-2" trusted`)
 
 	require.NotContains(t, FormatFor(m, "ai2").Meta, "from_own_session", "another AI's session is not mine")
 	own := FormatFor(m, "ai1")
 	require.Equal(t, "true", own.Meta["from_own_session"])
-	require.Contains(t, Frame(map[string]string{"author": "Nexous", "author_session": "pi-2", "from_own_session": own.Meta["from_own_session"], "content": own.Content}), `from_own_session="true"`)
+	require.Contains(t, Frame(map[string]string{"author": "Atlas", "author_session": "pi-2", "from_own_session": own.Meta["from_own_session"], "content": own.Content}), `from_own_session="true"`)
 }

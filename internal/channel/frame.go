@@ -40,7 +40,7 @@ func Frame(r map[string]string) string {
 	if r["trusted"] == "true" {
 		trusted, line = "true", TrustedLine
 	}
-	// An AI's parallel session is named after its author: "Nexous (via :pi-2)".
+	// An AI's parallel session is named after its author: "Atlas (via :pi-2)".
 	from := first("sender_name", "author")
 	if from != "" && r["author_session"] != "" {
 		from += " (via :" + r["author_session"] + ")"
