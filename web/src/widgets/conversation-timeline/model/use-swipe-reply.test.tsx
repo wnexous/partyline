@@ -1,6 +1,6 @@
 import { act, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { useSwipeReply } from "@/hooks/use-swipe-reply";
+import { useSwipeReply } from "../model/use-swipe-reply";
 
 /*
  * Dragging a message to the right to answer it (SWP-01..SWP-04): the row follows the finger, a

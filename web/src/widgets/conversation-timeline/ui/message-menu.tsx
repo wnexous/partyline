@@ -1,7 +1,6 @@
 import { CopyIcon, PencilIcon, ReplyIcon, Trash2Icon } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
-import { ReactionBar, ReactionMenuRow } from "@/components/reaction-bar";
 import {
   authorDisplayName,
   canDeleteMessage,
@@ -16,6 +15,7 @@ import { copyText } from "@/shared/lib/clipboard";
 import { ActionMenu, type MenuAction } from "@/shared/ui/molecules/action-menu";
 import { EmojiGrid } from "@/shared/ui/molecules/emoji-grid";
 import { PopoverAnchor } from "@/shared/ui/primitives/popover";
+import { ReactionBar, ReactionMenuRow } from "./reaction-bar";
 
 /*
  * The actions of a message (ACT-05, EDT-10, DLT-09, RCT-02): a bar of six quick reactions with a way to

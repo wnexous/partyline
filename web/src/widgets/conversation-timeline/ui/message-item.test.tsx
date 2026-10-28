@@ -1,10 +1,10 @@
 import { screen, within } from "@testing-library/react";
 import { beforeEach, describe, expect, it } from "vitest";
-import { MessageItem } from "@/components/message-item";
 import type { Message } from "@/shared/api/types.gen";
 import { makeIntelligence, makeMessage } from "@/test/fixtures";
 import { useLiveStore } from "@/test/live-store";
 import { renderWithRouter } from "@/test/render";
+import { MessageItem } from "./message-item";
 
 /*
  * Which session of an AI wrote a row (SESS-30, SESS-34): "via :label" next to the author for an

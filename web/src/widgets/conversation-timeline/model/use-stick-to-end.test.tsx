@@ -1,6 +1,6 @@
 import { renderHook } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { useStickToEnd } from "@/hooks/use-stick-to-end";
+import { useStickToEnd } from "../model/use-stick-to-end";
 
 /*
  * A timeline at its newest message stays there when its box changes height (KBD-02): the

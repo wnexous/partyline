@@ -2,13 +2,13 @@ import { act, fireEvent, screen, waitFor, within } from "@testing-library/react"
 import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { handleLiveEvent } from "@/app/live/dispatch";
-import { MessageTimeline } from "@/components/message-timeline";
 import type { Message, RoomMember } from "@/shared/api/types.gen";
 import { json, mockApi } from "@/test/fetch";
 import { makeIntelligence, makeMessage } from "@/test/fixtures";
 import { stubLayout } from "@/test/layout";
 import { useLiveStore } from "@/test/live-store";
 import { renderWithRouter } from "@/test/render";
+import { MessageTimeline } from "@/widgets/conversation-timeline";
 
 const ME = "u1";
 

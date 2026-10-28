@@ -4,12 +4,6 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { axe } from "vitest-axe";
 import * as matchers from "vitest-axe/matchers";
 import { handleLiveEvent } from "@/app/live/dispatch";
-import {
-  hasMessageActions,
-  type MessageCapabilities,
-  messageActionSet,
-} from "@/components/message-menu";
-import { MessageTimeline } from "@/components/message-timeline";
 import type { Message } from "@/shared/api/types.gen";
 import { json, mockApi } from "@/test/fetch";
 import { makeMessage } from "@/test/fixtures";
@@ -17,6 +11,12 @@ import { finger, HOLD, longPress, mouseDevice, touchDevice, wait } from "@/test/
 import { stubLayout } from "@/test/layout";
 import { useLiveStore } from "@/test/live-store";
 import { renderWithRouter } from "@/test/render";
+import {
+  hasMessageActions,
+  type MessageCapabilities,
+  MessageTimeline,
+  messageActionSet,
+} from "@/widgets/conversation-timeline";
 
 expect.extend(matchers);
 

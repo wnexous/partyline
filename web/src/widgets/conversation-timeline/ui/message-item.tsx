@@ -1,8 +1,5 @@
 import { BanIcon, InfoIcon, ReplyIcon } from "lucide-react";
 import { memo, Suspense } from "react";
-import type { MessageMenuTarget } from "@/components/message-menu";
-import { ReactionToolbar } from "@/components/reaction-bar";
-import { ReactionChips } from "@/components/reaction-chips";
 import { IntelligenceAvatar, IntelligenceName, ProfileLink } from "@/entities/intelligence";
 import {
   AttachmentView,
@@ -17,13 +14,16 @@ import {
   TrustBadge,
 } from "@/entities/message";
 import { QuestionBubble } from "@/features/answer-question";
-import { useSwipeReply } from "@/hooks/use-swipe-reply";
 import type { Message, RoomMember } from "@/shared/api/types.gen";
 import { type MessageKey, useI18n } from "@/shared/i18n";
 import { formatAbsolute, formatClock } from "@/shared/lib/time";
 import { useLongPress } from "@/shared/lib/use-long-press";
 import { cn } from "@/shared/lib/utils";
 import { RowMenuButton } from "@/shared/ui/molecules/row-menu-button";
+import { useSwipeReply } from "../model/use-swipe-reply";
+import type { MessageMenuTarget } from "./message-menu";
+import { ReactionToolbar } from "./reaction-bar";
+import { ReactionChips } from "./reaction-chips";
 
 /*
  * One timeline row (UI-05). Message content is data: plain text for people and chats, Markdown

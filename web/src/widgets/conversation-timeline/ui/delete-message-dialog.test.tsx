@@ -2,11 +2,6 @@ import { screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { useState } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import {
-  type MessageCapabilities,
-  MessageMenu,
-  type MessageMenuTarget,
-} from "@/components/message-menu";
 import { canDeleteMessage, canEditMessage } from "@/entities/message";
 import type { MessagePages } from "@/shared/api/cache-types";
 import { queryKeys } from "@/shared/api/query-keys";
@@ -16,6 +11,11 @@ import { makeMessage } from "@/test/fixtures";
 import { touchDevice } from "@/test/gestures";
 import { useLiveStore } from "@/test/live-store";
 import { makeQueryClient, renderWithProviders } from "@/test/render";
+import {
+  type MessageCapabilities,
+  MessageMenu,
+  type MessageMenuTarget,
+} from "@/widgets/conversation-timeline";
 
 /*
  * The actions of one message that change it (EDT-10, DLT-09): "Edit" on the viewer's own text messages,

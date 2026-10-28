@@ -3,17 +3,8 @@ import { useVirtualizer } from "@tanstack/react-virtual";
 import { ArrowDownIcon, MessagesSquareIcon } from "lucide-react";
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
-import { MessageItem } from "@/components/message-item";
-import {
-  hasMessageActions,
-  type MessageCapabilities,
-  MessageMenu,
-  type MessageMenuTarget,
-  messageActionSet,
-} from "@/components/message-menu";
 import { collectImages, ImageViewer, useRoomMessages } from "@/entities/message";
 import { useReact } from "@/features/react-to-message";
-import { useStickToEnd } from "@/hooks/use-stick-to-end";
 import type { Message, Page, RoomMember } from "@/shared/api/types.gen";
 import { useI18n } from "@/shared/i18n";
 import { useTouchFirst } from "@/shared/lib/device";
@@ -22,6 +13,15 @@ import { cn } from "@/shared/lib/utils";
 import { EmptyState } from "@/shared/ui/molecules/empty-state";
 import { Button } from "@/shared/ui/primitives/button";
 import { Skeleton } from "@/shared/ui/primitives/skeleton";
+import { useStickToEnd } from "../model/use-stick-to-end";
+import { MessageItem } from "./message-item";
+import {
+  hasMessageActions,
+  type MessageCapabilities,
+  MessageMenu,
+  type MessageMenuTarget,
+  messageActionSet,
+} from "./message-menu";
 
 /*
  * The live room timeline (UI-04, UI-05). Pages come from the infinite query (newest page first,

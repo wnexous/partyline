@@ -1,6 +1,5 @@
 import { act, fireEvent, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { MessageTimeline } from "@/components/message-timeline";
 import type { Message } from "@/shared/api/types.gen";
 import { json, mockApi } from "@/test/fetch";
 import { makeMessage } from "@/test/fixtures";
@@ -8,6 +7,7 @@ import { finger, HOLD, mouseDevice, touchDevice, wait } from "@/test/gestures";
 import { stubLayout } from "@/test/layout";
 import { useLiveStore } from "@/test/live-store";
 import { renderWithRouter } from "@/test/render";
+import { MessageTimeline } from "./message-timeline";
 
 /*
  * Answering a message with a drag to the right, on the rows of the timeline (SWP-01, SWP-02,
