@@ -177,6 +177,74 @@ describe("composer (UI-07)", () => {
   });
 });
 
+describe("the draft is kept per conversation (WA-07)", () => {
+  const box = (room = "deploys") => screen.getByRole("textbox", { name: `Message ${room}` });
+  const composerFor = (roomId: string, roomName: string) => (
+    <Composer key={roomId} roomId={roomId} roomName={roomName} level="post" />
+  );
+
+  it("shows the text and the attachment again after another conversation and back", async () => {
+    mockApi({});
+    const user = userEvent.setup();
+    const queryClient = makeQueryClient();
+    const at = (roomId: string, roomName: string) => (
+      <AppProviders queryClient={queryClient}>{composerFor(roomId, roomName)}</AppProviders>
+    );
+    const { rerender } = renderWithProviders(composerFor("r1", "deploys"), queryClient);
+    await user.type(box(), "ship it");
+    await user.upload(
+      screen.getByLabelText("Attach files"),
+      new File(["log line"], "build.log", { type: "text/plain" }),
+    );
+
+    rerender(at("r2", "alerts"));
+    expect(box("alerts")).toHaveValue("");
+    expect(screen.queryByText("build.log")).toBeNull();
+    await user.type(box("alerts"), "other thing");
+
+    rerender(at("r1", "deploys"));
+    expect(box()).toHaveValue("ship it");
+    expect(screen.getByText("build.log")).toBeInTheDocument();
+    rerender(at("r2", "alerts"));
+    expect(box("alerts")).toHaveValue("other thing");
+  });
+
+  it("a successful send clears that conversation's draft and leaves the others", async () => {
+    const { calls } = mockApi({ "POST /rooms/r1/messages": json(201, makeMessage({ seq: 9 })) });
+    const user = userEvent.setup();
+    const queryClient = makeQueryClient();
+    const { rerender } = renderWithProviders(composerFor("r2", "alerts"), queryClient);
+    await user.type(box("alerts"), "keep me");
+    rerender(<AppProviders queryClient={queryClient}>{composerFor("r1", "deploys")}</AppProviders>);
+    await user.type(box(), "send me{Enter}");
+    await waitFor(() => expect(posts(calls)).toHaveLength(1));
+    await waitFor(() => expect(box()).toHaveValue(""));
+    rerender(<AppProviders queryClient={queryClient}>{composerFor("r2", "alerts")}</AppProviders>);
+    expect(box("alerts")).toHaveValue("keep me");
+  });
+
+  it("clears the draft of a post that went through after the composer was gone", async () => {
+    let finish = () => {};
+    const { calls } = mockApi({
+      "POST /rooms/r1/messages": () =>
+        new Promise<Response>((resolve) => {
+          finish = () => resolve(json(201, makeMessage({ seq: 9 })));
+        }),
+    });
+    const user = userEvent.setup();
+    const queryClient = makeQueryClient();
+    const { rerender } = renderWithProviders(composerFor("r1", "deploys"), queryClient);
+    await user.type(box(), "on its way");
+    await user.click(screen.getByRole("button", { name: "Send" }));
+    await waitFor(() => expect(posts(calls)).toHaveLength(1));
+    rerender(<AppProviders queryClient={queryClient}>{composerFor("r2", "alerts")}</AppProviders>);
+    finish();
+    await act(async () => {});
+    rerender(<AppProviders queryClient={queryClient}>{composerFor("r1", "deploys")}</AppProviders>);
+    await waitFor(() => expect(box()).toHaveValue(""));
+  });
+});
+
 describe("mentioning a session (SESS-33)", () => {
   const sessions = [
     { label: "", harness: "claude", connected_at: "2026-10-19T11:00:00Z" },
@@ -669,6 +737,28 @@ describe("editing a message in the composer (EDT-10)", () => {
     expect(box()).toHaveValue("my unfinished draft");
     expect(screen.queryByText("Editing message")).toBeNull();
     expect(screen.getByLabelText("Attach files")).toBeInTheDocument();
+  });
+
+  it("keeps what was typed in an edit per message, apart from the new-message draft (WA-07)", async () => {
+    mockApi({});
+    const user = userEvent.setup();
+    const { editing } = renderEditing(null);
+    await user.type(box(), "new draft");
+
+    editing(original);
+    await user.type(box(), "!");
+    expect(box()).toHaveValue("helo wrld!");
+    // Back to writing a new message: its draft was never touched by the edit.
+    editing(null);
+    expect(box()).toHaveValue("new draft");
+    // The edit is still there for its message.
+    editing(original);
+    expect(box()).toHaveValue("helo wrld!");
+    // Cancel drops it: the next edit of the message starts from its text again.
+    await user.click(screen.getByRole("button", { name: "Cancel editing" }));
+    editing(null);
+    editing(original);
+    expect(box()).toHaveValue("helo wrld");
   });
 
   it("starts from another message's text when another one is chosen, and does not reset on a refreshed copy", async () => {

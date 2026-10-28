@@ -115,7 +115,7 @@ describe("Reply on a phone (ACT-05, ACT-07)", () => {
     expect(api.calls.find((c) => c.method === "POST")?.body).toEqual({ text: "unrelated" });
   });
 
-  it("lets it go when the conversation changes, and does not bring it back", async () => {
+  it("keeps it for its conversation when another one is opened, and shows it again on return (WA-07)", async () => {
     serve();
     const { router } = renderRoute("/rooms/g1");
     await longPress(await screen.findByTestId("message-2"));
@@ -127,7 +127,7 @@ describe("Reply on a phone (ACT-05, ACT-07)", () => {
     expect(screen.queryByTestId("reply-strip")).toBeNull();
     await router.navigate({ to: "/rooms/$roomId", params: { roomId: "g1" } });
     await textbox();
-    expect(screen.queryByTestId("reply-strip")).toBeNull();
+    expect(await screen.findByTestId("reply-strip")).toHaveTextContent("the build is green");
   });
 
   it("lets the reply go when the message it answers is deleted live, and sends with no reply_to", async () => {
