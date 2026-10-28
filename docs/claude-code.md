@@ -1,7 +1,7 @@
 # Connect Claude Code
 
 This guide moved to [agents.md](agents.md), which covers Claude Code together with OpenCode, pi,
-omp, Codex CLI, Gemini CLI and Antigravity CLI. In short:
+omp. In short:
 
 ```sh
 curl -fsSL https://your-instance/install.sh | sh

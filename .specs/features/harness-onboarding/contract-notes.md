@@ -586,3 +586,18 @@ scratch worktree.
   user's rows, 5 or more → 429 `rate_limited`, else insert one row; a code that exists deletes
   its row again (best effort, `context.WithoutCancel`). The in-memory map is gone. A restart
   keeps the count (`TestDeviceWrongCodeLimitSurvivesRestart`).
+
+## Codex, Gemini and Antigravity are removed (AD-034)
+- Decision line, not a rewrite of history: HAR-01..HAR-05, TURN-01 and TURN-02 and the tasks and validation
+  notes above describe Codex CLI, Gemini CLI and Antigravity CLI as they were built. They are no longer
+  supported: only harnesses with a live push channel and parallel sessions are (Claude Code, pi, OpenCode, omp).
+- `harness.All` lists the four supported registrars. `Env.CleanLegacy` (`internal/harness/legacy.go`) removes
+  what older versions registered for the three: the `partyline` MCP server that runs `channel --tools-only`
+  (`codex mcp remove`, `agy mcp remove`, the `mcpServers.partyline` entry of `~/.gemini/settings.json`), the hook
+  groups whose command is exactly `<binary> hook codex-stop|gemini-after-agent|antigravity-stop [--always]`
+  and the `mcp(partyline/<tool>)` allow rules of agy. `partyline setup` and `setup --uninstall` run it and print
+  `Removed the old Partyline setup for <Codex|Gemini|Antigravity> (no longer supported)`; it is idempotent, keeps
+  everything else, and a file it cannot parse is a warning on stderr.
+- `partyline hook <old name>` prints `{}` and exits 0; the TURN-02 behaviour is gone. `wait_for_messages` is
+  gone from the tools-only server (TURN-01).
+- A request with `X-Partyline-Harness: codex|gemini|antigravity|agy` is `410 harness_removed`.
