@@ -103,6 +103,8 @@ type launcherOptions struct {
 	as, project           string
 	org, position, parent string
 	takeOver              bool
+	// principal is --principal: this session becomes the AI's principal one and pins its harness session id.
+	principal bool
 	// args is what goes to the harness unchanged.
 	args []string
 }
@@ -110,7 +112,7 @@ type launcherOptions struct {
 // launcherValueFlags are the leading flags that take a value, as `--x v` or `--x=v`.
 var launcherValueFlags = []string{"--as", "--name", "--project", "--org", "--position", "--parent"}
 
-// launcherFlags takes the leading --take-over, --as (also --name, its older spelling), --project,
+// launcherFlags takes the leading --take-over, --principal, --as (also --name, its older spelling), --project,
 // --org, --position and --parent flags (also --as=<v>) off args (CLI-01, ORG-04); the rest goes to the
 // harness unchanged. as is the identity to adopt; project is accepted and ignored, since AIs no longer
 // belong to projects; org, position and parent are where the AI asks to be put.
@@ -119,6 +121,10 @@ func launcherFlags(args []string) (launcherOptions, error) {
 	for len(args) > 0 {
 		if args[0] == "--take-over" {
 			opts.takeOver, args = true, args[1:]
+			continue
+		}
+		if args[0] == "--principal" {
+			opts.principal, args = true, args[1:]
 			continue
 		}
 		flag, value, inline := strings.Cut(args[0], "=")
@@ -172,7 +178,7 @@ func placementOf(opts launcherOptions, io stdio) launchPlacement {
 	}
 }
 
-// launch runs `partyline <harness> [--take-over] [--as <identity>] [--org <slug>] [--position <name>]
+// launch runs `partyline <harness> [--take-over] [--principal] [--as <identity>] [--org <slug>] [--position <name>]
 // [--parent <@handle>] [args…]`: it replaces this process with the harness binary found on PATH, the
 // launcher's own arguments and then args unchanged, in this environment with PARTYLINE_FOLDER set to
 // the canonical folder it runs in, PARTYLINE_MAIN_FOLDER to the main worktree of a linked one (the
@@ -189,7 +195,8 @@ func placementOf(opts launcherOptions, io stdio) launchPlacement {
 // be refused, and a refusal is printed and exits 1 without starting anything. A harness that opens a
 // live session (claude, opencode, pi, omp) never asks anything: it starts as another session of the AI,
 // which the channel announces (SESS-15, SESS-16), or takes the AI over with PARTYLINE_TAKEOVER=1 when
-// --take-over or PARTYLINE_TAKEOVER=1 gave the consent (SESS-13). Codex, Gemini and Antigravity use the tools only
+// --take-over or PARTYLINE_TAKEOVER=1 gave the consent (SESS-13), or makes the session the AI's principal
+// one with PARTYLINE_PRINCIPAL=1 when --principal or PARTYLINE_PRINCIPAL=1 asked for it (SESS-57). Codex, Gemini and Antigravity use the tools only
 // and only announce the live session. Without the binary it exits 127; when Partyline is not
 // registered in the harness it warns once and starts anyway.
 func launch(ctx context.Context, l launcher, args []string, io stdio) int {
@@ -224,11 +231,15 @@ func launch(ctx context.Context, l launcher, args []string, io stdio) int {
 		fmt.Fprintln(io.stderr, projectIgnored(l.id))
 	}
 
-	takingOver := false
+	takingOver, principal := false, false
 	if l.live {
+		principal = opts.principal || strings.TrimSpace(io.getenv(principalEnvVar)) == "1"
 		// Without --take-over the harness connects as another session: there is nothing to ask (SESS-16).
 		takingOver = opts.takeOver || strings.TrimSpace(io.getenv("PARTYLINE_TAKEOVER")) == "1"
 	} else {
+		if opts.principal {
+			fmt.Fprintf(io.stderr, "partyline %s: --principal is ignored: %s has no live session, only tools\n", l.id, title)
+		}
 		announceToolsOnly(lookup, io)
 	}
 	if l.hint != "" {
@@ -254,6 +265,9 @@ func launch(ctx context.Context, l launcher, args []string, io stdio) int {
 	if takingOver {
 		set["PARTYLINE_TAKEOVER"] = "1"
 	}
+	if principal {
+		set[principalEnvVar] = "1"
+	}
 	if slices.Contains(pushedHarnesses, l.id) {
 		// The tools half of this harness has to act as the session its listen process holds: both get one
 		// live id, minted here for the process exec keeps (liveEnvVar, SESS-45).
@@ -277,7 +291,7 @@ func launch(ctx context.Context, l launcher, args []string, io stdio) int {
 		env = append(env, kv)
 	}
 	for _, k := range []string{
-		folderEnvVar, mainFolderVar, "PARTYLINE_HARNESS", "PARTYLINE_TAKEOVER", "PARTYLINE_AGENT",
+		folderEnvVar, mainFolderVar, "PARTYLINE_HARNESS", "PARTYLINE_TAKEOVER", principalEnvVar, "PARTYLINE_AGENT",
 		launchOrgVar, launchPositionVar, launchParentVar, liveEnvVar,
 	} {
 		if v, ok := set[k]; ok {
@@ -310,7 +324,7 @@ func launch(ctx context.Context, l launcher, args []string, io stdio) int {
 // PARTYLINE_PARENT); and those of the session it may itself run in (PARTYLINE_LAUNCH_*), which this launch
 // replaces with its own.
 var consumedVars = []string{
-	"PARTYLINE_TAKEOVER", mainFolderVar, orgEnvVar, positionEnvVar, parentEnvVar, launchOrgVar, launchPositionVar, launchParentVar,
+	"PARTYLINE_TAKEOVER", principalEnvVar, mainFolderVar, orgEnvVar, positionEnvVar, parentEnvVar, launchOrgVar, launchPositionVar, launchParentVar,
 	liveEnvVar, // the live id of the session this launch may itself run in is never the new session's
 }
 

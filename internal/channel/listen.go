@@ -30,6 +30,9 @@ type ListenOptions struct {
 	LiveID string
 	// Takeover means what it means for Run.
 	Takeover bool
+	// HarnessSession and Principal mean what they mean for Run.
+	HarnessSession string
+	Principal      bool
 
 	// Stdin ending (the harness that spawned listen went away) stops Listen; nil never does.
 	Stdin  io.Reader
@@ -73,11 +76,11 @@ func Listen(ctx context.Context, o ListenOptions) error {
 
 	id := Identity{
 		Machine: o.Machine, Folder: o.Folder, MainFolder: o.MainFolder, Home: o.Home, Harness: o.Harness, Adopt: o.Adopt,
-		Org: o.Org, Position: o.Position, Parent: o.Parent,
+		Org: o.Org, Position: o.Position, Parent: o.Parent, HarnessSession: o.HarnessSession,
 	}
 	out := &lineWriter{w: o.Stdout}
 	l := newLink(base, o.Token, id, o.HTTPClient, out, o.Stderr, o.timing)
-	l.takeover, l.zone = o.Takeover, o.zone
+	l.takeover, l.principal, l.zone = o.Takeover, o.Principal, o.zone
 	if o.LiveID != "" {
 		l.liveID = o.LiveID
 	}

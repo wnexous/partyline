@@ -60,6 +60,12 @@ type Options struct {
 	// Takeover makes the first connection take over the AI's live session when another
 	// session has it (SES-02); later connections, after a drop, never do.
 	Takeover bool
+	// HarnessSession is the harness's id of this conversation (Identity.HarnessSession); empty for a harness
+	// that has none or a tools-only process.
+	HarnessSession string
+	// Principal makes the first connection the AI's principal session and pins it (--principal, SESS-57);
+	// later connections, after a drop, never ask again.
+	Principal bool
 
 	Stdin  io.Reader
 	Stdout io.Writer
@@ -93,7 +99,7 @@ func Run(ctx context.Context, o Options) error {
 	}
 	id := Identity{
 		Machine: o.Machine, Folder: o.Folder, MainFolder: o.MainFolder, Home: o.Home, Harness: o.Harness, Adopt: o.Adopt,
-		Org: o.Org, Position: o.Position, Parent: o.Parent,
+		Org: o.Org, Position: o.Position, Parent: o.Parent, HarnessSession: o.HarnessSession,
 	}
 	if id.Harness == "" && !o.ToolsOnly {
 		id.Harness = HarnessClaude
@@ -140,7 +146,7 @@ func Run(ctx context.Context, o Options) error {
 	// each message came from (SESS-29). A tools-only process has no link and sends no live id.
 	id.LiveID = l.liveID
 	t.api.identity = id
-	l.takeover, l.zone, l.announce = o.Takeover, o.zone, true
+	l.takeover, l.principal, l.zone, l.announce = o.Takeover, o.Principal, o.zone, true
 	l.keepTryingWhenBusy = true // a channel reconnects by itself, it never gives up (SES-04)
 	l.onLost = func(reason lostReason, text string) {
 		fmt.Fprintf(o.Stderr, "partyline: %s\n", text)

@@ -234,3 +234,30 @@ func TestStrippedToolsOnlyChannelWithItsHarnessUsesItsWorkingDirectory(t *testin
 	require.Equal(t, []string{"/work/plain"}, e.folders(t))
 	require.Equal(t, "codex", e.registered(t, "/work/plain").AI.App)
 }
+
+// SESS-50: the harness session id of a process is PARTYLINE_HARNESS_SESSION, else Claude Code's own
+// CLAUDE_CODE_SESSION_ID for Claude Code only, and only a value the server accepts; anything else is no id.
+func TestHarnessSessionID(t *testing.T) {
+	const uuid = "15cf4c1e-3a52-4a8e-9f6b-0123456789ab"
+	for name, tc := range map[string]struct {
+		env     map[string]string
+		harness string
+		want    string
+	}{
+		"claude's own variable":               {map[string]string{"CLAUDE_CODE_SESSION_ID": uuid}, "claude", uuid},
+		"the full channel with no harness":    {map[string]string{"CLAUDE_CODE_SESSION_ID": uuid}, "", uuid},
+		"another harness started from claude": {map[string]string{"CLAUDE_CODE_SESSION_ID": uuid}, "pi", ""},
+		"the adapter's variable wins":         {map[string]string{"PARTYLINE_HARNESS_SESSION": "pi-session-1", "CLAUDE_CODE_SESSION_ID": uuid}, "claude", "pi-session-1"},
+		"the adapter's variable for pi":       {map[string]string{"PARTYLINE_HARNESS_SESSION": "pi-session-1"}, "pi", "pi-session-1"},
+		"surrounding blanks are dropped":      {map[string]string{"PARTYLINE_HARNESS_SESSION": "  pi-1 \n"}, "pi", "pi-1"},
+		"a malformed value is no id":          {map[string]string{"PARTYLINE_HARNESS_SESSION": "has space"}, "pi", ""},
+		"too long is no id":                   {map[string]string{"PARTYLINE_HARNESS_SESSION": strings.Repeat("a", 129)}, "pi", ""},
+		"nothing set":                         {map[string]string{}, "claude", ""},
+		"a malformed claude value is no id":   {map[string]string{"CLAUDE_CODE_SESSION_ID": "../x"}, "claude", ""},
+	} {
+		t.Run(name, func(t *testing.T) {
+			io := stdio{getenv: func(k string) string { return tc.env[k] }}
+			require.Equal(t, tc.want, harnessSessionID(io, tc.harness))
+		})
+	}
+}

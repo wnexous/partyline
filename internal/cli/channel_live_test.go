@@ -72,3 +72,31 @@ func TestChannelTakesOverWithTheEnvironmentVariable(t *testing.T) {
 	text, isErr := c.call(2, "list_rooms")
 	require.False(t, isErr, text)
 }
+
+// SESS-50, SESS-52: the channel of a Claude Code session sends CLAUDE_CODE_SESSION_ID as its harness session
+// id, and the first session of the AI pins it; a second channel with another id is a parallel session.
+func TestChannelSendsClaudeCodesSessionID(t *testing.T) {
+	e := newChannelEnv(t)
+	const first, second = "15cf4c1e-3a52-4a8e-9f6b-0123456789ab", "073e8d10-0000-4000-8000-000000000001"
+	env := func(id string) map[string]string {
+		return map[string]string{"PARTYLINE_URL": e.env.URL, "PARTYLINE_TOKEN": e.secret, "PARTYLINE_HARNESS": "claude", "CLAUDE_CODE_SESSION_ID": id}
+	}
+	a := startChannel(t, nil, env(first), "/tmp/wd")
+	a.initialize()
+	var id string
+	require.Eventually(t, func() bool {
+		prof := e.ai(t, "/tmp/wd")
+		id = prof.ID
+		return prof.AI != nil && prof.AI.Online
+	}, chanWait, 20*time.Millisecond)
+	agent, err := e.env.App.Store.R().GetAgent(t.Context(), id)
+	require.NoError(t, err)
+	require.Equal(t, first, agent.PrincipalSession, "the session id Claude Code gave the channel is pinned")
+
+	b := startChannel(t, nil, env(second), "/tmp/wd")
+	b.initialize()
+	require.Eventually(t, func() bool { return len(e.ai(t, "/tmp/wd").AI.Sessions) == 2 }, chanWait, 20*time.Millisecond)
+	agent, err = e.env.App.Store.R().GetAgent(t.Context(), id)
+	require.NoError(t, err)
+	require.Equal(t, first, agent.PrincipalSession, "a parallel session does not move the pin")
+}

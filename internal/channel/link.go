@@ -25,7 +25,10 @@ const (
 	closeDeleted   websocket.StatusCode = 4001
 	closeTakenOver websocket.StatusCode = 4002
 	closeBusy      websocket.StatusCode = 4003
-	closeLagged                         = websocket.StatusTryAgainLater // 1013
+	// closeRoleChanged tells the session the principal role moved (make principal in the web, SESS-59): it
+	// connects again and takes the role it now has. The channel does not stop.
+	closeRoleChanged websocket.StatusCode = 4004
+	closeLagged                           = websocket.StatusTryAgainLater // 1013
 )
 
 const (
@@ -142,6 +145,9 @@ type link struct {
 	// takeover makes the connection take over the AI's live session (SES-02). The first
 	// connection that succeeds clears it: a reconnect after a drop never takes over.
 	takeover bool
+	// principal makes the connection ask for the principal role and pin its harness session (--principal). Like
+	// takeover, only the first connection that succeeds does: a reconnect after a drop never does (SESS-57).
+	principal bool
 	// zone is where the busy text shows the time the other session connected; nil is the local zone.
 	zone *time.Location
 	// announce makes the first welcome of the process a notice that says who the AI is and who
@@ -655,6 +661,9 @@ func (l *link) session(ctx context.Context) (outcome, error) {
 	if l.takeover {
 		h.Set(dto.HeaderTakeover, "1")
 	}
+	if l.principal {
+		h.Set(dto.HeaderPrincipal, "1")
+	}
 	h.Set(dto.HeaderFeatures, dto.FeaturePlatform) // platform events (CID-06)
 	ws, resp, err := websocket.Dial(ctx, l.wsURL(), &websocket.DialOptions{HTTPClient: l.http, HTTPHeader: h})
 	if err != nil {
@@ -664,6 +673,7 @@ func (l *link) session(ctx context.Context) (outcome, error) {
 		_ = resp.Body.Close()
 	}
 	l.takeover = false // only the first connection that succeeds takes over (SES-02)
+	l.principal = false
 	ws.SetReadLimit(l.readLimit)
 	l.setState(stateConnected)
 
@@ -710,6 +720,8 @@ func (l *link) session(ctx context.Context) (outcome, error) {
 				return outDeleted, nil
 			case closeLagged:
 				return outLagged, nil
+			case closeRoleChanged:
+				return outDropped, nil // connect again at once: the roles were reassigned
 			}
 			return outDropped, nil // dropped, shutting down (ctx ends next) or a failed ack
 		}

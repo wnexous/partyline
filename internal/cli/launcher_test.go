@@ -959,3 +959,38 @@ func TestOnlyAntigravityLauncherPrintsAHint(t *testing.T) {
 		require.Equal(t, l.id == "antigravity", l.hint != "", l.id)
 	}
 }
+
+// SESS-57: --principal (among the leading flags) and PARTYLINE_PRINCIPAL=1 make the launch ask for the
+// principal role: the session's processes get PARTYLINE_PRINCIPAL=1 and the harness never sees the flag. A
+// harness with no live session says the flag does nothing.
+func TestLauncherAsksForThePrincipalRole(t *testing.T) {
+	for name, setup := range map[string]func(m *launchMachine){
+		"flag": func(m *launchMachine) { m.getenv = map[string]string{} },
+		"env":  func(m *launchMachine) { m.getenv = map[string]string{"PARTYLINE_PRINCIPAL": "1"} },
+	} {
+		t.Run(name, func(t *testing.T) {
+			m := newLaunchMachine(t)
+			setup(m)
+			m.onPath["claude"] = true
+			m.register(t, "claude")
+			m.terminals = map[int]bool{0: true, 2: true}
+			args := []string{"claude", "--resume"}
+			if name == "flag" {
+				args = []string{"claude", "--principal", "--resume"}
+			}
+			r := m.run(t, args...)
+			require.Equal(t, 7, r.code, r.stderr)
+			require.Equal(t, []string{"claude", "--dangerously-load-development-channels", "server:partyline", "--resume"}, r.argv)
+			require.Contains(t, r.env, "PARTYLINE_PRINCIPAL=1")
+			require.NotContains(t, r.env, "PARTYLINE_TAKEOVER=1", "asking for the role is not a takeover")
+		})
+	}
+	t.Run("a plain launch does not ask, whatever the shell inherited from a launched session", func(t *testing.T) {
+		m := newLaunchMachine(t)
+		m.onPath["claude"] = true
+		m.register(t, "claude")
+		m.terminals = map[int]bool{0: true, 2: true}
+		r := m.run(t, "claude")
+		require.NotContains(t, strings.Join(r.env, "\n"), "PARTYLINE_PRINCIPAL=")
+	})
+}

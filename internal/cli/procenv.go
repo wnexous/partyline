@@ -7,6 +7,9 @@ import (
 	"regexp"
 	"strconv"
 	"strings"
+
+	"github.com/wnexous/partyline/internal/api/dto"
+	"github.com/wnexous/partyline/internal/channel"
 )
 
 // folderEnvVar is the canonical folder the launcher runs in; the launcher always sets it, so a
@@ -65,11 +68,42 @@ func sessionLiveID(io stdio) string {
 	return id
 }
 
+// principalEnvVar is PARTYLINE_PRINCIPAL=1, which `partyline <harness> --principal` sets: this session asks to
+// be the AI's principal one and pins its harness session id (SESS-57).
+const principalEnvVar = "PARTYLINE_PRINCIPAL"
+
+// harnessSessionVar carries the harness's id of the conversation to the session's partyline processes. The
+// pi adapter sets it on the listen process it starts; Claude Code needs none, its channel process has
+// claudeSessionVar (SESS-50). Any other harness whose host can set an environment variable may use it.
+const harnessSessionVar = "PARTYLINE_HARNESS_SESSION"
+
+// claudeSessionVar is the variable Claude Code puts in the environment of the processes it starts, among them
+// `partyline channel`: its session id, which stays the same when the conversation is resumed with --resume.
+const claudeSessionVar = "CLAUDE_CODE_SESSION_ID"
+
+// harnessSessionPattern is the shape of a harness session id the server accepts (dto.HarnessSessionPattern).
+var harnessSessionPattern = regexp.MustCompile(dto.HarnessSessionPattern)
+
+// harnessSessionID is the harness's id of the conversation this process belongs to (SESS-50): harnessSessionVar
+// first, then, for Claude Code only (an empty harness is the full channel, which is Claude Code), claudeSessionVar (another harness started from a Claude Code tool inherits
+// it and must not send it). Empty when there is none or it is not an id the server accepts: such a session
+// then has no id, which only costs it the fixed principal role, never the connection.
+func harnessSessionID(io stdio, harness string) string {
+	id := strings.TrimSpace(io.getenv(harnessSessionVar))
+	if id == "" && (harness == channel.HarnessClaude || harness == "") {
+		id = strings.TrimSpace(io.getenv(claudeSessionVar))
+	}
+	if !harnessSessionPattern.MatchString(id) {
+		return ""
+	}
+	return id
+}
+
 // launcherVars are the variables `partyline <harness>` sets for its session (see launch).
 // PARTYLINE_TAKEOVER is the one a launcher sets when the user agreed to take the AI's live
 // session over; the PARTYLINE_LAUNCH_* ones carry what the session asked for.
 var launcherVars = []string{
-	folderEnvVar, mainFolderVar, "PARTYLINE_HARNESS", "PARTYLINE_TAKEOVER", "PARTYLINE_AGENT",
+	folderEnvVar, mainFolderVar, "PARTYLINE_HARNESS", "PARTYLINE_TAKEOVER", principalEnvVar, "PARTYLINE_AGENT",
 	launchOrgVar, launchPositionVar, launchParentVar, liveEnvVar,
 }
 
