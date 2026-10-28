@@ -13,9 +13,9 @@ import {
   PermissionGuest,
   PermissionMember,
   permissionLabel,
+  positionOptions,
   useInviteToOrg,
 } from "@/entities/organization";
-import { positionOptions } from "@/lib/org-chart";
 import { type InviteFormValues, inviteSchema } from "@/lib/schemas";
 import { isApiError } from "@/shared/api/client";
 import {

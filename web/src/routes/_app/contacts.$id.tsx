@@ -12,7 +12,6 @@ import {
 } from "lucide-react";
 import { type ReactNode, useState } from "react";
 import { MessageButton } from "@/components/message-button";
-import { ProfileConversations } from "@/components/profile-conversations";
 import { useMe } from "@/entities/account";
 import {
   contactsQuery,
@@ -52,6 +51,7 @@ import { PageSection } from "@/shared/ui/molecules/page-section";
 import { PanelSkeleton } from "@/shared/ui/molecules/panel-skeleton";
 import { Button } from "@/shared/ui/primitives/button";
 import { Skeleton } from "@/shared/ui/primitives/skeleton";
+import { ProfileConversations } from "@/widgets/profile-panel";
 
 export const Route = createFileRoute("/_app/contacts/$id")({
   component: ProfilePage,

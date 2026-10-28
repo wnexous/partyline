@@ -1,4 +1,10 @@
 import { describe, expect, it } from "vitest";
+import {
+  descendantsOf,
+  movablePositions,
+  positionOptions,
+  positionTree,
+} from "@/entities/organization";
 import type { Position } from "@/shared/api/types.gen";
 import {
   makeChartMember,
@@ -6,15 +12,7 @@ import {
   makeIntelligence,
   makeOrgChart,
 } from "@/test/fixtures";
-import {
-  buildChartTree,
-  type ChartTreeNode,
-  descendantsOf,
-  movablePositions,
-  positionOptions,
-  positionTree,
-  visibleNodes,
-} from "./org-chart";
+import { buildChartTree, type ChartTreeNode, visibleNodes } from "@/widgets/org-chart";
 
 /*
  * The positions of an organization as the pages use them (POS-01, POS-02, POS-04): in tree order,

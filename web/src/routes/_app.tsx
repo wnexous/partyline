@@ -2,10 +2,6 @@ import { createFileRoute, Outlet, redirect, useRouterState } from "@tanstack/rea
 import { SearchIcon } from "lucide-react";
 import { useEffect } from "react";
 import { startLive } from "@/app/live";
-import { AppSidebar } from "@/components/app-sidebar";
-import { CommandMenu } from "@/components/command-menu";
-import { OrgSwitcher } from "@/components/org-switcher";
-import { ProfilePanel } from "@/components/profile-panel";
 import { meQuery, useMe } from "@/entities/account";
 import { ensurePushSubscription } from "@/features/push-notifications";
 import { isApiError } from "@/shared/api/client";
@@ -20,6 +16,9 @@ import { BackToConversations } from "@/shared/ui/molecules/back-link";
 import { LiveBanner } from "@/shared/ui/molecules/live-status";
 import { Button } from "@/shared/ui/primitives/button";
 import { SidebarInset, SidebarProvider } from "@/shared/ui/primitives/sidebar";
+import { AppSidebar, OrgSwitcher } from "@/widgets/app-sidebar";
+import { CommandMenu } from "@/widgets/command-palette";
+import { ProfilePanel } from "@/widgets/profile-panel";
 
 export const Route = createFileRoute("/_app")({
   // Every page under _app needs a session: unknown users go to login and come back (UI-02).

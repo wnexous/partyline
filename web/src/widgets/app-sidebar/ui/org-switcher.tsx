@@ -1,7 +1,6 @@
 import { Link } from "@tanstack/react-router";
 import { BuildingIcon, ChevronsUpDownIcon, PlusIcon } from "lucide-react";
 import { useId, useMemo, useState } from "react";
-import { OrgPageItems } from "@/components/organization-menu";
 import {
   type MyOrg,
   OrgAvatar,
@@ -27,6 +26,7 @@ import {
   DropdownMenuTrigger,
 } from "@/shared/ui/primitives/dropdown-menu";
 import { Skeleton } from "@/shared/ui/primitives/skeleton";
+import { OrgPageItems } from "./organization-menu";
 
 /*
  * The organization switcher (ORG-01, ORG-02): the organization the sidebar, the connections and

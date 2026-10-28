@@ -10,6 +10,7 @@ export * from "./model/live";
 export * from "./model/pickables";
 export { onlineOf, useIsOnline, withContactPresence } from "./model/presence";
 export * from "./model/presence-store";
+export * from "./model/profile-panel";
 export * from "./model/rules";
 export * from "./ui/ai-status";
 export * from "./ui/contact-meta";

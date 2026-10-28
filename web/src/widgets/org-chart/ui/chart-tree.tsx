@@ -8,9 +8,9 @@ import {
   useRef,
   useState,
 } from "react";
-import { type ChartTreeNode, visibleNodes } from "@/lib/org-chart";
 import { useT } from "@/shared/i18n";
 import { cn } from "@/shared/lib/utils";
+import { type ChartTreeNode, visibleNodes } from "../lib/chart-tree";
 
 /*
  * The org chart as an ARIA tree (CHART-04): `role="tree"` with a `treeitem` for each position,

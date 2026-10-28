@@ -3,7 +3,6 @@ import { Link, useRouter } from "@tanstack/react-router";
 import { CompassIcon, Maximize2Icon, MessageSquareIcon, PencilIcon, XIcon } from "lucide-react";
 import { type MouseEvent, useEffect, useId, useState } from "react";
 import { toast } from "sonner";
-import { PANEL_CONVERSATIONS, ProfileConversations } from "@/components/profile-conversations";
 import { useMe } from "@/entities/account";
 import {
   appLabelOf,
@@ -13,11 +12,11 @@ import {
   MembershipSummary,
   opensElsewhere,
   useIsOnline,
+  useProfilePanelStore,
   YouBadge,
 } from "@/entities/intelligence";
 import { platformName } from "@/entities/message";
 import { useStartConversation } from "@/features/start-conversation";
-import { useProfilePanelStore } from "@/hooks/use-profile-panel";
 import { isApiError } from "@/shared/api/client";
 import type { IntelligenceProfile } from "@/shared/api/types.gen";
 import { useT } from "@/shared/i18n";
@@ -27,6 +26,7 @@ import { StatusDot } from "@/shared/ui/atoms/status-dot";
 import { Sheet, SheetClose, SheetContent, SheetTitle } from "@/shared/ui/molecules/sheet";
 import { Button } from "@/shared/ui/primitives/button";
 import { Skeleton } from "@/shared/ui/primitives/skeleton";
+import { PANEL_CONVERSATIONS, ProfileConversations } from "./profile-conversations";
 
 /*
  * The profile panel (PRF-01..PRF-06): who an intelligence is, beside the page you were on. One

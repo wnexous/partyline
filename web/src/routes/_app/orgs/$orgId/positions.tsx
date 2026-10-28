@@ -3,15 +3,18 @@ import { NetworkIcon, PlusIcon, SquarePenIcon, Trash2Icon } from "lucide-react";
 import { useId, useMemo, useState } from "react";
 import { toast } from "sonner";
 import {
+  descendantsOf,
   isAdminOf,
   MaxPositionNameLength,
+  type PositionNode,
+  positionOptions,
+  positionTree,
   useCreatePosition,
   useDeletePosition,
   useOrg,
   useOrgChart,
   useUpdatePosition,
 } from "@/entities/organization";
-import { descendantsOf, type PositionNode, positionOptions, positionTree } from "@/lib/org-chart";
 import { isApiError } from "@/shared/api/client";
 import {
   type ChartPosition,

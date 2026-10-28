@@ -1,10 +1,9 @@
 import { act, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { ProfilePanel } from "@/components/profile-panel";
 import { RoomFiles } from "@/components/room-files";
+import { useProfilePanel, useProfilePanelStore } from "@/entities/intelligence/model/profile-panel";
 import { MemberPicker } from "@/features/add-member/ui/member-picker";
-import { useProfilePanel, useProfilePanelStore } from "@/hooks/use-profile-panel";
 import type {
   IntelligenceProfile,
   ProfileMembership,
@@ -31,6 +30,7 @@ import { useLiveStore } from "@/test/live-store";
 import { stubViewport } from "@/test/media";
 import { renderRoute, renderWithRouter } from "@/test/render";
 import { sampleContacts } from "@/test/sample-contacts";
+import { ProfilePanel } from "./profile-panel";
 
 vi.mock("@/app/live", () => ({ startLive: vi.fn(() => () => {}) }));
 

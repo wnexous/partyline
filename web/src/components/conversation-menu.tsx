@@ -3,9 +3,9 @@ import { CheckCheckIcon, LogOutIcon, Trash2Icon, UserRoundIcon } from "lucide-re
 import { useRef, useState } from "react";
 import { toast } from "sonner";
 import { useMe } from "@/entities/account";
+import { useProfilePanel } from "@/entities/intelligence";
 import { useDeleteRoom, useLeaveRoom, useMarkRoomRead } from "@/entities/room";
 import { useRoomMembers } from "@/entities/room-member";
-import { useProfilePanel } from "@/hooks/use-profile-panel";
 import {
   type Conversation,
   ConversationKindDM,
