@@ -102,13 +102,33 @@ ticks its requirement ids here.
     capitalised (one `platformName`), and the member picker waits for the org's users (above).
 
 ## T4 — features (WA-06 part)
+- Split (two branches, merged separately): **T4a** = messaging (the room conversation: features
+  for send, edit, mention, voice, reactions, questions, delete and conversation actions; the widgets
+  conversation-timeline, conversation-header, conversation-list, room-files, room-settings; pages
+  room and home). **T4b** = people, orgs and account. Left for T5: app-sidebar, command-palette,
+  member-panel's remaining legacy callers, profile-panel, org-chart and the other pages.
 - send-message (composer split: form, attachments, edit bar), mention-autocomplete,
   send-voice-message, delete-message, react-to-message, answer-question, start-conversation
   (single contact row), create-group + add-member (shared picker on IntelligenceRow),
   edit-member-settings, remove-member, conversation-actions, manage-org-member (single org member
   actions), connect-agent, add-connector, edit-profile, change-language, toggle-theme,
   push-notifications, edit-room, create-org, invite-to-org.
-- Status: pending
+- Status: T4a done. Notes:
+  - The composer is `widgets/composer`, not a feature: it composes send-message, edit-message,
+    mention-autocomplete and send-voice-message, and a feature may not import another feature.
+    `features/send-message` keeps the draft store, the reply strip, the drop and focus helpers.
+  - Pure rules that the entities read moved to the entities: `entities/message/model/permissions`
+    (canEditMessage, canDeleteMessage), `entities/message/lib/voice` (isAudio, isVoiceName,
+    formatDuration), `entities/message/lib/reaction-list` (withReaction, reactedWith,
+    atReactionLimit), `entities/room/model/conversation-rules` (canPost, managesGroup,
+    hasConversationActions). The row is `entities/room/ui/conversation-row`.
+  - `shared/api/error-text` holds the post and edit rules (`errorText(t, err, "post" | "edit")`)
+    and `startConversationError`, which the hook re-exports for the other worker.
+  - Tests that drive the live dispatcher (app code) live in `routes/_app/rooms` (layer order).
+  - message-button stays in the conversation-timeline widget, as the spec maps it; it is really the
+    start-conversation action and can move to a feature in T5.
+  - No visible behaviour change.
+- Status: pending (T4b; see the split above)
 
 ## T5 — widgets + pages (WA-01, WA-06 part)
 - widgets: app-sidebar, conversation-list, conversation-header, conversation-timeline,
@@ -116,7 +136,7 @@ ticks its requirement ids here.
   room-files, room-settings.
 - pages: every route file becomes a thin wiring of a page slice; split account (sections →
   features), connector page, tokens, identities, org members/chart (one org member row).
-- Status: pending
+- Status: pending (what T4a left is listed under T4)
 
 ## T6 — strict (WA-05)
 - Delete `components/`, `hooks/`, `lib/`; baseline empty and the legacy layer removed from the
