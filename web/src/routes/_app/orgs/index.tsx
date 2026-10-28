@@ -4,14 +4,9 @@ import { useId, useState } from "react";
 import { toast } from "sonner";
 import { NewOrgDialog } from "@/components/new-org-dialog";
 import { OrgAvatar } from "@/components/org-avatar";
+import { useAnswerInvitation } from "@/entities/organization";
 import { useCurrentOrg } from "@/hooks/use-current-org";
-import {
-  useAcceptInvitation,
-  useDeclineInvitation,
-  useMe,
-  useMyInvitations,
-  useOrgs,
-} from "@/lib/api/queries";
+import { useMe, useMyInvitations, useOrgs } from "@/lib/api/queries";
 import { type MyOrg, PermissionGuest, permissionLabel } from "@/lib/orgs";
 import { isApiError } from "@/shared/api/client";
 import { ErrorCodeAlreadyMember, type Invitation } from "@/shared/api/types.gen";
@@ -221,8 +216,8 @@ function InvitationItem({ invitation: inv }: { invitation: Invitation }) {
   const { t, locale } = useI18n();
   const sentenceId = useId();
   const me = useMe().data;
-  const accept = useAcceptInvitation();
-  const decline = useDeclineInvitation();
+  const accept = useAnswerInvitation("accept");
+  const decline = useAnswerInvitation("decline");
   const forMe = inv.invitee.id === me?.intelligence.id;
   const who = forMe ? t("orgs.you") : inv.invitee.display_name;
   const pending = accept.isPending || decline.isPending;
