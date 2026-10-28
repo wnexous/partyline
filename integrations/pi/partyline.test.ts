@@ -10,7 +10,7 @@ type Plugin = typeof partyline;
 type Handler = (event: unknown, ctx: unknown) => unknown;
 type Sent = { message: { customType: string; content: string; display: boolean }; options: unknown };
 
-function fakePi(opts: { hasUI?: boolean; throwOnSend?: boolean } = {}, plugin: Plugin = partyline) {
+function fakePi(opts: { hasUI?: boolean; throwOnSend?: boolean; sessionId?: unknown } = {}, plugin: Plugin = partyline) {
 	const handlers = new Map<string, Handler>();
 	const sent: Sent[] = [];
 	const notices: Array<{ message: string; level?: string }> = [];
@@ -27,6 +27,7 @@ function fakePi(opts: { hasUI?: boolean; throwOnSend?: boolean } = {}, plugin: P
 		cwd: "/work/proj",
 		hasUI: opts.hasUI ?? true,
 		ui: { notify: (message: string, level?: string) => notices.push({ message, level }) },
+		sessionManager: "sessionId" in opts ? { getSessionId: () => opts.sessionId as string } : undefined,
 	};
 	plugin(api);
 	return {
@@ -102,6 +103,43 @@ describe("pi extension", () => {
 		expect(spawned[0].options.env?.PARTYLINE_HARNESS).toBe("pi");
 		expect(spawned[0].options.env?.PARTYLINE_SESSION).toBeUndefined();
 		expect(spawned[0].options.env?.PATH).toBe(process.env.PATH);
+	});
+
+	test("SESS-50: listen gets pi's session id as PARTYLINE_HARNESS_SESSION", () => {
+		fakePi({ sessionId: "0199-abc_DEF.1:2" }).start();
+		expect(spawned[0].options.env?.PARTYLINE_HARNESS_SESSION).toBe("0199-abc_DEF.1:2");
+	});
+
+	test("SESS-50: a restarted listen keeps the session id", () => {
+		const pi = fakePi({ sessionId: "pi-session-1" });
+		pi.start();
+		spawned[0].exit(1);
+		time.fire();
+		expect(spawned.length).toBe(2);
+		expect(spawned[1].options.env?.PARTYLINE_HARNESS_SESSION).toBe("pi-session-1");
+	});
+
+	test("SESS-50: no id, an unusable id or a pi without the API means no variable, never an inherited one", () => {
+		const inherited = process.env.PARTYLINE_HARNESS_SESSION;
+		process.env.PARTYLINE_HARNESS_SESSION = "another-session";
+		try {
+			for (const opts of [
+				{},
+				{ sessionId: undefined },
+				{ sessionId: "" },
+				{ sessionId: "has space" },
+				{ sessionId: "x".repeat(129) },
+				{ sessionId: 42 },
+			]) {
+				spawned.length = 0;
+				fakePi(opts).start();
+				expect(spawned.length).toBe(1);
+				expect(spawned[0].options.env).not.toHaveProperty("PARTYLINE_HARNESS_SESSION");
+			}
+		} finally {
+			if (inherited === undefined) delete process.env.PARTYLINE_HARNESS_SESSION;
+			else process.env.PARTYLINE_HARNESS_SESSION = inherited;
+		}
 	});
 
 	test("SESS-45: listen and the tools get one live id, tied to this process", () => {

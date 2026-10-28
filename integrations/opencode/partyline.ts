@@ -116,12 +116,16 @@ function sessionLive(): string {
 
 // superviseListen runs `<binary> listen` in cwd as the app harness with the live id live, hands each
 // JSON line to onLine and restarts the process with backoff when it exits (with the same id, so it is the
-// same session and keeps its label); stderr lines and failures go to log.
+// same session and keeps its label); stderr lines and failures go to log. harnessSession is the harness's
+// own id of the conversation, handed to listen as PARTYLINE_HARNESS_SESSION: the server pins the principal
+// role to it, so it must be the id of this conversation or none (an id inherited from another session is
+// removed).
 function superviseListen(opts: {
 	binary: string;
 	cwd?: string;
 	harness: string;
 	live: string;
+	harnessSession?: string;
 	onLine: (record: Record<string, string>) => void;
 	log: (message: string) => void;
 }): Listener {
@@ -148,12 +152,11 @@ function superviseListen(opts: {
 		timer = undefined;
 		const startedAt = Date.now();
 		let ended = false;
-		const proc = spawn(opts.binary, ["listen"], {
-			cwd: opts.cwd,
-			// listen is the AI of this folder, running in this harness.
-			env: { ...process.env, PARTYLINE_HARNESS: opts.harness, PARTYLINE_LIVE: opts.live },
-			stdio: ["pipe", "pipe", "pipe"],
-		});
+		// listen is the AI of this folder, running in this harness.
+		const env: Record<string, string | undefined> = { ...process.env, PARTYLINE_HARNESS: opts.harness, PARTYLINE_LIVE: opts.live };
+		if (opts.harnessSession) env.PARTYLINE_HARNESS_SESSION = opts.harnessSession;
+		else delete env.PARTYLINE_HARNESS_SESSION;
+		const proc = spawn(opts.binary, ["listen"], { cwd: opts.cwd, env, stdio: ["pipe", "pipe", "pipe"] });
 		child = proc;
 		proc.stdout?.on(
 			"data",

@@ -19,7 +19,13 @@ const PARTYLINE_BINARY = "partyline";
 const PARTYLINE_ALWAYS = false;
 
 type Ui = { notify?: (message: string, level?: string) => void };
-type Ctx = { cwd?: string; hasUI?: boolean; ui?: Ui };
+type Ctx = {
+	cwd?: string;
+	hasUI?: boolean;
+	ui?: Ui;
+	// pi's session manager knows the id of the conversation; it is the same when the session is resumed.
+	sessionManager?: { getSessionId?: () => string | undefined };
+};
 type PiApi = {
 	on(event: "session_start" | "session_shutdown", handler: (event: unknown, ctx: Ctx) => unknown): unknown;
 	sendMessage(
@@ -100,12 +106,16 @@ function sessionLive(): string {
 
 // superviseListen runs `<binary> listen` in cwd as the app harness with the live id live, hands each
 // JSON line to onLine and restarts the process with backoff when it exits (with the same id, so it is the
-// same session and keeps its label); stderr lines and failures go to log.
+// same session and keeps its label); stderr lines and failures go to log. harnessSession is the harness's
+// own id of the conversation, handed to listen as PARTYLINE_HARNESS_SESSION: the server pins the principal
+// role to it, so it must be the id of this conversation or none (an id inherited from another session is
+// removed).
 function superviseListen(opts: {
 	binary: string;
 	cwd?: string;
 	harness: string;
 	live: string;
+	harnessSession?: string;
 	onLine: (record: Record<string, string>) => void;
 	log: (message: string) => void;
 }): Listener {
@@ -132,12 +142,11 @@ function superviseListen(opts: {
 		timer = undefined;
 		const startedAt = Date.now();
 		let ended = false;
-		const proc = spawn(opts.binary, ["listen"], {
-			cwd: opts.cwd,
-			// listen is the AI of this folder, running in this harness.
-			env: { ...process.env, PARTYLINE_HARNESS: opts.harness, PARTYLINE_LIVE: opts.live },
-			stdio: ["pipe", "pipe", "pipe"],
-		});
+		// listen is the AI of this folder, running in this harness.
+		const env: Record<string, string | undefined> = { ...process.env, PARTYLINE_HARNESS: opts.harness, PARTYLINE_LIVE: opts.live };
+		if (opts.harnessSession) env.PARTYLINE_HARNESS_SESSION = opts.harnessSession;
+		else delete env.PARTYLINE_HARNESS_SESSION;
+		const proc = spawn(opts.binary, ["listen"], { cwd: opts.cwd, env, stdio: ["pipe", "pipe", "pipe"] });
 		child = proc;
 		proc.stdout?.on(
 			"data",
@@ -197,6 +206,20 @@ function listening(always: boolean, env: Record<string, string | undefined> = pr
 	return always || (env.PARTYLINE_HARNESS ?? "").trim() !== "";
 }
 
+// harnessSessionOf is pi's id of the conversation in ctx, or "" when pi does not give one or it is not an id
+// the server accepts (1 to 128 characters of [A-Za-z0-9._:-], starting with a letter or a digit). Partyline
+// pins the AI's principal role to this id, so that resuming the conversation (a new pi process, a new listen)
+// gets the role back and a parallel session never takes it.
+function harnessSessionOf(ctx: Ctx): string {
+	let id: unknown;
+	try {
+		id = ctx.sessionManager?.getSessionId?.();
+	} catch {
+		return "";
+	}
+	return typeof id === "string" && /^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$/.test(id) ? id : "";
+}
+
 export default function partyline(pi: PiApi): void {
 	let listener: Listener | undefined;
 	// Minted when the extension loads, before the MCP servers of the session start.
@@ -212,6 +235,7 @@ export default function partyline(pi: PiApi): void {
 			cwd: ctx.cwd,
 			harness: "pi",
 			live,
+			harnessSession: harnessSessionOf(ctx),
 			log,
 			onLine: (record) => {
 				// A notice (another session holds the AI) is for the person, not for the model.
