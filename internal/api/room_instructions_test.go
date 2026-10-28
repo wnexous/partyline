@@ -29,7 +29,7 @@ func TestRoomInstructions(t *testing.T) {
 	require.Contains(t, e.Fields, "instructions")
 	require.Len(t, testkit.Decode[dto.List[dto.Room]](alice.Get("/api/v1/rooms").RequireStatus(http.StatusOK)).Items, 1, "the invalid room was not created")
 
-	text := "Client: Lollerie. Answer in Portuguese, friendly tone."
+	text := "Client: Acme. Answer in Portuguese, friendly tone."
 	got := testkit.Decode[dto.Room](alice.Patch(path, dto.UpdateRoomRequest{Instructions: &text}).RequireStatus(http.StatusOK))
 	require.Equal(t, text, got.Instructions)
 	require.Equal(t, "ops", got.Name, "other fields unchanged")

@@ -15,7 +15,7 @@ import (
 // message of a DM chat.
 func TestWantsTable(t *testing.T) {
 	prefs := func(mode dto.DeliveryMode) MemberPrefs {
-		return MemberPrefs{Delivery: mode, Names: []string{"Lollerie Bot", "builder"}, Keywords: []string{"deploy", "on call"}}
+		return MemberPrefs{Delivery: mode, Names: []string{"Acme Bot", "builder"}, Keywords: []string{"deploy", "on call"}}
 	}
 	cases := []struct {
 		name string
@@ -41,7 +41,7 @@ func TestWantsTable(t *testing.T) {
 		{"mentions: @agent name", dto.DeliveryModeMentions, Delivered{Text: "hey @builder ship it"}, true},
 		{"mentions: @agent name, other case", dto.DeliveryModeMentions, Delivered{Text: "hey @BUILDER"}, true},
 		{"mentions: @name at start, punctuation after", dto.DeliveryModeMentions, Delivered{Text: "@builder, ship it"}, true},
-		{"mentions: @display name with a space", dto.DeliveryModeMentions, Delivered{Text: "oi @lollerie bot!"}, true},
+		{"mentions: @display name with a space", dto.DeliveryModeMentions, Delivered{Text: "oi @acme bot!"}, true},
 		{"mentions: name without @", dto.DeliveryModeMentions, Delivered{Text: "the builder is down"}, false},
 		{"mentions: @name inside a longer word", dto.DeliveryModeMentions, Delivered{Text: "ask @builders"}, false},
 		{"mentions: @name after a word character", dto.DeliveryModeMentions, Delivered{Text: "mail x@builder now"}, false},

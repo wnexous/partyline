@@ -25,7 +25,7 @@ func setInstructions(c *testkit.Client, roomID, text string) {
 func TestAgentRoomInfo(t *testing.T) {
 	f := newAgentRoom(t)
 	chat := f.chatMember(t, "Family")
-	setInstructions(f.alice, f.room.ID, "Answer in Portuguese. Client: Lollerie.")
+	setInstructions(f.alice, f.room.ID, "Answer in Portuguese. Client: Acme.")
 	keywords := []string{"deploy", "build"}
 	name, mode := "Bot", dto.DeliveryModeMentions
 	setMember(t, f.alice, f.room.ID, f.agentID, dto.UpdateMemberRequest{DisplayName: &name, Delivery: &mode, Keywords: &keywords})
@@ -33,7 +33,7 @@ func TestAgentRoomInfo(t *testing.T) {
 	for _, ref := range []string{f.room.ID, "support"} {
 		info := testkit.Decode[dto.RoomInfo](f.rest().Get(agentRoomPath(ref, "/info")).RequireStatus(http.StatusOK))
 		require.Equal(t, dto.RoomRef{ID: f.room.ID, Name: "Support"}, info.Room)
-		require.Equal(t, "Answer in Portuguese. Client: Lollerie.", info.Instructions)
+		require.Equal(t, "Answer in Portuguese. Client: Acme.", info.Instructions)
 		require.Equal(t, dto.MemberKindAgent, info.Me.Kind)
 		require.Equal(t, f.agentID, info.Me.MemberID)
 		require.Equal(t, "Bot", info.Me.DisplayName)

@@ -56,19 +56,19 @@ func TestAgentMemberSettingsAreStored(t *testing.T) {
 	require.Equal(t, []string{}, f.agent.Keywords)
 
 	path := f.members() + "/" + f.agent.ID
-	got := testkit.Decode[dto.RoomMember](f.alice.Patch(path, dto.UpdateMemberRequest{DisplayName: ptr("Lollerie Bot")}).RequireStatus(http.StatusOK))
-	require.Equal(t, "Lollerie Bot", got.DisplayName)
+	got := testkit.Decode[dto.RoomMember](f.alice.Patch(path, dto.UpdateMemberRequest{DisplayName: ptr("Acme Bot")}).RequireStatus(http.StatusOK))
+	require.Equal(t, "Acme Bot", got.DisplayName)
 	require.Equal(t, dto.DeliveryModeAll, got.Delivery, "other fields unchanged")
 	got = testkit.Decode[dto.RoomMember](f.alice.Patch(path, dto.UpdateMemberRequest{Delivery: ptr(dto.DeliveryModeMentions)}).RequireStatus(http.StatusOK))
 	require.Equal(t, dto.DeliveryModeMentions, got.Delivery)
-	require.Equal(t, "Lollerie Bot", got.DisplayName, "other fields unchanged")
+	require.Equal(t, "Acme Bot", got.DisplayName, "other fields unchanged")
 	got = testkit.Decode[dto.RoomMember](f.alice.Patch(path, dto.UpdateMemberRequest{Keywords: &[]string{"deploy", "urgente"}}).RequireStatus(http.StatusOK))
 	require.Equal(t, []string{"deploy", "urgente"}, got.Keywords)
 	got = testkit.Decode[dto.RoomMember](f.alice.Patch(path, dto.UpdateMemberRequest{Delivery: ptr(dto.DeliveryModeTrusted)}).RequireStatus(http.StatusOK))
 	require.Equal(t, dto.DeliveryModeTrusted, got.Delivery)
 
 	listed := f.listed(t, f.agent.ID)
-	require.Equal(t, "Lollerie Bot", listed.DisplayName)
+	require.Equal(t, "Acme Bot", listed.DisplayName)
 	require.Equal(t, dto.DeliveryModeTrusted, listed.Delivery)
 	require.Equal(t, []string{"deploy", "urgente"}, listed.Keywords)
 

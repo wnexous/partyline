@@ -62,7 +62,7 @@ First real use (2026-10-20) showed three gaps. Agents cannot tell which chat, pl
 
 **User Story**: As a user, I want chats and routed rooms to show real names so that I recognise them.
 
-**Why P1**: Rooms were named `lollerie|1203...@g.us` in first use.
+**Why P1**: Rooms were named `acme|1203...@g.us` in first use.
 
 **Acceptance Criteria**:
 
@@ -249,5 +249,5 @@ First real use (2026-10-20) showed three gaps. Agents cannot tell which chat, pl
 
 ## Success Criteria
 
-- [ ] In the lollerie group, the agent's message arrives without a header and the agent's context names the group.
+- [ ] In the acme group, the agent's message arrives without a header and the agent's context names the group.
 - [ ] A DM from an unknown number reaches the catch-all agent within 2 seconds of arrival.

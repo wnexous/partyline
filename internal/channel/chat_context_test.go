@@ -44,7 +44,7 @@ func (e *chanEnv) fromChat(chatID, senderID, senderName, text string) rooms.Mess
 // platform and the sender; agent and user messages carry none of those keys.
 func TestPushCarriesChatContext(t *testing.T) {
 	e := newChanEnv(t)
-	group := e.chatIn("whatsapp", "Lollerie", dto.ChatKindGroup)
+	group := e.chatIn("whatsapp", "Acme", dto.ChatKindGroup)
 	dm := e.chatIn("telegram", "Bob Smith", dto.ChatKindDM)
 	helper := e.env.NewAI(e.alice, "helper")
 	e.alice.Post("/api/v1/rooms/"+e.room.ID+"/members", dto.AddMemberRequest{Kind: dto.MemberKindAgent, MemberID: helper}).RequireStatus(http.StatusCreated)
@@ -56,7 +56,7 @@ func TestPushCarriesChatContext(t *testing.T) {
 	require.Equal(t, map[string]string{
 		"conversation": "group", "room": e.room.ID, "room_name": "Support", "message_id": backlog.ID, "author": "Grandma",
 		"author_kind": "chat", "sender_name": "Grandma", "trusted": "false", "kind": "text",
-		"chat_id": group, "chat_title": "Lollerie", "chat_kind": "group", "platform": "whatsapp",
+		"chat_id": group, "chat_title": "Acme", "chat_kind": "group", "platform": "whatsapp",
 		"sender_id": "5511999990000@s.whatsapp.net",
 	}, n.Meta)
 

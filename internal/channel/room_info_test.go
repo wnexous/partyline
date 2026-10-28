@@ -35,7 +35,7 @@ func (e *chanEnv) setInstructions(text string) {
 // kind) and the agent's own membership settings.
 func TestToolRoomInfo(t *testing.T) {
 	e := newChanEnv(t)
-	group := e.chatIn("whatsapp", "Lollerie", dto.ChatKindGroup)
+	group := e.chatIn("whatsapp", "Acme", dto.ChatKindGroup)
 	e.setInstructions("Tone: friendly. Language: Portuguese.")
 	name, mode, keywords := "Vega bot", dto.DeliveryModeMentions, []string{"pedido"}
 	e.alice.Patch("/api/v1/rooms/"+e.room.ID+"/members/"+e.builderMember().ID, dto.UpdateMemberRequest{
@@ -66,7 +66,7 @@ func TestToolRoomInfo(t *testing.T) {
 		byKind[mm["kind"].(string)] = mm
 	}
 	require.Equal(t, map[string]any{
-		"kind": "chat", "member_id": group, "name": "Lollerie", "platform": "whatsapp", "chat_kind": "group",
+		"kind": "chat", "member_id": group, "name": "Acme", "platform": "whatsapp", "chat_kind": "group",
 	}, byKind["chat"])
 	require.Equal(t, map[string]any{
 		"kind": "agent", "member_id": e.agentID, "name": "Builder", "handle": "builder", "owner": "alice", "online": true,
