@@ -1,7 +1,7 @@
 import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterAll, afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { AppProviders } from "@/components/app-providers";
+import { AppProviders } from "@/app/providers/app-providers";
 import { Composer } from "@/components/composer";
 import type { MessagePages } from "@/shared/api/cache-types";
 import { queryKeys } from "@/shared/api/query-keys";

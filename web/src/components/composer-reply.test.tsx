@@ -1,7 +1,7 @@
 import { fireEvent, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { AppProviders } from "@/components/app-providers";
+import { AppProviders } from "@/app/providers/app-providers";
 import { Composer } from "@/components/composer";
 import type { Message } from "@/shared/api/types.gen";
 import { apiError, json, mockApi } from "@/test/fetch";

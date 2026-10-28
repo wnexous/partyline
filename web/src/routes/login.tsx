@@ -2,7 +2,7 @@ import { zodResolver } from "@hookform/resolvers/zod";
 import { createFileRoute, redirect, useNavigate } from "@tanstack/react-router";
 import { useState } from "react";
 import { useForm } from "react-hook-form";
-import { AuthLayout } from "@/components/auth-layout";
+import { AuthLayout } from "@/app/layouts/auth-layout";
 import { setupStatusQuery, useLogin } from "@/entities/account";
 import { type LoginForm, loginSchema } from "@/lib/schemas";
 import { isApiError } from "@/shared/api/client";

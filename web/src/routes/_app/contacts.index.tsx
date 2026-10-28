@@ -9,7 +9,6 @@ import {
 } from "lucide-react";
 import { useMemo, useState } from "react";
 import { MessageButton } from "@/components/message-button";
-import { PeopleGroup } from "@/components/people-group";
 import {
   AIMeta,
   aiText,
@@ -33,6 +32,7 @@ import { PageHeader } from "@/shared/ui/molecules/page-header";
 import { PageSection } from "@/shared/ui/molecules/page-section";
 import { Button } from "@/shared/ui/primitives/button";
 import { Input } from "@/shared/ui/primitives/input";
+import { PeopleGroup } from "@/widgets/people-group";
 
 export const Route = createFileRoute("/_app/contacts/")({
   component: ContactsPage,

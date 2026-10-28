@@ -3,7 +3,7 @@ import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 import { LinkIcon } from "lucide-react";
 import { useState } from "react";
 import { useForm } from "react-hook-form";
-import { AuthLayout } from "@/components/auth-layout";
+import { AuthLayout } from "@/app/layouts/auth-layout";
 import { useAcceptInvite, useInviteInfo } from "@/entities/account";
 import { type AcceptInviteForm, acceptInviteSchema } from "@/lib/schemas";
 import { isApiError } from "@/shared/api/client";
