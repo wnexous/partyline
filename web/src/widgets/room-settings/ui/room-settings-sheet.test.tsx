@@ -1,7 +1,6 @@
 import { screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { RoomSettingsSheet } from "@/components/room-settings-sheet";
 import { useRoom } from "@/entities/room";
 import { queryKeys } from "@/shared/api/query-keys";
 import type { Room } from "@/shared/api/types.gen";
@@ -10,6 +9,7 @@ import { makeRoom } from "@/test/fixtures";
 import { LoadedImage } from "@/test/image";
 import { useLiveStore } from "@/test/live-store";
 import { makeQueryClient, renderWithRouter } from "@/test/render";
+import { RoomSettingsSheet } from "@/widgets/room-settings";
 
 const toast = vi.hoisted(() => Object.assign(vi.fn(), { success: vi.fn(), error: vi.fn() }));
 vi.mock("sonner", () => ({ toast }));

@@ -1,33 +1,22 @@
+/*
+ * The room settings form (ROOM-01, GAV-06, INS-01, ROOMDEL-01): the group's photo, name, description,
+ * instructions for agents, retention, and the delete that closes the form. Opened by the room settings
+ * widget; saving calls `onDone`, Cancel too.
+ */
+
 import { zodResolver } from "@hookform/resolvers/zod";
-import { useNavigate } from "@tanstack/react-router";
-import { type ReactNode, useId, useState } from "react";
+import { useId, useState } from "react";
 import { type ControllerRenderProps, useForm } from "react-hook-form";
 import { toast } from "sonner";
-import { PhotoEditor } from "@/components/photo-editor";
-import {
-  ConversationFace,
-  useDeleteRoom,
-  useRemoveRoomAvatar,
-  useUpdateRoom,
-  useUploadRoomAvatar,
-} from "@/entities/room";
+import { useUpdateRoom } from "@/entities/room";
 import { type RoomSettingsForm, roomSettingsSchema, textLength } from "@/lib/schemas";
 import { isApiError } from "@/shared/api/client";
 import { MaxRoomInstructions, type Room, type UpdateRoomRequest } from "@/shared/api/types.gen";
 import { useI18n } from "@/shared/i18n";
 import { applyFieldErrors } from "@/shared/lib/forms";
 import { cn } from "@/shared/lib/utils";
-import { ConfirmDialog } from "@/shared/ui/molecules/confirm-dialog";
 import { FieldError, FormAlert, TextField } from "@/shared/ui/molecules/form-fields";
-import {
-  Sheet,
-  SheetContent,
-  SheetDescription,
-  SheetFooter,
-  SheetHeader,
-  SheetTitle,
-  SheetTrigger,
-} from "@/shared/ui/molecules/sheet";
+import { SheetFooter } from "@/shared/ui/molecules/sheet";
 import { Button } from "@/shared/ui/primitives/button";
 import {
   FormControl,
@@ -40,31 +29,10 @@ import {
 } from "@/shared/ui/primitives/form";
 import { Input } from "@/shared/ui/primitives/input";
 import { Textarea } from "@/shared/ui/primitives/textarea";
+import { DeleteRoom } from "./delete-room";
+import { RoomPhoto } from "./room-photo";
 
-/**
- * Room settings for managers: the group's photo (GAV-06), name, description, instructions for
- * agents (INS-01), retention, and deleting the room (ROOMDEL-01). Chat bridging, broadcast and the
- * catch-all lock are gone with platform chats as members (CID-22); the stored columns are dead
- * until the server drops them.
- */
-export function RoomSettingsSheet({ room, trigger }: { room: Room; trigger: ReactNode }) {
-  const { t } = useI18n();
-  const [open, setOpen] = useState(false);
-  return (
-    <Sheet open={open} onOpenChange={setOpen}>
-      <SheetTrigger asChild>{trigger}</SheetTrigger>
-      <SheetContent className="w-full gap-0 sm:max-w-md">
-        <SheetHeader className="border-b">
-          <SheetTitle>{t("settings.title")}</SheetTitle>
-          <SheetDescription>{t("settings.body")}</SheetDescription>
-        </SheetHeader>
-        {open ? <SettingsForm room={room} onDone={() => setOpen(false)} /> : null}
-      </SheetContent>
-    </Sheet>
-  );
-}
-
-function SettingsForm({ room, onDone }: { room: Room; onDone: () => void }) {
+export function EditRoomForm({ room, onDone }: { room: Room; onDone: () => void }) {
   const { t } = useI18n();
   const update = useUpdateRoom(room.id);
   const [formError, setFormError] = useState<string | null>(null);
@@ -182,69 +150,6 @@ function SettingsForm({ room, onDone }: { room: Room; onDone: () => void }) {
         </SheetFooter>
       </form>
     </FormProvider>
-  );
-}
-
-/**
- * The group's photo: the editor every picture shares, wired to this room's routes. It sends a chosen
- * file at once, so the photo does not wait for the Save of the form it sits in (GAV-06).
- */
-function RoomPhoto({ room }: { room: Room }) {
-  const upload = useUploadRoomAvatar(room.id);
-  const remove = useRemoveRoomAvatar(room.id);
-  return (
-    <PhotoEditor
-      face={
-        <ConversationFace
-          group={{ id: room.id, name: room.name, avatarUrl: room.avatar_url }}
-          size="xl"
-          decorative
-        />
-      }
-      hasPhoto={Boolean(room.avatar_url)}
-      upload={upload.mutateAsync}
-      remove={(done) => remove.mutate(undefined, done)}
-      removing={remove.isPending}
-      className="sm:w-auto"
-    />
-  );
-}
-
-/** Deletes the room after an explicit confirmation, then returns to the rooms list (ROOMDEL-02). */
-function DeleteRoom({ room }: { room: Room }) {
-  const { t } = useI18n();
-  const navigate = useNavigate();
-  const remove = useDeleteRoom();
-  const [asking, setAsking] = useState(false);
-  return (
-    <div className="space-y-2 border-t pt-5">
-      <p className="text-sm text-muted-foreground">{t("room.deleteHint")}</p>
-      <Button
-        type="button"
-        variant="outline"
-        className="text-destructive hover:text-destructive"
-        onClick={() => setAsking(true)}
-      >
-        {t("room.delete")}
-      </Button>
-      <ConfirmDialog
-        open={asking}
-        onClose={() => setAsking(false)}
-        title={t("room.deleteTitle", { name: room.name })}
-        body={t("room.deleteBody")}
-        confirmLabel={t("room.delete")}
-        pending={remove.isPending}
-        onConfirm={() =>
-          remove.mutate(room.id, {
-            onSuccess: () => {
-              toast(t("room.deleted", { name: room.name }));
-              void navigate({ to: "/" });
-            },
-            onError: () => toast.error(t("room.deleteFailed")),
-          })
-        }
-      />
-    </div>
   );
 }
 

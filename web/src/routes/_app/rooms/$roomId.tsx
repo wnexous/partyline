@@ -20,7 +20,7 @@ import {
   useTimelineMessages,
 } from "@/components/message-timeline";
 import { RoomFiles } from "@/components/room-files";
-import { RoomSettingsSheet } from "@/components/room-settings-sheet";
+import { RoomSettingsSheet } from "@/widgets/room-settings";
 import { useMe } from "@/entities/account";
 import { platformName, postMessageKey } from "@/entities/message";
 import {
