@@ -13,12 +13,12 @@ import {
 const rules = (file: string, source: string) => checkFile(file, source).map((v) => v.rule);
 
 describe("classify", () => {
-  it("maps folders to layers; routes are the app layer; components, hooks and lib are legacy", () => {
+  it("maps folders to layers; routes are the app layer; the deleted legacy folders map to none", () => {
     expect(classify("routes/_app/rooms/$roomId").layer).toBe("app");
     expect(classify("main").layer).toBe("app");
-    expect(classify("components/composer").layer).toBe("legacy");
-    expect(classify("hooks/use-mobile").layer).toBe("legacy");
-    expect(classify("lib/api/queries").layer).toBe("legacy");
+    expect(classify("components/composer").layer).toBe("other");
+    expect(classify("hooks/use-mobile").layer).toBe("other");
+    expect(classify("lib/api/queries").layer).toBe("other");
     expect(classify("entities/intelligence/ui/intelligence-row")).toEqual({
       layer: "entities",
       slice: "intelligence",
@@ -79,11 +79,27 @@ describe("layer order", () => {
     expect(rules("features/f/ui/f.tsx", 'import { a } from "@/pages/p";')).toEqual(["layer-order"]);
   });
 
-  it("lets routes and app import everything, and anything import legacy", () => {
+  it("lets routes and app import everything", () => {
     expect(rules("routes/_app/x.tsx", 'import { a } from "@/pages/p";')).toEqual([]);
-    expect(rules("entities/e/ui/e.tsx", 'import { a } from "@/components/old";')).toEqual([]);
-    expect(rules("components/old.tsx", 'import { a } from "@/entities/e";')).toEqual([]);
-    expect(rules("hooks/use-x.ts", 'import { a } from "@/lib/y";')).toEqual([]);
+    expect(rules("app/providers.tsx", 'import { a } from "@/widgets/w";')).toEqual([]);
+  });
+
+  it("fails on a file in, or an import of, the deleted legacy folders", () => {
+    expect(rules("entities/e/ui/e.tsx", 'import { a } from "@/components/old";')).toEqual([
+      "legacy-removed",
+    ]);
+    expect(rules("entities/e/ui/e.tsx", 'import { a } from "@/hooks/use-x";')).toEqual([
+      "legacy-removed",
+    ]);
+    expect(rules("routes/_app/x.tsx", 'import { a } from "../../lib/y";')).toEqual([
+      "legacy-removed",
+    ]);
+    expect(rules("components/old.tsx", 'import { a } from "@/entities/e";')).toEqual([
+      "legacy-removed",
+    ]);
+    expect(rules("lib/api/queries.ts", "export const q = 1;")).toEqual(["legacy-removed"]);
+    // The shared layer is `shared/lib`, which is not the legacy folder.
+    expect(rules("shared/ui/x.tsx", 'import { a } from "@/shared/lib/utils";')).toEqual([]);
   });
 
   it("reports the line and file", () => {
@@ -109,10 +125,8 @@ describe("slices", () => {
     expect(
       rules("pages/p/ui/p.tsx", 'import { x } from "@/features/send-message/model/draft-store";'),
     ).toEqual(["public-api"]);
-    // Legacy code is held to it too.
-    expect(rules("components/c.tsx", 'import { x } from "@/entities/e/ui/row";')).toEqual([
-      "public-api",
-    ]);
+    // The app layer is held to it too.
+    expect(rules("app/c.tsx", 'import { x } from "@/entities/e/ui/row";')).toEqual(["public-api"]);
     // Shared has no slices: deep paths are fine.
     expect(
       rules("features/f/ui/f.tsx", 'import { x } from "@/shared/ui/molecules/confirm-dialog";'),
@@ -147,8 +161,44 @@ describe("slices", () => {
 
   it("skips generated files", () => {
     expect(rules("routeTree.gen.ts", 'import { r } from "./routes/_app/x";')).toEqual([]);
-    expect(rules("entities/e/ui/e.tsx", 'import { t } from "@/lib/api/types.gen";')).toEqual([]);
-    expect(rules("lib/api/types.gen.ts", 'import { x } from "@/widgets/w";')).toEqual([]);
+    expect(rules("entities/e/ui/e.tsx", 'import { t } from "@/shared/api/types.gen";')).toEqual([]);
+    expect(rules("shared/api/types.gen.ts", 'import { x } from "@/widgets/w";')).toEqual([]);
+  });
+});
+
+describe("dialogs and sheets come from the molecules", () => {
+  it("fails on the dialog or sheet primitive outside shared/ui", () => {
+    expect(
+      rules("features/f/ui/f.tsx", 'import { D } from "@/shared/ui/primitives/dialog";'),
+    ).toEqual(["primitive-dialog"]);
+    expect(rules("pages/p/ui/p.tsx", 'import { S } from "@/shared/ui/primitives/sheet";')).toEqual([
+      "primitive-dialog",
+    ]);
+    expect(rules("routes/_app/x.tsx", 'import { S } from "@/shared/ui/primitives/sheet";')).toEqual(
+      ["primitive-dialog"],
+    );
+  });
+
+  it("allows the molecules, the other primitives, and the primitives inside shared/ui", () => {
+    expect(
+      rules("features/f/ui/f.tsx", 'import { D } from "@/shared/ui/molecules/dialog";'),
+    ).toEqual([]);
+    expect(rules("pages/p/ui/p.tsx", 'import { S } from "@/shared/ui/molecules/sheet";')).toEqual(
+      [],
+    );
+    expect(
+      rules("features/f/ui/f.tsx", 'import { A } from "@/shared/ui/primitives/alert-dialog";'),
+    ).toEqual([]);
+    expect(
+      rules("shared/ui/molecules/dialog.tsx", 'import { D } from "@/shared/ui/primitives/dialog";'),
+    ).toEqual([]);
+    expect(rules("shared/ui/primitives/command.tsx", 'import { D } from "./dialog";')).toEqual([]);
+  });
+
+  it("is not exempted for test files outside src/test", () => {
+    expect(
+      rules("features/f/ui/f.test.tsx", 'import { D } from "@/shared/ui/primitives/dialog";'),
+    ).toEqual(["primitive-dialog"]);
   });
 });
 
@@ -158,7 +208,7 @@ describe("shared/ui sub-layers", () => {
     expect(rules(from, 'import { cn } from "@/shared/lib/utils";')).toEqual([]);
     expect(rules(from, 'import { Button } from "./button";')).toEqual([]);
     expect(rules(from, 'import { useT } from "@/shared/i18n";')).toEqual(["primitives-imports"]);
-    expect(rules(from, 'import { useIsMobile } from "@/hooks/use-mobile";')).toEqual([
+    expect(rules(from, 'import { useIsMobile } from "@/shared/lib/device";')).toEqual([
       "primitives-imports",
     ]);
     expect(rules(from, 'import { x } from "@/shared/ui/atoms/status-dot";')).toEqual([
