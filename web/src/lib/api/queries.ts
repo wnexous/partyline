@@ -1,5 +1,4 @@
 import {
-  type InfiniteData,
   infiniteQueryOptions,
   keepPreviousData,
   type QueryClient,
@@ -11,13 +10,14 @@ import {
 } from "@tanstack/react-query";
 import { withIntelligence, withoutAI } from "@/lib/contacts";
 import { type MeWithDefaultOrg, toMyOrgs } from "@/lib/orgs";
-import { withReaction } from "@/lib/reactions";
+import { putAvatarImage } from "@/shared/api/avatar-upload";
+import type { MessagePages, PeoplePages } from "@/shared/api/cache-types";
 import { api, isApiError } from "@/shared/api/client";
+import { items } from "@/shared/api/list";
+import { queryKeys } from "@/shared/api/query-keys";
 import {
   type AcceptInviteRequest,
   type ActivityItem,
-  type AddMemberRequest,
-  type AddReactionRequest,
   type AdminUser,
   type Agent,
   type AuditEntry,
@@ -27,26 +27,19 @@ import {
   type ConnectorKind,
   type Contacts,
   type Conversation,
-  type ConversationKind,
   type CreateConnectorRequest,
   type CreatedInvite,
   type CreatedToken,
-  type CreateGroupRequest,
   type CreateInvitationRequest,
   type CreateInviteRequest,
   type CreateOrganizationRequest,
   type CreatePositionRequest,
-  type CreateRoomRequest,
   type CreateTokenRequest,
   DefaultActivityLimit,
-  DefaultPageSize,
   DefaultPeoplePage,
   type DeleteAccountRequest,
   type DeviceRequest,
-  type EditMessageRequest,
   ErrorCodeAlreadyMember,
-  type FileKind,
-  FileKindDocument,
   type Identity,
   type IntelligenceProfile,
   type IntelligenceRef,
@@ -55,16 +48,10 @@ import {
   type InviteInfo,
   type List,
   type LoginRequest,
-  type MarkReadRequest,
-  MaxPreviewLength,
   type Me,
   type MergeAgentRequest,
   type Message,
-  type MessagePreview,
   type MovePreview,
-  MultipartFileField,
-  MultipartMessageField,
-  type OpenDMRequest,
   type Organization,
   type OrgChart,
   type OrgMember,
@@ -72,84 +59,25 @@ import {
   type PairingCode,
   type PairingRequest,
   type Position,
-  type PostMessageRequest,
   type PushKey,
   type PushSubscription,
   type PushSubscriptionRequest,
   type PushTest,
-  type Reaction,
-  type ReadState,
   type Room,
-  type RoomFile,
   type RoomMember,
   type Session,
   type SetupRequest,
   type SetupStatus,
   type Token,
   type UpdateConnectorRequest,
-  type UpdateMemberRequest,
   type UpdateMeRequest,
   type UpdateOrganizationRequest,
   type UpdateOrgMemberRequest,
   type UpdatePositionRequest,
   type UpdateProfileRequest,
-  type UpdateRoomRequest,
   type UpdateUserRequest,
   type User,
 } from "@/shared/api/types.gen";
-
-/*
- * Query keys and hooks for every API resource. Naming: `useX` reads, `useVerbX` mutates;
- * `xQuery(...)` returns options for loaders (`queryClient.ensureQueryData`). Collections are
- * cached as plain arrays (List.items unwrapped); message pages keep their Page shape.
- */
-
-export const queryKeys = {
-  me: ["me"] as const,
-  setupStatus: ["setup-status"] as const,
-  invite: (token: string) => ["invite", token] as const,
-  users: ["users"] as const,
-  sessions: ["me", "sessions"] as const,
-  /** The instance's VAPID public key; read when the user enables notifications (PUSH-02). */
-  pushKey: ["push", "key"] as const,
-  tokens: ["tokens"] as const,
-  rooms: ["rooms"] as const,
-  conversations: ["conversations"] as const,
-  contacts: ["contacts"] as const,
-  /** The people one connector has seen, filtered by a search text ("" = all of them). */
-  people: (connectorId: string, q: string) => ["contacts", "people", connectorId, q] as const,
-  intelligence: (id: string) => ["intelligences", id] as const,
-  /** The viewer's organizations; every query of one organization is under `org(id)`. */
-  orgs: ["orgs"] as const,
-  org: (id: string) => ["orgs", id] as const,
-  orgMembers: (id: string) => ["orgs", id, "members"] as const,
-  /** What moving a member to one position would change about who manages it (POS-04). */
-  orgMovePreview: (id: string, iid: string, positionId: string) =>
-    ["orgs", id, "members", iid, "move-preview", positionId] as const,
-  orgChart: (id: string) => ["orgs", id, "chart"] as const,
-  orgInvitations: (id: string) => ["orgs", id, "invitations"] as const,
-  /** The invitations waiting for the viewer, or for an AI they manage. */
-  invitations: ["invitations"] as const,
-  room: (id: string) => ["rooms", id] as const,
-  roomMembers: (id: string) => ["rooms", id, "members"] as const,
-  roomMessages: (id: string) => ["rooms", id, "messages"] as const,
-  roomFiles: (id: string, kind: FileFilter) => ["rooms", id, "files", kind] as const,
-  agents: ["agents"] as const,
-  connectorKinds: ["connector-kinds"] as const,
-  connectors: ["connectors"] as const,
-  connector: (id: string) => ["connectors", id] as const,
-  connectorChats: (id: string) => ["connectors", id, "chats"] as const,
-  identities: ["identities"] as const,
-  adminUsers: ["admin", "users"] as const,
-  adminInvites: ["admin", "invites"] as const,
-  adminAudit: ["admin", "audit"] as const,
-  activity: ["activity"] as const,
-};
-
-const items = <T>(list: List<T>) => list.items;
-
-// ---------------------------------------------------------------------------------------------
-// Session, setup and invites
 
 export const meQuery = () =>
   queryOptions({
@@ -174,7 +102,9 @@ export const inviteQuery = (token: string) =>
   });
 
 export const useMe = () => useQuery(meQuery());
+
 export const useSetupStatus = () => useQuery(setupStatusQuery());
+
 export const useInviteInfo = (token: string) => useQuery(inviteQuery(token));
 
 /** Stores the logged-in user and drops every cached resource of a previous session. */
@@ -280,9 +210,6 @@ export function useRevokeSession() {
   });
 }
 
-// ---------------------------------------------------------------------------------------------
-// Web Push (PUSH-02, PUSH-03, PUSH-05, PUSH-15)
-
 /**
  * The instance's VAPID public key. It is not read on mount: only pressing Enable needs it, so the
  * query starts disabled and Settings calls `refetch` (PUSH-18).
@@ -314,9 +241,6 @@ export function useUnsubscribePush() {
 export function useTestPush() {
   return useMutation({ mutationFn: () => api<PushTest>("POST", "/push/test") });
 }
-
-// ---------------------------------------------------------------------------------------------
-// Directory and tokens
 
 export const useUsers = () =>
   useQuery({
@@ -361,552 +285,6 @@ export function useRevokeToken() {
     onSuccess: () => qc.invalidateQueries({ queryKey: queryKeys.tokens }),
   });
 }
-
-// ---------------------------------------------------------------------------------------------
-// Rooms, members and messages
-
-export const roomsQuery = () =>
-  queryOptions({
-    queryKey: queryKeys.rooms,
-    queryFn: () => api<List<Room>>("GET", "/rooms").then(items),
-  });
-
-export const roomQuery = (id: string) =>
-  queryOptions({
-    queryKey: queryKeys.room(id),
-    queryFn: () => api<Room>("GET", `/rooms/${id}`),
-  });
-
-export const useRooms = () => useQuery(roomsQuery());
-export const useRoom = (id: string) => useQuery(roomQuery(id));
-
-/** A room the user just made, opened or changed: cached, and refreshed in the rooms list and the sidebar. */
-function storeRoom(qc: QueryClient, room: Room) {
-  qc.setQueryData(queryKeys.room(room.id), room);
-  qc.invalidateQueries({ queryKey: queryKeys.rooms, exact: true });
-  qc.invalidateQueries({ queryKey: queryKeys.conversations, exact: true });
-}
-
-export function useCreateRoom() {
-  const qc = useQueryClient();
-  return useMutation({
-    mutationFn: (req: CreateRoomRequest) => api<Room>("POST", "/rooms", req),
-    onSuccess: (room) => storeRoom(qc, room),
-  });
-}
-
-export function useUpdateRoom(id: string) {
-  const qc = useQueryClient();
-  return useMutation({
-    mutationFn: (req: UpdateRoomRequest) => api<Room>("PATCH", `/rooms/${id}`, req),
-    onSuccess: (room) => storeRoom(qc, room),
-  });
-}
-
-export function useDeleteRoom() {
-  const qc = useQueryClient();
-  return useMutation({
-    mutationFn: (id: string) => api<void>("DELETE", `/rooms/${id}`),
-    onSuccess: (_, id) => {
-      // Same cache effect as the live room.deleted event (ROOMDEL-02): gone from every list now.
-      qc.removeQueries({ queryKey: queryKeys.room(id) });
-      qc.setQueryData<Room[]>(queryKeys.rooms, (old) => old?.filter((r) => r.id !== id));
-      qc.setQueryData<Conversation[]>(queryKeys.conversations, (old) =>
-        old?.filter((c) => c.id !== id),
-      );
-      qc.setQueryData<ActivityItem[]>(queryKeys.activity, (old) =>
-        old?.filter((a) => a.room.id !== id),
-      );
-    },
-  });
-}
-
-/** Shows a group's photo, or its absence, on the cached room, rooms list and sidebar row (GAV-07). */
-function showRoomPhoto(qc: QueryClient, roomId: string, avatarUrl: string | undefined) {
-  const photo = <T extends { avatar_url?: string }>({ avatar_url: _old, ...rest }: T) =>
-    (avatarUrl ? { ...rest, avatar_url: avatarUrl } : rest) as unknown as T;
-  qc.setQueryData<Room>(queryKeys.room(roomId), (old) => old && photo(old));
-  qc.setQueryData<Room[]>(queryKeys.rooms, (old) =>
-    old?.map((r) => (r.id === roomId ? photo(r) : r)),
-  );
-  patchConversation(qc, roomId, photo);
-}
-
-/** Uploads a group's photo: the image file goes as the raw body (GAV-01); 422 `avatar_invalid`. */
-export function useUploadRoomAvatar(id: string) {
-  const qc = useQueryClient();
-  return useMutation({
-    mutationFn: (image: Blob) =>
-      putAvatarImage<Room>(`/rooms/${encodeURIComponent(id)}/avatar`, image),
-    onSuccess: (room) => {
-      storeRoom(qc, room);
-      showRoomPhoto(qc, room.id, room.avatar_url);
-    },
-  });
-}
-
-/** Removes a group's photo: its initials show again everywhere. */
-export function useRemoveRoomAvatar(id: string) {
-  const qc = useQueryClient();
-  return useMutation({
-    mutationFn: () => api<void>("DELETE", `/rooms/${encodeURIComponent(id)}/avatar`),
-    onSuccess: () => {
-      showRoomPhoto(qc, id, undefined);
-      qc.invalidateQueries({ queryKey: queryKeys.room(id), exact: true });
-      qc.invalidateQueries({ queryKey: queryKeys.rooms, exact: true });
-      qc.invalidateQueries({ queryKey: queryKeys.conversations, exact: true });
-    },
-  });
-}
-
-export function useResumeRoom(id: string) {
-  const qc = useQueryClient();
-  return useMutation({
-    mutationFn: () => api<Room>("POST", `/rooms/${id}/resume`),
-    onSuccess: (room) => qc.setQueryData(queryKeys.room(id), room),
-  });
-}
-
-/** The members of a room; `enabled` keeps a caller that has no room yet from asking for one. */
-export const useRoomMembers = (id: string, enabled = true) =>
-  useQuery({
-    queryKey: queryKeys.roomMembers(id),
-    queryFn: () => api<List<RoomMember>>("GET", `/rooms/${id}/members`).then(items),
-    enabled: enabled && id !== "",
-  });
-
-export function useAddMember(roomId: string) {
-  const qc = useQueryClient();
-  return useMutation({
-    mutationFn: (req: AddMemberRequest) => api<RoomMember>("POST", `/rooms/${roomId}/members`, req),
-    onSuccess: () => qc.invalidateQueries({ queryKey: queryKeys.roomMembers(roomId) }),
-  });
-}
-
-export function useUpdateMember(roomId: string) {
-  const qc = useQueryClient();
-  return useMutation({
-    mutationFn: ({ memberId, ...req }: UpdateMemberRequest & { memberId: string }) =>
-      api<RoomMember>("PATCH", `/rooms/${roomId}/members/${memberId}`, req),
-    onSuccess: (member) =>
-      qc.setQueryData<RoomMember[]>(queryKeys.roomMembers(roomId), (old) =>
-        old?.map((m) => (m.id === member.id ? member : m)),
-      ),
-  });
-}
-
-export function useRemoveMember(roomId: string) {
-  const qc = useQueryClient();
-  return useMutation({
-    mutationFn: (memberId: string) => api<void>("DELETE", `/rooms/${roomId}/members/${memberId}`),
-    onSuccess: () => qc.invalidateQueries({ queryKey: queryKeys.roomMembers(roomId) }),
-  });
-}
-
-/**
- * Takes the caller's own member row out of a group (ROOM-01): that is leaving, so the room goes
- * from every list at once, as the room.deleted event that follows it does.
- */
-export function useLeaveRoom() {
-  const qc = useQueryClient();
-  return useMutation({
-    mutationFn: ({ roomId, memberId }: { roomId: string; memberId: string }) =>
-      api<void>("DELETE", `/rooms/${roomId}/members/${memberId}`),
-    onSuccess: (_, { roomId }) => {
-      qc.removeQueries({ queryKey: queryKeys.room(roomId) });
-      qc.setQueryData<Room[]>(queryKeys.rooms, (old) => old?.filter((r) => r.id !== roomId));
-      qc.setQueryData<Conversation[]>(queryKeys.conversations, (old) =>
-        old?.filter((c) => c.id !== roomId),
-      );
-      qc.setQueryData<ActivityItem[]>(queryKeys.activity, (old) =>
-        old?.filter((a) => a.room.id !== roomId),
-      );
-    },
-  });
-}
-
-export type MessagePages = InfiniteData<Page<Message>, number | undefined>;
-
-/** Sorts a page oldest first, whatever order the server used. */
-export function normalizePage(page: Page<Message>): Page<Message> {
-  return { ...page, items: [...page.items].sort((a, b) => a.seq - b.seq) };
-}
-
-/** The `before_seq` cursor of the next (older) page, or undefined when there is none. */
-export function olderPageCursor(page: Page<Message>): number | undefined {
-  if (!page.has_more || page.items.length === 0) return undefined;
-  return Math.min(...page.items.map((m) => m.seq));
-}
-
-export function fetchMessages(
-  roomId: string,
-  cursor: { before_seq?: number; after_seq?: number },
-  signal?: AbortSignal,
-) {
-  return api<Page<Message>>("GET", `/rooms/${roomId}/messages`, undefined, {
-    query: { ...cursor, limit: DefaultPageSize },
-    signal,
-  }).then(normalizePage);
-}
-
-/**
- * Room timeline: pages[0] is the newest page; fetchNextPage loads older messages. Items inside
- * each page are oldest first. Live events append to pages[0] (lib/live/handlers.ts).
- */
-export const roomMessagesQuery = (roomId: string) =>
-  infiniteQueryOptions({
-    queryKey: queryKeys.roomMessages(roomId),
-    queryFn: ({ pageParam, signal }) => fetchMessages(roomId, { before_seq: pageParam }, signal),
-    initialPageParam: undefined as number | undefined,
-    getNextPageParam: olderPageCursor,
-    staleTime: Number.POSITIVE_INFINITY,
-  });
-
-export const useRoomMessages = (roomId: string) => useInfiniteQuery(roomMessagesQuery(roomId));
-
-/** The highest seq of the newest cached page; undefined while the timeline is empty or not loaded. */
-function newestSeqOf(data: MessagePages): number | undefined {
-  let newest: number | undefined;
-  for (const m of data.pages[0]?.items ?? []) {
-    if (newest === undefined || m.seq > newest) newest = m.seq;
-  }
-  return newest;
-}
-
-/** The newest message seq of a room's timeline; re-renders only when that number changes. */
-export const useNewestSeq = (roomId: string) =>
-  useInfiniteQuery({ ...roomMessagesQuery(roomId), select: newestSeqOf }).data;
-
-export interface PostMessageInput extends PostMessageRequest {
-  files?: File[];
-}
-
-/** Identifies one room's posts, so the page can read the refusal of its own composer. */
-export const postMessageKey = (roomId: string) => ["post-message", roomId] as const;
-
-/**
- * Posts a message. `onSent` runs when the post went through, also when the component that sent it
- * is gone by then (the callbacks of `mutate` are not run for an unmounted observer).
- */
-export function usePostMessage(roomId: string, onSent?: (input: PostMessageInput) => void) {
-  return useMutation({
-    mutationKey: postMessageKey(roomId),
-    onSuccess: (_message, input) => onSent?.(input),
-    mutationFn: ({ files, ...req }: PostMessageInput) => {
-      if (!files?.length) return api<Message>("POST", `/rooms/${roomId}/messages`, req);
-      const form = new FormData();
-      form.append(MultipartMessageField, JSON.stringify(req));
-      for (const file of files) form.append(MultipartFileField, file, file.name);
-      return api<Message>("POST", `/rooms/${roomId}/messages`, form);
-    },
-    // The stored message comes back through the live room.message event; no cache write here,
-    // so the timeline has a single source of appends.
-  });
-}
-
-/**
- * Puts a message where the cached copy of it is - the same id, in whichever page holds it - and touches
- * nothing else: an edit or a delete keeps the message's place (EDT-01, DLT-01). A message the pages do not hold
- * is not added: its first fetch has it as it is.
- */
-export function replaceMessage(
-  data: MessagePages | undefined,
-  m: Message,
-): MessagePages | undefined {
-  if (!data) return data;
-  let found = false;
-  const pages = data.pages.map((page) => {
-    const index = page.items.findIndex((x) => x.id === m.id);
-    if (index < 0) return page;
-    found = true;
-    const items = page.items.slice();
-    items[index] = m;
-    return { ...page, items };
-  });
-  return found ? { ...data, pages } : data;
-}
-
-/**
- * A message was edited or deleted, by this client (the answer of the request) or by anyone (the live
- * room.message_updated frame): everywhere the cache shows it, it becomes the message as it is now (EDT-06,
- * DLT-06). The timeline, the preview of the conversation if it is the last message, the dashboard feed; the
- * files of a deleted message leave the files lists. Nothing is added, counted as unread or moved up: the message
- * keeps its place. Applying the same update twice changes nothing more.
- */
-export function applyMessageUpdate(qc: QueryClient, m: Message) {
-  qc.setQueryData<MessagePages>(queryKeys.roomMessages(m.room_id), (old) => replaceMessage(old, m));
-  patchConversation(qc, m.room_id, (c) =>
-    c.last_message?.seq === m.seq ? { ...c, last_message: previewOf(m, c.kind) } : c,
-  );
-  qc.setQueryData<ActivityItem[]>(queryKeys.activity, (old) =>
-    old?.map((a) => (a.message.id === m.id ? { ...a, message: m } : a)),
-  );
-  if (m.deleted_at === undefined) return;
-  for (const [key, data] of qc.getQueriesData<FilePages>({
-    queryKey: ["rooms", m.room_id, "files"],
-  })) {
-    if (!data) continue;
-    qc.setQueryData<FilePages>(key, {
-      ...data,
-      pages: data.pages.map((page) => ({
-        ...page,
-        items: page.items.filter((f) => f.message_id !== m.id),
-      })),
-    });
-  }
-}
-
-/** Replaces the text of a message the viewer wrote (EDT-01); the answer is the message as it is now. */
-export function useEditMessage(roomId: string) {
-  const qc = useQueryClient();
-  return useMutation({
-    mutationFn: ({ id, text }: { id: string; text: string }) =>
-      api<Message>("PATCH", `/rooms/${roomId}/messages/${id}`, {
-        text,
-      } satisfies EditMessageRequest),
-    // The live frame says the same to everyone else; writing the answer here keeps this client right when its
-    // socket is down.
-    onSuccess: (m) => applyMessageUpdate(qc, m),
-  });
-}
-
-/** Deletes a message (DLT-01); the answer is its placeholder. */
-export function useDeleteMessage(roomId: string) {
-  const qc = useQueryClient();
-  return useMutation({
-    mutationFn: (id: string) => api<Message>("DELETE", `/rooms/${roomId}/messages/${id}`),
-    onSuccess: (m) => applyMessageUpdate(qc, m),
-  });
-}
-
-/** The message with this id, in whichever page of the timeline holds it. */
-function findMessage(data: MessagePages | undefined, id: string): Message | undefined {
-  for (const page of data?.pages ?? []) {
-    const found = page.items.find((m) => m.id === id);
-    if (found) return found;
-  }
-  return undefined;
-}
-
-/** The reactions the timeline holds for a message; none when it does not hold the message. */
-export const readReactions = (
-  qc: QueryClient,
-  roomId: string,
-  messageId: string,
-): Reaction[] | undefined =>
-  findMessage(qc.getQueryData<MessagePages>(queryKeys.roomMessages(roomId)), messageId)?.reactions;
-
-/**
- * The reactions of a message changed, by this client (a toggle, and the answer of the request) or by anyone (the
- * live room.reactions frame): everywhere the cache shows the message, they become the list as it is now (RCT-06).
- * The message keeps its place and is not counted as unread; a deleted message has none (RCT-07), so a frame that
- * outran its delete finds it unchanged. Applying the same list twice changes nothing more.
- */
-export function applyReactions(
-  qc: QueryClient,
-  roomId: string,
-  messageId: string,
-  reactions: Reaction[],
-) {
-  qc.setQueryData<MessagePages>(queryKeys.roomMessages(roomId), (old) => {
-    const m = findMessage(old, messageId);
-    return m && m.deleted_at === undefined ? replaceMessage(old, { ...m, reactions }) : old;
-  });
-  qc.setQueryData<ActivityItem[]>(queryKeys.activity, (old) =>
-    old?.map((a) =>
-      a.message.id === messageId && a.message.deleted_at === undefined
-        ? { ...a, message: { ...a.message, reactions } }
-        : a,
-    ),
-  );
-}
-
-/** One tap on a reaction: to react with an emoji (`add`) or to take that reaction back. */
-export interface ReactionToggle {
-  messageId: string;
-  emoji: string;
-  add: boolean;
-  /** The viewer's intelligence id: the reactions list who used an emoji by it (RCT-05). */
-  by: string;
-}
-
-/**
- * Reacts to a message of the room, or takes the reaction back (RCT-03). The reaction shows at once and the answer
- * (the message's reactions as they are then) settles it. While another toggle of the same message is still on its
- * way the answer of an earlier one is not written: it knows nothing of that one and would take it off the screen.
- * A request that fails tells `onFailure` (a callback of `mutate` would be lost when another toggle follows) and,
- * once no later toggle of the message is pending, puts back what it changed and refetches the room's messages so
- * that the screen follows the server rather than a local opposite toggle (RCT-08). While one is still pending it
- * leaves the screen alone: the last toggle to settle writes the server's list.
- */
-export function useToggleReaction(roomId: string, onFailure?: (error: unknown) => void) {
-  const qc = useQueryClient();
-  const pendingFor = (messageId: string) =>
-    qc.isMutating({
-      predicate: (m) =>
-        m.options.mutationKey?.[0] === "reactions" &&
-        (m.state.variables as ReactionToggle | undefined)?.messageId === messageId,
-    });
-  const change = ({ messageId, emoji, add, by }: ReactionToggle) => {
-    const current = readReactions(qc, roomId, messageId);
-    if (current) applyReactions(qc, roomId, messageId, withReaction(current, emoji, by, add));
-  };
-  return useMutation({
-    mutationKey: ["reactions", roomId],
-    mutationFn: ({ messageId, emoji, add }: ReactionToggle) =>
-      (add
-        ? api<List<Reaction>>("POST", `/rooms/${roomId}/messages/${messageId}/reactions`, {
-            emoji,
-          } satisfies AddReactionRequest)
-        : api<List<Reaction>>(
-            "DELETE",
-            `/rooms/${roomId}/messages/${messageId}/reactions/${encodeURIComponent(emoji)}`,
-          )
-      ).then(items),
-    onMutate: change,
-    onError: (error, toggle) => {
-      onFailure?.(error);
-      // This one is still pending while its callbacks run: more than one is a later toggle on its way.
-      if (pendingFor(toggle.messageId) > 1) return;
-      change({ ...toggle, add: !toggle.add });
-      // Mark the timeline stale first: it is kept fresh by the live frames and may have no observer
-      // (and so no query function) of its own; fetching the room's messages query gives the truth.
-      qc.invalidateQueries({ queryKey: queryKeys.roomMessages(roomId), refetchType: "none" });
-      void qc.fetchInfiniteQuery(roomMessagesQuery(roomId)).catch(() => {});
-    },
-    onSuccess: (reactions, { messageId }) => {
-      if (pendingFor(messageId) <= 1) applyReactions(qc, roomId, messageId, reactions);
-    },
-  });
-}
-
-export const attachmentUrl = (id: string) => `/api/v1/attachments/${id}`;
-
-// ---------------------------------------------------------------------------------------------
-// Conversations: the sidebar list, direct messages, groups and read state (LAY-01, DM-01, DM-06,
-// DM-07, LAY-04)
-
-/** The caller's DMs and groups, newest activity first, with unread counts (GET /conversations). */
-export const conversationsQuery = () =>
-  queryOptions({
-    queryKey: queryKeys.conversations,
-    queryFn: ({ signal }) =>
-      api<List<Conversation>>("GET", "/conversations", undefined, { signal }).then(items),
-  });
-
-export const useConversations = () => useQuery(conversationsQuery());
-
-/** Newest activity first; ties by title (case-insensitive), then id: the server's own order. */
-export function newestActivityFirst(a: Conversation, b: Conversation): number {
-  const diff = Date.parse(b.activity_at) - Date.parse(a.activity_at);
-  if (diff !== 0) return diff;
-  const [ta, tb] = [a.title.toLowerCase(), b.title.toLowerCase()];
-  if (ta !== tb) return ta < tb ? -1 : 1;
-  return a.id < b.id ? -1 : a.id > b.id ? 1 : 0;
-}
-
-/** The first `max` code points of `text`: an emoji counts once, whatever its UTF-16 length. */
-function firstCodePoints(text: string, max: number): string {
-  let end = 0;
-  let count = 0;
-  for (const point of text) {
-    if (count === max) break;
-    end += point.length;
-    count += 1;
-  }
-  return text.slice(0, end);
-}
-
-/**
- * The sidebar preview of a message (LAY-01), built as the server builds the list's: the first
- * MaxPreviewLength code points; "[first file name]" when the text is blank and there is a file;
- * the sender's name in groups only.
- */
-export function previewOf(m: Message, kind: ConversationKind): MessagePreview {
-  const file = m.attachments[0]?.name;
-  const blank = m.text.trim() === "";
-  const deleted = m.deleted_at !== undefined;
-  return {
-    seq: m.seq,
-    author_id: m.author.id,
-    author_name: kind === "group" ? m.author_name : "",
-    // A deleted message previews nothing of what it said (DLT-05); the list says "Message deleted".
-    text: deleted
-      ? ""
-      : blank
-        ? file
-          ? `[${file}]`
-          : ""
-        : firstCodePoints(m.text, MaxPreviewLength),
-    created_at: m.created_at,
-    ...(deleted ? { deleted: true } : {}),
-  };
-}
-
-/** Replaces one conversation of the cached list; a list that is not cached stays absent. */
-export function patchConversation(
-  qc: QueryClient,
-  roomId: string,
-  patch: (c: Conversation) => Conversation,
-) {
-  qc.setQueryData<Conversation[]>(queryKeys.conversations, (old) =>
-    old?.map((c) => (c.id === roomId ? patch(c) : c)),
-  );
-}
-
-/**
- * The user read a room up to `seq`: only what lies after it can still be unread. The count never
- * goes up here, so an answer that arrives late cannot undo a newer one.
- */
-export function markConversationRead(qc: QueryClient, roomId: string, seq: number) {
-  patchConversation(qc, roomId, (c) => {
-    const after = c.last_message ? Math.max(0, c.last_message.seq - seq) : 0;
-    const unread = Math.min(c.unread, after);
-    return unread === c.unread ? c : { ...c, unread };
-  });
-}
-
-/** Opens the DM with an intelligence (id): the existing one, or a new one (DM-01). */
-export function useOpenDM() {
-  const qc = useQueryClient();
-  return useMutation({
-    mutationFn: (withId: string) =>
-      api<Room>("POST", "/conversations/dm", { with: withId } satisfies OpenDMRequest),
-    onSuccess: (room) => storeRoom(qc, room),
-  });
-}
-
-/**
- * Creates a group with members (LAY-04). A 422 `members_refused` carries every refused member in
- * `ApiError.refused`; nothing is created then.
- */
-export function useCreateGroup() {
-  const qc = useQueryClient();
-  return useMutation({
-    mutationFn: (req: CreateGroupRequest) => api<Room>("POST", "/groups", req),
-    onSuccess: (room) => storeRoom(qc, room),
-  });
-}
-
-/** Marks a room read up to `seq` (the newest message when absent) for this user (DM-07). */
-export function useMarkRead() {
-  const qc = useQueryClient();
-  return useMutation({
-    mutationFn: ({ roomId, seq }: { roomId: string; seq?: number }) =>
-      api<ReadState>(
-        "PUT",
-        `/rooms/${roomId}/read`,
-        seq === undefined ? {} : ({ seq } satisfies MarkReadRequest),
-      ),
-    onSuccess: (state) =>
-      patchConversation(qc, state.room_id, (c) =>
-        state.unread < c.unread ? { ...c, unread: state.unread } : c,
-      ),
-  });
-}
-
-// ---------------------------------------------------------------------------------------------
-// Intelligence profiles (PROF-03, PROF-05, PROF-07)
 
 export const intelligenceQuery = (id: string) =>
   queryOptions({
@@ -1056,21 +434,6 @@ export function useUpdateIntelligence(id: string) {
   });
 }
 
-/** How long an avatar upload may take before it is abandoned, so a stalled connection cannot
- * leave the photo "sending" forever. */
-export const AvatarUploadTimeoutMs = 30_000;
-
-/** Sends an avatar image as the raw body of a PUT, and gives up on a connection that stalls. */
-async function putAvatarImage<T>(path: string, image: Blob): Promise<T> {
-  const abort = new AbortController();
-  const timer = setTimeout(() => abort.abort(), AvatarUploadTimeoutMs);
-  try {
-    return await api<T>("PUT", path, image, { signal: abort.signal });
-  } finally {
-    clearTimeout(timer);
-  }
-}
-
 /** Uploads an avatar: the image file goes as the raw body (PROF-07); 422 `avatar_invalid`. */
 export function useUploadAvatar(id: string) {
   const qc = useQueryClient();
@@ -1096,10 +459,6 @@ export function useRemoveAvatar(id: string) {
     },
   });
 }
-
-// ---------------------------------------------------------------------------------------------
-// Organizations: the viewer's own, and the members, positions, chart and invitations of each
-// (ORG-01, OMEM-01..07, POS-01..09, CHART-01..03)
 
 export const orgsQuery = () =>
   queryOptions({
@@ -1378,7 +737,7 @@ export function useRevokeInvitation(orgId: string) {
  * or gone because it expired (410, OMEM-07), was withdrawn (404) or became pointless (409
  * already_member), it leaves the inbox at once; accepting also adds the organization to the viewer's.
  */
-function useAnswerInvitation(verb: "accept" | "decline") {
+export function useAnswerInvitation(verb: "accept" | "decline") {
   const qc = useQueryClient();
   const drop = (id: string) =>
     qc.setQueryData<Invitation[]>(queryKeys.invitations, (old) => old?.filter((i) => i.id !== id));
@@ -1405,11 +764,8 @@ function useAnswerInvitation(verb: "accept" | "decline") {
 }
 
 export const useAcceptInvitation = () => useAnswerInvitation("accept");
-export const useDeclineInvitation = () => useAnswerInvitation("decline");
 
-// ---------------------------------------------------------------------------------------------
-// Contacts: the AIs of the user's organizations and the ones they host, the other users and the
-// people of the connections of their organizations (CONT-01, AD-016, AD-022)
+export const useDeclineInvitation = () => useAnswerInvitation("decline");
 
 /** Everyone the caller can reach, grouped as the contacts page shows them (GET /contacts). */
 export const contactsQuery = () =>
@@ -1419,8 +775,6 @@ export const contactsQuery = () =>
   });
 
 export const useContacts = () => useQuery(contactsQuery());
-
-export type PeoplePages = InfiniteData<Page<IntelligenceRef>, string | undefined>;
 
 /**
  * The people of one connector in name order, a page at a time; the cursor is the id of the last
@@ -1448,63 +802,11 @@ export const peopleQuery = (connectorId: string, q = "") =>
 export const usePeople = (connectorId: string, q = "", enabled = true) =>
   useInfiniteQuery({ ...peopleQuery(connectorId, q), enabled, placeholderData: keepPreviousData });
 
-// ---------------------------------------------------------------------------------------------
-// Room files (FILES-01, FILES-04)
-
-/** A files list filter: one kind, or every file. */
-export type FileFilter = FileKind | "all";
-
-/** The kind the server gives a file: its MIME family, document for everything else. */
-export function fileKindOf(mime: string): FileKind {
-  const family = mime.toLowerCase().split("/")[0];
-  return family === "image" || family === "audio" || family === "video" ? family : FileKindDocument;
-}
-
-/** A message's attachments as room files, newest first like the files list. */
-export function messageFiles(m: Message): RoomFile[] {
-  return m.attachments
-    .map((a) => ({
-      ...a,
-      kind: fileKindOf(a.mime),
-      message_id: m.id,
-      message_seq: m.seq,
-      author_kind: m.author_kind,
-      author_name: m.author_name,
-      author: m.author,
-      created_at: m.created_at,
-    }))
-    .reverse();
-}
-
-export type FilePages = InfiniteData<Page<RoomFile>, string | undefined>;
-
-/** A room's files, newest first; fetchNextPage loads older ones (cursor = last id). */
-export const roomFilesQuery = (roomId: string, kind: FileFilter) =>
-  infiniteQueryOptions({
-    queryKey: queryKeys.roomFiles(roomId, kind),
-    queryFn: ({ pageParam, signal }) =>
-      api<Page<RoomFile>>("GET", `/rooms/${roomId}/attachments`, undefined, {
-        query: {
-          kind: kind === "all" ? undefined : kind,
-          before: pageParam,
-          limit: DefaultPageSize,
-        },
-        signal,
-      }),
-    initialPageParam: undefined as string | undefined,
-    getNextPageParam: (page: Page<RoomFile>) =>
-      page.has_more ? page.items[page.items.length - 1]?.id : undefined,
-  });
-
-export const useRoomFiles = (roomId: string, kind: FileFilter) =>
-  useInfiniteQuery(roomFilesQuery(roomId, kind));
-
-// ---------------------------------------------------------------------------------------------
-// Dashboard activity
-
 /** Feed entries requested, then kept in the dashboard feed in total and at most per room. */
 export const ACTIVITY_FETCH = DefaultActivityLimit;
+
 export const ACTIVITY_SIZE = 8;
+
 export const ACTIVITY_PER_ROOM = 3;
 
 /** Newest message first; seq breaks ties inside a room. */
@@ -1549,9 +851,6 @@ export const activityQuery = () =>
   });
 
 export const useActivity = () => useQuery(activityQuery());
-
-// ---------------------------------------------------------------------------------------------
-// Agents
 
 export const agentsQuery = () =>
   queryOptions({
@@ -1638,9 +937,6 @@ export function useRemoveFromOrg() {
   });
 }
 
-// ---------------------------------------------------------------------------------------------
-// Connectors and chats
-
 export const useConnectorKinds = () =>
   useQuery({
     queryKey: queryKeys.connectorKinds,
@@ -1661,6 +957,7 @@ export const connectorQuery = (id: string) =>
   });
 
 export const useConnectors = () => useQuery(connectorsQuery());
+
 export const useConnector = (id: string) => useQuery(connectorQuery(id));
 
 export function useCreateConnector() {
@@ -1712,9 +1009,6 @@ export function useRefreshChats(id: string) {
   });
 }
 
-// ---------------------------------------------------------------------------------------------
-// Identities
-
 export const useIdentities = () =>
   useQuery({
     queryKey: queryKeys.identities,
@@ -1738,9 +1032,6 @@ export function useDeleteIdentity() {
     onSuccess: () => qc.invalidateQueries({ queryKey: queryKeys.identities }),
   });
 }
-
-// ---------------------------------------------------------------------------------------------
-// Admin
 
 export const useAdminUsers = () =>
   useQuery({
@@ -1794,10 +1085,6 @@ export const useAudit = () =>
     getNextPageParam: (page) => (page.has_more ? page.items.at(-1)?.id : undefined),
   });
 
-// ---------------------------------------------------------------------------------------------
-// Machine approval (WIZ-02, DEV-02, DEV-05): the user types the code the terminal shows; it
-// travels in the request body only, never in a URL.
-
 export type DeviceAction = "lookup" | "approve" | "deny";
 
 /** Looks up, approves or denies the request with a typed code; answers the request. */
@@ -1807,3 +1094,58 @@ export function useDeviceAction() {
       api<DeviceRequest>("POST", `/devices/${action}`, { code }),
   });
 }
+
+export type { PostMessageInput, ReactionToggle } from "@/entities/message";
+export {
+  applyMessageUpdate,
+  applyReactions,
+  attachmentUrl,
+  fetchMessages,
+  fileKindOf,
+  messageFiles,
+  normalizePage,
+  olderPageCursor,
+  postMessageKey,
+  readReactions,
+  replaceMessage,
+  roomMessagesQuery,
+  useDeleteMessage,
+  useEditMessage,
+  useNewestSeq,
+  usePostMessage,
+  useRoomMessages,
+  useToggleReaction,
+} from "@/entities/message";
+export {
+  conversationsQuery,
+  markConversationRead,
+  newestActivityFirst,
+  patchConversation,
+  previewOf,
+  roomFilesQuery,
+  roomQuery,
+  roomsQuery,
+  useConversations,
+  useCreateGroup,
+  useCreateRoom,
+  useDeleteRoom,
+  useLeaveRoom,
+  useMarkRead,
+  useOpenDM,
+  useRemoveRoomAvatar,
+  useResumeRoom,
+  useRoom,
+  useRoomFiles,
+  useRooms,
+  useUpdateRoom,
+  useUploadRoomAvatar,
+} from "@/entities/room";
+export {
+  useAddMember,
+  useRemoveMember,
+  useRoomMembers,
+  useUpdateMember,
+} from "@/entities/room-member";
+export { AvatarUploadTimeoutMs } from "@/shared/api/avatar-upload";
+export type { FileFilter, FilePages, MessagePages, PeoplePages } from "@/shared/api/cache-types";
+export { queryKeys } from "@/shared/api/query-keys";
