@@ -14,7 +14,6 @@ import { type ReactNode, useState } from "react";
 import { DeleteAIDialog } from "@/components/delete-ai-dialog";
 import { EndSessionDialog } from "@/components/end-session-dialog";
 import { MergeAIDialog } from "@/components/merge-ai-dialog";
-import { MessageButton } from "@/components/message-button";
 import { ProfileConversations } from "@/components/profile-conversations";
 import { ProfileEditor } from "@/components/profile-editor";
 import { RemoveFromOrgDialog } from "@/components/remove-from-org-dialog";
@@ -50,6 +49,7 @@ import { PageSection } from "@/shared/ui/molecules/page-section";
 import { PanelSkeleton } from "@/shared/ui/molecules/panel-skeleton";
 import { Button } from "@/shared/ui/primitives/button";
 import { Skeleton } from "@/shared/ui/primitives/skeleton";
+import { MessageButton } from "@/widgets/conversation-timeline";
 
 export const Route = createFileRoute("/_app/contacts/$id")({
   component: ProfilePage,

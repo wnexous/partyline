@@ -91,7 +91,7 @@ Fix the import instead (move the code down a layer, or go through the index).
 | Confirmation | `shared/ui/molecules/confirm-dialog` (`open`, `onClose`, `title`, `body`, `confirmLabel`, `destructive`, `pending`, `onConfirm`) | 14 hand-built AlertDialogs (§1.G) |
 | Form dialog shell | `shared/ui/molecules/form-dialog` | hand-built Dialog shells (§1.G) |
 | Empty / not found / loading | `EmptyState`, `NotFound` (one, with title/body/action props), `ListSkeleton`, `PanelSkeleton` | 4 not-found variants, inline skeletons (§1.H) |
-| Error text | `shared/api/error-text` (per-operation status→key maps) | postErrorText, editErrorText, startConversationError, formError (§1.H) |
+| Error text | `shared/api/error-text` (per-operation rule tables: `errorText(t, err, "post" \| "edit")`, `startConversationError`) | formError still to move (§1.H) |
 | Row menu | `ActionMenu` + `RowMenuButton` | member-list raw DropdownMenu (§1.I) |
 | Form fields / choice groups | `form-fields` (`TextField`, `TextAreaField`, `SelectField`), `ChoiceGroup` molecule | hand-made Label+NativeSelect/Input, 5 choice groups (§1.J) |
 | Section shell | `PageSection` | 3 local `Section` helpers (§1.K) |
@@ -101,6 +101,8 @@ Fix the import instead (move the code down a layer, or go through the index).
 | Device predicates | `shared/lib/device` (`isNarrow`/`useIsMobile`, `isCoarsePointer`, `isTouchFirst`) | 3 files (§1.Q) |
 | Pickable candidates | `entities/intelligence/model/pickables` `usePickables({ orgId })` | 3 wirings (§1.P) |
 | Composer draft | `features/send-message/model/draft-store` (zustand, per room: text, files, replyTo; edit drafts per message id) | local useState + keyed remount (§4) |
+| Message permissions (edit, delete) | `entities/message/model/permissions` | inline checks in the menu and the composer (§2.e) |
+| Composer | `widgets/composer` (composes send-message, edit-message, mention-autocomplete, send-voice-message) | `components/composer` (§3.3) |
 
 
 Some of these land with later migration tasks (`.specs/features/web-architecture/tasks.md`); until

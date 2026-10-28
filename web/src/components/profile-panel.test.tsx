@@ -3,7 +3,6 @@ import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { MemberPicker } from "@/components/member-picker";
 import { ProfilePanel } from "@/components/profile-panel";
-import { RoomFiles } from "@/components/room-files";
 import { useProfilePanel, useProfilePanelStore } from "@/hooks/use-profile-panel";
 import type {
   IntelligenceProfile,
@@ -31,6 +30,7 @@ import { useLiveStore } from "@/test/live-store";
 import { stubViewport } from "@/test/media";
 import { renderRoute, renderWithRouter } from "@/test/render";
 import { sampleContacts } from "@/test/sample-contacts";
+import { RoomFiles } from "@/widgets/room-files";
 
 vi.mock("@/app/live", () => ({ startLive: vi.fn(() => () => {}) }));
 

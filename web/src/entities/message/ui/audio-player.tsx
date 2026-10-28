@@ -1,10 +1,10 @@
 import { FileIcon, PauseIcon, PlayIcon } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
-import { formatDuration, isVoiceName } from "@/lib/voice";
 import type { Attachment } from "@/shared/api/types.gen";
 import { useI18n } from "@/shared/i18n";
 import { Button } from "@/shared/ui/primitives/button";
 import { attachmentUrl } from "../lib/attachments";
+import { formatDuration, isVoiceName } from "../lib/voice";
 
 /*
  * The compact player of an audio attachment (VOI-07, VOI-08): play and pause, the time and a seek

@@ -1,9 +1,9 @@
 import { FileIcon } from "lucide-react";
-import { isAudio } from "@/lib/voice";
 import type { Attachment } from "@/shared/api/types.gen";
 import { useI18n } from "@/shared/i18n";
 import { formatBytes } from "@/shared/lib/bytes";
 import { attachmentUrl, INLINE_IMAGES } from "../lib/attachments";
+import { isAudio } from "../lib/voice";
 import { AudioPlayer } from "./audio-player";
 
 /** Reserved box for inline images (Attachment has no width/height). */

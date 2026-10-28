@@ -7,7 +7,7 @@ import { I18nProvider } from "@/shared/i18n";
 import { EmojiGrid } from "@/shared/ui/molecules/emoji-grid";
 
 // The grid takes its emoji as props; the values below stand in for realistic picker input
-// (the reaction constants stay in lib/reactions until the picker moves in a later task).
+// (the reaction constants live in features/react-to-message).
 const MORE_REACTIONS = [
   "👍",
   "❤️",

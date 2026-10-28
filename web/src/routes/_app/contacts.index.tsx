@@ -11,7 +11,6 @@ import { useMemo, useState } from "react";
 import { ConnectAgentDialog } from "@/components/connect-agent-dialog";
 import { DeleteAIDialog } from "@/components/delete-ai-dialog";
 import { MergeAIDialog } from "@/components/merge-ai-dialog";
-import { MessageButton } from "@/components/message-button";
 import { PeopleGroup } from "@/components/people-group";
 import {
   AIMeta,
@@ -34,6 +33,7 @@ import { PageHeader } from "@/shared/ui/molecules/page-header";
 import { PageSection } from "@/shared/ui/molecules/page-section";
 import { Button } from "@/shared/ui/primitives/button";
 import { Input } from "@/shared/ui/primitives/input";
+import { MessageButton } from "@/widgets/conversation-timeline";
 
 export const Route = createFileRoute("/_app/contacts/")({
   component: ContactsPage,

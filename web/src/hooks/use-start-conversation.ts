@@ -1,28 +1,11 @@
 import { useNavigate } from "@tanstack/react-router";
 import { useState } from "react";
 import { useOpenDM } from "@/entities/room";
-import { isApiError } from "@/shared/api/client";
-import {
-  ErrorCodeContactNotFound,
-  ErrorCodeNoRouteToPerson,
-  type IntelligenceRef,
-} from "@/shared/api/types.gen";
-import { type Translate, useT } from "@/shared/i18n";
+import { startConversationError } from "@/shared/api/error-text";
+import type { IntelligenceRef } from "@/shared/api/types.gen";
+import { useT } from "@/shared/i18n";
 
-/** Why a DM with `target` could not be opened, in words the user can act on. */
-export function startConversationError(
-  t: Translate,
-  err: unknown,
-  target: Pick<IntelligenceRef, "display_name">,
-): string {
-  const name = target.display_name;
-  if (isApiError(err)) {
-    if (err.code === ErrorCodeNoRouteToPerson) return t("dm.noRoute", { name });
-    if (err.code === ErrorCodeContactNotFound) return t("dm.notFound", { name });
-    if (err.status === 0) return t("error.network");
-  }
-  return t("dm.failed");
-}
+export { startConversationError };
 
 /**
  * Opens the DM with an intelligence and goes to it (DM-01): the existing one, or a new one. A
