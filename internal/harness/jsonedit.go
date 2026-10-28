@@ -385,17 +385,6 @@ func (d *docEdit) appendElem(v any, keys ...string) error {
 	return nil
 }
 
-// replaceElem replaces element i of the array at keys with v.
-func (d *docEdit) replaceElem(v any, i int, keys ...string) error {
-	arr, err := d.lookup(keys...)
-	if err != nil {
-		return err
-	}
-	e := arr.elems[i]
-	d.data = splice(d.data, e.start, e.end, marshal(v, pretty(d.data, arr), lineIndent(d.data, e.start)))
-	return nil
-}
-
 // removeElems deletes the elements of the array at keys for which match is true (it is
 // given each element's raw bytes) and returns how many were removed. An array left empty
 // is removed with the objects on the way that become empty.

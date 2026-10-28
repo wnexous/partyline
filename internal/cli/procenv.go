@@ -96,7 +96,7 @@ func launcherEnviron(block []byte) map[string]string {
 
 // ancestorLauncherEnv returns the launcher variables of the nearest process, from pid up
 // through at most maxAncestors processes, whose environment has PARTYLINE_FOLDER, read under
-// procRoot (/proc on Linux). Harnesses such as Codex CLI start MCP servers with a filtered
+// procRoot (/proc on Linux). A harness may start MCP servers with a filtered
 // environment; the harness process itself (or the process that started it) still has the
 // launcher's variables. Processes whose environment cannot be read are passed over; without
 // procRoot (macOS, Windows) or such a process it returns nil. The environment is never logged.

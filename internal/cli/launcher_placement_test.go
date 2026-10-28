@@ -1,9 +1,11 @@
 package cli
 
 import (
+	"bufio"
 	"bytes"
 	"context"
 	"encoding/json"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"slices"
@@ -298,7 +300,7 @@ func TestLauncherStopsWhenTheServerRefusesThePlacement(t *testing.T) {
 		{"a position that does not exist", 422, dto.ErrorCodePositionUnknown, "the organization has no position with that name: partyline orgs <slug> lists them"},
 		{"an organization other than the AI's home", 409, dto.ErrorCodeOrganizationMismatch, "this AI belongs to Acme (acme): an AI does not move to another organization"},
 	}
-	for _, harness := range []string{"claude", "codex"} {
+	for _, harness := range []string{"claude", "pi"} {
 		for _, c := range refusals {
 			t.Run(harness+": "+c.name, func(t *testing.T) {
 				m := newLaunchMachine(t) // Partyline is not registered in the harness: the warning must not come first
@@ -399,6 +401,39 @@ func TestHelpDocumentsThePlacementFlags(t *testing.T) {
 		"keeps the organization it was created in. partyline orgs lists the organizations and their positions.\n")
 }
 
+// sessionCall makes one tool call of a tools-only channel with identity id against the server at url, which
+// is the request the session's processes send.
+func sessionCall(t *testing.T, url string, id channel.Identity) {
+	t.Helper()
+	inR, inW := io.Pipe()
+	outR, outW := io.Pipe()
+	ctx, cancel := context.WithCancel(context.Background())
+	done := make(chan error, 1)
+	go func() {
+		done <- channel.Run(ctx, channel.Options{
+			URL: url, Token: "pl_agent_x", Machine: id.Machine, Folder: id.Folder, MainFolder: id.MainFolder, Home: id.Home, Harness: id.Harness,
+			Adopt: id.Adopt, Org: id.Org, Position: id.Position, Parent: id.Parent, ToolsOnly: true,
+			Stdin: inR, Stdout: outW, Stderr: io.Discard, TempDir: t.TempDir(),
+		})
+	}()
+	answers := bufio.NewScanner(outR)
+	for _, req := range []string{
+		`{"jsonrpc":"2.0","id":0,"method":"initialize","params":{"protocolVersion":"2025-11-25"}}`,
+		`{"jsonrpc":"2.0","method":"notifications/initialized"}`,
+		`{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"list_rooms","arguments":{}}}`,
+	} {
+		_, err := io.WriteString(inW, req+"\n")
+		require.NoError(t, err)
+		if strings.Contains(req, `"id"`) {
+			require.True(t, answers.Scan())
+		}
+	}
+	go func() { _, _ = io.Copy(io.Discard, outR) }()
+	cancel()
+	_ = inW.Close()
+	require.NoError(t, <-done)
+}
+
 // The pre-flight of the launcher and the processes of the session send the identity headers in the same way:
 // the same names, the same percent-encoding, the same omissions (AID-07). They are written twice - the launcher
 // builds a request of its own - so this pins them together.
@@ -421,8 +456,7 @@ func TestTheLauncherSendsTheHeadersTheSessionSends(t *testing.T) {
 	} {
 		t.Run(name, func(t *testing.T) {
 			url, session := record(t)
-			_, err := channel.Pending(context.Background(), channel.PendingOptions{URL: url, Token: "pl_agent_x", Identity: id})
-			require.NoError(t, err)
+			sessionCall(t, url, id)
 			fromSession := session()
 
 			launcher := http.Header{}

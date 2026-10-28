@@ -96,8 +96,8 @@ func TestSessionIdentity(t *testing.T) {
 		}
 	}
 
-	id := sessionIdentity("", std(map[string]string{"HOME": home + "/", "PARTYLINE_HARNESS": " codex ", "PARTYLINE_AGENT": " old-bot "}, target+"/"))
-	require.Equal(t, channel.Identity{Machine: "devbox", Folder: target, Home: home, Harness: "codex", Adopt: "old-bot"}, id)
+	id := sessionIdentity("", std(map[string]string{"HOME": home + "/", "PARTYLINE_HARNESS": " pi ", "PARTYLINE_AGENT": " old-bot "}, target+"/"))
+	require.Equal(t, channel.Identity{Machine: "devbox", Folder: target, Home: home, Harness: "pi", Adopt: "old-bot"}, id)
 
 	id = sessionIdentity(" flagged ", std(map[string]string{"PARTYLINE_AGENT": "old-bot", "PARTYLINE_FOLDER": target}, "/ignored"))
 	require.Equal(t, channel.Identity{Machine: "devbox", Folder: target, Adopt: "flagged"}, id, "the flag beats PARTYLINE_AGENT and PARTYLINE_FOLDER beats the working directory")

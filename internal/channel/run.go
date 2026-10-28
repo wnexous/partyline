@@ -50,8 +50,7 @@ type Options struct {
 	ToolsOnly bool
 	// LiveID is, for a tools-only process, the id of the `partyline listen` process of the same pi or
 	// OpenCode session (SESS-45): sent as X-Partyline-Live with every call, so the server resolves the
-	// session the tools act as. Empty for Codex, Gemini and Antigravity, which hold no such process; the full channel
-	// ignores it and uses its own.
+	// session the tools act as. Empty when the tools run without the launcher; the full channel ignores it and uses its own.
 	LiveID string
 	// Harness is the harness id sent on connect; HarnessOmp also switches the MCP
 	// instructions to OmpInstructions. Empty means Claude Code for the full channel and an
@@ -128,7 +127,6 @@ func Run(ctx context.Context, o Options) error {
 	defer cancel()
 	if o.ToolsOnly {
 		t.register(srv)
-		t.registerWait(srv)
 		err := srv.Serve(ctx)
 		if errors.Is(err, context.Canceled) {
 			return nil

@@ -84,7 +84,7 @@ func setupCmd(ctx context.Context, args []string, io stdio) int {
 	flags.BoolVar(&f.tokenStdin, "token-stdin", false, "read the agent token from the first line of standard input")
 	flags.BoolVar(&f.browser, "browser", false, "approve this machine in the web app instead of using a saved token")
 	flags.BoolVar(&f.yes, "yes", false, "do not ask; apply the selection as given")
-	flags.StringVar(&f.harness, "harness", "", "harnesses to register, comma-separated: claude, codex, gemini, antigravity, opencode, pi, omp, or none")
+	flags.StringVar(&f.harness, "harness", "", "harnesses to register, comma-separated: claude, opencode, pi, omp, or none")
 	flags.BoolVar(&f.always, "always", false, "also start Partyline in sessions not started by `partyline <harness>` (records the choice in the harness config; --always=false undoes it)")
 	flags.BoolVar(&f.allDetected, "all-detected", false, "register every harness installed on this machine")
 	flags.StringVar(&f.remove, "remove", "", "harnesses to remove Partyline from, comma-separated")
@@ -122,6 +122,7 @@ func setupCmd(ctx context.Context, args []string, io stdio) int {
 		fmt.Fprintln(io.stderr, "partyline setup:", err)
 		return 2
 	}
+	cleanLegacy(ctx, env, io) // AD-034: the old setup of the harnesses that are no longer supported
 	if f.allDetected {
 		if f.harness != "" {
 			fmt.Fprintln(io.stderr, "partyline setup: use only one of --harness and --all-detected")

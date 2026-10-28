@@ -119,18 +119,17 @@ func TestChannelHarnessOmp(t *testing.T) {
 
 // An unknown harness, or omp together with --tools-only, exits 2 before anything connects.
 func TestChannelHarnessFlagErrors(t *testing.T) {
-	code, _, errOut := run("channel", "--harness", "codex")
+	code, _, errOut := run("channel", "--harness", "vim")
 	require.Equal(t, 2, code)
-	require.Contains(t, errOut, `partyline channel: unknown --harness "codex" (known: omp)`)
+	require.Contains(t, errOut, `partyline channel: unknown --harness "vim" (known: omp)`)
 
 	code, _, errOut = run("channel", "--harness", "omp", "--tools-only")
 	require.Equal(t, 2, code)
 	require.Contains(t, errOut, "partyline channel: --harness omp runs the full channel; drop --tools-only")
 }
 
-// AID-02 (T18): `channel --tools-only --harness <id>` (how setup registers Codex and Gemini)
-// acts as the AI of the folder under that harness without any launcher variable, and the flag
-// wins over PARTYLINE_HARNESS.
+// AID-02 (T18): `channel --tools-only --harness <id>` acts as the AI of the folder under that harness without
+// any launcher variable, and the flag wins over PARTYLINE_HARNESS.
 func TestToolsOnlyChannelHarnessFlag(t *testing.T) {
 	e := newChannelEnv(t)
 	call := func(c *mcpClient, id int) {
@@ -139,15 +138,15 @@ func TestToolsOnlyChannelHarnessFlag(t *testing.T) {
 		r := c.next()["result"].(map[string]any)
 		require.Equal(t, false, r["isError"], "result: %v", r)
 	}
-	codex := startChannel(t, []string{"--tools-only", "--harness", "codex"}, e.launched("codex"), "/work/notes")
-	initialize(codex)
-	call(codex, 1)
-	require.Equal(t, "codex", e.registered(t, "/work/notes").AI.App)
+	pi := startChannel(t, []string{"--tools-only", "--harness", "pi"}, e.launched("pi"), "/work/notes")
+	initialize(pi)
+	call(pi, 1)
+	require.Equal(t, "pi", e.registered(t, "/work/notes").AI.App)
 
-	gemini := startChannel(t, []string{"--tools-only", "--harness", "gemini"}, e.vars("PARTYLINE_HARNESS", "pi"), "/work/other")
-	initialize(gemini)
-	call(gemini, 1)
-	require.Equal(t, "gemini", e.registered(t, "/work/other").AI.App, "the flag wins over PARTYLINE_HARNESS")
+	opencode := startChannel(t, []string{"--tools-only", "--harness", "opencode"}, e.vars("PARTYLINE_HARNESS", "pi"), "/work/other")
+	initialize(opencode)
+	call(opencode, 1)
+	require.Equal(t, "opencode", e.registered(t, "/work/other").AI.App, "the flag wins over PARTYLINE_HARNESS")
 }
 
 // ID-01 (T18): with --tools-only, --harness takes the tools-only harnesses; anything else
@@ -155,5 +154,22 @@ func TestToolsOnlyChannelHarnessFlag(t *testing.T) {
 func TestToolsOnlyChannelHarnessFlagErrors(t *testing.T) {
 	code, _, errOut := run("channel", "--tools-only", "--harness", "claude")
 	require.Equal(t, 2, code)
-	require.Contains(t, errOut, `partyline channel: unknown --harness "claude" with --tools-only (known: codex, gemini, antigravity, opencode, pi)`)
+	require.Contains(t, errOut, `partyline channel: unknown --harness "claude" with --tools-only (known: opencode, pi)`)
+}
+
+// AD-034: an MCP server entry that older versions wrote for Codex, Gemini or Antigravity (`channel --tools-only
+// --harness codex`) says the harness is gone and what to do, with or without --tools-only, and exits 2 before
+// anything connects.
+func TestChannelOfARemovedHarnessSaysSo(t *testing.T) {
+	for _, h := range []string{"codex", "gemini", "antigravity"} {
+		for _, args := range [][]string{{"--tools-only", "--harness", h}, {"--harness", h}} {
+			code, out, errOut := run(append([]string{"channel"}, args...)...)
+			require.Equal(t, 2, code, args)
+			require.Empty(t, out)
+			require.Contains(t, errOut, "partyline channel: ")
+			require.Contains(t, errOut, "is no longer supported by Partyline")
+			require.Contains(t, errOut, "Use Claude Code, pi, OpenCode or omp")
+			require.Contains(t, errOut, "run partyline setup to remove the old")
+		}
+	}
 }

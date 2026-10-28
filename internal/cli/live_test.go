@@ -96,7 +96,7 @@ func (e *channelEnv) parallelPi(t *testing.T, folder, live string) (dto.Room, st
 }
 
 // SESS-45: the tools half of pi acts as the session its listen process holds. With the live id both got, a
-// message it writes carries that session's label; without it (Codex, a value another process owns) it posts
+// message it writes carries that session's label; without it (a value another process owns) it posts
 // as the AI's principal.
 func TestTheToolsHalfOfPiPostsAsItsListenSession(t *testing.T) {
 	e := newChannelEnv(t)
@@ -129,11 +129,6 @@ func TestTheToolsHalfOfPiPostsAsItsListenSession(t *testing.T) {
 	foreign := startChannel(t, []string{"--tools-only", "--harness", "pi"}, e.launched("pi", liveEnvVar, "1:"+live[len(strconv.Itoa(os.Getppid()))+1:]), "/work/pi-box")
 	foreign.initialize()
 	require.Empty(t, post(foreign, 3, "from a foreign id").AuthorLabel)
-
-	// Codex has no listen process and sends no live id, whatever the environment holds.
-	codex := startChannel(t, []string{"--tools-only", "--harness", "codex"}, e.launched("codex", liveEnvVar, live), "/work/pi-box")
-	codex.initialize()
-	require.Empty(t, post(codex, 4, "from codex").AuthorLabel)
 }
 
 // SESS-45: listen connects with the id it is given, and a restart with the same id is the same session: it keeps

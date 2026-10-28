@@ -428,35 +428,6 @@ func TestHarnessRefusesSymlinkOutsideHome(t *testing.T) {
 		}
 	}
 
-	t.Run("codex hooks", func(t *testing.T) {
-		env, cli := testEnv(t, nil)
-		hooks := filepath.Join(env.Home, ".codex", "hooks.json")
-		target := filepath.Join(t.TempDir(), "hooks.json")
-		writeFile(t, target, codexHooksOrig)
-		require.NoError(t, os.MkdirAll(filepath.Dir(hooks), 0o755))
-		require.NoError(t, os.Symlink(target, hooks))
-		err := registrar(t, env, "codex").Apply(context.Background())
-		require.EqualError(t, err, "refusing to write through the symlink "+hooks+": its target "+target+" is outside your home directory "+env.Home)
-		require.Empty(t, cli.calls, "no CLI ran")
-		require.Equal(t, codexHooksOrig, readFile(t, target))
-		requireMissing(t, hooks+".partyline.bak")
-	})
-
-	t.Run("gemini settings", func(t *testing.T) {
-		env, cli := testEnv(t, nil)
-		settings := filepath.Join(env.Home, ".gemini", "settings.json")
-		target := filepath.Join(t.TempDir(), "settings.json")
-		const orig = "{\n  \"theme\": \"Default\"\n}\n"
-		writeFile(t, target, orig)
-		require.NoError(t, os.MkdirAll(filepath.Dir(settings), 0o755))
-		require.NoError(t, os.Symlink(target, settings))
-		err := registrar(t, env, "gemini").Apply(context.Background())
-		require.EqualError(t, err, "refusing to write through the symlink "+settings+": its target "+target+" is outside your home directory "+env.Home)
-		require.Empty(t, cli.calls, "no CLI ran")
-		require.Equal(t, orig, readFile(t, target))
-		requireMissing(t, settings+".partyline.bak")
-	})
-
 	t.Run("symlinked home", func(t *testing.T) {
 		env, _ := testEnv(t, nil)
 		c := fileCases[1] // pi
@@ -480,13 +451,9 @@ func TestBackupsArePrivate(t *testing.T) {
 	skipUnlessUnixPerms(t)
 	env, _ := testEnv(t, nil)
 	pi := filepath.Join(env.Home, ".pi/agent/mcp.json")
-	hooks := filepath.Join(env.Home, ".codex/hooks.json")
 	writeFile(t, pi, fileCases[1].orig)
-	writeFile(t, hooks, codexHooksOrig)
-	for _, id := range []string{"pi", "codex"} {
-		require.NoError(t, registrar(t, env, id).Apply(context.Background()))
-	}
-	for _, p := range []string{pi, hooks} {
+	require.NoError(t, registrar(t, env, "pi").Apply(context.Background()))
+	for _, p := range []string{pi} {
 		fi, err := os.Stat(p + ".partyline.bak")
 		require.NoError(t, err)
 		require.Equal(t, os.FileMode(0o600), fi.Mode().Perm(), p)
@@ -496,13 +463,10 @@ func TestBackupsArePrivate(t *testing.T) {
 	}
 
 	want := map[string][]string{
-		"claude":      nil,
-		"codex":       {hooks + ".partyline.bak"},
-		"gemini":      {filepath.Join(env.Home, ".gemini/settings.json.partyline.bak")},
-		"antigravity": {filepath.Join(env.Home, ".gemini/config/hooks.json.partyline.bak"), filepath.Join(env.Home, ".gemini/antigravity-cli/settings.json.partyline.bak")},
-		"opencode":    {filepath.Join(env.Home, ".config/opencode/opencode.json.partyline.bak")},
-		"pi":          {pi + ".partyline.bak"},
-		"omp":         {filepath.Join(env.Home, ".omp/agent/mcp.json.partyline.bak")},
+		"claude":   nil,
+		"opencode": {filepath.Join(env.Home, ".config/opencode/opencode.json.partyline.bak")},
+		"pi":       {pi + ".partyline.bak"},
+		"omp":      {filepath.Join(env.Home, ".omp/agent/mcp.json.partyline.bak")},
 	}
 	for _, r := range All(env) {
 		require.Equal(t, want[r.ID()], r.Backups(), r.ID())

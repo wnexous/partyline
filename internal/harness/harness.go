@@ -1,6 +1,6 @@
 // Package harness registers Partyline in the coding agents ("harnesses") installed on a
-// machine (HAR-01, HAR-02, HAR-04): Claude Code, Codex CLI, Gemini CLI and Antigravity through their own
-// CLIs, OpenCode, pi and omp by editing their config files. Every registration runs the
+// machine (HAR-01, HAR-02, HAR-04): Claude Code through its own CLI, OpenCode, pi and omp by editing
+// their config files. Every registration runs the
 // partyline binary by its absolute path and keeps the harness's other settings as they were.
 package harness
 
@@ -26,7 +26,7 @@ type Runner func(ctx context.Context, name string, args ...string) ([]byte, erro
 type Env struct {
 	// Home is the user's home directory.
 	Home string
-	// Getenv reads environment variables such as XDG_CONFIG_HOME and CODEX_HOME.
+	// Getenv reads environment variables such as XDG_CONFIG_HOME.
 	Getenv func(string) string
 	// Binary is the absolute path of the partyline binary the harnesses run.
 	Binary string
@@ -88,7 +88,7 @@ type Entry struct {
 
 // Registrar registers Partyline in one harness.
 type Registrar interface {
-	// ID is the short name used by --harness (claude, codex, gemini, antigravity, opencode, pi, omp).
+	// ID is the short name used by --harness (claude, opencode, pi, omp).
 	ID() string
 	// Title is the harness's display name.
 	Title() string
@@ -113,9 +113,6 @@ type Registrar interface {
 func All(env Env) []Registrar {
 	return []Registrar{
 		&claude{env: env},
-		&codex{env: env},
-		&gemini{env: env},
-		&antigravity{env: env},
 		newOpenCode(env),
 		newPi(env),
 		newOmp(env),
@@ -142,19 +139,8 @@ func shellQuote(s string) string {
 	return "'" + strings.ReplaceAll(s, "'", `'\''`) + "'"
 }
 
-// hookCommand is the shell command of a Partyline hook; with Env.Always it carries the flag
-// that lets the hook run outside a launched session.
-func (e Env) hookCommand(hook string) string {
-	cmd := shellQuote(e.Binary) + " hook " + hook
-	if e.Always {
-		cmd += " --always"
-	}
-	return cmd
-}
-
-// ownsHook reports whether cmd is exactly the hook command setup writes for this binary, with
-// or without --always: a registration from either choice stays Partyline's to update or
-// remove. A hook of any other program, even one named partyline*, is not Partyline's to change.
+// ownsHook reports whether cmd is exactly the hook command older versions of setup wrote for this
+// binary, with or without --always: CleanLegacy removes those and no other. A hook of any other program, even one named partyline*, is not Partyline's to change.
 func (e Env) ownsHook(cmd, hook string) bool {
 	cmd = strings.TrimSpace(cmd)
 	base := shellQuote(e.Binary) + " hook " + hook

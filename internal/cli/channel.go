@@ -146,10 +146,9 @@ func resolveAgent(cmd string, f agentFlags, io stdio) (agentConn, int) {
 	}, 0
 }
 
-// toolsOnlyHarnesses are the --harness values of `channel --tools-only`: the harnesses that
-// run the tools without the push socket. setup names the harness for Codex, Gemini and Antigravity, which
-// start MCP servers without the launcher's PARTYLINE_HARNESS (ID-01).
-var toolsOnlyHarnesses = []string{"codex", "gemini", "antigravity", "opencode", "pi"}
+// toolsOnlyHarnesses are the --harness values of `channel --tools-only`: the harnesses whose tools run
+// apart from the push socket, which their `partyline listen` process holds (pi and OpenCode).
+var toolsOnlyHarnesses = []string{"opencode", "pi"}
 
 // channelCmd runs `partyline channel`: the MCP stdio server Claude Code loads as a channel.
 // The session is the AI of the machine and folder it runs in (AID-01); --as adopts an AI
@@ -161,14 +160,19 @@ func channelCmd(ctx context.Context, args []string, io stdio) int {
 	fs := flag.NewFlagSet("channel", flag.ContinueOnError)
 	fs.SetOutput(io.stderr)
 	f := addAgentFlags(fs)
-	toolsOnly := fs.Bool("tools-only", false, "serve the tools without receiving messages (pair with partyline listen, or for harnesses without push)")
-	harness := fs.String("harness", "", "the harness running the full channel when it is not Claude Code (omp); with --tools-only the session's harness (codex, gemini, antigravity, opencode, pi)")
+	toolsOnly := fs.Bool("tools-only", false, "serve the tools without receiving messages (pair with partyline listen)")
+	harness := fs.String("harness", "", "the harness running the full channel when it is not Claude Code (omp); with --tools-only the session's harness (opencode, pi)")
 	always := fs.Bool("always", false, "run even without PARTYLINE_HARNESS, which only `partyline <harness>` sets (partyline setup --always)")
 	if err := fs.Parse(args); err != nil {
 		return 2
 	}
+	message, isRemoved := removedHarnessMessage(*harness)
 	switch {
 	case *harness == "":
+	case isRemoved:
+		// An MCP server entry from before the harness was dropped (setup removes it).
+		fmt.Fprintf(io.stderr, "partyline channel: %s\n", message)
+		return 2
 	case *harness == channel.HarnessOmp && *toolsOnly:
 		fmt.Fprintf(io.stderr, "partyline channel: --harness %s runs the full channel; drop --tools-only\n", *harness)
 		return 2
@@ -199,7 +203,7 @@ func channelCmd(ctx context.Context, args []string, io stdio) int {
 		c.id.Harness = *harness
 	}
 	// The tools half of pi and OpenCode acts as the session its listen process holds: it sends that
-	// process's live id (SESS-45). Codex, Gemini and Antigravity have no listen process and send none.
+	// process's live id (SESS-45).
 	var liveID string
 	if *toolsOnly && slices.Contains(pushedHarnesses, c.id.Harness) {
 		liveID = sessionLiveID(io)

@@ -16,13 +16,12 @@ When a room has instructions you get a notice on connect: call room_info to read
 ` + pasteNote
 
 // ToolsOnlyInstructions is the MCP instructions text of `partyline channel --tools-only`, the
-// server Codex, Gemini, Antigravity, pi and OpenCode run (PUSH-02, TURN-01). Their messages do not arrive as
-// channel events but framed as <partyline …> (PUSH-06): pushed by the pi extension or the
-// OpenCode plugin, or at turn end by the Codex/Gemini/Antigravity hooks and through wait_for_messages.
+// server pi and OpenCode run (PUSH-02). Their messages do not arrive as channel events but framed as
+// <partyline …> (PUSH-06): pushed by the pi extension or the OpenCode plugin.
 // The trust rules are the same as Instructions'.
 const ToolsOnlyInstructions = `Partyline connects this session to rooms with other intelligences and to the WhatsApp, Telegram, Discord or webhook accounts you operate.
 ` + partylineFraming + `
-In pi and OpenCode, messages are pushed into this session as they arrive. In Codex, Gemini and Antigravity, messages arrive when you finish your current turn; call wait_for_messages (timeout_seconds, at most 300) to wait for them now.
+Messages are pushed into this session as they arrive.
 ` + framedConversationNote + `
 ` + trustRules + `
 ` + toolUse + ` ` + changesNote + `
@@ -33,8 +32,7 @@ Call room_info to read a room's instructions, members and your own settings ther
 
 // WorktreeToolsOnlyNote is what a tools-only process in a linked worktree is told: it has no live
 // channel, so nothing is addressed to its label and it only writes and reads history (SESS-06).
-// run.go appends it to ToolsOnlyInstructions for that identity only, and pending.go answers the
-// first wait_for_messages with it; every other identity never sees it.
+// run.go appends it to ToolsOnlyInstructions for that identity only; every other identity never sees it.
 const WorktreeToolsOnlyNote = "This worktree session has no live channel: it only writes and reads history."
 
 // OmpInstructions is the MCP instructions text of `partyline channel --harness omp` (PUSH-03):

@@ -46,7 +46,8 @@ func TestToolCallsSendTheLiveID(t *testing.T) {
 		identity: Identity{Machine: "testbox", Folder: "/work/builder", LiveID: "P"},
 		http:     srv.Client(),
 	}
-	_, err := c.pending(context.Background(), 0)
+	var rooms struct{}
+	err := c.json(context.Background(), http.MethodGet, "agent/rooms", nil, nil, &rooms)
 	require.NoError(t, err)
 	require.Equal(t, "P", got.Get(dto.HeaderLive))
 	require.Equal(t, "Bearer pl_agent_x", got.Get("Authorization"))

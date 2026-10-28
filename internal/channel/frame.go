@@ -25,7 +25,7 @@ var (
 // and the trust line (TrustedLine or DataLine). Absent fields are left out; markup in the text
 // is escaped. interactive and answers are the stored question and answer documents as JSON
 // (QR-21). connection_id and chat_id are what send_message takes to write to a chat of a
-// connection (CID-16): a harness fed by listen or the hooks sees the message, and so the connection
+// connection (CID-16): a harness fed by listen sees the message, and so the connection
 // and the chat, only through this frame.
 func Frame(r map[string]string) string {
 	first := func(keys ...string) string {
@@ -104,39 +104,4 @@ func PlatformRecord(e dto.PlatformEvent) map[string]string {
 	}
 	r["content"] = n.Content
 	return r
-}
-
-// FramePending frames what a poll of GET /agent/pending?platform=1 returned, which is what
-// wait_for_messages and the turn-end hooks hand the harness: first the notice of the platform
-// messages the server dropped (CID-10), in the words of the WebSocket's notice and framed like a
-// notice from Partyline, then the messages and events as FrameAll frames them. It is empty when
-// nothing arrived and nothing was dropped.
-func FramePending(p dto.AgentPending) string {
-	body := FrameAll(p.Items, p.Platform...)
-	if p.Dropped <= 0 {
-		return body
-	}
-	notice := Frame(NoticeRecord(dto.AgentNoticeFrame{Type: dto.AgentFrameTypeNotice, Text: dto.DroppedNotice(p.Dropped)}))
-	if body == "" {
-		return notice
-	}
-	return notice + "\n\n" + body
-}
-
-// FrameAll frames each message and each platform event, separated by a blank line and with the
-// trust line of its own flag. Both lists are oldest first and come out oldest first across the two
-// (what wait_for_messages and the turn-end hooks hand the harness); a message goes before an event
-// of the same time.
-func FrameAll(msgs []dto.AgentMessage, events ...dto.PlatformEvent) string {
-	parts := make([]string, 0, len(msgs)+len(events))
-	for len(msgs) > 0 || len(events) > 0 {
-		if len(events) == 0 || (len(msgs) > 0 && !msgs[0].Message.CreatedAt.After(events[0].ReceivedAt)) {
-			parts = append(parts, Frame(Record(msgs[0])))
-			msgs = msgs[1:]
-			continue
-		}
-		parts = append(parts, Frame(PlatformRecord(events[0])))
-		events = events[1:]
-	}
-	return strings.Join(parts, "\n\n")
 }
