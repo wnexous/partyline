@@ -115,8 +115,8 @@ func TestAnAddressInCodeIsNotDeliveredToItsSession(t *testing.T) {
 	second.ExpectNone(400 * time.Millisecond)
 	require.Empty(t, f.rows(t, "pi-2"))
 
-	real := f.post(t, "`@atlas:other` is gone, ask @atlas:pi-2")
-	require.Equal(t, real.ID, second.Message(time.Minute).Message.ID)
+	outside := f.post(t, "`@atlas:other` is gone, ask @atlas:pi-2")
+	require.Equal(t, outside.ID, second.Message(time.Minute).Message.ID)
 	principal.ExpectNone(300 * time.Millisecond)
 }
 
