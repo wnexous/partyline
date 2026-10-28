@@ -3,9 +3,9 @@
 Binding for every change under `web/`. Spec and design: `.specs/features/web-architecture/`
 (`spec.md`, `design.md`, `tasks.md`, `audit.md`). Conventions of the screens: `.specs/features/web-app/conventions.md`.
 
-Feature-Sliced Design for the layers, Atomic Design for the UI inside them. The migration from the
-flat `components/`, `hooks/`, `lib/` folders (called **legacy**) is task by task: new code goes in
-the layers below; code you move leaves the legacy folders.
+Feature-Sliced Design for the layers, Atomic Design for the UI inside them. The flat `components/`,
+`hooks/` and `lib/` folders of the migration (called **legacy**) are gone (T6): a file in them, or
+an import of them, fails the checker (`legacy-removed`). New code goes in the layers below.
 
 ## Layers
 
@@ -37,11 +37,12 @@ A slice has optional segments `ui/` (components), `model/` (hooks, stores, pure 
    no hooks; a label it needs, like "Close", is a prop). `atoms` import primitives and
    `shared/lib`, never molecules. `molecules` import atoms, primitives, `shared/lib`, `shared/i18n`.
    App code takes dialogs and sheets from `shared/ui/molecules/dialog` and `.../sheet`, which fill
-   in the translated close label and the touch-first focus rule; never from the primitives.
+   in the translated close label and the touch-first focus rule; never from the primitives
+   (`primitive-dialog`: only `shared/ui` may import `shared/ui/primitives/dialog` or `sheet`).
 5. Tests (`*.test.ts(x)`) and `src/test/**` are exempt from rules 2 and 3 (they still follow the
    layer order). Tests stay next to the file they test.
-6. Legacy: anything may import legacy during the migration and legacy may import anything, but
-   legacy reaches a slice through its `index.ts` like everyone else.
+6. No legacy folders: `components/`, `hooks/` and `lib/` under `src` are not layers any more.
+   Nothing may import them (`legacy-removed`).
 
 Run the checker (it also runs in `make web-check`, so in `make check`):
 
@@ -83,7 +84,7 @@ Fix the import instead (move the code down a layer, or go through the index).
 | Person/AI row (avatar, name, @handle, meta, sessions, actions slots) | `entities/intelligence/ui/intelligence-row` | MemberRow (member-list), ParticipantList rows, contact-row ContactRow + new-conversation ContactRow, picker Candidate/PickableCandidate, invite rows (§1.A, 1.B, 1.M) |
 | Avatar / name / handle / profile link | `IntelligenceAvatar` (gains `shape: "circle" \| "square"` for groups), `IntelligenceName` (`profileLink`, `showHandle`) | GroupAvatar, hand-made `@{handle}` spans, ProfileLink wrappers (§1.B, 1.E) |
 | Conversation face | `entities/room/ui/conversation-avatar` | inline copy in conversation-header (§1.E) |
-| Org avatar | `entities/organization/ui/org-avatar` on a shared `shared/ui/atoms/face` base with the tint/initials from `shared/lib/avatar` | duplicated PIXELS map (§1.F) |
+| Org avatar | `entities/organization/ui/org-avatar` (tint and initials from `shared/lib/avatar`); the shared `atoms/face` base is still open: the two PIXELS maps remain (T6 audit) | duplicated PIXELS map (§1.F) |
 | Sessions of an AI | `entities/intelligence/ui/session-list` + `session-label` | member-list line, contacts.$id list, message "via :label" (§1.A) |
 | Online state | `entities/intelligence/model/presence` `useIsOnline(id, fallback)` (+ pure `onlineOf`, `withContactPresence`) | 12 sites, 3 rules (§1.C) |
 | App label of an AI | `entities/intelligence/lib` `appLabelOf(profileOrAi)`: server label, then harness label, then raw id | 3 rules (§1.D) |
@@ -109,5 +110,6 @@ Fix the import instead (move the code down a layer, or go through the index).
 | Shared auth page frame | `shared/ui/molecules/auth-frame` (pages pass their language and theme controls) | `components/auth-layout.tsx` (T4b) |
 
 
-Some of these land with later migration tasks (`.specs/features/web-architecture/tasks.md`); until
-then the code under "Replaces" still exists and the canonical one is what new code must use.
+Every row above exists in the code now; where a row names a "Replaces" copy that is still there, the
+open list is in `.specs/features/web-architecture/tasks.md` (T6 audit). New code uses the canonical
+one, and search before you create (below): if the concept exists, use it.
