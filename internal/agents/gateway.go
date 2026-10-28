@@ -11,6 +11,7 @@ import (
 	"regexp"
 	"slices"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/coder/websocket"
@@ -111,6 +112,9 @@ type Gateway struct {
 	// beforeAttach runs after the upgrade and before the session attaches; tests use it to let
 	// another process win the race. Nil in production.
 	beforeAttach func()
+	// afterOwnerMiss runs when deliverOwned found no connection for a pending row, before the release
+	// re-checks under the life lock; tests use it to attach a connection in that gap. Nil in production.
+	afterOwnerMiss func()
 }
 
 // NewGateway returns a Gateway.
@@ -200,7 +204,7 @@ func (g *Gateway) pushToSelfSession(agentID, target string, m dto.AgentMessage) 
 		return false
 	}
 	c := g.labelConn(agentID, target)
-	if c == nil {
+	if c == nil || c.labelOf() != target {
 		return false
 	}
 	if err := g.createSessionDelivery(g.ctx, m.Message.ID, agentID, target, c.owner, time.Now().UnixMilli(), sql.NullInt64{}); err != nil {
@@ -274,7 +278,7 @@ func (g *Gateway) pushUpdateByRow(agentID string, row db.AgentSessionDelivery, t
 		c := g.labelConn(agentID, row.Label)
 		return c != nil && c.enqueue(outbound{typ: t, msg: m})
 	}
-	if c := g.ownerConn(agentID, row.OwnerLive); c != nil {
+	if c := g.ownerConn(agentID, row.OwnerLive, row.Label); c != nil {
 		return c.enqueue(outbound{typ: t, msg: m})
 	}
 	m.ForLabel = row.Label
@@ -361,7 +365,6 @@ func (g *Gateway) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		_ = ws.Close(websocket.StatusInternalError, "attach failed")
 		return
 	}
-	c.label = live.Label
 	// Only the principal session receives the platform events of the AI it operates (SESS-18).
 	if hs.platform && g.d.Platform != nil && live.Label == "" {
 		c.feed = newPlatformFeed(g.d.Platform, row.Agent.ID)
@@ -557,8 +560,10 @@ type conn struct {
 	ws     *websocket.Conn
 	queue  chan outbound
 	cancel context.CancelFunc
-	// label is the label of the live session the connection became (SESS-11): "" for the principal.
-	label string
+	// lab is the label of the live session the connection became (SESS-11): "" for the principal. The
+	// presence sets it under its lock before the connection is visible (setLabel), and other goroutines
+	// (a Kick sweep, a push looking for an owner) read it, so access goes through labelOf.
+	lab atomic.Value
 	// liveID is the id of the process that holds the connection; empty when the client sent none.
 	liveID string
 	// owner is the key of the delivery rows pushed to this connection (ownerKey): its live id, or a key
@@ -574,6 +579,16 @@ type conn struct {
 	mu     sync.Mutex
 	closed bool
 }
+
+// labelOf returns the label of the live session the connection became ("" before it attached).
+func (c *conn) labelOf() string {
+	l, _ := c.lab.Load().(string)
+	return l
+}
+
+// setLabel records the label the presence gave the connection; the presence calls it before the
+// connection can be found.
+func (c *conn) setLabel(l string) { c.lab.Store(l) }
 
 // Close starts the close handshake with code and reason without blocking.
 func (c *conn) Close(code websocket.StatusCode, reason string) {
@@ -688,7 +703,7 @@ func (g *Gateway) run(ctx context.Context, c *conn, row db.GetAgentWithOwnerRow,
 		case o := <-c.queue:
 			if o.typ == dto.AgentFrameTypeMessage {
 				id := o.msg.Message.ID
-				if c.label != "" || o.msg.ForLabel != "" {
+				if c.labelOf() != "" || o.msg.ForLabel != "" {
 					// A labelled session has no cursor, and a fallback may be below the principal's
 					// cursor: neither is judged by the sequence, but by what this connection wrote.
 					if _, dup := c.delivered[id]; dup {
@@ -727,7 +742,7 @@ func (g *Gateway) backlog(ctx context.Context, c *conn, a db.Agent) (map[string]
 	}
 	trust := g.d.Trust.Open()             // one for the whole backlog: the AI's home chart is read once
 	var owned map[string][]db.MessageView // a labelled session's own unacknowledged rows, by room
-	if c.label != "" {
+	if c.labelOf() != "" {
 		rows, err := g.d.Store.R().ListOwnedPending(ctx, db.ListOwnedPendingParams{AgentID: a.ID, OwnerLive: c.owner})
 		if err != nil {
 			return nil, err
@@ -738,7 +753,7 @@ func (g *Gateway) backlog(ctx context.Context, c *conn, a db.Agent) (map[string]
 		}
 	}
 	for _, st := range states {
-		if c.label == "" {
+		if c.labelOf() == "" {
 			// An earlier connection already received (or the backlog skipped on purpose) whatever the
 			// cursor covers. The dispatcher may still push such a message, late, to this connection:
 			// after a takeover the old session acknowledged it, so the new backlog sends nothing and
@@ -762,7 +777,7 @@ func (g *Gateway) backlog(ctx context.Context, c *conn, a db.Agent) (map[string]
 		if st.AgentsPaused {
 			continue // DLV-08: no agent delivery while the loop guard holds the room
 		}
-		if c.label != "" {
+		if c.labelOf() != "" {
 			if err := g.writeOwned(ctx, c, a, ref, trust, owned[st.ID]); err != nil {
 				return nil, err
 			}
@@ -787,7 +802,7 @@ func (g *Gateway) backlog(ctx context.Context, c *conn, a db.Agent) (map[string]
 					return err
 				}
 			}
-			if c.label == "" {
+			if c.labelOf() == "" {
 				// A fallback belongs to the principal alone; a labelled session must never read a
 				// message that already fell back (SESS-24).
 				fallbacks, err = loadSessionFallbacks(ctx, q, a.ID, st.ID)
@@ -945,7 +960,7 @@ func (g *Gateway) readAcks(ctx context.Context, c *conn, agentID string) {
 		}
 		switch {
 		case head.Type == dto.AgentFrameTypeAck && head.MessageID != "":
-			if c.label != "" {
+			if c.labelOf() != "" {
 				// A labelled session acknowledges its own delivery row; the AI's cursor follows its
 				// principal session (SESS-17, SESS-24).
 				if err := g.ackSessionDelivery(ctx, head.MessageID, agentID, c.owner); err != nil && ctx.Err() == nil {
@@ -989,8 +1004,14 @@ func (g *Gateway) ack(ctx context.Context, agentID, messageID string) error {
 		return g.d.Store.WithTx(ctx, func(q *db.Queries) error {
 			// The principal consumes the message and any fallback row it owned: the row stays as a
 			// tombstone, so the message is not read twice (SESS-24).
-			if err := ackFallbackDelivery(ctx, q, messageID, agentID); err != nil {
+			fellBack, err := ackFallbackDelivery(ctx, q, messageID, agentID)
+			if err != nil {
 				return err
+			}
+			if fellBack {
+				// A fallback's sequence is not the stream's: moving the cursor to it would skip the plain
+				// messages below it that the principal has not acknowledged (Pending does the same).
+				return nil
 			}
 			return q.AdvanceAgentCursor(ctx, db.AdvanceAgentCursorParams{AgentID: agentID, RoomID: m.RoomID, Seq: m.Seq})
 		})

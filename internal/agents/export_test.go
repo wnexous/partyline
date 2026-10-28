@@ -19,3 +19,7 @@ func SetPingInterval(g *Gateway, interval time.Duration) { g.d.PingInterval = in
 
 // SetAfterFolderMiss makes r run f when a session found no AI for its folder, before it creates one.
 func SetAfterFolderMiss(r *Registry, f func()) { r.afterFolderMiss = f }
+
+// SetAfterOwnerMiss makes g run f when a pending row found no owner connection, before the release
+// re-checks under the life lock.
+func SetAfterOwnerMiss(g *Gateway, f func()) { g.afterOwnerMiss = f }

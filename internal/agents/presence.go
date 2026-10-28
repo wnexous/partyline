@@ -50,6 +50,14 @@ type presenceEntry struct {
 	since   time.Time
 }
 
+// setSessionLabel tells a session the label it attached with, when it wants to know (a gateway
+// connection does). It runs under the presence lock, before the session can be found.
+func setSessionLabel(s Session, label string) {
+	if l, ok := s.(interface{ setLabel(string) }); ok {
+		l.setLabel(label)
+	}
+}
+
 // live is the exported view of an entry.
 func (e presenceEntry) live() Live {
 	return Live{Label: e.label, Harness: e.harness, Since: e.since}
@@ -170,6 +178,7 @@ func (p *Presence) AttachLabeled(ctx context.Context, agent db.Agent, s Session,
 			}
 			next := prev
 			next.session = s
+			setSessionLabel(s, next.label)
 			held[label] = next
 			delete(p.retired[agent.ID], liveID)
 			p.mu.Unlock()
@@ -199,6 +208,7 @@ func (p *Presence) AttachLabeled(ctx context.Context, agent db.Agent, s Session,
 			delete(p.retired[agent.ID], liveID) // live again: its next drop writes a new memory
 		}
 	}
+	setSessionLabel(s, entry.label) // before the session is visible: a lookup by label sees it set
 	held[entry.label] = entry
 	p.sessions[agent.ID] = held
 	p.mu.Unlock()
