@@ -148,7 +148,7 @@ func (q *Queries) DeleteAgentMemberships(ctx context.Context, memberID string) (
 }
 
 const getAgent = `-- name: GetAgent :one
-SELECT id, owner_id, name, description, created_at, last_seen_at, project_id, harness, machine, connected_at, folder, platform_dropped, org_id, creator_iid FROM agents WHERE id = ?
+SELECT id, owner_id, name, description, created_at, last_seen_at, project_id, harness, machine, connected_at, folder, platform_dropped, org_id, creator_iid, principal_session FROM agents WHERE id = ?
 `
 
 func (q *Queries) GetAgent(ctx context.Context, id string) (Agent, error) {
@@ -169,12 +169,13 @@ func (q *Queries) GetAgent(ctx context.Context, id string) (Agent, error) {
 		&i.PlatformDropped,
 		&i.OrgID,
 		&i.CreatorIid,
+		&i.PrincipalSession,
 	)
 	return i, err
 }
 
 const getAgentByFolder = `-- name: GetAgentByFolder :one
-SELECT id, owner_id, name, description, created_at, last_seen_at, project_id, harness, machine, connected_at, folder, platform_dropped, org_id, creator_iid FROM agents WHERE owner_id = ? AND machine = ? AND folder = ? AND folder <> ''
+SELECT id, owner_id, name, description, created_at, last_seen_at, project_id, harness, machine, connected_at, folder, platform_dropped, org_id, creator_iid, principal_session FROM agents WHERE owner_id = ? AND machine = ? AND folder = ? AND folder <> ''
 `
 
 type GetAgentByFolderParams struct {
@@ -201,6 +202,7 @@ func (q *Queries) GetAgentByFolder(ctx context.Context, arg GetAgentByFolderPara
 		&i.PlatformDropped,
 		&i.OrgID,
 		&i.CreatorIid,
+		&i.PrincipalSession,
 	)
 	return i, err
 }
@@ -222,7 +224,7 @@ func (q *Queries) GetAgentCursor(ctx context.Context, arg GetAgentCursorParams) 
 }
 
 const getAgentWithOwner = `-- name: GetAgentWithOwner :one
-SELECT a.id, a.owner_id, a.name, a.description, a.created_at, a.last_seen_at, a.project_id, a.harness, a.machine, a.connected_at, a.folder, a.platform_dropped, a.org_id, a.creator_iid, u.username AS owner_username,
+SELECT a.id, a.owner_id, a.name, a.description, a.created_at, a.last_seen_at, a.project_id, a.harness, a.machine, a.connected_at, a.folder, a.platform_dropped, a.org_id, a.creator_iid, a.principal_session, u.username AS owner_username,
        CAST(COALESCE(ui.display_name, '') AS TEXT) AS owner_display_name,
        CAST(COALESCE(i.handle, '') AS TEXT) AS handle,
        CAST(COALESCE(i.display_name, '') AS TEXT) AS profile_name,
@@ -269,6 +271,7 @@ func (q *Queries) GetAgentWithOwner(ctx context.Context, id string) (GetAgentWit
 		&i.Agent.PlatformDropped,
 		&i.Agent.OrgID,
 		&i.Agent.CreatorIid,
+		&i.Agent.PrincipalSession,
 		&i.OwnerUsername,
 		&i.OwnerDisplayName,
 		&i.Handle,
@@ -298,7 +301,7 @@ func (q *Queries) GetMessageRoomSeq(ctx context.Context, id string) (GetMessageR
 }
 
 const getUnlinkedAgentByHandle = `-- name: GetUnlinkedAgentByHandle :one
-SELECT a.id, a.owner_id, a.name, a.description, a.created_at, a.last_seen_at, a.project_id, a.harness, a.machine, a.connected_at, a.folder, a.platform_dropped, a.org_id, a.creator_iid FROM agents a JOIN intelligences i ON i.id = a.id
+SELECT a.id, a.owner_id, a.name, a.description, a.created_at, a.last_seen_at, a.project_id, a.harness, a.machine, a.connected_at, a.folder, a.platform_dropped, a.org_id, a.creator_iid, a.principal_session FROM agents a JOIN intelligences i ON i.id = a.id
 WHERE a.owner_id = ? AND a.folder = '' AND a.creator_iid = a.owner_id AND i.handle = ?
 `
 
@@ -329,12 +332,13 @@ func (q *Queries) GetUnlinkedAgentByHandle(ctx context.Context, arg GetUnlinkedA
 		&i.PlatformDropped,
 		&i.OrgID,
 		&i.CreatorIid,
+		&i.PrincipalSession,
 	)
 	return i, err
 }
 
 const getUnlinkedAgentByName = `-- name: GetUnlinkedAgentByName :one
-SELECT id, owner_id, name, description, created_at, last_seen_at, project_id, harness, machine, connected_at, folder, platform_dropped, org_id, creator_iid FROM agents WHERE owner_id = ? AND folder = '' AND creator_iid = owner_id AND name = ?
+SELECT id, owner_id, name, description, created_at, last_seen_at, project_id, harness, machine, connected_at, folder, platform_dropped, org_id, creator_iid, principal_session FROM agents WHERE owner_id = ? AND folder = '' AND creator_iid = owner_id AND name = ?
 `
 
 type GetUnlinkedAgentByNameParams struct {
@@ -361,6 +365,7 @@ func (q *Queries) GetUnlinkedAgentByName(ctx context.Context, arg GetUnlinkedAge
 		&i.PlatformDropped,
 		&i.OrgID,
 		&i.CreatorIid,
+		&i.PrincipalSession,
 	)
 	return i, err
 }
@@ -637,7 +642,7 @@ func (q *Queries) ListAgentRoomStates(ctx context.Context, memberID string) ([]L
 }
 
 const listAgentsByOwner = `-- name: ListAgentsByOwner :many
-SELECT id, owner_id, name, description, created_at, last_seen_at, project_id, harness, machine, connected_at, folder, platform_dropped, org_id, creator_iid FROM agents WHERE owner_id = ?
+SELECT id, owner_id, name, description, created_at, last_seen_at, project_id, harness, machine, connected_at, folder, platform_dropped, org_id, creator_iid, principal_session FROM agents WHERE owner_id = ?
 `
 
 func (q *Queries) ListAgentsByOwner(ctx context.Context, ownerID string) ([]Agent, error) {
@@ -664,6 +669,7 @@ func (q *Queries) ListAgentsByOwner(ctx context.Context, ownerID string) ([]Agen
 			&i.PlatformDropped,
 			&i.OrgID,
 			&i.CreatorIid,
+			&i.PrincipalSession,
 		); err != nil {
 			return nil, err
 		}
@@ -679,7 +685,7 @@ func (q *Queries) ListAgentsByOwner(ctx context.Context, ownerID string) ([]Agen
 }
 
 const listOrgAIs = `-- name: ListOrgAIs :many
-SELECT m.org_id AS org_id, a.id, a.owner_id, a.name, a.description, a.created_at, a.last_seen_at, a.project_id, a.harness, a.machine, a.connected_at, a.folder, a.platform_dropped, a.org_id, a.creator_iid
+SELECT m.org_id AS org_id, a.id, a.owner_id, a.name, a.description, a.created_at, a.last_seen_at, a.project_id, a.harness, a.machine, a.connected_at, a.folder, a.platform_dropped, a.org_id, a.creator_iid, a.principal_session
 FROM org_members me
 JOIN org_members m ON m.org_id = me.org_id
 JOIN agents a ON a.id = m.iid
@@ -719,6 +725,7 @@ func (q *Queries) ListOrgAIs(ctx context.Context, iid string) ([]ListOrgAIsRow, 
 			&i.Agent.PlatformDropped,
 			&i.Agent.OrgID,
 			&i.Agent.CreatorIid,
+			&i.Agent.PrincipalSession,
 		); err != nil {
 			return nil, err
 		}
@@ -734,7 +741,7 @@ func (q *Queries) ListOrgAIs(ctx context.Context, iid string) ([]ListOrgAIsRow, 
 }
 
 const listVisibleAgents = `-- name: ListVisibleAgents :many
-SELECT a.id, a.owner_id, a.name, a.description, a.created_at, a.last_seen_at, a.project_id, a.harness, a.machine, a.connected_at, a.folder, a.platform_dropped, a.org_id, a.creator_iid, u.username AS owner_username,
+SELECT a.id, a.owner_id, a.name, a.description, a.created_at, a.last_seen_at, a.project_id, a.harness, a.machine, a.connected_at, a.folder, a.platform_dropped, a.org_id, a.creator_iid, a.principal_session, u.username AS owner_username,
        CAST(COALESCE(ui.display_name, '') AS TEXT) AS owner_display_name,
        CAST(COALESCE(i.handle, '') AS TEXT) AS handle,
        CAST(COALESCE(i.display_name, '') AS TEXT) AS profile_name,
@@ -791,6 +798,7 @@ func (q *Queries) ListVisibleAgents(ctx context.Context, userID string) ([]ListV
 			&i.Agent.PlatformDropped,
 			&i.Agent.OrgID,
 			&i.Agent.CreatorIid,
+			&i.Agent.PrincipalSession,
 			&i.OwnerUsername,
 			&i.OwnerDisplayName,
 			&i.Handle,
@@ -838,6 +846,21 @@ type SetAgentHarnessParams struct {
 
 func (q *Queries) SetAgentHarness(ctx context.Context, arg SetAgentHarnessParams) error {
 	_, err := q.db.ExecContext(ctx, setAgentHarness, arg.Harness, arg.ID)
+	return err
+}
+
+const setAgentPrincipalSession = `-- name: SetAgentPrincipalSession :exec
+UPDATE agents SET principal_session = ? WHERE id = ?
+`
+
+type SetAgentPrincipalSessionParams struct {
+	PrincipalSession string
+	ID               string
+}
+
+// The harness session id pinned as the AI's principal (” unpins it, SESS-51).
+func (q *Queries) SetAgentPrincipalSession(ctx context.Context, arg SetAgentPrincipalSessionParams) error {
+	_, err := q.db.ExecContext(ctx, setAgentPrincipalSession, arg.PrincipalSession, arg.ID)
 	return err
 }
 

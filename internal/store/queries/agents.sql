@@ -159,3 +159,7 @@ UPDATE agents SET machine = ?, folder = ?, harness = ? WHERE id = ? AND folder =
 
 -- name: ListAgentsByOwner :many
 SELECT * FROM agents WHERE owner_id = ?;
+
+-- name: SetAgentPrincipalSession :exec
+-- The harness session id pinned as the AI's principal ('' unpins it, SESS-51).
+UPDATE agents SET principal_session = ? WHERE id = ?;
