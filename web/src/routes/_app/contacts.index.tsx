@@ -7,7 +7,7 @@ import {
   UsersRoundIcon,
   XIcon,
 } from "lucide-react";
-import { type ReactNode, useId, useMemo, useState } from "react";
+import { useMemo, useState } from "react";
 import { ConnectAgentDialog } from "@/components/connect-agent-dialog";
 import { AIMeta } from "@/components/contact-meta";
 import { ContactRow } from "@/components/contact-row";
@@ -26,6 +26,7 @@ import { useDebouncedValue } from "@/shared/lib/use-debounced-value";
 import { EmptyState } from "@/shared/ui/molecules/empty-state";
 import { ListSkeleton } from "@/shared/ui/molecules/list-skeleton";
 import { PageHeader } from "@/shared/ui/molecules/page-header";
+import { PageSection } from "@/shared/ui/molecules/page-section";
 import { Button } from "@/shared/ui/primitives/button";
 import { Input } from "@/shared/ui/primitives/input";
 
@@ -114,7 +115,8 @@ function ContactsPage() {
           <FilterBox value={filter} onChange={setFilter} />
           <div className="pb-10">
             {view.orgs.map((group) => (
-              <Section
+              <PageSection
+                layout="list"
                 key={group.org.id}
                 title={group.org.name}
                 description={t(
@@ -138,21 +140,25 @@ function ContactsPage() {
                     );
                   })}
                 </ul>
-              </Section>
+              </PageSection>
             ))}
 
             {text === "" && ais === 0 ? (
-              <Section title={t("contacts.myAIs")}>
+              <PageSection layout="list" title={t("contacts.myAIs")}>
                 {/* The page header has the one button that connects an AI. */}
                 <div className="space-y-1 px-4 pt-1 pb-2 text-sm text-muted-foreground md:px-8">
                   <p>{t("contacts.noAIs")}</p>
                   <p>{t("contacts.noAIsBody")}</p>
                 </div>
-              </Section>
+              </PageSection>
             ) : null}
 
             {view.hosted.length > 0 ? (
-              <Section title={t("contacts.hosted")} description={t("contacts.hostedBody")}>
+              <PageSection
+                layout="list"
+                title={t("contacts.hosted")}
+                description={t("contacts.hostedBody")}
+              >
                 <ul className="divide-y border-y">
                   {view.hosted.map((ai) => {
                     const item = live(ai);
@@ -198,11 +204,15 @@ function ContactsPage() {
                     );
                   })}
                 </ul>
-              </Section>
+              </PageSection>
             ) : null}
 
             {view.people.length > 0 ? (
-              <Section title={t("contacts.people")} description={t("contacts.peopleBody")}>
+              <PageSection
+                layout="list"
+                title={t("contacts.people")}
+                description={t("contacts.peopleBody")}
+              >
                 <div className="border-t">
                   {view.people.map((group) => (
                     // A search and a plain list are different states of a group: start it afresh.
@@ -213,11 +223,11 @@ function ContactsPage() {
                     />
                   ))}
                 </div>
-              </Section>
+              </PageSection>
             ) : null}
 
             {view.users.length > 0 ? (
-              <Section title={t("contacts.instance")}>
+              <PageSection layout="list" title={t("contacts.instance")}>
                 <ul className="divide-y border-y">
                   {view.users.map((user) => (
                     <li key={user.id}>
@@ -230,7 +240,7 @@ function ContactsPage() {
                     </li>
                   ))}
                 </ul>
-              </Section>
+              </PageSection>
             ) : null}
 
             {text !== "" &&
@@ -288,32 +298,5 @@ function FilterBox({ value, onChange }: { value: string; onChange: (value: strin
         ) : null}
       </div>
     </search>
-  );
-}
-
-function Section({
-  title,
-  description,
-  children,
-}: {
-  title: string;
-  description?: string;
-  children: ReactNode;
-}) {
-  const id = useId();
-  return (
-    <section aria-labelledby={id} className="pt-7 first:pt-5">
-      <div className="px-4 pb-2 md:px-8">
-        <h2 id={id} className="text-lg font-semibold tracking-[-0.015em]">
-          {title}
-        </h2>
-        {description ? (
-          <p className="mt-0.5 max-w-[65ch] text-sm text-pretty text-muted-foreground">
-            {description}
-          </p>
-        ) : null}
-      </div>
-      {children}
-    </section>
   );
 }

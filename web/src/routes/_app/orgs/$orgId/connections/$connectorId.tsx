@@ -7,7 +7,7 @@ import {
   Settings2Icon,
   TriangleAlertIcon,
 } from "lucide-react";
-import { type ReactNode, useEffect, useId, useState } from "react";
+import { useEffect, useId, useState } from "react";
 import { toast } from "sonner";
 import { ConnectorStatusBadge, useConnectorState } from "@/components/connector-status";
 import { chatTitle, platformLabel } from "@/components/message-item";
@@ -42,6 +42,7 @@ import { ConfirmDialog } from "@/shared/ui/molecules/confirm-dialog";
 import { CodeBlock } from "@/shared/ui/molecules/copy-field";
 import { EmptyState } from "@/shared/ui/molecules/empty-state";
 import { FormAlert } from "@/shared/ui/molecules/form-fields";
+import { PageSection } from "@/shared/ui/molecules/page-section";
 import {
   Sheet,
   SheetContent,
@@ -235,35 +236,19 @@ function ConnectorView({
         <DeliverySection connector={c} canManage={canManage} />
 
         {c.inbound_url ? (
-          <Section title={t("connector.inboundTitle")}>
+          <PageSection
+            layout="stacked"
+            headingClassName="label-caps text-[0.72rem] text-muted-foreground"
+            title={t("connector.inboundTitle")}
+          >
             <p className="text-sm text-muted-foreground">{t("connector.inboundBody")}</p>
             <CodeBlock label={t("connector.inboundUrl")} value={c.inbound_url} />
-          </Section>
+          </PageSection>
         ) : null}
 
         <ChatsSection connector={c} canList={kind?.can_list_chats ?? false} />
       </div>
     </>
-  );
-}
-
-function Section({
-  title,
-  actions,
-  children,
-}: {
-  title: ReactNode;
-  actions?: ReactNode;
-  children: ReactNode;
-}) {
-  return (
-    <section className="space-y-3">
-      <div className="flex items-center justify-between gap-3">
-        <h2 className="label-caps text-[0.72rem] text-muted-foreground">{title}</h2>
-        {actions}
-      </div>
-      {children}
-    </section>
   );
 }
 
@@ -274,7 +259,9 @@ function ChatsSection({ connector: c, canList }: { connector: Connector; canList
   const list = chats.data ?? [];
 
   return (
-    <Section
+    <PageSection
+      layout="stacked"
+      headingClassName="label-caps text-[0.72rem] text-muted-foreground"
       title={
         <>
           {t("connector.chats")}{" "}
@@ -343,7 +330,7 @@ function ChatsSection({ connector: c, canList }: { connector: Connector; canList
           })}
         </ul>
       )}
-    </Section>
+    </PageSection>
   );
 }
 
@@ -423,10 +410,14 @@ function DeliverySection({
 }) {
   const t = useT();
   return (
-    <Section title={t("connector.delivery")}>
+    <PageSection
+      layout="stacked"
+      headingClassName="label-caps text-[0.72rem] text-muted-foreground"
+      title={t("connector.delivery")}
+    >
       <p className="text-sm text-muted-foreground">{t("connector.deliveryBody")}</p>
       {canManage ? <DeliveryForm connector={c} /> : <DeliverySummary connector={c} />}
-    </Section>
+    </PageSection>
   );
 }
 
