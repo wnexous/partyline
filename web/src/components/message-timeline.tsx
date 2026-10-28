@@ -16,8 +16,9 @@ import { useReact } from "@/hooks/use-react";
 import { useStickToEnd } from "@/hooks/use-stick-to-end";
 import { useRoomMessages } from "@/lib/api/queries";
 import type { Message, Page, RoomMember } from "@/shared/api/types.gen";
-import { type Translate, useI18n } from "@/shared/i18n";
+import { useI18n } from "@/shared/i18n";
 import { useTouchFirst } from "@/shared/lib/device";
+import { dayKey, formatDayLabel } from "@/shared/lib/time";
 import { cn } from "@/shared/lib/utils";
 import { EmptyState } from "@/shared/ui/molecules/empty-state";
 import { Button } from "@/shared/ui/primitives/button";
@@ -58,20 +59,6 @@ export function flattenPages(data: InfiniteData<Page<Message>, unknown> | undefi
 export function useTimelineMessages(roomId: string): Map<string, Message> {
   const query = useRoomMessages(roomId);
   return useMemo(() => new Map(flattenPages(query.data).map((m) => [m.id, m])), [query.data]);
-}
-
-const dayKey = (iso: string) => new Date(iso).toDateString();
-
-function dayLabel(iso: string, t: Translate, locale: string): string {
-  const date = new Date(iso);
-  const today = new Date();
-  const yesterday = new Date(today);
-  yesterday.setDate(today.getDate() - 1);
-  if (date.toDateString() === today.toDateString()) return t("timeline.today");
-  if (date.toDateString() === yesterday.toDateString()) return t("timeline.yesterday");
-  return new Intl.DateTimeFormat(locale, { weekday: "long", day: "numeric", month: "long" }).format(
-    date,
-  );
 }
 
 function isGrouped(prev: Message | undefined, m: Message): boolean {
@@ -380,7 +367,10 @@ export function MessageTimeline({
                   {newDay ? (
                     <div className="flex items-center gap-3 px-4 pt-4 pb-1 md:px-6">
                       <span className="label-caps text-[0.68rem] text-muted-foreground">
-                        {dayLabel(m.created_at, t, locale)}
+                        {formatDayLabel(m.created_at, locale, {
+                          today: t("timeline.today"),
+                          yesterday: t("timeline.yesterday"),
+                        })}
                       </span>
                       <span aria-hidden="true" className="h-px flex-1 bg-border" />
                     </div>

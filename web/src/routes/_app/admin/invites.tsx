@@ -13,8 +13,9 @@ import {
   RoleMember,
 } from "@/shared/api/types.gen";
 import { type MessageKey, useI18n, useT } from "@/shared/i18n";
-import { formatAbsolute, formatRelative } from "@/shared/lib/time";
+import { formatAbsolute } from "@/shared/lib/time";
 import { cn } from "@/shared/lib/utils";
+import { RelativeTime } from "@/shared/ui/atoms/relative-time";
 import {
   Dialog,
   DialogContent,
@@ -166,23 +167,21 @@ function InviteRow({ invite: inv, onRevoke }: { invite: Invite; onRevoke: () => 
           </span>
         </p>
         <p className="flex flex-wrap gap-x-3 text-xs text-muted-foreground">
-          <span>
-            {t("invites.createdBy", {
-              name: `@${inv.created_by.username}`,
-              time: formatRelative(inv.created_at, locale),
-            })}
-          </span>
+          <RelativeTime value={inv.created_at} locale={locale}>
+            {(time) => t("invites.createdBy", { name: `@${inv.created_by.username}`, time })}
+          </RelativeTime>
           {inv.status === "used" && inv.used_by ? (
-            <span>
-              {t("invites.usedBy", {
-                name: `@${inv.used_by.username}`,
-                time: inv.used_at ? formatRelative(inv.used_at, locale) : "",
-              })}
-            </span>
+            inv.used_at ? (
+              <RelativeTime value={inv.used_at} locale={locale}>
+                {(time) => t("invites.usedBy", { name: `@${inv.used_by?.username}`, time })}
+              </RelativeTime>
+            ) : (
+              <span>{t("invites.usedBy", { name: `@${inv.used_by.username}`, time: "" })}</span>
+            )
           ) : inv.status === "pending" ? (
-            <span title={formatAbsolute(inv.expires_at, locale)}>
-              {t("invites.expires", { time: formatRelative(inv.expires_at, locale) })}
-            </span>
+            <RelativeTime value={inv.expires_at} locale={locale}>
+              {(time) => t("invites.expires", { time })}
+            </RelativeTime>
           ) : null}
         </p>
       </div>

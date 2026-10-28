@@ -36,7 +36,7 @@ import {
   type ProfileMembership,
 } from "@/shared/api/types.gen";
 import { useI18n, useT } from "@/shared/i18n";
-import { formatAbsolute, formatRelative } from "@/shared/lib/time";
+import { RelativeTime } from "@/shared/ui/atoms/relative-time";
 import { StatusDot } from "@/shared/ui/atoms/status-dot";
 import { EmptyState } from "@/shared/ui/molecules/empty-state";
 import { Button } from "@/shared/ui/primitives/button";
@@ -219,15 +219,13 @@ function ProfileView({ profile }: { profile: IntelligenceProfile }) {
                 <span className="min-w-0 text-muted-foreground [overflow-wrap:anywhere]">
                   {harnessLabel(session.harness) ?? session.harness}
                 </span>
-                <time
-                  dateTime={session.connected_at}
-                  title={formatAbsolute(session.connected_at, locale)}
+                <RelativeTime
+                  value={session.connected_at}
+                  locale={locale}
                   className="ml-auto shrink-0 font-mono text-xs text-muted-foreground tabular"
                 >
-                  {t("profile.sessionConnected", {
-                    time: formatRelative(session.connected_at, locale),
-                  })}
-                </time>
+                  {(time) => t("profile.sessionConnected", { time })}
+                </RelativeTime>
               </li>
             ))}
           </ul>
@@ -390,9 +388,9 @@ function AIDetails({ ai, id }: { ai: AIDetail; id: string }) {
             withLabel
           />
           {online ? null : lastSeen ? (
-            <span className="font-mono text-xs tabular" title={formatAbsolute(lastSeen, locale)}>
-              {t("contacts.lastSeen", { time: formatRelative(lastSeen, locale) })}
-            </span>
+            <RelativeTime value={lastSeen} locale={locale} className="font-mono text-xs tabular">
+              {(time) => t("contacts.lastSeen", { time })}
+            </RelativeTime>
           ) : (
             <span className="text-xs text-muted-foreground">{t("contacts.neverSeen")}</span>
           )}

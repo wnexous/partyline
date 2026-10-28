@@ -26,8 +26,8 @@ import {
   type Permission,
 } from "@/shared/api/types.gen";
 import { useI18n, useT } from "@/shared/i18n";
-import { formatAbsolute, formatRelative } from "@/shared/lib/time";
 import { NativeSelect } from "@/shared/ui/atoms/native-select";
+import { RelativeTime } from "@/shared/ui/atoms/relative-time";
 import { PageHeader } from "@/shared/ui/molecules/page-header";
 import { Badge } from "@/shared/ui/primitives/badge";
 import { Button } from "@/shared/ui/primitives/button";
@@ -420,9 +420,9 @@ function PendingItem({ orgId, invitation: inv }: { orgId: string; invitation: In
         </Badge>
         {inv.position_name ? <span>{inv.position_name}</span> : null}
         <span>{t("orgs.invitedBy", { name: inv.invited_by.display_name })}</span>
-        <time dateTime={inv.expires_at} title={formatAbsolute(inv.expires_at, locale)}>
-          {t("orgs.expires", { when: formatRelative(inv.expires_at, locale) })}
-        </time>
+        <RelativeTime value={inv.expires_at} locale={locale}>
+          {(when) => t("orgs.expires", { when })}
+        </RelativeTime>
       </span>
       <Button
         variant="outline"

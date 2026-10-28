@@ -10,6 +10,7 @@ import { isApiError } from "@/shared/api/client";
 import { type InviteInfo, PasswordMinLength, RoleAdmin } from "@/shared/api/types.gen";
 import { useI18n } from "@/shared/i18n";
 import { applyFieldErrors } from "@/shared/lib/forms";
+import { formatFull } from "@/shared/lib/time";
 import { EmptyState } from "@/shared/ui/molecules/empty-state";
 import { FormAlert, TextField } from "@/shared/ui/molecules/form-fields";
 import { Button } from "@/shared/ui/primitives/button";
@@ -82,9 +83,7 @@ function AcceptInvite({ token, info }: { token: string; info: InviteInfo }) {
     defaultValues: { username: "", display_name: "", password: "" },
   });
 
-  const expires = new Intl.DateTimeFormat(locale, { dateStyle: "long", timeStyle: "short" }).format(
-    new Date(info.expires_at),
-  );
+  const expires = formatFull(info.expires_at, locale);
   const role = info.role === RoleAdmin ? t("invite.roleAdmin") : t("invite.roleMember");
 
   const onSubmit = form.handleSubmit((values) => {

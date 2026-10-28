@@ -36,8 +36,8 @@ import {
   type UpdateConnectorRequest,
 } from "@/shared/api/types.gen";
 import { type MessageKey, useI18n, useT } from "@/shared/i18n";
-import { formatAbsolute, formatRelative } from "@/shared/lib/time";
 import { NativeSelect } from "@/shared/ui/atoms/native-select";
+import { RelativeTime } from "@/shared/ui/atoms/relative-time";
 import { CodeBlock } from "@/shared/ui/molecules/copy-field";
 import { EmptyState } from "@/shared/ui/molecules/empty-state";
 import { FormAlert } from "@/shared/ui/molecules/form-fields";
@@ -340,12 +340,11 @@ function ChatsSection({ connector: c, canList }: { connector: Connector; canList
                     </span>
                     <span className="truncate font-mono">{chat.external_id}</span>
                     {chat.last_seen_at ? (
-                      <span
+                      <RelativeTime
+                        value={chat.last_seen_at}
+                        locale={locale}
                         className="font-mono tabular"
-                        title={formatAbsolute(chat.last_seen_at, locale)}
-                      >
-                        {formatRelative(chat.last_seen_at, locale)}
-                      </span>
+                      />
                     ) : null}
                   </p>
                 </div>

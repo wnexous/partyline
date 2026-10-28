@@ -50,9 +50,9 @@ import {
 } from "@/shared/api/types.gen";
 import { LOCALES, type MessageKey, type Translate, useI18n, useT } from "@/shared/i18n";
 import { applyFieldErrors } from "@/shared/lib/forms";
-import { formatAbsolute, formatRelative } from "@/shared/lib/time";
 import { cn } from "@/shared/lib/utils";
 import { NativeSelect } from "@/shared/ui/atoms/native-select";
+import { RelativeTime } from "@/shared/ui/atoms/relative-time";
 import {
   Dialog,
   DialogContent,
@@ -702,9 +702,9 @@ function SessionsSection() {
                   </p>
                   <p className="flex flex-wrap gap-x-3 text-xs text-muted-foreground">
                     <span className="font-mono">{s.ip}</span>
-                    <span title={formatAbsolute(s.last_seen_at, locale)}>
-                      {t("account.lastActive", { time: formatRelative(s.last_seen_at, locale) })}
-                    </span>
+                    <RelativeTime value={s.last_seen_at} locale={locale}>
+                      {(time) => t("account.lastActive", { time })}
+                    </RelativeTime>
                   </p>
                 </div>
                 {s.current ? null : (

@@ -17,8 +17,8 @@ import {
 } from "@/shared/api/types.gen";
 import { type MessageKey, useI18n, useT } from "@/shared/i18n";
 import { applyFieldErrors } from "@/shared/lib/forms";
-import { formatAbsolute, formatRelative } from "@/shared/lib/time";
 import { cn } from "@/shared/lib/utils";
+import { RelativeTime } from "@/shared/ui/atoms/relative-time";
 import {
   Dialog,
   DialogContent,
@@ -229,18 +229,20 @@ function TokenRow({
         </p>
         <p className="mt-0.5 flex min-w-0 flex-wrap gap-x-3 gap-y-0.5 text-xs text-muted-foreground">
           <span className="font-mono">{token.prefix}…</span>
-          <span title={formatAbsolute(token.created_at, locale)}>
-            {t("tokens.created", { time: formatRelative(token.created_at, locale) })}
-          </span>
-          <span>
-            {token.last_used_at
-              ? t("tokens.lastUsed", { time: formatRelative(token.last_used_at, locale) })
-              : t("tokens.neverUsed")}
-          </span>
+          <RelativeTime value={token.created_at} locale={locale}>
+            {(time) => t("tokens.created", { time })}
+          </RelativeTime>
+          {token.last_used_at ? (
+            <RelativeTime value={token.last_used_at} locale={locale}>
+              {(time) => t("tokens.lastUsed", { time })}
+            </RelativeTime>
+          ) : (
+            <span>{t("tokens.neverUsed")}</span>
+          )}
           {token.expires_at && state === "active" ? (
-            <span title={formatAbsolute(token.expires_at, locale)}>
-              {t("tokens.expires", { time: formatRelative(token.expires_at, locale) })}
-            </span>
+            <RelativeTime value={token.expires_at} locale={locale}>
+              {(time) => t("tokens.expires", { time })}
+            </RelativeTime>
           ) : null}
         </p>
       </div>
