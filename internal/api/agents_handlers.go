@@ -38,6 +38,16 @@ func toAgent(a agents.Agent) dto.Agent {
 	return out
 }
 
+// agentWithSessions is toAgent with the AI's live sessions, the principal first; none while it is
+// offline.
+func (s *server) agentWithSessions(a agents.Agent) dto.Agent {
+	out := toAgent(a)
+	if lives := s.Agents.Sessions(a.ID); len(lives) > 0 {
+		out.Sessions = liveSessions(lives)
+	}
+	return out
+}
+
 func (s *server) listAgents(w http.ResponseWriter, r *http.Request, p authn.Principal) error {
 	list, err := s.Agents.ListVisible(r.Context(), p)
 	if err != nil {
@@ -45,7 +55,7 @@ func (s *server) listAgents(w http.ResponseWriter, r *http.Request, p authn.Prin
 	}
 	out := dto.List[dto.Agent]{Items: make([]dto.Agent, len(list))}
 	for i, a := range list {
-		out.Items[i] = toAgent(a)
+		out.Items[i] = s.agentWithSessions(a)
 	}
 	httpx.WriteJSON(w, http.StatusOK, out)
 	return nil
@@ -57,7 +67,7 @@ func (s *server) getAgent(w http.ResponseWriter, r *http.Request, p authn.Princi
 	if err != nil {
 		return err
 	}
-	httpx.WriteJSON(w, http.StatusOK, toAgent(a))
+	httpx.WriteJSON(w, http.StatusOK, s.agentWithSessions(a))
 	return nil
 }
 
@@ -72,7 +82,7 @@ func (s *server) updateAgent(w http.ResponseWriter, r *http.Request, p authn.Pri
 	if err != nil {
 		return err
 	}
-	httpx.WriteJSON(w, http.StatusOK, toAgent(a))
+	httpx.WriteJSON(w, http.StatusOK, s.agentWithSessions(a))
 	return nil
 }
 
@@ -101,6 +111,6 @@ func (s *server) mergeAgent(w http.ResponseWriter, r *http.Request, p authn.Prin
 	if err != nil {
 		return err
 	}
-	httpx.WriteJSON(w, http.StatusOK, toAgent(a))
+	httpx.WriteJSON(w, http.StatusOK, s.agentWithSessions(a))
 	return nil
 }

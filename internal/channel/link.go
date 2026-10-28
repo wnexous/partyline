@@ -170,6 +170,8 @@ type link struct {
 	// announcedSession is set once the process said which parallel session it became: a reconnect of the
 	// same process says it again neither on stderr nor in the identity notice (SESS-15).
 	announcedSession bool
+	// self is the AI this session is, as the last welcome named it; empty before the first.
+	self dto.IntelligenceRef
 	// expectReconnect is set once a channel told onLost that it keeps trying while busy: the welcome of
 	// the connection that follows then tells the harness that Partyline is back (SES-04).
 	expectReconnect bool
@@ -817,7 +819,7 @@ func (l *link) handle(ctx context.Context, ws *websocket.Conn, data []byte) erro
 			return nil
 		}
 		ack, _ := json.Marshal(dto.AgentAckFrame{Type: dto.AgentFrameTypeAck, MessageID: f.Message.ID})
-		return l.notifyThenAck(ctx, ws, f.Message.ID, func() Notification { return Format(f.AgentMessage) }, ack)
+		return l.notifyThenAck(ctx, ws, f.Message.ID, func() Notification { return FormatFor(f.AgentMessage, l.selfRef().ID) }, ack)
 	case dto.AgentFrameTypeMessageEdited, dto.AgentFrameTypeMessageDeleted:
 		// A message that was delivered before changed (EDT-07, DLT-07). It is told as it happened, in order with
 		// the messages around it, and neither acknowledged nor remembered: its id is the message's own, which the
@@ -826,7 +828,7 @@ func (l *link) handle(ctx context.Context, ws *websocket.Conn, data []byte) erro
 		if json.Unmarshal(data, &f) != nil || f.Message.ID == "" {
 			return nil
 		}
-		return l.notify.Notify(NotificationMethod, FormatUpdate(head.Type, f))
+		return l.notify.Notify(NotificationMethod, FormatUpdateFor(head.Type, f, l.selfRef().ID))
 	case dto.AgentFrameTypePlatform:
 		var f dto.AgentPlatformFrame
 		if json.Unmarshal(data, &f) != nil || f.Event.ID == "" {
@@ -845,12 +847,25 @@ func (l *link) handle(ctx context.Context, ws *websocket.Conn, data []byte) erro
 		if json.Unmarshal(data, &f) != nil {
 			return nil
 		}
+		l.mu.Lock()
+		l.self = f.Intelligence
+		l.mu.Unlock()
 		if err := l.announceIdentity(f); err != nil {
 			return err
 		}
 		return l.announceReconnect()
 	}
 	return nil // unknown frames need nothing: a client ignores the types a newer server adds
+}
+
+// selfRef is the AI this session is (id and handle), empty until the first welcome. It is safe on a nil link.
+func (l *link) selfRef() dto.IntelligenceRef {
+	if l == nil {
+		return dto.IntelligenceRef{}
+	}
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	return l.self
 }
 
 // notifyThenAck hands the frame with this id to the harness and then acknowledges it. Delivery is

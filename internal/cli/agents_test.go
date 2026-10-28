@@ -13,6 +13,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/wnexous/partyline/internal/agents"
+	"github.com/wnexous/partyline/internal/api/dto"
 	"github.com/wnexous/partyline/internal/authn"
 	"github.com/wnexous/partyline/internal/intelligences"
 	"github.com/wnexous/partyline/internal/orgs"
@@ -271,4 +272,33 @@ func TestHelpDescribesAgentsByOrganization(t *testing.T) {
 	require.Equal(t, 0, execute(context.Background(), []string{"partyline", "--help"}, stdio{stdout: &out, stderr: &bytes.Buffer{}, getenv: func(string) string { return "" }}))
 	require.Contains(t, out.String(), "  agents                 list the AIs you host, grouped by organization, with online markers\n")
 	require.NotContains(t, out.String(), "machine › folder", "the machine tree is gone")
+}
+
+// SESS-43: an online AI with parallel sessions lists each labelled one under its row, with the address that
+// reaches it, its app and since when; the principal is the AI's own row and an offline AI lists none.
+func TestAgentsListsTheParallelSessionsOfAnOnlineAI(t *testing.T) {
+	since := time.Date(2026, 10, 28, 14, 5, 0, 0, time.Local)
+	list := []dto.Agent{
+		{
+			Intelligence: dto.IntelligenceRef{DisplayName: "Atlas", Handle: "atlas"}, Harness: "claude", Online: true,
+			FolderLabel: "~/atlas",
+			Sessions: []dto.SessionInfo{
+				{Label: "", Harness: "claude", ConnectedAt: since},
+				{Label: "pi-2", Harness: "pi", ConnectedAt: since},
+			},
+		},
+		{
+			Intelligence: dto.IntelligenceRef{DisplayName: "Dev", Handle: "dev"}, Harness: "claude",
+			Sessions: []dto.SessionInfo{{Label: "wt", Harness: "claude", ConnectedAt: since}},
+		},
+	}
+	var out bytes.Buffer
+	printAgents(&out, list, since)
+	require.Contains(t, out.String(), "@atlas:pi-2")
+	require.Contains(t, out.String(), "since 14:05")
+	require.NotContains(t, out.String(), "@dev:wt", "an offline AI lists no session")
+	lines := strings.Split(strings.TrimSpace(out.String()), "\n")
+	require.Len(t, lines, 4, out.String())
+	require.Contains(t, lines[1], "@atlas ")
+	require.Contains(t, lines[2], "↳ :pi-2")
 }

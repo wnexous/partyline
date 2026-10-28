@@ -32,7 +32,15 @@ type Notification struct {
 // sender_id; other authors carry none of them (CTX-02). A message that asks a question or answers
 // one also names its stored document in interactive or answers, as the compact JSON the server
 // keeps (QR-21); the content stays the human text.
-func Format(m dto.AgentMessage) Notification {
+//
+// A message an AI's session wrote carries author_session, the session's label, when it is not the
+// principal (SESS-41), so two sessions of one AI can be told apart; from_own_session="true" marks one
+// written by another session of the receiving AI itself (FormatFor).
+func Format(m dto.AgentMessage) Notification { return FormatFor(m, "") }
+
+// FormatFor is Format for the AI whose intelligence id is selfID: a message its own intelligence wrote
+// (so, from another session of it) also carries from_own_session="true". An empty selfID marks nothing.
+func FormatFor(m dto.AgentMessage, selfID string) Notification {
 	msg := m.Message
 	conversation := dto.ConversationKindGroup
 	if m.Room.Kind == dto.ConversationKindDM {
@@ -54,6 +62,12 @@ func Format(m dto.AgentMessage) Notification {
 		if a.Handle != "" {
 			meta["author_handle"] = a.Handle
 		}
+	}
+	if msg.AuthorLabel != "" {
+		meta["author_session"] = msg.AuthorLabel
+	}
+	if selfID != "" && msg.AuthorKind == dto.AuthorKindAgent && msg.Author.ID == selfID {
+		meta["from_own_session"] = "true"
 	}
 	if msg.ReplyTo != "" {
 		meta["reply_to"] = msg.ReplyTo
@@ -114,7 +128,12 @@ const (
 // content says what happened and, for an edit, gives the new text. It is never acknowledged: the message was
 // acknowledged when it was first delivered.
 func FormatUpdate(t dto.AgentFrameType, m dto.AgentMessage) Notification {
-	n := Format(m)
+	return FormatUpdateFor(t, m, "")
+}
+
+// FormatUpdateFor is FormatUpdate for the AI whose intelligence id is selfID (see FormatFor).
+func FormatUpdateFor(t dto.AgentFrameType, m dto.AgentMessage, selfID string) Notification {
+	n := FormatFor(m, selfID)
 	switch t {
 	case dto.AgentFrameTypeMessageDeleted:
 		n.Meta["type"], n.Meta["deleted"] = DeletedType, "true"

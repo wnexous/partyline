@@ -152,3 +152,46 @@ describe("member list (CID-20, CID-22)", () => {
     });
   });
 });
+
+describe("member sessions (SESS-44)", () => {
+  const at = "2026-10-28T14:05:00Z";
+  it("an online AI with a parallel session lists principal and its labels; a single or offline one none", async () => {
+    mockApi({ "GET /me": json(200, makeMe()) });
+    const withPi = makeMember({
+      id: "mb-atlas",
+      member_id: "a1",
+      name: "Atlas",
+      intelligence: atlas,
+      online: true,
+      sessions: [
+        { label: "", harness: "claude", connected_at: at },
+        { label: "pi-2", harness: "pi", connected_at: at },
+      ],
+    });
+    const single = makeMember({
+      id: "mb-solo",
+      member_id: "a2",
+      name: "Solo",
+      intelligence: makeAI({ id: "a2", display_name: "Solo", handle: "solo" }),
+      online: true,
+      sessions: [{ label: "", harness: "claude", connected_at: at }],
+    });
+    const offline = makeMember({
+      id: "mb-off",
+      member_id: "a3",
+      name: "Off",
+      intelligence: makeAI({ id: "a3", display_name: "Off", handle: "off" }),
+      online: false,
+      sessions: [{ label: "wt", harness: "claude", connected_at: at }],
+    });
+    renderWithRouter(
+      <MemberList roomId="r1" members={[withPi, single, offline]} canManage={false} />,
+    );
+
+    const line = await screen.findByTestId("member-sessions-mb-atlas");
+    expect(line).toHaveTextContent("principal");
+    expect(line).toHaveTextContent(":pi-2");
+    expect(screen.queryByTestId("member-sessions-mb-solo")).toBeNull();
+    expect(screen.queryByTestId("member-sessions-mb-off")).toBeNull();
+  });
+});

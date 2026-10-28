@@ -250,7 +250,7 @@ func (s *server) ownerAgents(w http.ResponseWriter, r *http.Request) error {
 	out := dto.List[dto.Agent]{Items: []dto.Agent{}}
 	for _, a := range list {
 		if a.OwnerID == p.UserID {
-			out.Items = append(out.Items, toAgent(a))
+			out.Items = append(out.Items, s.agentWithSessions(a))
 		}
 	}
 	httpx.WriteJSON(w, http.StatusOK, out)
