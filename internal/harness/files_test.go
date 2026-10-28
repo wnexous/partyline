@@ -260,6 +260,21 @@ func TestOpenCodeXDGConfigHome(t *testing.T) {
 	require.FileExists(t, filepath.Join(xdg, "opencode", "plugins", "partyline.ts"))
 }
 
+// An OpenCode plugin written by an older setup (OpenCode 1 only, old version in its header) is
+// replaced by the current one, which also loads in OpenCode 2: a default export with id and setup.
+func TestOpenCodePluginFromOlderSetupIsRewritten(t *testing.T) {
+	env, _ := testEnv(t, nil)
+	ext := filepath.Join(env.Home, ".config/opencode/plugins/partyline.ts")
+	writeFile(t, ext, "// partyline v0.3.0: written by `partyline setup`; `partyline setup --uninstall` removes it.\nexport const PartylinePlugin = async () => ({});\n")
+	require.NoError(t, registrar(t, env, "opencode").Apply(context.Background()))
+	got := readFile(t, ext)
+	require.True(t, strings.HasPrefix(got, "// partyline v1.2.3: written by `partyline setup`;"), "the header names the installed version")
+	require.NotContains(t, got, "v0.3.0")
+	require.Contains(t, got, "export default {\n\tid: \"partyline\",")
+	require.Contains(t, got, "\tsetup: setupOpenCode2,")
+	require.Contains(t, got, "\tserver: PartylinePlugin,")
+}
+
 // skipUnlessUnixPerms skips tests that rely on unix permission bits or symlinks, and runs
 // that are root (root ignores permission bits).
 func skipUnlessUnixPerms(t *testing.T) {

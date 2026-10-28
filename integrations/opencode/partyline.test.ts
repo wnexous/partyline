@@ -62,9 +62,14 @@ afterEach(() => {
 });
 
 describe("OpenCode plugin", () => {
-	test("the plugin file exports only the plugin (OpenCode calls every export)", () => {
-		expect(Object.keys(plugin)).toEqual(["PartylinePlugin"]);
-		expect(typeof plugin.PartylinePlugin).toBe("function");
+	test("the default export loads in both OpenCode APIs: id, server (1.x) and setup (2.x)", () => {
+		const def = plugin.default as unknown as Record<string, unknown>;
+		expect(Object.keys(def).sort()).toEqual(["id", "server", "setup"]);
+		expect(def.id).toBe("partyline");
+		expect(def.server).toBe(plugin.PartylinePlugin);
+		expect(typeof def.setup).toBe("function");
+		// OpenCode 1.4+ reads only the default of a module that has one; OpenCode 2 reads only the default.
+		expect(Object.keys(plugin).sort()).toEqual(["PartylinePlugin", "default", "setupOpenCode2"]);
 	});
 
 	test("launch-only: a plain OpenCode session runs no listen", async () => {
@@ -223,5 +228,255 @@ describe("OpenCode plugin", () => {
 		expect(time.delays()).toEqual([]);
 		time.fire();
 		expect(spawned.length).toBe(1);
+	});
+});
+
+// --- OpenCode 2: the setup function of the default export, on a fake plugin context ---
+
+type Ev = { type: string; data?: Record<string, unknown> };
+type Prompt2 = { sessionID: string; text: string; delivery?: string };
+
+function fakeContext2(opts: { parents?: Record<string, string>; wrapped?: boolean; reject?: boolean; getFails?: boolean } = {}) {
+	const prompts: Prompt2[] = [];
+	const gets: string[] = [];
+	const subscribed: Array<{ types?: string[]; signal?: AbortSignal }> = [];
+	const queue: Ev[] = [];
+	let wake: (() => void) | undefined;
+	let ended = false;
+	const ctx = {
+		location: { directory: "/work/proj" },
+		session: {
+			prompt: (o: Prompt2) => {
+				prompts.push(o);
+				return opts.reject ? Promise.reject(new Error("session not found")) : Promise.resolve({});
+			},
+			get: async ({ sessionID }: { sessionID: string }) => {
+				gets.push(sessionID);
+				if (opts.getFails) throw new Error("gone");
+				const info = { id: sessionID, parentID: opts.parents?.[sessionID] };
+				return opts.wrapped ? { data: info } : info;
+			},
+		},
+		event: {
+			subscribe: (o: { types?: string[]; signal?: AbortSignal }) => {
+				subscribed.push(o);
+				o.signal?.addEventListener("abort", () => {
+					ended = true;
+					wake?.();
+				});
+				return {
+					async *[Symbol.asyncIterator]() {
+						while (!ended) {
+							const next = queue.shift();
+							if (next) yield next;
+							else await new Promise<void>((resolve) => (wake = resolve));
+						}
+					},
+				};
+			},
+		},
+	};
+	const emit = async (type: string, data: Record<string, unknown>) => {
+		queue.push({ type, data });
+		wake?.();
+		// let the consumer loop handle the event, including its awaited session.get
+		for (let i = 0; i < 5; i++) await new Promise((resolve) => queueMicrotask(() => resolve(undefined)));
+	};
+	return { ctx, prompts, gets, subscribed, emit };
+}
+
+async function load2(opts: Parameters<typeof fakeContext2>[0] = {}, api: Api = plugin) {
+	const c = fakeContext2(opts);
+	const dispose = await api.setupOpenCode2(c.ctx as never);
+	return { ...c, dispose };
+}
+
+describe("OpenCode 2 plugin", () => {
+	let errors: string[];
+	let consoleError: typeof console.error;
+	beforeEach(() => {
+		errors = [];
+		consoleError = console.error;
+		console.error = (...args: unknown[]) => void errors.push(args.join(" "));
+	});
+	afterEach(() => {
+		console.error = consoleError;
+	});
+
+	test("the default export's setup is the OpenCode 2 entry point", async () => {
+		const c = fakeContext2();
+		const dispose = await (plugin.default as unknown as { setup: (ctx: never) => Promise<() => Promise<void>> }).setup(c.ctx as never);
+		expect(spawned.length).toBe(1);
+		await dispose();
+	});
+
+	test("launch-only: a plain OpenCode 2 server runs no listen and returns no cleanup", async () => {
+		delete process.env.PARTYLINE_HARNESS;
+		const oc = await load2();
+		expect(spawned).toEqual([]);
+		expect(oc.subscribed).toEqual([]);
+		expect(oc.dispose).toBeUndefined();
+	});
+
+	test("setup --always: the installed plugin listens in OpenCode 2 without the launcher", async () => {
+		delete process.env.PARTYLINE_HARNESS;
+		const always = (await importAlways("opencode/partyline.ts")) as unknown as Api;
+		const oc = await load2({}, always);
+		expect(spawned.length).toBe(1);
+		await oc.dispose?.();
+	});
+
+	test("PUSH-05: it runs partyline listen in the project directory of the plugin context", async () => {
+		const oc = await load2();
+		expect(spawned.length).toBe(1);
+		expect(spawned[0].command).toBe("partyline");
+		expect(spawned[0].args).toEqual(["listen"]);
+		expect(spawned[0].options.cwd).toBe("/work/proj");
+		expect(spawned[0].options.env?.PARTYLINE_HARNESS).toBe("opencode");
+		await oc.dispose?.();
+	});
+
+	test("PUSH-05: each line goes to the active session with session.prompt, queued behind the turn", async () => {
+		const oc = await load2();
+		await oc.emit("session.status", { sessionID: "ses_1", status: { type: "busy" } });
+		spawned[0].out(`${JSON.stringify(framingCases[0].record)}\n`);
+		await oc.emit("session.execution.started", { sessionID: "ses_2" });
+		spawned[0].out(`${JSON.stringify(framingCases[1].record)}\n`);
+		expect(oc.prompts).toEqual([
+			{ sessionID: "ses_1", text: framingCases[0].text, delivery: "queue" },
+			{ sessionID: "ses_2", text: framingCases[1].text, delivery: "queue" },
+		]);
+		await oc.dispose?.();
+	});
+
+	test("the event stream asks for the session events only", async () => {
+		const oc = await load2();
+		expect(oc.subscribed.length).toBe(1);
+		expect(oc.subscribed[0].types).toEqual(["session.created", "session.status", "session.idle", "session.execution.started"]);
+		expect(oc.subscribed[0].signal).toBeInstanceOf(AbortSignal);
+		await oc.dispose?.();
+	});
+
+	test("PUSH-05: without a session yet, messages wait and go to the first one in order", async () => {
+		const oc = await load2();
+		spawned[0].out(`${JSON.stringify(framingCases[0].record)}\n${JSON.stringify(framingCases[1].record)}\n`);
+		expect(oc.prompts).toEqual([]);
+		await oc.emit("session.created", { sessionID: "ses_9" });
+		expect(oc.prompts.map((p) => [p.sessionID, p.text])).toEqual([
+			["ses_9", framingCases[0].text],
+			["ses_9", framingCases[1].text],
+		]);
+		await oc.emit("session.idle", { sessionID: "ses_9" });
+		expect(oc.prompts.length).toBe(2);
+		await oc.dispose?.();
+	});
+
+	test("a new top-level session becomes the active one and is not looked up", async () => {
+		const oc = await load2();
+		await oc.emit("session.created", { sessionID: "ses_a" });
+		await oc.emit("session.created", { sessionID: "ses_b" });
+		await oc.emit("session.status", { sessionID: "ses_b", status: { type: "busy" } });
+		spawned[0].out(`${JSON.stringify(framingCases[0].record)}\n`);
+		expect(oc.prompts.map((p) => p.sessionID)).toEqual(["ses_b"]);
+		expect(oc.gets).toEqual([]);
+		await oc.dispose?.();
+	});
+
+	test("subagent sessions never become the active session", async () => {
+		const oc = await load2({ parents: { ses_old_sub: "ses_main" } });
+		await oc.emit("session.status", { sessionID: "ses_main", status: { type: "busy" } });
+		await oc.emit("session.created", { sessionID: "ses_sub", parentID: "ses_main" });
+		await oc.emit("session.status", { sessionID: "ses_sub", status: { type: "busy" } });
+		// a subagent created before the plugin subscribed is found through session.get
+		await oc.emit("session.execution.started", { sessionID: "ses_old_sub" });
+		spawned[0].out(`${JSON.stringify(framingCases[0].record)}\n`);
+		expect(oc.prompts.map((p) => p.sessionID)).toEqual(["ses_main"]);
+		expect(oc.gets).toEqual(["ses_main", "ses_old_sub"]);
+		await oc.dispose?.();
+	});
+
+	test("session.get answers either the bare record or { data }", async () => {
+		const oc = await load2({ wrapped: true, parents: { ses_sub: "ses_main" } });
+		await oc.emit("session.status", { sessionID: "ses_sub", status: { type: "busy" } });
+		await oc.emit("session.status", { sessionID: "ses_main", status: { type: "busy" } });
+		spawned[0].out(`${JSON.stringify(framingCases[0].record)}\n`);
+		expect(oc.prompts.map((p) => p.sessionID)).toEqual(["ses_main"]);
+		await oc.dispose?.();
+	});
+
+	test("a session that cannot be read counts as a top-level one", async () => {
+		const oc = await load2({ getFails: true });
+		await oc.emit("session.status", { sessionID: "ses_1", status: { type: "busy" } });
+		spawned[0].out(`${JSON.stringify(framingCases[0].record)}\n`);
+		expect(oc.prompts.map((p) => p.sessionID)).toEqual(["ses_1"]);
+		await oc.dispose?.();
+	});
+
+	test("events without a session id are ignored", async () => {
+		const oc = await load2();
+		await oc.emit("session.status", {});
+		spawned[0].out(`${JSON.stringify(framingCases[0].record)}\n`);
+		expect(oc.prompts).toEqual([]);
+		await oc.dispose?.();
+	});
+
+	for (const c of framingCases) {
+		test(`PUSH-06: framing - ${c.name}`, async () => {
+			const oc = await load2();
+			await oc.emit("session.idle", { sessionID: "ses_1" });
+			spawned[0].out(`${JSON.stringify(c.record)}\n`);
+			expect(oc.prompts.map((p) => p.text)).toEqual([c.text]);
+			await oc.dispose?.();
+		});
+	}
+
+	test("SES-05: exit code 3 is not restarted, other codes are, and stderr goes to the log", async () => {
+		const oc = await load2();
+		spawned[0].err("partyline: server unreachable\n");
+		spawned[0].exit(1);
+		expect(errors).toEqual(["partyline: server unreachable", "partyline: listen exited (code 1); restarting in 1s"]);
+		expect(time.delays()).toEqual([1000]);
+		time.fire();
+		spawned[1].exit(3);
+		expect(time.delays()).toEqual([]);
+		await oc.dispose?.();
+	});
+
+	for (const c of notices) {
+		test(`SES-04/SES-05: the ${c.reason} notice is logged, not sent to the model`, async () => {
+			const oc = await load2();
+			await oc.emit("session.idle", { sessionID: "ses_1" });
+			spawned[0].out(`${JSON.stringify(c.record)}\n`);
+			spawned[0].exit(3);
+			expect(oc.prompts).toEqual([]);
+			expect(errors).toEqual([c.record.content as string]);
+			expect(time.delays()).toEqual([]);
+			await oc.dispose?.();
+		});
+	}
+
+	test("a rejected prompt is logged", async () => {
+		const oc = await load2({ reject: true });
+		await oc.emit("session.idle", { sessionID: "ses_1" });
+		spawned[0].out(`${JSON.stringify(framingCases[0].record)}\n`);
+		await flush();
+		await flush();
+		expect(errors).toEqual(["partyline: could not deliver a room message: session not found"]);
+		await oc.dispose?.();
+	});
+
+	test("dispose ends the event stream and the running listen, and stops restarts", async () => {
+		const oc = await load2();
+		spawned[0].exit(1);
+		expect(time.delays()).toEqual([1000]);
+		await oc.dispose?.();
+		expect(time.delays()).toEqual([]);
+		time.fire();
+		expect(spawned.length).toBe(1);
+
+		const second = await load2();
+		await second.dispose?.();
+		expect(spawned[1].killed).toBe(true);
+		expect(second.subscribed[0].signal?.aborted).toBe(true);
 	});
 });

@@ -1,15 +1,22 @@
-// Partyline plugin for OpenCode.
+// Partyline plugin for OpenCode (1.4 and later, and 2.x).
 //
 // OpenCode's MCP client does not turn server notifications into turns, so this plugin runs
-// `partyline listen` for the project and sends each message to the active session with the
-// SDK's client.session.promptAsync (PUSH-05), framed with the trust line (PUSH-06). The active
-// session is the last top-level session that was created or reported its status; messages that arrive before
-// any session exists wait for one. A notice line (another session holds the AI or took it over,
-// SES-04, SES-05) goes to the log instead, and listen is not started again. The tools come from
+// `partyline listen` for the project and sends each message to the active session (PUSH-05),
+// framed with the trust line (PUSH-06): with the SDK's client.session.promptAsync in OpenCode 1,
+// with ctx.session.prompt in OpenCode 2. The active session is the last top-level session that
+// was created or reported its status; messages that arrive before any session exists wait for
+// one. A notice line (another session holds the AI or took it over, SES-04, SES-05) goes to the
+// log instead, and listen is not started again. The tools come from
 // `partyline channel --tools-only` in opencode.json, which acts as the same agent as this listen
 // process.
 //
-// OpenCode calls every export of a plugin file as a plugin: export nothing else.
+// The default export carries both entry points. OpenCode 1 reads `id` and `server`; OpenCode 2
+// requires a default export with `id` and `setup` (or `effect`) and ignores `server`. OpenCode 1
+// before 1.4 calls every export as a function and cannot load a default object.
+//
+// OpenCode 2 runs plugins in its background server. That process has the environment of
+// whoever started it, so the launcher's PARTYLINE_HARNESS reaches the plugin only when the server
+// belongs to the window (`partyline opencode --standalone`); otherwise use `partyline setup --always`.
 
 import { spawn } from "node:child_process";
 
@@ -189,6 +196,45 @@ function listening(always: boolean, env: Record<string, string | undefined> = pr
 	return always || (env.PARTYLINE_HARNESS ?? "").trim() !== "";
 }
 
+// bridge connects `partyline listen` to the sessions of one OpenCode project. It is the part of
+// the plugin that does not depend on the OpenCode version: both plugin APIs below hand it the
+// session ids they learn about and a function that puts text into a session.
+function startBridge(opts: { directory?: string; log: (message: string) => void; send: (id: string, text: string) => void }) {
+	let active: string | undefined;
+	const children = new Set<string>(); // subagent sessions never become the active one
+	const waiting: string[] = [];
+
+	const listener = superviseListen({
+		binary: PARTYLINE_BINARY,
+		cwd: opts.directory,
+		harness: "opencode",
+		log: opts.log,
+		onLine: (record) => {
+			// A notice (another session holds the AI) is for the person, not for the model.
+			if (record.type === "notice") {
+				opts.log(record.content ?? "");
+				return;
+			}
+			const text = frame(record);
+			if (active) opts.send(active, text);
+			else waiting.push(text);
+		},
+	});
+
+	return {
+		stop: () => listener.stop(),
+		children,
+		// activate makes id the session messages go to and hands it what waited for a session.
+		activate(id: string) {
+			if (children.has(id)) return;
+			active = id;
+			for (const text of waiting.splice(0)) opts.send(id, text);
+		},
+	};
+}
+
+// --- OpenCode 1: the plugin function (and `server` of the default export) ---
+
 export const PartylinePlugin = async ({ client, directory }: { client: Client; directory?: string }) => {
 	if (!listening(PARTYLINE_ALWAYS)) {
 		return { event: async () => undefined, dispose: async () => undefined };
@@ -198,9 +244,6 @@ export const PartylinePlugin = async ({ client, directory }: { client: Client; d
 		if (sent) sent.catch(() => console.error(message));
 		else console.error(message);
 	};
-	let active: string | undefined;
-	const children = new Set<string>(); // subagent sessions never become the active one
-	const waiting: string[] = [];
 
 	const prompt = (id: string, text: string) => {
 		const session = client.session;
@@ -219,22 +262,7 @@ export const PartylinePlugin = async ({ client, directory }: { client: Client; d
 		);
 	};
 
-	const listener = superviseListen({
-		binary: PARTYLINE_BINARY,
-		cwd: directory,
-		harness: "opencode",
-		log,
-		onLine: (record) => {
-			// A notice (another session holds the AI) is for the person, not for the model.
-			if (record.type === "notice") {
-				log(record.content ?? "");
-				return;
-			}
-			const text = frame(record);
-			if (active) prompt(active, text);
-			else waiting.push(text);
-		},
-	});
+	const bridge = startBridge({ directory, log, send: prompt });
 
 	return {
 		event: async ({ event }: { event: Event }) => {
@@ -242,7 +270,7 @@ export const PartylinePlugin = async ({ client, directory }: { client: Client; d
 			let id: unknown;
 			if (event.type === "session.created" || event.type === "session.updated") {
 				const info = props.info as { id?: string; parentID?: string } | undefined;
-				if (info?.id && info.parentID) children.add(info.id);
+				if (info?.id && info.parentID) bridge.children.add(info.id);
 				// A new top-level session is where the user works next.
 				if (event.type !== "session.created" || !info?.id || info.parentID) return;
 				id = info.id;
@@ -251,10 +279,102 @@ export const PartylinePlugin = async ({ client, directory }: { client: Client; d
 			} else {
 				return;
 			}
-			if (typeof id !== "string" || children.has(id)) return;
-			active = id;
-			for (const text of waiting.splice(0)) prompt(id, text);
+			if (typeof id !== "string") return;
+			bridge.activate(id);
 		},
-		dispose: async () => listener.stop(),
+		dispose: async () => bridge.stop(),
 	};
+};
+
+// --- OpenCode 2: the setup function of the default export ---
+
+// What setup uses of OpenCode 2's plugin context (the Promise API of @opencode/plugin): the
+// session domain (prompt, get), the event stream and the project's location. The types are
+// declared here because the plugin file imports nothing from OpenCode.
+type SessionInfo = { id?: string; parentID?: string };
+type Context2 = {
+	location?: { directory?: string };
+	session: {
+		prompt: (input: { sessionID: string; text: string; delivery?: "steer" | "queue" }) => Promise<unknown>;
+		get: (input: { sessionID: string }) => Promise<SessionInfo | { data?: SessionInfo } | undefined>;
+	};
+	event: {
+		subscribe: (options?: { types?: string[]; signal?: AbortSignal }) => AsyncIterable<{ type: string; data?: Record<string, unknown> }>;
+	};
+};
+
+// The events that tell which session the user works in: a session was created, reports its
+// status (busy/idle; session.idle is its older form) or started a turn.
+const SESSION_EVENTS_2 = ["session.created", "session.status", "session.idle", "session.execution.started"];
+
+export async function setupOpenCode2(ctx: Context2): Promise<(() => Promise<void>) | undefined> {
+	if (!listening(PARTYLINE_ALWAYS)) return undefined;
+	// OpenCode 2 runs plugins in a background server process: its log is not the person's
+	// terminal and has no log call for plugins, so notices and failures go to its stderr.
+	const log = (message: string) => console.error(message);
+
+	const send = (id: string, text: string) => {
+		// delivery "queue": the message is a follow-up that starts after the turn in progress,
+		// as promptAsync does in OpenCode 1 (the default, "steer", lands in the middle of the turn).
+		ctx.session.prompt({ sessionID: id, text, delivery: "queue" }).catch((err: unknown) => {
+			log(`partyline: could not deliver a room message: ${err instanceof Error ? err.message : String(err)}`);
+		});
+	};
+	const bridge = startBridge({ directory: ctx.location?.directory, log, send });
+
+	// A session met through a status event may be a subagent that was created before this
+	// plugin subscribed: ask OpenCode for its parent once.
+	const seen = new Set<string>();
+	const consider = async (id: string) => {
+		if (bridge.children.has(id)) return;
+		if (!seen.has(id)) {
+			try {
+				const res = await ctx.session.get({ sessionID: id });
+				const info = res && "data" in res ? res.data : (res as SessionInfo | undefined);
+				if (info?.parentID) bridge.children.add(id);
+			} catch {
+				// A session that cannot be read counts as a top-level one, as in OpenCode 1.
+			}
+			seen.add(id);
+			if (bridge.children.has(id)) return;
+		}
+		bridge.activate(id);
+	};
+
+	const stopped = new AbortController();
+	const consuming = (async () => {
+		for await (const event of ctx.event.subscribe({ types: SESSION_EVENTS_2, signal: stopped.signal })) {
+			if (stopped.signal.aborted) break;
+			const data = event.data ?? {};
+			const id = data.sessionID;
+			if (typeof id !== "string") continue;
+			if (event.type === "session.created") {
+				if (typeof data.parentID === "string") {
+					bridge.children.add(id);
+				} else {
+					// A new top-level session is where the user works next.
+					seen.add(id);
+					bridge.activate(id);
+				}
+			} else if (SESSION_EVENTS_2.includes(event.type)) {
+				await consider(id);
+			}
+		}
+	})().catch((err: unknown) => {
+		if (!stopped.signal.aborted) log(`partyline: the OpenCode event stream failed: ${err instanceof Error ? err.message : String(err)}`);
+	});
+
+	return async () => {
+		stopped.abort();
+		bridge.stop();
+		await consuming;
+	};
+}
+
+// OpenCode 1 (1.4 and later) loads a default export with `id` and `server`; OpenCode 2 loads
+// one with `id` and `setup` (or `effect`). Each reads its own member and ignores the other.
+export default {
+	id: "partyline",
+	server: PartylinePlugin,
+	setup: setupOpenCode2,
 };
