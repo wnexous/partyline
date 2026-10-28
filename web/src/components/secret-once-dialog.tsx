@@ -39,11 +39,7 @@ export function SecretOnceDialog({
 }) {
   return (
     <Dialog open={secret !== null} onOpenChange={(open) => (open ? null : onClose())}>
-      <DialogContent
-        className="sm:max-w-lg"
-        closeLabel={confirmLabel}
-        onInteractOutside={(e) => e.preventDefault()}
-      >
+      <DialogContent className="sm:max-w-lg" onInteractOutside={(e) => e.preventDefault()}>
         <DialogHeader>
           <DialogTitle>{title}</DialogTitle>
           {description ? <DialogDescription>{description}</DialogDescription> : null}
