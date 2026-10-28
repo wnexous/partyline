@@ -1,5 +1,5 @@
-import type { Conversation, IntelligenceRef, Room } from "@/lib/api/types.gen";
-import { ConversationKindDM } from "@/lib/api/types.gen";
+import type { Conversation, IntelligenceRef, Room } from "@/shared/api/types.gen";
+import { ConversationKindDM } from "@/shared/api/types.gen";
 
 /**
  * A group has no profile: its initials and colour come from its name and room id, and its picture

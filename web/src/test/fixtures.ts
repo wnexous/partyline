@@ -21,7 +21,7 @@ import type {
   ProfileMembership,
   Room,
   RoomMember,
-} from "@/lib/api/types.gen";
+} from "@/shared/api/types.gen";
 
 /** Synthetic fixtures; never real names, numbers or chat ids. */
 

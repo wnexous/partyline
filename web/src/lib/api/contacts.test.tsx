@@ -2,6 +2,8 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { act, renderHook, waitFor } from "@testing-library/react";
 import type { ReactNode } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { ApiError } from "@/shared/api/client";
+import type { Contacts, IntelligenceProfile, IntelligenceRef } from "@/shared/api/types.gen";
 import { apiError, json, mockApi } from "@/test/fetch";
 import {
   makeAgent,
@@ -13,7 +15,6 @@ import {
   makePerson,
   makeProfile,
 } from "@/test/fixtures";
-import { ApiError } from "./client";
 import {
   queryKeys,
   useContacts,
@@ -22,7 +23,6 @@ import {
   useMergeAgent,
   usePeople,
 } from "./queries";
-import type { Contacts, IntelligenceProfile, IntelligenceRef } from "./types.gen";
 
 /*
  * The hooks behind the contacts and profile pages (T42 part 2): what each one asks of the server

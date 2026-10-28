@@ -1,8 +1,14 @@
 import { type ReactNode, useMemo, useState } from "react";
 import { PickableMeta } from "@/components/contact-meta";
-import { FormAlert } from "@/components/form-fields";
-import { Button } from "@/components/ui/button";
-import { Command, CommandInput, CommandItem, CommandList } from "@/components/ui/command";
+import { IntelligenceAvatar, IntelligenceName } from "@/entities/intelligence";
+import { useStartConversation } from "@/hooks/use-start-conversation";
+import { useContacts } from "@/lib/api/queries";
+import { type Pickable, pickableList } from "@/lib/contacts";
+import { matchesTerms } from "@/lib/conversations";
+import { useLiveStore } from "@/lib/live/store";
+import { withContactPresence } from "@/lib/presence";
+import type { IntelligenceRef } from "@/shared/api/types.gen";
+import { useT } from "@/shared/i18n";
 import {
   Dialog,
   DialogContent,
@@ -10,17 +16,11 @@ import {
   DialogHeader,
   DialogTitle,
   DialogTrigger,
-} from "@/components/ui/dialog";
-import { Skeleton } from "@/components/ui/skeleton";
-import { IntelligenceAvatar, IntelligenceName } from "@/entities/intelligence";
-import { useStartConversation } from "@/hooks/use-start-conversation";
-import { useContacts } from "@/lib/api/queries";
-import type { IntelligenceRef } from "@/lib/api/types.gen";
-import { type Pickable, pickableList } from "@/lib/contacts";
-import { matchesTerms } from "@/lib/conversations";
-import { useT } from "@/lib/i18n";
-import { useLiveStore } from "@/lib/live/store";
-import { withContactPresence } from "@/lib/presence";
+} from "@/shared/ui/molecules/dialog";
+import { FormAlert } from "@/shared/ui/molecules/form-fields";
+import { Button } from "@/shared/ui/primitives/button";
+import { Command, CommandInput, CommandItem, CommandList } from "@/shared/ui/primitives/command";
+import { Skeleton } from "@/shared/ui/primitives/skeleton";
 
 /*
  * "New conversation" (LAY-03, DM-01): pick an intelligence the user can see and open the one DM

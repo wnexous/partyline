@@ -2,15 +2,15 @@ import { SmilePlusIcon } from "lucide-react";
 import { Toolbar } from "radix-ui";
 import { useState } from "react";
 import { ReactionPicker } from "@/components/reaction-picker";
+import { QUICK_REACTIONS } from "@/lib/reactions";
+import { useT } from "@/shared/i18n";
+import { cn } from "@/shared/lib/utils";
 import {
   DropdownMenuGroup,
   DropdownMenuItem,
   DropdownMenuSeparator,
-} from "@/components/ui/dropdown-menu";
-import { PopoverTrigger } from "@/components/ui/popover";
-import { useT } from "@/lib/i18n";
-import { QUICK_REACTIONS } from "@/lib/reactions";
-import { cn } from "@/lib/utils";
+} from "@/shared/ui/primitives/dropdown-menu";
+import { PopoverTrigger } from "@/shared/ui/primitives/popover";
 
 /*
  * The six emoji at hand (RCT-02), in the three places a message offers them: a bar in the action sheet of a

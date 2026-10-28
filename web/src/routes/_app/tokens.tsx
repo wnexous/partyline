@@ -4,10 +4,32 @@ import { KeyRoundIcon, PlusIcon } from "lucide-react";
 import { useId, useMemo, useState } from "react";
 import { Controller, useForm } from "react-hook-form";
 import { toast } from "sonner";
-import { EmptyState } from "@/components/empty-state";
-import { FormAlert, TextField } from "@/components/form-fields";
-import { PageHeader } from "@/components/page-header";
 import { SecretOnceDialog } from "@/components/secret-once-dialog";
+import { useCreateToken, usePurgeToken, useRevokeToken, useTokens } from "@/lib/api/queries";
+import { type CreateTokenForm, createTokenSchema, TOKEN_EXPIRY_DAYS } from "@/lib/schemas";
+import { readStorage, writeStorage } from "@/lib/theme";
+import { isApiError } from "@/shared/api/client";
+import {
+  type CreatedToken,
+  type Token,
+  TokenKindAgent,
+  TokenKindUser,
+} from "@/shared/api/types.gen";
+import { type MessageKey, useI18n, useT } from "@/shared/i18n";
+import { applyFieldErrors } from "@/shared/lib/forms";
+import { formatAbsolute, formatRelative } from "@/shared/lib/time";
+import { cn } from "@/shared/lib/utils";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/shared/ui/molecules/dialog";
+import { EmptyState } from "@/shared/ui/molecules/empty-state";
+import { FormAlert, TextField } from "@/shared/ui/molecules/form-fields";
+import { PageHeader } from "@/shared/ui/molecules/page-header";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -17,29 +39,12 @@ import {
   AlertDialogFooter,
   AlertDialogHeader,
   AlertDialogTitle,
-} from "@/components/ui/alert-dialog";
-import { Button } from "@/components/ui/button";
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from "@/components/ui/dialog";
-import { Form } from "@/components/ui/form";
-import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
-import { Skeleton } from "@/components/ui/skeleton";
-import { Switch } from "@/components/ui/switch";
-import { isApiError } from "@/lib/api/client";
-import { useCreateToken, usePurgeToken, useRevokeToken, useTokens } from "@/lib/api/queries";
-import { type CreatedToken, type Token, TokenKindAgent, TokenKindUser } from "@/lib/api/types.gen";
-import { applyFieldErrors } from "@/lib/forms";
-import { type MessageKey, useI18n, useT } from "@/lib/i18n";
-import { type CreateTokenForm, createTokenSchema, TOKEN_EXPIRY_DAYS } from "@/lib/schemas";
-import { readStorage, writeStorage } from "@/lib/theme";
-import { formatAbsolute, formatRelative } from "@/lib/time";
-import { cn } from "@/lib/utils";
+} from "@/shared/ui/primitives/alert-dialog";
+import { Button } from "@/shared/ui/primitives/button";
+import { Form } from "@/shared/ui/primitives/form";
+import { RadioGroup, RadioGroupItem } from "@/shared/ui/primitives/radio-group";
+import { Skeleton } from "@/shared/ui/primitives/skeleton";
+import { Switch } from "@/shared/ui/primitives/switch";
 
 export const Route = createFileRoute("/_app/tokens")({
   component: TokensPage,

@@ -7,18 +7,18 @@ import {
   TimerOffIcon,
 } from "lucide-react";
 import { type FormEvent, type ReactNode, useEffect, useId, useState } from "react";
-import { EmptyState } from "@/components/empty-state";
-import { FormAlert } from "@/components/form-fields";
-import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
-import { useAutoFocus } from "@/hooks/use-auto-focus";
-import { isApiError } from "@/lib/api/client";
 import { useDeviceAction } from "@/lib/api/queries";
-import type { DeviceRequest } from "@/lib/api/types.gen";
-import { type Translate, useI18n, useT } from "@/lib/i18n";
-import { formatAbsolute, formatRelative } from "@/lib/time";
-import { cn } from "@/lib/utils";
+import { isApiError } from "@/shared/api/client";
+import type { DeviceRequest } from "@/shared/api/types.gen";
+import { type Translate, useI18n, useT } from "@/shared/i18n";
+import { useAutoFocus } from "@/shared/lib/device";
+import { formatAbsolute, formatRelative } from "@/shared/lib/time";
+import { cn } from "@/shared/lib/utils";
+import { EmptyState } from "@/shared/ui/molecules/empty-state";
+import { FormAlert } from "@/shared/ui/molecules/form-fields";
+import { Button } from "@/shared/ui/primitives/button";
+import { Input } from "@/shared/ui/primitives/input";
+import { Label } from "@/shared/ui/primitives/label";
 
 /*
  * Approve a machine (WIZ-02, DEV-02, DEV-05): `partyline setup --browser` prints this page's

@@ -10,36 +10,9 @@ import {
 import { type ReactNode, useEffect, useId, useState } from "react";
 import { toast } from "sonner";
 import { ConnectorStatusBadge, useConnectorState } from "@/components/connector-status";
-import { CodeBlock } from "@/components/copy-field";
-import { EmptyState } from "@/components/empty-state";
-import { FormAlert } from "@/components/form-fields";
 import { chatTitle, platformLabel } from "@/components/message-item";
-import { NativeSelect } from "@/components/native-select";
 import { NamedSentence } from "@/components/profile-link";
 import { ConnectorForm } from "@/components/schema-form";
-import {
-  AlertDialog,
-  AlertDialogAction,
-  AlertDialogCancel,
-  AlertDialogContent,
-  AlertDialogDescription,
-  AlertDialogFooter,
-  AlertDialogHeader,
-  AlertDialogTitle,
-  AlertDialogTrigger,
-} from "@/components/ui/alert-dialog";
-import { Button } from "@/components/ui/button";
-import {
-  Sheet,
-  SheetContent,
-  SheetDescription,
-  SheetHeader,
-  SheetTitle,
-  SheetTrigger,
-} from "@/components/ui/sheet";
-import { Skeleton } from "@/components/ui/skeleton";
-import { Switch } from "@/components/ui/switch";
-import { isApiError } from "@/lib/api/client";
 import {
   useConnector,
   useConnectorChats,
@@ -50,6 +23,8 @@ import {
   useRefreshChats,
   useUpdateConnector,
 } from "@/lib/api/queries";
+import { allAIs } from "@/lib/contacts";
+import { isApiError } from "@/shared/api/client";
 import {
   type Connector,
   type ConnectorDeliver,
@@ -59,10 +34,35 @@ import {
   type ConnectorKind,
   LevelManage,
   type UpdateConnectorRequest,
-} from "@/lib/api/types.gen";
-import { allAIs } from "@/lib/contacts";
-import { type MessageKey, useI18n, useT } from "@/lib/i18n";
-import { formatAbsolute, formatRelative } from "@/lib/time";
+} from "@/shared/api/types.gen";
+import { type MessageKey, useI18n, useT } from "@/shared/i18n";
+import { formatAbsolute, formatRelative } from "@/shared/lib/time";
+import { NativeSelect } from "@/shared/ui/atoms/native-select";
+import { CodeBlock } from "@/shared/ui/molecules/copy-field";
+import { EmptyState } from "@/shared/ui/molecules/empty-state";
+import { FormAlert } from "@/shared/ui/molecules/form-fields";
+import {
+  Sheet,
+  SheetContent,
+  SheetDescription,
+  SheetHeader,
+  SheetTitle,
+  SheetTrigger,
+} from "@/shared/ui/molecules/sheet";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+  AlertDialogTrigger,
+} from "@/shared/ui/primitives/alert-dialog";
+import { Button } from "@/shared/ui/primitives/button";
+import { Skeleton } from "@/shared/ui/primitives/skeleton";
+import { Switch } from "@/shared/ui/primitives/switch";
 
 export const Route = createFileRoute("/_app/orgs/$orgId/connections/$connectorId")({
   component: ConnectorPage,

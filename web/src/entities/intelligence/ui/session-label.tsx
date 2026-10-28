@@ -1,5 +1,5 @@
-import { useT } from "@/lib/i18n";
-import { cn } from "@/lib/utils";
+import { useT } from "@/shared/i18n";
+import { cn } from "@/shared/lib/utils";
 
 /**
  * One live session of an AI, named the way it is addressed: `:label`, or "principal" for the main

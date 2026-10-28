@@ -4,8 +4,8 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import { axe } from "vitest-axe";
 import * as matchers from "vitest-axe/matchers";
 import { ReactionChips } from "@/components/reaction-chips";
-import type { Reaction } from "@/lib/api/types.gen";
 import { useLiveStore } from "@/lib/live/store";
+import type { Reaction } from "@/shared/api/types.gen";
 import { renderWithProviders } from "@/test/render";
 
 expect.extend(matchers);

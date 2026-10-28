@@ -1,9 +1,9 @@
 import { type QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { type ReactNode, useEffect } from "react";
-import { TooltipProvider } from "@/components/ui/tooltip";
-import { I18nProvider } from "@/lib/i18n";
 import { useLiveStore } from "@/lib/live/store";
 import { applyTheme } from "@/lib/theme";
+import { I18nProvider } from "@/shared/i18n";
+import { TooltipProvider } from "@/shared/ui/primitives/tooltip";
 
 /** Applies the theme preference and follows the system scheme while it is "system" (UI-23). */
 function useThemeSync() {

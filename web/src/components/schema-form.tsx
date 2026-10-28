@@ -3,17 +3,6 @@ import { XIcon } from "lucide-react";
 import { type KeyboardEvent, type ReactNode, useMemo, useState } from "react";
 import { type Path, useForm } from "react-hook-form";
 import { z } from "zod";
-import { FieldError, FormAlert, TextField } from "@/components/form-fields";
-import { Button } from "@/components/ui/button";
-import {
-  Form,
-  FormControl,
-  FormDescription,
-  FormField,
-  FormItem,
-  FormLabel,
-} from "@/components/ui/form";
-import { Switch } from "@/components/ui/switch";
 import {
   type ConnectorField,
   type ConnectorKind,
@@ -21,9 +10,20 @@ import {
   FieldTypeSecret,
   FieldTypeStringList,
   FieldTypeURL,
-} from "@/lib/api/types.gen";
-import { type MessageKey, useT } from "@/lib/i18n";
-import { cn } from "@/lib/utils";
+} from "@/shared/api/types.gen";
+import { type MessageKey, useT } from "@/shared/i18n";
+import { cn } from "@/shared/lib/utils";
+import { FieldError, FormAlert, TextField } from "@/shared/ui/molecules/form-fields";
+import { Button } from "@/shared/ui/primitives/button";
+import {
+  Form,
+  FormControl,
+  FormDescription,
+  FormField,
+  FormItem,
+  FormLabel,
+} from "@/shared/ui/primitives/form";
+import { Switch } from "@/shared/ui/primitives/switch";
 
 /*
  * Connector forms rendered from the kind's field schema (AD-007, UI-16): string → text,

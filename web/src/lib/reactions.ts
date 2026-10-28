@@ -1,4 +1,4 @@
-import { MaxMessageEmoji, type Reaction } from "@/lib/api/types.gen";
+import { MaxMessageEmoji, type Reaction } from "@/shared/api/types.gen";
 
 /*
  * The emoji a message is reacted with (RCT-01, RCT-02) and what one reaction does to the list a message

@@ -14,7 +14,7 @@ import type {
   Organization,
   Room,
   Token,
-} from "../src/lib/api/types.gen";
+} from "../src/shared/api/types.gen";
 import { ADMIN, apiCall, expect, MEMBER, settled, test } from "./fixtures";
 import {
   agentJSON,

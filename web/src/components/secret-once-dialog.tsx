@@ -1,7 +1,6 @@
 import { TriangleAlertIcon } from "lucide-react";
 import type { ReactNode } from "react";
-import { CodeBlock } from "@/components/copy-field";
-import { Button } from "@/components/ui/button";
+import { CodeBlock } from "@/shared/ui/molecules/copy-field";
 import {
   Dialog,
   DialogContent,
@@ -9,7 +8,8 @@ import {
   DialogFooter,
   DialogHeader,
   DialogTitle,
-} from "@/components/ui/dialog";
+} from "@/shared/ui/molecules/dialog";
+import { Button } from "@/shared/ui/primitives/button";
 
 /*
  * A secret the server returns exactly once (token secret, invite link): shown with a copy

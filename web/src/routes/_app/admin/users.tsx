@@ -2,8 +2,13 @@ import { createFileRoute } from "@tanstack/react-router";
 import { UsersIcon } from "lucide-react";
 import { useId, useState } from "react";
 import { toast } from "sonner";
-import { EmptyState } from "@/components/empty-state";
-import { PageHeader } from "@/components/page-header";
+import { useAdminUsers, useMe, useUpdateUser } from "@/lib/api/queries";
+import { type AdminUser, type Role, RoleAdmin, RoleMember } from "@/shared/api/types.gen";
+import { useI18n, useT } from "@/shared/i18n";
+import { formatAbsolute } from "@/shared/lib/time";
+import { cn } from "@/shared/lib/utils";
+import { EmptyState } from "@/shared/ui/molecules/empty-state";
+import { PageHeader } from "@/shared/ui/molecules/page-header";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -13,16 +18,11 @@ import {
   AlertDialogFooter,
   AlertDialogHeader,
   AlertDialogTitle,
-} from "@/components/ui/alert-dialog";
-import { Button } from "@/components/ui/button";
-import { Skeleton } from "@/components/ui/skeleton";
-import { Switch } from "@/components/ui/switch";
-import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
-import { useAdminUsers, useMe, useUpdateUser } from "@/lib/api/queries";
-import { type AdminUser, type Role, RoleAdmin, RoleMember } from "@/lib/api/types.gen";
-import { useI18n, useT } from "@/lib/i18n";
-import { formatAbsolute } from "@/lib/time";
-import { cn } from "@/lib/utils";
+} from "@/shared/ui/primitives/alert-dialog";
+import { Button } from "@/shared/ui/primitives/button";
+import { Skeleton } from "@/shared/ui/primitives/skeleton";
+import { Switch } from "@/shared/ui/primitives/switch";
+import { ToggleGroup, ToggleGroupItem } from "@/shared/ui/primitives/toggle-group";
 
 export const Route = createFileRoute("/_app/admin/users")({
   component: AdminUsersPage,

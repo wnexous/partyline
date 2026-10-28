@@ -1,6 +1,6 @@
 import { useEffect } from "react";
-import { useDocumentVisible } from "@/hooks/use-document-visible";
 import { useLiveStore } from "@/lib/live/store";
+import { useDocumentVisible } from "@/shared/lib/use-document-visible";
 
 /**
  * Marks `roomId` as the conversation being looked at while its page is mounted and the tab is

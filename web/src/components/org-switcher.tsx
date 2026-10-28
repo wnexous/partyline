@@ -4,7 +4,12 @@ import { useId, useMemo, useState } from "react";
 import { NewOrgDialog } from "@/components/new-org-dialog";
 import { OrgAvatar } from "@/components/org-avatar";
 import { OrgPageItems } from "@/components/organization-menu";
-import { Button } from "@/components/ui/button";
+import { useCurrentOrg } from "@/hooks/use-current-org";
+import { useConversations } from "@/lib/api/queries";
+import { type MyOrg, permissionLabel, unreadByOrg, unreadOutsideOrg } from "@/lib/orgs";
+import { type Translate, useT } from "@/shared/i18n";
+import { cn } from "@/shared/lib/utils";
+import { Button } from "@/shared/ui/primitives/button";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -15,13 +20,8 @@ import {
   DropdownMenuRadioItem,
   DropdownMenuSeparator,
   DropdownMenuTrigger,
-} from "@/components/ui/dropdown-menu";
-import { Skeleton } from "@/components/ui/skeleton";
-import { useCurrentOrg } from "@/hooks/use-current-org";
-import { useConversations } from "@/lib/api/queries";
-import { type Translate, useT } from "@/lib/i18n";
-import { type MyOrg, permissionLabel, unreadByOrg, unreadOutsideOrg } from "@/lib/orgs";
-import { cn } from "@/lib/utils";
+} from "@/shared/ui/primitives/dropdown-menu";
+import { Skeleton } from "@/shared/ui/primitives/skeleton";
 
 /*
  * The organization switcher (ORG-01, ORG-02): the organization the sidebar, the connections and

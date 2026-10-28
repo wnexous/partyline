@@ -5,13 +5,13 @@ import { MemberPicker } from "@/components/member-picker";
 import { ProfilePanel } from "@/components/profile-panel";
 import { RoomFiles } from "@/components/room-files";
 import { useProfilePanel, useProfilePanelStore } from "@/hooks/use-profile-panel";
+import { useLiveStore } from "@/lib/live/store";
 import type {
   IntelligenceProfile,
   ProfileMembership,
   RoomMember,
   RoomRef,
-} from "@/lib/api/types.gen";
-import { useLiveStore } from "@/lib/live/store";
+} from "@/shared/api/types.gen";
 import { apiError, json, mockApi } from "@/test/fetch";
 import {
   makeAgent,

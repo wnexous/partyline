@@ -1,5 +1,5 @@
-import type { AIContact } from "@/lib/api/types.gen";
 import type { Presence } from "@/lib/live/store";
+import type { AIContact } from "@/shared/api/types.gen";
 
 /**
  * An AI of the contacts with its live presence folded in (the store wins over the fetched list):

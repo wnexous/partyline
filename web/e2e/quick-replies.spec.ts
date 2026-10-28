@@ -7,7 +7,7 @@ import type {
   Room,
   SetupRequest,
   WizardQuestionRequest,
-} from "../src/lib/api/types.gen";
+} from "../src/shared/api/types.gen";
 import { apiCall, test as base, type Credentials, expect, settled } from "./fixtures";
 import { agentJSON, connectAI, loginAs, MACHINE } from "./helpers";
 import { type Instance, startInstance } from "./server";

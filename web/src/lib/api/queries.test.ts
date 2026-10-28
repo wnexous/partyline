@@ -1,6 +1,6 @@
 import { QueryClient } from "@tanstack/react-query";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import type { Conversation } from "@/lib/api/types.gen";
+import type { Conversation } from "@/shared/api/types.gen";
 import { makeConversation, makeMessage } from "@/test/fixtures";
 import { markConversationRead, olderPageCursor, queryKeys, roomMessagesQuery } from "./queries";
 

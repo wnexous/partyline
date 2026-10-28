@@ -2,8 +2,22 @@ import { zodResolver } from "@hookform/resolvers/zod";
 import { useMemo, useState } from "react";
 import { useForm } from "react-hook-form";
 import { toast } from "sonner";
-import { FormAlert, SelectField, TextField } from "@/components/form-fields";
-import { Button } from "@/components/ui/button";
+import { IntelligenceAvatar, IntelligenceName } from "@/entities/intelligence";
+import { useContacts, useInviteToOrg } from "@/lib/api/queries";
+import { inviteCandidates } from "@/lib/contacts";
+import { positionOptions } from "@/lib/org-chart";
+import { PermissionAdmin, PermissionGuest, PermissionMember, permissionLabel } from "@/lib/orgs";
+import { type InviteFormValues, inviteSchema } from "@/lib/schemas";
+import { isApiError } from "@/shared/api/client";
+import {
+  ErrorCodeAlreadyMember,
+  ErrorCodeContactNotFound,
+  type OrgMember,
+  type Permission,
+  type Position,
+} from "@/shared/api/types.gen";
+import { useT } from "@/shared/i18n";
+import { applyFieldErrors } from "@/shared/lib/forms";
 import {
   Dialog,
   DialogContent,
@@ -11,24 +25,10 @@ import {
   DialogFooter,
   DialogHeader,
   DialogTitle,
-} from "@/components/ui/dialog";
-import { Form } from "@/components/ui/form";
-import { IntelligenceAvatar, IntelligenceName } from "@/entities/intelligence";
-import { isApiError } from "@/lib/api/client";
-import { useContacts, useInviteToOrg } from "@/lib/api/queries";
-import {
-  ErrorCodeAlreadyMember,
-  ErrorCodeContactNotFound,
-  type OrgMember,
-  type Permission,
-  type Position,
-} from "@/lib/api/types.gen";
-import { inviteCandidates } from "@/lib/contacts";
-import { applyFieldErrors } from "@/lib/forms";
-import { useT } from "@/lib/i18n";
-import { positionOptions } from "@/lib/org-chart";
-import { PermissionAdmin, PermissionGuest, PermissionMember, permissionLabel } from "@/lib/orgs";
-import { type InviteFormValues, inviteSchema } from "@/lib/schemas";
+} from "@/shared/ui/molecules/dialog";
+import { FormAlert, SelectField, TextField } from "@/shared/ui/molecules/form-fields";
+import { Button } from "@/shared/ui/primitives/button";
+import { Form } from "@/shared/ui/primitives/form";
 
 /**
  * Invites someone to the organization by @handle (OMEM-01). An admin gives any permission and

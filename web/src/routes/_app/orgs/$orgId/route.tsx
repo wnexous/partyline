@@ -3,15 +3,15 @@ import { ArrowLeftIcon } from "lucide-react";
 import { useEffect } from "react";
 import { OrgAvatar } from "@/components/org-avatar";
 import { OrgNotFound } from "@/components/org-not-found";
-import { Badge } from "@/components/ui/badge";
-import { Button } from "@/components/ui/button";
-import { Skeleton } from "@/components/ui/skeleton";
-import { isApiError } from "@/lib/api/client";
 import { useOrg } from "@/lib/api/queries";
-import type { Organization } from "@/lib/api/types.gen";
-import { useT } from "@/lib/i18n";
 import { PermissionAdmin, permissionLabel } from "@/lib/orgs";
-import { cn } from "@/lib/utils";
+import { isApiError } from "@/shared/api/client";
+import type { Organization } from "@/shared/api/types.gen";
+import { useT } from "@/shared/i18n";
+import { cn } from "@/shared/lib/utils";
+import { Badge } from "@/shared/ui/primitives/badge";
+import { Button } from "@/shared/ui/primitives/button";
+import { Skeleton } from "@/shared/ui/primitives/skeleton";
 
 export const Route = createFileRoute("/_app/orgs/$orgId")({
   component: OrgLayout,

@@ -1,5 +1,5 @@
 import { create } from "zustand";
-import type { AttachedFile } from "@/components/attachment-preview";
+import type { AttachedFile } from "@/shared/ui/molecules/attachment-preview";
 
 /*
  * Composer drafts (WA-07): what was typed, attached and chosen to answer in each conversation,

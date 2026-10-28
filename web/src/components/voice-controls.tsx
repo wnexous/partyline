@@ -1,10 +1,10 @@
 import { ChevronLeftIcon, MicIcon, SendHorizontalIcon } from "lucide-react";
 import { type PointerEvent, type Ref, useEffect, useRef } from "react";
-import { Button } from "@/components/ui/button";
 import type { VoicePhase } from "@/hooks/use-voice-recorder";
-import { useI18n } from "@/lib/i18n";
-import { cn } from "@/lib/utils";
 import { formatDuration, HOLD_MS, SLIDE_CANCEL_PX } from "@/lib/voice";
+import { useI18n } from "@/shared/i18n";
+import { cn } from "@/shared/lib/utils";
+import { Button } from "@/shared/ui/primitives/button";
 
 /*
  * The microphone button and the recording bar of the composer (VOI-02, VOI-03). One button does

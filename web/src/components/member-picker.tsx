@@ -3,7 +3,16 @@ import { PlusIcon, SearchIcon } from "lucide-react";
 import { type ReactNode, useMemo, useState } from "react";
 import { toast } from "sonner";
 import { PickableMeta } from "@/components/contact-meta";
-import { Button } from "@/components/ui/button";
+import { IntelligenceAvatar, IntelligenceName } from "@/entities/intelligence";
+import { useOrgUsers } from "@/hooks/use-org-users";
+import { useAddMember, useContacts, useRoom } from "@/lib/api/queries";
+import { type Pickable, pickableList } from "@/lib/contacts";
+import { matchesTerms } from "@/lib/conversations";
+import { useLiveStore } from "@/lib/live/store";
+import { withContactPresence } from "@/lib/presence";
+import type { MemberKind, RoomMember } from "@/shared/api/types.gen";
+import { useI18n } from "@/shared/i18n";
+import { useAutoFocus } from "@/shared/lib/device";
 import {
   Dialog,
   DialogContent,
@@ -11,19 +20,10 @@ import {
   DialogHeader,
   DialogTitle,
   DialogTrigger,
-} from "@/components/ui/dialog";
-import { Input } from "@/components/ui/input";
-import { Skeleton } from "@/components/ui/skeleton";
-import { IntelligenceAvatar, IntelligenceName } from "@/entities/intelligence";
-import { useAutoFocus } from "@/hooks/use-auto-focus";
-import { useOrgUsers } from "@/hooks/use-org-users";
-import { useAddMember, useContacts, useRoom } from "@/lib/api/queries";
-import type { MemberKind, RoomMember } from "@/lib/api/types.gen";
-import { type Pickable, pickableList } from "@/lib/contacts";
-import { matchesTerms } from "@/lib/conversations";
-import { useI18n } from "@/lib/i18n";
-import { useLiveStore } from "@/lib/live/store";
-import { withContactPresence } from "@/lib/presence";
+} from "@/shared/ui/molecules/dialog";
+import { Button } from "@/shared/ui/primitives/button";
+import { Input } from "@/shared/ui/primitives/input";
+import { Skeleton } from "@/shared/ui/primitives/skeleton";
 
 /*
  * Adds members to a group (UI-10, CID-20), AIs and users in one list by name (AD-024). Only what

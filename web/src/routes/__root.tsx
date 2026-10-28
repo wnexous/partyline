@@ -1,11 +1,11 @@
 import { createRootRouteWithContext, Outlet, useRouter } from "@tanstack/react-router";
 import { useEffect } from "react";
-import { CrashPage, NotFoundPage } from "@/components/status-pages";
-import { Toaster } from "@/components/ui/sonner";
-import { setUnauthorizedHandler } from "@/lib/api/client";
 import { queryKeys } from "@/lib/api/queries";
 import { useLiveStore } from "@/lib/live/store";
 import type { RouterContext } from "@/router";
+import { setUnauthorizedHandler } from "@/shared/api/client";
+import { CrashPage, NotFoundPage } from "@/shared/ui/molecules/status-pages";
+import { Toaster } from "@/shared/ui/primitives/sonner";
 
 /** Pages reachable without a session; a 401 there is not a reason to redirect. */
 const PUBLIC_PATHS = ["/login", "/setup", "/invite/"];

@@ -3,9 +3,30 @@ import { useNavigate } from "@tanstack/react-router";
 import { type ReactNode, useId, useState } from "react";
 import { type ControllerRenderProps, useForm } from "react-hook-form";
 import { toast } from "sonner";
-import { FieldError, FormAlert, TextField } from "@/components/form-fields";
 import { GroupAvatar } from "@/components/group-avatar";
 import { PhotoEditor } from "@/components/photo-editor";
+import {
+  useDeleteRoom,
+  useRemoveRoomAvatar,
+  useUpdateRoom,
+  useUploadRoomAvatar,
+} from "@/lib/api/queries";
+import { type RoomSettingsForm, roomSettingsSchema, textLength } from "@/lib/schemas";
+import { isApiError } from "@/shared/api/client";
+import { MaxRoomInstructions, type Room, type UpdateRoomRequest } from "@/shared/api/types.gen";
+import { useI18n } from "@/shared/i18n";
+import { applyFieldErrors } from "@/shared/lib/forms";
+import { cn } from "@/shared/lib/utils";
+import { FieldError, FormAlert, TextField } from "@/shared/ui/molecules/form-fields";
+import {
+  Sheet,
+  SheetContent,
+  SheetDescription,
+  SheetFooter,
+  SheetHeader,
+  SheetTitle,
+  SheetTrigger,
+} from "@/shared/ui/molecules/sheet";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -16,8 +37,8 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
   AlertDialogTrigger,
-} from "@/components/ui/alert-dialog";
-import { Button } from "@/components/ui/button";
+} from "@/shared/ui/primitives/alert-dialog";
+import { Button } from "@/shared/ui/primitives/button";
 import {
   FormControl,
   FormDescription,
@@ -26,30 +47,9 @@ import {
   FormLabel,
   Form as FormProvider,
   useFormField,
-} from "@/components/ui/form";
-import { Input } from "@/components/ui/input";
-import {
-  Sheet,
-  SheetContent,
-  SheetDescription,
-  SheetFooter,
-  SheetHeader,
-  SheetTitle,
-  SheetTrigger,
-} from "@/components/ui/sheet";
-import { Textarea } from "@/components/ui/textarea";
-import { isApiError } from "@/lib/api/client";
-import {
-  useDeleteRoom,
-  useRemoveRoomAvatar,
-  useUpdateRoom,
-  useUploadRoomAvatar,
-} from "@/lib/api/queries";
-import { MaxRoomInstructions, type Room, type UpdateRoomRequest } from "@/lib/api/types.gen";
-import { applyFieldErrors } from "@/lib/forms";
-import { useI18n } from "@/lib/i18n";
-import { type RoomSettingsForm, roomSettingsSchema, textLength } from "@/lib/schemas";
-import { cn } from "@/lib/utils";
+} from "@/shared/ui/primitives/form";
+import { Input } from "@/shared/ui/primitives/input";
+import { Textarea } from "@/shared/ui/primitives/textarea";
 
 /**
  * Room settings for managers: the group's photo (GAV-06), name, description, instructions for

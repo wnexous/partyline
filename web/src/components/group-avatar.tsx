@@ -1,6 +1,6 @@
 import { IntelligenceAvatar, type IntelligenceAvatarProps } from "@/entities/intelligence";
 import { groupFace } from "@/lib/conversations";
-import { cn } from "@/lib/utils";
+import { cn } from "@/shared/lib/utils";
 
 /*
  * A group's face (GAV-07): the photo its managers gave it, or its initials on the tint of its id.

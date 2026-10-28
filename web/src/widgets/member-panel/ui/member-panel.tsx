@@ -1,10 +1,10 @@
 import type { ReactNode } from "react";
 import { toast } from "sonner";
-import { Skeleton } from "@/components/ui/skeleton";
 import { type PersonRow, toPersonRow } from "@/entities/room-member";
 import { useAddMember, useMe, useRemoveMember } from "@/lib/api/queries";
-import type { IntelligenceRef, RoomMember } from "@/lib/api/types.gen";
-import { useI18n } from "@/lib/i18n";
+import type { IntelligenceRef, RoomMember } from "@/shared/api/types.gen";
+import { useI18n } from "@/shared/i18n";
+import { Skeleton } from "@/shared/ui/primitives/skeleton";
 import { MemberRow } from "./member-row";
 
 /*

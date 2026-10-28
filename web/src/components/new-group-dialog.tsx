@@ -4,27 +4,18 @@ import { SearchIcon, XIcon } from "lucide-react";
 import { type ReactNode, useEffect, useId, useMemo, useState } from "react";
 import { useForm } from "react-hook-form";
 import { PickableMeta } from "@/components/contact-meta";
-import { FormAlert, TextField } from "@/components/form-fields";
 import { OrgSelect } from "@/components/org-select";
-import { Button } from "@/components/ui/button";
-import { Checkbox } from "@/components/ui/checkbox";
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-  DialogTrigger,
-} from "@/components/ui/dialog";
-import { Form } from "@/components/ui/form";
-import { Input } from "@/components/ui/input";
-import { Skeleton } from "@/components/ui/skeleton";
 import { IntelligenceAvatar, IntelligenceName } from "@/entities/intelligence";
 import { useCurrentOrg } from "@/hooks/use-current-org";
 import { useOrgUsers } from "@/hooks/use-org-users";
-import { isApiError } from "@/lib/api/client";
 import { useContacts, useCreateGroup } from "@/lib/api/queries";
+import { type Pickable, pickableList } from "@/lib/contacts";
+import { matchesTerms } from "@/lib/conversations";
+import { useLiveStore } from "@/lib/live/store";
+import { canCreateGroupsIn } from "@/lib/orgs";
+import { withContactPresence } from "@/lib/presence";
+import { type CreateGroupForm, createGroupSchema } from "@/lib/schemas";
+import { isApiError } from "@/shared/api/client";
 import {
   ErrorCodeMembersRefused,
   ErrorCodeOrganizationRequired,
@@ -33,15 +24,24 @@ import {
   type RefusedReason,
   RefusedReasonNotOrgMember,
   RefusedReasonPerson,
-} from "@/lib/api/types.gen";
-import { type Pickable, pickableList } from "@/lib/contacts";
-import { matchesTerms } from "@/lib/conversations";
-import { applyFieldErrors } from "@/lib/forms";
-import { useT } from "@/lib/i18n";
-import { useLiveStore } from "@/lib/live/store";
-import { canCreateGroupsIn } from "@/lib/orgs";
-import { withContactPresence } from "@/lib/presence";
-import { type CreateGroupForm, createGroupSchema } from "@/lib/schemas";
+} from "@/shared/api/types.gen";
+import { useT } from "@/shared/i18n";
+import { applyFieldErrors } from "@/shared/lib/forms";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+  DialogTrigger,
+} from "@/shared/ui/molecules/dialog";
+import { FormAlert, TextField } from "@/shared/ui/molecules/form-fields";
+import { Button } from "@/shared/ui/primitives/button";
+import { Checkbox } from "@/shared/ui/primitives/checkbox";
+import { Form } from "@/shared/ui/primitives/form";
+import { Input } from "@/shared/ui/primitives/input";
+import { Skeleton } from "@/shared/ui/primitives/skeleton";
 
 /*
  * "New group" (LAY-04): a name, the organization it belongs to, and the members that join, AIs and

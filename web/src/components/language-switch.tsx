@@ -1,5 +1,8 @@
 import { LanguagesIcon } from "lucide-react";
-import { Button } from "@/components/ui/button";
+import { useUpdateMe } from "@/lib/api/queries";
+import { useLiveStore } from "@/lib/live/store";
+import { isLocale, LOCALES, type Locale, useT } from "@/shared/i18n";
+import { Button } from "@/shared/ui/primitives/button";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -7,10 +10,7 @@ import {
   DropdownMenuRadioGroup,
   DropdownMenuRadioItem,
   DropdownMenuTrigger,
-} from "@/components/ui/dropdown-menu";
-import { useUpdateMe } from "@/lib/api/queries";
-import { isLocale, LOCALES, type Locale, useT } from "@/lib/i18n";
-import { useLiveStore } from "@/lib/live/store";
+} from "@/shared/ui/primitives/dropdown-menu";
 
 /** Each language is named in itself, so it can be found from either locale. */
 export const LOCALE_NAMES: Record<Locale, string> = {

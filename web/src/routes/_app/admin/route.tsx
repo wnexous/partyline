@@ -1,7 +1,7 @@
 import { createFileRoute, Outlet } from "@tanstack/react-router";
-import { ForbiddenPage } from "@/components/status-pages";
 import { useMe } from "@/lib/api/queries";
-import { RoleAdmin } from "@/lib/api/types.gen";
+import { RoleAdmin } from "@/shared/api/types.gen";
+import { ForbiddenPage } from "@/shared/ui/molecules/status-pages";
 
 export const Route = createFileRoute("/_app/admin")({
   component: AdminLayout,

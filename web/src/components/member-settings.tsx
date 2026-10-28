@@ -3,23 +3,14 @@ import { PlusIcon, SlidersHorizontalIcon, XIcon } from "lucide-react";
 import { type FormEvent, type KeyboardEvent, useId, useState } from "react";
 import { useForm } from "react-hook-form";
 import { toast } from "sonner";
-import { FieldError, FormAlert } from "@/components/form-fields";
-import { Button } from "@/components/ui/button";
-import {
-  FormControl,
-  FormDescription,
-  FormField,
-  FormItem,
-  FormLabel,
-  Form as FormProvider,
-  useFormField,
-} from "@/components/ui/form";
-import { Input } from "@/components/ui/input";
-import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
-import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
-import { isCoarsePointer } from "@/hooks/use-auto-focus";
-import { isApiError } from "@/lib/api/client";
 import { useUpdateMember } from "@/lib/api/queries";
+import {
+  keywordError,
+  type MemberSettingsForm,
+  memberSettingsSchema,
+  validationVars,
+} from "@/lib/schemas";
+import { isApiError } from "@/shared/api/client";
 import {
   type DeliveryMode,
   DeliveryModeAll,
@@ -28,16 +19,25 @@ import {
   MaxMemberKeywords,
   type RoomMember,
   type UpdateMemberRequest,
-} from "@/lib/api/types.gen";
-import { applyFieldErrors, errorText } from "@/lib/forms";
-import { type MessageKey, useI18n } from "@/lib/i18n";
+} from "@/shared/api/types.gen";
+import { type MessageKey, useI18n } from "@/shared/i18n";
+import { isCoarsePointer } from "@/shared/lib/device";
+import { applyFieldErrors, errorText } from "@/shared/lib/forms";
+import { cn } from "@/shared/lib/utils";
+import { FieldError, FormAlert } from "@/shared/ui/molecules/form-fields";
+import { Button } from "@/shared/ui/primitives/button";
 import {
-  keywordError,
-  type MemberSettingsForm,
-  memberSettingsSchema,
-  validationVars,
-} from "@/lib/schemas";
-import { cn } from "@/lib/utils";
+  FormControl,
+  FormDescription,
+  FormField,
+  FormItem,
+  FormLabel,
+  Form as FormProvider,
+  useFormField,
+} from "@/shared/ui/primitives/form";
+import { Input } from "@/shared/ui/primitives/input";
+import { Popover, PopoverContent, PopoverTrigger } from "@/shared/ui/primitives/popover";
+import { RadioGroup, RadioGroupItem } from "@/shared/ui/primitives/radio-group";
 
 /*
  * Per-room settings of an agent member (MEM-01..05): the name it uses in this room and which room

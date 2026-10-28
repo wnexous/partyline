@@ -1,5 +1,5 @@
-import type { ProfileMembership } from "@/lib/api/types.gen";
-import { type MessageKey, useT } from "@/lib/i18n";
+import type { ProfileMembership } from "@/shared/api/types.gen";
+import { type MessageKey, useT } from "@/shared/i18n";
 
 const PERMISSION_LABELS: Record<string, MessageKey> = {
   admin: "profile.permissionAdmin",

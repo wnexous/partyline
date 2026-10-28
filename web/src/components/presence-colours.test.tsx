@@ -1,9 +1,9 @@
-import { act, screen } from "@testing-library/react";
+import { screen } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { ConnectorStatusBadge } from "@/components/connector-status";
-import { LiveIndicator } from "@/components/live-status";
-import { StatusDot } from "@/components/status-dot";
 import { useLiveStore } from "@/lib/live/store";
+import { StatusDot } from "@/shared/ui/atoms/status-dot";
+import { LiveIndicator } from "@/shared/ui/molecules/live-status";
 import { renderWithProviders } from "@/test/render";
 
 /*
@@ -22,8 +22,8 @@ describe("StatusDot", () => {
   it("is a filled green dot when online and a hollow grey ring when offline", () => {
     const { container } = renderWithProviders(
       <>
-        <StatusDot online withLabel />
-        <StatusDot online={false} withLabel />
+        <StatusDot online label="Online" withLabel />
+        <StatusDot online={false} label="Offline" withLabel />
       </>,
     );
     const [online, offline] = [...container.querySelectorAll('[aria-hidden="true"]')];
@@ -60,13 +60,13 @@ describe("ConnectorStatusBadge", () => {
 
 describe("LiveIndicator", () => {
   it("is a green dot while the socket is open, a green ring while it connects, grey when closed", () => {
-    const { container } = renderWithProviders(<LiveIndicator />);
-    act(() => useLiveStore.getState().setStatus("open"));
+    // The indicator is pure: the caller reads the store, the test drives the prop.
+    const { container, rerender } = renderWithProviders(<LiveIndicator status="open" />);
     expect(dot(container)?.className).toMatch(/\bbg-online\b/);
-    act(() => useLiveStore.getState().setStatus("connecting"));
+    rerender(<LiveIndicator status="connecting" />);
     expect(dot(container)?.className).toMatch(/\bborder-online\b/);
     expect(dot(container)?.className).not.toMatch(/\bbg-online\b/);
-    act(() => useLiveStore.getState().setStatus("closed"));
+    rerender(<LiveIndicator status="closed" />);
     expect(dot(container)?.className).not.toMatch(/online/);
   });
 });

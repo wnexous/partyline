@@ -26,14 +26,27 @@ ticks its requirement ids here.
 
 ## T2 — shared layer (WA-04, WA-06 part)
 - `components/ui/*` → `shared/ui/primitives` (decouple dialog/sheet/sidebar from i18n and hooks;
-  delete dead card/table/scroll-area/select).
-- atoms/molecules moves per design §1/§4; new `RelativeTime` (adopt at all ~11 sites),
+  delete dead card/table/scroll-area/select). Done in T2a (branch wnexous/web-fsd-t2a):
+  closeLabel/touchFirst props, SidebarProvider takes isMobile + labels from the shell.
+- T2a atoms/molecules moves (done): status-dot/native-select/brand → shared/ui/atoms; copy-field,
+  empty-state, form-fields, page-header, page-section, row-menu-button, action-menu, confirm-dialog,
+  inline-rename, emoji-grid, search-button, back-link, status-pages, live-status, attachment-preview
+  → shared/ui/molecules. StatusDot takes a translated label prop; LiveIndicator takes status,
+  LiveBanner takes disconnected, SearchButton takes onOpen; attachment-preview inlines its pure
+  fileKindOf/formatBytes. Left in components/: see the T2a report (app-coupled molecules).
+- T2a shared/lib (done): time, utils, clipboard, viewport, forms, avatar (+initials/avatarTone from
+  the intelligence entity, re-exported there), one device.ts (isNarrow/useIsMobile,
+  isCoarsePointer/useAutoFocus, isTouchFirst/useTouchFirst, enterSends/useEnterSends), generic
+  hooks (debounced-value, document-visible, visual-viewport, long-press, disconnected).
+- T2a shared/api + shared/i18n (done): client + types.gen (tygo.yaml/Makefile paths updated,
+  make generate rerun); lib/api/queries stays for T3; lib/i18n moved as is.
+- Remaining (T2b): new `RelativeTime` (adopt at all ~11 sites),
   `ConfirmDialog` with open/onClose (adopt at all 14 sites), `FormDialog`, `NotFound`,
   `ListSkeleton`, `ChoiceGroup`, `PageSection` adoption (3 local Sections).
-- `shared/lib` (time incl. the single day-label rule, device predicates, avatar tone/initials,
+  `shared/lib` (time incl. the single day-label rule, device predicates, avatar tone/initials,
   utils, clipboard, viewport, forms, validation), `shared/api` (client, queryKeys, error-text,
   socket transport, types.gen), `shared/i18n` (move only).
-- Status: pending
+- Status: T2a done; T2b pending
 
 ## T3 — entities (WA-06 part)
 - `entities/{intelligence, room, room-member, message, organization, connector}` with `ui/`,

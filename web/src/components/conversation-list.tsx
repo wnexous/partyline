@@ -13,24 +13,23 @@ import {
   type ConversationMenuTarget,
   hasConversationActions,
 } from "@/components/conversation-menu";
-
-import { EmptyState } from "@/components/empty-state";
 import { NewConversationDialog } from "@/components/new-conversation-dialog";
 import { NewGroupDialog } from "@/components/new-group-dialog";
-import { RowMenuButton } from "@/components/row-menu-button";
-import { Button } from "@/components/ui/button";
-import { Skeleton } from "@/components/ui/skeleton";
 import { useCurrentOrg } from "@/hooks/use-current-org";
-import { useTouchFirst } from "@/hooks/use-enter-sends";
-import { useLongPress } from "@/hooks/use-long-press";
 import { useConversations } from "@/lib/api/queries";
-import type { Conversation } from "@/lib/api/types.gen";
 import { conversationMatches } from "@/lib/conversations";
-import { useI18n, useT } from "@/lib/i18n";
 import { inOrg } from "@/lib/orgs";
-import { formatAbsolute, formatListTime } from "@/lib/time";
-import { cn } from "@/lib/utils";
 import { isVoicePreview } from "@/lib/voice";
+import type { Conversation } from "@/shared/api/types.gen";
+import { useI18n, useT } from "@/shared/i18n";
+import { useTouchFirst } from "@/shared/lib/device";
+import { formatAbsolute, formatListTime } from "@/shared/lib/time";
+import { useLongPress } from "@/shared/lib/use-long-press";
+import { cn } from "@/shared/lib/utils";
+import { EmptyState } from "@/shared/ui/molecules/empty-state";
+import { RowMenuButton } from "@/shared/ui/molecules/row-menu-button";
+import { Button } from "@/shared/ui/primitives/button";
+import { Skeleton } from "@/shared/ui/primitives/skeleton";
 
 /*
  * The sidebar's conversation list (LAY-01, DM-06): direct messages and groups together, newest

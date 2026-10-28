@@ -1,9 +1,9 @@
-import { StatusDot } from "@/components/status-dot";
 import { appLabelOf } from "@/entities/intelligence";
-import type { AIContact } from "@/lib/api/types.gen";
 import type { Pickable } from "@/lib/contacts";
-import { useI18n } from "@/lib/i18n";
-import { formatAbsolute, formatRelative } from "@/lib/time";
+import type { AIContact } from "@/shared/api/types.gen";
+import { useI18n } from "@/shared/i18n";
+import { formatAbsolute, formatRelative } from "@/shared/lib/time";
+import { StatusDot } from "@/shared/ui/atoms/status-dot";
 
 /**
  * What tells one AI from another beside its name: whether it is online (and, with `lastSeen`,
@@ -16,7 +16,11 @@ export function AIMeta({ ai, lastSeen = false }: { ai: AIContact; lastSeen?: boo
   const app = ai.app ? appLabelOf(ai) : "";
   return (
     <>
-      <StatusDot online={ai.online} withLabel />
+      <StatusDot
+        online={ai.online}
+        label={ai.online ? t("presence.online") : t("presence.offline")}
+        withLabel
+      />
       {lastSeen && !ai.online ? (
         ai.last_seen_at ? (
           <span className="font-mono tabular" title={formatAbsolute(ai.last_seen_at, locale)}>

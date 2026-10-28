@@ -20,7 +20,6 @@ import {
   useRef,
   useState,
 } from "react";
-import { AttachmentPreviews } from "@/components/attachment-preview";
 import {
   type MentionCandidate,
   MentionSuggestions,
@@ -30,13 +29,14 @@ import {
   mentionOptionId,
 } from "@/components/mention-suggestions";
 import { authorDisplayName } from "@/components/message-item";
-import { Button } from "@/components/ui/button";
 import { type HoldState, MicButton, RecordingBar } from "@/components/voice-controls";
 import { useDraft, useDraftStore, useEditDraft } from "@/features/send-message";
-import { useEnterSends } from "@/hooks/use-enter-sends";
 import { useVoiceRecorder } from "@/hooks/use-voice-recorder";
-import { isApiError } from "@/lib/api/client";
 import { useEditMessage, useMe, usePostMessage } from "@/lib/api/queries";
+import { messageExcerpt } from "@/lib/message-excerpt";
+import { textLength } from "@/lib/schemas";
+import type { VoiceFailure } from "@/lib/voice";
+import { isApiError } from "@/shared/api/client";
 import {
   ErrorCodeCounterpartDisabled,
   type Level,
@@ -45,17 +45,17 @@ import {
   MaxTextLength,
   type Message,
   type RoomMember,
-} from "@/lib/api/types.gen";
-import { type MessageKey, type Translate, useI18n } from "@/lib/i18n";
-import { messageExcerpt } from "@/lib/message-excerpt";
-import { textLength } from "@/lib/schemas";
-import { cn } from "@/lib/utils";
-import type { VoiceFailure } from "@/lib/voice";
+} from "@/shared/api/types.gen";
+import { type MessageKey, type Translate, useI18n } from "@/shared/i18n";
+import { useEnterSends } from "@/shared/lib/device";
+import { cn } from "@/shared/lib/utils";
+import { AttachmentPreviews } from "@/shared/ui/molecules/attachment-preview";
+import { Button } from "@/shared/ui/primitives/button";
 
 /*
  * Message composer (UI-07). Enter sends the trimmed text and Shift+Enter adds a line, with a mouse
  * or a trackpad; on a touch device Enter adds a line and only the Send button sends (ENT-01..ENT-05,
- * hooks/use-enter-sends.ts). Text over MaxTextLength (MSG-02) cannot be sent; files alone can. A post is a message to the room's
+ * shared/lib/device.ts).. Text over MaxTextLength (MSG-02) cannot be sent; files alone can. A post is a message to the room's
  * intelligences: chats are not members and there is no recipient picker any more (CID-22,
  * ROUTE-06/DLV-03..05 and their listen-only mapping are retired). The body carries the text and
  * files only. `members` still feeds the mention list below. Files come from the paperclip, a paste

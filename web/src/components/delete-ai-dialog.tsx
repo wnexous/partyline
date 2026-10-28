@@ -1,4 +1,8 @@
 import { toast } from "sonner";
+import { useDeleteAgent } from "@/lib/api/queries";
+import { isApiError } from "@/shared/api/client";
+import { ErrorCodeLastAdmin, type IntelligenceRef } from "@/shared/api/types.gen";
+import { useT } from "@/shared/i18n";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -8,11 +12,7 @@ import {
   AlertDialogFooter,
   AlertDialogHeader,
   AlertDialogTitle,
-} from "@/components/ui/alert-dialog";
-import { isApiError } from "@/lib/api/client";
-import { useDeleteAgent } from "@/lib/api/queries";
-import { ErrorCodeLastAdmin, type IntelligenceRef } from "@/lib/api/types.gen";
-import { useT } from "@/lib/i18n";
+} from "@/shared/ui/primitives/alert-dialog";
 
 /**
  * Asks before deleting an AI in its home organization (the contacts page for the unlinked ones, its

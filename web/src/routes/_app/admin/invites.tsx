@@ -2,9 +2,29 @@ import { createFileRoute } from "@tanstack/react-router";
 import { MailPlusIcon, PlusIcon } from "lucide-react";
 import { useId, useMemo, useState } from "react";
 import { toast } from "sonner";
-import { EmptyState } from "@/components/empty-state";
-import { PageHeader } from "@/components/page-header";
 import { SecretOnceDialog } from "@/components/secret-once-dialog";
+import { useAdminInvites, useCreateInvite, useRevokeInvite } from "@/lib/api/queries";
+import {
+  type CreatedInvite,
+  type Invite,
+  type InviteStatus,
+  type Role,
+  RoleAdmin,
+  RoleMember,
+} from "@/shared/api/types.gen";
+import { type MessageKey, useI18n, useT } from "@/shared/i18n";
+import { formatAbsolute, formatRelative } from "@/shared/lib/time";
+import { cn } from "@/shared/lib/utils";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/shared/ui/molecules/dialog";
+import { EmptyState } from "@/shared/ui/molecules/empty-state";
+import { PageHeader } from "@/shared/ui/molecules/page-header";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -14,30 +34,10 @@ import {
   AlertDialogFooter,
   AlertDialogHeader,
   AlertDialogTitle,
-} from "@/components/ui/alert-dialog";
-import { Button } from "@/components/ui/button";
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from "@/components/ui/dialog";
-import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
-import { Skeleton } from "@/components/ui/skeleton";
-import { useAdminInvites, useCreateInvite, useRevokeInvite } from "@/lib/api/queries";
-import {
-  type CreatedInvite,
-  type Invite,
-  type InviteStatus,
-  type Role,
-  RoleAdmin,
-  RoleMember,
-} from "@/lib/api/types.gen";
-import { type MessageKey, useI18n, useT } from "@/lib/i18n";
-import { formatAbsolute, formatRelative } from "@/lib/time";
-import { cn } from "@/lib/utils";
+} from "@/shared/ui/primitives/alert-dialog";
+import { Button } from "@/shared/ui/primitives/button";
+import { RadioGroup, RadioGroupItem } from "@/shared/ui/primitives/radio-group";
+import { Skeleton } from "@/shared/ui/primitives/skeleton";
 
 export const Route = createFileRoute("/_app/admin/invites")({
   component: AdminInvitesPage,

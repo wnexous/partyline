@@ -1,5 +1,5 @@
 import type { Browser, BrowserContextOptions, Locator, Page } from "@playwright/test";
-import type { Connector, Me, Organization, SetupRequest } from "../src/lib/api/types.gen";
+import type { Connector, Me, Organization, SetupRequest } from "../src/shared/api/types.gen";
 import { apiCall, test as base, type Credentials, expect, settled } from "./fixtures";
 import { loginAs } from "./helpers";
 import { type Instance, startInstance } from "./server";

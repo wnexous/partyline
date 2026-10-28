@@ -1,6 +1,6 @@
-import type { Reaction } from "@/lib/api/types.gen";
-import { useI18n } from "@/lib/i18n";
-import { cn } from "@/lib/utils";
+import type { Reaction } from "@/shared/api/types.gen";
+import { useI18n } from "@/shared/i18n";
+import { cn } from "@/shared/lib/utils";
 
 /*
  * The reactions under a message (RCT-01, RCT-08): one chip per emoji with how many used it, in the order each

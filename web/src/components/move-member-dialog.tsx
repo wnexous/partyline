@@ -1,8 +1,11 @@
 import { useId, useState } from "react";
 import { toast } from "sonner";
-import { NativeSelect } from "@/components/native-select";
-import { Alert, AlertDescription } from "@/components/ui/alert";
-import { Button } from "@/components/ui/button";
+import { useOrgMovePreview, useUpdateOrgMember } from "@/lib/api/queries";
+import { movablePositions, type PositionOption } from "@/lib/org-chart";
+import { isApiError } from "@/shared/api/client";
+import type { Position } from "@/shared/api/types.gen";
+import { useI18n, useT } from "@/shared/i18n";
+import { NativeSelect } from "@/shared/ui/atoms/native-select";
 import {
   Dialog,
   DialogContent,
@@ -10,13 +13,10 @@ import {
   DialogFooter,
   DialogHeader,
   DialogTitle,
-} from "@/components/ui/dialog";
-import { Label } from "@/components/ui/label";
-import { isApiError } from "@/lib/api/client";
-import { useOrgMovePreview, useUpdateOrgMember } from "@/lib/api/queries";
-import type { Position } from "@/lib/api/types.gen";
-import { useI18n, useT } from "@/lib/i18n";
-import { movablePositions, type PositionOption } from "@/lib/org-chart";
+} from "@/shared/ui/molecules/dialog";
+import { Alert, AlertDescription } from "@/shared/ui/primitives/alert";
+import { Button } from "@/shared/ui/primitives/button";
+import { Label } from "@/shared/ui/primitives/label";
 
 /** Who is being moved, and where they sit now (`""` for no position). */
 export interface MoveTarget {

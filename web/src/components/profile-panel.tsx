@@ -7,20 +7,20 @@ import { MembershipSummary } from "@/components/membership-summary";
 import { platformName } from "@/components/message-item";
 import { PANEL_CONVERSATIONS, ProfileConversations } from "@/components/profile-conversations";
 import { opensElsewhere } from "@/components/profile-link";
-import { StatusDot } from "@/components/status-dot";
-import { Button } from "@/components/ui/button";
-import { Sheet, SheetClose, SheetContent, SheetTitle } from "@/components/ui/sheet";
-import { Skeleton } from "@/components/ui/skeleton";
 import { appLabelOf, IntelligenceAvatar, YouBadge } from "@/entities/intelligence";
-import { useIsMobile } from "@/hooks/use-mobile";
 import { useProfilePanelStore } from "@/hooks/use-profile-panel";
 import { useStartConversation } from "@/hooks/use-start-conversation";
-import { isApiError } from "@/lib/api/client";
 import { intelligenceQuery, useMe } from "@/lib/api/queries";
-import { type IntelligenceProfile, IntelligenceRolePerson } from "@/lib/api/types.gen";
-import { useT } from "@/lib/i18n";
 import { useLiveStore } from "@/lib/live/store";
-import { cn } from "@/lib/utils";
+import { isApiError } from "@/shared/api/client";
+import { type IntelligenceProfile, IntelligenceRolePerson } from "@/shared/api/types.gen";
+import { useT } from "@/shared/i18n";
+import { useIsMobile } from "@/shared/lib/device";
+import { cn } from "@/shared/lib/utils";
+import { StatusDot } from "@/shared/ui/atoms/status-dot";
+import { Sheet, SheetClose, SheetContent, SheetTitle } from "@/shared/ui/molecules/sheet";
+import { Button } from "@/shared/ui/primitives/button";
+import { Skeleton } from "@/shared/ui/primitives/skeleton";
 
 /*
  * The profile panel (PRF-01..PRF-06): who an intelligence is, beside the page you were on. One
@@ -249,7 +249,12 @@ function ProfileCard({ profile }: { profile: IntelligenceProfile }) {
               <>
                 <dt className="text-muted-foreground">{t("profilePanel.status")}</dt>
                 <dd>
-                  <StatusDot online={online} withLabel labelClassName="text-sm text-foreground" />
+                  <StatusDot
+                    online={online}
+                    label={online ? t("presence.online") : t("presence.offline")}
+                    withLabel
+                    labelClassName="text-sm text-foreground"
+                  />
                 </dd>
               </>
             ) : null}

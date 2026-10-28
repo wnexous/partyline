@@ -1,30 +1,30 @@
 import { useNavigate } from "@tanstack/react-router";
 import { useId, useState } from "react";
-import { CodeBlock } from "@/components/copy-field";
 import { OrgSelect } from "@/components/org-select";
 import { ConnectorForm } from "@/components/schema-form";
 import { SecretOnceDialog } from "@/components/secret-once-dialog";
+import { useCurrentOrg } from "@/hooks/use-current-org";
+import { useConnectorKinds, useCreateConnector } from "@/lib/api/queries";
+import { isAdminOf } from "@/lib/orgs";
+import { isApiError } from "@/shared/api/client";
+import {
+  type Connector,
+  type ConnectorKind,
+  HeaderSignature,
+  HeaderTimestamp,
+} from "@/shared/api/types.gen";
+import { type Translate, useT } from "@/shared/i18n";
+import { cn } from "@/shared/lib/utils";
+import { CodeBlock } from "@/shared/ui/molecules/copy-field";
 import {
   Dialog,
   DialogContent,
   DialogDescription,
   DialogHeader,
   DialogTitle,
-} from "@/components/ui/dialog";
-import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
-import { Skeleton } from "@/components/ui/skeleton";
-import { useCurrentOrg } from "@/hooks/use-current-org";
-import { isApiError } from "@/lib/api/client";
-import { useConnectorKinds, useCreateConnector } from "@/lib/api/queries";
-import {
-  type Connector,
-  type ConnectorKind,
-  HeaderSignature,
-  HeaderTimestamp,
-} from "@/lib/api/types.gen";
-import { type Translate, useT } from "@/lib/i18n";
-import { isAdminOf } from "@/lib/orgs";
-import { cn } from "@/lib/utils";
+} from "@/shared/ui/molecules/dialog";
+import { RadioGroup, RadioGroupItem } from "@/shared/ui/primitives/radio-group";
+import { Skeleton } from "@/shared/ui/primitives/skeleton";
 
 /** Secrets the server generated for a new connector, with the labels of their fields. */
 interface Generated {

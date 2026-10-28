@@ -1,4 +1,4 @@
-import type { AnswerItem, WizardQuestion } from "@/lib/api/types.gen";
+import type { AnswerItem, WizardQuestion } from "@/shared/api/types.gen";
 
 /*
  * The pure rules of the wizard (QR-14, QR-15, QR-17). They live outside the bubble so the step gate,

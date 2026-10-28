@@ -4,26 +4,8 @@ import { MonitorIcon, MoonIcon, SunIcon } from "lucide-react";
 import { type ReactNode, useEffect, useId, useRef, useState } from "react";
 import { useForm } from "react-hook-form";
 import { toast } from "sonner";
-import { FormAlert, TextField } from "@/components/form-fields";
 import { LOCALE_NAMES, useChooseLocale } from "@/components/language-switch";
-import { NativeSelect } from "@/components/native-select";
-import { PageHeader } from "@/components/page-header";
-import { PageSection as Section } from "@/components/page-section";
 import { ProfileEditor } from "@/components/profile-editor";
-import { Button } from "@/components/ui/button";
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-  DialogTrigger,
-} from "@/components/ui/dialog";
-import { Form } from "@/components/ui/form";
-import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
-import { Skeleton } from "@/components/ui/skeleton";
-import { isApiError } from "@/lib/api/client";
 import {
   useChangePassword,
   useDeleteAccount,
@@ -39,14 +21,6 @@ import {
   useUnsubscribePush,
   useUpdateMe,
 } from "@/lib/api/queries";
-import {
-  ErrorCodeLastInstanceAdmin,
-  type Me,
-  PasswordMinLength,
-  type Session,
-} from "@/lib/api/types.gen";
-import { applyFieldErrors } from "@/lib/forms";
-import { LOCALES, type MessageKey, type Translate, useI18n, useT } from "@/lib/i18n";
 import { useLiveStore } from "@/lib/live/store";
 import { defaultOrgIdOf } from "@/lib/orgs";
 import {
@@ -67,8 +41,34 @@ import {
   deleteAccountSchema,
 } from "@/lib/schemas";
 import type { ThemePreference } from "@/lib/theme";
-import { formatAbsolute, formatRelative } from "@/lib/time";
-import { cn } from "@/lib/utils";
+import { isApiError } from "@/shared/api/client";
+import {
+  ErrorCodeLastInstanceAdmin,
+  type Me,
+  PasswordMinLength,
+  type Session,
+} from "@/shared/api/types.gen";
+import { LOCALES, type MessageKey, type Translate, useI18n, useT } from "@/shared/i18n";
+import { applyFieldErrors } from "@/shared/lib/forms";
+import { formatAbsolute, formatRelative } from "@/shared/lib/time";
+import { cn } from "@/shared/lib/utils";
+import { NativeSelect } from "@/shared/ui/atoms/native-select";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+  DialogTrigger,
+} from "@/shared/ui/molecules/dialog";
+import { FormAlert, TextField } from "@/shared/ui/molecules/form-fields";
+import { PageHeader } from "@/shared/ui/molecules/page-header";
+import { PageSection as Section } from "@/shared/ui/molecules/page-section";
+import { Button } from "@/shared/ui/primitives/button";
+import { Form } from "@/shared/ui/primitives/form";
+import { RadioGroup, RadioGroupItem } from "@/shared/ui/primitives/radio-group";
+import { Skeleton } from "@/shared/ui/primitives/skeleton";
 
 export const Route = createFileRoute("/_app/account/")({
   component: SettingsPage,

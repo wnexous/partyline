@@ -1,7 +1,7 @@
 import { useMemo } from "react";
 import { useMe, useOrgMembers } from "@/lib/api/queries";
-import type { IntelligenceRef } from "@/lib/api/types.gen";
 import { userMembers } from "@/lib/orgs";
+import type { IntelligenceRef } from "@/shared/api/types.gen";
 
 /**
  * The users who are members of an organization, for the pickers of a group of it (ORG-03).

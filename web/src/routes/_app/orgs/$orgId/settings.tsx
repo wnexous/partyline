@@ -3,24 +3,8 @@ import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import { useEffect, useId, useRef, useState } from "react";
 import { useForm } from "react-hook-form";
 import { toast } from "sonner";
-import { FormAlert, TextField } from "@/components/form-fields";
 import { OrgAvatar } from "@/components/org-avatar";
-import { PageHeader } from "@/components/page-header";
-import { PageSection as Section } from "@/components/page-section";
 import { PhotoEditor } from "@/components/photo-editor";
-import {
-  AlertDialog,
-  AlertDialogAction,
-  AlertDialogCancel,
-  AlertDialogContent,
-  AlertDialogDescription,
-  AlertDialogFooter,
-  AlertDialogHeader,
-  AlertDialogTitle,
-} from "@/components/ui/alert-dialog";
-import { Button } from "@/components/ui/button";
-import { Form } from "@/components/ui/form";
-import { isApiError } from "@/lib/api/client";
 import {
   useDeleteOrg,
   useMe,
@@ -30,16 +14,32 @@ import {
   useUpdateOrg,
   useUploadOrgAvatar,
 } from "@/lib/api/queries";
+import { ownedThings, PermissionAdmin } from "@/lib/orgs";
+import { type UpdateOrgForm, updateOrgSchema } from "@/lib/schemas";
+import { isApiError } from "@/shared/api/client";
 import {
   ErrorCodeLastAdmin,
   ErrorCodeOrganizationNotEmpty,
   type Organization,
   type UpdateOrganizationRequest,
-} from "@/lib/api/types.gen";
-import { applyFieldErrors } from "@/lib/forms";
-import { useI18n, useT } from "@/lib/i18n";
-import { ownedThings, PermissionAdmin } from "@/lib/orgs";
-import { type UpdateOrgForm, updateOrgSchema } from "@/lib/schemas";
+} from "@/shared/api/types.gen";
+import { useI18n, useT } from "@/shared/i18n";
+import { applyFieldErrors } from "@/shared/lib/forms";
+import { FormAlert, TextField } from "@/shared/ui/molecules/form-fields";
+import { PageHeader } from "@/shared/ui/molecules/page-header";
+import { PageSection as Section } from "@/shared/ui/molecules/page-section";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/shared/ui/primitives/alert-dialog";
+import { Button } from "@/shared/ui/primitives/button";
+import { Form } from "@/shared/ui/primitives/form";
 
 export const Route = createFileRoute("/_app/orgs/$orgId/settings")({
   component: OrgSettingsPage,

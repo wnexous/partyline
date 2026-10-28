@@ -1,9 +1,13 @@
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
-import { api, isApiError } from "@/lib/api/client";
 import { queryKeys } from "@/lib/api/queries";
-import { type AnswerSubmission, ErrorCodeAlreadyAnswered, type Message } from "@/lib/api/types.gen";
-import { useT } from "@/lib/i18n";
+import { api, isApiError } from "@/shared/api/client";
+import {
+  type AnswerSubmission,
+  ErrorCodeAlreadyAnswered,
+  type Message,
+} from "@/shared/api/types.gen";
+import { useT } from "@/shared/i18n";
 
 /*
  * Answers the question a message asks (QR-11, QR-12). It posts through the composer's path with the

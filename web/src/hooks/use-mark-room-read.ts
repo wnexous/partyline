@@ -1,6 +1,6 @@
 import { useEffect, useRef } from "react";
-import { useDocumentVisible } from "@/hooks/use-document-visible";
 import { useMarkRead, useNewestSeq } from "@/lib/api/queries";
+import { useDocumentVisible } from "@/shared/lib/use-document-visible";
 
 /**
  * Reads the conversation up to its newest message when it opens and again for each new message,

@@ -12,7 +12,7 @@ VERSION ?= $(shell git describe --tags --always --dirty 2>/dev/null || echo dev)
 LDFLAGS := -s -w -X github.com/wnexous/partyline/internal/cli.Version=$(VERSION)
 
 # Paths written by `make generate`; they are committed and must not drift.
-GENERATED := internal/store/db web/src/lib/api/types.gen.ts
+GENERATED := internal/store/db web/src/shared/api/types.gen.ts
 
 HAS_WEB := $(wildcard web/package.json)
 

@@ -1,13 +1,13 @@
 import { useNavigate } from "@tanstack/react-router";
 import { useState } from "react";
-import { isApiError } from "@/lib/api/client";
 import { useOpenDM } from "@/lib/api/queries";
+import { isApiError } from "@/shared/api/client";
 import {
   ErrorCodeContactNotFound,
   ErrorCodeNoRouteToPerson,
   type IntelligenceRef,
-} from "@/lib/api/types.gen";
-import { type Translate, useT } from "@/lib/i18n";
+} from "@/shared/api/types.gen";
+import { type Translate, useT } from "@/shared/i18n";
 
 /** Why a DM with `target` could not be opened, in words the user can act on. */
 export function startConversationError(

@@ -2,10 +2,29 @@ import { createFileRoute, Link } from "@tanstack/react-router";
 import { CircleCheckIcon, FingerprintIcon, LinkIcon, TimerOffIcon, XIcon } from "lucide-react";
 import { useEffect, useId, useState } from "react";
 import { toast } from "sonner";
-import { CodeBlock } from "@/components/copy-field";
-import { EmptyState } from "@/components/empty-state";
 import { platformLabel } from "@/components/message-item";
-import { PageHeader } from "@/components/page-header";
+import {
+  useConnectors,
+  useDeleteIdentity,
+  useIdentities,
+  useMyOrgs,
+  useStartPairing,
+} from "@/lib/api/queries";
+import { useLiveStore } from "@/lib/live/store";
+import type { Connector, Identity, PairingCode } from "@/shared/api/types.gen";
+import { useI18n, useT } from "@/shared/i18n";
+import { formatAbsolute } from "@/shared/lib/time";
+import { cn } from "@/shared/lib/utils";
+import { CodeBlock } from "@/shared/ui/molecules/copy-field";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+} from "@/shared/ui/molecules/dialog";
+import { EmptyState } from "@/shared/ui/molecules/empty-state";
+import { PageHeader } from "@/shared/ui/molecules/page-header";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -15,29 +34,10 @@ import {
   AlertDialogFooter,
   AlertDialogHeader,
   AlertDialogTitle,
-} from "@/components/ui/alert-dialog";
-import { Button } from "@/components/ui/button";
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogHeader,
-  DialogTitle,
-} from "@/components/ui/dialog";
-import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
-import { Skeleton } from "@/components/ui/skeleton";
-import {
-  useConnectors,
-  useDeleteIdentity,
-  useIdentities,
-  useMyOrgs,
-  useStartPairing,
-} from "@/lib/api/queries";
-import type { Connector, Identity, PairingCode } from "@/lib/api/types.gen";
-import { useI18n, useT } from "@/lib/i18n";
-import { useLiveStore } from "@/lib/live/store";
-import { formatAbsolute } from "@/lib/time";
-import { cn } from "@/lib/utils";
+} from "@/shared/ui/primitives/alert-dialog";
+import { Button } from "@/shared/ui/primitives/button";
+import { RadioGroup, RadioGroupItem } from "@/shared/ui/primitives/radio-group";
+import { Skeleton } from "@/shared/ui/primitives/skeleton";
 
 export const Route = createFileRoute("/_app/identities")({
   component: IdentitiesPage,

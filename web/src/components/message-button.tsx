@@ -1,9 +1,9 @@
 import { MessageSquareIcon } from "lucide-react";
 import { toast } from "sonner";
-import { Button } from "@/components/ui/button";
 import { useStartConversation } from "@/hooks/use-start-conversation";
-import type { IntelligenceRef } from "@/lib/api/types.gen";
-import { useT } from "@/lib/i18n";
+import type { IntelligenceRef } from "@/shared/api/types.gen";
+import { useT } from "@/shared/i18n";
+import { Button } from "@/shared/ui/primitives/button";
 
 /**
  * "Message" on a contact (DM-01): opens the one DM with it, creating it when there is none. A

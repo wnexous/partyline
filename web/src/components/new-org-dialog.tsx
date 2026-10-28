@@ -2,8 +2,12 @@ import { zodResolver } from "@hookform/resolvers/zod";
 import { useState } from "react";
 import { useForm } from "react-hook-form";
 import { toast } from "sonner";
-import { FormAlert, TextField } from "@/components/form-fields";
-import { Button } from "@/components/ui/button";
+import { useCurrentOrg } from "@/hooks/use-current-org";
+import { useCreateOrg } from "@/lib/api/queries";
+import { type CreateOrgForm, createOrgSchema } from "@/lib/schemas";
+import { isApiError } from "@/shared/api/client";
+import { useT } from "@/shared/i18n";
+import { applyFieldErrors } from "@/shared/lib/forms";
 import {
   Dialog,
   DialogContent,
@@ -11,14 +15,10 @@ import {
   DialogFooter,
   DialogHeader,
   DialogTitle,
-} from "@/components/ui/dialog";
-import { Form } from "@/components/ui/form";
-import { useCurrentOrg } from "@/hooks/use-current-org";
-import { isApiError } from "@/lib/api/client";
-import { useCreateOrg } from "@/lib/api/queries";
-import { applyFieldErrors } from "@/lib/forms";
-import { useT } from "@/lib/i18n";
-import { type CreateOrgForm, createOrgSchema } from "@/lib/schemas";
+} from "@/shared/ui/molecules/dialog";
+import { FormAlert, TextField } from "@/shared/ui/molecules/form-fields";
+import { Button } from "@/shared/ui/primitives/button";
+import { Form } from "@/shared/ui/primitives/form";
 
 /**
  * "New organization" (ORG-01): a name of 1 to 100 characters. The creator becomes its admin and the

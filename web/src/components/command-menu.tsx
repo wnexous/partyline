@@ -4,7 +4,20 @@ import { type ReactNode, type RefObject, useEffect, useLayoutEffect, useRef } fr
 import { ConnectorStatusBadge, useConnectorState } from "@/components/connector-status";
 import { ConversationAvatar } from "@/components/conversation-avatar";
 import { platformLabel } from "@/components/message-item";
-import { StatusDot } from "@/components/status-dot";
+import { useProfilePanel } from "@/hooks/use-profile-panel";
+import { useAgents, useConnectors, useConversations } from "@/lib/api/queries";
+import { useLiveStore } from "@/lib/live/store";
+import { NAV_GROUPS } from "@/lib/nav";
+import { type Connector, type Me, RoleAdmin } from "@/shared/api/types.gen";
+import { useT } from "@/shared/i18n";
+import { cn } from "@/shared/lib/utils";
+import { StatusDot } from "@/shared/ui/atoms/status-dot";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogTitle,
+} from "@/shared/ui/molecules/dialog";
 import {
   Command,
   CommandEmpty,
@@ -12,15 +25,7 @@ import {
   CommandInput,
   CommandItem,
   CommandList,
-} from "@/components/ui/command";
-import { Dialog, DialogContent, DialogDescription, DialogTitle } from "@/components/ui/dialog";
-import { useProfilePanel } from "@/hooks/use-profile-panel";
-import { useAgents, useConnectors, useConversations } from "@/lib/api/queries";
-import { type Connector, type Me, RoleAdmin } from "@/lib/api/types.gen";
-import { useT } from "@/lib/i18n";
-import { useLiveStore } from "@/lib/live/store";
-import { NAV_GROUPS } from "@/lib/nav";
-import { cn } from "@/lib/utils";
+} from "@/shared/ui/primitives/command";
 
 /*
  * Command palette (UI-22): Ctrl/Cmd+K from anywhere in the app jumps to a conversation, a connector
@@ -144,7 +149,15 @@ function PaletteBody({
                 icon={<ContactRoundIcon aria-hidden="true" />}
                 label={agent.intelligence.display_name}
                 hint={`@${agent.intelligence.handle}`}
-                trailing={<StatusDot online={presence[agent.id]?.online ?? agent.online} />}
+                trailing={(() => {
+                  const online = presence[agent.id]?.online ?? agent.online;
+                  return (
+                    <StatusDot
+                      online={online}
+                      label={online ? t("presence.online") : t("presence.offline")}
+                    />
+                  );
+                })()}
               />
             ))}
           </CommandGroup>

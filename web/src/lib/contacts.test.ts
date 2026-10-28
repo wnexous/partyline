@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import type { AIContact } from "@/lib/api/types.gen";
+import type { AIContact } from "@/shared/api/types.gen";
 import { makeAI, makeAIContact, makeContacts, makeIntelligence, makeOrgAIs } from "@/test/fixtures";
 import { atlas, bob, cora, notes, sampleContacts } from "@/test/sample-contacts";
 import {
