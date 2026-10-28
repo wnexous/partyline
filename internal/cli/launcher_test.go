@@ -10,6 +10,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -47,6 +48,8 @@ type launchMachine struct {
 	now func() time.Time
 	// sessionHTTP reaches GET /agent/session (nil: the launcher's own client).
 	sessionHTTP *http.Client
+	// pid is the launcher's process id (the pid a pi or OpenCode session's live id is tied to).
+	pid int
 	// afterExec runs inside the exec hook, before it returns (the takeover test dials as the
 	// harness's channel from there).
 	afterExec func(env []string)
@@ -55,7 +58,7 @@ type launchMachine struct {
 func newLaunchMachine(t *testing.T) *launchMachine {
 	t.Helper()
 	home := t.TempDir()
-	return &launchMachine{home: home, hostname: "testbox", cwd: "/work/acme", onPath: map[string]bool{}, environ: []string{
+	return &launchMachine{home: home, hostname: "testbox", cwd: "/work/acme", pid: 4242, onPath: map[string]bool{}, environ: []string{
 		"HOME=" + home, "PATH=/usr/local/bin:/usr/bin", "PARTYLINE_FOLDER=/inherited/folder", "LANG=C.UTF-8",
 	}}
 }
@@ -176,6 +179,7 @@ func (m *launchMachine) run(t *testing.T, args ...string) launchRun {
 			return []byte("Error: No MCP server named 'partyline' found."), errors.New("exit status 1")
 		},
 		environ:     func() []string { return append([]string(nil), m.environ...) },
+		pid:         func() int { return m.pid },
 		isTerminal:  func(fd int) bool { return m.terminals[fd] },
 		now:         m.now,
 		sessionHTTP: m.sessionHTTP,
@@ -227,7 +231,19 @@ func TestLaunchersExecTheHarness(t *testing.T) {
 			require.Equal(t, "/usr/local/bin/"+c.binary, r.path)
 			require.Equal(t, c.argv, r.argv)
 
-			require.Equal(t, []string{"HOME=" + m.home, "PATH=/usr/local/bin:/usr/bin", "LANG=C.UTF-8", "PARTYLINE_FOLDER=/work/acme", "PARTYLINE_HARNESS=" + c.binary}, r.env)
+			// The harnesses that get their messages from a listen process share one live id with their tools (SESS-45).
+			env := slices.DeleteFunc(slices.Clone(r.env), func(kv string) bool { return strings.HasPrefix(kv, liveEnvVar+"=") })
+			require.Equal(t, []string{"HOME=" + m.home, "PATH=/usr/local/bin:/usr/bin", "LANG=C.UTF-8", "PARTYLINE_FOLDER=/work/acme", "PARTYLINE_HARNESS=" + c.binary}, env)
+			lives := envValues(r.env, liveEnvVar)
+			if c.binary == "pi" || c.binary == "opencode" {
+				require.Len(t, lives, 1)
+				pid, id, ok := parseLive(lives[0])
+				require.True(t, ok, lives[0])
+				require.Equal(t, m.pid, pid, "the id belongs to the process exec keeps")
+				require.Regexp(t, `^[A-Za-z0-9_-]{22}$`, id)
+			} else {
+				require.Empty(t, lives)
+			}
 		})
 	}
 }
@@ -765,4 +781,34 @@ func TestParentChildInAWorktreeSendsNoMainFolder(t *testing.T) {
 	h := http.Header{}
 	setIdentityHeaders(h, id)
 	require.Empty(t, h.Values(dto.HeaderMainFolder))
+}
+
+// SESS-45: a launch gives its pi or OpenCode session a new live id and never hands on the one of the
+// session it runs in; Claude Code, Codex and Gemini get none, whatever they inherit.
+func TestLauncherNeverHandsOnAnotherSessionsLiveID(t *testing.T) {
+	inherited := liveEnvVar + "=999:AAAAAAAAAAAAAAAAAAAAAA"
+	for _, tc := range []struct {
+		command string
+		wantOwn bool
+	}{{"pi", true}, {"opencode", true}, {"claude", false}, {"codex", false}, {"gemini", false}, {"omp", false}} {
+		t.Run(tc.command, func(t *testing.T) {
+			m := newLaunchMachine(t)
+			m.environ = append(m.environ, inherited)
+			m.onPath[tc.command] = true
+			m.register(t, tc.command)
+
+			r := m.run(t, tc.command)
+			require.True(t, r.execed)
+			lives := envValues(r.env, liveEnvVar)
+			if !tc.wantOwn {
+				require.Empty(t, lives)
+				return
+			}
+			require.Len(t, lives, 1)
+			require.NotEqual(t, strings.TrimPrefix(inherited, liveEnvVar+"="), lives[0])
+			pid, _, ok := parseLive(lives[0])
+			require.True(t, ok)
+			require.Equal(t, m.pid, pid)
+		})
+	}
 }

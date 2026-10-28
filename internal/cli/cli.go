@@ -88,6 +88,9 @@ type stdio struct {
 	// launcherEnv returns the launcher variables of the nearest launched ancestor process
 	// (withLauncherEnv); nil means none (Run sets procLauncherEnv).
 	launcherEnv func() map[string]string
+	// pid and ppid are this process's id and its parent's (nil: os.Getpid, os.Getppid); the launcher
+	// and the live id of a pi or OpenCode session use them (liveEnvVar).
+	pid, ppid func() int
 	// rawTerm offers raw terminal mode for the checklist menu; tests inject a fake.
 	rawTerm rawTerminal
 	// isTerminal reports whether fd is a terminal (nil: golang.org/x/term.IsTerminal);

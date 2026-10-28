@@ -24,6 +24,10 @@ type ListenOptions struct {
 	Adopt      string
 	// Org, Position and Parent mean what they mean for Run.
 	Org, Position, Parent string
+	// LiveID is the id this process connects with, shared with the tools-only process of the same pi or
+	// OpenCode session so its tool calls are this session's (SESS-45). Empty means a random one; a listen
+	// process restarted by the adapter with the same id keeps its label (SESS-14).
+	LiveID string
 	// Takeover means what it means for Run.
 	Takeover bool
 
@@ -74,6 +78,9 @@ func Listen(ctx context.Context, o ListenOptions) error {
 	out := &lineWriter{w: o.Stdout}
 	l := newLink(base, o.Token, id, o.HTTPClient, out, o.Stderr, o.timing)
 	l.takeover, l.zone = o.Takeover, o.zone
+	if o.LiveID != "" {
+		l.liveID = o.LiveID
+	}
 	var lost bool
 	var noticeErr error
 	l.onLost = func(reason lostReason, text string) {
