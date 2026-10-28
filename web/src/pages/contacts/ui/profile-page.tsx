@@ -33,6 +33,7 @@ import {
   MergeAIDialog,
   RemoveFromOrgDialog,
 } from "@/features/manage-org-member";
+import { MessageButton } from "@/features/start-conversation";
 import { isApiError } from "@/shared/api/client";
 import {
   type AIDetail,
@@ -50,7 +51,6 @@ import { PageSection } from "@/shared/ui/molecules/page-section";
 import { PanelSkeleton } from "@/shared/ui/molecules/panel-skeleton";
 import { Button } from "@/shared/ui/primitives/button";
 import { Skeleton } from "@/shared/ui/primitives/skeleton";
-import { MessageButton } from "@/widgets/conversation-timeline";
 import { ProfileConversations } from "@/widgets/profile-panel";
 
 const routeApi = getRouteApi("/_app/contacts/$id");
