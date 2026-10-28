@@ -1,4 +1,11 @@
-import { ConversationKindDM, type Room } from "@/shared/api/types.gen";
+import {
+  type Conversation,
+  ConversationKindDM,
+  ConversationKindGroup,
+  LevelManage,
+  LevelPost,
+  type Room,
+} from "@/shared/api/types.gen";
 import type { Translate } from "@/shared/i18n";
 import { counterpartOf } from "../lib/conversations";
 
@@ -29,4 +36,22 @@ export function historyPlatform(room: Room): string | null {
  */
 export function isHistoryOnly(room: Room, refusedAsHistory: boolean): boolean {
   return historyPlatform(room) !== null || refusedAsHistory;
+}
+
+export const managesGroup = (c: Conversation) =>
+  c.kind !== ConversationKindDM && c.my_level === LevelManage;
+
+/** A member of a group is one with a `post` level: the member row is what gives it (AD-016). */
+const memberOfGroup = (c: Conversation) =>
+  c.kind === ConversationKindGroup && c.my_level === LevelPost;
+
+/** Whether a conversation has anything to offer: a row with nothing leaves the browser's own menu alone. */
+export function hasConversationActions(c: Conversation): boolean {
+  return (
+    c.unread > 0 ||
+    (c.kind === ConversationKindDM && c.counterpart !== undefined) ||
+    managesGroup(c) ||
+    // Leaving needs no unread and no manage: a plain member may always leave a group (ROOM-01).
+    memberOfGroup(c)
+  );
 }

@@ -1,30 +1,22 @@
+/*
+ * The actions of a conversation of the sidebar (ACT-03, ACT-04, ROOM-01): Mark as read where
+ * something waits, View profile for a DM, Leave group for a member and Delete group for a manager,
+ * the last two after a question. They use the routes that were already there (`PUT /rooms/{id}/read`,
+ * `DELETE /rooms/{id}/members/{mid}`, `DELETE /rooms/{id}`) and the rules those routes have (the
+ * rules of what a row offers are in entities/room/model/conversation-rules.ts).
+ */
+
 import { useNavigate, useRouter } from "@tanstack/react-router";
 import { CheckCheckIcon, LogOutIcon, Trash2Icon, UserRoundIcon } from "lucide-react";
 import { useRef, useState } from "react";
 import { toast } from "sonner";
 import { useMe } from "@/entities/account";
-import { useDeleteRoom, useLeaveRoom, useMarkRoomRead } from "@/entities/room";
+import { managesGroup, useDeleteRoom, useLeaveRoom, useMarkRoomRead } from "@/entities/room";
 import { useRoomMembers } from "@/entities/room-member";
-import { useProfilePanel } from "@/hooks/use-profile-panel";
-import {
-  type Conversation,
-  ConversationKindDM,
-  ConversationKindGroup,
-  LevelManage,
-  LevelPost,
-} from "@/shared/api/types.gen";
+import { type Conversation, ConversationKindDM } from "@/shared/api/types.gen";
 import { type Translate, useT } from "@/shared/i18n";
 import { ActionMenu, type MenuAction } from "@/shared/ui/molecules/action-menu";
 import { ConfirmDialog } from "@/shared/ui/molecules/confirm-dialog";
-
-/*
- * The actions of a conversation of the sidebar (ACT-03, ACT-04, ROOM-01): Mark as read where
- * something waits, View profile for a DM, Leave group for a member and Delete group for a manager,
- * the last two after a question. They use the routes that were already there (`PUT /rooms/{id}/read`,
- * `DELETE /rooms/{id}/members/{mid}`, `DELETE /rooms/{id}`) and the rules those routes have: a
- * member takes their own member row out to leave (manage is not needed for that), a group is
- * deleted with `manage`, and a DM is nobody's to delete or leave (DM-02).
- */
 
 /** What a row's menu is open for. */
 export interface ConversationMenuTarget {
@@ -34,24 +26,6 @@ export interface ConversationMenuTarget {
   at: { x: number; y: number; align?: "start" | "end" };
   /** The row, or the "⋯" that opened it: it takes focus back when the menu closes. */
   opener: HTMLElement | null;
-}
-
-const managesGroup = (c: Conversation) =>
-  c.kind !== ConversationKindDM && c.my_level === LevelManage;
-
-/** A member of a group is one with a `post` level: the member row is what gives it (AD-016). */
-const memberOfGroup = (c: Conversation) =>
-  c.kind === ConversationKindGroup && c.my_level === LevelPost;
-
-/** Whether a conversation has anything to offer: a row with nothing leaves the browser's own menu alone. */
-export function hasConversationActions(c: Conversation): boolean {
-  return (
-    c.unread > 0 ||
-    (c.kind === ConversationKindDM && c.counterpart !== undefined) ||
-    managesGroup(c) ||
-    // Leaving needs no unread and no manage: a plain member may always leave a group (ROOM-01).
-    memberOfGroup(c)
-  );
 }
 
 /** "Group · 3 unread messages": which kind it is, and what waits in it. */
@@ -79,13 +53,15 @@ export function ConversationMenu({
   target,
   onClose,
   touch,
+  onViewProfile,
 }: {
   target: ConversationMenuTarget | null;
   onClose: () => void;
   touch: boolean;
+  /** Opens the profile of a DM's other side; the caller holds the profile panel. */
+  onViewProfile: (id: string, opener: HTMLElement | null) => void;
 }) {
   const t = useT();
-  const profile = useProfilePanel();
   const router = useRouter();
   const navigate = useNavigate();
   const remove = useDeleteRoom();
@@ -149,7 +125,7 @@ export function ConversationMenu({
         icon: UserRoundIcon,
         onSelect: () => {
           handedOver.current = true;
-          profile.open(who, shown.opener);
+          onViewProfile(who, shown.opener);
         },
       });
     }

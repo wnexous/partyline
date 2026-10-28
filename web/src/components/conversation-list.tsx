@@ -7,16 +7,18 @@ import {
 } from "lucide-react";
 
 import { memo, useCallback, useMemo, useRef, useState } from "react";
-import {
-  ConversationMenu,
-  type ConversationMenuTarget,
-  hasConversationActions,
-} from "@/components/conversation-menu";
 import { NewConversationDialog } from "@/components/new-conversation-dialog";
 import { NewGroupDialog } from "@/components/new-group-dialog";
 import { isVoicePreview } from "@/entities/message";
 import { inOrg, useCurrentOrg } from "@/entities/organization";
-import { ConversationAvatar, conversationMatches, useConversations } from "@/entities/room";
+import {
+  ConversationAvatar,
+  conversationMatches,
+  hasConversationActions,
+  useConversations,
+} from "@/entities/room";
+import { ConversationMenu, type ConversationMenuTarget } from "@/features/conversation-actions";
+import { useProfilePanel } from "@/hooks/use-profile-panel";
 import type { Conversation } from "@/shared/api/types.gen";
 import { useI18n, useT } from "@/shared/i18n";
 import { useTouchFirst } from "@/shared/lib/device";
@@ -39,7 +41,7 @@ import { Button } from "@/shared/ui/primitives/button";
  * hides a conversation.
  *
  * A long press (touch), a right click or the "⋯" on a row (mouse) opens what the conversation
- * offers: mark it read, its profile, leave and delete (ACT-01..ACT-04, components/conversation-menu).
+ * offers: mark it read, its profile, leave and delete (ACT-01..ACT-04, features/conversation-actions).
  */
 
 const FRESH_MS = 1_500;
@@ -78,6 +80,7 @@ export function ConversationList({
   const conversations = useConversations();
   const { org, loading: orgLoading } = useCurrentOrg();
   const touch = useTouchFirst();
+  const profile = useProfilePanel();
   const [menu, setMenu] = useState<ConversationMenuTarget | null>(null);
   // The menu shows the row as it is now (a message may have come in), not as it was when it opened.
   const menuTarget = useMemo(
@@ -214,7 +217,12 @@ export function ConversationList({
           />
         </div>
       ) : null}
-      <ConversationMenu target={menuTarget} onClose={closeMenu} touch={touch} />
+      <ConversationMenu
+        target={menuTarget}
+        onClose={closeMenu}
+        touch={touch}
+        onViewProfile={profile.open}
+      />
     </>
   );
 }
