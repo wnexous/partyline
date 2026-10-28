@@ -499,7 +499,7 @@ func TestBackupsArePrivate(t *testing.T) {
 		"claude":      nil,
 		"codex":       {hooks + ".partyline.bak"},
 		"gemini":      {filepath.Join(env.Home, ".gemini/settings.json.partyline.bak")},
-		"antigravity": {filepath.Join(env.Home, ".gemini/config/hooks.json.partyline.bak")},
+		"antigravity": {filepath.Join(env.Home, ".gemini/config/hooks.json.partyline.bak"), filepath.Join(env.Home, ".gemini/antigravity-cli/settings.json.partyline.bak")},
 		"opencode":    {filepath.Join(env.Home, ".config/opencode/opencode.json.partyline.bak")},
 		"pi":          {pi + ".partyline.bak"},
 		"omp":         {filepath.Join(env.Home, ".omp/agent/mcp.json.partyline.bak")},

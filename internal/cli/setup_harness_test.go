@@ -339,6 +339,10 @@ func TestSetupRegistersAndRemovesAntigravity(t *testing.T) {
 	require.NoError(t, err)
 	require.Contains(t, string(hooks), testBinary+" hook antigravity-stop")
 	require.Contains(t, string(hooks), `"Stop"`)
+	settings, err := os.ReadFile(filepath.Join(home, ".gemini", "antigravity-cli", "settings.json"))
+	require.NoError(t, err)
+	require.Contains(t, string(settings), `"mcp(partyline/reply)"`, "agy does not ask before the partyline tools")
+	require.NotContains(t, string(settings), "*", "no wildcard rule")
 
 	// The fake CLI writes nothing, so the MCP entry is put where agy keeps it for the removal.
 	mcp := filepath.Join(home, ".gemini", "config", "mcp_config.json")
@@ -350,6 +354,7 @@ func TestSetupRegistersAndRemovesAntigravity(t *testing.T) {
 	require.Equal(t, []string{"agy mcp remove partyline"}, calls.calls())
 	require.Contains(t, r.stdout, "✓ Antigravity: removed")
 	require.NoFileExists(t, filepath.Join(home, ".gemini", "config", "hooks.json"))
+	require.NoFileExists(t, filepath.Join(home, ".gemini", "antigravity-cli", "settings.json"), "the rules were all it held")
 }
 
 // CLI-03: the setup checklist offers Antigravity, installed when `agy` is on PATH, and a detected
