@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { json, mockApi } from "@/test/fetch";
 // The manifest is a static file in public/, served as-is; the test parses the committed bytes.
-import manifestSource from "../../../public/manifest.webmanifest?raw";
+import manifestSource from "../../../../public/manifest.webmanifest?raw";
 import { ensurePushSubscription, registerServiceWorker } from "./register";
 
 /*

@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 // The worker is a classic script served from the root, so the test runs the real file as text
 // instead of importing it as a module.
-import source from "../../../public/sw.js?raw";
+import source from "../../../../public/sw.js?raw";
 
 /*
  * What the service worker does with a push: show it, suppress the conversation that is already on

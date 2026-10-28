@@ -7,7 +7,7 @@ import { CommandMenu } from "@/components/command-menu";
 import { OrgSwitcher } from "@/components/org-switcher";
 import { ProfilePanel } from "@/components/profile-panel";
 import { meQuery, useMe } from "@/entities/account";
-import { ensurePushSubscription } from "@/lib/push/register";
+import { ensurePushSubscription } from "@/features/push-notifications";
 import { isApiError } from "@/shared/api/client";
 import { isLocale, useT } from "@/shared/i18n";
 import { useIsMobile } from "@/shared/lib/device";

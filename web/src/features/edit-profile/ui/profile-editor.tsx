@@ -2,7 +2,6 @@ import { zodResolver } from "@hookform/resolvers/zod";
 import { useEffect, useId, useRef, useState } from "react";
 import { useForm } from "react-hook-form";
 import { toast } from "sonner";
-import { PhotoEditor } from "@/components/photo-editor";
 import {
   IntelligenceAvatar,
   useRemoveAvatar,
@@ -22,6 +21,7 @@ import { applyFieldErrors } from "@/shared/lib/forms";
 import { FormAlert, TextAreaField, TextField } from "@/shared/ui/molecules/form-fields";
 import { Button } from "@/shared/ui/primitives/button";
 import { Form } from "@/shared/ui/primitives/form";
+import { PhotoEditor } from "./photo-editor";
 
 /*
  * The editor of a profile (PROF-03, PROF-05, PROF-11): the photo, the display name, the @handle

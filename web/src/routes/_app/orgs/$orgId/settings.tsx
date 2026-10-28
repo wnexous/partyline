@@ -3,7 +3,6 @@ import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import { useEffect, useId, useRef, useState } from "react";
 import { useForm } from "react-hook-form";
 import { toast } from "sonner";
-import { PhotoEditor } from "@/components/photo-editor";
 import { useMe } from "@/entities/account";
 import {
   isAdminOf,
@@ -16,6 +15,7 @@ import {
   useUpdateOrg,
   useUploadOrgAvatar,
 } from "@/entities/organization";
+import { PhotoEditor } from "@/features/edit-profile";
 import { type UpdateOrgForm, updateOrgSchema } from "@/lib/schemas";
 import { isApiError } from "@/shared/api/client";
 import {

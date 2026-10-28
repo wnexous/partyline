@@ -4,7 +4,6 @@ import { MonitorIcon, MoonIcon, SunIcon } from "lucide-react";
 import { useEffect, useId, useRef, useState } from "react";
 import { useForm } from "react-hook-form";
 import { toast } from "sonner";
-import { ProfileEditor } from "@/components/profile-editor";
 import {
   useChangePassword,
   useDeleteAccount,
@@ -21,6 +20,7 @@ import {
 import { useIntelligence } from "@/entities/intelligence";
 import { defaultOrgIdOf, useMyOrgs } from "@/entities/organization";
 import { LOCALE_NAMES, useChooseLocale } from "@/features/change-language";
+import { ProfileEditor } from "@/features/edit-profile";
 import {
   activeRegistration,
   applicationServerKey,
@@ -31,7 +31,7 @@ import {
   subscribe,
   subscriptionJSON,
   unsubscribe,
-} from "@/lib/push/subscription";
+} from "@/features/push-notifications";
 import {
   type ChangePasswordForm,
   changePasswordSchema,

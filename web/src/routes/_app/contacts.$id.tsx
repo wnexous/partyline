@@ -13,7 +13,6 @@ import {
 import { type ReactNode, useState } from "react";
 import { MessageButton } from "@/components/message-button";
 import { ProfileConversations } from "@/components/profile-conversations";
-import { ProfileEditor } from "@/components/profile-editor";
 import { useMe } from "@/entities/account";
 import {
   contactsQuery,
@@ -29,6 +28,7 @@ import {
 } from "@/entities/intelligence";
 import { platformName } from "@/entities/message";
 import { removalOf } from "@/entities/organization";
+import { ProfileEditor } from "@/features/edit-profile";
 import {
   DeleteAIDialog,
   EndSessionDialog,
