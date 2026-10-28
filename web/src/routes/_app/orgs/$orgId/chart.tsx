@@ -1,13 +1,17 @@
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
-import { MoveRightIcon, PencilRulerIcon, Trash2Icon, UserMinusIcon } from "lucide-react";
+import { PencilRulerIcon } from "lucide-react";
 import { useMemo, useState } from "react";
 import { ChartTree, type TreeRowState } from "@/components/chart-tree";
-import { DeleteAIDialog } from "@/components/delete-ai-dialog";
-import { MoveMemberDialog, type MoveTarget } from "@/components/move-member-dialog";
-import { RemoveFromOrgDialog } from "@/components/remove-from-org-dialog";
 import { useMe } from "@/entities/account";
 import { IntelligenceAvatar, useIsOnline, YouBadge } from "@/entities/intelligence";
-import { removalOf, useOrg, useOrgChart } from "@/entities/organization";
+import { useOrg, useOrgChart } from "@/entities/organization";
+import {
+  DeleteAIDialog,
+  MoveMemberDialog,
+  type MoveTarget,
+  OrgMemberActions,
+  RemoveFromOrgDialog,
+} from "@/features/manage-org-member";
 import { buildChartTree, type ChartTreeNode } from "@/lib/org-chart";
 import { isApiError } from "@/shared/api/client";
 import {
@@ -247,8 +251,6 @@ function MemberRow({
   const online = useIsOnline(who.id, m.online);
   const tab = state.tabbable ? 0 : -1;
   const name = who.display_name;
-  const deletes = removalOf(m) === "delete";
-  const removes = removalOf(m) === "remove";
 
   return (
     <div className="flex min-w-0 flex-1 flex-wrap items-center gap-x-2 gap-y-1">
@@ -289,48 +291,16 @@ function MemberRow({
           ) : null}
         </span>
       </div>
-      {m.can_move || m.can_delete ? (
-        <div className="flex flex-wrap items-center gap-1.5">
-          {m.can_move ? (
-            <Button
-              variant="outline"
-              size="sm"
-              tabIndex={tab}
-              aria-label={t("orgs.chartMove", { name })}
-              onClick={() => onMove(m)}
-            >
-              <MoveRightIcon aria-hidden="true" />
-              {t("orgs.move")}
-            </Button>
-          ) : null}
-          {deletes ? (
-            <Button
-              variant="outline"
-              size="sm"
-              tabIndex={tab}
-              className="text-destructive hover:text-destructive"
-              aria-label={t("orgs.chartDelete", { name })}
-              onClick={() => onDelete(m)}
-            >
-              <Trash2Icon aria-hidden="true" />
-              {t("orgs.deleteMember")}
-            </Button>
-          ) : null}
-          {removes ? (
-            <Button
-              variant="outline"
-              size="sm"
-              tabIndex={tab}
-              className="text-destructive hover:text-destructive"
-              aria-label={t("orgs.chartRemove", { name, org: orgName })}
-              onClick={() => onRemove(m)}
-            >
-              <UserMinusIcon aria-hidden="true" />
-              {t("orgs.removeShort")}
-            </Button>
-          ) : null}
-        </div>
-      ) : null}
+      <OrgMemberActions
+        member={m}
+        name={name}
+        orgName={orgName}
+        variant="chart"
+        tabIndex={tab}
+        onMove={onMove}
+        onRemove={onRemove}
+        onDelete={onDelete}
+      />
     </div>
   );
 }

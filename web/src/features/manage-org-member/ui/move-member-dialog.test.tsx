@@ -1,11 +1,11 @@
 import { screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { MoveMemberDialog, type MoveTarget } from "@/components/move-member-dialog";
 import { json, mockApi } from "@/test/fetch";
 import { makeAI, makeIntelligence, makePosition } from "@/test/fixtures";
 import { useLiveStore } from "@/test/live-store";
 import { renderWithProviders } from "@/test/render";
+import { MoveMemberDialog, type MoveTarget } from "./move-member-dialog";
 
 /*
  * Moving a member to another position (POS-04). Before the move the dialog asks the server who

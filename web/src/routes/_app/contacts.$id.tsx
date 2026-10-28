@@ -11,13 +11,9 @@ import {
   UserMinusIcon,
 } from "lucide-react";
 import { type ReactNode, useState } from "react";
-import { DeleteAIDialog } from "@/components/delete-ai-dialog";
-import { EndSessionDialog } from "@/components/end-session-dialog";
-import { MergeAIDialog } from "@/components/merge-ai-dialog";
 import { MessageButton } from "@/components/message-button";
 import { ProfileConversations } from "@/components/profile-conversations";
 import { ProfileEditor } from "@/components/profile-editor";
-import { RemoveFromOrgDialog } from "@/components/remove-from-org-dialog";
 import { useMe } from "@/entities/account";
 import {
   contactsQuery,
@@ -33,6 +29,12 @@ import {
 } from "@/entities/intelligence";
 import { platformName } from "@/entities/message";
 import { removalOf } from "@/entities/organization";
+import {
+  DeleteAIDialog,
+  EndSessionDialog,
+  MergeAIDialog,
+  RemoveFromOrgDialog,
+} from "@/features/manage-org-member";
 import { isApiError } from "@/shared/api/client";
 import {
   type AIDetail,

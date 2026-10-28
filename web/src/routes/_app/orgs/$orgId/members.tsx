@@ -1,11 +1,8 @@
 import { createFileRoute } from "@tanstack/react-router";
-import { MoveRightIcon, Trash2Icon, UserMinusIcon, UserPlusIcon } from "lucide-react";
+import { UserPlusIcon } from "lucide-react";
 import { useId, useMemo, useState } from "react";
 import { toast } from "sonner";
-import { DeleteAIDialog } from "@/components/delete-ai-dialog";
 import { InviteDialog } from "@/components/invite-dialog";
-import { MoveMemberDialog, type MoveTarget } from "@/components/move-member-dialog";
-import { RemoveFromOrgDialog } from "@/components/remove-from-org-dialog";
 import { useMe } from "@/entities/account";
 import { IntelligenceAvatar, IntelligenceName } from "@/entities/intelligence";
 import {
@@ -14,7 +11,6 @@ import {
   PermissionGuest,
   PermissionMember,
   permissionLabel,
-  removalOf,
   useOrg,
   useOrgChart,
   useOrgInvitations,
@@ -22,6 +18,13 @@ import {
   useRevokeInvitation,
   useUpdateOrgMember,
 } from "@/entities/organization";
+import {
+  DeleteAIDialog,
+  MoveMemberDialog,
+  type MoveTarget,
+  OrgMemberActions,
+  RemoveFromOrgDialog,
+} from "@/features/manage-org-member";
 import { isApiError } from "@/shared/api/client";
 import {
   ErrorCodeLastAdmin,
@@ -346,38 +349,16 @@ function MemberRow({
         {m.invited_by ? t("orgs.invitedBy", { name: m.invited_by.display_name }) : null}
       </td>
       <td className="max-xl:col-span-2 xl:px-8 xl:py-3">
-        <div className="flex flex-wrap gap-2 xl:justify-end">
-          {m.can_move ? (
-            <Button variant="outline" size="sm" aria-describedby={nameId} onClick={() => onMove(m)}>
-              <MoveRightIcon aria-hidden="true" />
-              {t("orgs.move")}
-            </Button>
-          ) : null}
-          {removalOf(m) === "delete" ? (
-            <Button
-              variant="outline"
-              size="sm"
-              className="text-destructive hover:text-destructive"
-              aria-describedby={nameId}
-              onClick={() => onDelete(m)}
-            >
-              <Trash2Icon aria-hidden="true" />
-              {t("orgs.deleteMember")}
-            </Button>
-          ) : null}
-          {removalOf(m) === "remove" ? (
-            <Button
-              variant="outline"
-              size="sm"
-              className="text-destructive hover:text-destructive"
-              aria-describedby={nameId}
-              onClick={() => onRemove(m)}
-            >
-              <UserMinusIcon aria-hidden="true" />
-              {t("profile.removeFrom", { org: orgName })}
-            </Button>
-          ) : null}
-        </div>
+        <OrgMemberActions
+          member={m}
+          name={who.display_name}
+          orgName={orgName}
+          variant="table"
+          describedBy={nameId}
+          onMove={onMove}
+          onRemove={onRemove}
+          onDelete={onDelete}
+        />
       </td>
     </tr>
   );
