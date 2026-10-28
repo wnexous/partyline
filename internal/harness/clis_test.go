@@ -401,6 +401,15 @@ const agyHooksOrig = "{\n  \"lint\": {\n    \"PostToolUse\": [{\"matcher\": \"ru
 
 const agyMCPOrig = "{\n  \"mcpServers\": {\n    \"other\": {\"command\": \"o\", \"disabled\": false}\n  }\n}\n"
 
+const agySettingsOrig = "{\n  \"model\": \"Gemini 3 Pro\",\n  \"trustedWorkspaces\": [\"/home/dev\"],\n  \"permissions\": {\n    \"allow\": [\"command(git status)\"]\n  }\n}\n"
+
+// agyRules is every rule setup adds: one mcp(partyline/<tool>) per tool, never a wildcard.
+var agyRules = []string{
+	"mcp(partyline/reply)", "mcp(partyline/send_message)", "mcp(partyline/react)", "mcp(partyline/edit_message)",
+	"mcp(partyline/ask)", "mcp(partyline/history)", "mcp(partyline/room_info)", "mcp(partyline/list_rooms)",
+	"mcp(partyline/wait_for_messages)",
+}
+
 const agyHandler = `{"type":"command","command":"/opt/bin/partyline hook antigravity-stop","timeout":30}`
 
 // agyCLI emulates `agy mcp add/remove` on the global mcp_config.json: add writes (or replaces)
@@ -434,12 +443,17 @@ func TestAntigravityRegistersAndRemoves(t *testing.T) {
 	hooks := filepath.Join(env.Home, ".gemini", "config", "hooks.json")
 	writeFile(t, mcp, agyMCPOrig)
 	writeFile(t, hooks, agyHooksOrig)
+	settings := filepath.Join(env.Home, ".gemini", "antigravity-cli", "settings.json")
+	writeFile(t, settings, agySettingsOrig)
 	cli.handle = agyCLI(t, mcp)
 	r := registrar(t, env, "antigravity")
 	require.Equal(t, "Antigravity", r.Title())
 	require.True(t, r.Detected())
 	add := "agy mcp add partyline /opt/bin/partyline channel --tools-only --harness antigravity"
-	require.Equal(t, []string{"run: " + add, "edit ~/.gemini/config/hooks.json: add to partyline.Stop " + agyHandler}, r.Plan())
+	require.Equal(t, []string{
+		"run: " + add, "edit ~/.gemini/config/hooks.json: add to partyline.Stop " + agyHandler,
+		"edit ~/.gemini/antigravity-cli/settings.json: add to permissions.allow " + strings.Join(agyRules, ", "),
+	}, r.Plan())
 	require.Empty(t, r.RemovePlan(context.Background()), "nothing registered yet")
 
 	require.NoError(t, r.Apply(context.Background()))
@@ -448,6 +462,17 @@ func TestAntigravityRegistersAndRemoves(t *testing.T) {
 	require.NotNil(t, jsonAt(t, hooks, "lint", "PostToolUse"), "the other hook is kept")
 	require.NotNil(t, jsonAt(t, mcp, "mcpServers", "other"), "the other server is kept")
 	require.FileExists(t, hooks+".partyline.bak")
+	// The tool rules join the user's own rule; the other settings stay, and no rule is a wildcard.
+	allow := jsonAt(t, settings, "permissions", "allow").([]any)
+	require.Len(t, allow, 1+len(agyRules))
+	require.Equal(t, "command(git status)", allow[0])
+	for _, rule := range agyRules {
+		require.Contains(t, allow, rule)
+		require.NotContains(t, rule, "*")
+		require.True(t, strings.HasPrefix(rule, "mcp(partyline/"), "only the partyline server: %s", rule)
+	}
+	require.Equal(t, "Gemini 3 Pro", jsonAt(t, settings, "model"))
+	require.FileExists(t, settings+".partyline.bak")
 	entries, err := r.Entries(context.Background())
 	require.NoError(t, err)
 	require.Equal(t, []Entry{
@@ -457,14 +482,20 @@ func TestAntigravityRegistersAndRemoves(t *testing.T) {
 
 	require.NoError(t, r.Apply(context.Background()))
 	require.Len(t, jsonAt(t, hooks, "partyline", "Stop"), 1, "applying again does not duplicate the hook")
+	require.Len(t, jsonAt(t, settings, "permissions", "allow"), 1+len(agyRules), "nor the rules")
 
-	require.Equal(t, []string{"run: agy mcp remove partyline", "edit ~/.gemini/config/hooks.json: remove the Partyline Stop hook"}, r.RemovePlan(context.Background()))
+	require.Equal(t, []string{
+		"run: agy mcp remove partyline", "edit ~/.gemini/config/hooks.json: remove the Partyline Stop hook",
+		"edit ~/.gemini/antigravity-cli/settings.json: remove the Partyline tool rules from permissions.allow",
+	}, r.RemovePlan(context.Background()))
 	cli.calls = nil
 	require.NoError(t, r.Remove(context.Background()))
 	require.Equal(t, []string{"agy mcp remove partyline"}, cli.calls)
 	require.Equal(t, agyMCPOrig, readFile(t, mcp))
 	require.Equal(t, agyHooksOrig, readFile(t, hooks))
 	requireMissing(t, hooks+".partyline.bak")
+	require.JSONEq(t, agySettingsOrig, readFile(t, settings), "the user's own rule and settings are back as they were")
+	requireMissing(t, settings+".partyline.bak")
 
 	// Nothing registered: remove runs no CLI and touches nothing.
 	cli.calls = nil
@@ -484,9 +515,11 @@ func TestAntigravityCreatesAndDeletesHooksFile(t *testing.T) {
 	r := registrar(t, env, "antigravity")
 	require.NoError(t, r.Apply(context.Background()))
 	require.Equal(t, decode(t, `[`+agyHandler+`]`), jsonAt(t, hooks, "partyline", "Stop"))
+	require.Len(t, jsonAt(t, filepath.Join(env.Home, ".gemini", "antigravity-cli", "settings.json"), "permissions", "allow"), len(agyRules))
 	cli.handle = func(_ string) ([]byte, error) { return nil, os.Remove(mcp) }
 	require.NoError(t, r.Remove(context.Background()))
 	requireMissing(t, hooks)
+	requireMissing(t, filepath.Join(env.Home, ".gemini", "antigravity-cli", "settings.json"))
 }
 
 // A hook of the user's under the name "partyline" that is not Partyline's stays when the Stop
@@ -512,6 +545,34 @@ func TestAntigravityAlways(t *testing.T) {
 	plan := strings.Join(registrar(t, env, "antigravity").Plan(), "\n")
 	require.Contains(t, plan, "/opt/bin/partyline channel --tools-only --harness antigravity --always")
 	require.Contains(t, plan, "/opt/bin/partyline hook antigravity-stop --always")
+}
+
+// A settings.json that is not valid JSON is not touched and stops setup before agy runs.
+func TestAntigravityInvalidSettingsIsNotTouched(t *testing.T) {
+	env, cli := testEnv(t, nil)
+	path := filepath.Join(env.Home, ".gemini", "antigravity-cli", "settings.json")
+	writeFile(t, path, "{\"permissions\": {,}}")
+	err := registrar(t, env, "antigravity").Apply(context.Background())
+	var pe *ParseError
+	require.True(t, errors.As(err, &pe), "%v", err)
+	require.Contains(t, err.Error(), path)
+	require.Empty(t, cli.calls)
+	require.Equal(t, "{\"permissions\": {,}}", readFile(t, path))
+}
+
+// Rules the user wrote by hand stay when ours are removed, and an allow list with only ours goes away
+// together with its parent.
+func TestAntigravityRemoveKeepsTheUsersRules(t *testing.T) {
+	env, cli := testEnv(t, nil)
+	mcp := filepath.Join(env.Home, ".gemini", "config", "mcp_config.json")
+	settings := filepath.Join(env.Home, ".gemini", "antigravity-cli", "settings.json")
+	writeFile(t, settings, `{"permissions":{"allow":["mcp(other/tool)"],"deny":["command(rm)"]}}`)
+	writeFile(t, mcp, "{}\n")
+	cli.handle = agyCLI(t, mcp)
+	r := registrar(t, env, "antigravity")
+	require.NoError(t, r.Apply(context.Background()))
+	require.NoError(t, r.Remove(context.Background()))
+	require.JSONEq(t, `{"permissions":{"allow":["mcp(other/tool)"],"deny":["command(rm)"]}}`, readFile(t, settings))
 }
 
 // Edge case (HAR-02): a hooks or settings file that is not valid JSON is not touched, no CLI

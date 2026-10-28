@@ -45,6 +45,9 @@ type launcher struct {
 	bin   string
 	extra []string
 	live  bool
+	// hint is the one line printed when the session starts, for a harness whose messages do not arrive as
+	// they come in.
+	hint string
 }
 
 // binary is the program the launcher starts: bin, else the harness id.
@@ -63,7 +66,7 @@ var launchers = []launcher{
 	{id: "omp", live: true},
 	{id: "codex"},
 	{id: "gemini"},
-	{id: "antigravity", bin: "agy"},
+	{id: "antigravity", bin: "agy", hint: "messages arrive at the end of a turn, or while the session runs wait_for_messages"},
 }
 
 // launcherAliases are other spellings of a launcher id.
@@ -227,6 +230,9 @@ func launch(ctx context.Context, l launcher, args []string, io stdio) int {
 		takingOver = opts.takeOver || strings.TrimSpace(io.getenv("PARTYLINE_TAKEOVER")) == "1"
 	} else {
 		announceToolsOnly(lookup, io)
+	}
+	if l.hint != "" {
+		fmt.Fprintf(io.stderr, "partyline %s: %s\n", l.id, l.hint)
 	}
 
 	environ := io.environ

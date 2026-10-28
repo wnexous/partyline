@@ -69,6 +69,9 @@ func TestHookContinuesWithPendingMessages(t *testing.T) {
 			require.NoError(t, json.Unmarshal([]byte(out), &got))
 			reason := `<partyline room="Builds" conversation="group" from="` + m1.AuthorName + `" trusted="true" message_id="` + m1.ID + `">build &lt;red&gt; &amp; failing</partyline>` + "\n" + trustedLine +
 				"\n\n" + `<partyline room="Builds" conversation="group" from="` + m2.AuthorName + `" trusted="true" message_id="` + m2.ID + `">now green</partyline>` + "\n" + trustedLine
+			if hook == "antigravity-stop" {
+				reason = antigravityPreamble + "\n\n" + reason
+			}
 			require.Equal(t, map[string]string{"decision": decision, "reason": reason}, got)
 
 			code, out, _ = runHook(hook, `{"cwd":"/work/proj"}`, e.launched("codex"))
@@ -196,6 +199,9 @@ func TestAntigravityHookInput(t *testing.T) {
 	require.NoError(t, json.Unmarshal([]byte(out), &got))
 	require.Equal(t, "continue", got["decision"])
 	require.Contains(t, got["reason"], `message_id="`+msg.ID+`"`)
+	require.True(t, strings.HasPrefix(got["reason"], antigravityPreamble+"\n\n<partyline "), "the short preamble comes first")
+	require.Contains(t, antigravityPreamble, "Do not repeat your previous answer")
+	require.Less(t, len(antigravityPreamble), 250, "the preamble stays short")
 	require.Equal(t, "antigravity", e.registered(t, "/work/proj").AI.App)
 
 	code, out, _ = runHook("antigravity-stop", `{"workspacePaths":["/work/proj"]}`, e.launched("antigravity"))

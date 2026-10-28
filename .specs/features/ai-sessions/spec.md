@@ -224,6 +224,7 @@ pi and OpenCode run `partyline listen` (the WebSocket and the live id) and, from
 3. WHEN an AI has a parallel session in its own folder (not a worktree) THEN that session SHALL receive no plain message, no message the principal wrote, no message any session of the AI wrote unless it addresses that session, and no backlog of the principal's queue when it connects or reconnects, and SHALL receive a message addressed to its label once. (SESS-47)
 5. WHEN a message written by a labelled session of an AI mentions the AI by its bare `@handle` (a word-boundary mention outside code that is not an `@handle:label` address) THEN the system SHALL deliver it once to the AI's principal session, live, with `trusted: true`, the writing session named by `author_label`, and no `for_label` note; the principal's own message SHALL reach no session, a plain message of a labelled session SHALL reach none (SESS-38), and an edit or a delete of it SHALL reach the principal the same way (SESS-39); WHEN the principal is not live THEN nothing SHALL be delivered or queued (the AI's own messages are not part of the principal's backlog or pending list, and a principal has no delivery row, which needs a label). (SESS-49)
 4. WHEN a message's text holds `@handle:label` inside an inline code span or a fenced code block THEN that address SHALL NOT address a session; an address outside the code in the same text SHALL still address, and the first valid address outside code wins. (SESS-48)
+5. WHEN a request of an agent token arrives without a socket (a tool call, a pending read or a turn-end hook of a tools-only process, or its start registration) and the AI has no live session THEN the server SHALL stamp the AI's `last_seen_at` with the time of the call, at most once a minute per AI, and SHALL NOT make the AI online: `online` keeps meaning "has a live session", which the dispatcher's pushes, the 409 of the principal's reader and the "also open in another session" notice depend on; `partyline agents` shows the relative last seen ("now", "Nm ago") for such an AI. WHEN the AI has a live session THEN the call SHALL stamp nothing. (SESS-50)
 
 ---
 
@@ -356,6 +357,7 @@ pi and OpenCode run `partyline listen` (the WebSocket and the live id) and, from
 | SESS-47 | P2: The two halves of a pi or OpenCode session | v0.10.2 | Done |
 | SESS-48 | P2: The two halves of a pi or OpenCode session | v0.10.2 | Done |
 | SESS-49 | P2: The two halves of a pi or OpenCode session | v0.10.2 | Done |
+| SESS-50 | P2: The two halves of a pi or OpenCode session | v0.10.4 | Done |
 
 **Coverage:** 49 total, 39 mapped to tasks (`tasks.md` T1-T16), 5 shipped directly in v0.10.1 (SESS-40..44), 5 in v0.10.2 (SESS-45..49), status Pending (the plan is not executed
 yet).

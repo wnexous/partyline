@@ -25,6 +25,12 @@ var hookDecisions = map[string]string{
 	"antigravity-stop":   "continue",
 }
 
+// antigravityPreamble opens the reason of Antigravity's Stop hook. The hook has no field the person sees
+// (Antigravity's Stop result is decision and reason, and the reason is only injected for the model), so the
+// reason itself tells the model what happened and what not to do: its last answer is already on screen, so
+// it must not be repeated, and a one-line note at the end is the person's only sign of the exchange.
+const antigravityPreamble = "[Partyline] New message(s) arrived after your last answer. Handle them with the partyline tools (reply, send_message). Do not repeat your previous answer; when done, end with one short line saying what you did."
+
 // hookCmd runs `partyline hook codex-stop|gemini-after-agent|antigravity-stop`: it reads the hook input (JSON
 // with the session's cwd) from stdin, takes the agent's undelivered room messages and platform
 // events (the messages that arrived on the connections it operates), and the count of the platform
@@ -101,6 +107,9 @@ func hookCmd(ctx context.Context, args []string, io stdio) int {
 	reason := channel.FramePending(pending)
 	if reason == "" {
 		return allow()
+	}
+	if name == "antigravity-stop" {
+		reason = antigravityPreamble + "\n\n" + reason
 	}
 	enc := json.NewEncoder(io.stdout)
 	enc.SetEscapeHTML(false)

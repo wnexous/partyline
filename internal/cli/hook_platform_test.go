@@ -64,7 +64,12 @@ func hookReason(t *testing.T, hook, cwd string, env map[string]string) (decision
 	require.Equal(t, 0, code, errOut)
 	var got map[string]string
 	require.NoError(t, json.Unmarshal([]byte(out), &got))
-	return got["decision"], got["reason"]
+	reason = got["reason"]
+	if hook == "antigravity-stop" { // its reason opens with the preamble; the frames follow
+		require.True(t, strings.HasPrefix(reason, antigravityPreamble+"\n\n"), reason)
+		reason = strings.TrimPrefix(reason, antigravityPreamble+"\n\n")
+	}
+	return got["decision"], reason
 }
 
 // CID-06, TURN-02: with queued platform events each turn-end hook prints its harness's continue

@@ -28,6 +28,10 @@ const MaxFolderLength = 1024
 // calls resolve their folder constantly, the machine row only needs a coarse "last seen".
 const MachineTouchInterval = time.Minute
 
+// SeenTouchInterval is how often a tools-only call stamps its AI's last_seen_at (SESS-50): an AI used only
+// through Codex, Gemini or Antigravity holds no socket, so its calls are the only sign of life it gives.
+const SeenTouchInterval = time.Minute
+
 // FolderID is what a session tells the server about itself on every connection and tool call:
 // where it works (machine and canonical folder) and, for the app and the adoption of a v0.3
 // identity, the harness and the name it was started with (AID-07, MIG-02).
@@ -272,6 +276,33 @@ func (r *Registry) ResolveFolder(ctx context.Context, ownerID string, id FolderI
 		return db.Agent{}, err
 	}
 	return r.relabel(ctx, a, id.Harness, live)
+}
+
+// TouchSeen stamps last_seen_at of an AI whose request came without a socket (the HTTP calls of a tools-only
+// process: a tool call, a pending read, a hook), at most once per SeenTouchInterval per AI and only while the
+// AI has no live session: a live session stamps it when it connects and when it ends. It is not presence: the
+// AI stays offline, so the pushes, the 409 of a principal's reader and the "also open elsewhere" notice are
+// unchanged, and `partyline agents` shows "Nm ago" (SESS-50). A failed write is not worth failing the call over.
+func (r *Registry) TouchSeen(ctx context.Context, agentID string) {
+	if r.presence.Online(agentID) {
+		return
+	}
+	now := r.now()
+	r.seenMu.Lock()
+	if at, ok := r.seen[agentID]; ok && now.Sub(at) < SeenTouchInterval {
+		r.seenMu.Unlock()
+		return
+	}
+	r.seen[agentID] = now // reserved before the write: concurrent calls do not all write
+	r.seenMu.Unlock()
+	err := r.store.WithTx(ctx, func(q *db.Queries) error {
+		return q.TouchAgent(ctx, db.TouchAgentParams{LastSeenAt: nullMillis(now), ID: agentID})
+	})
+	if err != nil {
+		r.seenMu.Lock()
+		delete(r.seen, agentID) // the next call tries again
+		r.seenMu.Unlock()
+	}
 }
 
 // RegisterFolder resolves the AI of the machine and folder like a tools-only call would

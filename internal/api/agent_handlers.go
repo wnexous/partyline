@@ -230,7 +230,12 @@ func (s *server) agentOf(r *http.Request, p authn.Principal) (db.Agent, error) {
 	if err != nil {
 		return db.Agent{}, err
 	}
-	return s.Agents.ResolveFolder(r.Context(), p.UserID, id, false)
+	a, err := s.Agents.ResolveFolder(r.Context(), p.UserID, id, false)
+	if err != nil {
+		return db.Agent{}, err
+	}
+	s.Agents.TouchSeen(r.Context(), a.ID) // a call without a socket is the AI's only sign of life (SESS-50)
+	return a, nil
 }
 
 // ownerAgents lists the agents the token's owner owns, like GET /agents, for
@@ -439,6 +444,7 @@ func (s *server) agentRegister(w http.ResponseWriter, r *http.Request) error {
 	if err != nil {
 		return err
 	}
+	s.Agents.TouchSeen(r.Context(), row.Agent.ID)
 	httpx.WriteJSON(w, http.StatusOK, dto.AgentInfo{
 		ID: row.Agent.ID, Name: row.Handle, DisplayName: row.ProfileName, Owner: row.OwnerUsername,
 	})

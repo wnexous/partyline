@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"path/filepath"
+	"slices"
 	"strings"
 )
 
@@ -360,6 +361,30 @@ func (a *antigravity) configDir() string { return filepath.Join(a.env.Home, ".ge
 func (a *antigravity) mcpPath() string   { return filepath.Join(a.configDir(), "mcp_config.json") }
 func (a *antigravity) hooksPath() string { return filepath.Join(a.configDir(), "hooks.json") }
 
+// settingsPath is the CLI's own settings file; its permissions.allow list holds the tool rules.
+func (a *antigravity) settingsPath() string {
+	return filepath.Join(a.env.Home, ".gemini", "antigravity-cli", "settings.json")
+}
+
+// antigravityToolRules are the allow rules setup adds to permissions.allow of settings.json, one per tool,
+// so agy does not ask before every call of a Partyline tool: mcp(<server>/<tool>) is agy's own syntax. Tools
+// that read or write local files (send_file, download_attachment, update_profile's avatar) and the ones that
+// create things (create_group) and delete messages are left out, and nothing outside the partyline server
+// is ever granted.
+var antigravityToolRules = []string{
+	"mcp(" + ServerName + "/reply)",
+	"mcp(" + ServerName + "/send_message)",
+	"mcp(" + ServerName + "/react)",
+	"mcp(" + ServerName + "/edit_message)",
+	"mcp(" + ServerName + "/ask)",
+	"mcp(" + ServerName + "/history)",
+	"mcp(" + ServerName + "/room_info)",
+	"mcp(" + ServerName + "/list_rooms)",
+	"mcp(" + ServerName + "/wait_for_messages)",
+}
+
+var antigravityAllowKeys = []string{"permissions", "allow"}
+
 func (a *antigravity) addArgs() []string {
 	return append([]string{"mcp", "add", ServerName, a.env.Binary, "channel", "--tools-only", "--harness", a.ID()}, a.env.alwaysArgs()...)
 }
@@ -380,20 +405,26 @@ func (a *antigravity) Plan() []string {
 	return []string{
 		"run: agy " + strings.Join(a.addArgs(), " "),
 		fmt.Sprintf("edit %s: add to partyline.Stop %s", a.env.tildePath(a.hooksPath()), marshal(a.hookHandler(), false, "")),
+		fmt.Sprintf("edit %s: add to permissions.allow %s", a.env.tildePath(a.settingsPath()), strings.Join(antigravityToolRules, ", ")),
 	}
 }
 
 func (a *antigravity) Apply(ctx context.Context) error {
-	if _, _, err := readDoc(a.hooksPath()); err != nil {
-		return err
-	}
-	if _, err := a.env.writeTarget(a.hooksPath()); err != nil {
-		return err
+	for _, p := range []string{a.hooksPath(), a.settingsPath()} {
+		if _, _, err := readDoc(p); err != nil {
+			return err
+		}
+		if _, err := a.env.writeTarget(p); err != nil {
+			return err
+		}
 	}
 	if err := a.env.runCLI(ctx, "agy", a.addArgs()...); err != nil {
 		return err
 	}
-	return a.env.upsertHookGroup(a.hooksPath(), a.hookHandler(), AntigravityStopHook, antigravityHookKeys...)
+	if err := a.env.upsertHookGroup(a.hooksPath(), a.hookHandler(), AntigravityStopHook, antigravityHookKeys...); err != nil {
+		return err
+	}
+	return a.env.addAllowRules(a.settingsPath(), antigravityToolRules)
 }
 
 func (a *antigravity) mcpCommand() (string, error) {
@@ -412,6 +443,9 @@ func (a *antigravity) RemovePlan(context.Context) []string {
 	if bins, _ := a.env.hookBinaries(a.hooksPath(), AntigravityStopHook, antigravityHookKeys...); len(bins) > 0 {
 		plan = append(plan, fmt.Sprintf("edit %s: remove the Partyline Stop hook", a.env.tildePath(a.hooksPath())))
 	}
+	if present, _ := a.env.allowRulesIn(a.settingsPath(), antigravityToolRules); len(present) > 0 {
+		plan = append(plan, fmt.Sprintf("edit %s: remove the Partyline tool rules from permissions.allow", a.env.tildePath(a.settingsPath())))
+	}
 	return plan
 }
 
@@ -425,12 +459,17 @@ func (a *antigravity) Remove(ctx context.Context) error {
 			return err
 		}
 	}
-	return a.env.removeHookGroups(a.hooksPath(), AntigravityStopHook, antigravityHookKeys...)
+	if err := a.env.removeHookGroups(a.hooksPath(), AntigravityStopHook, antigravityHookKeys...); err != nil {
+		return err
+	}
+	return a.env.removeAllowRules(a.settingsPath(), antigravityToolRules)
 }
 
-// Backups lists the backup of hooks.json, the one file setup edits itself; agy writes
-// mcp_config.json.
-func (a *antigravity) Backups() []string { return []string{a.hooksPath() + backupSuffix} }
+// Backups lists the backups of hooks.json and settings.json, the files setup edits itself; agy
+// writes mcp_config.json.
+func (a *antigravity) Backups() []string {
+	return []string{a.hooksPath() + backupSuffix, a.settingsPath() + backupSuffix}
+}
 
 func (a *antigravity) Entries(context.Context) ([]Entry, error) {
 	var out []Entry
@@ -449,6 +488,77 @@ func (a *antigravity) Entries(context.Context) ([]Entry, error) {
 		out = append(out, Entry{What: "Stop hook in " + a.env.tildePath(a.hooksPath()), Binary: b})
 	}
 	return out, nil
+}
+
+// allowRulesIn returns the rules of want that the permissions.allow list at keys of path holds.
+func (e Env) allowRulesIn(path string, want []string) ([]string, error) {
+	d, _, err := readDoc(path)
+	if err != nil {
+		return nil, err
+	}
+	arr, err := d.lookup(antigravityAllowKeys...)
+	if err != nil || arr == nil || arr.kind != '[' {
+		return nil, err
+	}
+	var present []string
+	for _, el := range arr.elems {
+		var s string
+		if json.Unmarshal(d.raw(el), &s) == nil && slices.Contains(want, s) && !slices.Contains(present, s) {
+			present = append(present, s)
+		}
+	}
+	return present, nil
+}
+
+// addAllowRules appends the rules of want that permissions.allow of the settings file at path does not hold
+// yet, keeping every other setting and rule as it was.
+func (e Env) addAllowRules(path string, want []string) error {
+	d, existed, err := readDoc(path)
+	if err != nil {
+		return err
+	}
+	have, err := e.allowRulesIn(path, want)
+	if err != nil {
+		return err
+	}
+	added := false
+	for _, rule := range want {
+		if slices.Contains(have, rule) {
+			continue
+		}
+		if err := d.appendElem(rule, antigravityAllowKeys...); err != nil {
+			return err
+		}
+		added = true
+	}
+	if !added {
+		return nil
+	}
+	return e.writeDoc(d, existed, true)
+}
+
+// removeAllowRules deletes the rules of want from permissions.allow of the settings file at path; the list
+// and the objects around it go when they end up empty.
+func (e Env) removeAllowRules(path string, want []string) error {
+	d, existed, err := readDoc(path)
+	if err != nil || !existed {
+		return err
+	}
+	removed := 0
+	for _, rule := range want {
+		n, err := d.removeElems(func(raw []byte) bool {
+			var s string
+			return json.Unmarshal(raw, &s) == nil && s == rule
+		}, antigravityAllowKeys...)
+		if err != nil {
+			return err
+		}
+		removed += n
+	}
+	if removed == 0 {
+		return nil
+	}
+	return e.saveRemoval(d)
 }
 
 // --- shared hook-file helpers ---------------------------------------------------------
