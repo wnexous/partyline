@@ -3,7 +3,7 @@ import { create } from "zustand";
 
 /*
  * Which profile the panel shows (PRF-01, PRF-02). The panel itself is mounted once, in the app
- * shell (components/profile-panel.tsx); anything that shows an identity opens it through
+ * shell (widgets/profile-panel/ui/profile-panel.tsx); anything that shows an identity opens it through
  * `useProfilePanel().open(id)`.
  */
 

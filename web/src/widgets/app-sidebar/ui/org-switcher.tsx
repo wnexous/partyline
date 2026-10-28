@@ -26,7 +26,7 @@ import {
   DropdownMenuTrigger,
 } from "@/shared/ui/primitives/dropdown-menu";
 import { Skeleton } from "@/shared/ui/primitives/skeleton";
-import { OrgPageItems } from "./organization-menu";
+import { OrgPageItems } from "./org-page-items";
 
 /*
  * The organization switcher (ORG-01, ORG-02): the organization the sidebar, the connections and
