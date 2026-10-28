@@ -217,7 +217,7 @@ export function ConversationMenu({
       {question ? (
         <ConfirmDialog
           open={asking}
-          onOpenChange={setAsking}
+          onClose={() => setAsking(false)}
           title={t(question.kind === "leave" ? "actions.leaveTitle" : "actions.deleteTitle", {
             name: question.conversation.title,
           })}

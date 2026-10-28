@@ -38,6 +38,7 @@ import {
 import { type MessageKey, useI18n, useT } from "@/shared/i18n";
 import { NativeSelect } from "@/shared/ui/atoms/native-select";
 import { RelativeTime } from "@/shared/ui/atoms/relative-time";
+import { ConfirmDialog } from "@/shared/ui/molecules/confirm-dialog";
 import { CodeBlock } from "@/shared/ui/molecules/copy-field";
 import { EmptyState } from "@/shared/ui/molecules/empty-state";
 import { FormAlert } from "@/shared/ui/molecules/form-fields";
@@ -49,17 +50,6 @@ import {
   SheetTitle,
   SheetTrigger,
 } from "@/shared/ui/molecules/sheet";
-import {
-  AlertDialog,
-  AlertDialogAction,
-  AlertDialogCancel,
-  AlertDialogContent,
-  AlertDialogDescription,
-  AlertDialogFooter,
-  AlertDialogHeader,
-  AlertDialogTitle,
-  AlertDialogTrigger,
-} from "@/shared/ui/primitives/alert-dialog";
 import { Button } from "@/shared/ui/primitives/button";
 import { Skeleton } from "@/shared/ui/primitives/skeleton";
 import { Switch } from "@/shared/ui/primitives/switch";
@@ -659,41 +649,34 @@ function DeleteConnector({ orgId, connector: c }: { orgId: string; connector: Co
   const t = useT();
   const navigate = useNavigate();
   const remove = useDeleteConnector();
+  const [asking, setAsking] = useState(false);
   return (
     <div className="space-y-2 border-t pt-5">
       <p className="text-sm text-muted-foreground">{t("connector.deleteHint")}</p>
-      <AlertDialog>
-        <AlertDialogTrigger asChild>
-          <Button variant="outline" className="text-destructive hover:text-destructive">
-            {t("connector.delete")}
-          </Button>
-        </AlertDialogTrigger>
-        <AlertDialogContent>
-          <AlertDialogHeader>
-            <AlertDialogTitle>{t("connector.deleteTitle", { name: c.name })}</AlertDialogTitle>
-            <AlertDialogDescription>{t("connector.deleteBody")}</AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogCancel>{t("common.cancel")}</AlertDialogCancel>
-            <AlertDialogAction
-              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
-              disabled={remove.isPending}
-              onClick={(e) => {
-                e.preventDefault();
-                remove.mutate(c.id, {
-                  onSuccess: () => {
-                    toast(t("connector.deleted", { name: c.name }));
-                    void navigate({ to: "/orgs/$orgId/connections", params: { orgId } });
-                  },
-                  onError: () => toast.error(t("connector.deleteFailed")),
-                });
-              }}
-            >
-              {t("connector.delete")}
-            </AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
+      <Button
+        variant="outline"
+        className="text-destructive hover:text-destructive"
+        onClick={() => setAsking(true)}
+      >
+        {t("connector.delete")}
+      </Button>
+      <ConfirmDialog
+        open={asking}
+        onClose={() => setAsking(false)}
+        title={t("connector.deleteTitle", { name: c.name })}
+        body={t("connector.deleteBody")}
+        confirmLabel={t("connector.delete")}
+        pending={remove.isPending}
+        onConfirm={() =>
+          remove.mutate(c.id, {
+            onSuccess: () => {
+              toast(t("connector.deleted", { name: c.name }));
+              void navigate({ to: "/orgs/$orgId/connections", params: { orgId } });
+            },
+            onError: () => toast.error(t("connector.deleteFailed")),
+          })
+        }
+      />
     </div>
   );
 }

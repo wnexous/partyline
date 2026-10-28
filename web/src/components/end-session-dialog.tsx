@@ -2,16 +2,7 @@ import { toast } from "sonner";
 import { useEndSession } from "@/lib/api/queries";
 import type { IntelligenceRef } from "@/shared/api/types.gen";
 import { useT } from "@/shared/i18n";
-import {
-  AlertDialog,
-  AlertDialogAction,
-  AlertDialogCancel,
-  AlertDialogContent,
-  AlertDialogDescription,
-  AlertDialogFooter,
-  AlertDialogHeader,
-  AlertDialogTitle,
-} from "@/shared/ui/primitives/alert-dialog";
+import { ConfirmDialog } from "@/shared/ui/molecules/confirm-dialog";
 
 /**
  * Asks before ending the live session of an AI the viewer manages (POS-04): the session stops and
@@ -29,34 +20,24 @@ export function EndSessionDialog({
   const end = useEndSession();
   const name = ai?.display_name ?? "";
   return (
-    <AlertDialog open={ai !== null} onOpenChange={(open) => (open ? null : onClose())}>
-      <AlertDialogContent>
-        <AlertDialogHeader>
-          <AlertDialogTitle>{t("profile.endTitle", { name })}</AlertDialogTitle>
-          <AlertDialogDescription>{t("profile.endBody", { name })}</AlertDialogDescription>
-        </AlertDialogHeader>
-        <AlertDialogFooter>
-          <AlertDialogCancel>{t("common.cancel")}</AlertDialogCancel>
-          <AlertDialogAction
-            className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
-            disabled={end.isPending}
-            onClick={(e) => {
-              // Stay open while the request runs: a failure must leave the dialog to retry from.
-              e.preventDefault();
-              if (!ai) return;
-              end.mutate(ai.id, {
-                onSuccess: () => {
-                  toast(t("profile.ended", { name }));
-                  onClose();
-                },
-                onError: () => toast.error(t("profile.endFailed", { name })),
-              });
-            }}
-          >
-            {t("profile.endSession")}
-          </AlertDialogAction>
-        </AlertDialogFooter>
-      </AlertDialogContent>
-    </AlertDialog>
+    <ConfirmDialog
+      open={ai !== null}
+      onClose={onClose}
+      title={t("profile.endTitle", { name })}
+      body={t("profile.endBody", { name })}
+      confirmLabel={t("profile.endSession")}
+      pending={end.isPending}
+      onConfirm={() => {
+        // Stay open while the request runs: a failure must leave the dialog to retry from.
+        if (!ai) return;
+        end.mutate(ai.id, {
+          onSuccess: () => {
+            toast(t("profile.ended", { name }));
+            onClose();
+          },
+          onError: () => toast.error(t("profile.endFailed", { name })),
+        });
+      }}
+    />
   );
 }

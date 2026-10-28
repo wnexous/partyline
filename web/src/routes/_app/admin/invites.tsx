@@ -16,6 +16,7 @@ import { type MessageKey, useI18n, useT } from "@/shared/i18n";
 import { formatAbsolute } from "@/shared/lib/time";
 import { cn } from "@/shared/lib/utils";
 import { RelativeTime } from "@/shared/ui/atoms/relative-time";
+import { ConfirmDialog } from "@/shared/ui/molecules/confirm-dialog";
 import {
   Dialog,
   DialogContent,
@@ -26,16 +27,6 @@ import {
 } from "@/shared/ui/molecules/dialog";
 import { EmptyState } from "@/shared/ui/molecules/empty-state";
 import { PageHeader } from "@/shared/ui/molecules/page-header";
-import {
-  AlertDialog,
-  AlertDialogAction,
-  AlertDialogCancel,
-  AlertDialogContent,
-  AlertDialogDescription,
-  AlertDialogFooter,
-  AlertDialogHeader,
-  AlertDialogTitle,
-} from "@/shared/ui/primitives/alert-dialog";
 import { Button } from "@/shared/ui/primitives/button";
 import { RadioGroup, RadioGroupItem } from "@/shared/ui/primitives/radio-group";
 import { Skeleton } from "@/shared/ui/primitives/skeleton";
@@ -273,30 +264,20 @@ function RevokeInviteDialog({ invite, onClose }: { invite: Invite | null; onClos
   const t = useT();
   const revoke = useRevokeInvite();
   return (
-    <AlertDialog open={invite !== null} onOpenChange={(open) => (open ? null : onClose())}>
-      <AlertDialogContent>
-        <AlertDialogHeader>
-          <AlertDialogTitle>{t("invites.revokeTitle")}</AlertDialogTitle>
-          <AlertDialogDescription>{t("invites.revokeBody")}</AlertDialogDescription>
-        </AlertDialogHeader>
-        <AlertDialogFooter>
-          <AlertDialogCancel>{t("common.cancel")}</AlertDialogCancel>
-          <AlertDialogAction
-            className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
-            disabled={revoke.isPending}
-            onClick={(e) => {
-              e.preventDefault();
-              if (!invite) return;
-              revoke.mutate(invite.id, {
-                onSuccess: () => onClose(),
-                onError: () => toast.error(t("invites.revokeFailed")),
-              });
-            }}
-          >
-            {t("invites.revokeConfirm")}
-          </AlertDialogAction>
-        </AlertDialogFooter>
-      </AlertDialogContent>
-    </AlertDialog>
+    <ConfirmDialog
+      open={invite !== null}
+      onClose={onClose}
+      title={t("invites.revokeTitle")}
+      body={t("invites.revokeBody")}
+      confirmLabel={t("invites.revokeConfirm")}
+      pending={revoke.isPending}
+      onConfirm={() => {
+        if (!invite) return;
+        revoke.mutate(invite.id, {
+          onSuccess: () => onClose(),
+          onError: () => toast.error(t("invites.revokeFailed")),
+        });
+      }}
+    />
   );
 }

@@ -9,16 +9,7 @@ import {
   type ProfileMembership,
 } from "@/shared/api/types.gen";
 import { useT } from "@/shared/i18n";
-import {
-  AlertDialog,
-  AlertDialogAction,
-  AlertDialogCancel,
-  AlertDialogContent,
-  AlertDialogDescription,
-  AlertDialogFooter,
-  AlertDialogHeader,
-  AlertDialogTitle,
-} from "@/shared/ui/primitives/alert-dialog";
+import { ConfirmDialog } from "@/shared/ui/molecules/confirm-dialog";
 
 /**
  * Asks before taking an identity out of one organization (POS-05, POS-06): it leaves the
@@ -49,56 +40,45 @@ export function RemoveFromOrgDialog({
   };
 
   return (
-    <AlertDialog open={membership !== null} onOpenChange={(open) => (open ? null : close())}>
-      <AlertDialogContent>
-        <AlertDialogHeader>
-          <AlertDialogTitle>{t("profile.removeTitle", { name, org })}</AlertDialogTitle>
-          <AlertDialogDescription>
-            {t(isAI ? "profile.removeBodyAI" : "profile.removeBodyPerson", { name, org })}
-          </AlertDialogDescription>
-        </AlertDialogHeader>
-        {error ? (
-          <p role="alert" className="text-sm text-destructive">
-            {error}
-          </p>
-        ) : null}
-        <AlertDialogFooter>
-          <AlertDialogCancel>{t("common.cancel")}</AlertDialogCancel>
-          <AlertDialogAction
-            className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
-            disabled={remove.isPending}
-            onClick={(e) => {
-              // Stay open while the request runs: a failure must leave the dialog to retry from.
-              e.preventDefault();
-              if (!membership) return;
-              setError(null);
-              remove.mutate(
-                { orgId: membership.org_id, iid: identity.id },
-                {
-                  onSuccess: () => {
-                    toast(t("profile.removed", { name, org }));
-                    close();
-                  },
-                  onError: (err) => {
-                    if (isApiError(err) && err.code === ErrorCodeLastAdmin) {
-                      setError(t("profile.removeLastAdmin", { name, org }));
-                    } else if (isApiError(err) && err.code === ErrorCodeHomeOrganization) {
-                      // An AI is deleted in its home organization, never removed from it.
-                      setError(t("profile.removeHome", { name, org }));
-                    } else if (isApiError(err) && err.status === 0) {
-                      setError(t("error.network"));
-                    } else {
-                      setError(t("profile.removeFailed", { name, org }));
-                    }
-                  },
-                },
-              );
-            }}
-          >
-            {t("profile.removeFrom", { org })}
-          </AlertDialogAction>
-        </AlertDialogFooter>
-      </AlertDialogContent>
-    </AlertDialog>
+    <ConfirmDialog
+      open={membership !== null}
+      onClose={close}
+      title={t("profile.removeTitle", { name, org })}
+      body={t(isAI ? "profile.removeBodyAI" : "profile.removeBodyPerson", { name, org })}
+      confirmLabel={t("profile.removeFrom", { org })}
+      pending={remove.isPending}
+      onConfirm={() => {
+        // Stay open while the request runs: a failure must leave the dialog to retry from.
+        if (!membership) return;
+        setError(null);
+        remove.mutate(
+          { orgId: membership.org_id, iid: identity.id },
+          {
+            onSuccess: () => {
+              toast(t("profile.removed", { name, org }));
+              close();
+            },
+            onError: (err) => {
+              if (isApiError(err) && err.code === ErrorCodeLastAdmin) {
+                setError(t("profile.removeLastAdmin", { name, org }));
+              } else if (isApiError(err) && err.code === ErrorCodeHomeOrganization) {
+                // An AI is deleted in its home organization, never removed from it.
+                setError(t("profile.removeHome", { name, org }));
+              } else if (isApiError(err) && err.status === 0) {
+                setError(t("error.network"));
+              } else {
+                setError(t("profile.removeFailed", { name, org }));
+              }
+            },
+          },
+        );
+      }}
+    >
+      {error ? (
+        <p role="alert" className="text-sm text-destructive">
+          {error}
+        </p>
+      ) : null}
+    </ConfirmDialog>
   );
 }

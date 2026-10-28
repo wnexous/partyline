@@ -15,6 +15,7 @@ import type { Connector, Identity, PairingCode } from "@/shared/api/types.gen";
 import { useI18n, useT } from "@/shared/i18n";
 import { formatAbsolute } from "@/shared/lib/time";
 import { cn } from "@/shared/lib/utils";
+import { ConfirmDialog } from "@/shared/ui/molecules/confirm-dialog";
 import { CodeBlock } from "@/shared/ui/molecules/copy-field";
 import {
   Dialog,
@@ -25,16 +26,6 @@ import {
 } from "@/shared/ui/molecules/dialog";
 import { EmptyState } from "@/shared/ui/molecules/empty-state";
 import { PageHeader } from "@/shared/ui/molecules/page-header";
-import {
-  AlertDialog,
-  AlertDialogAction,
-  AlertDialogCancel,
-  AlertDialogContent,
-  AlertDialogDescription,
-  AlertDialogFooter,
-  AlertDialogHeader,
-  AlertDialogTitle,
-} from "@/shared/ui/primitives/alert-dialog";
 import { Button } from "@/shared/ui/primitives/button";
 import { RadioGroup, RadioGroupItem } from "@/shared/ui/primitives/radio-group";
 import { Skeleton } from "@/shared/ui/primitives/skeleton";
@@ -146,33 +137,21 @@ function RemoveIdentityDialog({
   const t = useT();
   const remove = useDeleteIdentity();
   return (
-    <AlertDialog open={identity !== null} onOpenChange={(open) => (open ? null : onClose())}>
-      <AlertDialogContent>
-        <AlertDialogHeader>
-          <AlertDialogTitle>
-            {t("identities.removeTitle", { name: identity?.display ?? "" })}
-          </AlertDialogTitle>
-          <AlertDialogDescription>{t("identities.removeBody")}</AlertDialogDescription>
-        </AlertDialogHeader>
-        <AlertDialogFooter>
-          <AlertDialogCancel>{t("common.cancel")}</AlertDialogCancel>
-          <AlertDialogAction
-            className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
-            disabled={remove.isPending}
-            onClick={(e) => {
-              e.preventDefault();
-              if (!identity) return;
-              remove.mutate(identity.id, {
-                onSuccess: () => onClose(),
-                onError: () => toast.error(t("identities.removeFailed")),
-              });
-            }}
-          >
-            {t("identities.removeConfirm")}
-          </AlertDialogAction>
-        </AlertDialogFooter>
-      </AlertDialogContent>
-    </AlertDialog>
+    <ConfirmDialog
+      open={identity !== null}
+      onClose={onClose}
+      title={t("identities.removeTitle", { name: identity?.display ?? "" })}
+      body={t("identities.removeBody")}
+      confirmLabel={t("identities.removeConfirm")}
+      pending={remove.isPending}
+      onConfirm={() => {
+        if (!identity) return;
+        remove.mutate(identity.id, {
+          onSuccess: () => onClose(),
+          onError: () => toast.error(t("identities.removeFailed")),
+        });
+      }}
+    />
   );
 }
 
