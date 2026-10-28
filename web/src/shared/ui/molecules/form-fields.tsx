@@ -1,7 +1,7 @@
 import { EyeIcon, EyeOffIcon } from "lucide-react";
 import { type ComponentProps, type ReactNode, useState } from "react";
 import type { Control, FieldPath, FieldValues } from "react-hook-form";
-import { NativeSelect } from "@/components/native-select";
+import { NativeSelect } from "@/shared/ui/atoms/native-select";
 import { Button } from "@/shared/ui/primitives/button";
 import {
   FormControl,
@@ -15,7 +15,7 @@ import { Input } from "@/shared/ui/primitives/input";
 import { Textarea } from "@/shared/ui/primitives/textarea";
 import { useAutoFocus } from "@/shared/lib/device";
 import { errorText } from "@/shared/lib/forms";
-import { useT } from "@/lib/i18n";
+import { useT } from "@/shared/i18n";
 import { cn } from "@/shared/lib/utils";
 
 /** FormMessage that translates schema error keys. */

@@ -2,7 +2,7 @@ import { zodResolver } from "@hookform/resolvers/zod";
 import { useEffect, useId, useRef, useState } from "react";
 import { useForm } from "react-hook-form";
 import { toast } from "sonner";
-import { FormAlert, TextAreaField, TextField } from "@/components/form-fields";
+import { FormAlert, TextAreaField, TextField } from "@/shared/ui/molecules/form-fields";
 import { PhotoEditor } from "@/components/photo-editor";
 import { Button } from "@/shared/ui/primitives/button";
 import { Form } from "@/shared/ui/primitives/form";
@@ -16,7 +16,7 @@ import {
   type UpdateProfileRequest,
 } from "@/lib/api/types.gen";
 import { applyFieldErrors } from "@/shared/lib/forms";
-import { useT } from "@/lib/i18n";
+import { useT } from "@/shared/i18n";
 import { type ProfileEditForm, profileEditSchema } from "@/lib/schemas";
 
 /*

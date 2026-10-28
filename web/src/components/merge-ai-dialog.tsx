@@ -1,7 +1,7 @@
 import { type FormEvent, useId, useState } from "react";
 import { toast } from "sonner";
-import { FormAlert } from "@/components/form-fields";
-import { NativeSelect } from "@/components/native-select";
+import { FormAlert } from "@/shared/ui/molecules/form-fields";
+import { NativeSelect } from "@/shared/ui/atoms/native-select";
 import { Button } from "@/shared/ui/primitives/button";
 import {
   Dialog,
@@ -14,7 +14,7 @@ import {
 import { isApiError } from "@/lib/api/client";
 import { useMergeAgent } from "@/lib/api/queries";
 import { ErrorCodeIdentityOnline, type IntelligenceRef } from "@/lib/api/types.gen";
-import { useT } from "@/lib/i18n";
+import { useT } from "@/shared/i18n";
 import { isCoarsePointer } from "@/shared/lib/device";
 
 /*

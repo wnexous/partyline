@@ -5,7 +5,7 @@ import type {
   Organization,
   OrgMember,
 } from "@/lib/api/types.gen";
-import type { MessageKey, Translate } from "@/lib/i18n";
+import type { MessageKey, Translate } from "@/shared/i18n";
 
 /*
  * The viewer's organizations as the web app uses them (ORG-02, OMEM-03, OMEM-04): which one is

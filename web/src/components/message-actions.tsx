@@ -11,7 +11,7 @@ import {
 } from "@/shared/ui/primitives/alert-dialog";
 import { useDeleteMessage } from "@/lib/api/queries";
 import type { Message } from "@/lib/api/types.gen";
-import { useT } from "@/lib/i18n";
+import { useT } from "@/shared/i18n";
 
 /*
  * What a viewer may do with one message: edit their own text (EDT-02, EDT-03) and delete their own or, in a

@@ -1,5 +1,5 @@
 import type { SessionInfo } from "@/lib/api/types.gen";
-import { useT } from "@/lib/i18n";
+import { useT } from "@/shared/i18n";
 import { cn } from "@/shared/lib/utils";
 import { SessionLabel } from "./session-label";
 

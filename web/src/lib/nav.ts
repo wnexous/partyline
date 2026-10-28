@@ -11,7 +11,7 @@ import {
   SettingsIcon,
   UsersIcon,
 } from "lucide-react";
-import type { MessageKey } from "@/lib/i18n";
+import type { MessageKey } from "@/shared/i18n";
 
 /*
  * Every destination outside a conversation (SET-03, SET-11): the account menu lists them by what

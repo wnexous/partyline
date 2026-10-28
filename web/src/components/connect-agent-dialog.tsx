@@ -1,8 +1,8 @@
 import { Link } from "@tanstack/react-router";
 import { ArrowUpRightIcon, ChevronRightIcon, HourglassIcon, RadioTowerIcon } from "lucide-react";
 import { type ReactNode, useEffect, useState } from "react";
-import { CodeBlock } from "@/components/copy-field";
-import { StatusDot } from "@/components/status-dot";
+import { CodeBlock } from "@/shared/ui/molecules/copy-field";
+import { StatusDot } from "@/shared/ui/atoms/status-dot";
 import { Button } from "@/shared/ui/primitives/button";
 import {
   Dialog,
@@ -24,7 +24,7 @@ import {
   SETUP_COMMAND,
 } from "@/lib/agent-connect";
 import { useAgents, useMe } from "@/lib/api/queries";
-import { useT } from "@/lib/i18n";
+import { useT } from "@/shared/i18n";
 import { useLiveStore } from "@/lib/live/store";
 import { cn } from "@/shared/lib/utils";
 import { isCoarsePointer } from "@/shared/lib/device";
@@ -264,7 +264,7 @@ function AgentArrival() {
         arrived ? "font-medium text-foreground" : "text-muted-foreground",
       )}
     >
-      <StatusDot online={Boolean(arrived)} />
+      <StatusDot online={Boolean(arrived)} label={arrived ? t("presence.online") : t("presence.offline")} />
       <span className="truncate">
         {arrived
           ? t("connect.online", { name: arrived.intelligence.display_name })

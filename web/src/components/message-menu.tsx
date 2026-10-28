@@ -1,8 +1,8 @@
 import { CopyIcon, PencilIcon, ReplyIcon, Trash2Icon } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
-import { ActionMenu, type MenuAction } from "@/components/action-menu";
-import { EmojiGrid } from "@/components/emoji-grid";
+import { ActionMenu, type MenuAction } from "@/shared/ui/molecules/action-menu";
+import { EmojiGrid } from "@/shared/ui/molecules/emoji-grid";
 import {
   canDeleteMessage,
   canEditMessage,
@@ -14,7 +14,7 @@ import { ReactionPicker } from "@/components/reaction-picker";
 import { PopoverAnchor } from "@/shared/ui/primitives/popover";
 import type { Message } from "@/lib/api/types.gen";
 import { copyText } from "@/shared/lib/clipboard";
-import { useT } from "@/lib/i18n";
+import { useT } from "@/shared/i18n";
 import { messageExcerpt } from "@/lib/message-excerpt";
 import { MORE_REACTIONS, PICKER_COLUMNS } from "@/lib/reactions";
 

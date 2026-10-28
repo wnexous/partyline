@@ -5,9 +5,9 @@ import {
   type AttachedFile,
   AttachmentPreview,
   AttachmentPreviews,
-} from "@/components/attachment-preview";
-import { useLiveStore } from "@/lib/live/store";
-import { renderWithProviders } from "@/test/render";
+} from "@/shared/ui/molecules/attachment-preview";
+import { I18nProvider } from "@/shared/i18n";
+import { render } from "@testing-library/react";
 
 /*
  * The composer's attachment previews (UI-07): an image shows a thumbnail made from an object URL
@@ -39,11 +39,11 @@ const png = () => fileOf("image.png", "image/png");
 describe("an attachment preview (UI-07)", () => {
   it("shows an image's thumbnail, name and size, named as one preview", () => {
     const file = png();
-    renderWithProviders(
+    render(<I18nProvider locale="en">
       <ul>
         <AttachmentPreview file={file} onRemove={() => {}} />
       </ul>,
-    );
+    </I18nProvider>);
 
     const preview = screen.getByRole("group", { name: "image.png, 120 KB" });
     expect(preview).toHaveTextContent("image.png");
@@ -54,11 +54,11 @@ describe("an attachment preview (UI-07)", () => {
   });
 
   it("shows a non-image file's name and size, with an icon instead of an image", () => {
-    renderWithProviders(
+    render(<I18nProvider locale="en">
       <ul>
         <AttachmentPreview file={fileOf("notes.pdf", "application/pdf")} onRemove={() => {}} />
       </ul>,
-    );
+    </I18nProvider>);
 
     const preview = screen.getByRole("group", { name: "notes.pdf, 120 KB" });
     expect(preview).toHaveTextContent("notes.pdf");
@@ -72,11 +72,11 @@ describe("an attachment preview (UI-07)", () => {
     ["a video", "clip.mp4", "video/mp4"],
     ["an audio file", "note.m4a", "audio/mp4"],
   ])("shows an icon for %s and never plays it", (_what, name, type) => {
-    renderWithProviders(
+    render(<I18nProvider locale="en">
       <ul>
         <AttachmentPreview file={fileOf(name, type)} onRemove={() => {}} />
       </ul>,
-    );
+    </I18nProvider>);
 
     const preview = screen.getByRole("group", { name: `${name}, 120 KB` });
     expect(preview.querySelector("video, audio")).toBeNull();
@@ -88,22 +88,22 @@ describe("an attachment preview (UI-07)", () => {
     const onRemove = vi.fn();
     const user = userEvent.setup();
     const file = png();
-    renderWithProviders(
+    render(<I18nProvider locale="en">
       <ul>
         <AttachmentPreview file={file} onRemove={onRemove} />
       </ul>,
-    );
+    </I18nProvider>);
 
     await user.click(screen.getByRole("button", { name: "Remove image.png" }));
     expect(onRemove).toHaveBeenCalledTimes(1);
   });
 
   it("revokes the thumbnail's object URL when the preview leaves", () => {
-    const { unmount } = renderWithProviders(
+    const { unmount } = render(<I18nProvider locale="en">
       <ul>
         <AttachmentPreview file={png()} onRemove={() => {}} />
       </ul>,
-    );
+    </I18nProvider>);
 
     expect(revokeObjectURL).not.toHaveBeenCalled();
     unmount();
@@ -114,7 +114,7 @@ describe("an attachment preview (UI-07)", () => {
 describe("the attachment row (UI-07)", () => {
   it("lists every file in order in a row that scrolls sideways", () => {
     const files = attach(png(), fileOf("build.log", "text/plain"));
-    renderWithProviders(<AttachmentPreviews files={files} onRemove={() => {}} />);
+    render(<I18nProvider locale="en"><AttachmentPreviews files={files} onRemove={() => {}} /></I18nProvider>);
 
     const list = screen.getByRole("list", { name: "Attachments" });
     expect(list).toHaveClass("overflow-x-auto");
@@ -130,7 +130,7 @@ describe("the attachment row (UI-07)", () => {
     const user = userEvent.setup();
     const file = fileOf("build.log", "text/plain");
     const files = attach(file);
-    renderWithProviders(<AttachmentPreviews files={files} onRemove={onRemove} />);
+    render(<I18nProvider locale="en"><AttachmentPreviews files={files} onRemove={onRemove} /></I18nProvider>);
 
     await user.click(screen.getByRole("button", { name: "Remove build.log" }));
     expect(onRemove).toHaveBeenCalledWith(files[0]?.id);
@@ -139,8 +139,7 @@ describe("the attachment row (UI-07)", () => {
 
 describe("the preview in Portuguese", () => {
   it("names the row and the remove action in the app's language", () => {
-    useLiveStore.setState({ locale: "pt-BR" });
-    renderWithProviders(<AttachmentPreviews files={attach(png())} onRemove={() => {}} />);
+    render(<I18nProvider locale="pt-BR"><AttachmentPreviews files={attach(png())} onRemove={() => {}} /></I18nProvider>);
 
     expect(screen.getByRole("list", { name: "Anexos" })).toBeInTheDocument();
     expect(screen.getByRole("group", { name: "image.png, 120 KB" })).toBeInTheDocument();

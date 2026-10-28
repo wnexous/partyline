@@ -2,10 +2,10 @@ import { createFileRoute, Outlet, redirect, useRouterState } from "@tanstack/rea
 import { SearchIcon } from "lucide-react";
 import { useEffect } from "react";
 import { AppSidebar } from "@/components/app-sidebar";
-import { BackToConversations } from "@/components/back-link";
-import { Wordmark } from "@/components/brand";
+import { BackToConversations } from "@/shared/ui/molecules/back-link";
+import { Wordmark } from "@/shared/ui/atoms/brand";
 import { CommandMenu } from "@/components/command-menu";
-import { LiveBanner } from "@/components/live-status";
+import { LiveBanner } from "@/shared/ui/molecules/live-status";
 import { OrgSwitcher } from "@/components/org-switcher";
 import { ProfilePanel } from "@/components/profile-panel";
 import { Button } from "@/shared/ui/primitives/button";
@@ -14,8 +14,9 @@ import { useIsMobile } from "@/shared/lib/device";
 import { useVisualViewport } from "@/shared/lib/use-visual-viewport";
 import { isApiError } from "@/lib/api/client";
 import { meQuery, useMe } from "@/lib/api/queries";
-import { isLocale, useT } from "@/lib/i18n";
+import { isLocale, useT } from "@/shared/i18n";
 import { startLive } from "@/lib/live";
+import { useDisconnected } from "@/shared/lib/use-disconnected";
 import { useLiveStore } from "@/lib/live/store";
 import { ensurePushSubscription } from "@/lib/push/register";
 import { LOCALE_KEY, readStorage } from "@/lib/theme";
@@ -93,7 +94,7 @@ function AppLayout() {
         className="min-w-0 outline-none has-[[data-fill]]:top-[var(--app-top,0px)] has-[[data-fill]]:h-[var(--app-height,100dvh)] has-[[data-fill]]:overflow-hidden"
       >
         <MobileBar />
-        <LiveBanner />
+        <LiveBanner disconnected={useDisconnected()} />
         <Outlet />
       </SidebarInset>
       <CommandMenu me={me} />

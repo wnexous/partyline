@@ -8,7 +8,7 @@ import {
   DropdownMenuRadioItem,
   DropdownMenuTrigger,
 } from "@/shared/ui/primitives/dropdown-menu";
-import { useT } from "@/lib/i18n";
+import { useT } from "@/shared/i18n";
 import { useLiveStore } from "@/lib/live/store";
 import type { ThemePreference } from "@/lib/theme";
 

@@ -2,10 +2,10 @@ import { createFileRoute, Link } from "@tanstack/react-router";
 import { BuildingIcon, PlusIcon } from "lucide-react";
 import { useId, useState } from "react";
 import { toast } from "sonner";
-import { EmptyState } from "@/components/empty-state";
+import { EmptyState } from "@/shared/ui/molecules/empty-state";
 import { NewOrgDialog } from "@/components/new-org-dialog";
 import { OrgAvatar } from "@/components/org-avatar";
-import { PageHeader } from "@/components/page-header";
+import { PageHeader } from "@/shared/ui/molecules/page-header";
 import { Badge } from "@/shared/ui/primitives/badge";
 import { Button } from "@/shared/ui/primitives/button";
 import { Skeleton } from "@/shared/ui/primitives/skeleton";
@@ -19,7 +19,7 @@ import {
   useOrgs,
 } from "@/lib/api/queries";
 import { ErrorCodeAlreadyMember, type Invitation } from "@/lib/api/types.gen";
-import { type MessageKey, type Translate, useI18n, useT } from "@/lib/i18n";
+import { type MessageKey, type Translate, useI18n, useT } from "@/shared/i18n";
 import { type MyOrg, PermissionGuest, permissionLabel } from "@/lib/orgs";
 import { formatAbsolute, formatRelative } from "@/shared/lib/time";
 

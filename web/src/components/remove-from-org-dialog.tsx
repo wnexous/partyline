@@ -18,7 +18,7 @@ import {
   type IntelligenceRef,
   type ProfileMembership,
 } from "@/lib/api/types.gen";
-import { useT } from "@/lib/i18n";
+import { useT } from "@/shared/i18n";
 
 /**
  * Asks before taking an identity out of one organization (POS-05, POS-06): it leaves the

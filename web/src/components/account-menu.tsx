@@ -17,7 +17,7 @@ import {
 import { IntelligenceAvatar } from "@/entities/intelligence";
 import { useLogout } from "@/lib/api/queries";
 import { type Me, RoleAdmin } from "@/lib/api/types.gen";
-import { useT } from "@/lib/i18n";
+import { useT } from "@/shared/i18n";
 import { NAV_GROUPS } from "@/lib/nav";
 import { cn } from "@/shared/lib/utils";
 

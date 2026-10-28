@@ -1,6 +1,7 @@
-import { StatusDot } from "@/components/status-dot";
+import { StatusDot } from "@/shared/ui/atoms/status-dot";
 import { appLabelOf, useIsOnline } from "@/entities/intelligence";
 import { useIntelligence } from "@/lib/api/queries";
+import { useT } from "@/shared/i18n";
 import { cn } from "@/shared/lib/utils";
 
 /**
@@ -17,6 +18,7 @@ export function AiStatusLine({
   /** Classes of the app name, so a tight header can hide it. */
   appClassName?: string;
 }) {
+  const t = useT();
   const profile = useIntelligence(id);
   const ai = profile.data?.ai;
   const online = useIsOnline(id, ai?.online);
@@ -29,7 +31,7 @@ export function AiStatusLine({
         className,
       )}
     >
-      <StatusDot online={online} withLabel />
+      <StatusDot online={online} label={online ? t("presence.online") : t("presence.offline")} withLabel />
       {app ? <span className={appClassName}>{app}</span> : null}
     </span>
   );

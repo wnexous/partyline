@@ -1,7 +1,7 @@
 import type { ReactNode } from "react";
-import { EmojiGrid } from "@/components/emoji-grid";
+import { EmojiGrid } from "@/shared/ui/molecules/emoji-grid";
 import { Popover, PopoverContent } from "@/shared/ui/primitives/popover";
-import { useT } from "@/lib/i18n";
+import { useT } from "@/shared/i18n";
 import { MORE_REACTIONS, PICKER_COLUMNS } from "@/lib/reactions";
 
 /*

@@ -4,8 +4,8 @@ import { LinkIcon } from "lucide-react";
 import { useState } from "react";
 import { useForm } from "react-hook-form";
 import { AuthLayout } from "@/components/auth-layout";
-import { EmptyState } from "@/components/empty-state";
-import { FormAlert, TextField } from "@/components/form-fields";
+import { EmptyState } from "@/shared/ui/molecules/empty-state";
+import { FormAlert, TextField } from "@/shared/ui/molecules/form-fields";
 import { Button } from "@/shared/ui/primitives/button";
 import { Form } from "@/shared/ui/primitives/form";
 import { Skeleton } from "@/shared/ui/primitives/skeleton";
@@ -13,7 +13,7 @@ import { isApiError } from "@/lib/api/client";
 import { useAcceptInvite, useInviteInfo } from "@/lib/api/queries";
 import { type InviteInfo, PasswordMinLength, RoleAdmin } from "@/lib/api/types.gen";
 import { applyFieldErrors } from "@/shared/lib/forms";
-import { useI18n } from "@/lib/i18n";
+import { useI18n } from "@/shared/i18n";
 import { type AcceptInviteForm, acceptInviteSchema } from "@/lib/schemas";
 
 export const Route = createFileRoute("/invite/$token")({

@@ -9,7 +9,7 @@ import {
   DropdownMenuTrigger,
 } from "@/shared/ui/primitives/dropdown-menu";
 import { useUpdateMe } from "@/lib/api/queries";
-import { isLocale, LOCALES, type Locale, useT } from "@/lib/i18n";
+import { isLocale, LOCALES, type Locale, useT } from "@/shared/i18n";
 import { useLiveStore } from "@/lib/live/store";
 
 /** Each language is named in itself, so it can be found from either locale. */

@@ -1,8 +1,8 @@
-import { StatusDot } from "@/components/status-dot";
+import { StatusDot } from "@/shared/ui/atoms/status-dot";
 import { appLabelOf } from "@/entities/intelligence";
 import type { AIContact } from "@/lib/api/types.gen";
 import type { Pickable } from "@/lib/contacts";
-import { useI18n } from "@/lib/i18n";
+import { useI18n } from "@/shared/i18n";
 import { formatAbsolute, formatRelative } from "@/shared/lib/time";
 
 /**
@@ -16,7 +16,7 @@ export function AIMeta({ ai, lastSeen = false }: { ai: AIContact; lastSeen?: boo
   const app = ai.app ? appLabelOf(ai) : "";
   return (
     <>
-      <StatusDot online={ai.online} withLabel />
+      <StatusDot online={ai.online} label={ai.online ? t("presence.online") : t("presence.offline")} withLabel />
       {lastSeen && !ai.online ? (
         ai.last_seen_at ? (
           <span className="font-mono tabular" title={formatAbsolute(ai.last_seen_at, locale)}>

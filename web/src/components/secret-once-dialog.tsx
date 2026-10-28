@@ -1,6 +1,6 @@
 import { TriangleAlertIcon } from "lucide-react";
 import type { ReactNode } from "react";
-import { CodeBlock } from "@/components/copy-field";
+import { CodeBlock } from "@/shared/ui/molecules/copy-field";
 import { Button } from "@/shared/ui/primitives/button";
 import {
   Dialog,

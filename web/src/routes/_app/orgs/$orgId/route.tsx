@@ -9,7 +9,7 @@ import { Skeleton } from "@/shared/ui/primitives/skeleton";
 import { isApiError } from "@/lib/api/client";
 import { useOrg } from "@/lib/api/queries";
 import type { Organization } from "@/lib/api/types.gen";
-import { useT } from "@/lib/i18n";
+import { useT } from "@/shared/i18n";
 import { PermissionAdmin, permissionLabel } from "@/lib/orgs";
 import { cn } from "@/shared/lib/utils";
 

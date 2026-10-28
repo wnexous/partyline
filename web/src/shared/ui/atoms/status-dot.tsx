@@ -1,21 +1,21 @@
-import { useI18n } from "@/lib/i18n";
 import { cn } from "@/shared/lib/utils";
 
 /** Agent presence: a filled, pulsing green dot when online, a hollow grey ring when offline. */
 export function StatusDot({
   online,
+  label,
   withLabel = false,
   className,
   labelClassName,
 }: {
   online: boolean;
+  /** The accessible label ("Online"/"Offline"): the caller translates it. */
+  label: string;
   withLabel?: boolean;
   className?: string;
   /** Classes of the word beside the dot, where it sits among text bigger than a list row's. */
   labelClassName?: string;
 }) {
-  const { t } = useI18n();
-  const label = online ? t("presence.online") : t("presence.offline");
   return (
     <span className={cn("inline-flex items-center gap-1.5", className)}>
       <span

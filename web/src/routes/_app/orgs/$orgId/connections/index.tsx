@@ -3,14 +3,14 @@ import { ChevronRightIcon, PlugZapIcon, PlusIcon } from "lucide-react";
 import { useMemo, useState } from "react";
 import { AddConnectorDialog } from "@/components/add-connector-dialog";
 import { ConnectorStatusBadge, useConnectorState } from "@/components/connector-status";
-import { EmptyState } from "@/components/empty-state";
+import { EmptyState } from "@/shared/ui/molecules/empty-state";
 import { platformLabel } from "@/components/message-item";
-import { PageHeader } from "@/components/page-header";
+import { PageHeader } from "@/shared/ui/molecules/page-header";
 import { Button } from "@/shared/ui/primitives/button";
 import { Skeleton } from "@/shared/ui/primitives/skeleton";
 import { useConnectors, useOrg } from "@/lib/api/queries";
 import type { Connector } from "@/lib/api/types.gen";
-import { useT } from "@/lib/i18n";
+import { useT } from "@/shared/i18n";
 import { isAdminOf } from "@/lib/orgs";
 
 export const Route = createFileRoute("/_app/orgs/$orgId/connections/")({

@@ -7,8 +7,8 @@ import {
   TimerOffIcon,
 } from "lucide-react";
 import { type FormEvent, type ReactNode, useEffect, useId, useState } from "react";
-import { EmptyState } from "@/components/empty-state";
-import { FormAlert } from "@/components/form-fields";
+import { EmptyState } from "@/shared/ui/molecules/empty-state";
+import { FormAlert } from "@/shared/ui/molecules/form-fields";
 import { Button } from "@/shared/ui/primitives/button";
 import { Input } from "@/shared/ui/primitives/input";
 import { Label } from "@/shared/ui/primitives/label";
@@ -16,7 +16,7 @@ import { useAutoFocus } from "@/shared/lib/device";
 import { isApiError } from "@/lib/api/client";
 import { useDeviceAction } from "@/lib/api/queries";
 import type { DeviceRequest } from "@/lib/api/types.gen";
-import { type Translate, useI18n, useT } from "@/lib/i18n";
+import { type Translate, useI18n, useT } from "@/shared/i18n";
 import { formatAbsolute, formatRelative } from "@/shared/lib/time";
 import { cn } from "@/shared/lib/utils";
 

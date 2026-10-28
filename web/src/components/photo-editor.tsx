@@ -4,7 +4,7 @@ import { Button, buttonVariants } from "@/shared/ui/primitives/button";
 import { isApiError } from "@/lib/api/client";
 import { ErrorCodeAvatarInvalid } from "@/lib/api/types.gen";
 import { prepareAvatar } from "@/shared/lib/avatar";
-import { type Translate, useT } from "@/lib/i18n";
+import { type Translate, useT } from "@/shared/i18n";
 import { cn } from "@/shared/lib/utils";
 
 const PHOTO_TYPES = "image/png,image/jpeg,image/webp";

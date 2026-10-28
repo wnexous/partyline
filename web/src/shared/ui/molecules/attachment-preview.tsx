@@ -7,11 +7,9 @@ import {
   XIcon,
 } from "lucide-react";
 import { useEffect, useState } from "react";
-import { formatBytes } from "@/components/message-item";
 import { Button } from "@/shared/ui/primitives/button";
-import { fileKindOf } from "@/lib/api/queries";
 import { type FileKind, FileKindImage } from "@/lib/api/types.gen";
-import { useI18n } from "@/lib/i18n";
+import { useI18n } from "@/shared/i18n";
 
 /*
  * What the composer is about to send (UI-07): one card per picked, pasted or dropped file. An image
@@ -20,6 +18,25 @@ import { useI18n } from "@/lib/i18n";
  * its name and size; a video or an audio file is never played here. The row scrolls sideways instead
  * of wrapping, which keeps the composer's height steady on a phone.
  */
+
+/** The kind of a file from its MIME family, document for everything else. */
+function fileKindOf(mime: string): FileKind {
+  const family = mime.toLowerCase().split("/")[0];
+  return family === "image" || family === "audio" || family === "video" ? family : "document";
+}
+
+/** Bytes in the UI locale ("120 KB"): the unit follows the value. */
+function formatBytes(size: number, locale: string): string {
+  const units = ["B", "KB", "MB", "GB"];
+  let value = size;
+  let unit = 0;
+  while (value >= 1024 && unit < units.length - 1) {
+    value /= 1024;
+    unit += 1;
+  }
+  const digits = unit === 0 || value >= 10 ? 0 : 1;
+  return `${new Intl.NumberFormat(locale, { maximumFractionDigits: digits }).format(value)} ${units[unit]}`;
+}
 
 /** Files of this kind get a thumbnail; the rest get an icon. */
 const isImageKind = (kind: FileKind) => kind === FileKindImage;

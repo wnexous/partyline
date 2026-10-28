@@ -3,10 +3,10 @@ import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import { useEffect, useId, useRef, useState } from "react";
 import { useForm } from "react-hook-form";
 import { toast } from "sonner";
-import { FormAlert, TextField } from "@/components/form-fields";
+import { FormAlert, TextField } from "@/shared/ui/molecules/form-fields";
 import { OrgAvatar } from "@/components/org-avatar";
-import { PageHeader } from "@/components/page-header";
-import { PageSection as Section } from "@/components/page-section";
+import { PageHeader } from "@/shared/ui/molecules/page-header";
+import { PageSection as Section } from "@/shared/ui/molecules/page-section";
 import { PhotoEditor } from "@/components/photo-editor";
 import {
   AlertDialog,
@@ -37,7 +37,7 @@ import {
   type UpdateOrganizationRequest,
 } from "@/lib/api/types.gen";
 import { applyFieldErrors } from "@/shared/lib/forms";
-import { useI18n, useT } from "@/lib/i18n";
+import { useI18n, useT } from "@/shared/i18n";
 import { ownedThings, PermissionAdmin } from "@/lib/orgs";
 import { type UpdateOrgForm, updateOrgSchema } from "@/lib/schemas";
 

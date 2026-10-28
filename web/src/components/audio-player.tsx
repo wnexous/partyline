@@ -3,7 +3,7 @@ import { useEffect, useRef, useState } from "react";
 import { Button } from "@/shared/ui/primitives/button";
 import { attachmentUrl } from "@/lib/api/queries";
 import type { Attachment } from "@/lib/api/types.gen";
-import { useI18n } from "@/lib/i18n";
+import { useI18n } from "@/shared/i18n";
 import { formatDuration, isVoiceName } from "@/lib/voice";
 
 /*

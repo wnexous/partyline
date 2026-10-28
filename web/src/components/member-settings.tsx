@@ -3,7 +3,7 @@ import { PlusIcon, SlidersHorizontalIcon, XIcon } from "lucide-react";
 import { type FormEvent, type KeyboardEvent, useId, useState } from "react";
 import { useForm } from "react-hook-form";
 import { toast } from "sonner";
-import { FieldError, FormAlert } from "@/components/form-fields";
+import { FieldError, FormAlert } from "@/shared/ui/molecules/form-fields";
 import { Button } from "@/shared/ui/primitives/button";
 import {
   FormControl,
@@ -30,7 +30,7 @@ import {
   type UpdateMemberRequest,
 } from "@/lib/api/types.gen";
 import { applyFieldErrors, errorText } from "@/shared/lib/forms";
-import { type MessageKey, useI18n } from "@/lib/i18n";
+import { type MessageKey, useI18n } from "@/shared/i18n";
 import {
   keywordError,
   type MemberSettingsForm,

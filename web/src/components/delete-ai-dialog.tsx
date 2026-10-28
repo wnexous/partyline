@@ -12,7 +12,7 @@ import {
 import { isApiError } from "@/lib/api/client";
 import { useDeleteAgent } from "@/lib/api/queries";
 import { ErrorCodeLastAdmin, type IntelligenceRef } from "@/lib/api/types.gen";
-import { useT } from "@/lib/i18n";
+import { useT } from "@/shared/i18n";
 
 /**
  * Asks before deleting an AI in its home organization (the contacts page for the unlinked ones, its

@@ -1,7 +1,7 @@
 import { CheckIcon, CopyIcon } from "lucide-react";
 import { useEffect, useId, useState } from "react";
 import { Button } from "@/shared/ui/primitives/button";
-import { useT } from "@/lib/i18n";
+import { useT } from "@/shared/i18n";
 import { cn } from "@/shared/lib/utils";
 
 /*

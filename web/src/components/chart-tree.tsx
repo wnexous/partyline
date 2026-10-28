@@ -8,7 +8,7 @@ import {
   useRef,
   useState,
 } from "react";
-import { useT } from "@/lib/i18n";
+import { useT } from "@/shared/i18n";
 import { type ChartTreeNode, visibleNodes } from "@/lib/org-chart";
 import { cn } from "@/shared/lib/utils";
 

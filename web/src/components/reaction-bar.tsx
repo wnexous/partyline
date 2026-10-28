@@ -8,7 +8,7 @@ import {
   DropdownMenuSeparator,
 } from "@/shared/ui/primitives/dropdown-menu";
 import { PopoverTrigger } from "@/shared/ui/primitives/popover";
-import { useT } from "@/lib/i18n";
+import { useT } from "@/shared/i18n";
 import { QUICK_REACTIONS } from "@/lib/reactions";
 import { cn } from "@/shared/lib/utils";
 

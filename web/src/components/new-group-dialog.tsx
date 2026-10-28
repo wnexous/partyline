@@ -4,7 +4,7 @@ import { SearchIcon, XIcon } from "lucide-react";
 import { type ReactNode, useEffect, useId, useMemo, useState } from "react";
 import { useForm } from "react-hook-form";
 import { PickableMeta } from "@/components/contact-meta";
-import { FormAlert, TextField } from "@/components/form-fields";
+import { FormAlert, TextField } from "@/shared/ui/molecules/form-fields";
 import { OrgSelect } from "@/components/org-select";
 import { Button } from "@/shared/ui/primitives/button";
 import { Checkbox } from "@/shared/ui/primitives/checkbox";
@@ -37,7 +37,7 @@ import {
 import { type Pickable, pickableList } from "@/lib/contacts";
 import { matchesTerms } from "@/lib/conversations";
 import { applyFieldErrors } from "@/shared/lib/forms";
-import { useT } from "@/lib/i18n";
+import { useT } from "@/shared/i18n";
 import { useLiveStore } from "@/lib/live/store";
 import { canCreateGroupsIn } from "@/lib/orgs";
 import { withContactPresence } from "@/lib/presence";

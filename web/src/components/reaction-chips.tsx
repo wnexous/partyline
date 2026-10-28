@@ -1,5 +1,5 @@
 import type { Reaction } from "@/lib/api/types.gen";
-import { useI18n } from "@/lib/i18n";
+import { useI18n } from "@/shared/i18n";
 import { cn } from "@/shared/lib/utils";
 
 /*

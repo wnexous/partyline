@@ -11,7 +11,7 @@ import {
 } from "@/shared/ui/primitives/alert-dialog";
 import { useEndSession } from "@/lib/api/queries";
 import type { IntelligenceRef } from "@/lib/api/types.gen";
-import { useT } from "@/lib/i18n";
+import { useT } from "@/shared/i18n";
 
 /**
  * Asks before ending the live session of an AI the viewer manages (POS-04): the session stops and

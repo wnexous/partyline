@@ -4,7 +4,7 @@ import { Skeleton } from "@/shared/ui/primitives/skeleton";
 import { type PersonRow, toPersonRow } from "@/entities/room-member";
 import { useAddMember, useMe, useRemoveMember } from "@/lib/api/queries";
 import type { IntelligenceRef, RoomMember } from "@/lib/api/types.gen";
-import { useI18n } from "@/lib/i18n";
+import { useI18n } from "@/shared/i18n";
 import { MemberRow } from "./member-row";
 
 /*

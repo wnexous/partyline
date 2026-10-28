@@ -1,13 +1,20 @@
 import { RadioTowerIcon } from "lucide-react";
-import { useDisconnected } from "@/hooks/use-disconnected";
-import { useT } from "@/lib/i18n";
-import { useLiveStore } from "@/lib/live/store";
+import { useT } from "@/shared/i18n";
 import { cn } from "@/shared/lib/utils";
 
+/** The socket states the line indicator knows. */
+export type LiveStatus = "connecting" | "open" | "closed";
+
 /** The line indicator: a filled, pulsing green dot while the live socket is open, a pulsing ring while it connects. */
-export function LiveIndicator({ className }: { className?: string }) {
+export function LiveIndicator({
+  status,
+  className,
+}: {
+  /** The live socket's state: the caller reads it from the live store. */
+  status: LiveStatus;
+  className?: string;
+}) {
   const t = useT();
-  const status = useLiveStore((s) => s.status);
   const label =
     status === "open"
       ? t("live.open")
@@ -35,9 +42,8 @@ export function LiveIndicator({ className }: { className?: string }) {
  * region stays mounted and only its content changes: screen readers skip regions that are
  * inserted together with their text.
  */
-export function LiveBanner() {
+export function LiveBanner({ disconnected }: { /** True once the socket has been down past the grace period. */ disconnected: boolean }) {
   const t = useT();
-  const disconnected = useDisconnected();
   return (
     <div role="status" aria-live="polite">
       {disconnected ? (

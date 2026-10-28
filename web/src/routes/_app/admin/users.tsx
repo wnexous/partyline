@@ -2,8 +2,8 @@ import { createFileRoute } from "@tanstack/react-router";
 import { UsersIcon } from "lucide-react";
 import { useId, useState } from "react";
 import { toast } from "sonner";
-import { EmptyState } from "@/components/empty-state";
-import { PageHeader } from "@/components/page-header";
+import { EmptyState } from "@/shared/ui/molecules/empty-state";
+import { PageHeader } from "@/shared/ui/molecules/page-header";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -20,7 +20,7 @@ import { Switch } from "@/shared/ui/primitives/switch";
 import { ToggleGroup, ToggleGroupItem } from "@/shared/ui/primitives/toggle-group";
 import { useAdminUsers, useMe, useUpdateUser } from "@/lib/api/queries";
 import { type AdminUser, type Role, RoleAdmin, RoleMember } from "@/lib/api/types.gen";
-import { useI18n, useT } from "@/lib/i18n";
+import { useI18n, useT } from "@/shared/i18n";
 import { formatAbsolute } from "@/shared/lib/time";
 import { cn } from "@/shared/lib/utils";
 

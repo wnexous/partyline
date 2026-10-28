@@ -2,10 +2,10 @@ import { createFileRoute, Navigate } from "@tanstack/react-router";
 import { NetworkIcon, PlusIcon, SquarePenIcon, Trash2Icon } from "lucide-react";
 import { useId, useMemo, useState } from "react";
 import { toast } from "sonner";
-import { EmptyState } from "@/components/empty-state";
-import { InlineRename } from "@/components/inline-rename";
-import { NativeSelect } from "@/components/native-select";
-import { PageHeader } from "@/components/page-header";
+import { EmptyState } from "@/shared/ui/molecules/empty-state";
+import { InlineRename } from "@/shared/ui/molecules/inline-rename";
+import { NativeSelect } from "@/shared/ui/atoms/native-select";
+import { PageHeader } from "@/shared/ui/molecules/page-header";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -31,7 +31,7 @@ import {
   ErrorCodePositionCycle,
   type UpdatePositionRequest,
 } from "@/lib/api/types.gen";
-import { type Translate, useT } from "@/lib/i18n";
+import { type Translate, useT } from "@/shared/i18n";
 import { descendantsOf, type PositionNode, positionOptions, positionTree } from "@/lib/org-chart";
 import { MaxPositionNameLength, PermissionAdmin } from "@/lib/orgs";
 

@@ -1,6 +1,6 @@
 import { useId, useState } from "react";
 import { toast } from "sonner";
-import { NativeSelect } from "@/components/native-select";
+import { NativeSelect } from "@/shared/ui/atoms/native-select";
 import { Alert, AlertDescription } from "@/shared/ui/primitives/alert";
 import { Button } from "@/shared/ui/primitives/button";
 import {
@@ -15,7 +15,7 @@ import { Label } from "@/shared/ui/primitives/label";
 import { isApiError } from "@/lib/api/client";
 import { useOrgMovePreview, useUpdateOrgMember } from "@/lib/api/queries";
 import type { Position } from "@/lib/api/types.gen";
-import { useI18n, useT } from "@/lib/i18n";
+import { useI18n, useT } from "@/shared/i18n";
 import { movablePositions, type PositionOption } from "@/lib/org-chart";
 import { isCoarsePointer } from "@/shared/lib/device";
 

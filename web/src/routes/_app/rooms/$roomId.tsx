@@ -11,14 +11,14 @@ import {
 } from "lucide-react";
 import { useEffect, useState } from "react";
 import { toast } from "sonner";
-import { BackToConversations } from "@/components/back-link";
+import { BackToConversations } from "@/shared/ui/molecules/back-link";
 import { Composer, canPost } from "@/components/composer";
 import {
   ConversationHeader,
   conversationTitle,
   historyPlatform,
 } from "@/components/conversation-header";
-import { EmptyState } from "@/components/empty-state";
+import { EmptyState } from "@/shared/ui/molecules/empty-state";
 import { MemberPicker } from "@/components/member-picker";
 import { platformName } from "@/components/message-item";
 import {
@@ -52,7 +52,7 @@ import {
   type Room,
   type RoomMember,
 } from "@/lib/api/types.gen";
-import { useI18n, useT } from "@/lib/i18n";
+import { useI18n, useT } from "@/shared/i18n";
 import { MemberPanel } from "@/widgets/member-panel";
 
 export const Route = createFileRoute("/_app/rooms/$roomId")({

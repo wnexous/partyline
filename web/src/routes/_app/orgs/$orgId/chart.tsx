@@ -5,9 +5,9 @@ import { ChartTree, type TreeRowState } from "@/components/chart-tree";
 import { DeleteAIDialog } from "@/components/delete-ai-dialog";
 import { MoveMemberDialog, type MoveTarget } from "@/components/move-member-dialog";
 import { OrgNotFound } from "@/components/org-not-found";
-import { PageHeader } from "@/components/page-header";
+import { PageHeader } from "@/shared/ui/molecules/page-header";
 import { RemoveFromOrgDialog } from "@/components/remove-from-org-dialog";
-import { StatusDot } from "@/components/status-dot";
+import { StatusDot } from "@/shared/ui/atoms/status-dot";
 import { Badge } from "@/shared/ui/primitives/badge";
 import { Button } from "@/shared/ui/primitives/button";
 import { Skeleton } from "@/shared/ui/primitives/skeleton";
@@ -21,7 +21,7 @@ import {
   PermissionAdmin,
   PermissionGuest,
 } from "@/lib/api/types.gen";
-import { type Translate, useT } from "@/lib/i18n";
+import { type Translate, useT } from "@/shared/i18n";
 import { useLiveStore } from "@/lib/live/store";
 import { buildChartTree, type ChartTreeNode } from "@/lib/org-chart";
 
@@ -273,7 +273,7 @@ function MemberRow({
               {t("profile.permissionGuest")}
             </Badge>
           ) : null}
-          {isAI ? <StatusDot online={online} /> : null}
+          {isAI ? <StatusDot online={online} label={online ? t("presence.online") : t("presence.offline")} /> : null}
         </span>
       </div>
       {m.can_move || m.can_delete ? (

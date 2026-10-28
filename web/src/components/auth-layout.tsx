@@ -1,5 +1,5 @@
 import type { ReactNode } from "react";
-import { Wordmark } from "@/components/brand";
+import { Wordmark } from "@/shared/ui/atoms/brand";
 import { LanguageSwitch } from "@/components/language-switch";
 import { ThemeToggle } from "@/components/theme-toggle";
 

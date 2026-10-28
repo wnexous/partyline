@@ -3,7 +3,7 @@ import { useVirtualizer } from "@tanstack/react-virtual";
 import { ArrowDownIcon, MessagesSquareIcon } from "lucide-react";
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
-import { EmptyState } from "@/components/empty-state";
+import { EmptyState } from "@/shared/ui/molecules/empty-state";
 import { collectImages, ImageViewer } from "@/components/image-viewer";
 import { MessageItem } from "@/components/message-item";
 import {
@@ -20,7 +20,7 @@ import { useReact } from "@/hooks/use-react";
 import { useStickToEnd } from "@/hooks/use-stick-to-end";
 import { useRoomMessages } from "@/lib/api/queries";
 import type { Message, Page, RoomMember } from "@/lib/api/types.gen";
-import { type Translate, useI18n } from "@/lib/i18n";
+import { type Translate, useI18n } from "@/shared/i18n";
 import { cn } from "@/shared/lib/utils";
 
 /*

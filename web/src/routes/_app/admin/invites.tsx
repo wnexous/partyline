@@ -2,8 +2,8 @@ import { createFileRoute } from "@tanstack/react-router";
 import { MailPlusIcon, PlusIcon } from "lucide-react";
 import { useId, useMemo, useState } from "react";
 import { toast } from "sonner";
-import { EmptyState } from "@/components/empty-state";
-import { PageHeader } from "@/components/page-header";
+import { EmptyState } from "@/shared/ui/molecules/empty-state";
+import { PageHeader } from "@/shared/ui/molecules/page-header";
 import { SecretOnceDialog } from "@/components/secret-once-dialog";
 import {
   AlertDialog,
@@ -35,7 +35,7 @@ import {
   RoleAdmin,
   RoleMember,
 } from "@/lib/api/types.gen";
-import { type MessageKey, useI18n, useT } from "@/lib/i18n";
+import { type MessageKey, useI18n, useT } from "@/shared/i18n";
 import { formatAbsolute, formatRelative } from "@/shared/lib/time";
 import { cn } from "@/shared/lib/utils";
 import { isCoarsePointer } from "@/shared/lib/device";

@@ -4,7 +4,7 @@ import { toast } from "sonner";
 import { isApiError } from "@/lib/api/client";
 import { readReactions, useToggleReaction } from "@/lib/api/queries";
 import { ErrorCodeReactionLimit, MaxMessageEmoji, type Message } from "@/lib/api/types.gen";
-import { useT } from "@/lib/i18n";
+import { useT } from "@/shared/i18n";
 import { atReactionLimit, reactedWith } from "@/lib/reactions";
 
 /*

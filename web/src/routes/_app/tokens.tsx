@@ -4,9 +4,9 @@ import { KeyRoundIcon, PlusIcon } from "lucide-react";
 import { useId, useMemo, useState } from "react";
 import { Controller, useForm } from "react-hook-form";
 import { toast } from "sonner";
-import { EmptyState } from "@/components/empty-state";
-import { FormAlert, TextField } from "@/components/form-fields";
-import { PageHeader } from "@/components/page-header";
+import { EmptyState } from "@/shared/ui/molecules/empty-state";
+import { FormAlert, TextField } from "@/shared/ui/molecules/form-fields";
+import { PageHeader } from "@/shared/ui/molecules/page-header";
 import { SecretOnceDialog } from "@/components/secret-once-dialog";
 import {
   AlertDialog,
@@ -35,7 +35,7 @@ import { isApiError } from "@/lib/api/client";
 import { useCreateToken, usePurgeToken, useRevokeToken, useTokens } from "@/lib/api/queries";
 import { type CreatedToken, type Token, TokenKindAgent, TokenKindUser } from "@/lib/api/types.gen";
 import { applyFieldErrors } from "@/shared/lib/forms";
-import { type MessageKey, useI18n, useT } from "@/lib/i18n";
+import { type MessageKey, useI18n, useT } from "@/shared/i18n";
 import { type CreateTokenForm, createTokenSchema, TOKEN_EXPIRY_DAYS } from "@/lib/schemas";
 import { readStorage, writeStorage } from "@/lib/theme";
 import { formatAbsolute, formatRelative } from "@/shared/lib/time";

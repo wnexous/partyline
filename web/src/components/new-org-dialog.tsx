@@ -2,7 +2,7 @@ import { zodResolver } from "@hookform/resolvers/zod";
 import { useState } from "react";
 import { useForm } from "react-hook-form";
 import { toast } from "sonner";
-import { FormAlert, TextField } from "@/components/form-fields";
+import { FormAlert, TextField } from "@/shared/ui/molecules/form-fields";
 import { Button } from "@/shared/ui/primitives/button";
 import {
   Dialog,
@@ -17,7 +17,7 @@ import { useCurrentOrg } from "@/hooks/use-current-org";
 import { isApiError } from "@/lib/api/client";
 import { useCreateOrg } from "@/lib/api/queries";
 import { applyFieldErrors } from "@/shared/lib/forms";
-import { useT } from "@/lib/i18n";
+import { useT } from "@/shared/i18n";
 import { type CreateOrgForm, createOrgSchema } from "@/lib/schemas";
 import { isCoarsePointer } from "@/shared/lib/device";
 

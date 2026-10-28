@@ -4,10 +4,8 @@ import { CheckCheckIcon, CopyIcon, Trash2Icon } from "lucide-react";
 import { afterEach, beforeEach, describe, expect, it, type Mock, vi } from "vitest";
 import { axe } from "vitest-axe";
 import * as matchers from "vitest-axe/matchers";
-import { ActionMenu, type ActionMenuProps, type MenuAction } from "@/components/action-menu";
-import { AppProviders } from "@/components/app-providers";
-import { useLiveStore } from "@/lib/live/store";
-import { makeQueryClient } from "@/test/render";
+import { ActionMenu, type ActionMenuProps, type MenuAction } from "@/shared/ui/molecules/action-menu";
+import { I18nProvider } from "@/shared/i18n";
 
 expect.extend(matchers);
 
@@ -30,7 +28,7 @@ const actions = (): MenuAction[] => [
   { id: "delete", label: "Delete group", icon: Trash2Icon, onSelect: remove, destructive: true },
 ];
 
-function renderMenu(over: Partial<ActionMenuProps> = {}) {
+function renderMenu(over: Partial<ActionMenuProps> = {}, locale: "en" | "pt-BR" = "en") {
   const props: ActionMenuProps = {
     open: true,
     onClose: close,
@@ -43,14 +41,13 @@ function renderMenu(over: Partial<ActionMenuProps> = {}) {
     ...over,
   };
   return render(
-    <AppProviders queryClient={makeQueryClient()}>
+    <I18nProvider locale={locale}>
       <ActionMenu {...props} />
-    </AppProviders>,
+    </I18nProvider>,
   );
 }
 
 beforeEach(() => {
-  useLiveStore.setState({ locale: "en" });
   read = vi.fn();
   copy = vi.fn();
   remove = vi.fn();
@@ -163,9 +160,9 @@ describe("the sheet of a touch device (ACT-01, ACT-06)", () => {
         actions: actions(),
       } satisfies ActionMenuProps;
       const wrapper = (open: boolean) => (
-        <AppProviders queryClient={makeQueryClient()}>
+        <I18nProvider locale="en">
           <ActionMenu {...props} open={open} />
-        </AppProviders>
+        </I18nProvider>
       );
       const { rerender } = render(wrapper(true));
       const readRow = await screen.findByRole("button", { name: "Mark as read" });
@@ -229,7 +226,7 @@ describe("the sheet of a touch device (ACT-01, ACT-06)", () => {
     const { rerender } = renderMenu();
     await screen.findByRole("dialog", { name: "Deploys" });
     rerender(
-      <AppProviders queryClient={makeQueryClient()}>
+      <I18nProvider locale="en">
         <ActionMenu
           open={false}
           onClose={close}
@@ -239,7 +236,7 @@ describe("the sheet of a touch device (ACT-01, ACT-06)", () => {
           actions={actions()}
           onCloseFocus={focusBack}
         />
-      </AppProviders>,
+      </I18nProvider>,
     );
     await waitFor(() => expect(focusBack).toHaveBeenCalledTimes(1));
     expect(focusBack.mock.calls[0]?.[0]).toBeInstanceOf(Event);
@@ -258,8 +255,7 @@ describe("the sheet of a touch device (ACT-01, ACT-06)", () => {
   });
 
   it("is named in Portuguese when the app is", async () => {
-    useLiveStore.setState({ locale: "pt-BR" });
-    renderMenu();
+    renderMenu({}, "pt-BR");
     expect(await screen.findByRole("button", { name: "Fechar" })).toBeInTheDocument();
   });
 });
@@ -321,7 +317,7 @@ describe("the menu of a mouse (ACT-02, ACT-06)", () => {
     await screen.findByRole("menu", { name: "Deploys" });
     const anchor = document.querySelector<HTMLElement>('[aria-haspopup="menu"]');
     rerender(
-      <AppProviders queryClient={makeQueryClient()}>
+      <I18nProvider locale="en">
         <ActionMenu
           open={false}
           onClose={close}
@@ -330,7 +326,7 @@ describe("the menu of a mouse (ACT-02, ACT-06)", () => {
           at={{ x: 120, y: 80 }}
           actions={actions()}
         />
-      </AppProviders>,
+      </I18nProvider>,
     );
     await waitFor(() => expect(screen.queryByRole("menu")).toBeNull());
     expect(document.activeElement).not.toBe(anchor);

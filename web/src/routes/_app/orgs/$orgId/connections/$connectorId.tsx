@@ -10,11 +10,11 @@ import {
 import { type ReactNode, useEffect, useId, useState } from "react";
 import { toast } from "sonner";
 import { ConnectorStatusBadge, useConnectorState } from "@/components/connector-status";
-import { CodeBlock } from "@/components/copy-field";
-import { EmptyState } from "@/components/empty-state";
-import { FormAlert } from "@/components/form-fields";
+import { CodeBlock } from "@/shared/ui/molecules/copy-field";
+import { EmptyState } from "@/shared/ui/molecules/empty-state";
+import { FormAlert } from "@/shared/ui/molecules/form-fields";
 import { chatTitle, platformLabel } from "@/components/message-item";
-import { NativeSelect } from "@/components/native-select";
+import { NativeSelect } from "@/shared/ui/atoms/native-select";
 import { NamedSentence } from "@/components/profile-link";
 import { ConnectorForm } from "@/components/schema-form";
 import {
@@ -61,7 +61,7 @@ import {
   type UpdateConnectorRequest,
 } from "@/lib/api/types.gen";
 import { allAIs } from "@/lib/contacts";
-import { type MessageKey, useI18n, useT } from "@/lib/i18n";
+import { type MessageKey, useI18n, useT } from "@/shared/i18n";
 import { formatAbsolute, formatRelative } from "@/shared/lib/time";
 
 export const Route = createFileRoute("/_app/orgs/$orgId/connections/$connectorId")({

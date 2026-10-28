@@ -3,7 +3,7 @@ import { useNavigate } from "@tanstack/react-router";
 import { type ReactNode, useId, useState } from "react";
 import { type ControllerRenderProps, useForm } from "react-hook-form";
 import { toast } from "sonner";
-import { FieldError, FormAlert, TextField } from "@/components/form-fields";
+import { FieldError, FormAlert, TextField } from "@/shared/ui/molecules/form-fields";
 import { GroupAvatar } from "@/components/group-avatar";
 import { PhotoEditor } from "@/components/photo-editor";
 import {
@@ -47,7 +47,7 @@ import {
 } from "@/lib/api/queries";
 import { MaxRoomInstructions, type Room, type UpdateRoomRequest } from "@/lib/api/types.gen";
 import { applyFieldErrors } from "@/shared/lib/forms";
-import { useI18n } from "@/lib/i18n";
+import { useI18n } from "@/shared/i18n";
 import { type RoomSettingsForm, roomSettingsSchema, textLength } from "@/lib/schemas";
 import { cn } from "@/shared/lib/utils";
 

@@ -3,7 +3,7 @@ import { XIcon } from "lucide-react";
 import { type KeyboardEvent, type ReactNode, useMemo, useState } from "react";
 import { type Path, useForm } from "react-hook-form";
 import { z } from "zod";
-import { FieldError, FormAlert, TextField } from "@/components/form-fields";
+import { FieldError, FormAlert, TextField } from "@/shared/ui/molecules/form-fields";
 import { Button } from "@/shared/ui/primitives/button";
 import {
   Form,
@@ -22,7 +22,7 @@ import {
   FieldTypeStringList,
   FieldTypeURL,
 } from "@/lib/api/types.gen";
-import { type MessageKey, useT } from "@/lib/i18n";
+import { type MessageKey, useT } from "@/shared/i18n";
 import { cn } from "@/shared/lib/utils";
 
 /*

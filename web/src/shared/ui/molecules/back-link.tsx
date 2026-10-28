@@ -1,7 +1,7 @@
 import { Link } from "@tanstack/react-router";
 import { ArrowLeftIcon } from "lucide-react";
 import { Button } from "@/shared/ui/primitives/button";
-import { useT } from "@/lib/i18n";
+import { useT } from "@/shared/i18n";
 import { cn } from "@/shared/lib/utils";
 
 /** The way back to the conversation list on a phone (LAY-05). */

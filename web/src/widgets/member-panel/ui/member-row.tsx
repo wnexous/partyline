@@ -1,18 +1,18 @@
 import { MessageSquareIcon, XIcon } from "lucide-react";
 import { useRef, useState } from "react";
 import { toast } from "sonner";
-import { ActionMenu } from "@/components/action-menu";
+import { ActionMenu } from "@/shared/ui/molecules/action-menu";
 import { AiStatusLine } from "@/components/ai-status";
 import { MemberSettings, memberSettingsSummary } from "@/components/member-settings";
-import { RowMenuButton } from "@/components/row-menu-button";
-import { StatusDot } from "@/components/status-dot";
+import { RowMenuButton } from "@/shared/ui/molecules/row-menu-button";
+import { StatusDot } from "@/shared/ui/atoms/status-dot";
 import { Button } from "@/shared/ui/primitives/button";
 import { IntelligenceRow, SessionList, useIsOnline } from "@/entities/intelligence";
 import type { PersonRow } from "@/entities/room-member";
 import { useTouchFirst } from "@/shared/lib/device";
 import { useStartConversation } from "@/hooks/use-start-conversation";
 import { useIntelligence } from "@/lib/api/queries";
-import { useI18n } from "@/lib/i18n";
+import { useI18n } from "@/shared/i18n";
 
 /**
  * What a group can do with a member row: its settings, and taking the member out. A DM has none of
@@ -51,7 +51,7 @@ export function MemberRow({
     // A group's member comes with its owner, settings and sessions.
     meta = (
       <>
-        <StatusDot online={online} withLabel />
+        <StatusDot online={online} label={online ? t("presence.online") : t("presence.offline")} withLabel />
         {member.owner ? <span>{t("rooms.ownedBy", { username: member.owner })}</span> : null}
         {member.display_name ? (
           <span className="[overflow-wrap:anywhere]">

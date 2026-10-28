@@ -1,6 +1,6 @@
 import type { FieldValues, Path, UseFormSetError } from "react-hook-form";
 import { isApiError } from "@/lib/api/client";
-import { dictionaries, type MessageKey, type Translate } from "@/lib/i18n";
+import { dictionaries, type MessageKey, type Translate } from "@/shared/i18n";
 import { validationVars } from "@/lib/schemas";
 
 /** Renders a field error: schema errors carry i18n keys, server errors carry plain text. */

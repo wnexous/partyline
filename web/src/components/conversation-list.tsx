@@ -14,10 +14,10 @@ import {
   hasConversationActions,
 } from "@/components/conversation-menu";
 
-import { EmptyState } from "@/components/empty-state";
+import { EmptyState } from "@/shared/ui/molecules/empty-state";
 import { NewConversationDialog } from "@/components/new-conversation-dialog";
 import { NewGroupDialog } from "@/components/new-group-dialog";
-import { RowMenuButton } from "@/components/row-menu-button";
+import { RowMenuButton } from "@/shared/ui/molecules/row-menu-button";
 import { Button } from "@/shared/ui/primitives/button";
 import { Skeleton } from "@/shared/ui/primitives/skeleton";
 import { useCurrentOrg } from "@/hooks/use-current-org";
@@ -26,7 +26,7 @@ import { useLongPress } from "@/shared/lib/use-long-press";
 import { useConversations } from "@/lib/api/queries";
 import type { Conversation } from "@/lib/api/types.gen";
 import { conversationMatches } from "@/lib/conversations";
-import { useI18n, useT } from "@/lib/i18n";
+import { useI18n, useT } from "@/shared/i18n";
 import { inOrg } from "@/lib/orgs";
 import { formatAbsolute, formatListTime } from "@/shared/lib/time";
 import { cn } from "@/shared/lib/utils";

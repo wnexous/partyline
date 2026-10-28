@@ -19,7 +19,7 @@ import {
 import { Skeleton } from "@/shared/ui/primitives/skeleton";
 import { useCurrentOrg } from "@/hooks/use-current-org";
 import { useConversations } from "@/lib/api/queries";
-import { type Translate, useT } from "@/lib/i18n";
+import { type Translate, useT } from "@/shared/i18n";
 import { type MyOrg, permissionLabel, unreadByOrg, unreadOutsideOrg } from "@/lib/orgs";
 import { cn } from "@/shared/lib/utils";
 

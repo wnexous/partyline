@@ -1,8 +1,7 @@
 import { SearchIcon } from "lucide-react";
 import { Button } from "@/shared/ui/primitives/button";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/shared/ui/primitives/tooltip";
-import { useT } from "@/lib/i18n";
-import { useLiveStore } from "@/lib/live/store";
+import { useT } from "@/shared/i18n";
 import { cn } from "@/shared/lib/utils";
 
 /** True when the shortcut should read ⌘K (Apple platforms) rather than Ctrl K. */
@@ -12,9 +11,15 @@ export function isApplePlatform(): boolean {
 }
 
 /** Opens the palette; the tooltip shows the keyboard shortcut next to its label. */
-export function SearchButton({ className }: { className?: string }) {
+export function SearchButton({
+  className,
+  onOpen,
+}: {
+  className?: string;
+  /** Opens the palette: the caller wires the live store. */
+  onOpen: () => void;
+}) {
   const t = useT();
-  const setOpen = useLiveStore((s) => s.setPaletteOpen);
   const apple = isApplePlatform();
   return (
     <Tooltip>
@@ -24,7 +29,7 @@ export function SearchButton({ className }: { className?: string }) {
           size="icon"
           aria-label={t("palette.open")}
           aria-keyshortcuts={apple ? "Meta+K" : "Control+K"}
-          onClick={() => setOpen(true)}
+          onClick={onOpen}
           className={cn("size-11 shrink-0 md:size-9", className)}
         >
           <SearchIcon aria-hidden="true" />

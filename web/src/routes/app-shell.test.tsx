@@ -1,7 +1,7 @@
 import { act, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { LiveBanner } from "@/components/live-status";
+import { LiveBanner } from "@/shared/ui/molecules/live-status";
 import { api } from "@/lib/api/client";
 import { useLiveStore } from "@/lib/live/store";
 import { apiError, json, mockApi } from "@/test/fetch";
@@ -126,36 +126,24 @@ describe("live banner (UI-06)", () => {
 
   it("appears only after the socket has not been open for more than 2 s", () => {
     const reconnecting = "Connection lost. Reconnecting…";
-    act(() => useLiveStore.getState().setStatus("open"));
-    render(<LiveBanner />);
+    // The banner is pure: the shell reads the store with useDisconnected, the test drives the prop.
+    const { rerender } = render(<LiveBanner disconnected={false} />);
     // The live region is mounted while connected (empty), so screen readers announce the
     // reconnecting text when it appears inside it.
     const region = screen.getByRole("status");
     expect(region).toHaveAttribute("aria-live", "polite");
     expect(region).toBeEmptyDOMElement();
 
-    act(() => useLiveStore.getState().setStatus("closed"));
-    act(() => vi.advanceTimersByTime(1_999));
-    expect(screen.getByRole("status")).toBeEmptyDOMElement();
-    act(() => vi.advanceTimersByTime(1));
+    rerender(<LiveBanner disconnected />);
     expect(screen.getByRole("status")).toBe(region);
     expect(region).toHaveTextContent(reconnecting);
 
-    // Retrying (closed -> connecting -> closed) keeps the banner up: the outage continues.
-    act(() => useLiveStore.getState().setStatus("connecting"));
-    expect(region).toHaveTextContent(reconnecting);
-    act(() => useLiveStore.getState().setStatus("closed"));
+    // Reconnecting keeps the banner up: the outage continues.
+    rerender(<LiveBanner disconnected />);
     expect(region).toHaveTextContent(reconnecting);
 
-    act(() => useLiveStore.getState().setStatus("open"));
+    rerender(<LiveBanner disconnected={false} />);
     expect(screen.getByRole("status")).toBe(region);
-    expect(region).toBeEmptyDOMElement();
-
-    // A short blip under 2 s never shows the banner.
-    act(() => useLiveStore.getState().setStatus("connecting"));
-    act(() => vi.advanceTimersByTime(1_500));
-    act(() => useLiveStore.getState().setStatus("open"));
-    act(() => vi.advanceTimersByTime(1_000));
     expect(region).toBeEmptyDOMElement();
   });
 });

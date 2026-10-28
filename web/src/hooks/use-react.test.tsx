@@ -6,7 +6,7 @@ import { useReact } from "@/hooks/use-react";
 import { type MessagePages, queryKeys } from "@/lib/api/queries";
 import type { Message, Reaction } from "@/lib/api/types.gen";
 import { MaxMessageEmoji } from "@/lib/api/types.gen";
-import { I18nProvider } from "@/lib/i18n";
+import { I18nProvider } from "@/shared/i18n";
 import { MORE_REACTIONS } from "@/lib/reactions";
 import { apiError, json, mockApi } from "@/test/fetch";
 import { makeMessage } from "@/test/fixtures";

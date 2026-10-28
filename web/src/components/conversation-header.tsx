@@ -1,12 +1,12 @@
 import type { ReactNode } from "react";
 import { AiStatusLine } from "@/components/ai-status";
-import { BackToConversations } from "@/components/back-link";
+import { BackToConversations } from "@/shared/ui/molecules/back-link";
 import { GroupAvatar } from "@/components/group-avatar";
 import { ProfileLink } from "@/components/profile-link";
 import { IntelligenceAvatar, IntelligenceName } from "@/entities/intelligence";
 import { ConversationKindDM, type Room } from "@/lib/api/types.gen";
 import { counterpartOf } from "@/lib/conversations";
-import { type Translate, useT } from "@/lib/i18n";
+import { type Translate, useT } from "@/shared/i18n";
 
 /** What a conversation is called: a group by its name, a DM by the other participant. */
 export function conversationTitle(room: Room, viewerId: string, t: Translate): string {

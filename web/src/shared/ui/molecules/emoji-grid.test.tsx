@@ -1,12 +1,65 @@
 import { screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { axe } from "vitest-axe";
 import * as matchers from "vitest-axe/matchers";
-import { EmojiGrid } from "@/components/emoji-grid";
-import { useLiveStore } from "@/lib/live/store";
-import { MORE_REACTIONS, PICKER_COLUMNS } from "@/lib/reactions";
-import { renderWithProviders } from "@/test/render";
+import { EmojiGrid } from "@/shared/ui/molecules/emoji-grid";
+import { I18nProvider } from "@/shared/i18n";
+
+// The grid takes its emoji as props; the values below stand in for realistic picker input
+// (the reaction constants stay in lib/reactions until the picker moves in a later task).
+const MORE_REACTIONS = [
+  "👍",
+  "❤️",
+  "😂",
+  "😮",
+  "😢",
+  "🙏",
+  "🔥",
+  "🎯",
+  "💡",
+  "🚀",
+  "🎉",
+  "🌟",
+  "🐛",
+  "📌",
+  "💯",
+  "🎨",
+  "⚽",
+  "🍕",
+  "🎁",
+  "💎",
+  "🌈",
+  "🍀",
+  "🔔",
+  "🎵",
+  "☕",
+  "🌙",
+  "⭐",
+  "🎊",
+  "💥",
+  "👀",
+  "🙌",
+  "👏",
+  "🤝",
+  "💪",
+  "🧠",
+  "❓",
+  "‼️",
+  "💤",
+  "👎",
+  "👀",
+  "🫡",
+  "🥳",
+  "😎",
+  "🤔",
+  "😴",
+  "🥺",
+  "😭",
+  "😡",
+] as const;
+const PICKER_COLUMNS = 8;
+import { render } from "@testing-library/react";
 
 expect.extend(matchers);
 
@@ -15,7 +68,6 @@ expect.extend(matchers);
  * with the arrows, and tells which of them the viewer used already.
  */
 
-beforeEach(() => useLiveStore.setState({ locale: "en" }));
 
 function grid(
   over: Partial<{
@@ -25,7 +77,7 @@ function grid(
   }> = {},
 ) {
   const onPick = over.onPick ?? vi.fn();
-  const utils = renderWithProviders(
+  const utils = render(<I18nProvider locale="en">
     <EmojiGrid
       emojis={MORE_REACTIONS}
       columns={PICKER_COLUMNS}
@@ -34,7 +86,7 @@ function grid(
       label="Pick a reaction"
       size={over.size ?? "pointer"}
     />,
-  );
+  </I18nProvider>);
   return { ...utils, onPick };
 }
 const button = (emoji: string) => screen.getByRole("button", { name: `React with ${emoji}` });

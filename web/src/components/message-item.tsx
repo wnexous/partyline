@@ -17,7 +17,7 @@ import { ProfileLink } from "@/components/profile-link";
 import { QuestionBubble } from "@/components/question-bubble";
 import { ReactionToolbar } from "@/components/reaction-bar";
 import { ReactionChips } from "@/components/reaction-chips";
-import { RowMenuButton } from "@/components/row-menu-button";
+import { RowMenuButton } from "@/shared/ui/molecules/row-menu-button";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/shared/ui/primitives/tooltip";
 import { IntelligenceAvatar, IntelligenceName } from "@/entities/intelligence";
 import { useLongPress } from "@/shared/lib/use-long-press";
@@ -30,7 +30,7 @@ import type {
   Message,
   RoomMember,
 } from "@/lib/api/types.gen";
-import { type MessageKey, type Translate, useI18n } from "@/lib/i18n";
+import { type MessageKey, type Translate, useI18n } from "@/shared/i18n";
 import { formatAbsolute, formatClock } from "@/shared/lib/time";
 import { cn } from "@/shared/lib/utils";
 import { isAudio } from "@/lib/voice";

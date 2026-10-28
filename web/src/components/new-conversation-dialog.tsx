@@ -1,6 +1,6 @@
 import { type ReactNode, useMemo, useState } from "react";
 import { PickableMeta } from "@/components/contact-meta";
-import { FormAlert } from "@/components/form-fields";
+import { FormAlert } from "@/shared/ui/molecules/form-fields";
 import { Button } from "@/shared/ui/primitives/button";
 import { Command, CommandInput, CommandItem, CommandList } from "@/shared/ui/primitives/command";
 import {
@@ -18,7 +18,7 @@ import { useContacts } from "@/lib/api/queries";
 import type { IntelligenceRef } from "@/lib/api/types.gen";
 import { type Pickable, pickableList } from "@/lib/contacts";
 import { matchesTerms } from "@/lib/conversations";
-import { useT } from "@/lib/i18n";
+import { useT } from "@/shared/i18n";
 import { useLiveStore } from "@/lib/live/store";
 import { withContactPresence } from "@/lib/presence";
 import { isCoarsePointer } from "@/shared/lib/device";

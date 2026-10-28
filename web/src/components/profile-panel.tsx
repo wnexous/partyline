@@ -7,7 +7,7 @@ import { MembershipSummary } from "@/components/membership-summary";
 import { platformName } from "@/components/message-item";
 import { PANEL_CONVERSATIONS, ProfileConversations } from "@/components/profile-conversations";
 import { opensElsewhere } from "@/components/profile-link";
-import { StatusDot } from "@/components/status-dot";
+import { StatusDot } from "@/shared/ui/atoms/status-dot";
 import { Button } from "@/shared/ui/primitives/button";
 import { Sheet, SheetClose, SheetContent, SheetTitle } from "@/shared/ui/primitives/sheet";
 import { Skeleton } from "@/shared/ui/primitives/skeleton";
@@ -18,7 +18,7 @@ import { useStartConversation } from "@/hooks/use-start-conversation";
 import { isApiError } from "@/lib/api/client";
 import { intelligenceQuery, useMe } from "@/lib/api/queries";
 import { type IntelligenceProfile, IntelligenceRolePerson } from "@/lib/api/types.gen";
-import { useT } from "@/lib/i18n";
+import { useT } from "@/shared/i18n";
 import { useLiveStore } from "@/lib/live/store";
 import { cn } from "@/shared/lib/utils";
 
@@ -249,7 +249,7 @@ function ProfileCard({ profile }: { profile: IntelligenceProfile }) {
               <>
                 <dt className="text-muted-foreground">{t("profilePanel.status")}</dt>
                 <dd>
-                  <StatusDot online={online} withLabel labelClassName="text-sm text-foreground" />
+                  <StatusDot online={online} label={online ? t("presence.online") : t("presence.offline")} withLabel labelClassName="text-sm text-foreground" />
                 </dd>
               </>
             ) : null}

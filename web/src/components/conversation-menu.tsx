@@ -2,8 +2,8 @@ import { useNavigate, useRouter } from "@tanstack/react-router";
 import { CheckCheckIcon, LogOutIcon, Trash2Icon, UserRoundIcon } from "lucide-react";
 import { useRef, useState } from "react";
 import { toast } from "sonner";
-import { ActionMenu, type MenuAction } from "@/components/action-menu";
-import { ConfirmDialog } from "@/components/confirm-dialog";
+import { ActionMenu, type MenuAction } from "@/shared/ui/molecules/action-menu";
+import { ConfirmDialog } from "@/shared/ui/molecules/confirm-dialog";
 import { useProfilePanel } from "@/hooks/use-profile-panel";
 import { useDeleteRoom, useLeaveRoom, useMarkRead, useMe, useRoomMembers } from "@/lib/api/queries";
 import {
@@ -13,7 +13,7 @@ import {
   LevelManage,
   LevelPost,
 } from "@/lib/api/types.gen";
-import { type Translate, useT } from "@/lib/i18n";
+import { type Translate, useT } from "@/shared/i18n";
 
 /*
  * The actions of a conversation of the sidebar (ACT-03, ACT-04, ROOM-01): Mark as read where

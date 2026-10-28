@@ -4,7 +4,7 @@ import { type ReactNode, type RefObject, useEffect, useLayoutEffect, useRef } fr
 import { ConnectorStatusBadge, useConnectorState } from "@/components/connector-status";
 import { ConversationAvatar } from "@/components/conversation-avatar";
 import { platformLabel } from "@/components/message-item";
-import { StatusDot } from "@/components/status-dot";
+import { StatusDot } from "@/shared/ui/atoms/status-dot";
 import {
   Command,
   CommandEmpty,
@@ -17,7 +17,7 @@ import { Dialog, DialogContent, DialogDescription, DialogTitle } from "@/shared/
 import { useProfilePanel } from "@/hooks/use-profile-panel";
 import { useAgents, useConnectors, useConversations } from "@/lib/api/queries";
 import { type Connector, type Me, RoleAdmin } from "@/lib/api/types.gen";
-import { useT } from "@/lib/i18n";
+import { useT } from "@/shared/i18n";
 import { useLiveStore } from "@/lib/live/store";
 import { NAV_GROUPS } from "@/lib/nav";
 import { cn } from "@/shared/lib/utils";
@@ -145,7 +145,17 @@ function PaletteBody({
                 icon={<ContactRoundIcon aria-hidden="true" />}
                 label={agent.intelligence.display_name}
                 hint={`@${agent.intelligence.handle}`}
-                trailing={<StatusDot online={presence[agent.id]?.online ?? agent.online} />}
+                trailing={
+                  (() => {
+                    const online = presence[agent.id]?.online ?? agent.online;
+                    return (
+                      <StatusDot
+                        online={online}
+                        label={online ? t("presence.online") : t("presence.offline")}
+                      />
+                    );
+                  })()
+                }
               />
             ))}
           </CommandGroup>

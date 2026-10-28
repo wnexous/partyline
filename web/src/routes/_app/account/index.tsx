@@ -4,11 +4,11 @@ import { MonitorIcon, MoonIcon, SunIcon } from "lucide-react";
 import { type ReactNode, useEffect, useId, useRef, useState } from "react";
 import { useForm } from "react-hook-form";
 import { toast } from "sonner";
-import { FormAlert, TextField } from "@/components/form-fields";
+import { FormAlert, TextField } from "@/shared/ui/molecules/form-fields";
 import { LOCALE_NAMES, useChooseLocale } from "@/components/language-switch";
-import { NativeSelect } from "@/components/native-select";
-import { PageHeader } from "@/components/page-header";
-import { PageSection as Section } from "@/components/page-section";
+import { NativeSelect } from "@/shared/ui/atoms/native-select";
+import { PageHeader } from "@/shared/ui/molecules/page-header";
+import { PageSection as Section } from "@/shared/ui/molecules/page-section";
 import { ProfileEditor } from "@/components/profile-editor";
 import { Button } from "@/shared/ui/primitives/button";
 import {
@@ -46,7 +46,7 @@ import {
   type Session,
 } from "@/lib/api/types.gen";
 import { applyFieldErrors } from "@/shared/lib/forms";
-import { LOCALES, type MessageKey, type Translate, useI18n, useT } from "@/lib/i18n";
+import { LOCALES, type MessageKey, type Translate, useI18n, useT } from "@/shared/i18n";
 import { useLiveStore } from "@/lib/live/store";
 import { defaultOrgIdOf } from "@/lib/orgs";
 import {

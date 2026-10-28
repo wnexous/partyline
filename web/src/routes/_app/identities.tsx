@@ -2,10 +2,10 @@ import { createFileRoute, Link } from "@tanstack/react-router";
 import { CircleCheckIcon, FingerprintIcon, LinkIcon, TimerOffIcon, XIcon } from "lucide-react";
 import { useEffect, useId, useState } from "react";
 import { toast } from "sonner";
-import { CodeBlock } from "@/components/copy-field";
-import { EmptyState } from "@/components/empty-state";
+import { CodeBlock } from "@/shared/ui/molecules/copy-field";
+import { EmptyState } from "@/shared/ui/molecules/empty-state";
 import { platformLabel } from "@/components/message-item";
-import { PageHeader } from "@/components/page-header";
+import { PageHeader } from "@/shared/ui/molecules/page-header";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -34,7 +34,7 @@ import {
   useStartPairing,
 } from "@/lib/api/queries";
 import type { Connector, Identity, PairingCode } from "@/lib/api/types.gen";
-import { useI18n, useT } from "@/lib/i18n";
+import { useI18n, useT } from "@/shared/i18n";
 import { useLiveStore } from "@/lib/live/store";
 import { formatAbsolute } from "@/shared/lib/time";
 import { cn } from "@/shared/lib/utils";

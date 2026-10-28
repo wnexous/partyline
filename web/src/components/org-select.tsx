@@ -1,5 +1,5 @@
 import { useId } from "react";
-import { NativeSelect } from "@/components/native-select";
+import { NativeSelect } from "@/shared/ui/atoms/native-select";
 import { Label } from "@/shared/ui/primitives/label";
 import type { MyOrg } from "@/lib/orgs";
 

@@ -20,7 +20,7 @@ import {
   useRef,
   useState,
 } from "react";
-import { AttachmentPreviews } from "@/components/attachment-preview";
+import { AttachmentPreviews } from "@/shared/ui/molecules/attachment-preview";
 import {
   type MentionCandidate,
   MentionSuggestions,
@@ -46,7 +46,7 @@ import {
   type Message,
   type RoomMember,
 } from "@/lib/api/types.gen";
-import { type MessageKey, type Translate, useI18n } from "@/lib/i18n";
+import { type MessageKey, type Translate, useI18n } from "@/shared/i18n";
 import { messageExcerpt } from "@/lib/message-excerpt";
 import { textLength } from "@/lib/schemas";
 import { cn } from "@/shared/lib/utils";

@@ -1,12 +1,12 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { ScrollTextIcon } from "lucide-react";
-import { EmptyState } from "@/components/empty-state";
-import { PageHeader } from "@/components/page-header";
+import { EmptyState } from "@/shared/ui/molecules/empty-state";
+import { PageHeader } from "@/shared/ui/molecules/page-header";
 import { Button } from "@/shared/ui/primitives/button";
 import { Skeleton } from "@/shared/ui/primitives/skeleton";
 import { useAudit } from "@/lib/api/queries";
 import type { AuditEntry } from "@/lib/api/types.gen";
-import { useI18n, useT } from "@/lib/i18n";
+import { useI18n, useT } from "@/shared/i18n";
 import { formatAbsolute, formatRelative } from "@/shared/lib/time";
 
 export const Route = createFileRoute("/_app/admin/audit")({

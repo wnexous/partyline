@@ -2,7 +2,7 @@ import { CheckIcon, XIcon } from "lucide-react";
 import { type FormEvent, useId, useState } from "react";
 import { Button } from "@/shared/ui/primitives/button";
 import { Input } from "@/shared/ui/primitives/input";
-import { useT } from "@/lib/i18n";
+import { useT } from "@/shared/i18n";
 
 /**
  * Renames in place: Enter saves, Escape cancels. The text is trimmed and counted in characters

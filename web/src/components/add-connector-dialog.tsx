@@ -1,6 +1,6 @@
 import { useNavigate } from "@tanstack/react-router";
 import { useId, useState } from "react";
-import { CodeBlock } from "@/components/copy-field";
+import { CodeBlock } from "@/shared/ui/molecules/copy-field";
 import { OrgSelect } from "@/components/org-select";
 import { ConnectorForm } from "@/components/schema-form";
 import { SecretOnceDialog } from "@/components/secret-once-dialog";
@@ -22,7 +22,7 @@ import {
   HeaderSignature,
   HeaderTimestamp,
 } from "@/lib/api/types.gen";
-import { type Translate, useT } from "@/lib/i18n";
+import { type Translate, useT } from "@/shared/i18n";
 import { isAdminOf } from "@/lib/orgs";
 import { cn } from "@/shared/lib/utils";
 import { isCoarsePointer } from "@/shared/lib/device";

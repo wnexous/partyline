@@ -2,7 +2,7 @@ import { zodResolver } from "@hookform/resolvers/zod";
 import { useMemo, useState } from "react";
 import { useForm } from "react-hook-form";
 import { toast } from "sonner";
-import { FormAlert, SelectField, TextField } from "@/components/form-fields";
+import { FormAlert, SelectField, TextField } from "@/shared/ui/molecules/form-fields";
 import { Button } from "@/shared/ui/primitives/button";
 import {
   Dialog,
@@ -25,7 +25,7 @@ import {
 } from "@/lib/api/types.gen";
 import { inviteCandidates } from "@/lib/contacts";
 import { applyFieldErrors } from "@/shared/lib/forms";
-import { useT } from "@/lib/i18n";
+import { useT } from "@/shared/i18n";
 import { positionOptions } from "@/lib/org-chart";
 import { PermissionAdmin, PermissionGuest, PermissionMember, permissionLabel } from "@/lib/orgs";
 import { type InviteFormValues, inviteSchema } from "@/lib/schemas";
