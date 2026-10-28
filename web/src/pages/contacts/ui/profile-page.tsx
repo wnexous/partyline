@@ -19,6 +19,7 @@ import {
   IntelligenceName,
   MembershipSummary,
   mergeTargets,
+  SessionLabel,
   useIntelligence,
   useIsOnline,
   usePresenceStore,
@@ -217,12 +218,10 @@ function ProfileView({ profile }: { profile: IntelligenceProfile }) {
                 key={`:${session.label}`}
                 className="flex flex-wrap items-baseline gap-x-2 gap-y-1 px-4 py-3 text-sm"
               >
-                <span
-                  data-testid="session-label"
-                  className="min-w-0 font-mono text-xs [overflow-wrap:anywhere]"
-                >
-                  {session.label ? `:${session.label}` : t("profile.sessionPrincipal")}
-                </span>
+                <SessionLabel
+                  label={session.label}
+                  className="min-w-0 text-xs [overflow-wrap:anywhere]"
+                />
                 <span className="min-w-0 text-muted-foreground [overflow-wrap:anywhere]">
                   {harnessLabel(session.harness) ?? session.harness}
                 </span>
