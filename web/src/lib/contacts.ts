@@ -1,6 +1,6 @@
 import { harnessLabel } from "@/lib/agents";
-import { matchesTerms } from "@/lib/conversations";
 import type { AIContact, Contacts, IntelligenceRef, OrgAIs } from "@/shared/api/types.gen";
+import { matchesTerms } from "@/shared/lib/search";
 
 /*
  * Pure functions of the contacts data (GET /contacts): what the live handlers and the mutations

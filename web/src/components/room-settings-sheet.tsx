@@ -3,9 +3,9 @@ import { useNavigate } from "@tanstack/react-router";
 import { type ReactNode, useId, useState } from "react";
 import { type ControllerRenderProps, useForm } from "react-hook-form";
 import { toast } from "sonner";
-import { GroupAvatar } from "@/components/group-avatar";
 import { PhotoEditor } from "@/components/photo-editor";
 import {
+  ConversationFace,
   useDeleteRoom,
   useRemoveRoomAvatar,
   useUpdateRoom,
@@ -195,7 +195,7 @@ function RoomPhoto({ room }: { room: Room }) {
   return (
     <PhotoEditor
       face={
-        <GroupAvatar
+        <ConversationFace
           group={{ id: room.id, name: room.name, avatarUrl: room.avatar_url }}
           size="xl"
           decorative

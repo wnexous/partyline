@@ -8,10 +8,10 @@ import {
 } from "@/entities/intelligence";
 import { useStartConversation } from "@/hooks/use-start-conversation";
 import { type Pickable, pickableList } from "@/lib/contacts";
-import { matchesTerms } from "@/lib/conversations";
 import { withContactPresence } from "@/lib/presence";
 import type { IntelligenceRef } from "@/shared/api/types.gen";
 import { useT } from "@/shared/i18n";
+import { matchesTerms } from "@/shared/lib/search";
 import {
   Dialog,
   DialogContent,

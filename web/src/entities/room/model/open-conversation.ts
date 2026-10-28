@@ -1,6 +1,6 @@
 import { useEffect } from "react";
-import { useOpenRoomStore } from "@/entities/room";
 import { useDocumentVisible } from "@/shared/lib/use-document-visible";
+import { useOpenRoomStore } from "./open-room-store";
 
 /**
  * Marks `roomId` as the conversation being looked at while its page is mounted and the tab is

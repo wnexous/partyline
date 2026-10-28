@@ -1,7 +1,7 @@
 import { act, renderHook } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { useLiveStore } from "@/test/live-store";
-import { useOpenConversation } from "./use-open-conversation";
+import { useOpenConversation } from "./open-conversation";
 
 /*
  * Which conversation the user is looking at (LAY-02): its page is open and the tab is visible.

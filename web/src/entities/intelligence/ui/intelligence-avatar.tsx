@@ -19,6 +19,8 @@ export interface IntelligenceAvatarProps {
   className?: string;
   /** Hidden from assistive technology: the name sits right next to the face (rows, headers). */
   decorative?: boolean;
+  /** A person or an AI is a circle; a group's face is a rounded square, so a mixed list reads at a glance. */
+  shape?: "circle" | "square";
 }
 
 // Re-exported here so existing importers keep working; the canonical home is shared/lib/avatar.
@@ -29,6 +31,7 @@ export function IntelligenceAvatar({
   size = "default",
   className,
   decorative = false,
+  shape = "circle",
 }: IntelligenceAvatarProps) {
   const name = intelligence.display_name.trim() || intelligence.handle || "?";
   return (
@@ -36,7 +39,12 @@ export function IntelligenceAvatar({
       size={size === "xl" ? "lg" : size}
       data-testid="intelligence-avatar"
       aria-hidden={decorative || undefined}
-      className={cn("shrink-0", size === "xl" && "data-[size=lg]:size-24", className)}
+      className={cn(
+        "shrink-0",
+        shape === "square" && "rounded-lg *:rounded-lg",
+        size === "xl" && "data-[size=lg]:size-24",
+        className,
+      )}
     >
       {intelligence.avatar_url ? (
         <AvatarImage

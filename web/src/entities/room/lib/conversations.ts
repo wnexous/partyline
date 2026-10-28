@@ -1,5 +1,6 @@
 import type { Conversation, IntelligenceRef, Room } from "@/shared/api/types.gen";
 import { ConversationKindDM } from "@/shared/api/types.gen";
+import { matchesTerms } from "@/shared/lib/search";
 
 /**
  * A group has no profile: its initials and colour come from its name and room id, and its picture
@@ -21,19 +22,6 @@ export function counterpartOf(room: Room, viewerId: string): IntelligenceRef | u
   if (room.kind !== ConversationKindDM) return undefined;
   if (!room.participants.some((p) => p.id === viewerId)) return undefined;
   return room.participants.find((p) => p.id !== viewerId);
-}
-
-/** Lower case without accents, so "joao" finds "João" and "ACAO" finds "ação". */
-export function foldText(text: string): string {
-  return text.normalize("NFD").replace(/\p{M}/gu, "").toLowerCase();
-}
-
-/** Whether every word of `query` appears somewhere in `haystack` (case and accents ignored); a blank query matches. */
-export function matchesTerms(haystack: string, query: string): boolean {
-  const terms = foldText(query).split(/\s+/).filter(Boolean);
-  if (terms.length === 0) return true;
-  const folded = foldText(haystack);
-  return terms.every((term) => folded.includes(term));
 }
 
 /**

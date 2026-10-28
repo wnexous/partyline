@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { makeConversation } from "@/test/fixtures";
-import { conversationMatches, foldText, matchesTerms } from "./conversations";
+import { conversationMatches } from "./conversations";
 
 /*
  * Sidebar search (LAY-03): a conversation is found by its name and by the people and AIs in it.
@@ -60,18 +60,5 @@ describe("conversationMatches (LAY-03)", () => {
     expect(conversationMatches(makeConversation({ title: "ops", member_names: [] }), "bob")).toBe(
       false,
     );
-  });
-});
-
-describe("foldText and matchesTerms", () => {
-  it("folds case and accents", () => {
-    expect(foldText("Ação À Vista")).toBe("acao a vista");
-    expect(foldText("ÀÉÎÕÜ ç")).toBe("aeiou c");
-  });
-
-  it("matches a haystack against every word of the query", () => {
-    expect(matchesTerms("Atlas @atlas devbox ~/atlas", "atlas dev")).toBe(true);
-    expect(matchesTerms("Atlas @atlas devbox ~/atlas", "atlas notebook")).toBe(false);
-    expect(matchesTerms("anything", "")).toBe(true);
   });
 });

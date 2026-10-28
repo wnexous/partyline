@@ -7,7 +7,6 @@ import {
 } from "lucide-react";
 
 import { memo, useCallback, useMemo, useRef, useState } from "react";
-import { ConversationAvatar } from "@/components/conversation-avatar";
 import {
   ConversationMenu,
   type ConversationMenuTarget,
@@ -15,9 +14,8 @@ import {
 } from "@/components/conversation-menu";
 import { NewConversationDialog } from "@/components/new-conversation-dialog";
 import { NewGroupDialog } from "@/components/new-group-dialog";
-import { useConversations } from "@/entities/room";
+import { ConversationAvatar, conversationMatches, useConversations } from "@/entities/room";
 import { useCurrentOrg } from "@/hooks/use-current-org";
-import { conversationMatches } from "@/lib/conversations";
 import { inOrg } from "@/lib/orgs";
 import { isVoicePreview } from "@/lib/voice";
 import type { Conversation } from "@/shared/api/types.gen";

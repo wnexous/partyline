@@ -15,7 +15,6 @@ import { useCreateGroup } from "@/entities/room";
 import { useCurrentOrg } from "@/hooks/use-current-org";
 import { useOrgUsers } from "@/hooks/use-org-users";
 import { type Pickable, pickableList } from "@/lib/contacts";
-import { matchesTerms } from "@/lib/conversations";
 import { canCreateGroupsIn } from "@/lib/orgs";
 import { withContactPresence } from "@/lib/presence";
 import { type CreateGroupForm, createGroupSchema } from "@/lib/schemas";
@@ -31,6 +30,7 @@ import {
 } from "@/shared/api/types.gen";
 import { useT } from "@/shared/i18n";
 import { applyFieldErrors } from "@/shared/lib/forms";
+import { matchesTerms } from "@/shared/lib/search";
 import {
   Dialog,
   DialogContent,

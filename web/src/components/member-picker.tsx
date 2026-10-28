@@ -13,11 +13,11 @@ import { useRoom } from "@/entities/room";
 import { useAddMember } from "@/entities/room-member";
 import { useOrgUsers } from "@/hooks/use-org-users";
 import { type Pickable, pickableList } from "@/lib/contacts";
-import { matchesTerms } from "@/lib/conversations";
 import { withContactPresence } from "@/lib/presence";
 import type { MemberKind, RoomMember } from "@/shared/api/types.gen";
 import { useI18n } from "@/shared/i18n";
 import { useAutoFocus } from "@/shared/lib/device";
+import { matchesTerms } from "@/shared/lib/search";
 import {
   Dialog,
   DialogContent,

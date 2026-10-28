@@ -1,8 +1,11 @@
 import { screen } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { GroupAvatar } from "@/components/group-avatar";
-import { avatarTone } from "@/entities/intelligence";
-import { groupFace } from "@/lib/conversations";
+import {
+  avatarTone,
+  IntelligenceAvatar,
+  type IntelligenceAvatarProps,
+} from "@/entities/intelligence";
+import { groupFace } from "@/entities/room";
 import { LoadedImage } from "@/test/image";
 import { useLiveStore } from "@/test/live-store";
 import { renderWithProviders } from "@/test/render";
@@ -13,6 +16,23 @@ import { renderWithProviders } from "@/test/render";
  */
 
 const PHOTO = "/api/v1/rooms/r1/avatar?v=abc";
+
+/** A group's face as the conversation pages draw it: the group's summary, as a rounded square. */
+function GroupAvatar({
+  group,
+  ...rest
+}: { group: { id: string; name: string; avatarUrl?: string } } & Omit<
+  IntelligenceAvatarProps,
+  "intelligence" | "shape"
+>) {
+  return (
+    <IntelligenceAvatar
+      intelligence={groupFace(group.id, group.name, group.avatarUrl)}
+      shape="square"
+      {...rest}
+    />
+  );
+}
 
 beforeEach(() => useLiveStore.setState({ locale: "en" }));
 afterEach(() => vi.unstubAllGlobals());
