@@ -59,8 +59,10 @@ Start a session with Partyline (the arguments go to the harness unchanged):
   codex [args...]        Codex CLI
   gemini [args...]       Gemini CLI
   agy [args...]          Antigravity CLI (also: antigravity)
-A session is the AI of the folder it starts in. Put --take-over before the arguments to take the
-AI's live session over from another one, and --as <handle> to adopt an AI that has no folder yet
+A session is the AI of the folder it starts in. The AI's principal session is the one whose harness
+session id (Claude Code's session id) was pinned: a parallel session never takes the role by itself.
+Put --principal before the arguments to make this session the AI's principal one, --take-over to
+replace the live principal session with it, and --as <handle> to adopt an AI that has no folder yet
 (one from before folders).
 A new AI joins your default organization. Put --org <slug> before the arguments to start it in
 another one, --position <name> to give it a position there and --parent <@handle> when one of your

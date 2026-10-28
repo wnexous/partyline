@@ -36,6 +36,8 @@ type agentConn struct {
 	id         channel.Identity
 	// takeover is PARTYLINE_TAKEOVER=1: the person agreed to take the AI's live session over.
 	takeover bool
+	// principal is PARTYLINE_PRINCIPAL=1: the person asked for this session to be the AI's principal one.
+	principal bool
 }
 
 // projectIgnored is the line printed when --project is given: AIs no longer belong to projects.
@@ -140,9 +142,12 @@ func resolveAgent(cmd string, f agentFlags, io stdio) (agentConn, int) {
 	if len(adopt) == 0 {
 		adopt = []string{""}
 	}
+	id := sessionIdentity(adopt[0], io)
+	id.HarnessSession = harnessSessionID(io, id.Harness)
 	return agentConn{
-		url: creds.URL, token: creds.Token, id: sessionIdentity(adopt[0], io),
-		takeover: strings.TrimSpace(io.getenv("PARTYLINE_TAKEOVER")) == "1",
+		url: creds.URL, token: creds.Token, id: id,
+		takeover:  strings.TrimSpace(io.getenv("PARTYLINE_TAKEOVER")) == "1",
+		principal: strings.TrimSpace(io.getenv(principalEnvVar)) == "1",
 	}, 0
 }
 
@@ -209,6 +214,7 @@ func channelCmd(ctx context.Context, args []string, io stdio) int {
 		Home: c.id.Home, Adopt: c.id.Adopt, LiveID: liveID,
 		Org: c.id.Org, Position: c.id.Position, Parent: c.id.Parent,
 		Harness: c.id.Harness, Version: buildVersion(), ToolsOnly: *toolsOnly, Takeover: c.takeover,
+		HarnessSession: c.id.HarnessSession, Principal: c.principal,
 		Stdin: io.stdin, Stdout: io.stdout, Stderr: io.stderr,
 	})
 	if err != nil && !errors.Is(err, context.Canceled) {
@@ -239,7 +245,8 @@ func listenCmd(ctx context.Context, args []string, io stdio) int {
 		URL: c.url, Token: c.token, Machine: c.id.Machine, Folder: c.id.Folder, MainFolder: c.id.MainFolder,
 		Home: c.id.Home, Harness: c.id.Harness, Adopt: c.id.Adopt, LiveID: sessionLiveID(withLauncherEnv(io)),
 		Org: c.id.Org, Position: c.id.Position, Parent: c.id.Parent,
-		Takeover: c.takeover, Stdin: io.stdin, Stdout: io.stdout, Stderr: io.stderr,
+		Takeover: c.takeover, HarnessSession: c.id.HarnessSession, Principal: c.principal,
+		Stdin: io.stdin, Stdout: io.stdout, Stderr: io.stderr,
 	})
 	switch {
 	case errors.Is(err, channel.ErrSessionLost):

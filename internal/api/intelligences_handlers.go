@@ -95,7 +95,7 @@ func (s *server) toProfile(prof intelligences.Profile) dto.IntelligenceProfile {
 			Folder: a.Folder, FolderLabel: intelligences.FolderLabel(a.Home, a.Folder),
 			App: a.Harness, Online: s.Agents.Online(a.ID),
 			LastSeenAt: convert.OptTime(a.LastSeenAt), ConnectedAt: convert.OptTime(a.ConnectedAt),
-			Sessions: liveSessions(s.Agents.Sessions(a.ID)), MyLevel: a.Level,
+			Sessions: liveSessions(s.Agents.Sessions(a.ID)), PrincipalOfflineSince: s.principalOfflineSince(a.ID), MyLevel: a.Level,
 		}
 		out.Apps = append(out.Apps, dto.App{Kind: a.Harness, Label: agents.HarnessLabel(a.Harness)})
 	case intelligences.RolePerson:

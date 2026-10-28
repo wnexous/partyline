@@ -2,7 +2,13 @@ import { queryOptions, useMutation, useQuery, useQueryClient } from "@tanstack/r
 import { api } from "@/shared/api/client";
 import { items } from "@/shared/api/list";
 import { queryKeys } from "@/shared/api/query-keys";
-import type { Agent, Contacts, List, MergeAgentRequest } from "@/shared/api/types.gen";
+import type {
+  Agent,
+  Contacts,
+  List,
+  MakePrincipalRequest,
+  MergeAgentRequest,
+} from "@/shared/api/types.gen";
 import { withoutAI } from "../lib/contacts";
 
 export const agentsQuery = () =>
@@ -62,6 +68,23 @@ export function useEndSession() {
   return useMutation({
     mutationFn: (id: string) => api<void>("DELETE", `/agents/${id}/session`),
     onSuccess: (_, id) => {
+      qc.invalidateQueries({ queryKey: queryKeys.intelligence(id), exact: true });
+      qc.invalidateQueries({ queryKey: queryKeys.agents });
+    },
+  });
+}
+
+/**
+ * Makes one of an AI's live sessions its principal (SESS-59): the server pins the session and both it
+ * and the former principal reconnect by themselves to take their new roles, so the profile is marked
+ * stale now and the live presence frames of the reconnects refresh it as they come.
+ */
+export function useMakePrincipal() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ id, label }: { id: string; label: string }) =>
+      api<void>("POST", `/agents/${id}/principal`, { label } satisfies MakePrincipalRequest),
+    onSuccess: (_, { id }) => {
       qc.invalidateQueries({ queryKey: queryKeys.intelligence(id), exact: true });
       qc.invalidateQueries({ queryKey: queryKeys.agents });
     },

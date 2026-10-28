@@ -1030,6 +1030,89 @@ describe("what the viewer may do, from the flags of the profile (POS-04, POS-05,
   });
 });
 
+describe("the principal session (SESS-59, SESS-61)", () => {
+  const at = "2026-10-28T14:05:00Z";
+  const withSessions = (over: Partial<IntelligenceProfile> = {}): IntelligenceProfile => ({
+    ...atlas,
+    can_end_session: true,
+    ai: atlas.ai && {
+      ...atlas.ai,
+      online: true,
+      principal_offline_since: "2026-10-28T14:00:00Z",
+      sessions: [
+        { label: "claude-2", harness: "claude", connected_at: at, can_be_principal: true },
+        { label: "wt", harness: "claude", connected_at: at },
+      ],
+    },
+    ...over,
+  });
+
+  it("says since when the principal has been away while another session keeps the AI online", async () => {
+    api(withSessions());
+    renderRoute("/contacts/a1");
+    expect(await screen.findByTestId("profile-principal-offline")).toHaveTextContent(
+      /^Principal offline since/,
+    );
+    expect(
+      within(screen.getByRole("region", { name: "Details" })).getByText("Online"),
+    ).toBeInTheDocument();
+  });
+
+  it("says nothing while the principal is live", async () => {
+    api(
+      withSessions({
+        ai: atlas.ai && {
+          ...atlas.ai,
+          online: true,
+          sessions: [
+            { label: "", harness: "claude", connected_at: at, can_be_principal: true },
+            { label: "claude-2", harness: "claude", connected_at: at, can_be_principal: true },
+          ],
+        },
+      }),
+    );
+    renderRoute("/contacts/a1");
+    await screen.findByText(":claude-2");
+    expect(screen.queryByTestId("profile-principal-offline")).toBeNull();
+  });
+
+  it("offers Make principal to whoever manages the AI, for the sessions that can be one", async () => {
+    const { calls } = api(withSessions(), { "POST /agents/a1/principal": noContent });
+    const user = userEvent.setup();
+    renderRoute("/contacts/a1");
+    expect(await screen.findByTestId("make-principal-claude-2")).toBeInTheDocument();
+    expect(screen.queryByTestId("make-principal-wt")).toBeNull(); // sent no harness session id
+    await user.click(
+      screen.getByRole("button", { name: "Make :claude-2 the principal session of Atlas" }),
+    );
+    await waitFor(() => expect(calls.filter((c) => c.method === "POST")).toHaveLength(1));
+    expect(calls.find((c) => c.method === "POST")?.body).toEqual({ label: "claude-2" });
+    expect(
+      await screen.findByText(":claude-2 is taking over as Atlas’s principal session"),
+    ).toBeInTheDocument();
+  });
+
+  it("offers nothing to whoever does not manage the AI", async () => {
+    api(withSessions({ can_end_session: false }));
+    renderRoute("/contacts/a1");
+    await screen.findByText(":claude-2");
+    expect(screen.queryByTestId("make-principal-claude-2")).toBeNull();
+    expect(screen.getByTestId("profile-principal-offline")).toBeInTheDocument(); // the fact is for everyone
+  });
+
+  it("is in Portuguese for a Brazilian user", async () => {
+    useLiveStore.setState({ locale: "pt-BR" });
+    api(withSessions(), { "GET /me": json(200, makeMe({ locale: "pt-BR" })) });
+    renderRoute("/contacts/a1");
+    expect(await screen.findByTestId("profile-principal-offline")).toHaveTextContent(
+      /^Principal offline desde/,
+    );
+    expect(
+      screen.getByRole("button", { name: "Tornar :claude-2 a sessão principal de Atlas" }),
+    ).toBeInTheDocument();
+  });
+});
+
 describe("ending a session (POS-04)", () => {
   const online = (over: Partial<IntelligenceProfile> = {}): IntelligenceProfile => ({
     ...atlas,

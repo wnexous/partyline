@@ -34,6 +34,11 @@ type Identity struct {
 	// every call so the server can record the session a message came from (SESS-29). Empty for a
 	// tools-only process, which holds no socket and posts as the AI of its folder.
 	LiveID string
+	// HarnessSession is the harness's own id of the conversation this session belongs to (Claude Code's
+	// CLAUDE_CODE_SESSION_ID, pi's session id), sent as X-Partyline-Harness-Session on connect. It is the same
+	// when the conversation is resumed in a new process, which is what makes the AI's principal session a fixed
+	// one (SESS-51). Empty for a harness that has none.
+	HarnessSession string
 	// Adopt is the handle or v0.3 agent name of an unlinked AI to link to the folder when it has
 	// none yet (--as, PARTYLINE_AGENT) (MIG-02).
 	Adopt string
@@ -58,8 +63,9 @@ func (id Identity) setHeaders(h http.Header) {
 	h.Set(dto.HeaderFolder, url.PathEscape(id.Folder))
 	for k, v := range map[string]string{
 		dto.HeaderHarness: id.Harness, dto.HeaderAdopt: id.Adopt, dto.HeaderLive: id.LiveID,
-		dto.HeaderMainFolder: escapeHeader(id.MainFolder),
-		dto.HeaderOrg:        id.Org, dto.HeaderPosition: escapeHeader(id.Position), dto.HeaderParent: id.Parent,
+		dto.HeaderHarnessSession: id.HarnessSession,
+		dto.HeaderMainFolder:     escapeHeader(id.MainFolder),
+		dto.HeaderOrg:            id.Org, dto.HeaderPosition: escapeHeader(id.Position), dto.HeaderParent: id.Parent,
 	} {
 		if v != "" {
 			h.Set(k, v)

@@ -423,3 +423,46 @@ func TestChannelAnnouncesItsParallelSessionOnce(t *testing.T) {
 		})
 	}
 }
+
+// SESS-51, SESS-57: the harness session id is sent on every dial, and --principal on the first connection that
+// succeeds only, like the takeover: a reconnect never takes the role again.
+func TestLinkSendsTheHarnessSessionAndAsksForThePrincipalOnce(t *testing.T) {
+	var log dialLog
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch log.add(r.Header.Clone()) {
+		case 1: // connects, then the connection drops
+			c, err := websocket.Accept(w, r, nil)
+			if err == nil {
+				_ = c.Close(websocket.StatusCode(4004), "role_changed")
+			}
+		default:
+			c, err := websocket.Accept(w, r, nil)
+			if err != nil {
+				return
+			}
+			defer func() { _ = c.CloseNow() }()
+			_, _, _ = c.Read(r.Context())
+		}
+	}))
+	t.Cleanup(srv.Close)
+	id := builderIdentity
+	id.HarnessSession = "15cf4c1e-3a52-4a8e-9f6b-0123456789ab"
+	runLinkWith(t, srv.URL, id, fastTiming, false, func(l *link) { l.principal = true })
+
+	require.Eventually(t, func() bool { return log.count() >= 2 }, wait, 5*time.Millisecond)
+	dials := log.all()
+	require.Equal(t, []string{"1", ""}, []string{dials[0].Get(dto.HeaderPrincipal), dials[1].Get(dto.HeaderPrincipal)})
+	for i, h := range dials[:2] {
+		require.Equal(t, id.HarnessSession, h.Get(dto.HeaderHarnessSession), "dial %d", i+1)
+	}
+}
+
+// SESS-51: a session whose harness has no session id sends no header.
+func TestLinkSendsNoHarnessSessionWhenThereIsNone(t *testing.T) {
+	var log dialLog
+	base := refuseWith(t, &log, http.StatusServiceUnavailable, dto.ErrorCodeUnavailable, "later")
+	runLink(t, base, fastTiming, false)
+	require.Eventually(t, func() bool { return log.count() >= 1 }, wait, 5*time.Millisecond)
+	require.Empty(t, log.all()[0].Values(dto.HeaderHarnessSession))
+	require.Empty(t, log.all()[0].Values(dto.HeaderPrincipal))
+}

@@ -28,6 +28,9 @@ type Agent struct {
 	CreatedAt   time.Time  `json:"created_at"`
 	// Sessions are the AI's live sessions, the principal ("") first; absent while it is offline.
 	Sessions []SessionInfo `json:"sessions,omitempty"`
+	// PrincipalOfflineSince is when the principal session left while another session is live; absent
+	// when the principal is live or the AI is offline (SESS-61).
+	PrincipalOfflineSince *time.Time `json:"principal_offline_since,omitempty"`
 }
 
 // MaxAgentDisplayName is the longest agent display name in characters (ID-04).
@@ -227,6 +230,16 @@ type SessionInfo struct {
 	Label       string    `json:"label"`
 	Harness     string    `json:"harness"`
 	ConnectedAt time.Time `json:"connected_at"`
+	// CanBePrincipal tells whether the session sent a harness session id, which is what the principal
+	// role is pinned to: only such a session can be made the principal (SESS-59).
+	CanBePrincipal bool `json:"can_be_principal,omitempty"`
+}
+
+// MakePrincipalRequest is the body of POST /agents/{id}/principal: the label of the live session to make
+// the AI's principal ("" is the current principal, which it pins). Whoever manages the AI may send it
+// (SESS-59).
+type MakePrincipalRequest struct {
+	Label string `json:"label"`
 }
 
 // SessionState is GET /agent/session: what the server knows about the AI of the machine and

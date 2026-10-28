@@ -379,7 +379,10 @@ func (g *Gateway) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}()
 	lock := g.lifeLock(row.Agent.ID)
 	lock.Lock()
-	live, err := g.d.Registry.Attach(ctx, row.Agent, c, hs.harness, hs.liveID, hs.label, hs.takeover)
+	live, err := g.d.Registry.AttachSession(ctx, row.Agent, c, AttachRequest{
+		Harness: hs.harness, LiveID: hs.liveID, Preferred: hs.label, Takeover: hs.takeover,
+		SessionID: hs.sessionID, Principal: hs.principal,
+	})
 	lock.Unlock()
 	if err != nil {
 		g.d.Logger.ErrorContext(ctx, "agent: attach failed", "agent_id", row.Agent.ID, "err", err)
@@ -474,12 +477,36 @@ type handshake struct {
 	label string
 	// takeover asks to take the AI's session over (SES-02).
 	takeover bool
+	// sessionID is the harness session id of the conversation the connection belongs to (SESS-51); empty
+	// when the harness has none.
+	sessionID string
+	// principal asks for the principal role and pins the session (--principal, SESS-57).
+	principal bool
 	// platform is set when the client understands platform events (dto.FeaturePlatform, CID-06).
 	platform bool
 }
 
 // liveIDPattern is the shape of a process id (dto.HeaderLive).
 var liveIDPattern = regexp.MustCompile(`^[A-Za-z0-9_-]{16,64}$`)
+
+// harnessSessionPattern is the shape of a harness session id (dto.HeaderHarnessSession).
+var harnessSessionPattern = regexp.MustCompile(dto.HarnessSessionPattern)
+
+// ValidHarnessSession reports whether id is a harness session id the server accepts: 1 to 128 characters of
+// [A-Za-z0-9._:-] starting with a letter or a digit (SESS-60).
+func ValidHarnessSession(id string) bool { return harnessSessionPattern.MatchString(id) }
+
+// HarnessSessionFromHeader reads the harness session id of a connection (SESS-51). Absent is fine, a client
+// whose harness has no session id sends none; one that is malformed is a 422 on the field harness_session, so
+// a typo never turns a session into a different one silently.
+func HarnessSessionFromHeader(h http.Header) (string, error) {
+	id := h.Get(dto.HeaderHarnessSession)
+	if id == "" || ValidHarnessSession(id) {
+		return id, nil
+	}
+	const message = "the harness session id must be 1 to 128 characters of letters, digits, '.', '_', ':' and '-', starting with a letter or a digit"
+	return "", &httpx.Error{Status: http.StatusUnprocessableEntity, Code: dto.ErrorCodeInvalid, Message: message, Fields: map[string]string{"harness_session": message}}
+}
 
 // register resolves the AI of the machine and folder the session sent (AID-02), creating it on
 // first sight, and reads the rest of what the connection says. The AI's app is not touched
@@ -494,6 +521,10 @@ func (g *Gateway) register(ctx context.Context, p authn.Principal, h http.Header
 	if v := h.Get(dto.HeaderLive); liveIDPattern.MatchString(v) {
 		d.liveID = v
 	}
+	if d.sessionID, err = HarnessSessionFromHeader(h); err != nil {
+		return db.GetAgentWithOwnerRow{}, handshake{}, err
+	}
+	d.principal = h.Get(dto.HeaderPrincipal) == "1"
 	id.Harness = ""
 	a, err := g.d.Registry.ResolveFolder(ctx, p.UserID, id, true)
 	if err != nil {

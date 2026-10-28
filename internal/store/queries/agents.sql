@@ -159,3 +159,21 @@ UPDATE agents SET machine = ?, folder = ?, harness = ? WHERE id = ? AND folder =
 
 -- name: ListAgentsByOwner :many
 SELECT * FROM agents WHERE owner_id = ?;
+
+-- name: SetAgentPrincipalSession :exec
+-- The harness session id pinned as the AI's principal ('' unpins it, SESS-51).
+UPDATE agents SET principal_session = ? WHERE id = ?;
+
+-- name: GetSessionLabel :one
+-- The label a parallel session had, by its harness session id (SESS-54).
+SELECT label FROM agent_session_labels WHERE agent_id = ? AND harness_session = ? AND updated_at >= ?;
+
+-- name: UpsertSessionLabel :exec
+INSERT INTO agent_session_labels (agent_id, harness_session, label, updated_at) VALUES (?, ?, ?, ?)
+ON CONFLICT (agent_id, harness_session) DO UPDATE SET label = excluded.label, updated_at = excluded.updated_at;
+
+-- name: DeleteSessionLabel :exec
+DELETE FROM agent_session_labels WHERE agent_id = ? AND harness_session = ?;
+
+-- name: PruneSessionLabels :exec
+DELETE FROM agent_session_labels WHERE agent_id = ? AND updated_at < ?;

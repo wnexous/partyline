@@ -25,6 +25,7 @@ export { IntelligenceName, type IntelligenceNameProps } from "./ui/intelligence-
 export { IntelligenceRow, type IntelligenceRowProps } from "./ui/intelligence-row";
 export * from "./ui/membership-summary";
 export { PickableRow } from "./ui/pickable-row";
+export { PrincipalOfflineLine } from "./ui/principal-offline-line";
 export * from "./ui/profile-link";
 export { SessionLabel } from "./ui/session-label";
 export { SessionList } from "./ui/session-list";

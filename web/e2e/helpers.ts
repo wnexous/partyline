@@ -209,6 +209,8 @@ export interface SessionOptions {
   folder?: string;
   /** The main worktree folder that identifies the AI (`X-Partyline-MainFolder`, a raw path). */
   mainFolder?: string;
+  /** The harness's own session id (`X-Partyline-Harness-Session`): what the principal role is pinned to. */
+  harnessSession?: string;
 }
 
 /**
@@ -233,6 +235,7 @@ export function openSession(instance: Instance, agent: AgentClient, options: Ses
     };
     if (live) headers["X-Partyline-Live"] = live;
     if (options.harness) headers["X-Partyline-Harness"] = options.harness;
+    if (options.harnessSession) headers["X-Partyline-Harness-Session"] = options.harnessSession;
     if (options.mainFolder) {
       headers["X-Partyline-MainFolder"] = encodeURIComponent(options.mainFolder);
     }

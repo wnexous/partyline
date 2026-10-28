@@ -2,8 +2,10 @@ package api
 
 import (
 	"encoding/json"
+	"errors"
 	"net/http"
 
+	"github.com/wnexous/partyline/internal/agents"
 	"github.com/wnexous/partyline/internal/api/convert"
 	"github.com/wnexous/partyline/internal/api/dto"
 	"github.com/wnexous/partyline/internal/api/httpx"
@@ -114,6 +116,7 @@ func (s *server) previewOrgMemberMove(w http.ResponseWriter, r *http.Request, p 
 func (s *server) identityDeleteRoutes(mux *http.ServeMux) {
 	s.handle(mux, "DELETE /api/v1/orgs/{org}/members/{iid}", authed(s.deleteOrgMember))
 	s.handle(mux, "DELETE /api/v1/agents/{id}/session", authed(s.endAgentSession))
+	s.handle(mux, "POST /api/v1/agents/{id}/principal", authed(s.makePrincipal))
 }
 
 // deleteOrgMember deletes the identity in the organization (POS-05, POS-06). Whoever is not a member of the
@@ -156,6 +159,26 @@ func (s *server) deleteOrgMember(w http.ResponseWriter, r *http.Request, p authn
 // reason "ended by @handle". An AI that is not live has nothing to end, which is not an error.
 func (s *server) endAgentSession(w http.ResponseWriter, r *http.Request, p authn.Principal) error {
 	if err := s.Agents.EndSession(r.Context(), p, r.PathValue("id")); err != nil {
+		return err
+	}
+	w.WriteHeader(http.StatusNoContent)
+	return nil
+}
+
+// makePrincipal makes one of the live sessions of an AI the caller manages its principal session (SESS-59): the
+// harness session id is pinned and the sessions concerned connect again to take their new roles. A session that
+// is not live, or has no harness session id to pin, is a 409.
+func (s *server) makePrincipal(w http.ResponseWriter, r *http.Request, p authn.Principal) error {
+	var req dto.MakePrincipalRequest
+	if err := httpx.DecodeJSON(w, r, &req); err != nil {
+		return err
+	}
+	switch err := s.Agents.MakePrincipal(r.Context(), p, r.PathValue("id"), req.Label); {
+	case errors.Is(err, agents.ErrSessionNotLive):
+		return httpx.NewError(http.StatusConflict, dto.ErrorCodeConflict, "that session is not live")
+	case errors.Is(err, agents.ErrSessionUnidentified):
+		return httpx.NewError(http.StatusConflict, dto.ErrorCodeConflict, "that session has no harness session id, so it cannot be pinned as the principal")
+	case err != nil:
 		return err
 	}
 	w.WriteHeader(http.StatusNoContent)

@@ -16,7 +16,9 @@ A session is the AI of the folder it starts in: run `partyline claude` in `~/atl
 is **Atlas** (@atlas) whatever harness you use next time, and a session in a linked git worktree
 is that repository's AI. An AI may be open in several sessions at once: a second session in the
 same folder is a parallel one (it prints `partyline: opened as parallel session claude-2`), and
-`partyline claude --take-over` replaces the principal session instead.
+`partyline claude --take-over` replaces the principal session instead. The principal is pinned to Claude
+Code's session id, so `claude --resume` of the principal conversation gets it back and a parallel session
+never takes it over by itself; `partyline claude --principal` makes the session you start the principal.
 
 `partyline claude` starts Claude Code with the Partyline channel loaded
 (`claude --dangerously-load-development-channels server:partyline`). See

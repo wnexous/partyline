@@ -29,6 +29,10 @@ const (
 	SecretMask = "********"
 )
 
+// HarnessSessionPattern is the shape of a harness session id (HeaderHarnessSession): 1 to 128
+// characters of [A-Za-z0-9._:-], starting with a letter or a digit.
+const HarnessSessionPattern = `^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$`
+
 // HTTP headers and multipart field names that are part of the contract.
 const (
 	// HeaderHarness is the launcher's harness id (claude, opencode, pi, omp, codex, gemini, antigravity).
@@ -52,6 +56,15 @@ const (
 	// ([A-Za-z0-9_-], 16 to 64 characters): the same process reconnecting is not another
 	// session of the AI (SES-02).
 	HeaderLive = "X-Partyline-Live"
+	// HeaderHarnessSession is the harness's own id of the conversation the session belongs to
+	// (Claude Code's session id, pi's session id), matching HarnessSessionPattern. It stays the same
+	// when the conversation is resumed in a new process, so the server can tell which session is the
+	// AI's principal one and keep a parallel session's label (SESS-51, SESS-54). Sent only by a client
+	// whose harness has one; a malformed value is refused with 422 and the field harness_session.
+	HeaderHarnessSession = "X-Partyline-Harness-Session"
+	// HeaderPrincipal set to "1" on the agent WebSocket makes the session the AI's principal one and
+	// pins its harness session id (`partyline <harness> --principal`, SESS-57).
+	HeaderPrincipal = "X-Partyline-Principal"
 	// HeaderTakeover set to "1" on the agent WebSocket takes over the AI's live session from
 	// another process instead of being refused with identity_busy (SES-02).
 	HeaderTakeover = "X-Partyline-Takeover"

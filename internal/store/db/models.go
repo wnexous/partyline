@@ -9,20 +9,21 @@ import (
 )
 
 type Agent struct {
-	ID              string
-	OwnerID         string
-	Name            string
-	Description     string
-	CreatedAt       int64
-	LastSeenAt      sql.NullInt64
-	ProjectID       sql.NullString
-	Harness         string
-	Machine         string
-	ConnectedAt     sql.NullInt64
-	Folder          string
-	PlatformDropped int64
-	OrgID           sql.NullString
-	CreatorIid      sql.NullString
+	ID               string
+	OwnerID          string
+	Name             string
+	Description      string
+	CreatedAt        int64
+	LastSeenAt       sql.NullInt64
+	ProjectID        sql.NullString
+	Harness          string
+	Machine          string
+	ConnectedAt      sql.NullInt64
+	Folder           string
+	PlatformDropped  int64
+	OrgID            sql.NullString
+	CreatorIid       sql.NullString
+	PrincipalSession string
 }
 
 type AgentCursor struct {
@@ -39,6 +40,13 @@ type AgentSessionDelivery struct {
 	CreatedAt  int64
 	FellBackAt sql.NullInt64
 	AckedAt    sql.NullInt64
+}
+
+type AgentSessionLabel struct {
+	AgentID        string
+	HarnessSession string
+	Label          string
+	UpdatedAt      int64
 }
 
 type ApiToken struct {

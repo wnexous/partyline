@@ -19,6 +19,7 @@ import {
   IntelligenceName,
   MembershipSummary,
   mergeTargets,
+  PrincipalOfflineLine,
   SessionLabel,
   useIntelligence,
   useIsOnline,
@@ -28,6 +29,7 @@ import {
 import { platformName } from "@/entities/message";
 import { removalOf } from "@/entities/organization";
 import { ProfileEditor } from "@/features/edit-profile";
+import { MakePrincipalButton } from "@/features/make-principal";
 import {
   DeleteAIDialog,
   EndSessionDialog,
@@ -212,6 +214,11 @@ function ProfileView({ profile }: { profile: IntelligenceProfile }) {
           addresses the mention list offers. Absent while the AI has no live session. */}
       {profile.ai && (profile.ai.sessions ?? []).length > 0 ? (
         <PageSection layout="stacked" title={t("profile.sessions")}>
+          <PrincipalOfflineLine
+            since={profile.ai.principal_offline_since}
+            online={online}
+            testId="profile-principal-offline"
+          />
           <ul aria-label={t("profile.sessions")} className="divide-y rounded-lg border">
             {(profile.ai.sessions ?? []).map((session) => (
               <li
@@ -232,6 +239,16 @@ function ProfileView({ profile }: { profile: IntelligenceProfile }) {
                 >
                   {(time) => t("profile.sessionConnected", { time })}
                 </RelativeTime>
+                {/* Only whoever manages the AI changes its principal, and only to a session that
+                    sent a harness session id (SESS-59). */}
+                {profile.can_end_session && session.label !== "" && session.can_be_principal ? (
+                  <MakePrincipalButton
+                    agentId={profile.id}
+                    name={name}
+                    label={session.label}
+                    testId={`make-principal-${session.label}`}
+                  />
+                ) : null}
               </li>
             ))}
           </ul>

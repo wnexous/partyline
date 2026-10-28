@@ -107,6 +107,19 @@ describe("OpenCode plugin", () => {
 		expect(process.env.PARTYLINE_LIVE).toBe(live); // the MCP servers started later inherit it
 	});
 
+	test("SESS-51: OpenCode has no id for the listener, which serves whichever session is active: none is sent, and an inherited one is removed", async () => {
+		const inherited = process.env.PARTYLINE_HARNESS_SESSION;
+		process.env.PARTYLINE_HARNESS_SESSION = "another-session";
+		try {
+			await load();
+			expect(spawned.length).toBe(1);
+			expect(spawned[0].options.env).not.toHaveProperty("PARTYLINE_HARNESS_SESSION");
+		} finally {
+			if (inherited === undefined) delete process.env.PARTYLINE_HARNESS_SESSION;
+			else process.env.PARTYLINE_HARNESS_SESSION = inherited;
+		}
+	});
+
 	test("SESS-45: the launcher's live id is kept when its pid is this process's", async () => {
 		const launcher = `${process.pid}:LLLLLLLLLLLLLLLLLLLLLL`;
 		process.env.PARTYLINE_LIVE = launcher;
