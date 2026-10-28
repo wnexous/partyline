@@ -1,5 +1,6 @@
 import { useEffect, useRef } from "react";
-import { useMarkRead, useNewestSeq } from "@/lib/api/queries";
+import { useNewestSeq } from "@/entities/message";
+import { useMarkRead } from "@/entities/room";
 import { useDocumentVisible } from "@/shared/lib/use-document-visible";
 
 /**

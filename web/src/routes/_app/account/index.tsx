@@ -9,9 +9,7 @@ import { ProfileEditor } from "@/components/profile-editor";
 import {
   useChangePassword,
   useDeleteAccount,
-  useIntelligence,
   useMe,
-  useMyOrgs,
   usePushKey,
   useRevokeSession,
   useSessions,
@@ -20,7 +18,9 @@ import {
   useTestPush,
   useUnsubscribePush,
   useUpdateMe,
-} from "@/lib/api/queries";
+} from "@/entities/account";
+import { useIntelligence } from "@/entities/intelligence";
+import { useMyOrgs } from "@/entities/organization";
 import { useLiveStore } from "@/lib/live/store";
 import { defaultOrgIdOf } from "@/lib/orgs";
 import {

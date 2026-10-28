@@ -12,9 +12,9 @@ import {
   type MessageMenuTarget,
   messageActionSet,
 } from "@/components/message-menu";
+import { useRoomMessages } from "@/entities/message";
 import { useReact } from "@/hooks/use-react";
 import { useStickToEnd } from "@/hooks/use-stick-to-end";
-import { useRoomMessages } from "@/lib/api/queries";
 import type { Message, Page, RoomMember } from "@/shared/api/types.gen";
 import { useI18n } from "@/shared/i18n";
 import { useTouchFirst } from "@/shared/lib/device";

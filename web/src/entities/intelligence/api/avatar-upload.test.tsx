@@ -2,8 +2,10 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { act, renderHook } from "@testing-library/react";
 import type { ReactNode } from "react";
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { useUploadRoomAvatar } from "@/entities/room";
+import { AvatarUploadTimeoutMs } from "@/shared/api/avatar-upload";
 import { mockApi } from "@/test/fetch";
-import { AvatarUploadTimeoutMs, useUploadAvatar, useUploadRoomAvatar } from "./queries";
+import { useUploadAvatar } from "./profile";
 
 /*
  * A stalled avatar upload must end: the request is abandoned after 30 s, so the profile's photo

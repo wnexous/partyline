@@ -8,7 +8,7 @@ import {
   useOrg,
   useOrgChart,
   useUpdatePosition,
-} from "@/lib/api/queries";
+} from "@/entities/organization";
 import { descendantsOf, type PositionNode, positionOptions, positionTree } from "@/lib/org-chart";
 import { MaxPositionNameLength, PermissionAdmin } from "@/lib/orgs";
 import { isApiError } from "@/shared/api/client";

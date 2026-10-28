@@ -1,6 +1,7 @@
 import type { QueryClient } from "@tanstack/react-query";
 import { useMemo } from "react";
-import { meQuery, orgsQuery, useMe, useMyOrgs } from "@/lib/api/queries";
+import { meQuery, useMe } from "@/entities/account";
+import { orgsQuery, useMyOrgs } from "@/entities/organization";
 import { useLiveStore } from "@/lib/live/store";
 import { defaultOrgIdOf, type MyOrg, resolveCurrentOrg, toMyOrgs } from "@/lib/orgs";
 

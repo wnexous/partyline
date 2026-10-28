@@ -3,13 +3,9 @@ import { CircleCheckIcon, FingerprintIcon, LinkIcon, TimerOffIcon, XIcon } from 
 import { useEffect, useId, useState } from "react";
 import { toast } from "sonner";
 import { platformLabel } from "@/components/message-item";
-import {
-  useConnectors,
-  useDeleteIdentity,
-  useIdentities,
-  useMyOrgs,
-  useStartPairing,
-} from "@/lib/api/queries";
+import { useDeleteIdentity, useIdentities, useStartPairing } from "@/entities/account";
+import { useConnectors } from "@/entities/connector";
+import { useMyOrgs } from "@/entities/organization";
 import { useLiveStore } from "@/lib/live/store";
 import type { Connector, Identity, PairingCode } from "@/shared/api/types.gen";
 import { useI18n, useT } from "@/shared/i18n";

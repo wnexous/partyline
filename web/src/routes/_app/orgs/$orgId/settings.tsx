@@ -5,15 +5,15 @@ import { useForm } from "react-hook-form";
 import { toast } from "sonner";
 import { OrgAvatar } from "@/components/org-avatar";
 import { PhotoEditor } from "@/components/photo-editor";
+import { useMe } from "@/entities/account";
 import {
   useDeleteOrg,
-  useMe,
   useOrg,
   useRemoveFromOrg,
   useRemoveOrgAvatar,
   useUpdateOrg,
   useUploadOrgAvatar,
-} from "@/lib/api/queries";
+} from "@/entities/organization";
 import { ownedThings, PermissionAdmin } from "@/lib/orgs";
 import { type UpdateOrgForm, updateOrgSchema } from "@/lib/schemas";
 import { isApiError } from "@/shared/api/client";

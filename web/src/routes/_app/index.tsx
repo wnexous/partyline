@@ -1,7 +1,7 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { MessagesSquareIcon } from "lucide-react";
 import { MessengerPanel } from "@/components/app-sidebar";
-import { useMe } from "@/lib/api/queries";
+import { useMe } from "@/entities/account";
 import { useT } from "@/shared/i18n";
 import { useIsMobile } from "@/shared/lib/device";
 import { EmptyState } from "@/shared/ui/molecules/empty-state";

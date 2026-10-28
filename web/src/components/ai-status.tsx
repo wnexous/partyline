@@ -1,5 +1,4 @@
-import { appLabelOf, useIsOnline } from "@/entities/intelligence";
-import { useIntelligence } from "@/lib/api/queries";
+import { appLabelOf, useIntelligence, useIsOnline } from "@/entities/intelligence";
 import { useT } from "@/shared/i18n";
 import { cn } from "@/shared/lib/utils";
 import { StatusDot } from "@/shared/ui/atoms/status-dot";

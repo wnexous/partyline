@@ -1,5 +1,5 @@
 import { toast } from "sonner";
-import { useDeleteMessage } from "@/lib/api/queries";
+import { useDeleteMessage } from "@/entities/message";
 import type { Message } from "@/shared/api/types.gen";
 import { useT } from "@/shared/i18n";
 import { ConfirmDialog } from "@/shared/ui/molecules/confirm-dialog";

@@ -1,6 +1,8 @@
 import { Link } from "@tanstack/react-router";
 import { ArrowUpRightIcon, ChevronRightIcon, HourglassIcon, RadioTowerIcon } from "lucide-react";
 import { type ReactNode, useEffect, useState } from "react";
+import { useMe } from "@/entities/account";
+import { useAgents } from "@/entities/intelligence";
 import {
   CLAUDE_CODE_DOCS_URL,
   CONFIG_FILE,
@@ -11,7 +13,6 @@ import {
   RELEASES_URL,
   SETUP_COMMAND,
 } from "@/lib/agent-connect";
-import { useAgents, useMe } from "@/lib/api/queries";
 import { useLiveStore } from "@/lib/live/store";
 import { useT } from "@/shared/i18n";
 import { cn } from "@/shared/lib/utils";

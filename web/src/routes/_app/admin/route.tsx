@@ -1,5 +1,5 @@
 import { createFileRoute, Outlet } from "@tanstack/react-router";
-import { useMe } from "@/lib/api/queries";
+import { useMe } from "@/entities/account";
 import { RoleAdmin } from "@/shared/api/types.gen";
 import { ForbiddenPage } from "@/shared/ui/molecules/status-pages";
 

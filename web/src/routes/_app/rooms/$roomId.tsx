@@ -26,10 +26,13 @@ import {
 } from "@/components/message-timeline";
 import { RoomFiles } from "@/components/room-files";
 import { RoomSettingsSheet } from "@/components/room-settings-sheet";
+import { useMe } from "@/entities/account";
+import { postMessageKey } from "@/entities/message";
+import { useResumeRoom, useRoom } from "@/entities/room";
+import { useRoomMembers } from "@/entities/room-member";
 import { useDraft, useDraftStore } from "@/features/send-message";
 import { useMarkRoomRead } from "@/hooks/use-mark-room-read";
 import { useOpenConversation } from "@/hooks/use-open-conversation";
-import { postMessageKey, useMe, useResumeRoom, useRoom, useRoomMembers } from "@/lib/api/queries";
 import { isApiError } from "@/shared/api/client";
 import {
   ConversationKindDM,

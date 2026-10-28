@@ -1,7 +1,9 @@
 import { InfiniteQueryObserver, QueryClient } from "@tanstack/react-query";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { type MessagePages, queryKeys, roomMessagesQuery } from "@/lib/api/queries";
+import { roomMessagesQuery } from "@/entities/message";
+import type { MessagePages } from "@/shared/api/cache-types";
 import { setUnauthorizedHandler } from "@/shared/api/client";
+import { queryKeys } from "@/shared/api/query-keys";
 import { FakeSocket } from "@/test/fake-socket";
 import { makeMe, makeMessage, makeRoom } from "@/test/fixtures";
 import { startLive } from "./index";

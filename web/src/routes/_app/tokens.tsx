@@ -5,7 +5,7 @@ import { useId, useMemo, useState } from "react";
 import { Controller, useForm } from "react-hook-form";
 import { toast } from "sonner";
 import { SecretOnceDialog } from "@/components/secret-once-dialog";
-import { useCreateToken, usePurgeToken, useRevokeToken, useTokens } from "@/lib/api/queries";
+import { useCreateToken, usePurgeToken, useRevokeToken, useTokens } from "@/entities/account";
 import { type CreateTokenForm, createTokenSchema, TOKEN_EXPIRY_DAYS } from "@/lib/schemas";
 import { readStorage, writeStorage } from "@/lib/theme";
 import { isApiError } from "@/shared/api/client";

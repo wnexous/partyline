@@ -6,16 +6,16 @@ import { DeleteAIDialog } from "@/components/delete-ai-dialog";
 import { InviteDialog } from "@/components/invite-dialog";
 import { MoveMemberDialog, type MoveTarget } from "@/components/move-member-dialog";
 import { RemoveFromOrgDialog } from "@/components/remove-from-org-dialog";
+import { useMe } from "@/entities/account";
 import { IntelligenceAvatar, IntelligenceName } from "@/entities/intelligence";
 import {
-  useMe,
   useOrg,
   useOrgChart,
   useOrgInvitations,
   useOrgMembers,
   useRevokeInvitation,
   useUpdateOrgMember,
-} from "@/lib/api/queries";
+} from "@/entities/organization";
 import { PermissionAdmin, PermissionGuest, PermissionMember, permissionLabel } from "@/lib/orgs";
 import { isApiError } from "@/shared/api/client";
 import {

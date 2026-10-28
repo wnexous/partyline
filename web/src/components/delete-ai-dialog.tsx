@@ -1,5 +1,5 @@
 import { toast } from "sonner";
-import { useDeleteAgent } from "@/lib/api/queries";
+import { useDeleteAgent } from "@/entities/intelligence";
 import { isApiError } from "@/shared/api/client";
 import { ErrorCodeLastAdmin, type IntelligenceRef } from "@/shared/api/types.gen";
 import { useT } from "@/shared/i18n";

@@ -17,12 +17,12 @@ import {
   useConnector,
   useConnectorChats,
   useConnectorKinds,
-  useContacts,
   useDeleteConnector,
-  useOrg,
   useRefreshChats,
   useUpdateConnector,
-} from "@/lib/api/queries";
+} from "@/entities/connector";
+import { useContacts } from "@/entities/intelligence";
+import { useOrg } from "@/entities/organization";
 import { allAIs } from "@/lib/contacts";
 import { isApiError } from "@/shared/api/client";
 import {

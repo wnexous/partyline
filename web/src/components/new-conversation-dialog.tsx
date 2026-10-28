@@ -1,8 +1,7 @@
 import { type ReactNode, useMemo, useState } from "react";
 import { PickableMeta } from "@/components/contact-meta";
-import { IntelligenceAvatar, IntelligenceName } from "@/entities/intelligence";
+import { IntelligenceAvatar, IntelligenceName, useContacts } from "@/entities/intelligence";
 import { useStartConversation } from "@/hooks/use-start-conversation";
-import { useContacts } from "@/lib/api/queries";
 import { type Pickable, pickableList } from "@/lib/contacts";
 import { matchesTerms } from "@/lib/conversations";
 import { useLiveStore } from "@/lib/live/store";

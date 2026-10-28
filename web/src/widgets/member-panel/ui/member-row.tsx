@@ -3,10 +3,14 @@ import { useRef, useState } from "react";
 import { toast } from "sonner";
 import { AiStatusLine } from "@/components/ai-status";
 import { MemberSettings, memberSettingsSummary } from "@/components/member-settings";
-import { IntelligenceRow, SessionList, useIsOnline } from "@/entities/intelligence";
+import {
+  IntelligenceRow,
+  SessionList,
+  useIntelligence,
+  useIsOnline,
+} from "@/entities/intelligence";
 import type { PersonRow } from "@/entities/room-member";
 import { useStartConversation } from "@/hooks/use-start-conversation";
-import { useIntelligence } from "@/lib/api/queries";
 import { useI18n } from "@/shared/i18n";
 import { useTouchFirst } from "@/shared/lib/device";
 import { StatusDot } from "@/shared/ui/atoms/status-dot";

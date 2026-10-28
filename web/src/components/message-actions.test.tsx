@@ -8,8 +8,9 @@ import {
   MessageMenu,
   type MessageMenuTarget,
 } from "@/components/message-menu";
-import { type MessagePages, queryKeys } from "@/lib/api/queries";
 import { useLiveStore } from "@/lib/live/store";
+import type { MessagePages } from "@/shared/api/cache-types";
+import { queryKeys } from "@/shared/api/query-keys";
 import type { Message } from "@/shared/api/types.gen";
 import { apiError, json, mockApi } from "@/test/fetch";
 import { makeMessage } from "@/test/fixtures";

@@ -7,10 +7,15 @@ import { MembershipSummary } from "@/components/membership-summary";
 import { platformName } from "@/components/message-item";
 import { PANEL_CONVERSATIONS, ProfileConversations } from "@/components/profile-conversations";
 import { opensElsewhere } from "@/components/profile-link";
-import { appLabelOf, IntelligenceAvatar, YouBadge } from "@/entities/intelligence";
+import { useMe } from "@/entities/account";
+import {
+  appLabelOf,
+  IntelligenceAvatar,
+  intelligenceQuery,
+  YouBadge,
+} from "@/entities/intelligence";
 import { useProfilePanelStore } from "@/hooks/use-profile-panel";
 import { useStartConversation } from "@/hooks/use-start-conversation";
-import { intelligenceQuery, useMe } from "@/lib/api/queries";
 import { useLiveStore } from "@/lib/live/store";
 import { isApiError } from "@/shared/api/client";
 import { type IntelligenceProfile, IntelligenceRolePerson } from "@/shared/api/types.gen";

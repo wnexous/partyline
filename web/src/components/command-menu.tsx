@@ -4,8 +4,10 @@ import { type ReactNode, type RefObject, useEffect, useLayoutEffect, useRef } fr
 import { ConnectorStatusBadge, useConnectorState } from "@/components/connector-status";
 import { ConversationAvatar } from "@/components/conversation-avatar";
 import { platformLabel } from "@/components/message-item";
+import { useConnectors } from "@/entities/connector";
+import { useAgents } from "@/entities/intelligence";
+import { useConversations } from "@/entities/room";
 import { useProfilePanel } from "@/hooks/use-profile-panel";
-import { useAgents, useConnectors, useConversations } from "@/lib/api/queries";
 import { useLiveStore } from "@/lib/live/store";
 import { NAV_GROUPS } from "@/lib/nav";
 import { type Connector, type Me, RoleAdmin } from "@/shared/api/types.gen";

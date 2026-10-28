@@ -1,6 +1,6 @@
 import { useNavigate } from "@tanstack/react-router";
 import { useState } from "react";
-import { useOpenDM } from "@/lib/api/queries";
+import { useOpenDM } from "@/entities/room";
 import { isApiError } from "@/shared/api/client";
 import {
   ErrorCodeContactNotFound,

@@ -1,7 +1,7 @@
 import type { ReactNode } from "react";
 import { toast } from "sonner";
-import { type PersonRow, toPersonRow } from "@/entities/room-member";
-import { useAddMember, useMe, useRemoveMember } from "@/lib/api/queries";
+import { useMe } from "@/entities/account";
+import { type PersonRow, toPersonRow, useAddMember, useRemoveMember } from "@/entities/room-member";
 import type { IntelligenceRef, RoomMember } from "@/shared/api/types.gen";
 import { useI18n } from "@/shared/i18n";
 import { PanelSkeleton } from "@/shared/ui/molecules/panel-skeleton";

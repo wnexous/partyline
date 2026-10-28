@@ -1,22 +1,22 @@
 import type { QueryClient } from "@tanstack/react-query";
+import { trimActivity } from "@/entities/account";
+import { patchIntelligence } from "@/entities/intelligence";
 import {
   applyMessageUpdate,
   applyReactions,
-  type FileFilter,
-  type FilePages,
   fetchMessages,
-  invalidateOrganizations,
-  type MessagePages,
-  markConversationRead,
   messageFiles,
+} from "@/entities/message";
+import { invalidateOrganizations } from "@/entities/organization";
+import {
+  markConversationRead,
   newestActivityFirst,
   patchConversation,
-  patchIntelligence,
   previewOf,
-  queryKeys,
-  trimActivity,
-} from "@/lib/api/queries";
+} from "@/entities/room";
 import { knowsAI } from "@/lib/contacts";
+import type { FileFilter, FilePages, MessagePages } from "@/shared/api/cache-types";
+import { queryKeys } from "@/shared/api/query-keys";
 import type {
   ActivityItem,
   Agent,

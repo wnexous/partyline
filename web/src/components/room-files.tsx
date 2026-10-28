@@ -11,7 +11,9 @@ import {
 import { useMemo, useRef, useState } from "react";
 import { formatBytes, INLINE_IMAGES } from "@/components/message-item";
 import { IntelligenceName } from "@/entities/intelligence";
-import { attachmentUrl, type FileFilter, useRoomFiles } from "@/lib/api/queries";
+import { attachmentUrl } from "@/entities/message";
+import { useRoomFiles } from "@/entities/room";
+import type { FileFilter } from "@/shared/api/cache-types";
 import type { FileKind, RoomFile } from "@/shared/api/types.gen";
 import { type MessageKey, useI18n } from "@/shared/i18n";
 import { cn } from "@/shared/lib/utils";

@@ -10,7 +10,7 @@ import {
   useRemoveRoomAvatar,
   useUpdateRoom,
   useUploadRoomAvatar,
-} from "@/lib/api/queries";
+} from "@/entities/room";
 import { type RoomSettingsForm, roomSettingsSchema, textLength } from "@/lib/schemas";
 import { isApiError } from "@/shared/api/client";
 import { MaxRoomInstructions, type Room, type UpdateRoomRequest } from "@/shared/api/types.gen";

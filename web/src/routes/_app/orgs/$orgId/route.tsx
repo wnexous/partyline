@@ -2,7 +2,7 @@ import { createFileRoute, Link, Outlet, useRouter } from "@tanstack/react-router
 import { ArrowLeftIcon } from "lucide-react";
 import { useEffect } from "react";
 import { OrgAvatar } from "@/components/org-avatar";
-import { useOrg } from "@/lib/api/queries";
+import { useOrg } from "@/entities/organization";
 import { PermissionAdmin, permissionLabel } from "@/lib/orgs";
 import { isApiError } from "@/shared/api/client";
 import type { Organization } from "@/shared/api/types.gen";

@@ -1,13 +1,8 @@
 import { QueryClient } from "@tanstack/react-query";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import {
-  ACTIVITY_PER_ROOM,
-  ACTIVITY_SIZE,
-  type FilePages,
-  type MessagePages,
-  type PeoplePages,
-  queryKeys,
-} from "@/lib/api/queries";
+import { ACTIVITY_PER_ROOM, ACTIVITY_SIZE } from "@/entities/account";
+import type { FilePages, MessagePages, PeoplePages } from "@/shared/api/cache-types";
+import { queryKeys } from "@/shared/api/query-keys";
 import type {
   ActivityItem,
   Agent,

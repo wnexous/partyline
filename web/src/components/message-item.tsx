@@ -18,8 +18,8 @@ import { QuestionBubble } from "@/components/question-bubble";
 import { ReactionToolbar } from "@/components/reaction-bar";
 import { ReactionChips } from "@/components/reaction-chips";
 import { IntelligenceAvatar, IntelligenceName } from "@/entities/intelligence";
+import { attachmentUrl } from "@/entities/message";
 import { useSwipeReply } from "@/hooks/use-swipe-reply";
-import { attachmentUrl } from "@/lib/api/queries";
 import { isAudio } from "@/lib/voice";
 import type {
   Attachment,

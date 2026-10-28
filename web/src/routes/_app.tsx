@@ -5,7 +5,7 @@ import { AppSidebar } from "@/components/app-sidebar";
 import { CommandMenu } from "@/components/command-menu";
 import { OrgSwitcher } from "@/components/org-switcher";
 import { ProfilePanel } from "@/components/profile-panel";
-import { meQuery, useMe } from "@/lib/api/queries";
+import { meQuery, useMe } from "@/entities/account";
 import { startLive } from "@/lib/live";
 import { useLiveStore } from "@/lib/live/store";
 import { ensurePushSubscription } from "@/lib/push/register";

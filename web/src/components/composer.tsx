@@ -30,9 +30,10 @@ import {
 } from "@/components/mention-suggestions";
 import { authorDisplayName } from "@/components/message-item";
 import { type HoldState, MicButton, RecordingBar } from "@/components/voice-controls";
+import { useMe } from "@/entities/account";
+import { useEditMessage, usePostMessage } from "@/entities/message";
 import { useDraft, useDraftStore, useEditDraft } from "@/features/send-message";
 import { useVoiceRecorder } from "@/hooks/use-voice-recorder";
-import { useEditMessage, useMe, usePostMessage } from "@/lib/api/queries";
 import { messageExcerpt } from "@/lib/message-excerpt";
 import { textLength } from "@/lib/schemas";
 import type { VoiceFailure } from "@/lib/voice";

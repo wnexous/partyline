@@ -2,8 +2,10 @@ import { useNavigate, useRouter } from "@tanstack/react-router";
 import { CheckCheckIcon, LogOutIcon, Trash2Icon, UserRoundIcon } from "lucide-react";
 import { useRef, useState } from "react";
 import { toast } from "sonner";
+import { useMe } from "@/entities/account";
+import { useDeleteRoom, useLeaveRoom, useMarkRead } from "@/entities/room";
+import { useRoomMembers } from "@/entities/room-member";
 import { useProfilePanel } from "@/hooks/use-profile-panel";
-import { useDeleteRoom, useLeaveRoom, useMarkRead, useMe, useRoomMembers } from "@/lib/api/queries";
 import {
   type Conversation,
   ConversationKindDM,

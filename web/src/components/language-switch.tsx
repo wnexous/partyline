@@ -1,5 +1,5 @@
 import { LanguagesIcon } from "lucide-react";
-import { useUpdateMe } from "@/lib/api/queries";
+import { useUpdateMe } from "@/entities/account";
 import { useLiveStore } from "@/lib/live/store";
 import { isLocale, LOCALES, type Locale, useT } from "@/shared/i18n";
 import { Button } from "@/shared/ui/primitives/button";

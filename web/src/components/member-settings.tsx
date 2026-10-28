@@ -3,7 +3,7 @@ import { PlusIcon, SlidersHorizontalIcon, XIcon } from "lucide-react";
 import { type FormEvent, type KeyboardEvent, useId, useState } from "react";
 import { useForm } from "react-hook-form";
 import { toast } from "sonner";
-import { useUpdateMember } from "@/lib/api/queries";
+import { useUpdateMember } from "@/entities/room-member";
 import {
   keywordError,
   type MemberSettingsForm,

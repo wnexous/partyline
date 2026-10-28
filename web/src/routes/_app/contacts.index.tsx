@@ -15,7 +15,7 @@ import { DeleteAIDialog } from "@/components/delete-ai-dialog";
 import { MergeAIDialog } from "@/components/merge-ai-dialog";
 import { MessageButton } from "@/components/message-button";
 import { PeopleGroup } from "@/components/people-group";
-import { useContacts } from "@/lib/api/queries";
+import { useContacts } from "@/entities/intelligence";
 import { aiText, filterOrgs, mergeTargets, onlineCount } from "@/lib/contacts";
 import { matchesTerms } from "@/lib/conversations";
 import { useLiveStore } from "@/lib/live/store";

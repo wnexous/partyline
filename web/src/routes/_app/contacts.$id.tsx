@@ -20,9 +20,15 @@ import { platformLabel } from "@/components/message-item";
 import { ProfileConversations } from "@/components/profile-conversations";
 import { ProfileEditor } from "@/components/profile-editor";
 import { RemoveFromOrgDialog } from "@/components/remove-from-org-dialog";
-import { IntelligenceAvatar, IntelligenceName, YouBadge } from "@/entities/intelligence";
+import { useMe } from "@/entities/account";
+import {
+  contactsQuery,
+  IntelligenceAvatar,
+  IntelligenceName,
+  useIntelligence,
+  YouBadge,
+} from "@/entities/intelligence";
 import { harnessLabel } from "@/lib/agents";
-import { contactsQuery, useIntelligence, useMe } from "@/lib/api/queries";
 import { mergeTargets } from "@/lib/contacts";
 import { useLiveStore } from "@/lib/live/store";
 import { isApiError } from "@/shared/api/client";

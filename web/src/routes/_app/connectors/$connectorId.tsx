@@ -1,5 +1,5 @@
 import { createFileRoute, isRedirect, redirect } from "@tanstack/react-router";
-import { connectorQuery } from "@/lib/api/queries";
+import { connectorQuery } from "@/entities/connector";
 
 /*
  * A connection names its organization (SET-07): `/connectors/{id}` reads the connection and sends
