@@ -102,6 +102,9 @@ type Gateway struct {
 	// pendingMu serializes Pending calls, so two callers never get the same message.
 	pendingMu sync.Mutex
 
+	// life orders, per AI, the attach of a connection against the end of another (lifeLock).
+	life [lifeStripes]sync.Mutex
+
 	// afterBacklogCount runs between the backlog count and list reads; tests use it to post
 	// a message in between. Nil in production.
 	afterBacklogCount func()
@@ -125,7 +128,12 @@ func NewGateway(d GatewayDeps) *Gateway {
 		d.Authz = orgs.NewAuthz(d.Store)
 	}
 	ctx, stop := context.WithCancel(context.Background())
-	return &Gateway{d: d, ctx: ctx, stop: stop}
+	g := &Gateway{d: d, ctx: ctx, stop: stop}
+	if d.Presence != nil {
+		// A Kick closes the sockets of every session of the AI; each gives back the rows it owned.
+		d.Presence.OnEnded(g.connectionKicked)
+	}
+	return g
 }
 
 // Close ends every agent connection and waits for them to finish.
@@ -155,10 +163,11 @@ func selfAuthored(m dto.Message, agentID string) bool {
 
 // Push queues a live message for the session it addresses without blocking. target is the session
 // label the text names, or "" for the principal (SESS-20, SESS-21). A message for a live label gets a
-// pending agent_session_deliveries row and reaches that session only; a message for a label with no
-// live session is the principal's from the start, with ForLabel set, and a message for a label that
-// ended since the row was written falls back to the principal (SESS-22, SESS-24). It reports false
-// when nobody received it live, so the message stays in the principal's queue.
+// pending agent_session_deliveries row owned by the connection that holds the label, and reaches that
+// connection only; a message for a label with no live session is the principal's from the start, with
+// ForLabel set, and a message whose owner ended since the row was written falls back to the principal
+// (SESS-22, SESS-24). It reports false when nobody received it live, so the message stays in the
+// principal's queue.
 //
 // A message the AI wrote itself is the exception (D11): it reaches only the live sibling its text
 // addresses, and a target with no live session gets no row and no fallback to the principal (SESS-38).
@@ -170,68 +179,37 @@ func (g *Gateway) Push(agentID, target string, m dto.AgentMessage) bool {
 		return g.pushToPrincipal(agentID, m)
 	}
 	now := time.Now().UnixMilli()
-	_, live := g.d.Presence.SessionByLabel(agentID, target)
-	fellBackAt := sql.NullInt64{}
-	if !live {
-		fellBackAt = sql.NullInt64{Int64: now, Valid: true}
+	owner, fellBackAt := "", sql.NullInt64{Int64: now, Valid: true} // no session: the principal's from the start
+	if c := g.labelConn(agentID, target); c != nil {
+		owner, fellBackAt = c.owner, sql.NullInt64{}
 	}
-	if err := g.createSessionDelivery(g.ctx, m.Message.ID, agentID, target, now, fellBackAt); err != nil {
+	if err := g.createSessionDelivery(g.ctx, m.Message.ID, agentID, target, owner, now, fellBackAt); err != nil {
 		g.d.Logger.Error("agent: session delivery write failed", "agent_id", agentID, "message_id", m.Message.ID, "err", err)
 		return false
 	}
-	if fellBackAt.Valid {
-		// The label had no session when the row was written: the principal owns it even if a session
-		// with that label connected meanwhile.
-		m.ForLabel = target
-		return g.pushToPrincipal(agentID, m)
-	}
-	s, live := g.d.Presence.SessionByLabel(agentID, target)
-	if live {
-		c, ok := s.(*conn)
-		return ok && c.push(m)
-	}
-	// The label ended between the two reads. The end-of-session sweep may have taken the row already;
-	// when it did not (it ran before the row existed) the row is marked now and pushed here.
-	ids, err := g.fallBackSessionDeliveries(g.ctx, agentID, target, time.Now().UnixMilli())
-	if err != nil {
-		g.d.Logger.Error("agent: session fallback failed", "agent_id", agentID, "message_id", m.Message.ID, "err", err)
-		return false
-	}
-	for _, id := range ids {
-		if id == m.Message.ID {
-			m.ForLabel = target
-			return g.pushToPrincipal(agentID, m)
-		}
-	}
-	return false
+	// The row may name a connection that ended after it was looked up: deliverOwned checks it again.
+	return g.deliverOwned(agentID, m)
 }
 
 // pushToSelfSession queues a message the AI wrote for the live sibling it addresses, with a pending
-// delivery row. Nothing happens for a target with no live session: the AI never receives its own
-// message, neither there nor as a fallback to its principal (SESS-38).
+// delivery row owned by that connection. Nothing happens for a target with no live session, nor for the
+// session that wrote the message: the AI never receives its own message, neither there nor as a fallback
+// to its principal (SESS-38).
 func (g *Gateway) pushToSelfSession(agentID, target string, m dto.AgentMessage) bool {
-	if target == "" {
+	if target == "" || target == m.Message.AuthorLabel {
 		return false
 	}
-	s, live := g.d.Presence.SessionByLabel(agentID, target)
-	if !live {
+	c := g.labelConn(agentID, target)
+	if c == nil {
 		return false
 	}
-	now := time.Now().UnixMilli()
-	if err := g.createSessionDelivery(g.ctx, m.Message.ID, agentID, target, now, sql.NullInt64{}); err != nil {
+	if err := g.createSessionDelivery(g.ctx, m.Message.ID, agentID, target, c.owner, time.Now().UnixMilli(), sql.NullInt64{}); err != nil {
 		g.d.Logger.Error("agent: session delivery write failed", "agent_id", agentID, "message_id", m.Message.ID, "err", err)
 		return false
 	}
-	if _, live := g.d.Presence.SessionByLabel(agentID, target); !live {
-		// The session ended between the two reads, and its sweep may have run before the row existed:
-		// the row is dropped here instead of becoming the principal's (SESS-38).
-		if err := g.deleteSessionDelivery(g.ctx, m.Message.ID, agentID); err != nil {
-			g.d.Logger.Error("agent: self session delivery delete failed", "agent_id", agentID, "message_id", m.Message.ID, "err", err)
-		}
-		return false
-	}
-	c, ok := s.(*conn)
-	return ok && c.push(m)
+	// If the connection ended between the two reads and its sweep ran before the row existed, the sweep
+	// runs now and acknowledges the row instead of handing it to the principal (SESS-38).
+	return g.deliverOwned(agentID, m)
 }
 
 // pushUpdateToPrincipal queues an edit or delete for the principal session without blocking.
@@ -246,11 +224,14 @@ func (g *Gateway) pushUpdateToPrincipal(agentID string, t dto.AgentFrameType, m 
 
 // PushUpdate queues, without blocking, the frame that tells the targeted session that a message was edited
 // (dto.AgentFrameTypeMessageEdited) or deleted (dto.AgentFrameTypeMessageDeleted); m carries the message as it
-// is now. A live label receives it; when the label has no live session the principal does, because it may hold
-// the message as a fallback (SESS-27). A message the AI wrote is the exception: only the addressed live sibling
-// receives its update, and a dead target receives nothing (SESS-39). Like Push it reports false when the agent is
-// offline or its queue overflowed. Such a frame is never acknowledged and never sent again: a connection that was
-// not there hears nothing of it, and reads the current state of the message when it connects (EDT-07, DLT-07).
+// is now. The message's delivery row says who holds it (SESS-27): a pending row goes to the connection that
+// owns it, or to the principal when that connection is gone; a fallen-back row goes to the principal; a row the
+// label acknowledged goes to the label while it is live and to nobody otherwise. A message with no row for the
+// target is routed by liveness: a live label receives it, else the principal does, because it may hold the
+// message as a fallback. A message the AI wrote is the exception: only the addressed live sibling receives its
+// update, and a dead target receives nothing (SESS-39). Like Push it reports false when the agent is offline or
+// its queue overflowed. Such a frame is never acknowledged and never sent again: a connection that was not there
+// hears nothing of it, and reads the current state of the message when it connects (EDT-07, DLT-07).
 func (g *Gateway) PushUpdate(agentID, target string, t dto.AgentFrameType, m dto.AgentMessage) bool {
 	if selfAuthored(m.Message, agentID) {
 		// The update stays with the addressed sibling and never reaches the principal (SESS-39).
@@ -267,6 +248,13 @@ func (g *Gateway) PushUpdate(agentID, target string, t dto.AgentFrameType, m dto
 	if target == "" {
 		return g.pushUpdateToPrincipal(agentID, t, m)
 	}
+	row, err := g.d.Store.R().GetSessionDelivery(g.ctx, db.GetSessionDeliveryParams{MessageID: m.Message.ID, AgentID: agentID})
+	switch {
+	case err == nil && row.Label == target:
+		return g.pushUpdateByRow(agentID, row, t, m)
+	case err != nil && !errors.Is(err, sql.ErrNoRows):
+		g.d.Logger.Error("agent: session delivery read failed", "agent_id", agentID, "message_id", m.Message.ID, "err", err)
+	}
 	s, ok := g.d.Presence.SessionByLabel(agentID, target)
 	if !ok {
 		m.ForLabel = target
@@ -274,6 +262,23 @@ func (g *Gateway) PushUpdate(agentID, target string, t dto.AgentFrameType, m dto
 	}
 	c, ok := s.(*conn)
 	return ok && c.enqueue(outbound{typ: t, msg: m})
+}
+
+// pushUpdateByRow routes an edit or a delete of a message that has a delivery row for the target label.
+func (g *Gateway) pushUpdateByRow(agentID string, row db.AgentSessionDelivery, t dto.AgentFrameType, m dto.AgentMessage) bool {
+	switch {
+	case row.FellBackAt.Valid:
+		m.ForLabel = row.Label
+		return g.pushUpdateToPrincipal(agentID, t, m)
+	case row.AckedAt.Valid:
+		c := g.labelConn(agentID, row.Label)
+		return c != nil && c.enqueue(outbound{typ: t, msg: m})
+	}
+	if c := g.ownerConn(agentID, row.OwnerLive); c != nil {
+		return c.enqueue(outbound{typ: t, msg: m})
+	}
+	m.ForLabel = row.Label
+	return g.pushUpdateToPrincipal(agentID, t, m)
 }
 
 // Online reports whether the agent is connected.
@@ -332,19 +337,25 @@ func (g *Gateway) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	stopReq := context.AfterFunc(r.Context(), cancel)
 	defer stopReq()
 
-	c := &conn{ws: ws, queue: make(chan outbound, QueueSize), cancel: cancel}
+	c := &conn{
+		ws: ws, queue: make(chan outbound, QueueSize), cancel: cancel,
+		liveID: hs.liveID, owner: ownerKey(hs.liveID), delivered: map[string]struct{}{},
+	}
 	if g.beforeAttach != nil {
 		g.beforeAttach()
 	}
 	defer func() {
-		// The sweep must survive the request context that closed the socket.
+		// The sweep must survive the request context that closed the socket. Whatever ended the
+		// connection (its own close, a takeover, a reconnect, a Kick), the rows it owned are given back
+		// unless the same process holds another connection by now.
 		sweepCtx, sweepCancel := context.WithTimeout(context.WithoutCancel(ctx), sessionSweepTimeout)
 		defer sweepCancel()
-		if g.d.Presence.Detach(sweepCtx, row.Agent.ID, c) { // frees the label; false after a takeover or reconnect
-			g.sessionEnded(sweepCtx, row.Agent.ID, c.label)
-		}
+		g.connectionEnded(sweepCtx, row.Agent.ID, c)
 	}()
+	lock := g.lifeLock(row.Agent.ID)
+	lock.Lock()
 	live, err := g.d.Registry.Attach(ctx, row.Agent, c, hs.harness, hs.liveID, hs.label, hs.takeover)
+	lock.Unlock()
 	if err != nil {
 		g.d.Logger.ErrorContext(ctx, "agent: attach failed", "agent_id", row.Agent.ID, "err", err)
 		_ = ws.Close(websocket.StatusInternalError, "attach failed")
@@ -548,6 +559,14 @@ type conn struct {
 	cancel context.CancelFunc
 	// label is the label of the live session the connection became (SESS-11): "" for the principal.
 	label string
+	// liveID is the id of the process that holds the connection; empty when the client sent none.
+	liveID string
+	// owner is the key of the delivery rows pushed to this connection (ownerKey): its live id, or a key
+	// no other connection has.
+	owner string
+	// delivered holds the messages already written to this connection that can be written twice: the
+	// rows of a labelled session and the fallbacks of the principal. Only the run loop touches it.
+	delivered map[string]struct{}
 	// feed sends the AI's platform items; nil for a client that did not opt in to them and for every
 	// labelled session, which receives none (SESS-18).
 	feed *platformFeed
@@ -667,8 +686,18 @@ func (g *Gateway) run(ctx context.Context, c *conn, row db.GetAgentWithOwnerRow,
 				return err
 			}
 		case o := <-c.queue:
-			if o.typ == dto.AgentFrameTypeMessage && o.msg.Message.Seq <= sent[o.msg.Room.ID] {
-				continue // already delivered by the backlog
+			if o.typ == dto.AgentFrameTypeMessage {
+				id := o.msg.Message.ID
+				if c.label != "" || o.msg.ForLabel != "" {
+					// A labelled session has no cursor, and a fallback may be below the principal's
+					// cursor: neither is judged by the sequence, but by what this connection wrote.
+					if _, dup := c.delivered[id]; dup {
+						continue // already delivered by the backlog or by an earlier push
+					}
+					c.delivered[id] = struct{}{}
+				} else if o.msg.Message.Seq <= sent[o.msg.Room.ID] {
+					continue // already delivered by the backlog
+				}
 			}
 			if err := c.write(ctx, framed(o)); err != nil {
 				return err
@@ -679,7 +708,9 @@ func (g *Gateway) run(ctx context.Context, c *conn, row db.GetAgentWithOwnerRow,
 
 // backlog delivers, per room of the agent (paused rooms excepted), the messages after the
 // agent's cursor that its delivery mode wants (MEM-03, MEM-04), oldest first and at most
-// BacklogLimit (AGT-08). When more are pending it first sends a notice with the skipped count
+// BacklogLimit (AGT-08). That is the principal's queue: a labelled session has no cursor and no backlog of
+// that kind (SESS-17, SESS-24); it receives only the rows its own connection owns and has not
+// acknowledged, which is what a process that reconnected needs again (SESS-14). When more are pending it first sends a notice with the skipped count
 // and moves the cursor past them (AGT-09). A room with instructions first gets one
 // InstructionsNotice, paused or not (INS-03). It returns, per room, the highest sequence number
 // the agent has already been through: its cursor, or the last message listed now when that is
@@ -694,13 +725,26 @@ func (g *Gateway) backlog(ctx context.Context, c *conn, a db.Agent) (map[string]
 	if err != nil {
 		return nil, err
 	}
-	trust := g.d.Trust.Open() // one for the whole backlog: the AI's home chart is read once
+	trust := g.d.Trust.Open()             // one for the whole backlog: the AI's home chart is read once
+	var owned map[string][]db.MessageView // a labelled session's own unacknowledged rows, by room
+	if c.label != "" {
+		rows, err := g.d.Store.R().ListOwnedPending(ctx, db.ListOwnedPendingParams{AgentID: a.ID, OwnerLive: c.owner})
+		if err != nil {
+			return nil, err
+		}
+		owned = map[string][]db.MessageView{}
+		for _, v := range rows {
+			owned[v.RoomID] = append(owned[v.RoomID], v)
+		}
+	}
 	for _, st := range states {
-		// An earlier connection already received (or the backlog skipped on purpose) whatever the
-		// cursor covers. The dispatcher may still push such a message, late, to this connection:
-		// after a takeover the old session acknowledged it, so the new backlog sends nothing and
-		// a bare 0 here would let the push through a second time (SES-05).
-		sent[st.ID] = st.Cursor
+		if c.label == "" {
+			// An earlier connection already received (or the backlog skipped on purpose) whatever the
+			// cursor covers. The dispatcher may still push such a message, late, to this connection:
+			// after a takeover the old session acknowledged it, so the new backlog sends nothing and
+			// a bare 0 here would let the push through a second time (SES-05).
+			sent[st.ID] = st.Cursor
+		}
 		ref := delivery.RoomRef(st.ID, st.Name, st.Kind)
 		if st.Instructions != "" { // INS-03: once per room and connection, before its messages
 			text := InstructionsNoticeUntrusted
@@ -717,6 +761,12 @@ func (g *Gateway) backlog(ctx context.Context, c *conn, a db.Agent) (map[string]
 		}
 		if st.AgentsPaused {
 			continue // DLV-08: no agent delivery while the loop guard holds the room
+		}
+		if c.label != "" {
+			if err := g.writeOwned(ctx, c, a, ref, trust, owned[st.ID]); err != nil {
+				return nil, err
+			}
+			continue
 		}
 		// The count, the cursor list and the fallbacks read one snapshot, so a message posted in
 		// between cannot make the skipped count disagree with the cursor jump (S6).
@@ -786,6 +836,7 @@ func (g *Gateway) backlog(ctx context.Context, c *conn, a db.Agent) (map[string]
 				if err := c.write(ctx, frame); err != nil {
 					return nil, err
 				}
+				c.delivered[m.ID] = struct{}{}
 				if m.Seq > sent[st.ID] {
 					sent[st.ID] = m.Seq
 				}
@@ -830,6 +881,36 @@ func (g *Gateway) backlog(ctx context.Context, c *conn, a db.Agent) (map[string]
 	return sent, nil
 }
 
+// writeOwned writes, in sequence order, the rows a labelled session's connection owns and has not
+// acknowledged in one room. They are not filtered by the delivery mode again (the dispatcher wanted them
+// when it pushed them) and carry no note: they are the session's own.
+func (g *Gateway) writeOwned(ctx context.Context, c *conn, a db.Agent, ref dto.RoomRef, trust delivery.Trust, views []db.MessageView) error {
+	if len(views) == 0 {
+		return nil
+	}
+	msgs, err := g.d.Rooms.Details(ctx, views)
+	if err != nil {
+		return err
+	}
+	for _, m := range msgs {
+		trusted := true // the AI wrote it: its sibling trusts it, as the live push said (SESS-37)
+		if !selfAuthored(convert.Message(m), a.ID) {
+			var err error
+			if trusted, err = trustedFor(ctx, trust, m.MessageView, a.ID); err != nil {
+				return err
+			}
+		}
+		frame := dto.AgentMessageFrame{Type: dto.AgentFrameTypeMessage, AgentMessage: dto.AgentMessage{
+			Room: ref, Trusted: trusted, Message: convert.Message(m),
+		}}
+		if err := c.write(ctx, frame); err != nil {
+			return err
+		}
+		c.delivered[m.ID] = struct{}{}
+	}
+	return nil
+}
+
 // countBacklog counts the room's undelivered messages for the agent.
 func countBacklog(ctx context.Context, q *db.Queries, agentID string, st RoomState) (int64, error) {
 	return q.CountAgentBacklog(ctx, db.CountAgentBacklogParams{RoomID: st.ID, AfterSeq: st.Cursor, AgentID: agentID})
@@ -867,7 +948,7 @@ func (g *Gateway) readAcks(ctx context.Context, c *conn, agentID string) {
 			if c.label != "" {
 				// A labelled session acknowledges its own delivery row; the AI's cursor follows its
 				// principal session (SESS-17, SESS-24).
-				if err := g.ackSessionDelivery(ctx, head.MessageID, agentID); err != nil && ctx.Err() == nil {
+				if err := g.ackSessionDelivery(ctx, head.MessageID, agentID, c.owner); err != nil && ctx.Err() == nil {
 					g.d.Logger.Error("agent: session ack failed", "agent_id", agentID, "err", err)
 				}
 				continue
@@ -906,8 +987,9 @@ func (g *Gateway) ack(ctx context.Context, agentID, messageID string) error {
 	}
 	if n > 0 {
 		return g.d.Store.WithTx(ctx, func(q *db.Queries) error {
-			// The principal consumes the message and any fallback row it owned (SESS-24).
-			if err := q.DeleteSessionDelivery(ctx, db.DeleteSessionDeliveryParams{MessageID: messageID, AgentID: agentID}); err != nil {
+			// The principal consumes the message and any fallback row it owned: the row stays as a
+			// tombstone, so the message is not read twice (SESS-24).
+			if err := ackFallbackDelivery(ctx, q, messageID, agentID); err != nil {
 				return err
 			}
 			return q.AdvanceAgentCursor(ctx, db.AdvanceAgentCursorParams{AgentID: agentID, RoomID: m.RoomID, Seq: m.Seq})

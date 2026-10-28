@@ -26,7 +26,8 @@ type pendingMessage struct {
 // it looked at: the returned messages count as delivered. It serves harnesses that cannot hold
 // the WebSocket (wait_for_messages, turn-end hooks). Fallen-back messages are merged into the
 // same sequence order with their note, are returned without the delivery filter, and their rows
-// are deleted by this read (SESS-22, SESS-24).
+// are acknowledged by this read: they stay as tombstones (SESS-22, SESS-24). The cursor follows the
+// cursor messages only: a fallback's sequence never moves it, and it never moves backwards.
 //
 // label is the session the request came from. A process whose folder resolves to a non-empty
 // label has no live session: nothing is addressed to it and its label's messages are the
@@ -109,10 +110,7 @@ func (g *Gateway) Pending(ctx context.Context, a db.Agent, label string, limit i
 					return nil, err
 				}
 				selected = append(selected, pendingMessage{view: f.view, trusted: trusted, fallback: true, label: f.label})
-				if f.view.Seq > advanceTo {
-					advanceTo = f.view.Seq
-				}
-				continue
+				continue // the cursor does not follow a fallback: its sequence is not the stream's
 			}
 			v := cursor[ci]
 			ci++
@@ -133,7 +131,7 @@ func (g *Gateway) Pending(ctx context.Context, a db.Agent, label string, limit i
 			selected = append(selected, pendingMessage{view: v, trusted: trusted})
 		}
 		if len(selected) == 0 {
-			if advanceTo > 0 {
+			if advanceTo > st.Cursor {
 				if err := g.advance(ctx, a.ID, st.ID, advanceTo); err != nil {
 					return nil, err
 				}
@@ -151,13 +149,13 @@ func (g *Gateway) Pending(ctx context.Context, a db.Agent, label string, limit i
 		ref := delivery.RoomRef(st.ID, st.Name, st.Kind)
 		for i, s := range selected {
 			if s.fallback {
-				if err := g.deleteSessionDelivery(ctx, s.view.ID, a.ID); err != nil {
+				if err := g.d.Store.WithTx(ctx, func(q *db.Queries) error { return ackFallbackDelivery(ctx, q, s.view.ID, a.ID) }); err != nil {
 					return nil, err
 				}
 			}
 			out = append(out, dto.AgentMessage{Room: ref, Trusted: s.trusted, ForLabel: s.label, Message: convert.Message(msgs[i])})
 		}
-		if advanceTo > 0 {
+		if advanceTo > st.Cursor {
 			if err := g.advance(ctx, a.ID, st.ID, advanceTo); err != nil {
 				return nil, err
 			}

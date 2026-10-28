@@ -92,47 +92,6 @@ func (q *Queries) CreateSessionDelivery(ctx context.Context, arg CreateSessionDe
 	return err
 }
 
-const deleteSelfSessionDeliveries = `-- name: DeleteSelfSessionDeliveries :execrows
-DELETE FROM agent_session_deliveries
-WHERE agent_id = ?1 AND label = ?2 AND fell_back_at IS NULL
-  AND EXISTS (
-      SELECT 1 FROM messages m
-      WHERE m.id = agent_session_deliveries.message_id
-        AND m.author_kind = 'agent' AND m.author_id = ?1)
-`
-
-type DeleteSelfSessionDeliveriesParams struct {
-	AgentID string
-	Label   string
-}
-
-// The label-keyed drop of the AI's own pending rows.
-func (q *Queries) DeleteSelfSessionDeliveries(ctx context.Context, arg DeleteSelfSessionDeliveriesParams) (int64, error) {
-	result, err := q.db.ExecContext(ctx, deleteSelfSessionDeliveries, arg.AgentID, arg.Label)
-	if err != nil {
-		return 0, err
-	}
-	return result.RowsAffected()
-}
-
-const deleteSessionDelivery = `-- name: DeleteSessionDelivery :exec
-
-DELETE FROM agent_session_deliveries WHERE message_id = ? AND agent_id = ?
-`
-
-type DeleteSessionDeliveryParams struct {
-	MessageID string
-	AgentID   string
-}
-
-// Legacy queries below keep the callers of internal/agents compiling until the gateway is wired to the
-// owned rows; they are label-keyed and delete rows, so nothing new may use them.
-// Deletes a fallen-back or unowned row: the principal's or a tools-only process's consumption.
-func (q *Queries) DeleteSessionDelivery(ctx context.Context, arg DeleteSessionDeliveryParams) error {
-	_, err := q.db.ExecContext(ctx, deleteSessionDelivery, arg.MessageID, arg.AgentID)
-	return err
-}
-
 const fallBackOwnedDeliveries = `-- name: FallBackOwnedDeliveries :many
 UPDATE agent_session_deliveries
 SET fell_back_at = CASE WHEN EXISTS (
@@ -179,46 +138,6 @@ func (q *Queries) FallBackOwnedDeliveries(ctx context.Context, arg FallBackOwned
 			return nil, err
 		}
 		items = append(items, i)
-	}
-	if err := rows.Close(); err != nil {
-		return nil, err
-	}
-	if err := rows.Err(); err != nil {
-		return nil, err
-	}
-	return items, nil
-}
-
-const fallBackSessionDeliveries = `-- name: FallBackSessionDeliveries :many
-UPDATE agent_session_deliveries SET fell_back_at = ?1
-WHERE agent_id = ?2 AND label = ?3 AND fell_back_at IS NULL
-  AND NOT EXISTS (
-      SELECT 1 FROM messages m
-      WHERE m.id = agent_session_deliveries.message_id
-        AND m.author_kind = 'agent' AND m.author_id = ?2)
-RETURNING message_id
-`
-
-type FallBackSessionDeliveriesParams struct {
-	FellBackAt sql.NullInt64
-	AgentID    string
-	Label      string
-}
-
-// The label-keyed end-of-session sweep.
-func (q *Queries) FallBackSessionDeliveries(ctx context.Context, arg FallBackSessionDeliveriesParams) ([]string, error) {
-	rows, err := q.db.QueryContext(ctx, fallBackSessionDeliveries, arg.FellBackAt, arg.AgentID, arg.Label)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	var items []string
-	for rows.Next() {
-		var message_id string
-		if err := rows.Scan(&message_id); err != nil {
-			return nil, err
-		}
-		items = append(items, message_id)
 	}
 	if err := rows.Close(); err != nil {
 		return nil, err
@@ -332,8 +251,8 @@ type ListSessionDeliveriesByLabelParams struct {
 	Label   string
 }
 
-// The delivery rows of one label, in the order they were created (the end-of-session sweep reads the ids
-// of a label through FallBackSessionDeliveries' RETURNING; this lists them for tests and diagnostics).
+// The delivery rows of one label, in the order they were created (the end of a connection sweeps its own
+// rows through FallBackOwnedDeliveries; this lists a label's rows for tests and diagnostics).
 func (q *Queries) ListSessionDeliveriesByLabel(ctx context.Context, arg ListSessionDeliveriesByLabelParams) ([]AgentSessionDelivery, error) {
 	rows, err := q.db.QueryContext(ctx, listSessionDeliveriesByLabel, arg.AgentID, arg.Label)
 	if err != nil {
@@ -476,23 +395,4 @@ func (q *Queries) ListSessionFallbacks(ctx context.Context, arg ListSessionFallb
 		return nil, err
 	}
 	return items, nil
-}
-
-const releaseSessionDelivery = `-- name: ReleaseSessionDelivery :execrows
-DELETE FROM agent_session_deliveries
-WHERE message_id = ? AND agent_id = ? AND fell_back_at IS NULL
-`
-
-type ReleaseSessionDeliveryParams struct {
-	MessageID string
-	AgentID   string
-}
-
-// A live labelled session's acknowledgement by deletion, keyed by the AI only.
-func (q *Queries) ReleaseSessionDelivery(ctx context.Context, arg ReleaseSessionDeliveryParams) (int64, error) {
-	result, err := q.db.ExecContext(ctx, releaseSessionDelivery, arg.MessageID, arg.AgentID)
-	if err != nil {
-		return 0, err
-	}
-	return result.RowsAffected()
 }
