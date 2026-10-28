@@ -2,7 +2,6 @@ import { createFileRoute } from "@tanstack/react-router";
 import { MailPlusIcon, PlusIcon } from "lucide-react";
 import { useId, useMemo, useState } from "react";
 import { toast } from "sonner";
-import { SecretOnceDialog } from "@/components/secret-once-dialog";
 import { useAdminInvites, useCreateInvite, useRevokeInvite } from "@/entities/account";
 import {
   type CreatedInvite,
@@ -27,6 +26,7 @@ import {
 } from "@/shared/ui/molecules/dialog";
 import { EmptyState } from "@/shared/ui/molecules/empty-state";
 import { PageHeader } from "@/shared/ui/molecules/page-header";
+import { SecretOnceDialog } from "@/shared/ui/molecules/secret-once-dialog";
 import { Button } from "@/shared/ui/primitives/button";
 import { RadioGroup, RadioGroupItem } from "@/shared/ui/primitives/radio-group";
 import { Skeleton } from "@/shared/ui/primitives/skeleton";

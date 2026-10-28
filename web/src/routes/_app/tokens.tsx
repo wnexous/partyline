@@ -4,7 +4,6 @@ import { KeyRoundIcon, PlusIcon } from "lucide-react";
 import { useId, useMemo, useState } from "react";
 import { Controller, useForm } from "react-hook-form";
 import { toast } from "sonner";
-import { SecretOnceDialog } from "@/components/secret-once-dialog";
 import { useCreateToken, usePurgeToken, useRevokeToken, useTokens } from "@/entities/account";
 import { type CreateTokenForm, createTokenSchema, TOKEN_EXPIRY_DAYS } from "@/lib/schemas";
 import { readStorage, writeStorage } from "@/lib/theme";
@@ -31,6 +30,7 @@ import {
 import { EmptyState } from "@/shared/ui/molecules/empty-state";
 import { FormAlert, TextField } from "@/shared/ui/molecules/form-fields";
 import { PageHeader } from "@/shared/ui/molecules/page-header";
+import { SecretOnceDialog } from "@/shared/ui/molecules/secret-once-dialog";
 import { Button } from "@/shared/ui/primitives/button";
 import { Form } from "@/shared/ui/primitives/form";
 import { RadioGroup, RadioGroupItem } from "@/shared/ui/primitives/radio-group";

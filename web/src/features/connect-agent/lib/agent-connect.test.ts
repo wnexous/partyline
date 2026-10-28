@@ -5,7 +5,7 @@ import {
   installCommand,
   RELEASES_URL,
   SETUP_COMMAND,
-} from "@/lib/agent-connect";
+} from "./agent-connect";
 
 describe("agent connect commands (WIZ-01)", () => {
   it("installs from this instance's /install.sh", () => {

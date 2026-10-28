@@ -8,7 +8,6 @@ import {
   XIcon,
 } from "lucide-react";
 import { useMemo, useState } from "react";
-import { ConnectAgentDialog } from "@/components/connect-agent-dialog";
 import { MessageButton } from "@/components/message-button";
 import { PeopleGroup } from "@/components/people-group";
 import {
@@ -22,6 +21,7 @@ import {
   usePresenceStore,
   withContactPresence,
 } from "@/entities/intelligence";
+import { ConnectAgentDialog } from "@/features/connect-agent";
 import { DeleteAIDialog, MergeAIDialog } from "@/features/manage-org-member";
 import type { AIContact, Contacts, IntelligenceRef } from "@/shared/api/types.gen";
 import { useI18n } from "@/shared/i18n";

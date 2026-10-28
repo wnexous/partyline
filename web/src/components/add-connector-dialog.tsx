@@ -1,7 +1,6 @@
 import { useNavigate } from "@tanstack/react-router";
 import { useId, useState } from "react";
 import { ConnectorForm } from "@/components/schema-form";
-import { SecretOnceDialog } from "@/components/secret-once-dialog";
 import { useConnectorKinds, useCreateConnector } from "@/entities/connector";
 import { isAdminOf, OrgSelect, useCurrentOrg } from "@/entities/organization";
 import { isApiError } from "@/shared/api/client";
@@ -21,6 +20,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/shared/ui/molecules/dialog";
+import { SecretOnceDialog } from "@/shared/ui/molecules/secret-once-dialog";
 import { RadioGroup, RadioGroupItem } from "@/shared/ui/primitives/radio-group";
 import { Skeleton } from "@/shared/ui/primitives/skeleton";
 

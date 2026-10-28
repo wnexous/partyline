@@ -3,16 +3,6 @@ import { ArrowUpRightIcon, ChevronRightIcon, HourglassIcon, RadioTowerIcon } fro
 import { type ReactNode, useEffect, useState } from "react";
 import { useMe } from "@/entities/account";
 import { onlineOf, useAgents, usePresenceStore } from "@/entities/intelligence";
-import {
-  CLAUDE_CODE_DOCS_URL,
-  CONFIG_FILE,
-  HARNESSES,
-  type Harness,
-  type HarnessId,
-  installCommand,
-  RELEASES_URL,
-  SETUP_COMMAND,
-} from "@/lib/agent-connect";
 import { useT } from "@/shared/i18n";
 import { cn } from "@/shared/lib/utils";
 import { StatusDot } from "@/shared/ui/atoms/status-dot";
@@ -27,6 +17,16 @@ import {
 } from "@/shared/ui/molecules/dialog";
 import { Button } from "@/shared/ui/primitives/button";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/shared/ui/primitives/tabs";
+import {
+  CLAUDE_CODE_DOCS_URL,
+  CONFIG_FILE,
+  HARNESSES,
+  type Harness,
+  type HarnessId,
+  installCommand,
+  RELEASES_URL,
+  SETUP_COMMAND,
+} from "../lib/agent-connect";
 
 /*
  * "Connect an agent" (WIZ-01): install partyline from this instance, approve the machine once
