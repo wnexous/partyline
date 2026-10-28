@@ -1,14 +1,22 @@
-import { screen, waitFor, within } from "@testing-library/react";
+import { act, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { MemberList } from "@/components/member-list";
+import type { IntelligenceProfile, SessionInfo } from "@/lib/api/types.gen";
 import { useLiveStore } from "@/lib/live/store";
 import { json, mockApi } from "@/test/fetch";
-import { makeAI, makeIntelligence, makeMe, makeMember } from "@/test/fixtures";
-import { renderWithRouter } from "@/test/render";
+import {
+  makeAI,
+  makeIntelligence,
+  makeMe,
+  makeMember,
+  makePerson,
+  makeProfile,
+} from "@/test/fixtures";
+import { renderWithProviders, renderWithRouter } from "@/test/render";
+import { MemberPanel } from "./member-panel";
 
 /*
- * Rooms hold intelligences only (CID-20, CID-22): the member list shows AIs and users and has no
+ * The member panel of a group. Rooms hold intelligences only (CID-20, CID-22): the member list shows AIs and users and has no
  * chat row, so it also has no per-chat outbound control. A chat member left in old data stays
  * invisible instead of coming back as a switch. AIs and users are one list, in the order they
  * joined, with nothing that marks one kind (AD-024).
@@ -48,10 +56,10 @@ beforeEach(() => {
 });
 afterEach(() => vi.unstubAllGlobals());
 
-describe("member list (CID-20, CID-22)", () => {
+describe("member panel, group (CID-20, CID-22)", () => {
   it("shows AIs and users and neither a chat row nor its outbound control", async () => {
     mockApi({ "GET /me": json(200, makeMe()) });
-    renderWithRouter(<MemberList roomId="r1" members={members} canManage />);
+    renderWithRouter(<MemberPanel roomId="r1" members={members} canManage loading={false} />);
 
     expect(await screen.findByTestId("member-mb-atlas")).toHaveTextContent("Atlas");
     expect(screen.getByTestId("member-mb-bob")).toHaveTextContent("Bob Lima");
@@ -88,7 +96,9 @@ describe("member list (CID-20, CID-22)", () => {
       }),
     ];
     mockApi({ "GET /me": json(200, makeMe()) });
-    renderWithRouter(<MemberList roomId="r1" members={joined} canManage={false} />);
+    renderWithRouter(
+      <MemberPanel roomId="r1" members={joined} canManage={false} loading={false} />,
+    );
 
     const list = await screen.findByRole("list", { name: "Members" });
     expect(
@@ -104,7 +114,9 @@ describe("member list (CID-20, CID-22)", () => {
 
   it("puts no kind badge next to a member, and gives an AI and a user the same row", async () => {
     mockApi({ "GET /me": json(200, makeMe()) });
-    renderWithRouter(<MemberList roomId="r1" members={members} canManage={false} />);
+    renderWithRouter(
+      <MemberPanel roomId="r1" members={members} canManage={false} loading={false} />,
+    );
 
     const ai = within(await screen.findByTestId("member-mb-atlas"));
     const user = within(screen.getByTestId("member-mb-bob"));
@@ -122,7 +134,9 @@ describe("member list (CID-20, CID-22)", () => {
 
   it("renders the empty state when the room only still holds a chat", async () => {
     mockApi({ "GET /me": json(200, makeMe()) });
-    renderWithRouter(<MemberList roomId="r1" members={[chatOnly]} canManage={false} />);
+    renderWithRouter(
+      <MemberPanel roomId="r1" members={[chatOnly]} canManage={false} loading={false} />,
+    );
 
     expect(
       await screen.findByText("No members yet. Add members so messages have somewhere to go."),
@@ -136,7 +150,7 @@ describe("member list (CID-20, CID-22)", () => {
       "DELETE /rooms/r1/members/mb-atlas": new Response(null, { status: 204 }),
       "POST /rooms/r1/members": json(201, members[0]),
     });
-    renderWithRouter(<MemberList roomId="r1" members={members} canManage />);
+    renderWithRouter(<MemberPanel roomId="r1" members={members} canManage loading={false} />);
 
     await userEvent.setup().click(await screen.findByRole("button", { name: "Remove Atlas" }));
     await waitFor(() => expect(toast).toHaveBeenCalledTimes(1));
@@ -185,7 +199,12 @@ describe("member sessions (SESS-44)", () => {
       sessions: [{ label: "wt", harness: "claude", connected_at: at }],
     });
     renderWithRouter(
-      <MemberList roomId="r1" members={[withPi, single, offline]} canManage={false} />,
+      <MemberPanel
+        roomId="r1"
+        members={[withPi, single, offline]}
+        canManage={false}
+        loading={false}
+      />,
     );
 
     const line = await screen.findByTestId("member-sessions-mb-atlas");
@@ -193,5 +212,153 @@ describe("member sessions (SESS-44)", () => {
     expect(line).toHaveTextContent(":pi-2");
     expect(screen.queryByTestId("member-sessions-mb-solo")).toBeNull();
     expect(screen.queryByTestId("member-sessions-mb-off")).toBeNull();
+  });
+});
+
+describe("member panel, loading and empty states", () => {
+  it("shows a skeleton while the members load, for a group and for a DM alike", () => {
+    mockApi({ "GET /me": json(200, makeMe()) });
+    const group = renderWithProviders(
+      <MemberPanel roomId="r1" members={[]} canManage={false} loading />,
+    );
+    expect(group.container.querySelector('[data-slot="skeleton"]')).not.toBeNull();
+    expect(screen.queryByRole("list")).toBeNull();
+    group.unmount();
+    const dm = renderWithProviders(
+      <MemberPanel
+        roomId="d1"
+        members={[]}
+        participants={[atlas, bob]}
+        canManage={false}
+        loading
+      />,
+    );
+    expect(dm.container.querySelector('[data-slot="skeleton"]')).not.toBeNull();
+    expect(screen.queryByRole("list")).toBeNull();
+  });
+
+  it("says so when a DM has nobody to show", async () => {
+    mockApi({ "GET /me": json(200, makeMe()) });
+    renderWithRouter(
+      <MemberPanel roomId="d1" members={[]} participants={[]} canManage={false} loading={false} />,
+    );
+    expect(await screen.findByText("Nobody to show in this conversation.")).toBeInTheDocument();
+  });
+});
+
+describe("member panel, DM participants (DM-02, WA-08)", () => {
+  const at = "2026-10-28T14:05:00Z";
+  const session = (label: string, harness = "claude"): SessionInfo => ({
+    label,
+    harness,
+    connected_at: at,
+  });
+  const profileOf = (
+    ai: ReturnType<typeof makeAI>,
+    over: { online: boolean; sessions: SessionInfo[] },
+  ): IntelligenceProfile =>
+    makeProfile({
+      ...ai,
+      apps: [{ kind: "claude", label: "Claude Code" }],
+      ai: {
+        owner: makeMe().intelligence,
+        folder: "",
+        folder_label: "",
+        app: "claude",
+        ...over,
+      },
+    });
+
+  function renderDM(
+    participants = [makeMe().intelligence, atlas],
+    api: Parameters<typeof mockApi>[0] = {},
+  ) {
+    mockApi({ "GET /me": json(200, makeMe()), ...api });
+    return renderWithRouter(
+      <MemberPanel
+        roomId="d1"
+        members={[]}
+        participants={participants}
+        canManage
+        loading={false}
+      />,
+    );
+  }
+
+  it("lists the two participants with the same row as a group, read-only", async () => {
+    renderDM(undefined, {
+      "GET /intelligences/a1": json(
+        200,
+        profileOf(atlas, { online: true, sessions: [session("")] }),
+      ),
+    });
+    const list = await screen.findByRole("list", { name: "Participants" });
+    expect(within(list).getAllByRole("listitem")).toHaveLength(2);
+    const ai = within(screen.getByTestId("participant-a1"));
+    expect(ai.getByTestId("intelligence-avatar")).toBeInTheDocument();
+    expect(ai.getByText("@atlas")).toBeInTheDocument();
+    expect(await ai.findByText("Online")).toBeInTheDocument();
+    expect(ai.getByText("Claude Code")).toBeInTheDocument();
+    const you = within(screen.getByTestId("participant-u1"));
+    expect(you.getByText("You")).toBeInTheDocument();
+    // Nobody adds, removes or configures anyone in a DM, even when the caller could manage.
+    expect(screen.queryByRole("button")).toBeNull();
+  });
+
+  it("shows the sessions of an online AI with a parallel one: principal · :pi-2", async () => {
+    renderDM(undefined, {
+      "GET /intelligences/a1": json(
+        200,
+        profileOf(atlas, { online: true, sessions: [session(""), session("pi-2", "pi")] }),
+      ),
+    });
+    const line = await screen.findByTestId("participant-sessions-a1");
+    expect(line).toHaveTextContent(/principal\s*·\s*:pi-2/);
+  });
+
+  it("shows none for an offline AI or an AI with its principal session alone", async () => {
+    renderDM([atlas, makeAI({ id: "a2", display_name: "Solo", handle: "solo" })], {
+      "GET /intelligences/a1": json(
+        200,
+        profileOf(atlas, { online: false, sessions: [session(""), session("pi-2", "pi")] }),
+      ),
+      "GET /intelligences/a2": json(
+        200,
+        profileOf(makeAI({ id: "a2", display_name: "Solo", handle: "solo" }), {
+          online: true,
+          sessions: [session("")],
+        }),
+      ),
+    });
+    expect(
+      await within(await screen.findByTestId("participant-a1")).findByText("Offline"),
+    ).toBeInTheDocument();
+    await within(screen.getByTestId("participant-a2")).findByText("Online");
+    expect(screen.queryByTestId("participant-sessions-a1")).toBeNull();
+    expect(screen.queryByTestId("participant-sessions-a2")).toBeNull();
+  });
+
+  it("follows the live presence of the AI", async () => {
+    renderDM(undefined, {
+      "GET /intelligences/a1": json(
+        200,
+        profileOf(atlas, { online: true, sessions: [session(""), session("pi-2", "pi")] }),
+      ),
+    });
+    await screen.findByTestId("participant-sessions-a1");
+    act(() => useLiveStore.getState().setPresence("a1", { online: false }));
+    expect(screen.queryByTestId("participant-sessions-a1")).toBeNull();
+  });
+
+  it("shows a person without status or sessions", async () => {
+    renderDM([makeAI(), makePerson()], {
+      "GET /intelligences/a1": json(
+        200,
+        profileOf(atlas, { online: true, sessions: [session("")] }),
+      ),
+    });
+    const lia = within(await screen.findByTestId("participant-p1"));
+    expect(lia.getByText("@lia")).toBeInTheDocument();
+    expect(lia.queryByText(/line$/)).toBeNull();
   });
 });

@@ -19,7 +19,6 @@ import {
   historyPlatform,
 } from "@/components/conversation-header";
 import { EmptyState } from "@/components/empty-state";
-import { MemberList } from "@/components/member-list";
 import { MemberPicker } from "@/components/member-picker";
 import { platformName } from "@/components/message-item";
 import {
@@ -27,7 +26,6 @@ import {
   MessageTimeline,
   useTimelineMessages,
 } from "@/components/message-timeline";
-import { ParticipantList } from "@/components/participant-list";
 import { RoomFiles } from "@/components/room-files";
 import { RoomSettingsSheet } from "@/components/room-settings-sheet";
 import { Button } from "@/components/ui/button";
@@ -55,6 +53,7 @@ import {
   type RoomMember,
 } from "@/lib/api/types.gen";
 import { useI18n, useT } from "@/lib/i18n";
+import { MemberPanel } from "@/widgets/member-panel";
 
 export const Route = createFileRoute("/_app/rooms/$roomId")({
   component: RoomPage,
@@ -164,7 +163,7 @@ function RoomPage() {
       membersLabel={membersLabel}
       count={participantCount}
       canManage={canManage}
-      loading={members.isPending}
+      loading={!isDM && members.isPending}
       onOpenMessage={openInTimeline}
     />
   );
@@ -339,43 +338,18 @@ function SidePanel({
         ) : null}
       </div>
       <TabsContent value="members" className="flex min-h-0 flex-col rounded-none">
-        {participants ? (
-          <div className="min-h-0 flex-1 overflow-y-auto">
-            <ParticipantList participants={participants} />
-          </div>
-        ) : (
-          <MembersPanel roomId={roomId} members={members} canManage={canManage} loading={loading} />
-        )}
+        <MemberPanel
+          roomId={roomId}
+          members={members}
+          participants={participants}
+          canManage={canManage}
+          loading={loading}
+        />
       </TabsContent>
       <TabsContent value="files" className="flex min-h-0 flex-col rounded-none">
         <RoomFiles roomId={roomId} onOpenMessage={onOpenMessage} />
       </TabsContent>
     </Tabs>
-  );
-}
-
-function MembersPanel({
-  roomId,
-  members,
-  canManage,
-  loading,
-}: {
-  roomId: string;
-  members: RoomMember[];
-  canManage: boolean;
-  loading: boolean;
-}) {
-  return (
-    <div className="min-h-0 flex-1 overflow-y-auto">
-      {loading ? (
-        <div className="space-y-3 p-4" aria-hidden="true">
-          <Skeleton className="h-4 w-36" />
-          <Skeleton className="h-4 w-44" />
-        </div>
-      ) : (
-        <MemberList roomId={roomId} members={members} canManage={canManage} />
-      )}
-    </div>
   );
 }
 
