@@ -1,12 +1,12 @@
 import { screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { MemberSettings } from "@/components/member-settings";
 import type { RoomMember } from "@/shared/api/types.gen";
 import { apiError, json, mockApi } from "@/test/fetch";
 import { makeMember } from "@/test/fixtures";
 import { useLiveStore } from "@/test/live-store";
 import { renderWithProviders } from "@/test/render";
+import { MemberSettings } from "./member-settings";
 
 /*
  * Agent membership settings (MEM-01..05, routing-context T13): each field maps to its PATCH key,
