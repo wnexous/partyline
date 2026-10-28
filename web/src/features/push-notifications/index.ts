@@ -1,4 +1,7 @@
-export { ensurePushSubscription, registerServiceWorker } from "./lib/register";
+export {
+  ensurePushSubscription,
+  registerServiceWorker,
+} from "./lib/register";
 export {
   activeRegistration,
   applicationServerKey,
@@ -10,3 +13,4 @@ export {
   subscriptionJSON,
   unsubscribe,
 } from "./lib/subscription";
+export { NotificationsSection } from "./ui/notifications-section";
