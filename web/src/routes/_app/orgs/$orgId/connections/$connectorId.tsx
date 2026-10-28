@@ -9,7 +9,6 @@ import {
 } from "lucide-react";
 import { useEffect, useId, useState } from "react";
 import { toast } from "sonner";
-import { ConnectorForm } from "@/components/schema-form";
 import {
   ConnectorStatusBadge,
   useConnector,
@@ -23,6 +22,7 @@ import {
 import { allAIs, NamedSentence, useContacts } from "@/entities/intelligence";
 import { chatTitle, platformName } from "@/entities/message";
 import { useOrg } from "@/entities/organization";
+import { ConnectorForm } from "@/features/add-connector";
 import { isApiError } from "@/shared/api/client";
 import {
   type Connector,

@@ -1,6 +1,5 @@
 import { useNavigate } from "@tanstack/react-router";
 import { useId, useState } from "react";
-import { ConnectorForm } from "@/components/schema-form";
 import { useConnectorKinds, useCreateConnector } from "@/entities/connector";
 import { isAdminOf, OrgSelect, useCurrentOrg } from "@/entities/organization";
 import { isApiError } from "@/shared/api/client";
@@ -23,6 +22,7 @@ import {
 import { SecretOnceDialog } from "@/shared/ui/molecules/secret-once-dialog";
 import { RadioGroup, RadioGroupItem } from "@/shared/ui/primitives/radio-group";
 import { Skeleton } from "@/shared/ui/primitives/skeleton";
+import { ConnectorForm } from "./connector-form";
 
 /** Secrets the server generated for a new connector, with the labels of their fields. */
 interface Generated {

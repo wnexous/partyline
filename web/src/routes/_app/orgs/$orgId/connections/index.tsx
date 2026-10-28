@@ -1,10 +1,10 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { ChevronRightIcon, PlugZapIcon, PlusIcon } from "lucide-react";
 import { useMemo, useState } from "react";
-import { AddConnectorDialog } from "@/components/add-connector-dialog";
 import { ConnectorStatusBadge, useConnectorState, useConnectors } from "@/entities/connector";
 import { platformName } from "@/entities/message";
 import { isAdminOf, useOrg } from "@/entities/organization";
+import { AddConnectorDialog } from "@/features/add-connector";
 import type { Connector } from "@/shared/api/types.gen";
 import { useT } from "@/shared/i18n";
 import { EmptyState } from "@/shared/ui/molecules/empty-state";
