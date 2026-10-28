@@ -1,11 +1,11 @@
 import { act, fireEvent, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { AudioPlayer } from "@/components/audio-player";
 import type { Attachment } from "@/shared/api/types.gen";
 import { useLiveStore } from "@/test/live-store";
 import { media, pause, play, stubMedia } from "@/test/media-element";
 import { renderWithProviders } from "@/test/render";
+import { AudioPlayer } from "./audio-player";
 
 /*
  * The compact player of an audio attachment (VOI-07, VOI-08): play and pause, the time, and a seek

@@ -28,13 +28,16 @@ import {
   mentionCandidates,
   mentionOptionId,
 } from "@/components/mention-suggestions";
-import { authorDisplayName } from "@/components/message-item";
 import { type HoldState, MicButton, RecordingBar } from "@/components/voice-controls";
 import { useMe } from "@/entities/account";
-import { useEditMessage, usePostMessage } from "@/entities/message";
+import {
+  authorDisplayName,
+  messageExcerpt,
+  useEditMessage,
+  usePostMessage,
+} from "@/entities/message";
 import { useDraft, useDraftStore, useEditDraft } from "@/features/send-message";
 import { useVoiceRecorder } from "@/hooks/use-voice-recorder";
-import { messageExcerpt } from "@/lib/message-excerpt";
 import { textLength } from "@/lib/schemas";
 import type { VoiceFailure } from "@/lib/voice";
 import { isApiError } from "@/shared/api/client";

@@ -10,7 +10,6 @@ import {
 import { useEffect, useId, useState } from "react";
 import { toast } from "sonner";
 import { ConnectorStatusBadge, useConnectorState } from "@/components/connector-status";
-import { chatTitle, platformLabel } from "@/components/message-item";
 import { NamedSentence } from "@/components/profile-link";
 import { ConnectorForm } from "@/components/schema-form";
 import {
@@ -22,6 +21,7 @@ import {
   useUpdateConnector,
 } from "@/entities/connector";
 import { useContacts } from "@/entities/intelligence";
+import { chatTitle, platformName } from "@/entities/message";
 import { useOrg } from "@/entities/organization";
 import { allAIs } from "@/lib/contacts";
 import { isApiError } from "@/shared/api/client";
@@ -170,7 +170,7 @@ function ConnectorView({
           <div className="min-w-0 space-y-1.5">
             <h1 className="truncate text-2xl font-semibold tracking-[-0.02em]">{c.name}</h1>
             <p className="flex flex-wrap items-center gap-x-3 gap-y-1 text-sm text-muted-foreground">
-              <span>{kind?.label ?? platformLabel(c.kind)}</span>
+              <span>{kind?.label ?? platformName(c.kind)}</span>
               <ConnectorStatusBadge status={status} enabled={c.enabled} />
               {c.operator ? (
                 <span>

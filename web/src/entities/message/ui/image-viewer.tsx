@@ -7,8 +7,6 @@ import {
   XIcon,
 } from "lucide-react";
 import { type KeyboardEvent, type PointerEvent, useEffect, useRef, useState } from "react";
-import { isViewableImage } from "@/components/message-item";
-import { attachmentUrl } from "@/entities/message";
 import type { Attachment, Message } from "@/shared/api/types.gen";
 import { useI18n } from "@/shared/i18n";
 import { cn } from "@/shared/lib/utils";
@@ -21,6 +19,7 @@ import {
 } from "@/shared/ui/molecules/dialog";
 import { Button } from "@/shared/ui/primitives/button";
 import { Skeleton } from "@/shared/ui/primitives/skeleton";
+import { attachmentUrl, isViewableImage } from "../lib/attachments";
 
 /*
  * The image viewer (IMG-01..IMG-06): an image attachment opens in a dialog inside the app instead

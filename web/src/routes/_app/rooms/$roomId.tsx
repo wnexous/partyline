@@ -18,7 +18,6 @@ import {
   historyPlatform,
 } from "@/components/conversation-header";
 import { MemberPicker } from "@/components/member-picker";
-import { platformName } from "@/components/message-item";
 import {
   type MessageFocus,
   MessageTimeline,
@@ -27,7 +26,7 @@ import {
 import { RoomFiles } from "@/components/room-files";
 import { RoomSettingsSheet } from "@/components/room-settings-sheet";
 import { useMe } from "@/entities/account";
-import { postMessageKey } from "@/entities/message";
+import { platformName, postMessageKey } from "@/entities/message";
 import { useResumeRoom, useRoom } from "@/entities/room";
 import { useRoomMembers } from "@/entities/room-member";
 import { useDraft, useDraftStore } from "@/features/send-message";

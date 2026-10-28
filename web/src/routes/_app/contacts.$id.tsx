@@ -16,7 +16,6 @@ import { EndSessionDialog } from "@/components/end-session-dialog";
 import { MembershipSummary } from "@/components/membership-summary";
 import { MergeAIDialog } from "@/components/merge-ai-dialog";
 import { MessageButton } from "@/components/message-button";
-import { platformLabel } from "@/components/message-item";
 import { ProfileConversations } from "@/components/profile-conversations";
 import { ProfileEditor } from "@/components/profile-editor";
 import { RemoveFromOrgDialog } from "@/components/remove-from-org-dialog";
@@ -29,6 +28,7 @@ import {
   usePresenceStore,
   YouBadge,
 } from "@/entities/intelligence";
+import { platformName } from "@/entities/message";
 import { harnessLabel } from "@/lib/agents";
 import { mergeTargets } from "@/lib/contacts";
 import { isApiError } from "@/shared/api/client";
@@ -418,7 +418,7 @@ function PersonDetails({ person }: { person: PersonDetail }) {
         >
           <span>{person.connector.name}</span>
           <span className="text-xs text-muted-foreground">
-            {platformLabel(person.connector.kind)}
+            {platformName(person.connector.kind)}
           </span>
         </Link>
       </Row>

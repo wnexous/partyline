@@ -9,13 +9,13 @@ import {
   MessageSquareShareIcon,
 } from "lucide-react";
 import { useMemo, useRef, useState } from "react";
-import { formatBytes, INLINE_IMAGES } from "@/components/message-item";
 import { IntelligenceName } from "@/entities/intelligence";
-import { attachmentUrl } from "@/entities/message";
+import { attachmentUrl, INLINE_IMAGES } from "@/entities/message";
 import { useRoomFiles } from "@/entities/room";
 import type { FileFilter } from "@/shared/api/cache-types";
 import type { FileKind, RoomFile } from "@/shared/api/types.gen";
 import { type MessageKey, useI18n } from "@/shared/i18n";
+import { formatBytes } from "@/shared/lib/bytes";
 import { cn } from "@/shared/lib/utils";
 import { RelativeTime } from "@/shared/ui/atoms/relative-time";
 import { Button } from "@/shared/ui/primitives/button";

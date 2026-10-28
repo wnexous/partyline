@@ -3,8 +3,8 @@ import { ChevronRightIcon, PlugZapIcon, PlusIcon } from "lucide-react";
 import { useMemo, useState } from "react";
 import { AddConnectorDialog } from "@/components/add-connector-dialog";
 import { ConnectorStatusBadge, useConnectorState } from "@/components/connector-status";
-import { platformLabel } from "@/components/message-item";
 import { useConnectors } from "@/entities/connector";
+import { platformName } from "@/entities/message";
 import { useOrg } from "@/entities/organization";
 import { isAdminOf } from "@/lib/orgs";
 import type { Connector } from "@/shared/api/types.gen";
@@ -125,7 +125,7 @@ function ConnectorRow({ orgId, connector: c }: { orgId: string; connector: Conne
         <span className="flex min-w-0 items-center gap-2">
           <span className="truncate font-semibold tracking-[-0.01em]">{c.name}</span>
           <span className="shrink-0 rounded-[3px] border px-1.5 py-px text-[0.7rem] text-muted-foreground">
-            {platformLabel(c.kind)}
+            {platformName(c.kind)}
           </span>
         </span>
         <ChevronRightIcon

@@ -4,7 +4,6 @@ import { CompassIcon, Maximize2Icon, MessageSquareIcon, PencilIcon, XIcon } from
 import { type MouseEvent, useEffect, useId, useState } from "react";
 import { toast } from "sonner";
 import { MembershipSummary } from "@/components/membership-summary";
-import { platformName } from "@/components/message-item";
 import { PANEL_CONVERSATIONS, ProfileConversations } from "@/components/profile-conversations";
 import { opensElsewhere } from "@/components/profile-link";
 import { useMe } from "@/entities/account";
@@ -15,6 +14,7 @@ import {
   usePresenceStore,
   YouBadge,
 } from "@/entities/intelligence";
+import { platformName } from "@/entities/message";
 import { useProfilePanelStore } from "@/hooks/use-profile-panel";
 import { useStartConversation } from "@/hooks/use-start-conversation";
 import { isApiError } from "@/shared/api/client";

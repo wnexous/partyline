@@ -1,7 +1,6 @@
 import { fireEvent, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { collectImages } from "@/components/image-viewer";
 import { MessageTimeline } from "@/components/message-timeline";
 import type { Attachment, Message } from "@/shared/api/types.gen";
 import { apiError, json, mockApi } from "@/test/fetch";
@@ -10,6 +9,7 @@ import { stubLayout } from "@/test/layout";
 import { useLiveStore } from "@/test/live-store";
 import { stubViewport } from "@/test/media";
 import { renderWithRouter } from "@/test/render";
+import { collectImages } from "./image-viewer";
 
 /*
  * The image viewer (IMG-01..IMG-06): an image attachment in the timeline opens in a dialog inside

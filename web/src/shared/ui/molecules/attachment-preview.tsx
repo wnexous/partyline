@@ -9,6 +9,7 @@ import {
 import { useEffect, useState } from "react";
 import { type FileKind, FileKindImage } from "@/shared/api/types.gen";
 import { useI18n } from "@/shared/i18n";
+import { formatBytes } from "@/shared/lib/bytes";
 import { Button } from "@/shared/ui/primitives/button";
 
 /*
@@ -23,19 +24,6 @@ import { Button } from "@/shared/ui/primitives/button";
 function fileKindOf(mime: string): FileKind {
   const family = mime.toLowerCase().split("/")[0];
   return family === "image" || family === "audio" || family === "video" ? family : "document";
-}
-
-/** Bytes in the UI locale ("120 KB"): the unit follows the value. */
-function formatBytes(size: number, locale: string): string {
-  const units = ["B", "KB", "MB", "GB"];
-  let value = size;
-  let unit = 0;
-  while (value >= 1024 && unit < units.length - 1) {
-    value /= 1024;
-    unit += 1;
-  }
-  const digits = unit === 0 || value >= 10 ? 0 : 1;
-  return `${new Intl.NumberFormat(locale, { maximumFractionDigits: digits }).format(value)} ${units[unit]}`;
 }
 
 /** Files of this kind get a thumbnail; the rest get an icon. */

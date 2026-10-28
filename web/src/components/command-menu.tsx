@@ -3,9 +3,9 @@ import { ContactRoundIcon, PlugZapIcon } from "lucide-react";
 import { type ReactNode, type RefObject, useEffect, useLayoutEffect, useRef } from "react";
 import { ConnectorStatusBadge, useConnectorState } from "@/components/connector-status";
 import { ConversationAvatar } from "@/components/conversation-avatar";
-import { platformLabel } from "@/components/message-item";
 import { useConnectors } from "@/entities/connector";
 import { useAgents, usePresenceStore } from "@/entities/intelligence";
+import { platformName } from "@/entities/message";
 import { useConversations } from "@/entities/room";
 import { useProfilePanel } from "@/hooks/use-profile-panel";
 import { NAV_GROUPS } from "@/lib/nav";
@@ -205,11 +205,11 @@ function ConnectorItem({ connector: c, onSelect }: { connector: Connector; onSel
   return (
     <PaletteItem
       value={`connector:${c.id}`}
-      keywords={[c.name, platformLabel(c.kind)]}
+      keywords={[c.name, platformName(c.kind)]}
       onSelect={onSelect}
       icon={<PlugZapIcon aria-hidden="true" />}
       label={c.name}
-      hint={platformLabel(c.kind)}
+      hint={platformName(c.kind)}
       trailing={<ConnectorStatusBadge status={status} enabled={c.enabled} />}
     />
   );

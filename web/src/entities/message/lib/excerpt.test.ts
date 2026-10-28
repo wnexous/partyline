@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { messageExcerpt } from "@/lib/message-excerpt";
+import { messageExcerpt } from "@/entities/message";
 import { makeMessage } from "@/test/fixtures";
 
 const VOICE = "Voice message";
