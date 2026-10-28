@@ -1,9 +1,10 @@
 import { MessagesSquareIcon } from "lucide-react";
-import { MessengerPanel } from "@/components/app-sidebar";
 import { useMe } from "@/entities/account";
 import { useT } from "@/shared/i18n";
 import { useIsMobile } from "@/shared/lib/device";
 import { EmptyState } from "@/shared/ui/molecules/empty-state";
+import { MessengerPanel } from "@/widgets/app-sidebar";
+import { conversationSlots } from "@/widgets/conversation-list";
 
 /*
  * The home page is the messenger with nothing open: beside the sidebar it asks to pick a
@@ -14,7 +15,7 @@ export function HomePage() {
   const t = useT();
   const isMobile = useIsMobile();
   const me = useMe().data;
-  if (isMobile) return me ? <MessengerPanel me={me} screen /> : null;
+  if (isMobile) return me ? <MessengerPanel me={me} screen {...conversationSlots} /> : null;
   return (
     <div className="flex flex-1 items-center justify-center">
       <EmptyState icon={MessagesSquareIcon} title={t("home.title")} headingLevel="h1">

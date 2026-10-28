@@ -1,6 +1,7 @@
 import type { MessageKey, Translate } from "@/shared/i18n";
 import { isApiError } from "./client";
 import {
+  ErrorCodeAvatarInvalid,
   ErrorCodeContactNotFound,
   ErrorCodeCounterpartDisabled,
   ErrorCodeNoRouteToPerson,
@@ -66,4 +67,18 @@ export function startConversationError(
     if (err.status === 0) return t("error.network");
   }
   return t("dm.failed");
+}
+
+/** The text of a failed form request that has no specific reason: the network, or a generic line. */
+export function formFailureText(t: Translate, err: unknown): string {
+  return isApiError(err) && err.status === 0 ? t("error.network") : t("error.generic");
+}
+
+/** Why a photo was refused, in words the user can act on; a lost connection ends like any other failed upload. */
+export function photoErrorText(t: Translate, err: unknown): string {
+  if (isApiError(err)) {
+    if (err.code === ErrorCodeAvatarInvalid) return t("profile.photoInvalid");
+    if (err.status === 413) return t("profile.photoTooLarge");
+  }
+  return t("profile.photoFailed");
 }

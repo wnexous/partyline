@@ -103,6 +103,10 @@ Fix the import instead (move the code down a layer, or go through the index).
 | Composer draft | `features/send-message/model/draft-store` (zustand, per room: text, files, replyTo; edit drafts per message id) | local useState + keyed remount (§4) |
 | Message permissions (edit, delete) | `entities/message/model/permissions` | inline checks in the menu and the composer (§2.e) |
 | Composer | `widgets/composer` (composes send-message, edit-message, mention-autocomplete, send-voice-message) | `components/composer` (§3.3) |
+| Validators (text length, username, password, handle) | `shared/lib/validation`; form schemas in their feature (`features/<x>/model/schema.ts`) or page (`pages/<p>/model/schema.ts`) | `lib/schemas.ts` (T4b) |
+| Theme and preference keys | `shared/lib/theme`, `shared/lib/storage`; the theme radio is `shared/ui/molecules/theme-radio-group` | `lib/theme.ts` (T4b) |
+| Candidate row of a picker (DM, group, member) | `entities/intelligence/ui/pickable-row` (IntelligenceRow + `useIsOnline`) | three private rows (T4b) |
+| Shared auth page frame | `shared/ui/molecules/auth-frame` (pages pass their language and theme controls) | `components/auth-layout.tsx` (T4b) |
 
 
 Some of these land with later migration tasks (`.specs/features/web-architecture/tasks.md`); until

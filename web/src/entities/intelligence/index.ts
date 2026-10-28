@@ -10,6 +10,7 @@ export * from "./model/live";
 export * from "./model/pickables";
 export { onlineOf, useIsOnline, withContactPresence } from "./model/presence";
 export * from "./model/presence-store";
+export * from "./model/profile-panel";
 export * from "./model/rules";
 export * from "./ui/ai-status";
 export * from "./ui/contact-meta";
@@ -23,6 +24,7 @@ export {
 export { IntelligenceName, type IntelligenceNameProps } from "./ui/intelligence-name";
 export { IntelligenceRow, type IntelligenceRowProps } from "./ui/intelligence-row";
 export * from "./ui/membership-summary";
+export { PickableRow } from "./ui/pickable-row";
 export * from "./ui/profile-link";
 export { SessionLabel } from "./ui/session-label";
 export { SessionList } from "./ui/session-list";

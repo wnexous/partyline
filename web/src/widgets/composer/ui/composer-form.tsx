@@ -67,12 +67,12 @@ import {
   useVoiceRecorder,
   type VoiceFailure,
 } from "@/features/send-voice-message";
-import { textLength } from "@/lib/schemas";
 import { errorText } from "@/shared/api/error-text";
 import { MaxTextLength, type Message, type RoomMember } from "@/shared/api/types.gen";
 import { type MessageKey, useI18n } from "@/shared/i18n";
 import { useEnterSends } from "@/shared/lib/device";
 import { cn } from "@/shared/lib/utils";
+import { textLength } from "@/shared/lib/validation";
 import { AttachmentPreviews } from "@/shared/ui/molecules/attachment-preview";
 import { Button } from "@/shared/ui/primitives/button";
 

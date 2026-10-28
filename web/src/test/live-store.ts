@@ -11,6 +11,9 @@ import { type OpenRoomState, useOpenRoomStore } from "@/entities/room";
 import { type SocketState, useSocketStore } from "@/shared/api/socket-store";
 import { type PrefsState, usePrefsStore } from "@/shared/lib/prefs-store";
 
+/** The live dispatcher, for tests that push a server event into the stores. */
+export { handleLiveEvent } from "@/app/live/dispatch";
+
 const parts = [
   useSocketStore,
   usePresenceStore,

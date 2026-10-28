@@ -1,11 +1,18 @@
-import type { MemberSettingsForm } from "@/lib/schemas";
 import {
+  type DeliveryMode,
   DeliveryModeMentions,
   DeliveryModeTrusted,
   type RoomMember,
   type UpdateMemberRequest,
 } from "@/shared/api/types.gen";
 import type { MessageKey } from "@/shared/i18n";
+
+/** The values of the member settings form (the feature validates them, MEM-01..05). */
+export interface MemberSettingsForm {
+  display_name: string;
+  delivery: DeliveryMode;
+  keywords: string[];
+}
 
 /** The short, non-default settings of an agent member, for the member row. */
 export function memberSettingsSummary(m: RoomMember): MessageKey[] {

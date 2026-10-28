@@ -9,12 +9,12 @@ import { useId, useState } from "react";
 import { type ControllerRenderProps, useForm } from "react-hook-form";
 import { toast } from "sonner";
 import { useUpdateRoom } from "@/entities/room";
-import { type RoomSettingsForm, roomSettingsSchema, textLength } from "@/lib/schemas";
 import { isApiError } from "@/shared/api/client";
 import { MaxRoomInstructions, type Room, type UpdateRoomRequest } from "@/shared/api/types.gen";
 import { useI18n } from "@/shared/i18n";
 import { applyFieldErrors } from "@/shared/lib/forms";
 import { cn } from "@/shared/lib/utils";
+import { textLength } from "@/shared/lib/validation";
 import { FieldError, FormAlert, TextField } from "@/shared/ui/molecules/form-fields";
 import { SheetFooter } from "@/shared/ui/molecules/sheet";
 import { Button } from "@/shared/ui/primitives/button";
@@ -29,6 +29,7 @@ import {
 } from "@/shared/ui/primitives/form";
 import { Input } from "@/shared/ui/primitives/input";
 import { Textarea } from "@/shared/ui/primitives/textarea";
+import { type RoomSettingsForm, roomSettingsSchema } from "../model/schema";
 import { DeleteRoom } from "./delete-room";
 import { RoomPhoto } from "./room-photo";
 

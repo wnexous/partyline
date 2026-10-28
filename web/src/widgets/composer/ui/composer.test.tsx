@@ -1,7 +1,6 @@
 import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterAll, afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { AppProviders } from "@/components/app-providers";
 import type { MessagePages } from "@/shared/api/cache-types";
 import { queryKeys } from "@/shared/api/query-keys";
 import { type Level, MaxTextLength, type Message, type RoomMember } from "@/shared/api/types.gen";
@@ -9,7 +8,7 @@ import { apiError, json, mockApi } from "@/test/fetch";
 import { makeAI, makeMember, makeMessage } from "@/test/fixtures";
 import { useLiveStore } from "@/test/live-store";
 import { stubMatchMedia, stubPointer } from "@/test/media";
-import { makeQueryClient, renderWithProviders } from "@/test/render";
+import { AppProviders, makeQueryClient, renderWithProviders } from "@/test/render";
 import { Composer } from "@/widgets/composer";
 
 // A room may still carry chat members from before the upgrade; the composer ignores them.

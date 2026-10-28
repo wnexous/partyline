@@ -1,13 +1,7 @@
 import { create } from "zustand";
-import {
-  LOCALE_KEY,
-  readStorage,
-  readThemePreference,
-  THEME_KEY,
-  type ThemePreference,
-  writeStorage,
-} from "@/lib/theme";
 import { detectLocale, isLocale, type Locale } from "@/shared/i18n";
+import { LOCALE_KEY, readStorage, THEME_KEY, writeStorage } from "@/shared/lib/storage";
+import { readThemePreference, type ThemePreference } from "@/shared/lib/theme";
 
 /*
  * Per-browser preferences of the app shell: colour theme, language and the command palette. They

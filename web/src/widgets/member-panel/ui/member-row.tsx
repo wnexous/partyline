@@ -1,7 +1,6 @@
 import { MessageSquareIcon, XIcon } from "lucide-react";
 import { useRef, useState } from "react";
 import { toast } from "sonner";
-import { MemberSettings } from "@/components/member-settings";
 import {
   AiStatusLine,
   canMessage,
@@ -12,7 +11,8 @@ import {
 } from "@/entities/intelligence";
 import type { PersonRow } from "@/entities/room-member";
 import { memberSettingsSummary } from "@/entities/room-member";
-import { useStartConversation } from "@/hooks/use-start-conversation";
+import { MemberSettings } from "@/features/edit-member-settings";
+import { useStartConversation } from "@/features/start-conversation";
 import { useI18n } from "@/shared/i18n";
 import { useTouchFirst } from "@/shared/lib/device";
 import { StatusDot } from "@/shared/ui/atoms/status-dot";

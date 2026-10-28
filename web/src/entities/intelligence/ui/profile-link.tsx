@@ -1,7 +1,7 @@
 import { Link } from "@tanstack/react-router";
 import type { ComponentProps, MouseEvent } from "react";
-import { useProfilePanel } from "@/hooks/use-profile-panel";
 import { cn } from "@/shared/lib/utils";
+import { useProfilePanel } from "../model/profile-panel";
 
 /*
  * An identity that can be clicked (PRF-01, PRF-06). It is a link to the identity's profile page,

@@ -5,8 +5,7 @@ import {
   UsersRoundIcon,
 } from "lucide-react";
 import { useCallback, useMemo, useState } from "react";
-import { NewConversationDialog } from "@/components/new-conversation-dialog";
-import { NewGroupDialog } from "@/components/new-group-dialog";
+import { useProfilePanel } from "@/entities/intelligence";
 import { inOrg, useCurrentOrg } from "@/entities/organization";
 import {
   ConversationRow,
@@ -15,7 +14,8 @@ import {
   useConversations,
 } from "@/entities/room";
 import { ConversationMenu, type ConversationMenuTarget } from "@/features/conversation-actions";
-import { useProfilePanel } from "@/hooks/use-profile-panel";
+import { NewGroupDialog } from "@/features/create-group";
+import { NewConversationDialog } from "@/features/start-conversation";
 import { useT } from "@/shared/i18n";
 import { useTouchFirst } from "@/shared/lib/device";
 import { EmptyState } from "@/shared/ui/molecules/empty-state";

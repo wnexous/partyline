@@ -8,7 +8,6 @@ import {
   UsersRoundIcon,
 } from "lucide-react";
 import { useEffect, useState } from "react";
-import { MemberPicker } from "@/components/member-picker";
 import { useMe } from "@/entities/account";
 import { postMessageKey } from "@/entities/message";
 import {
@@ -21,6 +20,7 @@ import {
   useRoom,
 } from "@/entities/room";
 import { useRoomMembers } from "@/entities/room-member";
+import { MemberPicker } from "@/features/add-member";
 import { useDraft, useDraftStore } from "@/features/send-message";
 import { isApiError } from "@/shared/api/client";
 import {

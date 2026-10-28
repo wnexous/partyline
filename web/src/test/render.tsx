@@ -8,8 +8,11 @@ import {
 } from "@tanstack/react-router";
 import { render } from "@testing-library/react";
 import type { ReactNode } from "react";
-import { AppProviders } from "@/components/app-providers";
+import { AppProviders } from "@/app/providers/app-providers";
 import { createAppRouter } from "@/router";
+
+/** The app providers, for tests of slices that cannot import the app layer and rerender themselves. */
+export { AppProviders };
 
 export function makeQueryClient() {
   return new QueryClient({
