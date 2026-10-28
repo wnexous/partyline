@@ -973,6 +973,34 @@ describe("the live sessions of an AI's profile (SESS-32)", () => {
     expect(screen.queryByRole("region", { name: "Live sessions" })).toBeNull();
   });
 
+  it("lists a session labelled principal beside the principal, with distinct keys", async () => {
+    const errors = vi.spyOn(console, "error").mockImplementation(() => {});
+    profileApi([
+      { label: "", harness: "claude", connected_at: "2026-10-19T11:00:00Z" },
+      { label: "principal", harness: "pi", connected_at: "2026-10-19T12:00:00Z" },
+    ]);
+    renderRoute("/contacts/a1");
+    const section = await screen.findByRole("region", { name: "Live sessions" });
+    const labels = within(section)
+      .getAllByTestId("session-label")
+      .map((el) => el.textContent);
+    expect(labels).toEqual(["principal", ":principal"]);
+    // React reports colliding keys through console.error.
+    expect(errors.mock.calls.filter((call) => String(call[0]).includes("same key"))).toEqual([]);
+    errors.mockRestore();
+  });
+
+  it("renders a profile from a server that sends no sessions or conversations", async () => {
+    const { sessions: _s, ...bare } = ai;
+    const { conversations: _c, ...rest } = profile;
+    api(sampleContacts, {
+      "GET /intelligences/a1": json(200, { ...rest, ai: bare }),
+    });
+    renderRoute("/contacts/a1");
+    expect(await screen.findByRole("heading", { name: "Atlas", level: 1 })).toBeInTheDocument();
+    expect(screen.queryByRole("region", { name: "Live sessions" })).toBeNull();
+  });
+
   it("has no axe violations with two live sessions", async () => {
     profileApi();
     const { container } = renderRoute("/contacts/a1");

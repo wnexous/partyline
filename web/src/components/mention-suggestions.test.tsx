@@ -226,6 +226,46 @@ describe("session candidates (SESS-33)", () => {
     ]);
   });
 
+  it("MEN-01: a session labelled principal and the principal are both candidates", () => {
+    const member = makeMember({
+      id: "mb-a1",
+      kind: "agent",
+      member_id: "a1",
+      intelligence: atlas,
+      sessions: [
+        principalSession,
+        { label: "principal", harness: "pi", connected_at: "2026-10-19T12:00:00Z" },
+      ],
+    });
+    expect(pairs(mentionCandidates([member], me.id))).toEqual([
+      { handle: "atlas", label: "" },
+      { handle: "atlas", label: "principal" },
+    ]);
+  });
+
+  it("MEN-02: handle:label matches the handle before the colon and the label after it", () => {
+    const both = [
+      makeMember({ id: "mb-a1", kind: "agent", member_id: "a1", intelligence: atlas, sessions }),
+      makeMember({
+        id: "mb-a2",
+        kind: "agent",
+        member_id: "a2",
+        intelligence: atlasTwo,
+        sessions: [labelledSession],
+      }),
+    ];
+    const all = mentionCandidates(both, me.id);
+    expect(pairs(matchMentions(all, "atlas:cl"))).toEqual([
+      { handle: "atlas", label: "claude-2" },
+      { handle: "atlas-2", label: "claude-2" },
+    ]);
+    expect(pairs(matchMentions(all, "atlas-2:cl"))).toEqual([
+      { handle: "atlas-2", label: "claude-2" },
+    ]);
+    expect(pairs(matchMentions(all, "atlas:zz"))).toEqual([]);
+    expect(pairs(matchMentions(all, "bruno:cl"))).toEqual([]);
+  });
+
   it("MEN-01: the option shows the label and leaves the principal plain", async () => {
     const { user, box } = renderComposer(withSessions);
     await user.type(box, "@atlas");

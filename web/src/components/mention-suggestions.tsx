@@ -58,6 +58,9 @@ export interface MentionCandidate {
   label: string;
 }
 
+/** The key of a candidate: the principal is `id:` and a session `id:label`, so no label collides. */
+const candidateKey = (id: string, label: string) => `${id}:${label ? `:${label}` : ""}`;
+
 /** Accent- and case-insensitive form for matching (MEN-02). */
 const fold = (value: string) =>
   value
@@ -76,7 +79,7 @@ export function mentionCandidates(members: RoomMember[], viewerId?: string): Men
   const candidates: MentionCandidate[] = [];
   const add = (intelligence: IntelligenceRef, label = "") => {
     if (!intelligence.handle || intelligence.id === viewerId) return;
-    const key = `${intelligence.id}:${label || "principal"}`;
+    const key = candidateKey(intelligence.id, label);
     if (seen.has(key)) return;
     seen.add(key);
     candidates.push({ intelligence, label });
@@ -104,20 +107,28 @@ export function mentionCandidates(members: RoomMember[], viewerId?: string): Men
  */
 export function matchMentions(candidates: MentionCandidate[], query: string): MentionCandidate[] {
   const needle = fold(query.trim());
-  const matched = needle
-    ? candidates.filter(
-        ({ intelligence, label }) =>
-          fold(intelligence.display_name).includes(needle) ||
-          intelligence.handle.toLowerCase().includes(needle) ||
-          label.toLowerCase().includes(needle),
-      )
-    : candidates;
+  // `handle:label` as typed: the part before the colon is the handle, the part after the label.
+  const colon = needle.indexOf(":");
+  const matched = !needle
+    ? candidates
+    : colon >= 0
+      ? candidates.filter(
+          ({ intelligence, label }) =>
+            intelligence.handle.toLowerCase().includes(needle.slice(0, colon)) &&
+            label.toLowerCase().includes(needle.slice(colon + 1)),
+        )
+      : candidates.filter(
+          ({ intelligence, label }) =>
+            fold(intelligence.display_name).includes(needle) ||
+            intelligence.handle.toLowerCase().includes(needle) ||
+            label.toLowerCase().includes(needle),
+        );
   return matched.slice(0, MaxMentionSuggestions);
 }
 
 /** The DOM id of an option, so the combobox can name the active one. */
 export const mentionOptionId = (listId: string, candidate: MentionCandidate) =>
-  `${listId}-${candidate.intelligence.id}:${candidate.label || "principal"}`;
+  `${listId}-${candidateKey(candidate.intelligence.id, candidate.label)}`;
 
 export interface MentionSuggestionsProps {
   id: string;
@@ -149,7 +160,7 @@ export function MentionSuggestions({
         const active = index === activeIndex;
         return (
           <div
-            key={`${candidate.intelligence.id}:${candidate.label || "principal"}`}
+            key={candidateKey(candidate.intelligence.id, candidate.label)}
             id={mentionOptionId(id, candidate)}
             role="option"
             aria-selected={active}

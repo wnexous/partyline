@@ -1,7 +1,11 @@
 import { screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { AttachmentPreview, AttachmentPreviews } from "@/components/attachment-preview";
+import {
+  type AttachedFile,
+  AttachmentPreview,
+  AttachmentPreviews,
+} from "@/components/attachment-preview";
 import { useLiveStore } from "@/lib/live/store";
 import { renderWithProviders } from "@/test/render";
 
@@ -27,6 +31,8 @@ afterEach(() => {
 
 const fileOf = (name: string, type: string, size = 120 * 1024) =>
   new File([new Uint8Array(size)], name, { type });
+
+const attach = (...files: File[]): AttachedFile[] => files.map((file, id) => ({ id, file }));
 
 const png = () => fileOf("image.png", "image/png");
 
@@ -107,7 +113,7 @@ describe("an attachment preview (UI-07)", () => {
 
 describe("the attachment row (UI-07)", () => {
   it("lists every file in order in a row that scrolls sideways", () => {
-    const files = [png(), fileOf("build.log", "text/plain")];
+    const files = attach(png(), fileOf("build.log", "text/plain"));
     renderWithProviders(<AttachmentPreviews files={files} onRemove={() => {}} />);
 
     const list = screen.getByRole("list", { name: "Attachments" });
@@ -123,17 +129,18 @@ describe("the attachment row (UI-07)", () => {
     const onRemove = vi.fn();
     const user = userEvent.setup();
     const file = fileOf("build.log", "text/plain");
-    renderWithProviders(<AttachmentPreviews files={[file]} onRemove={onRemove} />);
+    const files = attach(file);
+    renderWithProviders(<AttachmentPreviews files={files} onRemove={onRemove} />);
 
     await user.click(screen.getByRole("button", { name: "Remove build.log" }));
-    expect(onRemove).toHaveBeenCalledWith(file);
+    expect(onRemove).toHaveBeenCalledWith(files[0]?.id);
   });
 });
 
 describe("the preview in Portuguese", () => {
   it("names the row and the remove action in the app's language", () => {
     useLiveStore.setState({ locale: "pt-BR" });
-    renderWithProviders(<AttachmentPreviews files={[png()]} onRemove={() => {}} />);
+    renderWithProviders(<AttachmentPreviews files={attach(png())} onRemove={() => {}} />);
 
     expect(screen.getByRole("list", { name: "Anexos" })).toBeInTheDocument();
     expect(screen.getByRole("group", { name: "image.png, 120 KB" })).toBeInTheDocument();

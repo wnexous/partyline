@@ -204,12 +204,12 @@ function ProfileView({ profile }: { profile: IntelligenceProfile }) {
 
       {/* The AI's live sessions, the principal first (SESS-32): a fact of the profile, and the
           addresses the mention list offers. Absent while the AI has no live session. */}
-      {profile.ai && profile.ai.sessions.length > 0 ? (
+      {profile.ai && (profile.ai.sessions ?? []).length > 0 ? (
         <Section title={t("profile.sessions")}>
           <ul aria-label={t("profile.sessions")} className="divide-y rounded-lg border">
-            {profile.ai.sessions.map((session) => (
+            {(profile.ai.sessions ?? []).map((session) => (
               <li
-                key={session.label || "principal"}
+                key={`:${session.label}`}
                 className="flex flex-wrap items-baseline gap-x-2 gap-y-1 px-4 py-3 text-sm"
               >
                 <span
@@ -264,9 +264,9 @@ function ProfileView({ profile }: { profile: IntelligenceProfile }) {
         </Section>
       ) : null}
 
-      {isPerson || profile.conversations.length > 0 ? (
+      {isPerson || (profile.conversations ?? []).length > 0 ? (
         <Section title={t("profile.conversations")}>
-          <ProfileConversations conversations={profile.conversations} />
+          <ProfileConversations conversations={profile.conversations ?? []} />
         </Section>
       ) : null}
 
