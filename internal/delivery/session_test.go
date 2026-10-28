@@ -97,3 +97,33 @@ func TestSessionLabelIgnoresCode(t *testing.T) {
 		})
 	}
 }
+
+// SESS-49: a bare "@handle" mentions the AI; an address of a session, a mention inside code, another handle and
+// a mention inside a word or a path do not.
+func TestMentionsPrincipal(t *testing.T) {
+	cases := []struct {
+		text string
+		want bool
+	}{
+		{"@atlas ping", true},
+		{"ping @ATLAS", true},
+		{"@atlas: ping", true},
+		{"@atlas, hi", true},
+		{"(@atlas)", true},
+		{"@atlas:wt do X", false},
+		{"@atlas:wt and @atlas", true},
+		{"@atlas:", true},
+		{"@atlas:wt.example.com", true},
+		{"@atlas-two hi", false},
+		{"x@atlas", false},
+		{"https://example.com/@atlas", false},
+		{"write `@atlas` to reach me", false},
+		{"```\n@atlas\n```", false},
+		{"hello", false},
+		{"", false},
+	}
+	for _, c := range cases {
+		require.Equal(t, c.want, MentionsPrincipal(c.text, "atlas"), c.text)
+	}
+	require.False(t, MentionsPrincipal("@atlas", ""))
+}

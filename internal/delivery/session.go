@@ -28,24 +28,9 @@ func SessionLabel(text, handle string) string {
 	}
 	text = blankCode(text)
 	for i := 0; i < len(text); i++ {
-		if text[i] != '@' {
-			continue
-		}
-		if i > 0 {
-			before, _ := utf8.DecodeLastRuneInString(text[:i])
-			if isWordRune(before) || before == '/' { // not inside a path or a URL
-				continue
-			}
-		}
-		rest, ok := cutPrefixFold(text[i+1:], handle)
+		rest, ok := handleAt(text, i, handle)
 		if !ok {
 			continue
-		}
-		if rest != "" {
-			after, _ := utf8.DecodeRuneInString(rest)
-			if continuesHandle(after) {
-				continue
-			}
 		}
 		if !strings.HasPrefix(rest, ":") {
 			continue
@@ -235,4 +220,54 @@ func closingFenceEnd(b []byte, from int, fence byte, n int) int {
 		i = end
 	}
 	return len(b)
+}
+
+// PrincipalTarget is the target the dispatcher hands the gateway for the principal session of the AI that
+// wrote a message from a labelled session (SESS-49). It is no label: it starts with "@".
+const PrincipalTarget = "@principal"
+
+// MentionsPrincipal reports whether the text mentions the AI with handle by its bare "@handle", the way
+// SessionLabel reads addresses: at a word boundary, case-insensitively, not inside a path or a URL, and
+// not inside code. "@atlas:wt" is an address of the session wt and "@atlas:" or "@atlas: ping" are not
+// (no label follows): only the latter mention the AI itself (SESS-49).
+func MentionsPrincipal(text, handle string) bool {
+	if handle == "" {
+		return false
+	}
+	text = blankCode(text)
+	for i := 0; i < len(text); i++ {
+		rest, ok := handleAt(text, i, handle)
+		if !ok {
+			continue
+		}
+		if strings.HasPrefix(rest, ":") && leadingLabel(rest[1:]) != "" {
+			continue // an address of a session, not of the AI
+		}
+		return true
+	}
+	return false
+}
+
+// handleAt reports whether "@handle" starts at text[i], at a boundary on both sides, and returns what
+// follows it.
+func handleAt(text string, i int, handle string) (rest string, ok bool) {
+	if text[i] != '@' {
+		return "", false
+	}
+	if i > 0 {
+		before, _ := utf8.DecodeLastRuneInString(text[:i])
+		if isWordRune(before) || before == '/' { // not inside a path or a URL
+			return "", false
+		}
+	}
+	rest, ok = cutPrefixFold(text[i+1:], handle)
+	if !ok {
+		return "", false
+	}
+	if rest != "" {
+		if after, _ := utf8.DecodeRuneInString(rest); continuesHandle(after) {
+			return "", false
+		}
+	}
+	return rest, true
 }

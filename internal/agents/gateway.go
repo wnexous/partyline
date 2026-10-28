@@ -200,6 +200,9 @@ func (g *Gateway) Push(agentID, target string, m dto.AgentMessage) bool {
 // session that wrote the message: the AI never receives its own message, neither there nor as a fallback
 // to its principal (SESS-38).
 func (g *Gateway) pushToSelfSession(agentID, target string, m dto.AgentMessage) bool {
+	if target == delivery.PrincipalTarget {
+		return g.pushToSelfPrincipal(m)
+	}
 	if target == "" || target == m.Message.AuthorLabel {
 		return false
 	}
@@ -214,6 +217,20 @@ func (g *Gateway) pushToSelfSession(agentID, target string, m dto.AgentMessage) 
 	// If the connection ended between the two reads and its sweep ran before the row existed, the sweep
 	// runs now and acknowledges the row instead of handing it to the principal (SESS-38).
 	return g.deliverOwned(agentID, m)
+}
+
+// pushToSelfPrincipal queues, live only, a message a labelled session of the AI wrote that mentions the AI by
+// its bare @handle, for the AI's principal session (SESS-49). The principal never receives its own message,
+// so nothing happens when the writer is the principal. The message has no delivery row (a row needs a label,
+// and the principal has none): its acknowledgement moves the cursor like any live message, and the principal's
+// backlog and pending list leave out the AI's own messages, so it is never delivered twice. With no live
+// principal the message is not delivered and not queued.
+func (g *Gateway) pushToSelfPrincipal(m dto.AgentMessage) bool {
+	if m.Message.AuthorLabel == "" {
+		return false
+	}
+	m.ForLabel = ""
+	return g.pushToPrincipal(m.Message.AuthorID, m)
 }
 
 // pushUpdateToPrincipal queues an edit or delete for the principal session without blocking.
@@ -238,7 +255,11 @@ func (g *Gateway) pushUpdateToPrincipal(agentID string, t dto.AgentFrameType, m 
 // hears nothing of it, and reads the current state of the message when it connects (EDT-07, DLT-07).
 func (g *Gateway) PushUpdate(agentID, target string, t dto.AgentFrameType, m dto.AgentMessage) bool {
 	if selfAuthored(m.Message, agentID) {
-		// The update stays with the addressed sibling and never reaches the principal (SESS-39).
+		// The update stays with the addressed sibling and reaches the principal only when the writer is a
+		// labelled session that mentions the AI by its bare @handle (SESS-39, SESS-49).
+		if target == delivery.PrincipalTarget {
+			return m.Message.AuthorLabel != "" && g.pushUpdateToPrincipal(agentID, t, m)
+		}
 		if target == "" {
 			return false
 		}

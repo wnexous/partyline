@@ -323,12 +323,17 @@ A session may hand work to another live session of its own AI with `@handle:labe
 `trusted="true"` because the AI itself wrote it, and the session never receives its own message:
 
 - the principal writes `@atlas:wt do X` → `:wt` receives it once, with a delivery of its own;
-- `:wt` writes `@atlas do Y` → no session of `atlas` receives it (the echo rule);
+- `:wt` writes `@atlas do Y` → the principal receives it once (a labelled session reaches its own
+  principal with the bare `@handle`; live only: with no live principal nothing is delivered or
+  queued), and no other session does;
+- the principal writes `@atlas do Y` → no session receives it (a principal never receives its own
+  message);
+- `:wt` writes `do Y` with no mention → no session of `atlas` receives it (the echo rule);
 - `:wt` writes `@atlas:wt do Z` → no session of `atlas` receives it;
 - `:wt` writes `@atlas:claude-2 do W` when `claude-2` is not live → nobody receives it and it is
   not handed to the principal as a fallback.
 
-A plain message is never echoed to the AI's other sessions, and a room paused by the loop guard
+A plain message is never echoed to the AI's other sessions, and a mention inside code is not a mention, and a room paused by the loop guard
 delivers nothing to any session. An edit or a delete by a session follows the same rule: only the
 addressed sibling receives it, never the principal.
 
