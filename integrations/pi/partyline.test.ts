@@ -40,13 +40,18 @@ function fakePi(opts: { hasUI?: boolean; throwOnSend?: boolean } = {}, plugin: P
 
 let time: FakeTime;
 let launched: string | undefined;
+let liveVar: string | undefined;
 beforeEach(() => {
 	spawned.length = 0;
+	liveVar = process.env.PARTYLINE_LIVE;
+	delete process.env.PARTYLINE_LIVE;
 	launched = process.env.PARTYLINE_HARNESS;
 	process.env.PARTYLINE_HARNESS = "pi"; // the launcher's environment
 	time = new FakeTime();
 });
 afterEach(() => {
+	if (liveVar === undefined) delete process.env.PARTYLINE_LIVE;
+	else process.env.PARTYLINE_LIVE = liveVar;
 	if (launched === undefined) delete process.env.PARTYLINE_HARNESS;
 	else process.env.PARTYLINE_HARNESS = launched;
 	time.restore();
@@ -97,6 +102,44 @@ describe("pi extension", () => {
 		expect(spawned[0].options.env?.PARTYLINE_HARNESS).toBe("pi");
 		expect(spawned[0].options.env?.PARTYLINE_SESSION).toBeUndefined();
 		expect(spawned[0].options.env?.PATH).toBe(process.env.PATH);
+	});
+
+	test("SESS-45: listen and the tools get one live id, tied to this process", () => {
+		const pi = fakePi();
+		pi.start();
+		const live = spawned[0].options.env?.PARTYLINE_LIVE ?? "";
+		expect(live).toMatch(new RegExp(`^${process.pid}:[A-Za-z0-9_-]{22}$`));
+		expect(process.env.PARTYLINE_LIVE).toBe(live); // the MCP servers started later inherit it
+	});
+
+	test("SESS-45: the launcher's live id is kept when its pid is this process's", () => {
+		const launcher = `${process.pid}:LLLLLLLLLLLLLLLLLLLLLL`;
+		process.env.PARTYLINE_LIVE = launcher;
+		fakePi().start();
+		expect(spawned[0].options.env?.PARTYLINE_LIVE).toBe(launcher);
+	});
+
+	test("SESS-45: an id inherited from another harness process is never shared", () => {
+		process.env.PARTYLINE_LIVE = `${process.pid + 1}:LLLLLLLLLLLLLLLLLLLLLL`;
+		fakePi().start();
+		const live = spawned[0].options.env?.PARTYLINE_LIVE ?? "";
+		expect(live).toMatch(new RegExp(`^${process.pid}:[A-Za-z0-9_-]{22}$`));
+		expect(live).not.toContain("LLLLLLLLLLLLLLLLLLLLLL");
+	});
+
+	test("SESS-45: a restarted listen is the same session: same live id", () => {
+		const pi = fakePi();
+		pi.start();
+		spawned[0].exit(1);
+		time.fire();
+		expect(spawned.length).toBe(2);
+		expect(spawned[1].options.env?.PARTYLINE_LIVE).toBe(spawned[0].options.env?.PARTYLINE_LIVE);
+	});
+
+	test("SESS-45: a plain pi session mints no id", () => {
+		delete process.env.PARTYLINE_HARNESS;
+		fakePi().start();
+		expect(process.env.PARTYLINE_LIVE).toBeUndefined();
 	});
 
 	test("PUSH-04: each line becomes one sendMessage that triggers a turn or follows up", () => {

@@ -49,13 +49,18 @@ const sent = (text: string, id: string): Prompt => ({ path: { id }, body: { part
 
 let time: FakeTime;
 let launched: string | undefined;
+let liveVar: string | undefined;
 beforeEach(() => {
 	spawned.length = 0;
+	liveVar = process.env.PARTYLINE_LIVE;
+	delete process.env.PARTYLINE_LIVE;
 	launched = process.env.PARTYLINE_HARNESS;
 	process.env.PARTYLINE_HARNESS = "opencode"; // the launcher's environment
 	time = new FakeTime();
 });
 afterEach(() => {
+	if (liveVar === undefined) delete process.env.PARTYLINE_LIVE;
+	else process.env.PARTYLINE_LIVE = liveVar;
 	if (launched === undefined) delete process.env.PARTYLINE_HARNESS;
 	else process.env.PARTYLINE_HARNESS = launched;
 	time.restore();
@@ -88,6 +93,36 @@ describe("OpenCode plugin", () => {
 		expect(spawned.length).toBe(1);
 		expect(spawned[0].args).toEqual(["listen"]);
 		expect(spawned[0].options.env?.PARTYLINE_HARNESS).toBe("opencode");
+	});
+
+	test("SESS-45: listen and the tools get one live id, tied to this process", async () => {
+		await load();
+		const live = spawned[0].options.env?.PARTYLINE_LIVE ?? "";
+		expect(live).toMatch(new RegExp(`^${process.pid}:[A-Za-z0-9_-]{22}$`));
+		expect(process.env.PARTYLINE_LIVE).toBe(live); // the MCP servers started later inherit it
+	});
+
+	test("SESS-45: the launcher's live id is kept when its pid is this process's", async () => {
+		const launcher = `${process.pid}:LLLLLLLLLLLLLLLLLLLLLL`;
+		process.env.PARTYLINE_LIVE = launcher;
+		await load();
+		expect(spawned[0].options.env?.PARTYLINE_LIVE).toBe(launcher);
+	});
+
+	test("SESS-45: an id inherited from another harness process is never shared", async () => {
+		process.env.PARTYLINE_LIVE = `${process.pid + 1}:LLLLLLLLLLLLLLLLLLLLLL`;
+		await load();
+		const live = spawned[0].options.env?.PARTYLINE_LIVE ?? "";
+		expect(live).toMatch(new RegExp(`^${process.pid}:[A-Za-z0-9_-]{22}$`));
+		expect(live).not.toContain("LLLLLLLLLLLLLLLLLLLLLL");
+	});
+
+	test("SESS-45: a restarted listen is the same session: same live id", async () => {
+		await load();
+		spawned[0].exit(1);
+		time.fire();
+		expect(spawned.length).toBe(2);
+		expect(spawned[1].options.env?.PARTYLINE_LIVE).toBe(spawned[0].options.env?.PARTYLINE_LIVE);
 	});
 
 	test("PUSH-05: it runs partyline listen in the project directory", async () => {

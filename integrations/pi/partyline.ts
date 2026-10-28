@@ -9,6 +9,7 @@
 // listen process.
 
 import { spawn } from "node:child_process";
+import { randomBytes } from "node:crypto";
 
 // `partyline setup` writes the absolute path of the partyline binary here.
 const PARTYLINE_BINARY = "partyline";
@@ -83,13 +84,28 @@ const EXIT_SESSION_LOST = 3;
 
 type Listener = { stop(): void };
 
-// superviseListen runs `<binary> listen` in cwd as the app harness, hands each JSON line to
-// onLine and restarts the process with backoff when it exits; stderr lines and failures go to
-// log.
+// sessionLive returns the live id of this harness process as "<pid>:<id>", the value of PARTYLINE_LIVE. The
+// listen process connects with it and the tools-only process the harness starts from its MCP config sends it
+// with every call, so the server knows the tools act as the session listen holds (a post carries its label,
+// pending reads its queue). `partyline <harness>` mints it for the process it execs; otherwise, or when the
+// pid in it is not this process's (a harness started by a tool of another one inherits the variable), a new
+// one is minted and put in this process's environment, which the MCP servers started later inherit.
+function sessionLive(): string {
+	const [pid, id] = (process.env.PARTYLINE_LIVE ?? "").trim().split(":");
+	if (Number(pid) === process.pid && /^[A-Za-z0-9_-]{16,64}$/.test(id ?? "")) return `${pid}:${id}`;
+	const live = `${process.pid}:${randomBytes(16).toString("base64url")}`;
+	process.env.PARTYLINE_LIVE = live;
+	return live;
+}
+
+// superviseListen runs `<binary> listen` in cwd as the app harness with the live id live, hands each
+// JSON line to onLine and restarts the process with backoff when it exits (with the same id, so it is the
+// same session and keeps its label); stderr lines and failures go to log.
 function superviseListen(opts: {
 	binary: string;
 	cwd?: string;
 	harness: string;
+	live: string;
 	onLine: (record: Record<string, string>) => void;
 	log: (message: string) => void;
 }): Listener {
@@ -119,7 +135,7 @@ function superviseListen(opts: {
 		const proc = spawn(opts.binary, ["listen"], {
 			cwd: opts.cwd,
 			// listen is the AI of this folder, running in this harness.
-			env: { ...process.env, PARTYLINE_HARNESS: opts.harness },
+			env: { ...process.env, PARTYLINE_HARNESS: opts.harness, PARTYLINE_LIVE: opts.live },
 			stdio: ["pipe", "pipe", "pipe"],
 		});
 		child = proc;
@@ -183,6 +199,8 @@ function listening(always: boolean, env: Record<string, string | undefined> = pr
 
 export default function partyline(pi: PiApi): void {
 	let listener: Listener | undefined;
+	// Minted when the extension loads, before the MCP servers of the session start.
+	const live = listening(PARTYLINE_ALWAYS) ? sessionLive() : "";
 	pi.on("session_start", (_event, ctx) => {
 		if (listener || !listening(PARTYLINE_ALWAYS)) return;
 		const log = (message: string) => {
@@ -193,6 +211,7 @@ export default function partyline(pi: PiApi): void {
 			binary: PARTYLINE_BINARY,
 			cwd: ctx.cwd,
 			harness: "pi",
+			live,
 			log,
 			onLine: (record) => {
 				// A notice (another session holds the AI) is for the person, not for the model.
