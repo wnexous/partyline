@@ -2,8 +2,6 @@ import { Link } from "@tanstack/react-router";
 import { MessageSquarePlusIcon, UsersRoundIcon } from "lucide-react";
 import { useState } from "react";
 import { AccountMenu } from "@/components/account-menu";
-import { ConversationList } from "@/components/conversation-list";
-import { ConversationSearch } from "@/components/conversation-search";
 import { NewConversationDialog } from "@/components/new-conversation-dialog";
 import { NewGroupDialog } from "@/components/new-group-dialog";
 import { OrgSwitcher } from "@/components/org-switcher";
@@ -19,6 +17,7 @@ import { LiveIndicator } from "@/shared/ui/molecules/live-status";
 import { SearchButton } from "@/shared/ui/molecules/search-button";
 import { Button } from "@/shared/ui/primitives/button";
 import { SidebarContent, SidebarFooter, SidebarHeader } from "@/shared/ui/primitives/sidebar";
+import { ConversationList, ConversationSearch } from "@/widgets/conversation-list";
 
 /** The wide-screen column: the messenger panel beside the page, as tall as the window. */
 export function AppSidebar({ me }: { me: Me }) {

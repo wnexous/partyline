@@ -3,12 +3,12 @@ import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { catchUp } from "@/app/live/catch-up";
 import { handleLiveEvent } from "@/app/live/dispatch";
-import { RoomFiles } from "@/components/room-files";
 import type { RoomFile } from "@/shared/api/types.gen";
 import { apiError, json, mockApi } from "@/test/fetch";
 import { makeAI, makeIntelligence, makeMessage, makePerson } from "@/test/fixtures";
 import { useLiveStore } from "@/test/live-store";
 import { renderWithRouter } from "@/test/render";
+import { RoomFiles } from "@/widgets/room-files";
 
 function makeFile(over: Partial<RoomFile> = {}): RoomFile {
   return {

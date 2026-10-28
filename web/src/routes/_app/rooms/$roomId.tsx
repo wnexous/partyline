@@ -8,9 +8,7 @@ import {
   UsersRoundIcon,
 } from "lucide-react";
 import { useEffect, useState } from "react";
-import { ConversationHeader } from "@/components/conversation-header";
 import { MemberPicker } from "@/components/member-picker";
-import { RoomFiles } from "@/components/room-files";
 import { useMe } from "@/entities/account";
 import { postMessageKey } from "@/entities/message";
 import {
@@ -47,6 +45,7 @@ import { Button } from "@/shared/ui/primitives/button";
 import { Skeleton } from "@/shared/ui/primitives/skeleton";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/shared/ui/primitives/tabs";
 import { Composer } from "@/widgets/composer";
+import { ConversationHeader } from "@/widgets/conversation-header";
 import {
   HistoryNotice,
   type MessageFocus,
@@ -55,6 +54,7 @@ import {
   useTimelineMessages,
 } from "@/widgets/conversation-timeline";
 import { MemberPanel } from "@/widgets/member-panel";
+import { RoomFiles } from "@/widgets/room-files";
 import { RoomSettingsSheet } from "@/widgets/room-settings";
 
 export const Route = createFileRoute("/_app/rooms/$roomId")({

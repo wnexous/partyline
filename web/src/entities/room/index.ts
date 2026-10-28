@@ -11,3 +11,4 @@ export * from "./model/mark-read";
 export * from "./model/open-conversation";
 export * from "./model/open-room-store";
 export * from "./ui/conversation-avatar";
+export * from "./ui/conversation-row";
