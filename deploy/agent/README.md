@@ -54,12 +54,30 @@ is exactly what answering "Yes" writes. It seeds nothing about permissions: a to
 asks for approval. `CLAUDE_CODE_OAUTH_TOKEN` (the token `claude setup-token` prints, the
 recommended credential) needs none of this.
 
-Known follow-up, not an image concern: Claude Code 2.1.304 asks once per launch to acknowledge
-`--dangerously-load-development-channels` (the flag `partyline claude` uses to load the Partyline
-channel), offering "I am using this for local development" or "Exit". That answer is not stored,
-so an unmanaged container session stops on it. Choosing between that flag and the newer
-`--channels` list is a launcher decision (`internal/cli/launcher.go`), not one this image can
-make.
+### Unattended Claude Code
+
+Claude Code 2.1.304 asks once per launch to acknowledge `--dangerously-load-development-channels`
+(the flag `partyline claude` uses to load the Partyline channel), offering "I am using this for
+local development" or "Exit". The answer is not stored, so a container session would stop on it.
+
+There is no supported non-interactive way to pre-acknowledge it, checked against Claude Code
+2.1.304 and its documentation:
+
+- `--channels` only accepts the allowed plugin entries (`plugin:<name>@<marketplace>`); a raw
+  `server:` entry still needs `--dangerously-load-development-channels`, and Partyline is not a
+  plugin on the approved allowlist.
+- The development flag "prompts for confirmation, so it takes effect in interactive sessions";
+  with `-p` (or the Agent SDK) Claude Code ignores the flag and the channel does not register.
+- `channelsEnabled` and `allowedChannelPlugins` (managed settings) gate availability and the
+  plugin allowlist but do not remove the development confirmation, and no settings key or
+  environment variable records the acknowledgement.
+
+The entrypoint therefore falls back to the interactive mechanism the flag documents: it exports
+`PARTYLINE_UNATTENDED=1`, and for `claude` it runs the session under `script` with a FIFO as stdin
+and sends a few Enters through the pty while the harness starts (the prompt's default choice is
+"I am using this for local development"). It types nothing else and answers no other prompt. The
+design records the decision (`design.md`, "Unattended Claude Code"); when Anthropic adds a
+supported pre-acknowledgement this block goes away.
 
 ## Environment contract
 

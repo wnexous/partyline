@@ -29,6 +29,12 @@ var execLookPath = exec.LookPath
 var worktreeMainFolder = channel.MainWorktreeFolder
 
 // claudeChannelArgs are the arguments `partyline claude` puts before the user's (HAR-03).
+//
+// In a container (PARTYLINE_UNATTENDED=1, exported by deploy/agent/entrypoint.sh) they stay the
+// same: Partyline is a raw MCP server, so only the development flag registers it as a channel
+// (--channels takes allowlisted plugin entries only), and Claude Code has no supported
+// non-interactive way to acknowledge that flag. The entrypoint answers its prompt on the pty it
+// already gives the session; see deploy/agent/README.md, "Unattended Claude Code".
 var claudeChannelArgs = []string{"--dangerously-load-development-channels", "server:partyline"}
 
 // launcherSessionTimeout bounds the lookup of the AI's live session before a launch (SES-01):

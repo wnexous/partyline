@@ -161,6 +161,55 @@ fs.chmodSync(file, 0o600);
 	fi
 fi
 
+# --- unattended Claude Code ------------------------------------------------------------------
+
+# Nothing in this container can answer a prompt, and the launcher must start every harness
+# without one. Claude Code 2.1.x asks at every launch to acknowledge
+# --dangerously-load-development-channels, the flag `partyline claude` needs because Partyline is a
+# raw MCP server channel and not a plugin on the approved allowlist. The answer is not stored, and
+# there is no supported non-interactive way to pre-acknowledge it: `--channels` takes only
+# allowlisted plugin entries, `-p` ignores the development flag, and no settings key or environment
+# variable exists (deploy/agent/README.md, design.md). The session already runs under `script`,
+# which owns a pty, so for Claude Code the entrypoint answers that one prompt with Enter once the
+# harness has started. Nothing else is typed and no other prompt is answered.
+export PARTYLINE_UNATTENDED=1
+
+# start_ack feeds the pty of `script` a few Enters while Claude Code starts. fd 9 stays open for
+# the whole session: a closed stdin could make the TUI read an end of file.
+ack_fifo=
+ack_dir=
+ack_writer=
+start_ack() {
+	ack_dir=$(mktemp -d "${TMPDIR:-/tmp}/partyline-ack.XXXXXX")
+	ack_fifo="$ack_dir/ack"
+	mkfifo "$ack_fifo"
+	# O_RDWR, so opening the FIFO neither blocks nor gives the reader an end of file.
+	exec 9<>"$ack_fifo"
+	(
+		for _ in 1 2 3 4 5 6; do
+			sleep 2
+			printf '\r' >&9
+		done
+	) &
+	ack_writer=$!
+}
+
+# stop_ack stops the writer and removes the FIFO once the session ended.
+stop_ack() {
+	if [ -n "$ack_writer" ]; then
+		kill "$ack_writer" 2>/dev/null || true
+		wait "$ack_writer" 2>/dev/null || true
+		ack_writer=
+	fi
+	if [ -n "$ack_fifo" ]; then
+		exec 9>&-
+		exec 9<&-
+		rm -rf "$ack_dir"
+		ack_fifo=
+		ack_dir=
+	fi
+}
+
 # --- the session -----------------------------------------------------------------------------
 
 # script -qfec runs the launcher under a pty, so the harness sees a terminal it can draw on; -e
@@ -179,12 +228,18 @@ backoff=1
 while :; do
 	started=$(date +%s)
 	set +e
-	script -qfec "partyline $harness --principal" /dev/null &
+	if [ "$harness" = claude ]; then
+		start_ack
+		script -qfec "partyline $harness --principal" /dev/null <"$ack_fifo" &
+	else
+		script -qfec "partyline $harness --principal" /dev/null &
+	fi
 	child=$!
 	wait "$child"
 	status=$?
 	set -e
 	child=
+	stop_ack
 	ran=$(($(date +%s) - started))
 
 	# A session that stayed up long enough counts as healthy: the next crash starts at 1s again.
