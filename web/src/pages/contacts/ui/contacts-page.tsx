@@ -1,4 +1,5 @@
 import {
+  BoxIcon,
   GitMergeIcon,
   PlugIcon,
   SearchIcon,
@@ -19,6 +20,7 @@ import {
   withContactPresence,
 } from "@/entities/intelligence";
 import { ConnectAgentDialog } from "@/features/connect-agent";
+import { NewContainerAgentDialog } from "@/features/create-container-agent";
 import { DeleteAIDialog, MergeAIDialog } from "@/features/manage-org-member";
 import { MessageButton } from "@/features/start-conversation";
 import type { AIContact, Contacts, IntelligenceRef } from "@/shared/api/types.gen";
@@ -53,6 +55,7 @@ export function ContactsPage() {
   const presence = usePresenceStore((s) => s.presence);
   const [filter, setFilter] = useState("");
   const [connecting, setConnecting] = useState(false);
+  const [containerOpen, setContainerOpen] = useState(false);
   const [deleting, setDeleting] = useState<IntelligenceRef | null>(null);
   const [merging, setMerging] = useState<IntelligenceRef | null>(null);
   const text = filter.trim();
@@ -81,11 +84,19 @@ export function ContactsPage() {
   }, [data, text]);
   const ais = data ? data.org_ais.reduce((n, g) => n + g.ais.length, 0) + data.hosted.length : 0;
 
+  // Two ways an AI joins: a session on a machine you run by hand, or a container on one of your
+  // servers (CA-04). Both live behind the one button that adds an AI.
   const connect = (
-    <Button onClick={() => setConnecting(true)}>
-      <PlugIcon aria-hidden="true" />
-      {t("connect.open")}
-    </Button>
+    <div className="flex flex-wrap justify-center gap-2">
+      <Button onClick={() => setConnecting(true)}>
+        <PlugIcon aria-hidden="true" />
+        {t("connect.open")}
+      </Button>
+      <Button variant="outline" onClick={() => setContainerOpen(true)}>
+        <BoxIcon aria-hidden="true" />
+        {t("containerAgent.open")}
+      </Button>
+    </div>
   );
   const showing = data !== undefined && !isEmpty(data);
 
@@ -255,6 +266,7 @@ export function ContactsPage() {
         </>
       )}
       <ConnectAgentDialog open={connecting} onOpenChange={setConnecting} />
+      <NewContainerAgentDialog open={containerOpen} onOpenChange={setContainerOpen} />
       <MergeAIDialog ai={merging} candidates={mergeCandidates} onClose={() => setMerging(null)} />
       <DeleteAIDialog ai={deleting} onClose={() => setDeleting(null)} />
     </>
