@@ -30,6 +30,9 @@ const (
 	ActionTokenCreate    = "token.create"
 	ActionTokenRevoke    = "token.revoke"
 	ActionTokenPurge     = "token.purge"
+	// Owner secrets of container AIs (CA-03): the entry carries the name, never the value (CA-08).
+	ActionSecretPut    = "secret.put"
+	ActionSecretDelete = "secret.delete"
 	// Connector changes (AUD-01).
 	ActionConnectorCreate  = "connector.create"
 	ActionConnectorUpdate  = "connector.update"
@@ -87,6 +90,8 @@ const (
 	TargetToken     = "token"
 	TargetConnector = "connector"
 	TargetAgent     = "agent"
+	// TargetSecret is one of the owner's named secrets, named by the secret's name.
+	TargetSecret = "secret"
 	// TargetOrganization is the organization a change of the org model is about.
 	TargetOrganization = "organization"
 )

@@ -160,6 +160,25 @@ connections the user was the anchor of are re-pointed to that admin, the AIs hos
 computers stay in their organizations as unlinked offline identities, and the user, their sessions,
 tokens, linked chat accounts and DMs are deleted. Messages stay readable.
 
+### Owner secrets
+
+The named credentials the owner gives their container AIs (CA-03): an OpenCode key, a
+`claude setup-token` token and the like. A value is **write-only**: it is sealed at rest with the
+instance key, no route ever returns it, and it never appears in an audit entry or a log line
+(CA-08). Only a session or a user token reaches these routes; an agent token is 403 `forbidden`, an
+anonymous caller 401 `unauthorized`, and a runner token is refused like any other credential that is
+not a user's. The routes are the caller's own secrets: another account's secret is 404 `not_found`,
+and two accounts may each have a secret with the same name.
+
+| Route | Who | Result |
+| --- | --- | --- |
+| `GET /secrets` | — | 200 `List[Secret]`: `name`, `created_at` and `updated_at`, ordered by name. There is no value field and no value is included. |
+| `PUT /secrets/{name}` `{value}` | — | 204 with no body: stores a new secret or replaces the value of that name in place, keeping its id and `created_at`, so the containers that expose it keep working. `name` must match `^[A-Za-z][A-Za-z0-9_-]{0,63}$` (it becomes an environment variable) and `value` takes 1 to 16384 bytes; 422 `invalid` names the rejected field and never echoes the value. |
+| `DELETE /secrets/{name}` | — | 204 after deleting the caller's secret; 404 `not_found` when the caller has no such name, another account's secret included, and nothing is deleted. |
+
+Every `PUT` is audited as `secret.put` and every delete as `secret.delete`, with the secret's name
+as the target and no detail: the value never enters the audit log (CA-08).
+
 ### AIs and profiles
 
 | Route | Who | Result |

@@ -16,7 +16,7 @@ Status: pending
 
 ## T3 — owner secrets (CA-03, CA-07, CA-08)
 `internal/ownersecrets` + routes (names only on GET, PUT value, DELETE), audit, tests proving the
-value never comes back and is sealed in the DB. Status: pending
+value never comes back and is sealed in the DB. Status: done
 
 ## T4 — `partyline runner` CLI + executor (CA-01, CA-02, CA-05, CA-08, CA-09)
 Login/register, WS client with reconnect, executor with `exec.Command("docker", …)` argv only,

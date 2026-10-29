@@ -318,23 +318,36 @@ func (q *Queries) ListContainerAgentsByRunner(ctx context.Context, runnerID stri
 }
 
 const listOwnerSecretNames = `-- name: ListOwnerSecretNames :many
-SELECT name FROM owner_secrets WHERE owner_id = ? ORDER BY name
+SELECT id, name, created_at, updated_at FROM owner_secrets WHERE owner_id = ? ORDER BY name
 `
 
-// The owner's secret names only: the API never returns a value (CA-03, CA-08).
-func (q *Queries) ListOwnerSecretNames(ctx context.Context, ownerID string) ([]string, error) {
+type ListOwnerSecretNamesRow struct {
+	ID        string
+	Name      string
+	CreatedAt int64
+	UpdatedAt int64
+}
+
+// The owner's secret names and dates only: the API never returns a value (CA-03, CA-08). The id is
+// not a value and lets the container service map an environment variable to the secret it opens.
+func (q *Queries) ListOwnerSecretNames(ctx context.Context, ownerID string) ([]ListOwnerSecretNamesRow, error) {
 	rows, err := q.db.QueryContext(ctx, listOwnerSecretNames, ownerID)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
-	var items []string
+	var items []ListOwnerSecretNamesRow
 	for rows.Next() {
-		var name string
-		if err := rows.Scan(&name); err != nil {
+		var i ListOwnerSecretNamesRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.Name,
+			&i.CreatedAt,
+			&i.UpdatedAt,
+		); err != nil {
 			return nil, err
 		}
-		items = append(items, name)
+		items = append(items, i)
 	}
 	if err := rows.Close(); err != nil {
 		return nil, err

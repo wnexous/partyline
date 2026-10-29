@@ -31,6 +31,7 @@ import (
 	"github.com/wnexous/partyline/internal/intelligences"
 	"github.com/wnexous/partyline/internal/live"
 	"github.com/wnexous/partyline/internal/orgs"
+	"github.com/wnexous/partyline/internal/ownersecrets"
 	"github.com/wnexous/partyline/internal/platform"
 	"github.com/wnexous/partyline/internal/rooms"
 	"github.com/wnexous/partyline/internal/secrets"
@@ -136,6 +137,8 @@ type App struct {
 	Identities *identities.Service
 	// Devices approves new machines (partyline setup --browser).
 	Devices *devices.Service
+	// Secrets stores the owner's named credentials for container AIs, sealed at rest (CA-03).
+	Secrets *ownersecrets.Service
 	// Gateway serves the agent WebSocket and pushes messages to connected agents.
 	Gateway *agents.Gateway
 	Live    *live.Hub
@@ -270,6 +273,7 @@ func New(cfg *config.Config, opts Options) (*App, error) {
 		Sessions: usersSvc, SessionCheckInterval: opts.LiveSessionCheck,
 	})
 	a.Devices = devices.New(devices.Deps{Store: st, Users: usersSvc, Box: box, Audit: auditLog, Now: opts.Now})
+	a.Secrets = ownersecrets.New(ownersecrets.Deps{Store: st, Box: box, Audit: auditLog, Now: opts.Now})
 	pushDelivery := webpush.NewDeliverer(webpush.DelivererDeps{
 		Store: st, Sender: webpush.NewClient(vapid, cfg.PublicURL.String()), Now: opts.Now, Logger: opts.Logger,
 	})
@@ -295,6 +299,7 @@ func New(cfg *config.Config, opts Options) (*App, error) {
 		Connectors:    a.Connectors,
 		Identities:    a.Identities,
 		Devices:       a.Devices,
+		Secrets:       a.Secrets,
 		Hooks:         a.ConnectorManager,
 		Crashes:       a.ConnectorManager,
 		FileLinks:     fileLinks,
