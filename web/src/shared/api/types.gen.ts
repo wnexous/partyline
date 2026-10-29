@@ -1271,6 +1271,86 @@ export const MaxPeoplePage = 200;
 export const MaxPeopleSearch = 100;
 
 //////////
+// source: container_agents.go
+
+/**
+ * ContainerEnvVar maps one environment variable of a container AI to one of the owner's named
+ * secrets (CA-04). The value is never part of an answer: only the variable and the secret name are.
+ */
+export interface ContainerEnvVar {
+  var: string;
+  secret_name: string;
+}
+/**
+ * CreateContainerAgentRequest is the body of POST /api/v1/container-agents (CA-04): the server, the
+ * harness, the profile of the new AI, an optional repository and the secrets to expose.
+ */
+export interface CreateContainerAgentRequest {
+  runner_id: string;
+  harness: string;
+  display_name: string;
+  handle: string;
+  /**
+   * RepoURL and RepoRef clone a repository into /workspace/repo; RepoRef defaults to main.
+   */
+  repo_url?: string;
+  repo_ref?: string;
+  /**
+   * Env exposes the named secrets as the named environment variables.
+   */
+  env?: ContainerEnvVar[];
+  /**
+   * CPUs and MemoryMB are the limits; zero takes 1 CPU and 1024 MiB.
+   */
+  cpus?: number /* float64 */;
+  memory_mb?: number /* int64 */;
+}
+/**
+ * ContainerAgent is one AI's container (CA-06): the AI it runs, where it runs, what it was created
+ * with, the desired state and the state the runner last reported. Env holds names only (CA-08).
+ */
+export interface ContainerAgent {
+  agent: IntelligenceRef;
+  runner_id: string;
+  harness: string;
+  image: string;
+  repo_url?: string;
+  repo_ref?: string;
+  volume: string;
+  container_name: string;
+  env: ContainerEnvVar[];
+  cpus: number /* float64 */;
+  memory_mb: number /* int64 */;
+  /**
+   * Desired is what the owner wants: running or stopped.
+   */
+  desired: string;
+  /**
+   * State is what the runner last reported: running, stopped, error or unknown.
+   */
+  state: string;
+  /**
+   * LastError is why the last operation failed; never a secret (CA-08).
+   */
+  last_error?: string;
+  created_at: string /* RFC 3339 */;
+  updated_at: string /* RFC 3339 */;
+}
+/**
+ * ContainerActionRequest is the body of POST /api/v1/agents/{id}/container: start, stop or restart
+ * (CA-06).
+ */
+export interface ContainerActionRequest {
+  action: string;
+}
+/**
+ * ContainerLogs is GET /api/v1/agents/{id}/container/logs: the last log lines of the container.
+ */
+export interface ContainerLogs {
+  logs: string;
+}
+
+//////////
 // source: conversations.go
 
 /**

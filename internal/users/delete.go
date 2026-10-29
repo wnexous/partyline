@@ -50,6 +50,15 @@ func (s *Service) DeleteAccount(ctx context.Context, userID, password string) er
 	if !ok {
 		return &ValidationError{Fields: map[string]string{"password": "is incorrect"}}
 	}
+	// The containers on the user's runners go first (CA-06): container_agents holds its runner with
+	// ON DELETE RESTRICT, so the cascade of the user to the runners would refuse the deletion while a
+	// container row exists. The containers on the hosts are removed best effort; a runner that is
+	// offline leaves its container behind, but the row, the token and the runner all go.
+	if s.containers != nil {
+		if err := s.containers(ctx, userID); err != nil {
+			return err
+		}
+	}
 	var hosted, ended, touched, rooms []string
 	err = s.store.WithTx(ctx, func(q *db.Queries) error {
 		hosted, ended, touched, rooms = nil, nil, nil, nil

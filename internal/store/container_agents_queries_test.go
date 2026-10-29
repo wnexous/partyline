@@ -209,6 +209,17 @@ func TestContainerAgentQueries(t *testing.T) {
 		})
 	})
 
+	// A second owner's runner and container, for the by-owner list.
+	require.NoError(t, e.runner("r2", "u2", "bob-box", "t2", "bob-box"))
+	e.must(`INSERT INTO agents (id, owner_id, name, created_at) VALUES ('a3', 'u2', 'cache', 1)`)
+	e.tx(func(q *db.Queries) error {
+		return q.CreateContainerAgent(ctx, db.CreateContainerAgentParams{
+			AgentID: "a3", RunnerID: "r2", Harness: "omp", Image: "ghcr.io/wnexous/partyline-agent:1",
+			Volume: "vol-a3", ContainerName: "partyline-a3", Env: "[]",
+			Cpus: 1, MemoryMb: 1024, Desired: "stopped", CreatedAt: 12, UpdatedAt: 12,
+		})
+	})
+
 	ca, err := e.s.R().GetContainerAgent(ctx, "a1")
 	require.NoError(t, err)
 	require.Equal(t, "r1", ca.RunnerID)
@@ -220,6 +231,15 @@ func TestContainerAgentQueries(t *testing.T) {
 	require.NoError(t, err)
 	require.Len(t, list, 2)
 	require.Equal(t, []string{"a1", "a2"}, []string{list[0].AgentID, list[1].AgentID}, "ordered by container name")
+
+	// The account deletion reads every container on the owner's runners, and only those (CA-06).
+	owned, err := e.s.R().ListContainerAgentsByOwner(ctx, "u1")
+	require.NoError(t, err)
+	require.Equal(t, []string{"a1", "a2"}, []string{owned[0].AgentID, owned[1].AgentID})
+	other, err := e.s.R().ListContainerAgentsByOwner(ctx, "u2")
+	require.NoError(t, err)
+	require.Len(t, other, 1)
+	require.Equal(t, "a3", other[0].AgentID)
 
 	e.tx(func(q *db.Queries) error {
 		return q.SetContainerAgentDesired(ctx, db.SetContainerAgentDesiredParams{Desired: "stopped", UpdatedAt: 20, AgentID: "a1"})
@@ -245,6 +265,16 @@ func TestContainerAgentQueries(t *testing.T) {
 	ca, err = e.s.R().GetContainerAgent(ctx, "a1")
 	require.NoError(t, err)
 	require.False(t, ca.LastError.Valid, "a later success clears the error")
+
+	// A container created again gets a fresh token (CA-08).
+	e.tx(func(q *db.Queries) error {
+		return q.SetContainerAgentToken(ctx, db.SetContainerAgentTokenParams{
+			TokenID: sql.NullString{String: "t3", Valid: true}, UpdatedAt: 23, AgentID: "a1",
+		})
+	})
+	ca, err = e.s.R().GetContainerAgent(ctx, "a1")
+	require.NoError(t, err)
+	require.Equal(t, "t3", ca.TokenID.String)
 
 	e.tx(func(q *db.Queries) error { return q.DeleteContainerAgent(ctx, "a1") })
 	_, err = e.s.R().GetContainerAgent(ctx, "a1")

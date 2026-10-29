@@ -65,6 +65,11 @@ type Options struct {
 	// Kick ends the live session of an AI, as a deleted AI's is; DeleteAccount calls it for each AI the
 	// deleted user hosted. Optional.
 	Kick func(ctx context.Context, agentID string)
+	// RemoveContainers removes the containers of the user's runners before the account is deleted
+	// (CA-06): their rows hold the runners with ON DELETE RESTRICT, so the account deletion would fail
+	// otherwise. It is best effort about the containers on the hosts and returns an error only when the
+	// rows could not be removed. Optional.
+	RemoveContainers func(ctx context.Context, ownerID string) error
 }
 
 // Service implements account use cases over the store.
@@ -76,6 +81,7 @@ type Service struct {
 	audit      *audit.Log
 	bus        *events.Bus
 	kick       func(ctx context.Context, agentID string)
+	containers func(ctx context.Context, ownerID string) error
 	// verifyPassword checks a password against its argon2id hash (authn.VerifyPassword);
 	// tests wrap it to count the slow checks a login burst runs.
 	verifyPassword func(hash, password string) (bool, error)
@@ -101,6 +107,7 @@ func NewService(st *store.Store, opts Options) (*Service, error) {
 		audit:      audit.New(st, opts.Now),
 		bus:        opts.Bus,
 		kick:       opts.Kick,
+		containers: opts.RemoveContainers,
 
 		verifyPassword: authn.VerifyPassword,
 	}, nil

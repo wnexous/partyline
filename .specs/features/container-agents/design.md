@@ -98,6 +98,23 @@ itself, so the entrypoint writes no credential file and requires at least one va
 `PARTYLINE_WORKSPACE` (default `/workspace`) is optional; `/workspace` is the one volume the
 container AI keeps (CA-05).
 
+## Unattended Claude Code (decision, T6)
+Claude Code 2.1.x shows a confirmation dialog on every launch of
+`--dangerously-load-development-channels` and does not remember the answer, so a container session
+would sit on it. There is no supported non-interactive way to pre-acknowledge it (checked against
+2.1.304 and its documentation): `--channels` accepts only plugin entries from the approved (or
+managed `allowedChannelPlugins`) allowlist, a raw `server:` entry needs the development flag, the
+flag is ignored with `-p`/the Agent SDK, and `channelsEnabled` gates availability without removing
+the dialog. No settings key or environment variable records the acknowledgement.
+
+Decision: the launcher keeps `--dangerously-load-development-channels server:partyline` (it is
+the only way a raw MCP server registers as a channel), the agent image exports
+`PARTYLINE_UNATTENDED=1`, and for `claude` the entrypoint feeds a few Enters into the pty it
+already creates with `script` while the harness starts: the prompt's default choice is the
+acknowledgement, so the session proceeds without a person. This is a last resort, isolated to the
+entrypoint's `claude` branch and removed when Anthropic offers a supported acknowledgement; see
+`deploy/agent/README.md`, "Unattended Claude Code".
+
 ## Web
 FSD: `entities/runner`, `entities/container-agent`, `features/{manage-runners, manage-secrets,
 create-container-agent, operate-container}`; "Servidores" (runners list + "how to add": the two

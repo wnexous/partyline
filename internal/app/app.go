@@ -23,6 +23,7 @@ import (
 	"github.com/wnexous/partyline/internal/connectors/telegram"
 	"github.com/wnexous/partyline/internal/connectors/webhook"
 	"github.com/wnexous/partyline/internal/connectors/whatsapp"
+	"github.com/wnexous/partyline/internal/containeragents"
 	"github.com/wnexous/partyline/internal/conversations"
 	"github.com/wnexous/partyline/internal/delivery"
 	"github.com/wnexous/partyline/internal/devices"
@@ -146,6 +147,8 @@ type App struct {
 	Secrets *ownersecrets.Service
 	// Runners is the registry of the servers that run container AIs, with their live hub (CA-01).
 	Runners *runners.Service
+	// Containers creates and runs the AIs that live in a container on a runner (CA-04, CA-06).
+	Containers *containeragents.Service
 	// Gateway serves the agent WebSocket and pushes messages to connected agents.
 	Gateway *agents.Gateway
 	Live    *live.Hub
@@ -195,10 +198,19 @@ func New(cfg *config.Config, opts Options) (*App, error) {
 	}
 	bus := events.NewBus()
 	presence := agents.NewPresence(st, bus, opts.Now)
+	// The container service is built after the account service (it needs the runner hub); the account
+	// deletion asks it through this closure to remove the user's containers first (CA-06).
+	var containers *containeragents.Service
 	usersSvc, err := users.NewService(st, users.Options{
 		Now: opts.Now, Bus: bus,
 		Kick: func(ctx context.Context, agentID string) {
 			presence.Kick(ctx, agentID, agents.CloseDeleted, agents.ReasonDeleted)
+		},
+		RemoveContainers: func(ctx context.Context, ownerID string) error {
+			if containers == nil {
+				return nil
+			}
+			return containers.RemoveOwner(ctx, ownerID)
 		},
 	})
 	if err != nil {
@@ -285,6 +297,12 @@ func New(cfg *config.Config, opts Options) (*App, error) {
 		Store: st, Audit: auditLog, Bus: bus, Images: cfg.RunnerImages, Logger: opts.Logger,
 		Now: opts.Now, Timeouts: opts.RunnerTimeouts,
 	})
+	containers = containeragents.New(containeragents.Deps{
+		Store: st, Agents: a.Agents, Runners: a.Runners, Secrets: a.Secrets, Users: usersSvc,
+		Audit: auditLog, Bus: bus, PublicURL: cfg.PublicURL.String(), Images: cfg.RunnerImages,
+		Version: version, Logger: opts.Logger, Now: opts.Now,
+	})
+	a.Containers = containers
 	pushDelivery := webpush.NewDeliverer(webpush.DelivererDeps{
 		Store: st, Sender: webpush.NewClient(vapid, cfg.PublicURL.String()), Now: opts.Now, Logger: opts.Logger,
 	})
@@ -313,6 +331,7 @@ func New(cfg *config.Config, opts Options) (*App, error) {
 		Secrets:       a.Secrets,
 		Runners:       a.Runners,
 		RunnerWS:      a.Runners.Hub(),
+		Containers:    a.Containers,
 		Hooks:         a.ConnectorManager,
 		Crashes:       a.ConnectorManager,
 		FileLinks:     fileLinks,
