@@ -141,30 +141,6 @@ func TestAgentRegisterByFolderAdoptsTheNamedLegacyIdentity(t *testing.T) {
 	require.Len(t, ownedAIs(t, alice), 1)
 }
 
-// GET /agent/pending by folder returns what the folder's AI has not received, once; an AI that
-// holds a live session gets its messages pushed and the call answers 409.
-func TestAgentPendingByFolder(t *testing.T) {
-	env := testkit.New(t)
-	alice := env.NewUser("alice")
-	room := createRoom(alice, "Support")
-	tok := alice.Token(dto.TokenKindAgent, "laptop")
-	tools := tok.AsFolder(testkit.Folder{Machine: "devbox", Path: "/home/alice/acme", Harness: "omp"})
-	reg := testkit.Decode[dto.AgentInfo](tools.Post("/api/v1/agent/register", nil).RequireStatus(http.StatusOK))
-	alice.Post("/api/v1/rooms/"+room.ID+"/members", dto.AddMemberRequest{Kind: dto.MemberKindAgent, MemberID: reg.ID}).RequireStatus(http.StatusCreated)
-
-	posted := testkit.Decode[dto.Message](alice.Post("/api/v1/rooms/"+room.ID+"/messages", dto.PostMessageRequest{Text: "ping"}).RequireStatus(http.StatusCreated))
-	got := testkit.Decode[dto.List[dto.AgentMessage]](tools.Get("/api/v1/agent/pending").RequireStatus(http.StatusOK))
-	require.Len(t, got.Items, 1)
-	require.Equal(t, []any{posted.ID, "ping", true}, []any{got.Items[0].Message.ID, got.Items[0].Message.Text, got.Items[0].Trusted})
-	again := testkit.Decode[dto.List[dto.AgentMessage]](tools.Get("/api/v1/agent/pending").RequireStatus(http.StatusOK))
-	require.Empty(t, again.Items, "delivered once")
-
-	conn, resp := tok.DialFolder(acme)
-	require.NotNil(t, conn, "upgrade refused: %d %s", resp.Status, resp.Body)
-	require.Equal(t, reg.ID, conn.Welcome(wsWait).Agent.ID)
-	tools.Get("/api/v1/agent/pending").RequireError(http.StatusConflict, dto.ErrorCodeConflict)
-}
-
 // SES-01: GET /agent/session reports whether the folder has an AI, whether it is online, its app
 // and when its live session connected, and creates nothing.
 func TestAgentSessionReportsTheFoldersLiveState(t *testing.T) {
@@ -276,7 +252,6 @@ func TestAgentFolderHeadersAreValidated(t *testing.T) {
 	routes := map[string]func(c *testkit.Client) *testkit.Response{
 		"tool call": func(c *testkit.Client) *testkit.Response { return c.Get("/api/v1/agent/rooms") },
 		"register":  func(c *testkit.Client) *testkit.Response { return c.Post("/api/v1/agent/register", nil) },
-		"pending":   func(c *testkit.Client) *testkit.Response { return c.Get("/api/v1/agent/pending") },
 		"session":   func(c *testkit.Client) *testkit.Response { return c.Get("/api/v1/agent/session") },
 	}
 	for _, c := range cases {
@@ -362,7 +337,6 @@ func agentCalls(room, message string) map[string]func(c *testkit.Client) *testki
 			return c.Post("/api/v1/agent/messages/"+message+"/react", dto.ReactRequest{Emoji: "👍"})
 		},
 		"attachment": func(c *testkit.Client) *testkit.Response { return c.Get("/api/v1/agent/attachments/" + message) },
-		"pending":    func(c *testkit.Client) *testkit.Response { return c.Get("/api/v1/agent/pending") },
 		"register":   func(c *testkit.Client) *testkit.Response { return c.Post("/api/v1/agent/register", nil) },
 		"session":    func(c *testkit.Client) *testkit.Response { return c.Get("/api/v1/agent/session") },
 		"update profile": func(c *testkit.Client) *testkit.Response {

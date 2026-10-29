@@ -194,23 +194,6 @@ func TestDMBacklogArrivesAsDMs(t *testing.T) {
 	}
 }
 
-// The pending path of the harnesses without a WebSocket (wait_for_messages, turn-end hooks) names
-// DMs the same way.
-func TestPendingNamesDMs(t *testing.T) {
-	env := testkit.New(t)
-	alice := env.NewUser("alice")
-	atlas := env.NewAI(alice, "atlas")
-	hers := dmWith(alice, atlas, http.StatusCreated)
-	setDelivery(t, env, hers.ID, atlas, dto.DeliveryModeMentions) // a DM needs no mention here either
-	sent := say(alice, hers.ID, "are you there?")
-
-	page := testkit.Decode[dto.List[dto.AgentMessage]](alice.Token(dto.TokenKindAgent, "laptop").AsAgent("atlas").Get("/api/v1/agent/pending").RequireStatus(http.StatusOK))
-	require.Len(t, page.Items, 1)
-	require.Equal(t, sent.ID, page.Items[0].Message.ID)
-	require.Equal(t, dto.RoomRef{ID: hers.ID, Name: "alice", Kind: dto.ConversationKindDM}, page.Items[0].Room)
-	require.Equal(t, "dm", channel.Format(page.Items[0]).Meta["conversation"])
-}
-
 // TOOL-09 with DMs: list_rooms (GET /agent/rooms) includes the AI's DMs with their kind and the
 // other participant, and its groups with theirs.
 func TestAgentRoomsListsDMs(t *testing.T) {

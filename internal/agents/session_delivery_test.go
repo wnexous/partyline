@@ -619,25 +619,15 @@ func TestAPushToTheAuthorsOwnLabelDeliversNothing(t *testing.T) {
 	require.Empty(t, f.rows(t, "wt"))
 }
 
-// pending reads the principal's queue the way a tools-only reader does.
-func (f *sessionFixture) pending(t *testing.T) []dto.AgentMessage {
-	t.Helper()
-	a, err := f.env.App.Store.R().GetAgent(context.Background(), f.agentID)
-	require.NoError(t, err)
-	out, err := f.env.App.Gateway.Pending(context.Background(), a, "", 20)
-	require.NoError(t, err)
-	return out
-}
-
 func (f *sessionFixture) cursor(t *testing.T) (int64, error) {
 	t.Helper()
 	return f.env.App.Store.R().GetAgentCursor(context.Background(), db.GetAgentCursorParams{AgentID: f.agentID, RoomID: f.room.ID})
 }
 
-// SESS-24: a Pending call that returns only a fallback row never moves the principal's cursor, whether
-// the fallback is below it (it was jumped over by a later acknowledgement) or above everything the
-// cursor stream holds.
-func TestPendingWithOnlyAFallbackKeepsTheCursor(t *testing.T) {
+// SESS-24: a fallback the principal acknowledges from its backlog never moves the principal's cursor,
+// whether the fallback is below it (it was jumped over by a later acknowledgement) or above everything
+// the cursor stream holds; the acknowledgement leaves a tombstone, so it is not delivered again.
+func TestBacklogWithOnlyAFallbackKeepsTheCursor(t *testing.T) {
 	t.Run("below the cursor", func(t *testing.T) {
 		f := newSessionFixture(t)
 		principal := f.dial(t)
@@ -654,15 +644,21 @@ func TestPendingWithOnlyAFallbackKeepsTheCursor(t *testing.T) {
 		principal.Close()
 		f.waitPrincipalGone(t)
 
-		got := f.pending(t)
-		require.Len(t, got, 1)
-		require.Equal(t, fallback.ID, got[0].Message.ID)
-		require.Equal(t, "wt", got[0].ForLabel)
+		again := f.dial(t)
+		got := again.Message(time.Minute)
+		require.Equal(t, fallback.ID, got.Message.ID)
+		require.Equal(t, "wt", got.ForLabel)
+		again.Ack(fallback.ID)
+		require.Eventually(t, func() bool { return f.rowOf(t, fallback.ID).AckedAt.Valid }, 5*time.Second, 10*time.Millisecond,
+			"the acknowledgement consumed the fallback and left a tombstone")
 		seq, err := f.cursor(t)
 		require.NoError(t, err)
 		require.Equal(t, later.Seq, seq, "the cursor did not move")
-		require.True(t, f.rowOf(t, fallback.ID).AckedAt.Valid, "the read consumed the fallback and left a tombstone")
-		require.Empty(t, f.pending(t))
+
+		again.Close()
+		f.waitPrincipalGone(t)
+		once := f.dial(t)
+		once.ExpectNone(400 * time.Millisecond)
 	})
 	t.Run("above the cursor stream", func(t *testing.T) {
 		f := newSessionFixture(t)
@@ -673,9 +669,11 @@ func TestPendingWithOnlyAFallbackKeepsTheCursor(t *testing.T) {
 		principal.Close()
 		f.waitPrincipalGone(t)
 
-		got := f.pending(t)
-		require.Len(t, got, 1)
-		require.Equal(t, fallback.ID, got[0].Message.ID)
+		again := f.dial(t)
+		got := again.Message(time.Minute)
+		require.Equal(t, fallback.ID, got.Message.ID)
+		again.Ack(fallback.ID)
+		require.Eventually(t, func() bool { return f.rowOf(t, fallback.ID).AckedAt.Valid }, 5*time.Second, 10*time.Millisecond)
 		_, err := f.cursor(t)
 		require.ErrorIs(t, err, sql.ErrNoRows, "a fallback's sequence never becomes the cursor")
 	})

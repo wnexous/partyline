@@ -8,7 +8,7 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// SESS-50: the calls of a tools-only process (a tool call, a pending read, a hook) stamp its AI's
+// SESS-50: the calls of a tools-only process (a tool call, a session read, a hook) stamp its AI's
 // last_seen_at, at most once a minute, while the AI stays offline: `partyline agents` can then say "Nm ago"
 // for an AI used only through a tools call. A call never makes the AI online.
 func TestToolsOnlyCallsStampLastSeenWithoutGoingOnline(t *testing.T) {
@@ -30,12 +30,12 @@ func TestToolsOnlyCallsStampLastSeenWithoutGoingOnline(t *testing.T) {
 	require.True(t, l.start.Equal(*at))
 
 	l.clock.Advance(30 * time.Second)
-	tools.Get("/api/v1/agent/pending").RequireStatus(http.StatusOK)
+	tools.Get("/api/v1/agent/rooms").RequireStatus(http.StatusOK)
 	_, at = seen()
 	require.True(t, l.start.Equal(*at), "a second call within the minute writes nothing")
 
 	l.clock.Advance(90 * time.Second)
-	tools.Get("/api/v1/agent/pending").RequireStatus(http.StatusOK)
+	tools.Get("/api/v1/agent/rooms").RequireStatus(http.StatusOK)
 	online, at = seen()
 	require.False(t, online, "a tools-only call is no presence")
 	require.True(t, l.start.Add(2*time.Minute).Equal(*at))

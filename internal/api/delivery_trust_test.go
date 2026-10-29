@@ -19,8 +19,8 @@ import (
 
 // POS-10, AD-018: trusted=true on a message delivered to an AI means its author manages the AI in the
 // AI's home organization. These tests drive one set of authors through each way a message reaches an
-// AI (a live push, the backlog of a connection, GET /agent/pending and the history tool, L-034), once
-// in the delivery mode "all" and once in "trusted", which delivers only what is trusted.
+// AI (a live push, the backlog of a connection and the history tool, L-034), once in the delivery mode
+// "all" and once in "trusted", which delivers only what is trusted.
 
 // trustAI is the name of the folder of the AI that receives: testkit.OrgRoles calls it "<org>-ai".
 const trustAI = "acme-ai"
@@ -219,32 +219,6 @@ func TestBacklogIsTrustedOnlyWhenTheAuthorManagesTheAI(t *testing.T) {
 				require.Equal(t, e.trusted, got.Trusted, e.name)
 			}
 			conn.ExpectNone(300 * time.Millisecond)
-		})
-	}
-}
-
-// POS-10, pending: GET /agent/pending flags the same way.
-func TestPendingIsTrustedOnlyWhenTheAuthorManagesTheAI(t *testing.T) {
-	for _, mode := range trustModes {
-		t.Run(string(mode), func(t *testing.T) {
-			w := newTrustWorld(t)
-			w.setDelivery(t, mode)
-			var wantIDs []string
-			wantTrusted := map[string]bool{}
-			for _, a := range w.authors() {
-				id := a.post(t, a.name)
-				if delivered(mode, a) {
-					wantIDs = append(wantIDs, id)
-					wantTrusted[id] = a.trusted
-				}
-			}
-			got := testkit.Decode[dto.List[dto.AgentMessage]](w.asAI(trustAI).Get("/api/v1/agent/pending").RequireStatus(http.StatusOK)).Items
-			var ids []string
-			for _, m := range got {
-				ids = append(ids, m.Message.ID)
-				require.Equal(t, wantTrusted[m.Message.ID], m.Trusted, m.Message.Text)
-			}
-			require.Equal(t, wantIDs, ids)
 		})
 	}
 }

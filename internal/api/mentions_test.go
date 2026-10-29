@@ -77,23 +77,20 @@ func TestMentionOfAHandleDoesNotReachALongerHandle(t *testing.T) {
 	conns[1].ExpectNone(quiet)
 }
 
-// The backlog an AI receives when it connects and the inbox of the turn-end hook filter by the
-// profile too: only what mentions the new handle comes, in order.
-func TestBacklogAndInboxFollowTheProfile(t *testing.T) {
+// The backlog an AI receives when it connects filters by the profile too: only what mentions the new
+// handle comes, in order, and a later mention is pushed live.
+func TestBacklogFollowsTheProfile(t *testing.T) {
 	f := newAgentRoom(t)
 	mentionsOnly(t, f)
 	patchProfile(f.alice, f.agentID, dto.UpdateProfileRequest{DisplayName: ptr("Orion Bot"), Handle: ptr("nova")}).RequireStatus(http.StatusOK)
 	f.post(f.alice, "@builder, the old handle")
 	wanted := f.post(f.alice, "@nova, the new handle")
 
-	inbox := testkit.Decode[dto.List[dto.AgentMessage]](f.agent.AsAgent("builder").
-		Get("/api/v1/agent/pending").RequireStatus(http.StatusOK))
-	require.Len(t, inbox.Items, 1)
-	require.Equal(t, wanted.ID, inbox.Items[0].Message.ID)
-
-	again := f.post(f.alice, "@nova once more")
 	conn := f.dial(t)
 	conn.Welcome(wsWait)
+	require.Equal(t, wanted.ID, conn.Message(wsWait).Message.ID, "the old handle no longer mentions it")
+
+	again := f.post(f.alice, "@nova once more")
 	require.Equal(t, again.ID, conn.Message(wsWait).Message.ID)
 	conn.ExpectNone(quiet)
 }

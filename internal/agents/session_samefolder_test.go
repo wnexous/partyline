@@ -1,13 +1,11 @@
 package agents_test
 
 import (
-	"net/http"
 	"testing"
 	"time"
 
 	"github.com/stretchr/testify/require"
 
-	"github.com/wnexous/partyline/internal/api/dto"
 	"github.com/wnexous/partyline/internal/testkit"
 )
 
@@ -67,39 +65,6 @@ func TestAParallelSessionOfTheSameFolderReceivesOnlyWhatAddressesIt(t *testing.T
 	t.Cleanup(again.Close)
 	require.Equal(t, "pi-2", again.Welcome(time.Minute).Session.Label)
 	again.ExpectNone(600 * time.Millisecond)
-}
-
-// SESS-46: the tools half of pi and OpenCode holds no socket; its messages are pushed by the listen
-// process. When the principal is not live but a parallel session is, it must not read (and thereby
-// take) the principal's queue: a plain message stays for the principal. A harness that is not one of them keeps
-// reading it. With the live id of the parallel session it is that session: empty.
-func TestTheToolsHalfOfAListenHarnessNeverTakesThePrincipalsQueue(t *testing.T) {
-	f := newSessionFixture(t)
-	principal, _, _, s := f.sameFolderPair(t)
-	principal.Close()
-	f.waitPrincipalGone(t)
-
-	plain := f.post(t, "plain for the principal")
-
-	tools := s
-	tools.Live = ""
-	r := f.token.AsFolder(tools).Get("/api/v1/agent/pending")
-	require.Equal(t, http.StatusConflict, r.Status, r.Body)
-	cursor, err := f.cursor(t)
-	require.Zero(t, cursor, "nothing was taken from the principal's queue")
-	_ = err
-
-	asSession := f.token.AsFolder(s).Get("/api/v1/agent/pending")
-	require.Equal(t, http.StatusOK, asSession.Status, asSession.Body)
-	require.Empty(t, testkit.Decode[dto.List[dto.AgentMessage]](asSession).Items)
-
-	other := tools
-	other.Harness = "omp"
-	r = f.token.AsFolder(other).Get("/api/v1/agent/pending")
-	require.Equal(t, http.StatusOK, r.Status, r.Body)
-	items := testkit.Decode[dto.List[dto.AgentMessage]](r).Items
-	require.Len(t, items, 1)
-	require.Equal(t, plain.ID, items[0].Message.ID)
 }
 
 // SESS-48: an address written as an example in code reaches the principal as a plain message, with no
@@ -162,7 +127,6 @@ func TestAParallelSessionReachesItsPrincipalWithTheBareHandle(t *testing.T) {
 	t.Cleanup(again.Close)
 	again.Welcome(time.Minute)
 	again.ExpectNone(500 * time.Millisecond)
-	require.Empty(t, f.pending(t))
 
 	// Both addresses in one message: the sibling and the principal each receive it once.
 	both := f.postFrom(t, s, "@atlas and @atlas:claude-2")
@@ -185,5 +149,4 @@ func TestAMentionOfAnOfflinePrincipalIsNotQueued(t *testing.T) {
 	t.Cleanup(again.Close)
 	again.Welcome(time.Minute)
 	again.ExpectNone(500 * time.Millisecond)
-	require.Empty(t, f.pending(t))
 }
