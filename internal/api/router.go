@@ -23,6 +23,7 @@ import (
 	"github.com/wnexous/partyline/internal/identities"
 	"github.com/wnexous/partyline/internal/intelligences"
 	"github.com/wnexous/partyline/internal/orgs"
+	"github.com/wnexous/partyline/internal/ownersecrets"
 	"github.com/wnexous/partyline/internal/platform"
 	"github.com/wnexous/partyline/internal/rooms"
 	"github.com/wnexous/partyline/internal/users"
@@ -58,6 +59,8 @@ type Deps struct {
 	Devices *devices.Service
 	Blobs   *attachments.Store
 	Audit   *audit.Log
+	// Secrets stores the owner's named credentials for container AIs (CA-03).
+	Secrets *ownersecrets.Service
 	// Platform is the delivery queue of the messages that arrive on connections: GET
 	// /agent/pending?platform=1 takes from it and the agent attachments route serves its files.
 	Platform *platform.Queue
@@ -134,6 +137,7 @@ func (s *server) routes(mux *http.ServeMux) {
 	s.hookRoutes(mux)
 	s.pushRoutes(mux)
 	s.deviceRoutes(mux)
+	s.secretRoutes(mux)
 	if s.Live != nil {
 		mux.Handle("GET /api/v1/live", s.Live)
 	}
@@ -177,6 +181,18 @@ func authed(h principalFunc) apiFunc {
 	}
 }
 
+// userOnly requires a user principal: a session or a user token. An agent token never reaches
+// here (the middleware restricts it to the agent API) and any other credential kind, such as a
+// runner token, is refused.
+func userOnly(h principalFunc) apiFunc {
+	return authed(func(w http.ResponseWriter, r *http.Request, p authn.Principal) error {
+		if p.Kind != authn.KindUser {
+			return httpx.NewError(http.StatusForbidden, dto.ErrorCodeForbidden, "user credentials required")
+		}
+		return h(w, r, p)
+	})
+}
+
 // adminOnly requires an admin user principal; other users get 403.
 func adminOnly(h principalFunc) apiFunc {
 	return authed(func(w http.ResponseWriter, r *http.Request, p authn.Principal) error {
@@ -217,6 +233,8 @@ func mapError(err error) error {
 	case errors.Is(err, users.ErrRateLimited):
 		return httpx.NewError(http.StatusTooManyRequests, dto.ErrorCodeRateLimited, "too many failed logins, try again later")
 	case errors.Is(err, users.ErrNotFound):
+		return httpx.NewError(http.StatusNotFound, dto.ErrorCodeNotFound, "not found")
+	case errors.Is(err, ownersecrets.ErrNotFound):
 		return httpx.NewError(http.StatusNotFound, dto.ErrorCodeNotFound, "not found")
 	case errors.Is(err, users.ErrInviteGone):
 		return httpx.NewError(http.StatusGone, dto.ErrorCodeGone, "invite already used, revoked or expired")

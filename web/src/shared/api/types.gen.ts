@@ -2845,6 +2845,26 @@ export const DefaultActivityLimit = 20;
 export const MaxActivityLimit = 50;
 
 //////////
+// source: secrets.go
+
+/**
+ * Secret is one of the owner's named secrets for container AIs (CA-03): the name and its dates,
+ * never the value. A value goes in and is never returned (CA-08).
+ */
+export interface Secret {
+  name: string;
+  created_at: string /* RFC 3339 */;
+  updated_at: string /* RFC 3339 */;
+}
+/**
+ * PutSecretRequest is the body of PUT /secrets/{name}. The value is write-only: it is sealed at
+ * rest and never returned by any route (CA-03, CA-08).
+ */
+export interface PutSecretRequest {
+  value: string;
+}
+
+//////////
 // source: users.go
 
 /**
