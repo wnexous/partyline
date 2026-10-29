@@ -154,10 +154,12 @@ type AcceptInviteRequest struct {
 // TokenKind is the kind of a personal API token.
 type TokenKind string
 
-// API token kinds: agent tokens reach only /agent endpoints (TOK-03).
+// API token kinds: agent tokens reach only /agent endpoints (TOK-03); runner tokens only the
+// runner routes (CA-01).
 const (
-	TokenKindAgent TokenKind = "agent"
-	TokenKindUser  TokenKind = "user"
+	TokenKindAgent  TokenKind = "agent"
+	TokenKindUser   TokenKind = "user"
+	TokenKindRunner TokenKind = "runner"
 )
 
 // Token is an API token without its secret (GET /tokens; revoked tokens only with

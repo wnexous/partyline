@@ -51,6 +51,9 @@ const (
 	MaxMachineLength = 64
 	// NameSuffix follows the machine name in the name of the agent token an approval creates.
 	NameSuffix = " (via setup)"
+	// RunnerNameSuffix follows the machine name in the name of the runner token an approval
+	// creates (CA-01).
+	RunnerNameSuffix = " (runner)"
 	// CodeAttemptLimit wrong codes per CodeAttemptWindow and user; more answer 429 (DEV-05).
 	CodeAttemptLimit  = 5
 	CodeAttemptWindow = time.Minute
@@ -168,11 +171,24 @@ func validMachine(m string) bool {
 }
 
 // Create stores a new pending request for machine from the client address ip (DEV-01). At
-// most CreateLimit requests per CreateWindow are accepted per address (DEV-04).
-func (s *Service) Create(ctx context.Context, machine string, ip netip.Addr) (Created, error) {
+// most CreateLimit requests per CreateWindow are accepted per address (DEV-04). kind is the
+// token the approval creates: dto.TokenKindAgent (the default) for setup or dto.TokenKindRunner
+// for `partyline runner` (CA-01).
+func (s *Service) Create(ctx context.Context, machine, kind string, ip netip.Addr) (Created, error) {
 	machine = strings.TrimSpace(machine)
+	fields := map[string]string{}
 	if !validMachine(machine) {
-		return Created{}, &validation.Error{Fields: map[string]string{"machine": fmt.Sprintf("must have 1 to %d characters", MaxMachineLength)}}
+		fields["machine"] = fmt.Sprintf("must have 1 to %d characters", MaxMachineLength)
+	}
+	switch kind {
+	case "", string(dto.TokenKindAgent):
+		kind = string(dto.TokenKindAgent)
+	case string(dto.TokenKindRunner):
+	default:
+		fields["kind"] = "must be agent or runner"
+	}
+	if len(fields) > 0 {
+		return Created{}, &validation.Error{Fields: fields}
 	}
 	code, err := newCode()
 	if err != nil {
@@ -202,13 +218,13 @@ func (s *Service) Create(ctx context.Context, machine string, ip netip.Addr) (Cr
 			ipText = ip.String()
 		}
 		if err := q.CreateDeviceRequest(ctx, db.CreateDeviceRequestParams{
-			ID: id, CodeHash: hash(code), PollSecretHash: hash(secret), Machine: machine,
+			ID: id, CodeHash: hash(code), PollSecretHash: hash(secret), Machine: machine, Kind: kind,
 			CreatedIp: ipText, IpKey: key, CreatedAt: now.UnixMilli(), ExpiresAt: out.ExpiresAt.UnixMilli(),
 		}); err != nil {
 			return err
 		}
 		return s.d.Audit.Record(ctx, q, audit.Entry{
-			Action: ActionCreate, TargetKind: TargetDevice, TargetID: id, Detail: map[string]any{"machine": machine},
+			Action: ActionCreate, TargetKind: TargetDevice, TargetID: id, Detail: map[string]any{"machine": machine, "kind": kind},
 		})
 	})
 	if err != nil {
@@ -292,13 +308,18 @@ func (s *Service) Deny(ctx context.Context, p authn.Principal, code string) (Req
 }
 
 // TokenName is the name of the token an approval creates: the machine name (cut so the name
-// fits the 64-character token name limit) and NameSuffix.
-func TokenName(machine string) string {
-	maxMachine := 64 - utf8.RuneCountInString(NameSuffix)
+// fits the 64-character token name limit) and the suffix of the kind (NameSuffix for an agent
+// token, RunnerNameSuffix for a runner token, CA-01).
+func TokenName(machine, kind string) string {
+	suffix := NameSuffix
+	if kind == string(dto.TokenKindRunner) {
+		suffix = RunnerNameSuffix
+	}
+	maxMachine := 64 - utf8.RuneCountInString(suffix)
 	if utf8.RuneCountInString(machine) > maxMachine {
 		machine = strings.TrimSpace(string([]rune(machine)[:maxMachine]))
 	}
-	return machine + NameSuffix
+	return machine + suffix
 }
 
 func (s *Service) decide(ctx context.Context, p authn.Principal, code string, approve bool) (Request, error) {
@@ -327,7 +348,8 @@ func (s *Service) decide(ctx context.Context, p authn.Principal, code string, ap
 		row.Status = string(dto.DeviceStatusDenied)
 		if approve {
 			action = ActionApprove
-			tok, secret, err := s.d.Users.CreateTokenTx(ctx, q, p.UserID, users.TokenInput{Kind: dto.TokenKindAgent, Name: TokenName(row.Machine)})
+			kind := dto.TokenKind(row.Kind)
+			tok, secret, err := s.d.Users.CreateTokenTx(ctx, q, p.UserID, users.TokenInput{Kind: kind, Name: TokenName(row.Machine, row.Kind)})
 			if err != nil {
 				return err
 			}

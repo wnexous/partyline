@@ -78,8 +78,8 @@ func (q *Queries) CountDeviceRequestsSince(ctx context.Context, arg CountDeviceR
 }
 
 const createDeviceRequest = `-- name: CreateDeviceRequest :exec
-INSERT INTO device_requests (id, code_hash, poll_secret_hash, machine, created_ip, ip_key, created_at, expires_at)
-VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+INSERT INTO device_requests (id, code_hash, poll_secret_hash, machine, kind, created_ip, ip_key, created_at, expires_at)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
 `
 
 type CreateDeviceRequestParams struct {
@@ -87,18 +87,21 @@ type CreateDeviceRequestParams struct {
 	CodeHash       string
 	PollSecretHash string
 	Machine        string
+	Kind           string
 	CreatedIp      string
 	IpKey          string
 	CreatedAt      int64
 	ExpiresAt      int64
 }
 
+// kind is what the approval creates: an agent token (setup) or a runner token (CA-01).
 func (q *Queries) CreateDeviceRequest(ctx context.Context, arg CreateDeviceRequestParams) error {
 	_, err := q.db.ExecContext(ctx, createDeviceRequest,
 		arg.ID,
 		arg.CodeHash,
 		arg.PollSecretHash,
 		arg.Machine,
+		arg.Kind,
 		arg.CreatedIp,
 		arg.IpKey,
 		arg.CreatedAt,
@@ -158,7 +161,7 @@ func (q *Queries) DeleteOldDeviceRequests(ctx context.Context, createdAt int64) 
 }
 
 const getDeviceRequestByCode = `-- name: GetDeviceRequestByCode :one
-SELECT id, code_hash, poll_secret_hash, machine, created_ip, ip_key, status, user_id, token_id, token_once_enc, created_at, expires_at, last_poll_at FROM device_requests WHERE code_hash = ?
+SELECT id, code_hash, poll_secret_hash, machine, created_ip, ip_key, status, user_id, token_id, token_once_enc, created_at, expires_at, last_poll_at, kind FROM device_requests WHERE code_hash = ?
 `
 
 func (q *Queries) GetDeviceRequestByCode(ctx context.Context, codeHash string) (DeviceRequest, error) {
@@ -178,12 +181,13 @@ func (q *Queries) GetDeviceRequestByCode(ctx context.Context, codeHash string) (
 		&i.CreatedAt,
 		&i.ExpiresAt,
 		&i.LastPollAt,
+		&i.Kind,
 	)
 	return i, err
 }
 
 const getDeviceRequestByPollSecret = `-- name: GetDeviceRequestByPollSecret :one
-SELECT id, code_hash, poll_secret_hash, machine, created_ip, ip_key, status, user_id, token_id, token_once_enc, created_at, expires_at, last_poll_at FROM device_requests WHERE poll_secret_hash = ?
+SELECT id, code_hash, poll_secret_hash, machine, created_ip, ip_key, status, user_id, token_id, token_once_enc, created_at, expires_at, last_poll_at, kind FROM device_requests WHERE poll_secret_hash = ?
 `
 
 func (q *Queries) GetDeviceRequestByPollSecret(ctx context.Context, pollSecretHash string) (DeviceRequest, error) {
@@ -203,6 +207,7 @@ func (q *Queries) GetDeviceRequestByPollSecret(ctx context.Context, pollSecretHa
 		&i.CreatedAt,
 		&i.ExpiresAt,
 		&i.LastPollAt,
+		&i.Kind,
 	)
 	return i, err
 }

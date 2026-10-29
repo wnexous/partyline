@@ -269,7 +269,8 @@ func (s *server) listTokens(w http.ResponseWriter, r *http.Request, p authn.Prin
 	return nil
 }
 
-// createToken returns the secret once (TOK-01).
+// createToken returns the secret once (TOK-01). Runner tokens are not created here: the device
+// approval creates them for `partyline runner` (CA-01).
 func (s *server) createToken(w http.ResponseWriter, r *http.Request, p authn.Principal) error {
 	var req dto.CreateTokenRequest
 	if err := httpx.DecodeJSON(w, r, &req); err != nil {

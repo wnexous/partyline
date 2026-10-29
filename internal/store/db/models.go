@@ -161,6 +161,7 @@ type DeviceRequest struct {
 	CreatedAt      int64
 	ExpiresAt      int64
 	LastPollAt     sql.NullInt64
+	Kind           string
 }
 
 type Identity struct {
