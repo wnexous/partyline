@@ -144,9 +144,13 @@ func TestOwnerSecretQueriesUpsertInPlaceAndNeverListValues(t *testing.T) {
 		})
 	})
 
-	names, err := e.s.R().ListOwnerSecretNames(ctx, "u1")
+	list, err := e.s.R().ListOwnerSecretNames(ctx, "u1")
 	require.NoError(t, err)
-	require.Equal(t, []string{"CLAUDE_TOKEN", "OPENCODE_KEY"}, names, "the list is the names only, sorted")
+	require.Len(t, list, 2, "the list is the names and dates only, no value")
+	require.Equal(t, []string{"CLAUDE_TOKEN", "OPENCODE_KEY"}, []string{list[0].Name, list[1].Name}, "sorted by name")
+	require.Equal(t, int64(11), list[0].CreatedAt)
+	require.Equal(t, int64(10), list[1].CreatedAt)
+	require.Equal(t, int64(14), list[1].UpdatedAt, "the upsert kept the creation time and bumped the update")
 
 	rows, err := e.s.R().GetOwnerSecrets(ctx, db.GetOwnerSecretsParams{OwnerID: "u1", Ids: []string{"c1", "c-bob"}})
 	require.NoError(t, err)
@@ -169,9 +173,10 @@ func TestOwnerSecretQueriesUpsertInPlaceAndNeverListValues(t *testing.T) {
 		return err
 	})
 	require.Equal(t, int64(1), n)
-	names, err = e.s.R().ListOwnerSecretNames(ctx, "u1")
+	left, err := e.s.R().ListOwnerSecretNames(ctx, "u1")
 	require.NoError(t, err)
-	require.Equal(t, []string{"CLAUDE_TOKEN"}, names)
+	require.Len(t, left, 1)
+	require.Equal(t, "CLAUDE_TOKEN", left[0].Name)
 }
 
 // CA-04, CA-06 (queries): the container row of an AI is created from the new tables, read by agent,

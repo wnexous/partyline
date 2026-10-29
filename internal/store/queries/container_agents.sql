@@ -48,8 +48,9 @@ ON CONFLICT (owner_id, name) DO UPDATE SET
     updated_at = excluded.updated_at;
 
 -- name: ListOwnerSecretNames :many
--- The owner's secret names only: the API never returns a value (CA-03, CA-08).
-SELECT name FROM owner_secrets WHERE owner_id = ? ORDER BY name;
+-- The owner's secret names and dates only: the API never returns a value (CA-03, CA-08). The id is
+-- not a value and lets the container service map an environment variable to the secret it opens.
+SELECT id, name, created_at, updated_at FROM owner_secrets WHERE owner_id = ? ORDER BY name;
 
 -- name: GetOwnerSecrets :many
 -- The sealed rows of the chosen secrets of one owner (the container service opens them to write the

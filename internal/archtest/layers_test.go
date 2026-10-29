@@ -38,7 +38,7 @@ var packagesOf = map[layer][]string{
 	},
 	kernel: {
 		"orgs", "access", "intelligences", "users", "authn", "audit", "events", "handles", "validation",
-		"attachments", "avatars", "secrets", "api/dto", "api/httpx",
+		"attachments", "avatars", "secrets", "ownersecrets", "api/dto", "api/httpx",
 	},
 	infra: {
 		"store", "store/db", "config", "app", "api", "api/convert", "cli", "cliconfig", "harness", "devices",
