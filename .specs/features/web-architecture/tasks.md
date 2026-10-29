@@ -211,3 +211,36 @@ ticks its requirement ids here.
 - Delete `components/`, `hooks/`, `lib/`; baseline empty and the legacy layer removed from the
   checker; final doc pass. Optional: split i18n dictionaries by domain.
 - Status: done (see the T5 notes for the audit and what stayed).
+
+## T7 — last standardisation (audit leftovers)
+- `entities/intelligence/ui/intelligence-handle` `IntelligenceHandle` + `handleText`: the app's one
+  `@handle` (the mono, muted style `IntelligenceName showHandle` already had). Adopted by
+  `IntelligenceName`, the conversation header, the org chart row, the mention list, the account
+  menu, the profile header and panel, the merge and operator option labels, and, inline, the
+  connector's operator sentence (`NamedSentence` can carry a handle slot). Admin users keeps its
+  `@username`: it is a username, not an intelligence's handle.
+- `FormDialog` for the form shells: invites, tokens, add-connector and delete-account. The
+  connector form logic (`useConnectorForm`, `ConnectorFields`) is shared with the settings sheet,
+  and `FormDialog` gained the destructive submit and the header/form classes a scrolling body
+  needs.
+- `SelectControl` in `form-fields`, the controlled twin of `SelectField` (label, description,
+  error, aria wiring; `hideLabel` for a select the row already names): the connector operator and
+  delivery picks, org members' permission, the chart's parent picker, merge AI, the default
+  organization and `OrgSelect`.
+- `shared/ui/atoms/face` is the one avatar base (size map in pixels, circle/square, tint and
+  initials from `shared/lib/avatar`, image); `IntelligenceAvatar` and `OrgAvatar` are the domain
+  skins over it, and the duplicated PIXELS maps are gone.
+- `ConversationAvatar` is the one exported name for a conversation's face, with a `variant`
+  (`conversation` for a row, `face` for the counterpart or group a page names); `ConversationFace`
+  is gone and its importers use the variant.
+- Status: done. Left on purpose:
+  - the identities pairing dialog is a multi-step status flow (its steps own their buttons, it has
+    no form and no submit), so it stays a plain Dialog; it already imports
+    `shared/ui/molecules/dialog` and uses its `DialogHeader`. The other non-form dialogs (member
+    picker, new conversation, new group, connect agent, command menu, image viewer) already do the
+    same and are unchanged.
+  - the devices page has no select: its hand-made label is on the code input (not a `NativeSelect`).
+  - `AIMeta`'s "hosted by @handle" stays translated text inside one sentence (the testable string
+    the pickers show), and the command palette's hint stays the generic hint slot (it also holds
+    a connector's platform label).
+  - the visible result is unchanged except the handle, which is now the same mono span everywhere.
