@@ -1,4 +1,4 @@
-import { IntelligenceAvatar } from "@/entities/intelligence";
+import { IntelligenceAvatar, IntelligenceHandle } from "@/entities/intelligence";
 import { useI18n } from "@/shared/i18n";
 import { cn } from "@/shared/lib/utils";
 import { candidateKey, type MentionCandidate, mentionOptionId } from "../model/mention";
@@ -60,7 +60,7 @@ export function MentionSuggestions({
             {/* The label is part of the address the option inserts, so a phone sees which
                 session it is picking (SESS-33). The principal stays the plain handle. */}
             <span className="shrink-0 font-mono text-xs text-muted-foreground">
-              <span>@{candidate.intelligence.handle}</span>
+              <IntelligenceHandle handle={candidate.intelligence.handle} />
               {candidate.label ? <span>:{candidate.label}</span> : null}
             </span>
           </div>

@@ -21,6 +21,11 @@ export {
   type IntelligenceAvatarProps,
   initials,
 } from "./ui/intelligence-avatar";
+export {
+  handleText,
+  IntelligenceHandle,
+  type IntelligenceHandleProps,
+} from "./ui/intelligence-handle";
 export { IntelligenceName, type IntelligenceNameProps } from "./ui/intelligence-name";
 export { IntelligenceRow, type IntelligenceRowProps } from "./ui/intelligence-row";
 export * from "./ui/membership-summary";

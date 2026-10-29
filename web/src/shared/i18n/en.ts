@@ -711,7 +711,7 @@ export const en = {
   "connector.operator": "Operator",
   "connector.operatorPick": "Operator",
   "connector.operatorNone": "Choose an AI",
-  "connector.operatorNamed": "{name} (@{handle})",
+  "connector.operatorNamed": "{name} ({handle})",
   "connector.operatorHint":
     "The operator receives what arrives here and answers through the account. Only it may send.",
   "connector.aiLoadError": "Couldn’t load your AIs.",

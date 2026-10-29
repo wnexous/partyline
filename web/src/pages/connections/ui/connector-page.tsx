@@ -19,7 +19,7 @@ import {
   useRefreshChats,
   useUpdateConnector,
 } from "@/entities/connector";
-import { allAIs, NamedSentence, useContacts } from "@/entities/intelligence";
+import { allAIs, handleText, NamedSentence, useContacts } from "@/entities/intelligence";
 import { chatTitle, platformName } from "@/entities/message";
 import { useOrg } from "@/entities/organization";
 import { ConnectorForm } from "@/features/add-connector";
@@ -35,12 +35,11 @@ import {
   type UpdateConnectorRequest,
 } from "@/shared/api/types.gen";
 import { type MessageKey, useI18n, useT } from "@/shared/i18n";
-import { NativeSelect } from "@/shared/ui/atoms/native-select";
 import { RelativeTime } from "@/shared/ui/atoms/relative-time";
 import { ConfirmDialog } from "@/shared/ui/molecules/confirm-dialog";
 import { CodeBlock } from "@/shared/ui/molecules/copy-field";
 import { EmptyState } from "@/shared/ui/molecules/empty-state";
-import { FormAlert } from "@/shared/ui/molecules/form-fields";
+import { FormAlert, SelectControl } from "@/shared/ui/molecules/form-fields";
 import { PageSection } from "@/shared/ui/molecules/page-section";
 import {
   Sheet,
@@ -439,9 +438,7 @@ function DeliveryForm({ connector: c }: { connector: Connector }) {
   const dirty =
     operatorId !== current || deliver !== c.deliver || mentionsOnly !== c.groups_mentions_only;
   const operatorField = `${id}-operator`;
-  const operatorHint = `${id}-operator-hint`;
   const deliverField = `${id}-deliver`;
-  const deliverHint = `${id}-deliver-hint`;
   const mentionsField = `${id}-mentions`;
 
   const save = () => {
@@ -487,80 +484,59 @@ function DeliveryForm({ connector: c }: { connector: Connector }) {
           {t("connector.noOperatorHint")}
         </p>
       ) : null}
-      <div className="space-y-1">
-        <label htmlFor={operatorField} className="block text-sm font-medium">
-          {t("connector.operatorPick")}
-        </label>
-        {contacts.isPending ? (
-          <Skeleton className="h-9 w-full" />
-        ) : contacts.isError ? (
-          <p role="alert" className="text-sm text-destructive">
-            {t("connector.aiLoadError")}
-          </p>
-        ) : (
-          <NativeSelect
-            id={operatorField}
-            value={operatorId}
-            onChange={(e) => {
-              setOperatorId(e.target.value);
-              setOperatorError(null);
-            }}
-            aria-invalid={operatorError ? true : undefined}
-            aria-describedby={operatorError ? `${operatorField}-error` : operatorHint}
-          >
-            <option value="" disabled>
-              {t("connector.operatorNone")}
-            </option>
-            {missing ? (
-              <option value={current}>{c.operator?.display_name ?? current}</option>
-            ) : null}
-            {candidates.map((a) => (
-              <option key={a.intelligence.id} value={a.intelligence.id}>
-                {a.intelligence.display_name} (@{a.intelligence.handle})
-              </option>
-            ))}
-          </NativeSelect>
-        )}
-        {operatorError ? (
-          <p id={`${operatorField}-error`} role="alert" className="text-sm text-destructive">
-            {operatorError}
-          </p>
-        ) : (
-          <p id={operatorHint} className="text-xs text-muted-foreground">
-            {t("connector.operatorHint")}
-          </p>
-        )}
-      </div>
-      <div className="space-y-1">
-        <label htmlFor={deliverField} className="block text-sm font-medium">
-          {t("connector.deliver")}
-        </label>
-        <NativeSelect
-          id={deliverField}
-          value={deliver}
+      {contacts.isPending || contacts.isError ? (
+        <div className="space-y-1">
+          <label htmlFor={operatorField} className="block text-sm font-medium">
+            {t("connector.operatorPick")}
+          </label>
+          {contacts.isPending ? (
+            <Skeleton className="h-9 w-full" />
+          ) : (
+            <p role="alert" className="text-sm text-destructive">
+              {t("connector.aiLoadError")}
+            </p>
+          )}
+        </div>
+      ) : (
+        <SelectControl
+          id={operatorField}
+          label={t("connector.operatorPick")}
+          description={operatorError ? undefined : t("connector.operatorHint")}
+          error={operatorError}
+          value={operatorId}
           onChange={(e) => {
-            setDeliver(e.target.value as ConnectorDeliver);
-            setDeliverError(null);
+            setOperatorId(e.target.value);
+            setOperatorError(null);
           }}
-          aria-invalid={deliverError ? true : undefined}
-          aria-describedby={deliverError ? `${deliverField}-error` : deliverHint}
         >
-          {DELIVER_OPTIONS.map((value) => (
-            <option key={value} value={value}>
-              {t(DELIVER[value])}
+          <option value="" disabled>
+            {t("connector.operatorNone")}
+          </option>
+          {missing ? <option value={current}>{c.operator?.display_name ?? current}</option> : null}
+          {candidates.map((a) => (
+            <option key={a.intelligence.id} value={a.intelligence.id}>
+              {a.intelligence.display_name} ({handleText(a.intelligence.handle)})
             </option>
           ))}
-        </NativeSelect>
-        {deliverError ? (
-          <p id={`${deliverField}-error`} role="alert" className="text-sm text-destructive">
-            {deliverError}
-          </p>
-        ) : (
-          <p id={deliverHint} className="text-xs text-muted-foreground">
-            {t("connector.deliverHint")}
-          </p>
-        )}
-      </div>
+        </SelectControl>
+      )}
+      <SelectControl
+        id={deliverField}
+        label={t("connector.deliver")}
+        description={deliverError ? undefined : t("connector.deliverHint")}
+        error={deliverError}
+        value={deliver}
+        onChange={(e) => {
+          setDeliver(e.target.value as ConnectorDeliver);
+          setDeliverError(null);
+        }}
+      >
+        {DELIVER_OPTIONS.map((value) => (
+          <option key={value} value={value}>
+            {t(DELIVER[value])}
+          </option>
+        ))}
+      </SelectControl>
       <div className="flex items-start justify-between gap-4 rounded-md border px-4 py-3">
         <span className="space-y-0.5">
           <label htmlFor={mentionsField} className="block text-sm font-medium">
@@ -609,8 +585,9 @@ function DeliverySummary({ connector: c }: { connector: Connector }) {
               <NamedSentence
                 id={c.operator.id}
                 name={c.operator.display_name}
-                sentence={(name) =>
-                  t("connector.operatorNamed", { name, handle: c.operator?.handle ?? "" })
+                handle={c.operator.handle}
+                sentence={(name, handle) =>
+                  t("connector.operatorNamed", { name, handle: handle ?? "" })
                 }
               />
             ) : (

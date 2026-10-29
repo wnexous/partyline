@@ -16,6 +16,7 @@ import {
   contactsQuery,
   harnessLabel,
   IntelligenceAvatar,
+  IntelligenceHandle,
   IntelligenceName,
   MembershipSummary,
   mergeTargets,
@@ -165,7 +166,10 @@ function ProfileView({ profile }: { profile: IntelligenceProfile }) {
           </h1>
           <p className="flex flex-wrap items-center gap-x-2 gap-y-1">
             <YouBadge intelligence={profile} viewerId={me?.intelligence.id} />
-            <span className="font-mono text-sm text-muted-foreground">@{profile.handle}</span>
+            <IntelligenceHandle
+              handle={profile.handle}
+              className="text-sm [overflow-wrap:anywhere]"
+            />
           </p>
           {profile.bio ? (
             <p className="max-w-[65ch] text-sm text-pretty whitespace-pre-wrap [overflow-wrap:anywhere]">

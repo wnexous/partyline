@@ -15,15 +15,8 @@ import { formatAbsolute } from "@/shared/lib/time";
 import { cn } from "@/shared/lib/utils";
 import { RelativeTime } from "@/shared/ui/atoms/relative-time";
 import { ConfirmDialog } from "@/shared/ui/molecules/confirm-dialog";
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from "@/shared/ui/molecules/dialog";
 import { EmptyState } from "@/shared/ui/molecules/empty-state";
+import { FormDialog } from "@/shared/ui/molecules/form-dialog";
 import { PageHeader } from "@/shared/ui/molecules/page-header";
 import { SecretOnceDialog } from "@/shared/ui/molecules/secret-once-dialog";
 import { Button } from "@/shared/ui/primitives/button";
@@ -213,45 +206,43 @@ function CreateInviteDialog({
     );
 
   return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-md">
-        <DialogHeader>
-          <DialogTitle>{t("invites.new")}</DialogTitle>
-          <DialogDescription>{t("invites.newBody")}</DialogDescription>
-        </DialogHeader>
-        <fieldset>
-          <legend className="mb-2 text-sm font-medium">{t("invites.role")}</legend>
-          <RadioGroup value={role} onValueChange={(v) => setRole(v as Role)} className="gap-2">
-            {([RoleMember, RoleAdmin] as Role[]).map((r) => (
-              <label
-                key={r}
-                htmlFor={`${ids}-${r}`}
-                className={cn(
-                  "flex cursor-pointer items-start gap-3 rounded-md border px-3 py-2.5 transition-colors hover:bg-accent/60",
-                  role === r && "border-tape-strong bg-tape/40",
-                )}
-              >
-                <RadioGroupItem id={`${ids}-${r}`} value={r} className="mt-0.5" />
-                <span className="space-y-0.5">
-                  <span className="block text-sm font-medium">{t(ROLE_LABEL[r])}</span>
-                  <span className="block text-xs text-muted-foreground">
-                    {t(r === RoleAdmin ? "invites.adminHint" : "invites.memberHint")}
-                  </span>
+    <FormDialog
+      open={open}
+      onOpenChange={onOpenChange}
+      title={t("invites.new")}
+      description={t("invites.newBody")}
+      onSubmit={(event) => {
+        event.preventDefault();
+        submit();
+      }}
+      submitLabel={t("invites.create")}
+      pending={create.isPending}
+      contentClassName="sm:max-w-md"
+    >
+      <fieldset>
+        <legend className="mb-2 text-sm font-medium">{t("invites.role")}</legend>
+        <RadioGroup value={role} onValueChange={(v) => setRole(v as Role)} className="gap-2">
+          {([RoleMember, RoleAdmin] as Role[]).map((r) => (
+            <label
+              key={r}
+              htmlFor={`${ids}-${r}`}
+              className={cn(
+                "flex cursor-pointer items-start gap-3 rounded-md border px-3 py-2.5 transition-colors hover:bg-accent/60",
+                role === r && "border-tape-strong bg-tape/40",
+              )}
+            >
+              <RadioGroupItem id={`${ids}-${r}`} value={r} className="mt-0.5" />
+              <span className="space-y-0.5">
+                <span className="block text-sm font-medium">{t(ROLE_LABEL[r])}</span>
+                <span className="block text-xs text-muted-foreground">
+                  {t(r === RoleAdmin ? "invites.adminHint" : "invites.memberHint")}
                 </span>
-              </label>
-            ))}
-          </RadioGroup>
-        </fieldset>
-        <DialogFooter>
-          <Button variant="outline" onClick={() => onOpenChange(false)}>
-            {t("common.cancel")}
-          </Button>
-          <Button onClick={submit} disabled={create.isPending}>
-            {t("invites.create")}
-          </Button>
-        </DialogFooter>
-      </DialogContent>
-    </Dialog>
+              </span>
+            </label>
+          ))}
+        </RadioGroup>
+      </fieldset>
+    </FormDialog>
   );
 }
 

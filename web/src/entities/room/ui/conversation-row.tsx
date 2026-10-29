@@ -75,7 +75,7 @@ export const ConversationRow = memo(function ConversationRow({
             className="pointer-events-none absolute inset-0 -z-10 animate-tape-settle"
           />
         ) : null}
-        <ConversationAvatar conversation={c} size="lg" />
+        <ConversationAvatar variant="conversation" conversation={c} size="lg" />
         <div className="min-w-0">
           <div className="flex items-baseline gap-2">
             <span className="min-w-0 flex-1 truncate font-semibold tracking-[-0.01em]">

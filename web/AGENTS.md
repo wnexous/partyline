@@ -82,19 +82,19 @@ Fix the import instead (move the code down a layer, or go through the index).
 | Concept | Canonical | Replaces (see `audit.md`) |
 |---|---|---|
 | Person/AI row (avatar, name, @handle, meta, sessions, actions slots) | `entities/intelligence/ui/intelligence-row` | MemberRow (member-list), ParticipantList rows, contact-row ContactRow + new-conversation ContactRow, picker Candidate/PickableCandidate, invite rows (§1.A, 1.B, 1.M) |
-| Avatar / name / handle / profile link | `IntelligenceAvatar` (gains `shape: "circle" \| "square"` for groups), `IntelligenceName` (`profileLink`, `showHandle`) | GroupAvatar, hand-made `@{handle}` spans, ProfileLink wrappers (§1.B, 1.E) |
-| Conversation face | `entities/room/ui/conversation-avatar` | inline copy in conversation-header (§1.E) |
-| Org avatar | `entities/organization/ui/org-avatar` (tint and initials from `shared/lib/avatar`); the shared `atoms/face` base is still open: the two PIXELS maps remain (T6 audit) | duplicated PIXELS map (§1.F) |
+| Avatar / name / handle / profile link | `IntelligenceAvatar` (`shape: "circle" \| "square"` for groups), `IntelligenceName` (`profileLink`, `showHandle`), `IntelligenceHandle` + `handleText` for the `@handle` alone | GroupAvatar, hand-made `@{handle}` spans and texts, ProfileLink wrappers (§1.B, 1.E) |
+| Conversation face | `entities/room/ui/conversation-avatar` (`ConversationAvatar`, `variant: "conversation" \| "face"`) | inline copy in conversation-header, the separate ConversationFace (§1.E) |
+| Avatar base and org avatar | `shared/ui/atoms/face` (size map in pixels, circle/square, tint and initials from `shared/lib/avatar`, image); `entities/organization/ui/org-avatar` is the domain skin | duplicated PIXELS map, hand-built avatar shells (§1.F) |
 | Sessions of an AI | `entities/intelligence/ui/session-list` + `session-label` | member-list line, contacts.$id list, message "via :label" (§1.A) |
 | Online state | `entities/intelligence/model/presence` `useIsOnline(id, fallback)` (+ pure `onlineOf`, `withContactPresence`) | 12 sites, 3 rules (§1.C) |
 | App label of an AI | `entities/intelligence/lib` `appLabelOf(profileOrAi)`: server label, then harness label, then raw id | 3 rules (§1.D) |
 | Presence/status dots | `shared/ui/atoms/status-dot` (variants online/connecting/error/stopped) | connector-status DOT map, LiveIndicator dot (§1.C) |
 | Confirmation | `shared/ui/molecules/confirm-dialog` (`open`, `onClose`, `title`, `body`, `confirmLabel`, `destructive`, `pending`, `onConfirm`) | 14 hand-built AlertDialogs (§1.G) |
-| Form dialog shell | `shared/ui/molecules/form-dialog` | hand-built Dialog shells (§1.G) |
+| Form dialog shell | `shared/ui/molecules/form-dialog` (`submitLabel`, `cancelLabel`, `pending`, `submitDisabled`, `destructive`, the header/form classes of a scrolling body) | hand-built Dialog shells around a form (§1.G) |
 | Empty / not found / loading | `EmptyState`, `NotFound` (one, with title/body/action props), `ListSkeleton`, `PanelSkeleton` | 4 not-found variants, inline skeletons (§1.H) |
 | Error text | `shared/api/error-text` (per-operation rule tables: `errorText(t, err, "post" \| "edit")`, `startConversationError`) | formError still to move (§1.H) |
 | Row menu | `ActionMenu` + `RowMenuButton` | member-list raw DropdownMenu (§1.I) |
-| Form fields / choice groups | `form-fields` (`TextField`, `TextAreaField`, `SelectField`), `ChoiceGroup` molecule | hand-made Label+NativeSelect/Input, 5 choice groups (§1.J) |
+| Form fields / choice groups | `form-fields` (`TextField`, `TextAreaField`, `SelectField`, and `SelectControl` for a select outside react-hook-form), `ChoiceGroup` molecule | hand-made Label+NativeSelect/Input, 5 choice groups (§1.J) |
 | Section shell | `PageSection` | 3 local `Section` helpers (§1.K) |
 | Org member row + removal rule | `features/manage-org-member/ui/org-member-actions` + `entities/organization/model/removal` `removalOf(member)`, `entities/organization/lib/orgs` `isAdminOf` | 2 MemberRow, inline admin checks (§1.L, 2.e) |
 | Time | `shared/ui/atoms/relative-time` (`<time title=absolute>relative</time>`), day labels only in `shared/lib/time` | ~11 hand-written pairs, 2 day-label rules (§1.N) |
@@ -111,5 +111,6 @@ Fix the import instead (move the code down a layer, or go through the index).
 
 
 Every row above exists in the code now; where a row names a "Replaces" copy that is still there, the
-open list is in `.specs/features/web-architecture/tasks.md` (T6 audit). New code uses the canonical
-one, and search before you create (below): if the concept exists, use it.
+open list is in `.specs/features/web-architecture/tasks.md` (the T7 notes say what was left on
+purpose and why). New code uses the canonical one, and search before you create (below): if the
+concept exists, use it.

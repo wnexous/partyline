@@ -1,6 +1,11 @@
 import type { ReactNode } from "react";
-import { AiStatusLine, IntelligenceName, ProfileLink } from "@/entities/intelligence";
-import { ConversationFace, conversationTitle, counterpartOf } from "@/entities/room";
+import {
+  AiStatusLine,
+  IntelligenceHandle,
+  IntelligenceName,
+  ProfileLink,
+} from "@/entities/intelligence";
+import { ConversationAvatar, conversationTitle, counterpartOf } from "@/entities/room";
 import { ConversationKindDM, type Room } from "@/shared/api/types.gen";
 import { useT } from "@/shared/i18n";
 import { BackToConversations } from "@/shared/ui/molecules/back-link";
@@ -45,7 +50,8 @@ export function ConversationHeader({
           aria-label={t("message.openProfile", { name: face.display_name })}
           className="shrink-0 rounded-full focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring"
         >
-          <ConversationFace
+          <ConversationAvatar
+            variant="face"
             counterpart={face}
             group={{ id: room.id, name: room.name, avatarUrl: room.avatar_url }}
             size="lg"
@@ -53,7 +59,8 @@ export function ConversationHeader({
           />
         </ProfileLink>
       ) : (
-        <ConversationFace
+        <ConversationAvatar
+          variant="face"
           group={{ id: room.id, name: room.name, avatarUrl: room.avatar_url }}
           size="lg"
           decorative
@@ -87,7 +94,7 @@ export function ConversationHeader({
             counterpart ? (
               <>
                 {counterpart.handle ? (
-                  <span className="truncate font-mono text-xs">@{counterpart.handle}</span>
+                  <IntelligenceHandle handle={counterpart.handle} className="truncate" />
                 ) : null}
                 {counterpart.role === "ai" ? (
                   <AiStatusLine id={counterpart.id} appClassName="max-sm:hidden" />
