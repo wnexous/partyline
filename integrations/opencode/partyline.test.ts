@@ -358,6 +358,14 @@ describe("OpenCode 2 plugin", () => {
 		await dispose();
 	});
 
+	test("OpenCode 1.x also calls setup with its partial context: that call starts no second listen", async () => {
+		const v1ctx = { directory: "/work/atlas", client: {} };
+		const dispose = await plugin.setupOpenCode2(v1ctx as never);
+		expect(dispose).toBeUndefined();
+		expect(spawned).toEqual([]);
+		expect(errors).toEqual([]);
+	});
+
 	test("launch-only: a plain OpenCode 2 server runs no listen and returns no cleanup", async () => {
 		delete process.env.PARTYLINE_HARNESS;
 		const oc = await load2();

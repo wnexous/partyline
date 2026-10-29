@@ -330,6 +330,10 @@ const SESSION_EVENTS_2 = ["session.created", "session.status", "session.idle", "
 
 export async function setupOpenCode2(ctx: Context2): Promise<(() => Promise<void>) | undefined> {
 	if (!listening(PARTYLINE_ALWAYS)) return undefined;
+	// OpenCode 1.x (1.19 at least) also calls `setup`, with a context that has no event stream or
+	// session API, after it already started `server`: only a real OpenCode 2 context runs this
+	// entry, so the session is bridged once.
+	if (!isOpenCode2Context(ctx)) return undefined;
 	// OpenCode 2 runs plugins in a background server process: its log is not the person's
 	// terminal and has no log call for plugins, so notices and failures go to its stderr.
 	const log = (message: string) => console.error(message);
@@ -390,6 +394,13 @@ export async function setupOpenCode2(ctx: Context2): Promise<(() => Promise<void
 		bridge.stop();
 		await consuming;
 	};
+}
+
+// isOpenCode2Context reports whether setup was given the OpenCode 2 context (event stream and
+// session API), not the partial one OpenCode 1.x passes.
+function isOpenCode2Context(ctx: unknown): ctx is Context2 {
+	const c = ctx as { event?: { subscribe?: unknown }; session?: { prompt?: unknown } } | undefined;
+	return typeof c?.event?.subscribe === "function" && typeof c?.session?.prompt === "function";
 }
 
 // OpenCode 1 (1.4 and later) loads a default export with `id` and `server`; OpenCode 2 loads
