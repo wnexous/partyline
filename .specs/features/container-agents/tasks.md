@@ -26,7 +26,7 @@ Tests with a fake `docker` on PATH and a test server. Status: pending
 ## T5 — agent image (CA-04, CA-05)
 `deploy/agent/Dockerfile` + entrypoint, per-harness credential setup from env (verify how Claude
 Code, pi, OpenCode, omp read credentials), release job pushing `ghcr.io/wnexous/partyline-agent`,
-smoke script. Status: pending
+smoke script. Status: done
 
 ## T6 — container agents service + API (CA-04, CA-06, CA-07, CA-08)
 `internal/containeragents` (create identity + token + `run` via hub, lifecycle, logs, delete with
