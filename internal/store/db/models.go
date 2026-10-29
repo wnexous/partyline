@@ -121,6 +121,26 @@ type Connector struct {
 	OrgID              sql.NullString
 }
 
+type ContainerAgent struct {
+	AgentID       string
+	RunnerID      string
+	Harness       string
+	Image         string
+	RepoUrl       sql.NullString
+	RepoRef       sql.NullString
+	Volume        string
+	ContainerName string
+	Env           string
+	Cpus          float64
+	MemoryMb      int64
+	Desired       string
+	State         string
+	LastError     sql.NullString
+	TokenID       sql.NullString
+	CreatedAt     int64
+	UpdatedAt     int64
+}
+
 type DeviceCodeAttempt struct {
 	ID          int64
 	UserID      string
@@ -275,6 +295,15 @@ type Organization struct {
 	UpdatedAt    int64
 }
 
+type OwnerSecret struct {
+	ID          string
+	OwnerID     string
+	Name        string
+	ValueSealed []byte
+	CreatedAt   int64
+	UpdatedAt   int64
+}
+
 type PairingCode struct {
 	CodeHash    string
 	UserID      string
@@ -405,6 +434,19 @@ type RoomMember struct {
 	SignOutbound bool
 	Delivery     string
 	KeywordsJson string
+}
+
+type Runner struct {
+	ID            string
+	OwnerID       string
+	Name          string
+	TokenID       string
+	Machine       string
+	DockerVersion sql.NullString
+	DockerError   sql.NullString
+	LastSeenAt    sql.NullInt64
+	CreatedAt     int64
+	UpdatedAt     int64
 }
 
 type Session struct {
