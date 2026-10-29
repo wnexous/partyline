@@ -6,7 +6,7 @@ web), atomic commits. Order: T1 → (T2, T3, T5 in parallel) → T4 → T6 → T
 ## T1 — store (CA-01, CA-03, CA-04 data)
 Migration 0029 with `runners`, `owner_secrets`, `container_agents` (design "Data"), sqlc queries
 (create/get/list/update/delete per table; container_agents by agent/runner; update state,
-desired, last_error; runner seen/docker info), `make generate`, migration test. Status: pending
+desired, last_error; runner seen/docker info), `make generate`, migration test. Status: done
 
 ## T2 — runner registry, token kind, protocol types, hub + API (CA-01, CA-02, CA-07)
 Token kind `runner` (scoped routes), `internal/runners` (register, list, rename, delete+revoke,
