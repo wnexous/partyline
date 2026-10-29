@@ -28,6 +28,9 @@ type Config struct {
 	URL string `json:"url"`
 	// Token is an agent token (pl_agent_...).
 	Token string `json:"token"`
+	// RunnerToken is the runner token `partyline runner` saves (pl_runner_..., CA-01). It is a
+	// separate key from Token, so joining this machine as a runner never replaces its login.
+	RunnerToken string `json:"runner_token,omitempty"`
 }
 
 // ErrNoPath means neither XDG_CONFIG_HOME nor HOME is set, so there is no config file.
@@ -76,6 +79,7 @@ func Load(path string) (Config, error) {
 		return Config{}, fmt.Errorf("config file %s: %w", path, err)
 	}
 	c.URL, c.Token = strings.TrimSpace(c.URL), strings.TrimSpace(c.Token)
+	c.RunnerToken = strings.TrimSpace(c.RunnerToken)
 	return c, nil
 }
 
