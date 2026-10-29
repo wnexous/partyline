@@ -286,10 +286,10 @@ func (r *Registry) ResolveFolder(ctx context.Context, ownerID string, id FolderI
 }
 
 // TouchSeen stamps last_seen_at of an AI whose request came without a socket (the HTTP calls of a tools-only
-// process: a tool call or a pending read), at most once per SeenTouchInterval per AI and only while the
+// process: a tool call or a session read), at most once per SeenTouchInterval per AI and only while the
 // AI has no live session: a live session stamps it when it connects and when it ends. It is not presence: the
-// AI stays offline, so the pushes, the 409 of a principal's reader and the "also open elsewhere" notice are
-// unchanged, and `partyline agents` shows "Nm ago" (SESS-50). A failed write is not worth failing the call over.
+// AI stays offline, so the pushes and the "also open elsewhere" notice are unchanged, and `partyline agents`
+// shows "Nm ago" (SESS-50). A failed write is not worth failing the call over.
 func (r *Registry) TouchSeen(ctx context.Context, agentID string) {
 	if r.presence.Online(agentID) {
 		return

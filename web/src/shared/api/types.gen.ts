@@ -446,25 +446,6 @@ export interface AgentPlatformAckFrame {
   item_id: string;
 }
 /**
- * AgentPending is the answer of GET /agent/pending?platform=1 (CID-06). No supported harness polls it any
- * more (the turn-end hooks and wait_for_messages went with Codex, Gemini and Antigravity, AD-035); it is
- * kept only because the server tests read through it what an AI would be handed. It holds the undelivered room
- * messages, exactly as the call without the parameter returns them (a List of AgentMessage), and
- * the AI's queued platform events, oldest first, at most 20 per call like the room messages. Both
- * lists count as delivered once returned: the platform events lose their text (CID-09).
- */
-export interface AgentPending {
-  items: AgentMessage[];
-  platform: PlatformEvent[];
-  /**
-   * Dropped is how many of the AI's platform messages the server dropped since it last told the AI,
-   * for being older than 7 days or over the bound of 5,000 (CID-10): the WebSocket's notice for the
-   * harnesses that poll (DroppedNotice words it). The call that returns it resets it, so it comes
-   * once, and it ends a wait like a message does. Always present; 0 when nothing was dropped.
-   */
-  dropped: number /* int64 */;
-}
-/**
  * AgentDMRequest is the body of POST /agent/dms (DM-04): the AI writes to a user, or to an AI it
  * shares an organization with, opening the DM when there is none. To is the target's "@handle", handle or id;
  * ChatIDs, sent by v0.4 CLIs, are accepted and ignored: a DM sends nothing to a chat (CID-22).

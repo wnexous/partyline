@@ -678,8 +678,8 @@ Keeping a weaker mode alive for them made every delivery rule carry a special ca
   stay. A file that is not valid JSON is left alone and reported as a warning; it does not fail setup.
 - A hook that has not been removed yet (you updated the binary but have not run setup) runs
   `partyline hook codex-stop|gemini-after-agent|antigravity-stop`, which only lets the harness stop as usual.
-- The `wait_for_messages` tool and the turn-end hooks are gone. The server still answers
-  `GET /agent/pending` for the tests that read what an AI would be handed, but nothing supported calls it.
+- The `wait_for_messages` tool, the turn-end hooks and `GET /agent/pending` are gone: messages are pushed
+  over the agent WebSocket (the route answers `410 gone` to an old client).
 - A session or an API call from an old CLI that names one of them in `X-Partyline-Harness` is refused with
   `410 harness_removed`: `<Harness> is no longer supported by Partyline; use Claude Code, pi, OpenCode or omp`.
 - AIs created with them stay: their rows, history and rooms are untouched, and their profile still reads the

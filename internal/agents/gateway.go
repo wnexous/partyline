@@ -69,7 +69,7 @@ type GatewayDeps struct {
 	Rooms    *rooms.Service
 	// Platform is the AIs' platform queue. Without it no session gets platform events (optional).
 	Platform *platform.Queue
-	// Trust opens the trust of each backlog and each Pending call: a message is trusted when its author
+	// Trust opens the trust of each backlog call: a message is trusted when its author
 	// manages the AI in its home organization (POS-10). Without it no message is trusted (optional).
 	Trust delivery.TrustSource
 	// Authz reads the chart that tells the welcome frame where the AI stands and who manages it. It
@@ -99,9 +99,6 @@ type Gateway struct {
 	mu     sync.Mutex
 	closed bool
 	wg     sync.WaitGroup
-
-	// pendingMu serializes Pending calls, so two callers never get the same message.
-	pendingMu sync.Mutex
 
 	// life orders, per AI, the attach of a connection against the end of another (lifeLock).
 	life [lifeStripes]sync.Mutex
@@ -223,7 +220,7 @@ func (g *Gateway) pushToSelfSession(agentID, target string, m dto.AgentMessage) 
 // its bare @handle, for the AI's principal session (SESS-49). The principal never receives its own message,
 // so nothing happens when the writer is the principal. The message has no delivery row (a row needs a label,
 // and the principal has none): its acknowledgement moves the cursor like any live message, and the principal's
-// backlog and pending list leave out the AI's own messages, so it is never delivered twice. With no live
+// backlog leaves out the AI's own messages, so it is never delivered twice. With no live
 // principal the message is not delivered and not queued.
 func (g *Gateway) pushToSelfPrincipal(m dto.AgentMessage) bool {
 	if m.Message.AuthorLabel == "" {
@@ -1062,7 +1059,7 @@ func (g *Gateway) ack(ctx context.Context, agentID, messageID string) error {
 			}
 			if fellBack {
 				// A fallback's sequence is not the stream's: moving the cursor to it would skip the plain
-				// messages below it that the principal has not acknowledged (Pending does the same).
+				// messages below it that the principal has not acknowledged.
 				return nil
 			}
 			return q.AdvanceAgentCursor(ctx, db.AdvanceAgentCursorParams{AgentID: agentID, RoomID: m.RoomID, Seq: m.Seq})
