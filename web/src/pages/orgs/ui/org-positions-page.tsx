@@ -22,9 +22,9 @@ import {
   type UpdatePositionRequest,
 } from "@/shared/api/types.gen";
 import { type Translate, useT } from "@/shared/i18n";
-import { NativeSelect } from "@/shared/ui/atoms/native-select";
 import { ConfirmDialog } from "@/shared/ui/molecules/confirm-dialog";
 import { EmptyState } from "@/shared/ui/molecules/empty-state";
+import { SelectControl } from "@/shared/ui/molecules/form-fields";
 import { InlineRename } from "@/shared/ui/molecules/inline-rename";
 import { PageHeader } from "@/shared/ui/molecules/page-header";
 import { Button } from "@/shared/ui/primitives/button";
@@ -282,8 +282,9 @@ function PositionRow({
           )}
         </div>
         <div className="flex w-full items-center gap-1 md:w-auto md:gap-1.5">
-          <NativeSelect
-            aria-label={t("orgs.parentOf", { name: position.name })}
+          <SelectControl
+            label={t("orgs.parentOf", { name: position.name })}
+            hideLabel
             value={position.parent_id ?? ""}
             disabled={update.isPending}
             onChange={(e) =>
@@ -291,7 +292,8 @@ function PositionRow({
                 toast(t("orgs.positionMoved", { name: position.name }));
               })
             }
-            className="h-9 min-w-0 flex-1 md:w-44 md:flex-none"
+            className="min-w-0 flex-1 md:w-44 md:flex-none"
+            selectClassName="h-9"
           >
             <option value="">{t("orgs.noParent")}</option>
             {parents.map((o) => (
@@ -299,7 +301,7 @@ function PositionRow({
                 {o.name}
               </option>
             ))}
-          </NativeSelect>
+          </SelectControl>
           <Button
             variant="ghost"
             size="icon"

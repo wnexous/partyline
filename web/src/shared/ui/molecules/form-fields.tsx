@@ -1,5 +1,5 @@
 import { EyeIcon, EyeOffIcon } from "lucide-react";
-import { type ComponentProps, type ReactNode, useState } from "react";
+import { type ComponentProps, type ReactNode, useId, useState } from "react";
 import type { Control, FieldPath, FieldValues } from "react-hook-form";
 import { useT } from "@/shared/i18n";
 import { useAutoFocus } from "@/shared/lib/device";
@@ -16,6 +16,7 @@ import {
   useFormField,
 } from "@/shared/ui/primitives/form";
 import { Input } from "@/shared/ui/primitives/input";
+import { Label } from "@/shared/ui/primitives/label";
 import { Textarea } from "@/shared/ui/primitives/textarea";
 
 /** FormMessage that translates schema error keys. */
@@ -226,5 +227,75 @@ export function SelectField<T extends FieldValues>({
         </FormItem>
       )}
     />
+  );
+}
+
+/**
+ * A labelled select outside react-hook-form: the same markup as `SelectField` for a value the
+ * caller holds itself (a setting saved as it changes, a picker inside a dialog). `hideLabel` keeps
+ * the label for screen readers when the row says what the select is.
+ */
+export function SelectControl({
+  label,
+  hideLabel = false,
+  description,
+  error,
+  className,
+  selectClassName,
+  children,
+  id,
+  ...select
+}: {
+  label: ReactNode;
+  hideLabel?: boolean;
+  description?: ReactNode;
+  error?: string | null;
+  className?: string;
+  selectClassName?: string;
+  /** The `<option>`s. */
+  children: ReactNode;
+  id?: string;
+} & Omit<ComponentProps<"select">, "id" | "className" | "children">) {
+  const autoId = useId();
+  const selectId = id ?? autoId;
+  const descriptionId = `${selectId}-description`;
+  const errorId = `${selectId}-error`;
+  const describedBy =
+    [description ? descriptionId : null, error ? errorId : null].filter(Boolean).join(" ") ||
+    undefined;
+  return (
+    <div data-slot="form-item" className={cn("grid gap-2", className)}>
+      <Label
+        data-slot="form-label"
+        data-error={!!error}
+        className={cn(hideLabel && "sr-only", "data-[error=true]:text-destructive")}
+        htmlFor={selectId}
+      >
+        {label}
+      </Label>
+      <NativeSelect
+        id={selectId}
+        aria-invalid={error ? true : undefined}
+        aria-describedby={describedBy}
+        className={selectClassName}
+        {...select}
+      >
+        {children}
+      </NativeSelect>
+      {description ? (
+        <p
+          data-slot="form-description"
+          id={descriptionId}
+          className="text-xs text-muted-foreground"
+        >
+          {description}
+        </p>
+      ) : null}
+      {error ? (
+        <p data-slot="form-message" id={errorId} className="text-sm text-destructive">
+          {error}
+        </p>
+      ) : null}
+    </div>
   );
 }

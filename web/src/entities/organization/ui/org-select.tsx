@@ -1,6 +1,4 @@
-import { useId } from "react";
-import { NativeSelect } from "@/shared/ui/atoms/native-select";
-import { Label } from "@/shared/ui/primitives/label";
+import { SelectControl } from "@/shared/ui/molecules/form-fields";
 import type { MyOrg } from "../lib/orgs";
 
 /**
@@ -20,25 +18,18 @@ export function OrgSelect({
   value: string;
   onChange: (orgId: string) => void;
 }) {
-  const id = useId();
   return (
-    <div className="grid gap-2">
-      <Label htmlFor={`${id}-org`}>{label}</Label>
-      <NativeSelect
-        id={`${id}-org`}
-        value={value}
-        onChange={(e) => onChange(e.target.value)}
-        aria-describedby={`${id}-hint`}
-      >
-        {orgs.map((o) => (
-          <option key={o.id} value={o.id}>
-            {o.name}
-          </option>
-        ))}
-      </NativeSelect>
-      <p id={`${id}-hint`} className="text-xs text-muted-foreground">
-        {hint}
-      </p>
-    </div>
+    <SelectControl
+      label={label}
+      description={hint}
+      value={value}
+      onChange={(e) => onChange(e.target.value)}
+    >
+      {orgs.map((o) => (
+        <option key={o.id} value={o.id}>
+          {o.name}
+        </option>
+      ))}
+    </SelectControl>
   );
 }

@@ -4,7 +4,7 @@ import { useMe, useSetDefaultOrg } from "@/entities/account";
 import { defaultOrgIdOf, useMyOrgs } from "@/entities/organization";
 import { isApiError } from "@/shared/api/client";
 import { useT } from "@/shared/i18n";
-import { NativeSelect } from "@/shared/ui/atoms/native-select";
+import { SelectControl } from "@/shared/ui/molecules/form-fields";
 import { PageSection as Section } from "@/shared/ui/molecules/page-section";
 import { Skeleton } from "@/shared/ui/primitives/skeleton";
 
@@ -61,8 +61,9 @@ export function DefaultOrgSection() {
       title={t("account.defaultOrg")}
       description={t("account.defaultOrgBody")}
     >
-      <NativeSelect
-        aria-label={t("account.defaultOrgLabel")}
+      <SelectControl
+        label={t("account.defaultOrgLabel")}
+        hideLabel
         value={value}
         disabled={setDefault.isPending}
         onChange={(e) => choose(e.target.value)}
@@ -78,7 +79,7 @@ export function DefaultOrgSection() {
             {o.name}
           </option>
         ))}
-      </NativeSelect>
+      </SelectControl>
     </Section>
   );
 }

@@ -33,8 +33,8 @@ import {
   type Permission,
 } from "@/shared/api/types.gen";
 import { useI18n, useT } from "@/shared/i18n";
-import { NativeSelect } from "@/shared/ui/atoms/native-select";
 import { RelativeTime } from "@/shared/ui/atoms/relative-time";
+import { SelectControl } from "@/shared/ui/molecules/form-fields";
 import { PageHeader } from "@/shared/ui/molecules/page-header";
 import { Badge } from "@/shared/ui/primitives/badge";
 import { Button } from "@/shared/ui/primitives/button";
@@ -312,19 +312,21 @@ function OrgMemberRow({
       </th>
       <td className="xl:px-3 xl:py-3">
         {admin ? (
-          <NativeSelect
-            aria-label={t("orgs.permissionOf", { name: who.display_name })}
+          <SelectControl
+            label={t("orgs.permissionOf", { name: who.display_name })}
+            hideLabel
             value={m.permission}
             disabled={update.isPending}
             onChange={(e) => setPermission(e.target.value as Permission)}
-            className="h-8 w-32"
+            className="w-32"
+            selectClassName="h-8"
           >
             {[PermissionAdmin, PermissionMember, PermissionGuest].map((p) => (
               <option key={p} value={p}>
                 {permissionLabel(t, p)}
               </option>
             ))}
-          </NativeSelect>
+          </SelectControl>
         ) : (
           <Badge variant="secondary" className="px-1.5 py-0 text-[0.68rem] leading-5">
             {permissionLabel(t, m.permission)}

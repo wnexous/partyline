@@ -4,9 +4,8 @@ import { handleText, useMergeAgent } from "@/entities/intelligence";
 import { isApiError } from "@/shared/api/client";
 import { ErrorCodeIdentityOnline, type IntelligenceRef } from "@/shared/api/types.gen";
 import { useT } from "@/shared/i18n";
-import { NativeSelect } from "@/shared/ui/atoms/native-select";
 import { FormDialog } from "@/shared/ui/molecules/form-dialog";
-import { FormAlert } from "@/shared/ui/molecules/form-fields";
+import { FormAlert, SelectControl } from "@/shared/ui/molecules/form-fields";
 
 /*
  * Merge one of the caller's AIs into another one (MRG-01, MRG-02): the one picked keeps
@@ -93,7 +92,6 @@ function MergeForm({
 
   const title = t("merge.title", { name: ai.display_name });
   const fieldId = `${id}-into`;
-  const fieldErrorId = `${id}-into-error`;
 
   return (
     // The dialog is named by Radix's own id on the title; the form takes the same name for its own.
@@ -111,33 +109,23 @@ function MergeForm({
       pending={merge.isPending}
     >
       <FormAlert>{error}</FormAlert>
-      <div className="space-y-1">
-        <label htmlFor={fieldId} className="block text-sm font-medium">
-          {t("merge.into")}
-        </label>
-        <NativeSelect
-          id={fieldId}
-          value={into}
-          onChange={(e) => {
-            setInto(e.target.value);
-            setFieldError(null);
-          }}
-          aria-invalid={fieldError ? true : undefined}
-          aria-describedby={fieldError ? fieldErrorId : undefined}
-        >
-          <option value="">{t("merge.pick")}</option>
-          {candidates.map((candidate) => (
-            <option key={candidate.id} value={candidate.id}>
-              {candidate.display_name} ({handleText(candidate.handle)})
-            </option>
-          ))}
-        </NativeSelect>
-        {fieldError ? (
-          <p id={fieldErrorId} role="alert" className="text-sm text-destructive">
-            {fieldError}
-          </p>
-        ) : null}
-      </div>
+      <SelectControl
+        id={fieldId}
+        label={t("merge.into")}
+        error={fieldError}
+        value={into}
+        onChange={(e) => {
+          setInto(e.target.value);
+          setFieldError(null);
+        }}
+      >
+        <option value="">{t("merge.pick")}</option>
+        {candidates.map((candidate) => (
+          <option key={candidate.id} value={candidate.id}>
+            {candidate.display_name} ({handleText(candidate.handle)})
+          </option>
+        ))}
+      </SelectControl>
     </FormDialog>
   );
 }
