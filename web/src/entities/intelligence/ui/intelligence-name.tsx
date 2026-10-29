@@ -1,6 +1,7 @@
 import type { IntelligenceRef } from "@/shared/api/types.gen";
 import { cn } from "@/shared/lib/utils";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/shared/ui/primitives/tooltip";
+import { IntelligenceHandle } from "./intelligence-handle";
 import { ProfileLink } from "./profile-link";
 import { YouBadge } from "./you-badge";
 
@@ -81,8 +82,8 @@ export function IntelligenceName({
         nameEl
       )}
       <YouBadge intelligence={intelligence} viewerId={viewerId} />
-      {showHandle && handle ? (
-        <span className="min-w-0 truncate font-mono text-xs text-muted-foreground">{handle}</span>
+      {showHandle && intelligence.handle ? (
+        <IntelligenceHandle handle={intelligence.handle} />
       ) : null}
     </span>
   );

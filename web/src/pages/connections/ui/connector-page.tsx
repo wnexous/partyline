@@ -19,7 +19,7 @@ import {
   useRefreshChats,
   useUpdateConnector,
 } from "@/entities/connector";
-import { allAIs, NamedSentence, useContacts } from "@/entities/intelligence";
+import { allAIs, handleText, NamedSentence, useContacts } from "@/entities/intelligence";
 import { chatTitle, platformName } from "@/entities/message";
 import { useOrg } from "@/entities/organization";
 import { ConnectorForm } from "@/features/add-connector";
@@ -516,7 +516,7 @@ function DeliveryForm({ connector: c }: { connector: Connector }) {
             ) : null}
             {candidates.map((a) => (
               <option key={a.intelligence.id} value={a.intelligence.id}>
-                {a.intelligence.display_name} (@{a.intelligence.handle})
+                {a.intelligence.display_name} ({handleText(a.intelligence.handle)})
               </option>
             ))}
           </NativeSelect>
@@ -609,8 +609,9 @@ function DeliverySummary({ connector: c }: { connector: Connector }) {
               <NamedSentence
                 id={c.operator.id}
                 name={c.operator.display_name}
-                sentence={(name) =>
-                  t("connector.operatorNamed", { name, handle: c.operator?.handle ?? "" })
+                handle={c.operator.handle}
+                sentence={(name, handle) =>
+                  t("connector.operatorNamed", { name, handle: handle ?? "" })
                 }
               />
             ) : (

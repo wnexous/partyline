@@ -2,6 +2,7 @@ import { Link } from "@tanstack/react-router";
 import type { ComponentProps, MouseEvent } from "react";
 import { cn } from "@/shared/lib/utils";
 import { useProfilePanel } from "../model/profile-panel";
+import { IntelligenceHandle } from "./intelligence-handle";
 
 /*
  * An identity that can be clicked (PRF-01, PRF-06). It is a link to the identity's profile page,
@@ -38,26 +39,35 @@ export function ProfileLink({ id, onClick, ...props }: ProfileLinkProps) {
 
 /** What a translated sentence is written around, to find where the name goes in it. */
 const NAME_MARK = "\u0000";
+/** The same for the handle, when the sentence names one next to the name. */
+const HANDLE_MARK = "\u0001";
 
 /**
  * A translated sentence that names an intelligence ("Operated by {name}"), with the name as a link
  * that opens its profile panel (PRF-01). `sentence` gives the text for a name: it is asked for a
  * mark in the name's place and split there, so the link sits wherever the language puts the name
- * and the text of the sentence stays what it was.
+ * and the text of the sentence stays what it was. With `handle`, the sentence gets a second mark
+ * for the handle, drawn by the handle atom inline ("Operated by {name} (@{handle})").
  */
 export function NamedSentence({
   id,
   name,
+  handle,
   sentence,
   className,
 }: {
   id: string;
   name: string;
-  sentence: (name: string) => string;
+  /** The handle the sentence names, if it names one: it is `sentence`'s second argument. */
+  handle?: string;
+  sentence: (name: string, handle?: string) => string;
   className?: string;
 }) {
-  const [before, after, ...rest] = sentence(NAME_MARK).split(NAME_MARK);
-  if (after === undefined || rest.length > 0) return <>{sentence(name)}</>;
+  const text = sentence(NAME_MARK, handle === undefined ? undefined : HANDLE_MARK);
+  const [before, after, ...rest] = text.split(NAME_MARK);
+  if (after === undefined || rest.length > 0) return <>{sentence(name, handle)}</>;
+  const handleParts = after.split(HANDLE_MARK);
+  const inlineHandle = handle !== undefined && handleParts.length === 2 ? handle : undefined;
   return (
     <>
       {before}
@@ -70,7 +80,15 @@ export function NamedSentence({
       >
         {name}
       </ProfileLink>
-      {after}
+      {inlineHandle === undefined ? (
+        after
+      ) : (
+        <>
+          {handleParts[0]}
+          <IntelligenceHandle handle={inlineHandle} />
+          {handleParts[1]}
+        </>
+      )}
     </>
   );
 }

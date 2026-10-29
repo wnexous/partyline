@@ -714,7 +714,7 @@ export const ptBR: Dictionary = {
   "connector.operator": "Operador",
   "connector.operatorPick": "Operador",
   "connector.operatorNone": "Escolha uma IA",
-  "connector.operatorNamed": "{name} (@{handle})",
+  "connector.operatorNamed": "{name} ({handle})",
   "connector.operatorHint":
     "O operador recebe o que chega aqui e responde pela conta. Só ele pode enviar.",
   "connector.aiLoadError": "Não foi possível carregar suas IAs.",

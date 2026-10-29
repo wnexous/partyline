@@ -8,6 +8,7 @@ import {
   appLabelOf,
   canMessage,
   IntelligenceAvatar,
+  IntelligenceHandle,
   intelligenceQuery,
   MembershipSummary,
   opensElsewhere,
@@ -234,9 +235,10 @@ function ProfileCard({ profile }: { profile: IntelligenceProfile }) {
             <p className="flex flex-wrap items-center gap-x-2 gap-y-1">
               <YouBadge intelligence={profile} viewerId={me?.intelligence.id} />
               {profile.handle ? (
-                <span className="font-mono text-sm text-muted-foreground [overflow-wrap:anywhere]">
-                  @{profile.handle}
-                </span>
+                <IntelligenceHandle
+                  handle={profile.handle}
+                  className="whitespace-normal text-sm [overflow-wrap:anywhere]"
+                />
               ) : null}
             </p>
           </div>

@@ -1,5 +1,10 @@
 import { Link } from "@tanstack/react-router";
-import { IntelligenceAvatar, useIsOnline, YouBadge } from "@/entities/intelligence";
+import {
+  IntelligenceAvatar,
+  IntelligenceHandle,
+  useIsOnline,
+  YouBadge,
+} from "@/entities/intelligence";
 import { OrgMemberActions } from "@/features/manage-org-member";
 import { type ChartMember, PermissionAdmin, PermissionGuest } from "@/shared/api/types.gen";
 import { type Translate, useT } from "@/shared/i18n";
@@ -112,7 +117,7 @@ function ChartMemberRow({
           id={state.descId}
           className="flex min-w-0 flex-wrap items-center gap-x-1.5 gap-y-0.5 text-xs text-muted-foreground"
         >
-          <span className="max-w-full truncate font-mono">@{who.handle}</span>
+          <IntelligenceHandle handle={who.handle} className="max-w-full" />
           <YouBadge intelligence={who} viewerId={viewerId} />
           {m.permission === PermissionAdmin ? (
             <Badge variant="secondary" className="px-1.5 py-0 text-[0.68rem] leading-5">

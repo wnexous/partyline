@@ -1,5 +1,10 @@
 import type { ReactNode } from "react";
-import { AiStatusLine, IntelligenceName, ProfileLink } from "@/entities/intelligence";
+import {
+  AiStatusLine,
+  IntelligenceHandle,
+  IntelligenceName,
+  ProfileLink,
+} from "@/entities/intelligence";
 import { ConversationFace, conversationTitle, counterpartOf } from "@/entities/room";
 import { ConversationKindDM, type Room } from "@/shared/api/types.gen";
 import { useT } from "@/shared/i18n";
@@ -86,9 +91,7 @@ export function ConversationHeader({
           {isDM ? (
             counterpart ? (
               <>
-                {counterpart.handle ? (
-                  <span className="truncate font-mono text-xs">@{counterpart.handle}</span>
-                ) : null}
+                {counterpart.handle ? <IntelligenceHandle handle={counterpart.handle} /> : null}
                 {counterpart.role === "ai" ? (
                   <AiStatusLine id={counterpart.id} appClassName="max-sm:hidden" />
                 ) : null}

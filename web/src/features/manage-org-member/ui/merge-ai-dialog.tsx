@@ -1,6 +1,6 @@
 import { type FormEvent, useId, useState } from "react";
 import { toast } from "sonner";
-import { useMergeAgent } from "@/entities/intelligence";
+import { handleText, useMergeAgent } from "@/entities/intelligence";
 import { isApiError } from "@/shared/api/client";
 import { ErrorCodeIdentityOnline, type IntelligenceRef } from "@/shared/api/types.gen";
 import { useT } from "@/shared/i18n";
@@ -128,7 +128,7 @@ function MergeForm({
           <option value="">{t("merge.pick")}</option>
           {candidates.map((candidate) => (
             <option key={candidate.id} value={candidate.id}>
-              {candidate.display_name} (@{candidate.handle})
+              {candidate.display_name} ({handleText(candidate.handle)})
             </option>
           ))}
         </NativeSelect>

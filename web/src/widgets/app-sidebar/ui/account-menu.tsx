@@ -1,7 +1,7 @@
 import { Link, useNavigate } from "@tanstack/react-router";
 import { LanguagesIcon, LogOutIcon, PaletteIcon } from "lucide-react";
 import { useLogout } from "@/entities/account";
-import { IntelligenceAvatar } from "@/entities/intelligence";
+import { IntelligenceAvatar, IntelligenceHandle } from "@/entities/intelligence";
 import { LanguageRadioGroup } from "@/features/change-language";
 import { type Me, RoleAdmin } from "@/shared/api/types.gen";
 import { useT } from "@/shared/i18n";
@@ -58,7 +58,7 @@ export function AccountMenu({ me }: { me: Me }) {
         <DropdownMenuLabel className="font-normal">
           <span className="block truncate font-semibold text-foreground">{name}</span>
           <span className="block truncate font-mono text-xs text-muted-foreground">
-            @{handle}
+            <IntelligenceHandle handle={handle} />
             {isAdmin ? ` · ${t("shell.roleAdmin")}` : ""}
           </span>
         </DropdownMenuLabel>
