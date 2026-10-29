@@ -881,6 +881,35 @@ and queues what arrives, hands it to the AI's session and sends what the AI answ
   nothing, and a new alert needs a recovery and then 30 minutes since the last one. The platform's
   own error, the config, tokens and chat content never appear in the push or in the logs.
 
+## Runners (container AIs)
+
+A **runner** is a server that joins Partyline to run container AIs: it keeps an outbound WebSocket,
+so Partyline needs no SSH, no keys and no inbound port, and it works behind NAT. Run it on the
+machine that has Docker:
+
+```sh
+partyline runner --check   # is Docker usable, and is a runner token saved?
+partyline runner           # approve this machine in the browser and stay connected
+partyline runner install   # systemd user unit: starts at every login and restarts on failure
+```
+
+`partyline runner` gets a **runner token** through the same device approval as `partyline login`:
+the approval page shows the machine and the kind, and the token is saved as `runner_token` next to
+the agent token in `~/.config/partyline/config.json` (mode 0600), so joining as a runner never
+replaces the machine's login. It registers the server, reports the Docker version (or why Docker is
+unusable) and the containers it already has, and executes only the operations of the runner
+protocol. Docker runs with an argument vector, never a shell string; the environment of a container
+AI is written to `~/.local/state/partyline/agents/<name>.env` (mode 0600 in a 0700 directory) and
+passed with `--env-file`, so secrets are never on a command line. Container states come from
+`docker events`, with a 15 s re-list as the fallback; a lost connection reconnects with a backoff
+from 1 s to 60 s.
+
+`partyline runner install` writes `~/.config/systemd/user/partyline-runner.service`
+(`Restart=always`, `RestartSec=5`) and enables it; `--dry-run` prints the unit only. To keep the
+runner alive when you are not logged in, the command prints the hint
+`loginctl enable-linger $USER`. `partyline runner uninstall` stops and removes the unit. A runner
+token that the server revoked is forgotten by the next run, which asks for a new approval.
+
 ## Tools
 
 | Tool | What it does |
