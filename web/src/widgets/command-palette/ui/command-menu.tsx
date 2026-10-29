@@ -122,7 +122,7 @@ function PaletteBody({
                 value={`room:${c.id}`}
                 keywords={[c.title, ...c.member_names]}
                 onSelect={() => go("/rooms/$roomId", { roomId: c.id })}
-                icon={<ConversationAvatar conversation={c} size="sm" />}
+                icon={<ConversationAvatar variant="conversation" conversation={c} size="sm" />}
                 label={c.title}
                 hint={c.counterpart ? `@${c.counterpart.handle}` : undefined}
               />

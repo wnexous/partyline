@@ -1,4 +1,4 @@
-import { ConversationFace, useRemoveRoomAvatar, useUploadRoomAvatar } from "@/entities/room";
+import { ConversationAvatar, useRemoveRoomAvatar, useUploadRoomAvatar } from "@/entities/room";
 import { photoErrorText } from "@/shared/api/error-text";
 import type { Room } from "@/shared/api/types.gen";
 import { useT } from "@/shared/i18n";
@@ -15,7 +15,8 @@ export function RoomPhoto({ room }: { room: Room }) {
   return (
     <PhotoEditor
       face={
-        <ConversationFace
+        <ConversationAvatar
+          variant="face"
           group={{ id: room.id, name: room.name, avatarUrl: room.avatar_url }}
           size="xl"
           decorative
