@@ -17,6 +17,7 @@ import (
 	"github.com/wnexous/partyline/internal/avatars"
 	"github.com/wnexous/partyline/internal/config"
 	"github.com/wnexous/partyline/internal/connectors"
+	"github.com/wnexous/partyline/internal/containeragents"
 	"github.com/wnexous/partyline/internal/conversations"
 	"github.com/wnexous/partyline/internal/delivery"
 	"github.com/wnexous/partyline/internal/devices"
@@ -75,6 +76,8 @@ type Deps struct {
 	AgentWS http.Handler
 	// Runners is the registry of the servers that run container AIs (CA-01).
 	Runners *runners.Service
+	// Containers creates and operates the AIs that live in a container on a runner (CA-04, CA-06).
+	Containers *containeragents.Service
 	// RunnerWS serves the runner WebSocket at GET /api/v1/runner/ws (CA-02).
 	RunnerWS http.Handler
 	// Inbox serves GET /api/v1/agent/pending.
@@ -145,6 +148,7 @@ func (s *server) routes(mux *http.ServeMux) {
 	s.deviceRoutes(mux)
 	s.secretRoutes(mux)
 	s.runnerRoutes(mux)
+	s.containerAgentRoutes(mux)
 	if s.Live != nil {
 		mux.Handle("GET /api/v1/live", s.Live)
 	}
@@ -261,7 +265,7 @@ func mapError(err error) error {
 		return httpx.NewError(http.StatusTooManyRequests, dto.ErrorCodeRateLimited, "too many failed logins, try again later")
 	case errors.Is(err, users.ErrNotFound):
 		return httpx.NewError(http.StatusNotFound, dto.ErrorCodeNotFound, "not found")
-	case errors.Is(err, ownersecrets.ErrNotFound):
+	case errors.Is(err, ownersecrets.ErrNotFound), errors.Is(err, containeragents.ErrNotFound):
 		return httpx.NewError(http.StatusNotFound, dto.ErrorCodeNotFound, "not found")
 	case errors.Is(err, users.ErrInviteGone):
 		return httpx.NewError(http.StatusGone, dto.ErrorCodeGone, "invite already used, revoked or expired")

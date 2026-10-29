@@ -30,7 +30,7 @@ smoke script. Status: done
 
 ## T6 — container agents service + API (CA-04, CA-06, CA-07, CA-08)
 `internal/containeragents` (create identity + token + `run` via hub, lifecycle, logs, delete with
-volume option + token revoke, last_error), routes, audit, tests with the fake runner. Status: pending
+volume option + token revoke, last_error), routes, audit, tests with the fake runner. Status: done
 
 ## T7 — web (CA-01..CA-06, CA-10)
 Slices per design "Web"; vitest; one e2e with a fake runner client. Status: pending
