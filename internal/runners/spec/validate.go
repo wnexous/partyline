@@ -284,6 +284,12 @@ func ValidateCommand(c Command, allow []string) error {
 		if c.Name != "" {
 			fields["name"] = "is not allowed for run"
 		}
+		if c.Tail != 0 {
+			fields["tail"] = "is only allowed for logs"
+		}
+		if c.RemoveVolume {
+			fields["remove_volume"] = "is only allowed for remove"
+		}
 	case OpStart, OpStop, OpRestart, OpRemove, OpLogs:
 		if !ValidContainerName(c.Name) {
 			fields["name"] = "must match " + ContainerNamePattern.String()
