@@ -112,6 +112,16 @@ describe("the page", () => {
     expect(await screen.findByRole("dialog", { name: "Connect an agent" })).toBeInTheDocument();
   });
 
+  it("offers the two ways an AI joins: a session here, or a container on a server (CA-04)", async () => {
+    api();
+    const user = userEvent.setup();
+    renderRoute("/contacts");
+    await user.click(await screen.findByRole("button", { name: "New AI in a container" }));
+    expect(
+      await screen.findByRole("dialog", { name: "New AI in a container" }),
+    ).toBeInTheDocument();
+  });
+
   it("sends the old agents address here", async () => {
     api();
     const { router } = renderRoute("/agents");

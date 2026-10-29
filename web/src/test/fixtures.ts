@@ -7,6 +7,7 @@ import type {
   Connector,
   ConnectorKind,
   Contacts,
+  ContainerAgent,
   Conversation,
   IntelligenceProfile,
   IntelligenceRef,
@@ -21,6 +22,8 @@ import type {
   ProfileMembership,
   Room,
   RoomMember,
+  Runner,
+  Secret,
 } from "@/shared/api/types.gen";
 
 /** Synthetic fixtures; never real names, numbers or chat ids. */
@@ -377,4 +380,49 @@ export function makeChartPosition(over: Partial<ChartPosition> = {}): ChartPosit
 /** `GET /orgs/{org}/chart` for a viewer who is not an admin, with an empty chart, unless overridden. */
 export function makeOrgChart(over: Partial<OrgChart> = {}): OrgChart {
   return { viewer: { admin: false }, positions: [], members: [], unassigned: [], ...over };
+}
+
+/** A server that runs container AIs (CA-01): connected, Docker usable, no containers, unless overridden. */
+export function makeRunner(over: Partial<Runner> = {}): Runner {
+  return {
+    id: "r1",
+    name: "devbox",
+    machine: "devbox.local",
+    online: true,
+    docker_version: "27.3.1",
+    last_seen_at: "2026-10-29T12:00:00Z",
+    container_count: 0,
+    created_at: "2026-10-01T12:00:00Z",
+    ...over,
+  };
+}
+
+/** One of the owner's named secrets (CA-03): a name and its dates, never a value. */
+export function makeSecret(over: Partial<Secret> = {}): Secret {
+  return {
+    name: "OPENCODE_API_KEY",
+    created_at: "2026-10-01T12:00:00Z",
+    updated_at: "2026-10-29T12:00:00Z",
+    ...over,
+  };
+}
+
+/** The container of an AI (CA-06): Atlas on devbox, running, with the default limits, unless overridden. */
+export function makeContainer(over: Partial<ContainerAgent> = {}): ContainerAgent {
+  return {
+    agent: makeAI(),
+    runner_id: "r1",
+    harness: "opencode",
+    image: "ghcr.io/wnexous/partyline-agent:latest",
+    volume: "pl-000000000001-ws",
+    container_name: "pl-000000000001",
+    env: [{ var: "OPENCODE_API_KEY", secret_name: "OPENCODE_API_KEY" }],
+    cpus: 1,
+    memory_mb: 2048,
+    desired: "running",
+    state: "running",
+    created_at: "2026-10-29T12:00:00Z",
+    updated_at: "2026-10-29T12:00:00Z",
+    ...over,
+  };
 }

@@ -10,6 +10,7 @@ import {
   makeAI,
   makeAIContact,
   makeContacts,
+  makeContainer,
   makeIntelligence,
   makeMe,
   makeMembership,
@@ -135,6 +136,32 @@ describe("reading a profile (PROF-09)", () => {
     expect(within(details).queryByText("devbox")).toBeNull();
     expect(within(details).getByText("~/atlas")).toBeInTheDocument();
     vi.useRealTimers();
+  });
+
+  it("shows the container of an AI the viewer manages (CA-06)", async () => {
+    api(atlas, {
+      "GET /agents/a1/container": json(
+        200,
+        makeContainer({ agent: atlasRef, state: "running", last_error: "restarted once" }),
+      ),
+    });
+    renderRoute("/contacts/a1");
+    await name();
+    const container = await screen.findByRole("region", { name: "Container" });
+    expect(within(container).getByText("Running")).toBeInTheDocument();
+    expect(within(container).getByText("restarted once")).toBeInTheDocument();
+    expect(within(container).getByRole("button", { name: "Restart" })).toBeInTheDocument();
+  });
+
+  it("hides the container of an AI the viewer only uses (CA-07)", async () => {
+    const { calls } = api(
+      { ...atlas, ai: atlas.ai && { ...atlas.ai, my_level: "use" } },
+      { "GET /agents/a1/container": json(200, makeContainer({ agent: atlasRef })) },
+    );
+    renderRoute("/contacts/a1");
+    await name();
+    expect(screen.queryByRole("region", { name: "Container" })).toBeNull();
+    expect(calls.some((c) => c.path === "/agents/a1/container")).toBe(false);
   });
 
   it("says an AI that no folder was ever linked to has none", async () => {

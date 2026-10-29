@@ -17,9 +17,10 @@ import {
   YouBadge,
 } from "@/entities/intelligence";
 import { platformName } from "@/entities/message";
+import { ContainerSection } from "@/features/operate-container";
 import { useStartConversation } from "@/features/start-conversation";
 import { isApiError } from "@/shared/api/client";
-import type { IntelligenceProfile } from "@/shared/api/types.gen";
+import { type IntelligenceProfile, LevelManage } from "@/shared/api/types.gen";
 import { useT } from "@/shared/i18n";
 import { useIsMobile } from "@/shared/lib/device";
 import { cn } from "@/shared/lib/utils";
@@ -304,6 +305,17 @@ function ProfileCard({ profile }: { profile: IntelligenceProfile }) {
           </div>
         </section>
       ) : null}
+
+      {/* The container of an AI the viewer manages (CA-06), the same section as the full profile. */}
+      <ContainerSection
+        agentId={profile.id}
+        name={name}
+        manages={profile.ai?.my_level === LevelManage}
+        headingLevel="h3"
+        headingClassName="text-sm font-medium"
+        className="border-t px-5 py-4"
+        testId="profile-panel-container"
+      />
     </>
   );
 }
