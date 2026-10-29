@@ -271,6 +271,54 @@ func (q *Queries) GetRunnerByToken(ctx context.Context, tokenID string) (Runner,
 	return i, err
 }
 
+const listContainerAgentsByOwner = `-- name: ListContainerAgentsByOwner :many
+SELECT ca.agent_id, ca.runner_id, ca.harness, ca.image, ca.repo_url, ca.repo_ref, ca.volume, ca.container_name, ca.env, ca.cpus, ca.memory_mb, ca.desired, ca.state, ca.last_error, ca.token_id, ca.created_at, ca.updated_at FROM container_agents ca JOIN runners r ON r.id = ca.runner_id
+WHERE r.owner_id = ? ORDER BY ca.agent_id
+`
+
+// Every container on one owner's runners (account deletion removes them before the runners go: the
+// runner foreign key is RESTRICT).
+func (q *Queries) ListContainerAgentsByOwner(ctx context.Context, ownerID string) ([]ContainerAgent, error) {
+	rows, err := q.db.QueryContext(ctx, listContainerAgentsByOwner, ownerID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []ContainerAgent
+	for rows.Next() {
+		var i ContainerAgent
+		if err := rows.Scan(
+			&i.AgentID,
+			&i.RunnerID,
+			&i.Harness,
+			&i.Image,
+			&i.RepoUrl,
+			&i.RepoRef,
+			&i.Volume,
+			&i.ContainerName,
+			&i.Env,
+			&i.Cpus,
+			&i.MemoryMb,
+			&i.Desired,
+			&i.State,
+			&i.LastError,
+			&i.TokenID,
+			&i.CreatedAt,
+			&i.UpdatedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const listContainerAgentsByRunner = `-- name: ListContainerAgentsByRunner :many
 SELECT agent_id, runner_id, harness, image, repo_url, repo_ref, volume, container_name, env, cpus, memory_mb, desired, state, last_error, token_id, created_at, updated_at FROM container_agents WHERE runner_id = ? ORDER BY container_name, agent_id
 `
@@ -442,6 +490,22 @@ type SetContainerAgentStateParams struct {
 // The last state the runner reported (running, stopped, error, unknown), CA-06.
 func (q *Queries) SetContainerAgentState(ctx context.Context, arg SetContainerAgentStateParams) error {
 	_, err := q.db.ExecContext(ctx, setContainerAgentState, arg.State, arg.UpdatedAt, arg.AgentID)
+	return err
+}
+
+const setContainerAgentToken = `-- name: SetContainerAgentToken :exec
+UPDATE container_agents SET token_id = ?, updated_at = ? WHERE agent_id = ?
+`
+
+type SetContainerAgentTokenParams struct {
+	TokenID   sql.NullString
+	UpdatedAt int64
+	AgentID   string
+}
+
+// A container that is created again gets a fresh agent token; the old one is revoked (CA-08).
+func (q *Queries) SetContainerAgentToken(ctx context.Context, arg SetContainerAgentTokenParams) error {
+	_, err := q.db.ExecContext(ctx, setContainerAgentToken, arg.TokenID, arg.UpdatedAt, arg.AgentID)
 	return err
 }
 

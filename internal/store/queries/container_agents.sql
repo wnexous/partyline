@@ -76,6 +76,12 @@ SELECT * FROM container_agents WHERE agent_id = ?;
 -- The containers a runner reports and operates, by container name.
 SELECT * FROM container_agents WHERE runner_id = ? ORDER BY container_name, agent_id;
 
+-- name: ListContainerAgentsByOwner :many
+-- Every container on one owner's runners (account deletion removes them before the runners go: the
+-- runner foreign key is RESTRICT).
+SELECT ca.* FROM container_agents ca JOIN runners r ON r.id = ca.runner_id
+WHERE r.owner_id = ? ORDER BY ca.agent_id;
+
 -- name: SetContainerAgentDesired :exec
 -- What the owner wants (start, stop, restart, or the intent a create writes).
 UPDATE container_agents SET desired = ?, updated_at = ? WHERE agent_id = ?;
@@ -83,6 +89,10 @@ UPDATE container_agents SET desired = ?, updated_at = ? WHERE agent_id = ?;
 -- name: SetContainerAgentState :exec
 -- The last state the runner reported (running, stopped, error, unknown), CA-06.
 UPDATE container_agents SET state = ?, updated_at = ? WHERE agent_id = ?;
+
+-- name: SetContainerAgentToken :exec
+-- A container that is created again gets a fresh agent token; the old one is revoked (CA-08).
+UPDATE container_agents SET token_id = ?, updated_at = ? WHERE agent_id = ?;
 
 -- name: SetContainerAgentLastError :exec
 -- The last failure (NULL clears it), CA-06.
