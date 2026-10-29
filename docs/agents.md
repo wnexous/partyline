@@ -910,6 +910,9 @@ runner alive when you are not logged in, the command prints the hint
 `loginctl enable-linger $USER`. `partyline runner uninstall` stops and removes the unit. A runner
 token that the server revoked is forgotten by the next run, which asks for a new approval.
 
+The whole setup — requirements on the server, the secrets each app needs, creating and operating a
+container AI — is in [container-agents.md](container-agents.md).
+
 ## Tools
 
 | Tool | What it does |

@@ -456,6 +456,14 @@
 - **Status**: active
 - **Amends**: AD-033 and AD-034 (the tools-only reader of Codex, Gemini and Antigravity no longer exists, and neither does their lack of a harness session id), harness-onboarding HAR-01..HAR-05 and TURN-01, TURN-02 (they described those three), and the intelligences spec's SES-50 (the tools-only sign of life now serves pi and OpenCode).
 
+### AD-036
+- **Decision**: A container AI runs on a server that joins Partyline through a **runner** that logs in to Partyline (device approval, token kind `runner`) and keeps an outbound WebSocket; Partyline never uses SSH and the server needs no inbound port. The runner drives Docker with an argument vector only, built from values validated on the server and again on the runner, and executes only `run`, `start`, `stop`, `restart`, `remove`, `logs` and `state` on containers labelled `partyline.agent`. Secret values are sealed at rest with the instance key, are write-only over the API, and reach a container only in an env file (mode 0600 in a 0700 directory) passed with `--env-file`, never on a command line, in a process list or in a log line.
+- **Reason**: The owner asked for AIs that are always on, isolated and on a server of their choice, started and managed from the web app (2026-10-26, defaults agreed 2026-10-29). Logging in works behind NAT and keeps the owner's keys off Partyline and the server's SSH out of the picture; argv-only Docker calls and an env file keep secrets out of the process list (CA-01, CA-08, CA-09).
+- **Trade-off**: Commands are not queued: a container operation fails fast while its runner is offline, and the web shows it. One Docker host per runner, containers only, no sleep/wake or scheduling across servers in this version. Claude Code's channel acknowledgement has no supported non-interactive form, so the agent image types it into the pty as a last resort until Anthropic offers one (design, "Unattended Claude Code").
+- **Scope**: store (`0029`), `runners` + `runners/spec`, `ownersecrets`, `containeragents`, `runnerexec`, cli (`runner`), api (`/runners`, `/secrets`, `/container-agents`, `/runner/*`), web (servers, secrets, create/operate container AI), `deploy/agent`, docs.
+- **Date**: 2026-10-29
+- **Status**: active
+
 ## Handoff
 
 - **Feature**: organizations

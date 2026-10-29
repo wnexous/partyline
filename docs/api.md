@@ -179,6 +179,52 @@ and two accounts may each have a secret with the same name.
 Every `PUT` is audited as `secret.put` and every delete as `secret.delete`, with the secret's name
 as the target and no detail: the value never enters the audit log (CA-08).
 
+### Servers and container AIs
+
+A **runner** is a machine that runs container AIs (CA-01, CA-02). It joins with a token of kind
+`runner`, obtained from the device flow (`POST /devices` with `kind: "runner"`; the token it
+creates is named `<machine> (runner)`), keeps an outbound WebSocket and executes only the
+operations of the runner protocol (CA-09). Partyline never dials a runner: no SSH, no inbound port.
+A **container AI** is an AI whose machine is `runner:<runner-id>` and whose folder is `/workspace`
+(with a repository, `/workspace/repo`); it is created, read and operated through the routes below
+(CA-04..CA-07).
+
+#### Servers
+
+A runner token reaches only `/runner/register` and `/runner/ws`; every other route answers 403
+`forbidden` for it. The owner routes take a session or a user token (an agent token is 403), and a
+runner of another account is 404 `not_found`.
+
+| Route | Who | Result |
+| --- | --- | --- |
+| `POST /runner/register` `{name?, machine}` | Runner token | 201 the first time and 200 after, idempotent per token: `Runner`. `machine` is required, 1 to 64 characters without control characters; `name` defaults to it, must be 1 to 64 characters starting with a letter or a digit (letters, digits, `.`, `_`, ` ` and `-` after it) and is made unique per owner with `-2`, `-3`, … A later registration of the same token keeps the existing runner, so `name` counts only when it is created. Audited as `runner.register`. |
+| `GET /runner/ws` | Runner token, WebSocket | The runner's live connection. The first frame is the runner's `hello` with `docker_version` or `docker_error` and the containers it has; the server sends `command` frames (`run`, `start`, `stop`, `restart`, `remove`, `logs`, `state`) and the runner answers `result` frames, with unsolicited `state` frames from `docker events` (plus a 15 s poll). Ping/pong keeps it open; a new connection replaces the old one at once. A token that registered no runner is 403. |
+| `GET /runners` | — | 200 `List[Runner]`: `id`, `name`, `machine`, `online`, `docker_version` or `docker_error`, `last_seen_at` (absent until the first connection), `container_count` and `created_at`. |
+| `PATCH /runners/{id}` `{name}` | The runner's owner | 200 `Runner`. The name follows the rule of register; another of the owner's runners with it is 409 `conflict` (the message says another runner has this name). Audited as `runner.rename`. |
+| `DELETE /runners/{id}` | The runner's owner | 204: removes the runner, revokes its token and closes its connection. 409 `runner_in_use` while one of its container AIs exists (delete those first). Audited as `runner.delete`. |
+
+A command for a runner that is not connected fails at once with 409 `runner_offline` (there is no
+queue in this version). An operation has its own timeout, 60 s (15 s for `logs` and `state`): a
+runner that does not answer is 504 `unavailable`, and a Docker operation it refuses is 502
+`unavailable` with the runner's message. Every value is validated on the server and again on the
+runner (CA-09), and the runner reports container states as they change, which the server stores in
+`container_agents.state`.
+
+#### Container AIs
+
+A container AI is created on one of the caller's runners and belongs to its owner. The routes below
+take a session or a user token only; an agent token is 403. Reading and operating the container
+needs to manage the AI in an organization the caller shares (404 when it cannot see the AI, 403
+when it sees it without managing it).
+
+| Route | Who | Result |
+| --- | --- | --- |
+| `POST /container-agents` `{runner_id, harness, display_name, handle, repo_url?, repo_ref?, env?, cpus?, memory_mb?}` | — (the runner's owner) | 201 `ContainerAgent`: validates, creates the AI's identity (machine `runner:<runner-id>`, folder `/workspace` or `/workspace/repo`), an agent token and the container row in one transaction, then asks the runner to run the agent image. `harness` is `claude`, `opencode`, `pi` or `omp`; `display_name` 1 to 64 characters; `handle` matches `^[a-z][a-z0-9-]{0,39}$` and must be free (409 `handle_taken`); `repo_url` is an `https://`, `ssh://` or `git@host:path` URL and `repo_ref` a branch, tag or commit (default `main`, 422 when a ref comes without a URL); `env` is at most 64 `{var, secret_name}` rows, `var` matching `^[A-Z_][A-Z0-9_]{0,63}$`, no duplicates and none of `PARTYLINE_URL`, `PARTYLINE_TOKEN`, `PARTYLINE_HARNESS`, `PARTYLINE_REPO`, `PARTYLINE_REPO_REF` (set by Partyline), and `secret_name` one of the caller's secrets (422 `invalid` names the row). `cpus` is 0.1 to 64 (default 1) and `memory_mb` 64 to 65536 (default 1024). 404 for another owner's runner, 409 `runner_offline` when it is not connected, 409 `conflict` at the account's 200-AI limit. A run the runner refuses leaves the row with `last_error`. |
+| `GET /agents/{id}/container` | Whoever manages the AI | 200 `ContainerAgent`: `agent` (an `IntelligenceRef`), `runner_id`, `harness`, `image`, `repo_url`/`repo_ref` when set, `volume`, `container_name`, `env` (variables and secret names only, never values), `cpus`, `memory_mb`, `desired` (`running` or `stopped`), `state` (`running`, `stopped`, `error` or `unknown`), `last_error` when the last operation failed, `created_at` and `updated_at`. 404 when the AI has no container. |
+| `POST /agents/{id}/container` `{action}` | Whoever manages the AI | 200 `ContainerAgent`. `action` is `start`, `stop` or `restart` (anything else is 422 on `action`); it records the desired state and asks the runner. `start` on a container the runner no longer has creates it again with a fresh agent token and the current secret values. 409 `runner_offline`, 504 or 502 `unavailable` as above. Audited as `container.start`, `container.stop` or `container.restart`. |
+| `GET /agents/{id}/container/logs?tail=200` | Whoever manages the AI | 200 `{logs}`: the last `tail` lines, 200 by default and clamped to 1..500 (a negative value is 422 on `tail`). The read is audited as `container.logs`. |
+| `DELETE /agents/{id}/container?volume=false` | Whoever manages the AI | 204. Removes the container, revokes the AI's agent token and deletes the container row; `volume=true` also removes the workspace volume (irreversible). A runner that is offline or does not answer keeps the row and answers 409 or 504, so a container is never left behind silently. Afterwards the AI is deleted too when the caller may delete it in its home organization; a caller who may operate the container but not delete the AI keeps the AI, without a container. Audited as `container.delete`. |
+
 ### AIs and profiles
 
 | Route | Who | Result |
@@ -521,6 +567,8 @@ others are unchanged.
 | `members_refused` | 422 | A group member cannot be added; each refused member has a reason: `not_found`, `person` or `not_org_member`. |
 | `conflict` | 409 | An address or a position name that is already taken. |
 | `last_instance_admin` | 409 | The last active instance admin tried to delete their account. |
+| `runner_offline` | 409 | An operation on a container (or a create) whose runner has no live connection: reconnect the runner and try again. |
+| `runner_in_use` | 409 | A server with at least one container AI cannot be removed: delete those containers first. |
 | `invalid` | 422 | A field is wrong: a name outside its bounds, a parent of another organization, an invalid permission. `fields` names it. |
 | `already_answered` | 409 | The caller already answered that question with the structured copy; they delete their answer to answer again ([Questions and answers](#questions-and-answers)). |
 
