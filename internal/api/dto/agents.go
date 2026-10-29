@@ -291,8 +291,7 @@ type AgentNoticeFrame struct {
 }
 
 // DroppedNotice is the text that tells an AI how many of its platform messages the server dropped, for
-// being older than 7 days or over the bound of 5,000 queued (CID-10). The WebSocket notice and the
-// answer of GET /agent/pending share it.
+// being older than 7 days or over the bound of 5,000 queued (CID-10), as the WebSocket notice says it.
 func DroppedNotice(n int64) string {
 	return fmt.Sprintf("%d platform messages were dropped (older than 7 days or over 5,000 queued)", n)
 }
@@ -345,22 +344,6 @@ type AgentPlatformFrame struct {
 type AgentPlatformAckFrame struct {
 	Type   AgentFrameType `json:"type" tstype:"typeof AgentFrameTypePlatformAck"`
 	ItemID string         `json:"item_id"`
-}
-
-// AgentPending is the answer of GET /agent/pending?platform=1 (CID-06). No supported harness polls it any
-// more (the turn-end hooks and wait_for_messages went with Codex, Gemini and Antigravity, AD-035); it is
-// kept only because the server tests read through it what an AI would be handed. It holds the undelivered room
-// messages, exactly as the call without the parameter returns them (a List of AgentMessage), and
-// the AI's queued platform events, oldest first, at most 20 per call like the room messages. Both
-// lists count as delivered once returned: the platform events lose their text (CID-09).
-type AgentPending struct {
-	Items    []AgentMessage  `json:"items"`
-	Platform []PlatformEvent `json:"platform"`
-	// Dropped is how many of the AI's platform messages the server dropped since it last told the AI,
-	// for being older than 7 days or over the bound of 5,000 (CID-10): the WebSocket's notice for the
-	// harnesses that poll (DroppedNotice words it). The call that returns it resets it, so it comes
-	// once, and it ends a wait like a message does. Always present; 0 when nothing was dropped.
-	Dropped int64 `json:"dropped"`
 }
 
 // AgentDMRequest is the body of POST /agent/dms (DM-04): the AI writes to a user, or to an AI it

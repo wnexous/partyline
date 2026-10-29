@@ -13,8 +13,7 @@ type Trust interface {
 	Trusts(ctx context.Context, authorIID, agentID string) (bool, error)
 }
 
-// TrustSource opens the Trust of one operation: a dispatch, a backlog, a page of pending messages or
-// of history. The Trust it returns may remember what it read, such as an organization's chart, for as
+// TrustSource opens the Trust of one operation: a dispatch, a backlog or a page of history. The Trust it returns may remember what it read, such as an organization's chart, for as
 // long as the operation lasts, so every operation opens its own and never keeps it (AD-017: no cache
 // across requests, so an answer is never stale).
 type TrustSource func() Trust

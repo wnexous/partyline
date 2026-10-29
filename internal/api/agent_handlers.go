@@ -10,7 +10,6 @@ import (
 	"net/http"
 	"path/filepath"
 	"slices"
-	"strconv"
 	"strings"
 	"time"
 
@@ -63,7 +62,7 @@ func (s *server) agentAPIRoutes(mux *http.ServeMux) {
 	s.handle(mux, "POST /api/v1/agent/messages/{id}/react", s.agentOnly(s.agentReact))
 	s.handle(mux, "GET /api/v1/agent/attachments/{id}", s.agentOnly(s.agentAttachment))
 	s.handle(mux, "POST /api/v1/agent/register", s.agentRegister)
-	s.handle(mux, "GET /api/v1/agent/pending", s.agentOnly(s.agentPending))
+	s.handle(mux, "GET /api/v1/agent/pending", agentPendingGone)
 	s.handle(mux, "DELETE /api/v1/agent/token", s.revokeOwnAgentToken)
 	s.handle(mux, "GET /api/v1/agent/agents", s.ownerAgents)
 	s.handle(mux, "GET /api/v1/agent/session", s.agentSession)
@@ -280,130 +279,26 @@ func (s *server) revokeOwnAgentToken(w http.ResponseWriter, r *http.Request) err
 	return nil
 }
 
-// AgentInbox reads an agent's undelivered messages for harnesses without the WebSocket
-// (TURN-01, TURN-02); the agent gateway implements it.
-type AgentInbox interface {
-	Pending(ctx context.Context, a db.Agent, label string, limit int) ([]dto.AgentMessage, error)
-	Online(agentID string) bool
-}
+// errPendingRemoved answers the pull route Partyline dropped with AD-035.
+var errPendingRemoved = httpx.NewError(http.StatusGone, dto.ErrorCodeGone,
+	"GET /agent/pending was removed in v0.12.1 (AD-035): messages are pushed to the agent WebSocket; update partyline")
 
-// MaxPendingWait bounds GET /agent/pending?wait= in seconds (TURN-01).
-const MaxPendingWait = 300
-
-// pendingPoll is how often a waiting GET /agent/pending looks for new messages.
-var pendingPoll = 500 * time.Millisecond
-
-var errPushedSession = httpx.NewError(http.StatusConflict, dto.ErrorCodeConflict, "messages are pushed to this agent's session; there is nothing to wait for")
-
-// agentPending returns up to 20 undelivered messages, oldest first, and counts them as
-// delivered. With wait=N (1-300 s) it waits up to N seconds for the first one and returns an
-// empty list on timeout. An agent connected over the WebSocket gets 409: its messages are
-// pushed there. With platform=1 the answer also carries the AI's queued platform events (up to
-// 20, oldest first), which count as delivered too, and a platform event ends the wait (CID-06,
-// CID-08, CID-09), and how many platform messages the server dropped since the AI was last told,
-// which is taken once and ends the wait too (CID-10); without it the platform queue and the count
-// are neither read nor touched. A tools-only process in a linked worktree has no live session:
-// its label's messages are the principal's, so it gets an empty page (items, platform events and
-// dropped count) at once, without waiting, and takes nothing (SESS-06). The tools half of pi and
-// OpenCode, which cannot be tied to a session, gets the same 409 while the AI has any live session: its
-// messages are pushed by its listen process (SESS-46).
-func (s *server) agentPending(w http.ResponseWriter, r *http.Request, p authn.Principal) error {
-	wait := 0
-	if v := r.URL.Query().Get("wait"); v != "" {
-		n, err := strconv.Atoi(v)
-		if err != nil || n < 0 || n > MaxPendingWait {
-			c := validation.Check{}
-			c.Add("wait", "must be a whole number of seconds from 0 to 300")
-			return c.Err()
-		}
-		wait = n
+// agentPendingGone is the tombstone of GET /agent/pending, which no supported harness calls since AD-035.
+// An old client still gets its 410 after the agent-token check, and a session of a removed harness keeps
+// its own 410 harness_removed (FolderIDFromHeader). It resolves no AI, creates none, writes nothing and
+// stamps no sign of life: a call to a removed route is no use of the AI.
+func agentPendingGone(_ http.ResponseWriter, r *http.Request) error {
+	p, ok := authn.PrincipalFrom(r.Context())
+	if !ok {
+		return errNotLoggedIn
 	}
-	withPlatform, err := platformParam(r)
-	if err != nil {
+	if p.Kind != authn.KindAgent {
+		return agents.ErrAgentTokenRequired
+	}
+	if _, err := agents.FolderIDFromHeader(r.Header); err != nil {
 		return err
 	}
-	withPlatform = withPlatform && s.Platform != nil // a server built without the queue has no events
-	a, err := s.Agents.ByID(r.Context(), p.AgentID)  // agentOnly resolved it
-	if err != nil {
-		return err
-	}
-	folder, err := agents.FolderIDFromHeader(r.Header) // agentOnly already validated it
-	if err != nil {
-		return err
-	}
-	label := s.Agents.SessionLabelOf(r.Context(), a.ID, r.Header.Get(dto.HeaderLive), folder.Folder)
-	// Only the principal session is pushed to: a process of the AI's own folder is refused while the principal is
-	// live, not while the AI is live only through a labelled session (SESS-06).
-	if _, principalLive := s.Agents.Live(a.ID); label == "" && principalLive {
-		return errPushedSession
-	}
-	// The tools half of pi and OpenCode is not a session of its own: its messages are pushed by its listen
-	// process. When it cannot be tied to that process (an older adapter, a stale live id) and the AI has a
-	// live session, it is told the same instead of being handed the principal's queue, which a parallel
-	// session would then answer in the principal's place while the principal never sees it (SESS-46).
-	if label == "" && agents.PushedHarness(folder.Harness) && len(s.Agents.Sessions(a.ID)) > 0 {
-		return errPushedSession
-	}
-	// A labelled reader that is itself a live session waits as asked and answers empty: nothing is queued for it.
-	// One that is not live (a tools-only process of a worktree) is answered at once (SESS-06).
-	liveReader := label != "" && r.Header.Get(dto.HeaderLive) != "" && slices.ContainsFunc(s.Agents.Sessions(a.ID), func(l agents.Live) bool { return l.Label == label })
-	deadline := time.Now().Add(time.Duration(wait) * time.Second)
-	for {
-		// The count goes first: when a later step fails, only a notice is lost, not messages. A
-		// labelled reader has no queue, so its platform count is not taken either (SESS-06).
-		var dropped int64
-		if withPlatform && label == "" {
-			if dropped, err = s.Platform.TakeDropped(r.Context(), a.ID); err != nil {
-				return err
-			}
-		}
-		msgs, err := s.Inbox.Pending(r.Context(), a, label, agents.PendingLimit)
-		if err != nil {
-			return err
-		}
-		events := []dto.PlatformEvent{}
-		if withPlatform && label == "" {
-			taken, err := s.Platform.Take(r.Context(), a.ID, agents.PendingLimit)
-			if err != nil {
-				return err
-			}
-			for _, e := range taken {
-				events = append(events, convert.PlatformEvent(e))
-			}
-		}
-		left := time.Until(deadline)
-		// An empty page for a labelled reader that is not a live session is answered now: it must not wait for a
-		// queue it can never be given (SESS-06).
-		if (label != "" && !liveReader) || len(msgs) > 0 || len(events) > 0 || dropped > 0 || left <= 0 {
-			if withPlatform {
-				httpx.WriteJSON(w, http.StatusOK, dto.AgentPending{Items: msgs, Platform: events, Dropped: dropped})
-			} else {
-				httpx.WriteJSON(w, http.StatusOK, dto.List[dto.AgentMessage]{Items: msgs})
-			}
-			return nil
-		}
-		select {
-		case <-r.Context().Done():
-			return r.Context().Err()
-		case <-time.After(min(pendingPoll, left)):
-		}
-	}
-}
-
-// platformParam reads the platform query parameter of GET /agent/pending: 1 asks for the platform
-// events, 0 or none leaves them alone; anything else is a 422.
-func platformParam(r *http.Request) (bool, error) {
-	switch v := r.URL.Query()["platform"]; {
-	case len(v) == 0:
-		return false, nil
-	case len(v) == 1 && v[0] == "1":
-		return true, nil
-	case len(v) == 1 && (v[0] == "0" || v[0] == ""):
-		return false, nil
-	}
-	c := validation.Check{}
-	c.Add("platform", "must be 1 or 0")
-	return false, c.Err()
+	return errPendingRemoved
 }
 
 // agentAttachment serves a file the AI may read: an attachment of a room it can view, else a file

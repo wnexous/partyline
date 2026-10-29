@@ -439,7 +439,7 @@ func onlyRoom(t *testing.T, e *schemaEnv, roomID string, got []string) []string 
 }
 
 // SESS-24 (data): the fallback list is per AI and per room, a message with any delivery row is not read
-// by the principal's backlog or pending list, and the three queue reads exclude every delivery row.
+// by the principal's backlog, and the three queue reads exclude every delivery row.
 func TestFallbacksArePerRoomAndOrdered(t *testing.T) {
 	ctx := context.Background()
 	e := newSchemaEnv(t)
@@ -464,8 +464,4 @@ func TestFallbacksArePerRoomAndOrdered(t *testing.T) {
 	n, err := e.s.R().CountAgentBacklog(ctx, db.CountAgentBacklogParams{RoomID: "r1", AfterSeq: 0, AgentID: "a1"})
 	require.NoError(t, err)
 	require.Equal(t, int64(1), n)
-
-	pending, err := e.s.R().ListAgentPending(ctx, db.ListAgentPendingParams{RoomID: "r1", AfterSeq: 0, AgentID: "a1", Limit: 10})
-	require.NoError(t, err)
-	require.Equal(t, []string{"m-new"}, messageIDs(pending), "a pending row of a live label is not the principal's")
 }

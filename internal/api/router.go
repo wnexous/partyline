@@ -64,8 +64,8 @@ type Deps struct {
 	Audit   *audit.Log
 	// Secrets stores the owner's named credentials for container AIs (CA-03).
 	Secrets *ownersecrets.Service
-	// Platform is the delivery queue of the messages that arrive on connections: GET
-	// /agent/pending?platform=1 takes from it and the agent attachments route serves its files.
+	// Platform is the delivery queue of the messages that arrive on connections: the agent WebSocket
+	// reads it for a session that opted in, and the agent attachments route serves its files.
 	Platform *platform.Queue
 	// Sends sends what an AI answers through a connection it operates: the reply to a message
 	// of the queue (CID-15).
@@ -80,8 +80,6 @@ type Deps struct {
 	Containers *containeragents.Service
 	// RunnerWS serves the runner WebSocket at GET /api/v1/runner/ws (CA-02).
 	RunnerWS http.Handler
-	// Inbox serves GET /api/v1/agent/pending.
-	Inbox AgentInbox
 	// Trust opens the trust of each request that tells an AI what it may trust: the history tool and the
 	// room's instructions (POS-10). Without it nothing is trusted.
 	Trust delivery.TrustSource

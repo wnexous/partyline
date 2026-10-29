@@ -341,7 +341,6 @@ func New(cfg *config.Config, opts Options) (*App, error) {
 		Sends:         a.Sends,
 		Live:          a.Live,
 		AgentWS:       a.Gateway,
-		Inbox:         a.Gateway,
 		Trust:         trust,
 		Push:          a.PushService,
 		WebUI:         webui.Handler(cfg.PublicURL),

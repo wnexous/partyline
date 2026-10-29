@@ -591,35 +591,27 @@ func TestReadsOfTheRoomReturnThePlaceholder(t *testing.T) {
 }
 
 // DLT-05, DLT-07: an AI that comes online receives the messages it missed in order, a deleted one as the
-// placeholder; so does a harness that polls.
-func TestBacklogAndPendingShowThePlaceholder(t *testing.T) {
-	for _, via := range []string{"backlog", "pending"} {
-		t.Run(via, func(t *testing.T) {
-			f := newAgentRoom(t)
-			f.post(f.alice, "one")
-			secret := f.post(f.alice, "secret")
-			f.post(f.alice, "three")
-			deleteMessage(t, f.alice, f.room.ID, secret.ID)
+// placeholder.
+func TestBacklogShowsThePlaceholder(t *testing.T) {
+	f := newAgentRoom(t)
+	f.post(f.alice, "one")
+	secret := f.post(f.alice, "secret")
+	f.post(f.alice, "three")
+	deleteMessage(t, f.alice, f.room.ID, secret.ID)
 
-			var got []dto.AgentMessage
-			if via == "backlog" {
-				conn := f.dial(t)
-				conn.Welcome(wsWait)
-				for range 3 {
-					got = append(got, conn.Message(wsWait).AgentMessage)
-				}
-			} else {
-				got = testkit.Decode[dto.List[dto.AgentMessage]](f.rest().Get("/api/v1/agent/pending").RequireStatus(http.StatusOK)).Items
-			}
-			require.Len(t, got, 3)
-			require.Equal(t, "one", got[0].Message.Text)
-			require.Equal(t, secret.ID, got[1].Message.ID, "the placeholder is in its place")
-			require.Equal(t, secret.Seq, got[1].Message.Seq)
-			require.Empty(t, got[1].Message.Text, "and carries nothing of the text")
-			require.NotNil(t, got[1].Message.DeletedAt)
-			require.Equal(t, "three", got[2].Message.Text)
-		})
+	conn := f.dial(t)
+	conn.Welcome(wsWait)
+	got := make([]dto.AgentMessage, 3)
+	for i := range got {
+		got[i] = conn.Message(wsWait).AgentMessage
 	}
+	require.Len(t, got, 3)
+	require.Equal(t, "one", got[0].Message.Text)
+	require.Equal(t, secret.ID, got[1].Message.ID, "the placeholder is in its place")
+	require.Equal(t, secret.Seq, got[1].Message.Seq)
+	require.Empty(t, got[1].Message.Text, "and carries nothing of the text")
+	require.NotNil(t, got[1].Message.DeletedAt)
+	require.Equal(t, "three", got[2].Message.Text)
 }
 
 // DLT-05, EDT-10: the conversation list previews the edited text, and a deleted last message as deleted.

@@ -134,16 +134,17 @@ func (w *mergeWorld) readCursor(t *testing.T, user *testkit.Client, room string)
 	return seq
 }
 
-// pending returns the texts of the messages an AI was not delivered in a room, oldest first.
-func (w *mergeWorld) pending(t *testing.T, ai, room string) []string {
+// undelivered returns the texts of the messages an AI was not delivered in a room, oldest first: the
+// same rows its backlog reads on connect (AD-035: the pull route is gone, the queue is not).
+func (w *mergeWorld) undelivered(t *testing.T, ai, room string) []string {
 	t.Helper()
-	views, err := w.env.App.Store.R().ListAgentPending(context.Background(), db.ListAgentPendingParams{
+	views, err := w.env.App.Store.R().ListAgentBacklog(context.Background(), db.ListAgentBacklogParams{
 		RoomID: room, AfterSeq: max(w.cursor(t, ai, room), 0), AgentID: ai, Limit: 100,
 	})
 	require.NoError(t, err)
 	out := make([]string, len(views))
 	for i, v := range views {
-		out[i] = v.Text
+		out[len(views)-1-i] = v.Text
 	}
 	return out
 }
@@ -394,7 +395,7 @@ func TestMergeKeepsWhatTheSurvivorHasNotReceivedOrRead(t *testing.T) {
 	require.Equal(t, []string{"to atlas 1", "to atlas 2", "atlas speaks", "History merged from @old", "to old", "old answers"},
 		texts(timeline(t, w.alice, atlasWithAlice.ID)))
 	require.Equal(t, int64(0), w.cursor(t, w.atlas, atlasWithAlice.ID), "the survivor was not delivered its first messages")
-	require.Equal(t, []string{"to atlas 1", "to atlas 2", "History merged from @old", "to old"}, w.pending(t, w.atlas, atlasWithAlice.ID),
+	require.Equal(t, []string{"to atlas 1", "to atlas 2", "History merged from @old", "to old"}, w.undelivered(t, w.atlas, atlasWithAlice.ID),
 		"its two messages are still pending, then what came with the merge")
 	require.Equal(t, int64(0), w.readCursor(t, w.alice, atlasWithAlice.ID), "alice had not read what atlas wrote")
 	require.Equal(t, 3, conversation(t, w.alice, atlasWithAlice.ID).Unread, "atlas's message, the notice and what old answered")
@@ -438,12 +439,12 @@ func TestMergeMovesTheCursorsOfPartiesThatWereUpToDate(t *testing.T) {
 
 	// alice's DM is now q1 a1 | notice | o1 o2 (1-2, 3, 4-5): atlas received o1 and wrote o2, alice read both.
 	require.Equal(t, int64(4), w.cursor(t, w.atlas, atlasAlice.ID))
-	require.Empty(t, w.pending(t, w.atlas, atlasAlice.ID), "nothing is delivered again")
+	require.Empty(t, w.undelivered(t, w.atlas, atlasAlice.ID), "nothing is delivered again")
 	require.Equal(t, int64(5), w.readCursor(t, w.alice, atlasAlice.ID))
 	require.Zero(t, conversation(t, w.alice, atlasAlice.ID).Unread)
 	// bob's is hi hello | notice | hey-bob hey (1-2, 3, 4-5): bob read the greeting and wrote the other.
 	require.Equal(t, int64(5), w.cursor(t, w.atlas, atlasBob.ID))
-	require.Empty(t, w.pending(t, w.atlas, atlasBob.ID))
+	require.Empty(t, w.undelivered(t, w.atlas, atlasBob.ID))
 	require.Equal(t, int64(4), w.readCursor(t, w.bob, atlasBob.ID))
 	require.Zero(t, conversation(t, w.bob, atlasBob.ID).Unread, "he does not read the merged history again")
 }
@@ -470,8 +471,8 @@ func TestMergeCreditsEachAICursorToItself(t *testing.T) {
 	require.Equal(t, []string{"t1", "t2", "History merged from @old", "o1", "o2", "o3"}, texts(timeline(t, w.alice, target)))
 	require.Equal(t, int64(6), w.cursor(t, w.atlas, target), "the survivor received what the merged AI received: up to o3")
 	require.Equal(t, int64(5), w.cursor(t, orion, target), "orion received o2 and wrote o3: its own cursor moved, not the survivor's")
-	require.Empty(t, w.pending(t, w.atlas, target))
-	require.Empty(t, w.pending(t, orion, target))
+	require.Empty(t, w.undelivered(t, w.atlas, target))
+	require.Empty(t, w.undelivered(t, orion, target))
 }
 
 func conversation(t *testing.T, c *testkit.Client, room string) dto.Conversation {
