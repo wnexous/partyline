@@ -66,6 +66,7 @@ export function TextField<T extends FieldValues>({
   type = "text",
   autoComplete,
   autoFocus,
+  disabled = false,
   className,
   inputClassName,
 }: {
@@ -77,6 +78,8 @@ export function TextField<T extends FieldValues>({
   type?: "text" | "password" | "url";
   autoComplete?: string;
   autoFocus?: boolean;
+  /** The value is fixed (a name a replace keeps): shown, not editable. */
+  disabled?: boolean;
   className?: string;
   inputClassName?: string;
 }) {
@@ -102,6 +105,7 @@ export function TextField<T extends FieldValues>({
                 value={field.value ?? ""}
                 autoComplete={autoComplete}
                 autoFocus={focusOnMount}
+                disabled={disabled}
                 className={inputClassName}
               />
             ) : (
@@ -111,6 +115,7 @@ export function TextField<T extends FieldValues>({
                 type={type}
                 autoComplete={autoComplete}
                 autoFocus={focusOnMount}
+                disabled={disabled}
                 autoCapitalize="none"
                 autoCorrect="off"
                 spellCheck={false}

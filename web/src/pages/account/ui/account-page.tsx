@@ -4,6 +4,8 @@ import { LocaleChoice } from "@/features/change-language";
 import { PasswordSection } from "@/features/change-password";
 import { DeleteAccountSection } from "@/features/delete-account";
 import { ProfileSection } from "@/features/edit-profile";
+import { ServersSection } from "@/features/manage-runners";
+import { SecretsSection } from "@/features/manage-secrets";
 import { NotificationsSection } from "@/features/push-notifications";
 import { SessionsSection } from "@/features/revoke-session";
 import { DefaultOrgSection } from "@/features/set-default-org";
@@ -27,6 +29,8 @@ export function AccountPage({ initialMe }: { initialMe: Me }) {
         <DefaultOrgSection />
         <PasswordSection />
         <SessionsSection />
+        <ServersSection />
+        <SecretsSection />
         <DeleteAccountSection />
       </div>
     </>
