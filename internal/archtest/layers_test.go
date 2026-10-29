@@ -44,7 +44,7 @@ var packagesOf = map[layer][]string{
 	},
 	infra: {
 		"store", "store/db", "config", "app", "api", "api/convert", "cli", "cliconfig", "harness", "devices",
-		"testkit", "datalock", "memlimit", "archtest",
+		"runnerexec", "testkit", "datalock", "memlimit", "archtest",
 	},
 }
 

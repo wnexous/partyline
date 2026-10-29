@@ -41,6 +41,10 @@ Commands:
                          --harness omp describes the omp extension's message framing;
                          with --tools-only, --harness opencode|pi names the harness
   listen                 print incoming messages as JSON lines (used by the pi and OpenCode adapters)
+  runner                 join this machine to Partyline as a server that runs container AIs
+                         (default $PARTYLINE_URL or the saved config; --name, --url, --check);
+                         runner install|uninstall (--dry-run) write or remove the systemd user
+                         unit that keeps it running
   agents                 list the AIs you host, grouped by organization, with online markers
   orgs [slug]            list your organizations and where you stand in them; with an address, its positions
   doctor                 check this machine: binary, config file, server, token, harnesses, versions
@@ -103,6 +107,10 @@ type stdio struct {
 	// pid and ppid are this process's id and its parent's (nil: os.Getpid, os.Getppid); the launcher
 	// and the live id of a pi or OpenCode session use them (liveEnvVar).
 	pid, ppid func() int
+	// dockerPath finds the docker executable `partyline runner` executes (nil: docker on PATH);
+	// systemctl runs `systemctl --user` for `partyline runner install` (nil: the real one).
+	dockerPath func() (string, error)
+	systemctl  func(ctx context.Context, args ...string) ([]byte, error)
 	// rawTerm offers raw terminal mode for the checklist menu; tests inject a fake.
 	rawTerm rawTerminal
 	// isTerminal reports whether fd is a terminal (nil: golang.org/x/term.IsTerminal);
@@ -165,6 +173,8 @@ func execute(ctx context.Context, args []string, io stdio) int {
 		return channelCmd(ctx, args[2:], io)
 	case "listen":
 		return listenCmd(ctx, args[2:], io)
+	case "runner":
+		return runnerCmd(ctx, args[2:], io)
 	case "hook":
 		return hookCmd(ctx, args[2:], io)
 	case "agents":

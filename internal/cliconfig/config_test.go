@@ -207,3 +207,21 @@ func TestResolveKeepsSavedTokenWithItsURL(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, cliconfig.Config{URL: "http://other.example.com", Token: "pl_agent_flag"}, got)
 }
+
+// CA-01: the runner token is its own key. It survives a round trip next to the agent token, and
+// the agent credentials a command resolves do not carry it.
+func TestRunnerTokenIsSeparate(t *testing.T) {
+	skipOnWindows(t)
+	home := t.TempDir()
+	path := filepath.Join(home, ".config", "partyline", "config.json")
+	writeFile(t, path, `{"url":"http://file.example.com","token":"pl_agent_file","runner_token":"pl_runner_file"}`, 0o600, 0o700)
+
+	got, err := cliconfig.Load(path)
+	require.NoError(t, err)
+	require.Equal(t, cliconfig.Config{URL: "http://file.example.com", Token: "pl_agent_file", RunnerToken: "pl_runner_file"}, got)
+
+	creds, err := cliconfig.Resolve(cliconfig.Config{}, env(map[string]string{"HOME": home}))
+	require.NoError(t, err)
+	require.Equal(t, cliconfig.Config{URL: "http://file.example.com", Token: "pl_agent_file"}, creds,
+		"the agent credentials never carry the runner token")
+}

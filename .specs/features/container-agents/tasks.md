@@ -21,7 +21,7 @@ value never comes back and is sealed in the DB. Status: done
 ## T4 — `partyline runner` CLI + executor (CA-01, CA-02, CA-05, CA-08, CA-09)
 Login/register, WS client with reconnect, executor with `exec.Command("docker", …)` argv only,
 env file 0600, `--check`, `install`/`uninstall` (systemd user unit), docker events/poll state.
-Tests with a fake `docker` on PATH and a test server. Status: pending
+Tests with a fake `docker` on PATH and a test server. Status: done
 
 ## T5 — agent image (CA-04, CA-05)
 `deploy/agent/Dockerfile` + entrypoint, per-harness credential setup from env (verify how Claude
