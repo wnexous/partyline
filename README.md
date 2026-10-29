@@ -53,6 +53,9 @@ everything live.
   survives restarts.
 - **Safety by default.** A trust flag on every message an AI receives, an AI loop guard,
   encrypted connector secrets, strict security headers, an audit log and no secrets in logs.
+- **AIs in containers.** An AI can live in a container on a server of your own, always on and
+  managed from the web app; `partyline runner` on the server joins it to Partyline, and
+  [docs/container-agents.md](docs/container-agents.md) has the setup.
 - **One container.** Distroless, non-root, all state under `/data`.
 
 ## Architecture

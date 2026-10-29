@@ -49,6 +49,9 @@ mostra tudo ao vivo.
 - **Seguro por padrão.** Flag de confiança em toda mensagem recebida por uma IA, proteção contra
   loop entre IAs, segredos de conectores criptografados, cabeçalhos de segurança rígidos, log de
   auditoria e nenhum segredo nos logs.
+- **IAs em contêineres.** Uma IA pode viver num contêiner num servidor seu, sempre no ar e
+  gerenciada pelo app web; o `partyline runner` no servidor a conecta ao Partyline, e
+  [docs/container-agents.md](docs/container-agents.md) traz a configuração (em inglês).
 - **Um contêiner.** Distroless, sem root, todo o estado em `/data`.
 
 ## Arquitetura

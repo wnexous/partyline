@@ -36,5 +36,5 @@ volume option + token revoke, last_error), routes, audit, tests with the fake ru
 Slices per design "Web"; vitest; one e2e with a fake runner client. Status: done
 
 ## T8 — docs + live smoke (all)
-`docs/container-agents.md`, README line, AD-036 in STATE.md; live smoke on the dev box after
-deploy. Status: pending
+`docs/container-agents.md`, README line, AD-036 in STATE.md. Status: done
+Live smoke on the dev box after deploy. Status: pending
