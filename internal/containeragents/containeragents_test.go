@@ -30,11 +30,11 @@ func TestImageFor(t *testing.T) {
 func TestContainerNamesAreValid(t *testing.T) {
 	const id = "01a18952-3fbb-7b1a-b247-a8062a7ff40e"
 	name, volume := ContainerName(id), VolumeName(id)
-	require.Equal(t, "pl-01a189523fbb", name)
-	require.Equal(t, "pl-01a189523fbb-ws", volume)
+	require.Equal(t, "pl-a8062a7ff40e", name)
+	require.Equal(t, "pl-a8062a7ff40e-ws", volume)
 	require.True(t, spec.ValidContainerName(name))
 	require.True(t, spec.ValidVolumeName(volume))
-	require.Equal(t, "pl-01a189523fbb", ContainerName("01a189523fbb")) // a short id stays itself
+	require.Equal(t, "pl-a8062a7ff40e", ContainerName("01a189523fbb7b1ab247a8062a7ff40e")) // dashes are removed
 }
 
 // CA-04, CA-08: a create is validated field by field, the defaults are filled in, and no error

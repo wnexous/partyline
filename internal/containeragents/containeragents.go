@@ -113,12 +113,14 @@ func ContainerName(agentID string) string { return "pl-" + shortID(agentID) }
 // VolumeName is the named volume of an agent's workspace: pl-<short agent id>-ws (CA-05).
 func VolumeName(agentID string) string { return ContainerName(agentID) + "-ws" }
 
-// shortID is the first characters of an agent id without its dashes; 12 hex characters (48 bits)
-// make a collision of two containers practically impossible and keep the name short.
+// shortID is 12 characters of an agent id without its dashes. It takes the tail: an id is a UUIDv7,
+// whose first 48 bits are the creation millisecond, so the head would collide for two AIs created
+// in the same millisecond; the tail is random, and 48 bits keep a collision of two containers
+// practically impossible while the name stays short.
 func shortID(id string) string {
 	hex := strings.ReplaceAll(id, "-", "")
 	if len(hex) > shortIDLength {
-		hex = hex[:shortIDLength]
+		hex = hex[len(hex)-shortIDLength:]
 	}
 	return hex
 }
@@ -795,6 +797,13 @@ func (s *Service) resolveSecrets(ctx context.Context, ownerID string, env []EnvV
 // view reads the container as the API shows it: the row, the AI's profile name and handle, and
 // the names of the secrets its environment maps (never their values, CA-08).
 func (s *Service) view(ctx context.Context, row db.ContainerAgent) (Container, error) {
+	// Read the row again: a state event may have arrived while the operation ran, and the answer
+	// should show what the runner last reported.
+	if fresh, err := s.d.Store.R().GetContainerAgent(ctx, row.AgentID); err == nil {
+		row = fresh
+	} else if !errors.Is(err, sql.ErrNoRows) {
+		return Container{}, err
+	}
 	out := Container{
 		AgentID: row.AgentID, RunnerID: row.RunnerID, Harness: row.Harness, Image: row.Image,
 		RepoURL: row.RepoUrl.String, RepoRef: row.RepoRef.String, Volume: row.Volume,
