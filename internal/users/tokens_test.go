@@ -73,6 +73,7 @@ func TestCreateTokenValidatesInput(t *testing.T) {
 		field string
 	}{
 		{"unknown kind", TokenInput{Kind: "root", Name: "x"}, "kind"},
+		{"runner kind", TokenInput{Kind: dto.TokenKindRunner, Name: "x"}, "kind"},
 		{"empty name", TokenInput{Kind: dto.TokenKindUser, Name: "  "}, "name"},
 		{"long name", TokenInput{Kind: dto.TokenKindUser, Name: strings.Repeat("n", 65)}, "name"},
 		{"past expiry", TokenInput{Kind: dto.TokenKindUser, Name: "x", ExpiresAt: &past}, "expires_at"},
@@ -111,6 +112,26 @@ func TestAuthenticateTokenResolvesPrincipal(t *testing.T) {
 	require.Equal(t, authn.KindUser, p.Kind)
 	require.Equal(t, userID, p.TokenID)
 	require.Empty(t, p.SessionID)
+}
+
+// CA-01: a runner token is created by the device approval path and authenticates as a runner
+// principal, so the middleware keeps it on the runner routes.
+func TestCreateRunnerTokenIsARunnerPrincipal(t *testing.T) {
+	ctx := context.Background()
+	f := newFixture(t)
+	f.setupAdmin(t)
+	uid := f.adminID(t)
+
+	tok, secret, err := f.svc.CreateRunnerToken(ctx, uid, "devbox (runner)")
+	require.NoError(t, err)
+	require.True(t, strings.HasPrefix(secret, "pl_runner_"), secret)
+	require.Equal(t, string(dto.TokenKindRunner), tok.Kind)
+
+	p, err := f.svc.AuthenticateToken(ctx, secret)
+	require.NoError(t, err)
+	require.Equal(t, authn.KindRunner, p.Kind)
+	require.Equal(t, uid, p.UserID)
+	require.Equal(t, tok.ID, p.TokenID)
 }
 
 // TOK-02: revoked, expired, unknown and malformed tokens are unauthenticated.

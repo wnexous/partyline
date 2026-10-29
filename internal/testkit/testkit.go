@@ -40,6 +40,7 @@ import (
 	"github.com/wnexous/partyline/internal/events"
 	"github.com/wnexous/partyline/internal/handles"
 	"github.com/wnexous/partyline/internal/intelligences"
+	"github.com/wnexous/partyline/internal/runners/spec"
 	"github.com/wnexous/partyline/internal/store"
 	"github.com/wnexous/partyline/internal/store/db"
 	"github.com/wnexous/partyline/internal/users"
@@ -81,6 +82,7 @@ type options struct {
 	database         string
 	inboundWait      func(ctx context.Context, d time.Duration) error
 	connectorWait    func(ctx context.Context, d time.Duration) error
+	runnerTimeouts   map[spec.Op]time.Duration
 }
 
 // Option customizes New.
@@ -143,6 +145,12 @@ func WithConnectorWait(wait func(ctx context.Context, d time.Duration) error) Op
 // WithVersion sets the server build version (default "dev").
 func WithVersion(v string) Option { return func(o *options) { o.version = v } }
 
+// WithRunnerTimeouts overrides the per-operation timeout of the runner hub (CA-09); tests shorten
+// a command's timeout to see it expire.
+func WithRunnerTimeouts(timeouts map[spec.Op]time.Duration) Option {
+	return func(o *options) { o.runnerTimeouts = timeouts }
+}
+
 // New starts an app on a temp data dir behind an httptest server; both stop at test cleanup.
 func New(t testing.TB, opts ...Option) *Env {
 	t.Helper()
@@ -164,7 +172,7 @@ func New(t testing.TB, opts ...Option) *Env {
 
 	e := &Env{
 		T: t, Server: srv, URL: base, Origin: cfg.PublicURL.Scheme + "://" + cfg.PublicURL.Host, cfg: cfg,
-		appOpts: app.Options{Logger: o.logger, Now: o.now, LiveSessionCheck: o.liveSessionCheck, ConnectorKinds: o.kinds, DisableOutbox: !o.outbox, DisablePush: o.push, PushQueueSize: o.pushQueueSize, Version: o.version, InboundWait: o.inboundWait, ConnectorWait: o.connectorWait},
+		appOpts: app.Options{Logger: o.logger, Now: o.now, LiveSessionCheck: o.liveSessionCheck, ConnectorKinds: o.kinds, DisableOutbox: !o.outbox, DisablePush: o.push, PushQueueSize: o.pushQueueSize, Version: o.version, InboundWait: o.inboundWait, ConnectorWait: o.connectorWait, RunnerTimeouts: o.runnerTimeouts},
 	}
 	e.startApp()
 	srv.Config.Handler = http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { (*e.handler.Load()).ServeHTTP(w, r) })

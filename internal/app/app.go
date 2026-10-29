@@ -33,6 +33,8 @@ import (
 	"github.com/wnexous/partyline/internal/orgs"
 	"github.com/wnexous/partyline/internal/platform"
 	"github.com/wnexous/partyline/internal/rooms"
+	"github.com/wnexous/partyline/internal/runners"
+	"github.com/wnexous/partyline/internal/runners/spec"
 	"github.com/wnexous/partyline/internal/secrets"
 	"github.com/wnexous/partyline/internal/store"
 	"github.com/wnexous/partyline/internal/store/db"
@@ -77,6 +79,9 @@ type Options struct {
 	// connector (CON-06); nil sleeps for real. Tests that make a connector crash pass a wait that
 	// does not take seconds.
 	ConnectorWait func(ctx context.Context, d time.Duration) error
+	// RunnerTimeouts overrides the per-operation timeout of the runner hub (CA-09). Tests shorten
+	// a command's timeout to see it expire.
+	RunnerTimeouts map[spec.Op]time.Duration
 }
 
 // BuiltinKinds returns the connector kinds shipped with Partyline. A new platform adds its
@@ -136,6 +141,8 @@ type App struct {
 	Identities *identities.Service
 	// Devices approves new machines (partyline setup --browser).
 	Devices *devices.Service
+	// Runners is the registry of the servers that run container AIs, with their live hub (CA-01).
+	Runners *runners.Service
 	// Gateway serves the agent WebSocket and pushes messages to connected agents.
 	Gateway *agents.Gateway
 	Live    *live.Hub
@@ -270,6 +277,10 @@ func New(cfg *config.Config, opts Options) (*App, error) {
 		Sessions: usersSvc, SessionCheckInterval: opts.LiveSessionCheck,
 	})
 	a.Devices = devices.New(devices.Deps{Store: st, Users: usersSvc, Box: box, Audit: auditLog, Now: opts.Now})
+	a.Runners = runners.New(runners.Deps{
+		Store: st, Audit: auditLog, Bus: bus, Images: cfg.RunnerImages, Logger: opts.Logger,
+		Now: opts.Now, Timeouts: opts.RunnerTimeouts,
+	})
 	pushDelivery := webpush.NewDeliverer(webpush.DelivererDeps{
 		Store: st, Sender: webpush.NewClient(vapid, cfg.PublicURL.String()), Now: opts.Now, Logger: opts.Logger,
 	})
@@ -295,6 +306,8 @@ func New(cfg *config.Config, opts Options) (*App, error) {
 		Connectors:    a.Connectors,
 		Identities:    a.Identities,
 		Devices:       a.Devices,
+		Runners:       a.Runners,
+		RunnerWS:      a.Runners.Hub(),
 		Hooks:         a.ConnectorManager,
 		Crashes:       a.ConnectorManager,
 		FileLinks:     fileLinks,
@@ -404,6 +417,7 @@ func (a *App) Shutdown(_ context.Context) error {
 	}
 	a.ConnectorManager.Close()
 	a.Gateway.Close()
+	a.Runners.Hub().Close()
 	a.Live.Close()
 	a.bg.Wait()
 	return a.Store.Close()

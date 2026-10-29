@@ -39,6 +39,7 @@ var packagesOf = map[layer][]string{
 	kernel: {
 		"orgs", "access", "intelligences", "users", "authn", "audit", "events", "handles", "validation",
 		"attachments", "avatars", "secrets", "api/dto", "api/httpx",
+		"runners",      // the runner registry and the hub of their connections (CA-01)
 		"runners/spec", // the runner protocol shared with the CLI (CA-09)
 	},
 	infra: {

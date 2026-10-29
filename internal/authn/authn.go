@@ -23,8 +23,8 @@ type PrincipalKind string
 
 // Principal kinds.
 const (
-	KindUser   PrincipalKind = "user"
-	KindAgent  PrincipalKind = "agent"
+	KindUser  PrincipalKind = "user"
+	KindAgent PrincipalKind = "agent"
 	// KindRunner is a `partyline runner` connection: it acts for its owner only on the runner
 	// routes (CA-01).
 	KindRunner PrincipalKind = "runner"
