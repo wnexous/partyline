@@ -243,4 +243,6 @@ ticks its requirement ids here.
   - `AIMeta`'s "hosted by @handle" stays translated text inside one sentence (the testable string
     the pickers show), and the command palette's hint stays the generic hint slot (it also holds
     a connector's platform label).
-  - the visible result is unchanged except the handle, which is now the same mono span everywhere.
+  - the visible result changes only where a canonical piece replaces a hand-made one: the handle is
+    the same mono span everywhere, and a form dialog or a labelled select now spaces its title,
+    label, hint and error the way the form shell and `form-fields` do. Nothing else moved.
