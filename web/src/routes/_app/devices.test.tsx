@@ -17,6 +17,7 @@ function makeRequest(over: Partial<DeviceRequest> = {}): DeviceRequest {
   return {
     code: CODE,
     machine: "ana-laptop",
+    kind: "agent",
     ip: "203.0.113.24",
     status: "pending",
     created_at: new Date(now - 3 * 60_000).toISOString(),

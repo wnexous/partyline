@@ -786,9 +786,15 @@ export const ErrorCodeIdentityOnline = "identity_online";
  */
 export const ErrorCodeAlreadyAnswered = "already_answered";
 /**
+ * ErrorCodeRunnerOffline is a command for a runner that is not connected (409, CA-01);
+ * ErrorCodeRunnerInUse is the refusal to delete a runner that still has containers (409).
+ */
+export const ErrorCodeRunnerOffline = "runner_offline";
+export const ErrorCodeRunnerInUse = "runner_in_use";
+/**
  * Error codes and the HTTP status they come with.
  */
-export type ErrorCode = typeof ErrorCodeInvalid | typeof ErrorCodeUnauthorized | typeof ErrorCodeForbidden | typeof ErrorCodeNotFound | typeof ErrorCodeConflict | typeof ErrorCodeGone | typeof ErrorCodeTooLarge | typeof ErrorCodeRateLimited | typeof ErrorCodeInternal | typeof ErrorCodeUnavailable | typeof ErrorCodeHandleTaken | typeof ErrorCodeAvatarInvalid | typeof ErrorCodeLastInstanceAdmin | typeof ErrorCodeLastAdmin | typeof ErrorCodeHomeOrganization | typeof ErrorCodeAlreadyMember | typeof ErrorCodeNotOperator | typeof ErrorCodeUnknownChat | typeof ErrorCodeUnsupported | typeof ErrorCodeFolderRequired | typeof ErrorCodeFolderInvalid | typeof ErrorCodeHarnessRemoved | typeof ErrorCodePositionUnknown | typeof ErrorCodeOrganizationMismatch | typeof ErrorCodeIdentityBusy | typeof ErrorCodeDMMembersFixed | typeof ErrorCodeReactionLimit | typeof ErrorCodeDMSelf | typeof ErrorCodeContactNotFound | typeof ErrorCodeNoRouteToPerson | typeof ErrorCodeHistoryOnly | typeof ErrorCodeCounterpartDisabled | typeof ErrorCodeChatsNotMembers | typeof ErrorCodeMembersRefused | typeof ErrorCodeOrganizationRequired | typeof ErrorCodeOrganizationNotEmpty | typeof ErrorCodePositionCycle | typeof ErrorCodeIdentityOnline | typeof ErrorCodeAlreadyAnswered;
+export type ErrorCode = typeof ErrorCodeInvalid | typeof ErrorCodeUnauthorized | typeof ErrorCodeForbidden | typeof ErrorCodeNotFound | typeof ErrorCodeConflict | typeof ErrorCodeGone | typeof ErrorCodeTooLarge | typeof ErrorCodeRateLimited | typeof ErrorCodeInternal | typeof ErrorCodeUnavailable | typeof ErrorCodeHandleTaken | typeof ErrorCodeAvatarInvalid | typeof ErrorCodeLastInstanceAdmin | typeof ErrorCodeLastAdmin | typeof ErrorCodeHomeOrganization | typeof ErrorCodeAlreadyMember | typeof ErrorCodeNotOperator | typeof ErrorCodeUnknownChat | typeof ErrorCodeUnsupported | typeof ErrorCodeFolderRequired | typeof ErrorCodeFolderInvalid | typeof ErrorCodeHarnessRemoved | typeof ErrorCodePositionUnknown | typeof ErrorCodeOrganizationMismatch | typeof ErrorCodeIdentityBusy | typeof ErrorCodeDMMembersFixed | typeof ErrorCodeReactionLimit | typeof ErrorCodeDMSelf | typeof ErrorCodeContactNotFound | typeof ErrorCodeNoRouteToPerson | typeof ErrorCodeHistoryOnly | typeof ErrorCodeCounterpartDisabled | typeof ErrorCodeChatsNotMembers | typeof ErrorCodeMembersRefused | typeof ErrorCodeOrganizationRequired | typeof ErrorCodeOrganizationNotEmpty | typeof ErrorCodePositionCycle | typeof ErrorCodeIdentityOnline | typeof ErrorCodeAlreadyAnswered | typeof ErrorCodeRunnerOffline | typeof ErrorCodeRunnerInUse;
 /**
  * ErrorBody is the envelope of every error response.
  */
@@ -1470,10 +1476,12 @@ export const DeviceStatusExpired = "expired";
 export type DeviceStatus = typeof DeviceStatusPending | typeof DeviceStatusApproved | typeof DeviceStatusDenied | typeof DeviceStatusExpired;
 /**
  * CreateDeviceRequest is the body of POST /devices (anonymous): `partyline setup --browser`
- * names the machine (its hostname).
+ * names the machine (its hostname). Kind is the token the approval creates: agent (the default)
+ * for setup, runner for `partyline runner` (CA-01).
  */
 export interface CreateDeviceRequest {
   machine: string;
+  kind?: TokenKind;
 }
 /**
  * DeviceRequestCreated answers POST /devices (201). The user opens ApproveURL
@@ -1517,6 +1525,7 @@ export interface DeviceCode {
 export interface DeviceRequest {
   code: string;
   machine: string;
+  kind: TokenKind;
   ip: string;
   status: DeviceStatus;
   created_at: string /* RFC 3339 */;
@@ -2845,6 +2854,54 @@ export const DefaultActivityLimit = 20;
 export const MaxActivityLimit = 50;
 
 //////////
+// source: runners.go
+
+/**
+ * Runner is a server that runs container AIs, as GET /runners lists it (CA-01): what it reported
+ * about Docker and whether it is connected now.
+ */
+export interface Runner {
+  id: string;
+  name: string;
+  machine: string;
+  /**
+   * Online is whether the runner holds a live connection right now.
+   */
+  online: boolean;
+  /**
+   * DockerVersion is the Docker version the last hello reported; empty when Docker is unusable.
+   */
+  docker_version?: string;
+  /**
+   * DockerError is why the last hello said Docker is unusable; empty when it is usable.
+   */
+  docker_error?: string;
+  /**
+   * LastSeenAt is when the runner last connected; absent until its first connection.
+   */
+  last_seen_at?: string /* RFC 3339 */;
+  /**
+   * ContainerCount is how many container AIs the runner runs.
+   */
+  container_count: number /* int */;
+  created_at: string /* RFC 3339 */;
+}
+/**
+ * RegisterRunnerRequest is the body of POST /runner/register, the first call of a connection
+ * authenticated by a runner token. Name defaults to Machine and is made unique per owner.
+ */
+export interface RegisterRunnerRequest {
+  name?: string;
+  machine: string;
+}
+/**
+ * RenameRunnerRequest is the body of PATCH /runners/{id} (CA-01).
+ */
+export interface RenameRunnerRequest {
+  name: string;
+}
+
+//////////
 // source: secrets.go
 
 /**
@@ -3047,10 +3104,12 @@ export interface AcceptInviteRequest {
  */
 export const TokenKindAgent = "agent";
 export const TokenKindUser = "user";
+export const TokenKindRunner = "runner";
 /**
- * API token kinds: agent tokens reach only /agent endpoints (TOK-03).
+ * API token kinds: agent tokens reach only /agent endpoints (TOK-03); runner tokens only the
+ * runner routes (CA-01).
  */
-export type TokenKind = typeof TokenKindAgent | typeof TokenKindUser;
+export type TokenKind = typeof TokenKindAgent | typeof TokenKindUser | typeof TokenKindRunner;
 /**
  * Token is an API token without its secret (GET /tokens; revoked tokens only with
  * ?include_revoked=true). DELETE /tokens/{id} revokes it, DELETE /tokens/{id}/purge deletes a

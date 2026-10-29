@@ -48,8 +48,9 @@ func TestVerifyPasswordRejectsMalformedHash(t *testing.T) {
 
 func TestNewTokenFormat(t *testing.T) {
 	for kind, re := range map[TokenKind]string{
-		TokenAgent: `^pl_agent_[0-9A-Za-z]{43}$`,
-		TokenUser:  `^pl_user_[0-9A-Za-z]{43}$`,
+		TokenAgent:  `^pl_agent_[0-9A-Za-z]{43}$`,
+		TokenUser:   `^pl_user_[0-9A-Za-z]{43}$`,
+		TokenRunner: `^pl_runner_[0-9A-Za-z]{43}$`,
 	} {
 		secret, err := NewToken(kind)
 		require.NoError(t, err)

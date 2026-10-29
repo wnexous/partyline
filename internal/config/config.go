@@ -11,6 +11,7 @@ import (
 
 	"github.com/wnexous/partyline/internal/connectors/safehttp"
 	"github.com/wnexous/partyline/internal/memlimit"
+	"github.com/wnexous/partyline/internal/runners/spec"
 )
 
 // Config is the validated server configuration.
@@ -32,6 +33,9 @@ type Config struct {
 	// MemoryLimit is the soft memory limit of the process (PARTYLINE_MEMORY_LIMIT); nil when the
 	// variable is not set, and the limit of the container applies (OPS-06).
 	MemoryLimit *memlimit.Limit
+	// RunnerImages lists the extra image repositories a container AI may use besides the default
+	// agent image (PARTYLINE_RUNNER_IMAGES, comma-separated); nil lists none (CA-09).
+	RunnerImages []string
 }
 
 // SecureCookies reports whether cookies must carry the Secure attribute.
@@ -90,6 +94,17 @@ func Load(getenv func(string) string) (*Config, error) {
 			return nil, fmt.Errorf("PARTYLINE_MEMORY_LIMIT: %w", err)
 		}
 		cfg.MemoryLimit = &limit
+	}
+
+	for _, repo := range strings.Split(get("PARTYLINE_RUNNER_IMAGES", ""), ",") {
+		repo = strings.TrimSpace(repo)
+		if repo == "" {
+			continue
+		}
+		if !spec.ValidImageRepo(repo) {
+			return nil, fmt.Errorf("PARTYLINE_RUNNER_IMAGES: %q is not an image repository (registry/name)", repo)
+		}
+		cfg.RunnerImages = append(cfg.RunnerImages, repo)
 	}
 
 	for _, item := range strings.Split(get("PARTYLINE_TRUSTED_PROXIES", ""), ",") {

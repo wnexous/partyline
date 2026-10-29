@@ -18,25 +18,42 @@ no inbound port, works behind NAT.
 - Sealing with `internal/secrets` Box (AES-256-GCM, instance key).
 
 ## Runner protocol
-- Auth: `partyline runner` uses the saved CLI login or the device-code flow (`internal/devices`)
-  to get a token of a new kind `runner` (scoped: only the runner routes). `POST
-  /api/v1/runner/register {name, machine}` → runner id (idempotent per token).
+- Token path (decided in T2): `partyline runner` obtains a token of the new kind `runner` from the
+  device-code flow (`internal/devices`), which takes `kind: "runner"` on `POST /api/v1/devices`
+  (default `agent`, so setup is unchanged). The approving user sees the machine and approves; the
+  poll delivers a `pl_runner_…` secret once, named `<machine> (runner)`. Nothing else creates the
+  kind: `POST /api/v1/tokens` offers agent and user only, and a runner token reaches only
+  `/api/v1/runner/*` (the middleware restricts each token kind to its routes). The token is scoped
+  to the approving owner; the AI inside a container never holds one. Then `POST
+  /api/v1/runner/register {name, machine}` → runner (201 first time, 200 after; idempotent per
+  token, enforced by a unique index on `runners.token_id`). The name defaults to the machine and
+  is made unique per owner with `-2`, `-3`….
 - `GET /api/v1/runner/ws` (WebSocket, the token): hello `{docker_version | docker_error,
-  containers: [{name, state}]}`; server → runner commands `{id, op: run|start|stop|restart|remove|
-  logs|state, ...}`; runner → server `{id, ok, error?, data?}` and unsolicited `state` events
-  (from `docker events --filter label=partyline.agent` or a 15 s poll). Pings like the agent WS.
-- Ops payloads carry only validated fields. `run` carries `{name, image, volume, cpus, memory_mb,
-  labels, env: {VAR: value}}`; the runner writes env to `~/.local/state/partyline/agents/<name>.env`
-  (0600) and runs `docker run -d --name … --restart unless-stopped --env-file … --cpus …
-  --memory …m -v <volume>:/workspace --label partyline.agent=<agent-id> <image>` with
-  `exec.Command("docker", args...)` (no shell). Each op validates again on the runner.
-- Delivery: commands for an offline runner fail fast with `runner_offline` (no queue in v1); the
-  web shows it.
+  containers: [{name, state, error?}]}` updates `docker_version`/`docker_error`/`last_seen_at` and
+  the container states; server → runner commands `{type: "command", id, op:
+  run|start|stop|restart|remove|logs|state, run?, name?, tail?, remove_volume?}`; runner → server
+  results `{type: "result", id, ok, error?, logs?, containers?}` and unsolicited `state` events
+  `{type: "state", containers}` (from `docker events --filter label=partyline.agent` or a 15 s
+  poll). Pings like the agent WS. A new connection replaces the old one at once.
+- Ops payloads carry only validated fields (`internal/runners/spec` validates on the server and
+  again on the runner; the image repository is the default agent one or an entry of
+  `PARTYLINE_RUNNER_IMAGES`). `run` carries `{name, image, volume, cpus, memory_mb, labels, env:
+  {VAR: value}}`; the runner writes env to `~/.local/state/partyline/agents/<name>.env` (0600) and
+  runs `docker run -d --name … --restart unless-stopped --env-file … --cpus … --memory …m -v
+  <volume>:/workspace --label partyline.agent=<agent-id> <image>` with `exec.Command("docker",
+  args...)` (no shell). Each op validates again on the runner.
+- Delivery: commands for an offline runner fail fast with `runner_offline` (409, no queue in v1);
+  an operation has its own timeout (`Do`: 60 s, logs and state 15 s) and a runner that does not
+  answer is `ErrTimeout`; the web shows both. Delete revokes the token, closes the connection and
+  is refused with `runner_in_use` (409) while one of its containers exists.
 
 ## Packages
-- `internal/runners`: registry (register, list, rename, delete+revoke token), hub of live runner
-  connections (`Do(ctx, runnerID, op) (Result, error)` with timeout 60 s, logs 15 s), state
-  updates into container_agents.
+- `internal/runners/spec`: the frame types (hello, command, result, state) and the validators both
+  sides apply (container/volume/env names, image + allowlist, cpus/memory, repo URL and ref). Pure
+  Go, imported by the CLI and the server (CA-09).
+- `internal/runners`: registry (register, list, rename, delete+revoke token; 404 for another
+  owner's runner) and hub of live runner connections (`Do(ctx, runnerID, cmd) (Result, error)` with
+  per-op timeouts), state updates into container_agents, audit of register/rename/delete.
 - `internal/ownersecrets`: CRUD; `Open(ctx, owner, ids)` for the container service only.
 - `internal/containeragents`: create (identity with machine `runner:<runner-id>` and folder
   `/workspace`, agent token, env = PARTYLINE_URL, PARTYLINE_TOKEN, PARTYLINE_HARNESS,

@@ -9,10 +9,10 @@ Migration 0029 with `runners`, `owner_secrets`, `container_agents` (design "Data
 desired, last_error; runner seen/docker info), `make generate`, migration test. Status: done
 
 ## T2 — runner registry, token kind, protocol types, hub + API (CA-01, CA-02, CA-07)
-Token kind `runner` (scoped routes), `internal/runners` (register, list, rename, delete+revoke,
-live hub with request/response over WS, state updates), `internal/runners/spec` (op types +
-validators shared with the CLI), routes + DTOs + tygo, audit, tests with a fake runner WS client.
-Status: pending
+Token kind `runner` (scoped routes, created by the device flow with `kind=runner`), `internal/runners`
+(register, list, rename, delete+revoke, live hub with request/response over WS, state updates),
+`internal/runners/spec` (op types + validators shared with the CLI), routes + DTOs + tygo, audit,
+tests with a fake runner WS client. Status: done
 
 ## T3 — owner secrets (CA-03, CA-07, CA-08)
 `internal/ownersecrets` + routes (names only on GET, PUT value, DELETE), audit, tests proving the

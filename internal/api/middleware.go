@@ -28,6 +28,9 @@ const SessionCookie = "pl_session"
 // agentPathPrefix is the only path prefix agent tokens may reach (TOK-03).
 const agentPathPrefix = "/api/v1/agent/"
 
+// runnerPathPrefix is the only path prefix runner tokens may reach (CA-01).
+const runnerPathPrefix = "/api/v1/runner/"
+
 // DefaultCSP is the Content-Security-Policy of API responses. HTML responses set their own.
 const DefaultCSP = "default-src 'none'; frame-ancestors 'none'"
 
@@ -49,7 +52,7 @@ type MiddlewareConfig struct {
 }
 
 // Middleware wraps next with, outermost first: recover, request id, security headers,
-// client IP, body limit, principal resolution, agent-token restriction and the CSRF check.
+// client IP, body limit, principal resolution, token-kind restriction and the CSRF check.
 func Middleware(cfg MiddlewareConfig, next http.Handler) http.Handler {
 	if cfg.Logger == nil {
 		cfg.Logger = slog.Default()
@@ -57,7 +60,7 @@ func Middleware(cfg MiddlewareConfig, next http.Handler) http.Handler {
 	origin := cfg.PublicURL.Scheme + "://" + cfg.PublicURL.Host
 
 	h := csrf(origin, next)
-	h = agentRestriction(h)
+	h = tokenRestriction(h)
 	h = principal(cfg, h)
 	h = bodyLimit(cfg.MaxUploadBytes, h)
 	h = clientIP(cfg.TrustedProxies, h)
@@ -236,11 +239,22 @@ func principal(cfg MiddlewareConfig, next http.Handler) http.Handler {
 	})
 }
 
-func agentRestriction(next http.Handler) http.Handler {
+// tokenRestriction keeps each token kind inside its routes: agent tokens reach only the agent
+// endpoints (TOK-03) and runner tokens only the runner endpoints (CA-01), so a machine token
+// never acts as its owner anywhere else.
+func tokenRestriction(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if p, ok := authn.PrincipalFrom(r.Context()); ok && p.Kind == authn.KindAgent &&
-			!strings.HasPrefix(r.URL.Path, agentPathPrefix) {
+		p, ok := authn.PrincipalFrom(r.Context())
+		if !ok {
+			next.ServeHTTP(w, r)
+			return
+		}
+		switch {
+		case p.Kind == authn.KindAgent && !strings.HasPrefix(r.URL.Path, agentPathPrefix):
 			httpx.WriteError(w, httpx.NewError(http.StatusForbidden, dto.ErrorCodeForbidden, "agent tokens can only call agent endpoints"))
+			return
+		case p.Kind == authn.KindRunner && !strings.HasPrefix(r.URL.Path, runnerPathPrefix):
+			httpx.WriteError(w, httpx.NewError(http.StatusForbidden, dto.ErrorCodeForbidden, "runner tokens can only call runner endpoints"))
 			return
 		}
 		next.ServeHTTP(w, r)

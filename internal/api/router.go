@@ -26,6 +26,8 @@ import (
 	"github.com/wnexous/partyline/internal/ownersecrets"
 	"github.com/wnexous/partyline/internal/platform"
 	"github.com/wnexous/partyline/internal/rooms"
+	"github.com/wnexous/partyline/internal/runners"
+	"github.com/wnexous/partyline/internal/runners/spec"
 	"github.com/wnexous/partyline/internal/users"
 	"github.com/wnexous/partyline/internal/validation"
 	"github.com/wnexous/partyline/internal/webpush"
@@ -71,6 +73,10 @@ type Deps struct {
 	Live http.Handler
 	// AgentWS serves the agent WebSocket at GET /api/v1/agent/ws.
 	AgentWS http.Handler
+	// Runners is the registry of the servers that run container AIs (CA-01).
+	Runners *runners.Service
+	// RunnerWS serves the runner WebSocket at GET /api/v1/runner/ws (CA-02).
+	RunnerWS http.Handler
 	// Inbox serves GET /api/v1/agent/pending.
 	Inbox AgentInbox
 	// Trust opens the trust of each request that tells an AI what it may trust: the history tool and the
@@ -138,6 +144,7 @@ func (s *server) routes(mux *http.ServeMux) {
 	s.pushRoutes(mux)
 	s.deviceRoutes(mux)
 	s.secretRoutes(mux)
+	s.runnerRoutes(mux)
 	if s.Live != nil {
 		mux.Handle("GET /api/v1/live", s.Live)
 	}
@@ -219,9 +226,29 @@ func mapError(err error) error {
 	var verr *validation.Error
 	var refused *conversations.MembersRefusedError
 	var notEmpty *orgs.NotEmptyError
+	var specErr *spec.ValidationError
+	var opErr *runners.OpError
 	switch {
 	case errors.As(err, &verr):
 		return httpx.Invalid(verr.Fields)
+	case errors.As(err, &specErr):
+		return httpx.Invalid(specErr.Fields)
+	case errors.As(err, &opErr):
+		return httpx.NewError(http.StatusBadGateway, dto.ErrorCodeUnavailable, opErr.Error())
+	case errors.Is(err, runners.ErrTokenRequired):
+		return httpx.NewError(http.StatusForbidden, dto.ErrorCodeForbidden, "runner token required")
+	case errors.Is(err, runners.ErrNotRegistered):
+		return httpx.NewError(http.StatusForbidden, dto.ErrorCodeForbidden, "runner token is not registered")
+	case errors.Is(err, runners.ErrNotFound):
+		return httpx.NewError(http.StatusNotFound, dto.ErrorCodeNotFound, "not found")
+	case errors.Is(err, runners.ErrInUse):
+		return httpx.NewError(http.StatusConflict, dto.ErrorCodeRunnerInUse, "the runner still runs containers: delete them first")
+	case errors.Is(err, runners.ErrOffline):
+		return httpx.NewError(http.StatusConflict, dto.ErrorCodeRunnerOffline, "the runner is offline")
+	case errors.Is(err, runners.ErrTimeout):
+		return httpx.NewError(http.StatusGatewayTimeout, dto.ErrorCodeUnavailable, "the runner did not answer in time")
+	case errors.Is(err, runners.ErrNameTaken):
+		return httpx.NewError(http.StatusConflict, dto.ErrorCodeConflict, "another runner already has this name")
 	case errors.Is(err, users.ErrSetupDone):
 		return httpx.NewError(http.StatusConflict, dto.ErrorCodeConflict, "setup already done")
 	case errors.Is(err, users.ErrBadSetupToken):

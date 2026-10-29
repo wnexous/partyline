@@ -63,12 +63,38 @@ func TestDeviceCreate(t *testing.T) {
 
 	d := testkit.Decode[dto.DeviceRequest](decide(e.alice, "lookup", c.Code).RequireStatus(http.StatusOK))
 	require.Equal(t, dto.DeviceRequest{
-		Code: c.Code, Machine: "laptop-01", IP: "203.0.113.10", Status: dto.DeviceStatusPending,
+		Code: c.Code, Machine: "laptop-01", Kind: dto.TokenKindAgent, IP: "203.0.113.10", Status: dto.DeviceStatusPending,
 		CreatedAt: deviceT0, ExpiresAt: deviceT0.Add(10 * time.Minute),
 	}, d)
 
 	p := testkit.Decode[dto.DevicePoll](e.poll(c.PollSecret).RequireStatus(http.StatusOK))
 	require.Equal(t, dto.DevicePoll{Status: dto.DeviceStatusPending}, p)
+}
+
+// DEV-01, CA-01: `partyline runner` asks for a runner token with kind=runner; the approval
+// creates it (named after the machine) instead of an agent token, and an unknown kind is refused.
+func TestDeviceCreateRunnerKind(t *testing.T) {
+	e := newDeviceEnv(t)
+	created := testkit.Decode[dto.DeviceRequestCreated](e.cli("203.0.113.10").
+		Post("/api/v1/devices", dto.CreateDeviceRequest{Machine: "runnerbox", Kind: dto.TokenKindRunner}).
+		RequireStatus(http.StatusCreated))
+
+	d := testkit.Decode[dto.DeviceRequest](decide(e.alice, "lookup", created.Code).RequireStatus(http.StatusOK))
+	require.Equal(t, dto.TokenKindRunner, d.Kind)
+	decide(e.alice, "approve", created.Code).RequireStatus(http.StatusOK)
+
+	p := testkit.Decode[dto.DevicePoll](e.poll(created.PollSecret).RequireStatus(http.StatusOK))
+	require.True(t, strings.HasPrefix(p.Token, "pl_runner_"), "token %q", p.Token)
+	tokens := testkit.Decode[dto.List[dto.Token]](e.alice.Get("/api/v1/tokens").RequireStatus(http.StatusOK))
+	require.Len(t, tokens.Items, 1)
+	require.Equal(t, "runnerbox (runner)", tokens.Items[0].Name)
+	require.Equal(t, dto.TokenKindRunner, tokens.Items[0].Kind)
+
+	for _, kind := range []dto.TokenKind{dto.TokenKindUser, "root"} {
+		er := e.cli("203.0.113.10").Post("/api/v1/devices", dto.CreateDeviceRequest{Machine: "box", Kind: kind}).
+			RequireError(http.StatusUnprocessableEntity, dto.ErrorCodeInvalid)
+		require.Equal(t, map[string]string{"kind": "must be agent or runner"}, er.Fields, "kind %q", kind)
+	}
 }
 
 // DEV-01: the machine name is required and has at most 64 characters.

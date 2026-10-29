@@ -199,6 +199,10 @@ const (
 	// ErrorCodeAlreadyAnswered is a second structured answer by the same author to the same question
 	// (409, QR-08): the member answers once, and deletes the answer to answer again.
 	ErrorCodeAlreadyAnswered ErrorCode = "already_answered"
+	// ErrorCodeRunnerOffline is a command for a runner that is not connected (409, CA-01);
+	// ErrorCodeRunnerInUse is the refusal to delete a runner that still has containers (409).
+	ErrorCodeRunnerOffline ErrorCode = "runner_offline"
+	ErrorCodeRunnerInUse   ErrorCode = "runner_in_use"
 )
 
 // ErrorBody is the envelope of every error response.

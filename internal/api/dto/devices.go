@@ -14,9 +14,11 @@ const (
 )
 
 // CreateDeviceRequest is the body of POST /devices (anonymous): `partyline setup --browser`
-// names the machine (its hostname).
+// names the machine (its hostname). Kind is the token the approval creates: agent (the default)
+// for setup, runner for `partyline runner` (CA-01).
 type CreateDeviceRequest struct {
-	Machine string `json:"machine"`
+	Machine string    `json:"machine"`
+	Kind    TokenKind `json:"kind,omitempty"`
 }
 
 // DeviceRequestCreated answers POST /devices (201). The user opens ApproveURL
@@ -55,6 +57,7 @@ type DeviceCode struct {
 type DeviceRequest struct {
 	Code      string       `json:"code"`
 	Machine   string       `json:"machine"`
+	Kind      TokenKind    `json:"kind"`
 	IP        string       `json:"ip"`
 	Status    DeviceStatus `json:"status"`
 	CreatedAt time.Time    `json:"created_at"`

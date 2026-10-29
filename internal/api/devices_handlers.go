@@ -41,7 +41,7 @@ func (s *server) createDevice(w http.ResponseWriter, r *http.Request) error {
 	if err := httpx.DecodeJSON(w, r, &req); err != nil {
 		return err
 	}
-	c, err := s.Devices.Create(r.Context(), req.Machine, httpx.ClientIP(r.Context()))
+	c, err := s.Devices.Create(r.Context(), req.Machine, string(req.Kind), httpx.ClientIP(r.Context()))
 	if err != nil {
 		return err
 	}
@@ -70,7 +70,7 @@ func (s *server) pollDevice(w http.ResponseWriter, r *http.Request) error {
 
 func deviceDTO(code string, d devices.Request) dto.DeviceRequest {
 	return dto.DeviceRequest{
-		Code: devices.NormalizeCode(code), Machine: d.Machine, IP: d.CreatedIp, Status: d.Status,
+		Code: devices.NormalizeCode(code), Machine: d.Machine, Kind: dto.TokenKind(d.Kind), IP: d.CreatedIp, Status: d.Status,
 		CreatedAt: time.UnixMilli(d.CreatedAt).UTC(), ExpiresAt: time.UnixMilli(d.ExpiresAt).UTC(),
 	}
 }
