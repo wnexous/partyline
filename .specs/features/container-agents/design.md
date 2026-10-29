@@ -52,12 +52,34 @@ no inbound port, works behind NAT.
   Runner routes `/api/v1/runner/register`, `/runner/ws`. DTOs + tygo.
 
 ## Agent image (`deploy/agent/`)
-`ghcr.io/wnexous/partyline-agent:<version>`: Debian slim + tini + git + ca-certificates + node/bun
-+ pinned Claude Code, pi, OpenCode, omp + the partyline binary. Entrypoint: clone
-`PARTYLINE_REPO`@`PARTYLINE_REPO_REF` into `/workspace/repo` when empty; configure the harness
-credentials from env under the container user's home; run `partyline $PARTYLINE_HARNESS --always
---principal` inside `script -qfec` (TTY), restarting with backoff. Non-root, no Docker socket.
-Release workflow builds and pushes it on each tag.
+`ghcr.io/wnexous/partyline-agent:<version>`: Debian slim + tini + git + ca-certificates + curl +
+util-linux `script` + node LTS + bun + pinned Claude Code, pi, OpenCode, omp + the partyline
+binary (built in a Go stage with the server Dockerfile's flags). Entrypoint (`deploy/agent/entrypoint.sh`,
+POSIX sh, `set -eu`, tracing off): validate `PARTYLINE_URL`, `PARTYLINE_TOKEN` and
+`PARTYLINE_HARNESS`; clone `PARTYLINE_REPO`@`PARTYLINE_REPO_REF` into `/workspace/repo` when
+empty; log the CLI in and register the harness in one non-interactive step
+(`partyline setup --url … --token-stdin --harness … --always --yes`, which writes
+`~/.config/partyline/config.json` mode 0600); run `partyline $PARTYLINE_HARNESS --principal`
+inside `script -qfec` (TTY), restarting with backoff 1s→60s, reset after 10 min up. `--always` is
+a `partyline setup` flag, not a launcher flag: setup records in the harness config that the
+extension, plugin and MCP server act in every session of the container, while `--principal`
+makes the session the AI's principal one (SESS-57). Non-root user `agent` (uid/gid 1000, home
+`/home/agent`), no Docker socket, no secret in the image. Release workflow builds and pushes it
+on each tag (`image-agent` job, amd64 + arm64, QEMU for the runtime stage).
+
+Harness credentials come only from the environment — each harness reads its provider keys
+itself, so the entrypoint writes no credential file and requires at least one variable per row
+(it names the missing ones instead of starting a session that could not authenticate):
+
+| Harness | `PARTYLINE_HARNESS` | Credential env (any one) |
+| --- | --- | --- |
+| Claude Code | `claude` | `CLAUDE_CODE_OAUTH_TOKEN` (from `claude setup-token`), `ANTHROPIC_API_KEY`, `ANTHROPIC_AUTH_TOKEN` |
+| OpenCode | `opencode` | `OPENCODE_API_KEY` (OpenCode Go key), `ANTHROPIC_API_KEY`, `OPENAI_API_KEY`, `GEMINI_API_KEY`, `OPENROUTER_API_KEY` |
+| pi | `pi` | `OPENCODE_API_KEY`, `ANTHROPIC_API_KEY`, `OPENAI_API_KEY`, `GEMINI_API_KEY`, `OPENROUTER_API_KEY` |
+| omp | `omp` | `OPENCODE_API_KEY`, `ANTHROPIC_API_KEY`, `OPENAI_API_KEY`, `GEMINI_API_KEY`, `OPENROUTER_API_KEY` |
+
+`PARTYLINE_WORKSPACE` (default `/workspace`) is optional; `/workspace` is the one volume the
+container AI keeps (CA-05).
 
 ## Web
 FSD: `entities/runner`, `entities/container-agent`, `features/{manage-runners, manage-secrets,
