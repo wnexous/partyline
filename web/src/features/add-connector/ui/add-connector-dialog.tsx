@@ -1,5 +1,5 @@
 import { useNavigate } from "@tanstack/react-router";
-import { useId, useState } from "react";
+import { useEffect, useId, useState } from "react";
 import { useConnectorKinds, useCreateConnector } from "@/entities/connector";
 import { isAdminOf, OrgSelect, useCurrentOrg } from "@/entities/organization";
 import { isApiError } from "@/shared/api/client";
@@ -12,17 +12,13 @@ import {
 import { type Translate, useT } from "@/shared/i18n";
 import { cn } from "@/shared/lib/utils";
 import { CodeBlock } from "@/shared/ui/molecules/copy-field";
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogHeader,
-  DialogTitle,
-} from "@/shared/ui/molecules/dialog";
+import { FormDialog } from "@/shared/ui/molecules/form-dialog";
+import { FormAlert } from "@/shared/ui/molecules/form-fields";
 import { SecretOnceDialog } from "@/shared/ui/molecules/secret-once-dialog";
+import { Form } from "@/shared/ui/primitives/form";
 import { RadioGroup, RadioGroupItem } from "@/shared/ui/primitives/radio-group";
 import { Skeleton } from "@/shared/ui/primitives/skeleton";
-import { ConnectorForm } from "./connector-form";
+import { ConnectorFields, useConnectorForm } from "./connector-form";
 
 /** Secrets the server generated for a new connector, with the labels of their fields. */
 interface Generated {
@@ -66,31 +62,22 @@ export function AddConnectorDialog({
 
   return (
     <>
-      <Dialog open={open} onOpenChange={onOpenChange}>
-        <DialogContent className="flex max-h-[calc(100dvh-2rem)] flex-col gap-0 p-0 sm:max-w-lg">
-          <DialogHeader className="border-b px-5 pt-5 pb-4 text-left">
-            <DialogTitle>{t("connectors.addTitle")}</DialogTitle>
-            <DialogDescription>{t("connectors.addBody")}</DialogDescription>
-          </DialogHeader>
-          {open ? (
-            <AddConnectorBody
-              defaultOrgId={orgId}
-              onCancel={() => onOpenChange(false)}
-              onCreated={(connector, kind) => {
-                onOpenChange(false);
-                const secrets = Object.entries(connector.generated_secrets ?? {}).map(
-                  ([name, value]) => ({
-                    label: kind.fields.find((f) => f.name === name)?.label ?? name,
-                    value,
-                  }),
-                );
-                if (secrets.length > 0) setGenerated({ connector, secrets });
-                else openConnector(connector.id, connector.org_id);
-              }}
-            />
-          ) : null}
-        </DialogContent>
-      </Dialog>
+      <AddConnectorForm
+        open={open}
+        defaultOrgId={orgId}
+        onCancel={() => onOpenChange(false)}
+        onCreated={(connector, kind) => {
+          onOpenChange(false);
+          const secrets = Object.entries(connector.generated_secrets ?? {}).map(
+            ([name, value]) => ({
+              label: kind.fields.find((f) => f.name === name)?.label ?? name,
+              value,
+            }),
+          );
+          if (secrets.length > 0) setGenerated({ connector, secrets });
+          else openConnector(connector.id, connector.org_id);
+        }}
+      />
       <SecretOnceDialog
         secret={first?.value ?? null}
         title={t("connectors.secretTitle")}
@@ -127,17 +114,24 @@ function failureText(t: Translate, err: unknown): string {
   return t("error.generic");
 }
 
-function AddConnectorBody({
+/**
+ * The dialog's body and its form: the organization the connection goes to, the platform, and the
+ * fields that platform's schema describes. It stays mounted between openings (the dialog animates
+ * closed) and every opening starts from the first platform and the page's organization.
+ */
+function AddConnectorForm({
+  open,
   defaultOrgId,
   onCancel,
   onCreated,
 }: {
+  open: boolean;
   defaultOrgId: string;
   onCancel: () => void;
   onCreated: (connector: Connector, kind: ConnectorKind) => void;
 }) {
   const t = useT();
-  const kinds = useConnectorKinds();
+  const kinds = useConnectorKinds(open);
   const create = useCreateConnector();
   const { org: current, orgs } = useCurrentOrg();
   const [chosen, setChosen] = useState<string | null>(null);
@@ -145,6 +139,17 @@ function AddConnectorBody({
   const idBase = useId();
   const kindName = chosen ?? (kinds.data?.length === 1 ? kinds.data[0]?.name : null) ?? null;
   const kind = kinds.data?.find((k) => k.name === kindName);
+  const { form, formError, handleSubmit, reset } = useConnectorForm(kind);
+
+  // A new opening is a new connection: the platform, the organization and the fields start over.
+  // biome-ignore lint/correctness/useExhaustiveDependencies: only the opening resets the form
+  useEffect(() => {
+    if (!open) return;
+    setChosen(null);
+    setPickedOrg(null);
+    reset();
+  }, [open]);
+
   // The organization it goes to: the pick, else the one the page is about when the viewer
   // administers it (SET-08: the address wins over the browser's current organization), else the
   // current one they administer, else the first they administer. None while their organizations
@@ -157,69 +162,82 @@ function AddConnectorBody({
     adminOrgs[0];
 
   return (
-    <div className="min-h-0 flex-1 space-y-5 overflow-y-auto px-5 pt-4 pb-5">
-      {org ? (
-        <OrgSelect
-          label={t("connectors.org")}
-          hint={t("connectors.orgHint")}
-          orgs={adminOrgs}
-          value={org.id}
-          onChange={setPickedOrg}
-        />
-      ) : null}
-      <fieldset className="space-y-2">
-        <legend className="mb-2 text-sm font-medium">{t("connectors.platform")}</legend>
-        {kinds.isPending ? (
-          <Skeleton className="h-10 w-full" />
-        ) : kinds.isError ? (
-          <p role="alert" className="text-sm text-destructive">
-            {t("connectors.kindsError")}
-          </p>
-        ) : (
-          <RadioGroup
-            value={kindName ?? ""}
-            onValueChange={setChosen}
-            className="grid grid-cols-2 gap-2 sm:grid-cols-4"
-          >
-            {kinds.data.map((k) => (
-              <label
-                key={k.name}
-                htmlFor={`${idBase}-${k.name}`}
-                className={cn(
-                  "flex cursor-pointer items-center gap-2 rounded-md border px-3 py-2.5 text-sm font-medium transition-colors hover:bg-accent/60",
-                  k.name === kindName && "border-tape-strong bg-tape/40",
-                )}
-              >
-                <RadioGroupItem id={`${idBase}-${k.name}`} value={k.name} />
-                {k.label}
-              </label>
-            ))}
-          </RadioGroup>
-        )}
-      </fieldset>
-      {kind ? (
-        <ConnectorForm
-          key={kind.name}
-          kind={kind}
-          submitLabel={t("connectors.add")}
-          pending={create.isPending}
-          onCancel={onCancel}
-          onSubmit={(values, form) =>
-            create.mutate(
-              { kind: kind.name, ...values, ...(org ? { org_id: org.id } : {}) },
-              {
-                onSuccess: (c) => onCreated(c, kind),
-                onError: (err) => {
-                  if (isApiError(err) && err.status === 422 && form.applyServerErrors(err.fields)) {
-                    return;
-                  }
-                  form.setFormError(failureText(t, err));
-                },
+    <Form {...form}>
+      <FormDialog
+        open={open}
+        onOpenChange={(next) => {
+          if (!next) onCancel();
+        }}
+        title={t("connectors.addTitle")}
+        description={t("connectors.addBody")}
+        onSubmit={handleSubmit((values, api) => {
+          if (!kind) return;
+          create.mutate(
+            { kind: kind.name, ...values, ...(org ? { org_id: org.id } : {}) },
+            {
+              onSuccess: (c) => onCreated(c, kind),
+              onError: (err) => {
+                if (isApiError(err) && err.status === 422 && api.applyServerErrors(err.fields)) {
+                  return;
+                }
+                api.setFormError(failureText(t, err));
               },
-            )
-          }
-        />
-      ) : null}
-    </div>
+            },
+          );
+        })}
+        submitLabel={t("connectors.add")}
+        submitDisabled={!kind}
+        pending={create.isPending}
+        contentClassName="flex max-h-[calc(100dvh-2rem)] flex-col gap-0 p-0 sm:max-w-lg"
+        headerClassName="border-b px-5 pt-5 pb-4 text-left"
+        formClassName="min-h-0 flex-1 space-y-5 overflow-y-auto px-5 pt-4 pb-5"
+      >
+        {org ? (
+          <OrgSelect
+            label={t("connectors.org")}
+            hint={t("connectors.orgHint")}
+            orgs={adminOrgs}
+            value={org.id}
+            onChange={setPickedOrg}
+          />
+        ) : null}
+        <fieldset className="space-y-2">
+          <legend className="mb-2 text-sm font-medium">{t("connectors.platform")}</legend>
+          {kinds.isPending ? (
+            <Skeleton className="h-10 w-full" />
+          ) : kinds.isError ? (
+            <p role="alert" className="text-sm text-destructive">
+              {t("connectors.kindsError")}
+            </p>
+          ) : (
+            <RadioGroup
+              value={kindName ?? ""}
+              onValueChange={setChosen}
+              className="grid grid-cols-2 gap-2 sm:grid-cols-4"
+            >
+              {kinds.data.map((k) => (
+                <label
+                  key={k.name}
+                  htmlFor={`${idBase}-${k.name}`}
+                  className={cn(
+                    "flex cursor-pointer items-center gap-2 rounded-md border px-3 py-2.5 text-sm font-medium transition-colors hover:bg-accent/60",
+                    k.name === kindName && "border-tape-strong bg-tape/40",
+                  )}
+                >
+                  <RadioGroupItem id={`${idBase}-${k.name}`} value={k.name} />
+                  {k.label}
+                </label>
+              ))}
+            </RadioGroup>
+          )}
+        </fieldset>
+        {kind ? (
+          <>
+            <FormAlert>{formError}</FormAlert>
+            <ConnectorFields kind={kind} form={form} />
+          </>
+        ) : null}
+      </FormDialog>
+    </Form>
   );
 }

@@ -1,6 +1,13 @@
 import { zodResolver } from "@hookform/resolvers/zod";
 import { XIcon } from "lucide-react";
-import { type KeyboardEvent, type ReactNode, useMemo, useState } from "react";
+import {
+  type BaseSyntheticEvent,
+  type KeyboardEvent,
+  type ReactNode,
+  useEffect,
+  useMemo,
+  useState,
+} from "react";
 import { type Path, useForm } from "react-hook-form";
 import {
   type ConnectorFormApi,
@@ -39,6 +46,99 @@ import { Switch } from "@/shared/ui/primitives/switch";
  * the stored value when an edit sends it empty.
  */
 
+export interface ConnectorFormState {
+  form: ReturnType<typeof useForm<ConnectorFormValues>>;
+  /** The form-level error (the request failed, not a field). */
+  formError: string | null;
+  /** Validates the values and hands them, with the server-error API, to the caller's handler. */
+  handleSubmit: (
+    onValid: (values: ConnectorFormValues, api: ConnectorFormApi) => void,
+  ) => (event?: BaseSyntheticEvent) => Promise<void>;
+  /** Back to the defaults of the current kind, with the form error cleared. */
+  reset: () => void;
+}
+
+/**
+ * The form of one connector kind: its zod schema, its defaults and the way a 422 lands under the
+ * inputs. A kind is a schema, so a different kind starts that kind's form from its own defaults;
+ * `kind` is undefined until the caller has picked one.
+ */
+export function useConnectorForm(
+  kind: ConnectorKind | undefined,
+  initial?: { name: string; config: Record<string, unknown> },
+): ConnectorFormState {
+  const fields = kind?.fields;
+  const schema = useMemo(() => connectorFormSchema(fields ?? []), [fields]);
+  const [formError, setFormError] = useState<string | null>(null);
+  const form = useForm<ConnectorFormValues>({
+    resolver: zodResolver(schema) as never,
+    defaultValues: connectorFormDefaults(fields ?? [], initial),
+  });
+  const reset = () => {
+    form.reset(connectorFormDefaults(fields ?? [], initial));
+    setFormError(null);
+  };
+  const kindName = kind?.name ?? "";
+  // The kind's name is the identity of the form; `initial` is what its first render was given.
+  // biome-ignore lint/correctness/useExhaustiveDependencies: reset when the kind changes, not when a caller re-renders
+  useEffect(() => {
+    reset();
+  }, [kindName]);
+
+  const api: ConnectorFormApi = {
+    setFormError,
+    applyServerErrors: (fields) => {
+      let applied = false;
+      for (const [key, reason] of Object.entries(fields)) {
+        const bare = key.replace(/^config\./, "");
+        const path =
+          key === "name"
+            ? "name"
+            : (kind?.fields ?? []).some((f) => f.name === bare)
+              ? `config.${bare}`
+              : null;
+        if (!path) continue;
+        form.setError(path as Path<ConnectorFormValues>, { type: "server", message: reason });
+        applied = true;
+      }
+      return applied;
+    },
+  };
+
+  const handleSubmit = (onValid: (values: ConnectorFormValues, api: ConnectorFormApi) => void) =>
+    form.handleSubmit((values) => {
+      setFormError(null);
+      onValid(schema.parse(values) as ConnectorFormValues, api);
+    });
+
+  return { form, formError, handleSubmit, reset };
+}
+
+/** The fields of a connector kind (its name, then the schema's): the caller's form holds them. */
+export function ConnectorFields({
+  kind,
+  form,
+}: {
+  kind: ConnectorKind;
+  form: ReturnType<typeof useForm<ConnectorFormValues>>;
+}) {
+  const t = useT();
+  return (
+    <>
+      <TextField
+        control={form.control}
+        name="name"
+        label={t("connectors.name")}
+        description={t("connectors.nameHint")}
+        autoComplete="off"
+      />
+      {kind.fields.map((field) => (
+        <SchemaField key={field.name} field={field} form={form} />
+      ))}
+    </>
+  );
+}
+
 export function ConnectorForm({
   kind,
   initial,
@@ -58,52 +158,17 @@ export function ConnectorForm({
   footer?: ReactNode;
 }) {
   const t = useT();
-  const schema = useMemo(() => connectorFormSchema(kind.fields), [kind.fields]);
-  const [formError, setFormError] = useState<string | null>(null);
-  const form = useForm<ConnectorFormValues>({
-    resolver: zodResolver(schema) as never,
-    defaultValues: connectorFormDefaults(kind.fields, initial),
-  });
-
-  const api: ConnectorFormApi = {
-    setFormError,
-    applyServerErrors: (fields) => {
-      let applied = false;
-      for (const [key, reason] of Object.entries(fields)) {
-        const bare = key.replace(/^config\./, "");
-        const path =
-          key === "name"
-            ? "name"
-            : kind.fields.some((f) => f.name === bare)
-              ? `config.${bare}`
-              : null;
-        if (!path) continue;
-        form.setError(path as Path<ConnectorFormValues>, { type: "server", message: reason });
-        applied = true;
-      }
-      return applied;
-    },
-  };
-
-  const submit = form.handleSubmit((values) => {
-    setFormError(null);
-    onSubmit(schema.parse(values) as ConnectorFormValues, api);
-  });
+  const { form, formError, handleSubmit } = useConnectorForm(kind, initial);
 
   return (
     <Form {...form}>
-      <form onSubmit={submit} noValidate className="space-y-5">
+      <form
+        onSubmit={handleSubmit((values, api) => onSubmit(values, api))}
+        noValidate
+        className="space-y-5"
+      >
         <FormAlert>{formError}</FormAlert>
-        <TextField
-          control={form.control}
-          name="name"
-          label={t("connectors.name")}
-          description={t("connectors.nameHint")}
-          autoComplete="off"
-        />
-        {kind.fields.map((field) => (
-          <SchemaField key={field.name} field={field} form={form} />
-        ))}
+        <ConnectorFields kind={kind} form={form} />
         {footer}
         <div className="flex flex-col-reverse gap-2 pt-1 sm:flex-row sm:justify-end">
           {onCancel ? (

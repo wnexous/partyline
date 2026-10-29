@@ -11,11 +11,12 @@ import type {
   UpdateConnectorRequest,
 } from "@/shared/api/types.gen";
 
-export const useConnectorKinds = () =>
+export const useConnectorKinds = (enabled = true) =>
   useQuery({
     queryKey: queryKeys.connectorKinds,
     queryFn: () => api<List<ConnectorKind>>("GET", "/connector-kinds").then(items),
     staleTime: Number.POSITIVE_INFINITY,
+    enabled,
   });
 
 export const connectorsQuery = () =>

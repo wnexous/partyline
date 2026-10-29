@@ -1,5 +1,6 @@
 import type { FormEvent, ReactNode } from "react";
 import { useT } from "@/shared/i18n";
+import { cn } from "@/shared/lib/utils";
 import {
   Dialog,
   DialogContent,
@@ -26,8 +27,11 @@ export function FormDialog({
   cancelLabel,
   pending = false,
   submitDisabled = false,
+  destructive = false,
   formLabel,
   contentClassName,
+  headerClassName,
+  formClassName,
   children,
 }: {
   open: boolean;
@@ -43,26 +47,41 @@ export function FormDialog({
   pending?: boolean;
   /** Disables the submit button until the form can be sent. */
   submitDisabled?: boolean;
+  /** The submit button deletes something: it is the destructive variant. */
+  destructive?: boolean;
   /** The accessible name of the form element, when it is not the dialog's title. */
   formLabel?: string;
   contentClassName?: string;
+  /** The header's classes, for a dialog whose body scrolls under a fixed header. */
+  headerClassName?: string;
+  /** The form element's classes, for a dialog whose body scrolls. */
+  formClassName?: string;
   children: ReactNode;
 }) {
   const t = useT();
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className={contentClassName}>
-        <DialogHeader>
+        <DialogHeader className={headerClassName}>
           <DialogTitle>{title}</DialogTitle>
           {description ? <DialogDescription>{description}</DialogDescription> : null}
         </DialogHeader>
-        <form aria-label={formLabel} onSubmit={onSubmit} noValidate className="space-y-4">
+        <form
+          aria-label={formLabel}
+          onSubmit={onSubmit}
+          noValidate
+          className={cn("space-y-4", formClassName)}
+        >
           {children}
           <DialogFooter>
             <Button type="button" variant="outline" onClick={() => onOpenChange(false)}>
               {cancelLabel ?? t("common.cancel")}
             </Button>
-            <Button type="submit" disabled={pending || submitDisabled}>
+            <Button
+              type="submit"
+              variant={destructive ? "destructive" : "default"}
+              disabled={pending || submitDisabled}
+            >
               {submitLabel}
             </Button>
           </DialogFooter>

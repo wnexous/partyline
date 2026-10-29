@@ -1,7 +1,7 @@
 import { zodResolver } from "@hookform/resolvers/zod";
 import { Link } from "@tanstack/react-router";
 import { KeyRoundIcon, PlusIcon } from "lucide-react";
-import { useId, useMemo, useState } from "react";
+import { useEffect, useId, useMemo, useState } from "react";
 import { Controller, useForm } from "react-hook-form";
 import { toast } from "sonner";
 import { useCreateToken, usePurgeToken, useRevokeToken, useTokens } from "@/entities/account";
@@ -18,15 +18,8 @@ import { readStorage, writeStorage } from "@/shared/lib/storage";
 import { cn } from "@/shared/lib/utils";
 import { RelativeTime } from "@/shared/ui/atoms/relative-time";
 import { ConfirmDialog } from "@/shared/ui/molecules/confirm-dialog";
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from "@/shared/ui/molecules/dialog";
 import { EmptyState } from "@/shared/ui/molecules/empty-state";
+import { FormDialog } from "@/shared/ui/molecules/form-dialog";
 import { FormAlert, TextField } from "@/shared/ui/molecules/form-fields";
 import { PageHeader } from "@/shared/ui/molecules/page-header";
 import { SecretOnceDialog } from "@/shared/ui/molecules/secret-once-dialog";
@@ -268,27 +261,6 @@ function CreateTokenDialog({
   onCreated: (created: CreatedToken) => void;
 }) {
   const t = useT();
-  return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-md">
-        <DialogHeader>
-          <DialogTitle>{t("tokens.new")}</DialogTitle>
-          <DialogDescription>{t("tokens.newBody")}</DialogDescription>
-        </DialogHeader>
-        {open ? <NewTokenForm onCreated={onCreated} onCancel={() => onOpenChange(false)} /> : null}
-      </DialogContent>
-    </Dialog>
-  );
-}
-
-function NewTokenForm({
-  onCreated,
-  onCancel,
-}: {
-  onCreated: (created: CreatedToken) => void;
-  onCancel: () => void;
-}) {
-  const t = useT();
   const create = useCreateToken();
   const ids = useId();
   const [formError, setFormError] = useState<string | null>(null);
@@ -296,6 +268,14 @@ function NewTokenForm({
     resolver: zodResolver(createTokenSchema),
     defaultValues: { kind: TokenKindAgent, name: "", expiry: "never" },
   });
+
+  // The dialog stays mounted between openings (so it animates closed), and every opening starts
+  // from the defaults.
+  useEffect(() => {
+    if (!open) return;
+    form.reset({ kind: TokenKindAgent, name: "", expiry: "never" });
+    setFormError(null);
+  }, [form, open]);
 
   const onSubmit = form.handleSubmit((values) => {
     setFormError(null);
@@ -322,7 +302,16 @@ function NewTokenForm({
 
   return (
     <Form {...form}>
-      <form onSubmit={onSubmit} noValidate className="space-y-5">
+      <FormDialog
+        open={open}
+        onOpenChange={onOpenChange}
+        title={t("tokens.new")}
+        description={t("tokens.newBody")}
+        onSubmit={(event) => void onSubmit(event)}
+        submitLabel={create.isPending ? t("connect.creating") : t("connect.create")}
+        pending={create.isPending}
+        contentClassName="sm:max-w-md"
+      >
         <FormAlert>{formError}</FormAlert>
         <fieldset className="space-y-2">
           <legend className="mb-2 text-sm font-medium">{t("tokens.kind")}</legend>
@@ -392,15 +381,7 @@ function NewTokenForm({
             )}
           />
         </fieldset>
-        <DialogFooter>
-          <Button type="button" variant="outline" onClick={onCancel}>
-            {t("common.cancel")}
-          </Button>
-          <Button type="submit" disabled={create.isPending}>
-            {create.isPending ? t("connect.creating") : t("connect.create")}
-          </Button>
-        </DialogFooter>
-      </form>
+      </FormDialog>
     </Form>
   );
 }

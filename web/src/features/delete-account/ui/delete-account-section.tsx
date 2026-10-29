@@ -9,15 +9,7 @@ import { formFailureText } from "@/shared/api/error-text";
 import { ErrorCodeLastInstanceAdmin } from "@/shared/api/types.gen";
 import { useT } from "@/shared/i18n";
 import { applyFieldErrors } from "@/shared/lib/forms";
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-  DialogTrigger,
-} from "@/shared/ui/molecules/dialog";
+import { FormDialog } from "@/shared/ui/molecules/form-dialog";
 import { FormAlert, TextField } from "@/shared/ui/molecules/form-fields";
 import { PageSection as Section } from "@/shared/ui/molecules/page-section";
 import { Button } from "@/shared/ui/primitives/button";
@@ -31,37 +23,22 @@ import { type DeleteAccountForm, deleteAccountSchema } from "../model/schema";
 export function DeleteAccountSection() {
   const t = useT();
   const id = useId();
-  const [open, setOpen] = useState(false);
-  return (
-    <Section id={`${id}-delete`} title={t("account.delete")} description={t("account.deleteBody")}>
-      <Dialog open={open} onOpenChange={setOpen}>
-        <DialogTrigger asChild>
-          <Button variant="outline" className="text-destructive hover:text-destructive">
-            {t("account.deleteOpen")}
-          </Button>
-        </DialogTrigger>
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>{t("account.deleteTitle")}</DialogTitle>
-            <DialogDescription>{t("account.deleteDialogBody")}</DialogDescription>
-          </DialogHeader>
-          {/* Mounted only while open: every opening starts with an empty password. */}
-          {open ? <DeleteAccountBody onCancel={() => setOpen(false)} /> : null}
-        </DialogContent>
-      </Dialog>
-    </Section>
-  );
-}
-
-function DeleteAccountBody({ onCancel }: { onCancel: () => void }) {
-  const t = useT();
   const navigate = useNavigate();
   const remove = useDeleteAccount();
+  const [open, setOpen] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const form = useForm<DeleteAccountForm>({
     resolver: zodResolver(deleteAccountSchema),
     defaultValues: { password: "" },
   });
+
+  // Every opening starts with an empty password.
+  const openDialog = () => {
+    form.reset({ password: "" });
+    setError(null);
+    setOpen(true);
+  };
+
   const onSubmit = form.handleSubmit(({ password }) => {
     if (remove.isPending) return;
     setError(null);
@@ -86,26 +63,36 @@ function DeleteAccountBody({ onCancel }: { onCancel: () => void }) {
   });
 
   return (
-    <Form {...form}>
-      <form onSubmit={onSubmit} noValidate className="space-y-4">
-        <FormAlert>{error}</FormAlert>
-        <TextField
-          control={form.control}
-          name="password"
-          type="password"
-          label={t("auth.password")}
-          autoComplete="current-password"
-          autoFocus
-        />
-        <DialogFooter>
-          <Button type="button" variant="outline" onClick={onCancel}>
-            {t("common.cancel")}
-          </Button>
-          <Button type="submit" variant="destructive" disabled={remove.isPending}>
-            {t("account.deleteConfirm")}
-          </Button>
-        </DialogFooter>
-      </form>
-    </Form>
+    <Section id={`${id}-delete`} title={t("account.delete")} description={t("account.deleteBody")}>
+      <Button
+        variant="outline"
+        className="text-destructive hover:text-destructive"
+        onClick={openDialog}
+      >
+        {t("account.deleteOpen")}
+      </Button>
+      <Form {...form}>
+        <FormDialog
+          open={open}
+          onOpenChange={setOpen}
+          title={t("account.deleteTitle")}
+          description={t("account.deleteDialogBody")}
+          onSubmit={(event) => void onSubmit(event)}
+          submitLabel={t("account.deleteConfirm")}
+          destructive
+          pending={remove.isPending}
+        >
+          <FormAlert>{error}</FormAlert>
+          <TextField
+            control={form.control}
+            name="password"
+            type="password"
+            label={t("auth.password")}
+            autoComplete="current-password"
+            autoFocus
+          />
+        </FormDialog>
+      </Form>
+    </Section>
   );
 }
