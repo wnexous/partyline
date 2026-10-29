@@ -91,6 +91,9 @@ func ValidVolumeName(name string) bool { return VolumeNamePattern.MatchString(na
 // ValidEnvName reports whether name is an accepted environment variable name.
 func ValidEnvName(name string) bool { return EnvNamePattern.MatchString(name) }
 
+// ValidDockerVersion reports whether v is a Docker version as a hello reports it (CA-02).
+func ValidDockerVersion(v string) bool { return versionPattern.MatchString(v) }
+
 // ValidState reports whether s is a state Partyline stores.
 func ValidState(s State) bool {
 	switch s {
@@ -220,7 +223,7 @@ func ValidateHello(h Hello) error {
 		fields["docker_error"] = "only one of docker_version and docker_error is allowed"
 	case h.DockerError != "" && !ValidMessage(h.DockerError):
 		fields["docker_error"] = fmt.Sprintf("must have 1 to %d characters without control characters", MaxMessage)
-	case h.DockerVersion != "" && !versionPattern.MatchString(h.DockerVersion):
+	case h.DockerVersion != "" && !ValidDockerVersion(h.DockerVersion):
 		fields["docker_version"] = "must be a Docker version"
 	}
 	if err := checkContainers(h.Containers); err != nil {
