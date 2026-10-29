@@ -33,7 +33,7 @@ smoke script. Status: done
 volume option + token revoke, last_error), routes, audit, tests with the fake runner. Status: done
 
 ## T7 — web (CA-01..CA-06, CA-10)
-Slices per design "Web"; vitest; one e2e with a fake runner client. Status: pending
+Slices per design "Web"; vitest; one e2e with a fake runner client. Status: done
 
 ## T8 — docs + live smoke (all)
 `docs/container-agents.md`, README line, AD-036 in STATE.md; live smoke on the dev box after

@@ -108,6 +108,8 @@ Fix the import instead (move the code down a layer, or go through the index).
 | Theme and preference keys | `shared/lib/theme`, `shared/lib/storage`; the theme radio is `shared/ui/molecules/theme-radio-group` | `lib/theme.ts` (T4b) |
 | Candidate row of a picker (DM, group, member) | `entities/intelligence/ui/pickable-row` (IntelligenceRow + `useIsOnline`) | three private rows (T4b) |
 | Shared auth page frame | `shared/ui/molecules/auth-frame` (pages pass their language and theme controls) | `components/auth-layout.tsx` (T4b) |
+| Server (runner) row | `entities/runner/ui/runner-row` (online dot, machine, Docker version or error, container count, last seen, actions slot) | — (container-agents T7) |
+| Container of an AI (state, actions, logs, delete) | `features/operate-container/ui/container-section` (one for the profile page and the panel; `headingLevel`/`className` let each host place it) | — (container-agents T7) |
 
 
 Every row above exists in the code now; where a row names a "Replaces" copy that is still there, the

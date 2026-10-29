@@ -320,3 +320,128 @@ export async function agentJSON<T>(
   expect(res.ok(), `${method} ${path} → ${res.status()}`).toBe(true);
   return (await res.json()) as T;
 }
+
+/**
+ * A masked client-to-server WebSocket frame (RFC 6455 §5.3): every frame a client sends must be
+ * masked, and the runner's hello is the only one the fake runner writes.
+ */
+function maskedText(payload: string): Buffer {
+  const data = Buffer.from(payload);
+  if (data.length >= 126) throw new Error("the fake runner's frames stay under 126 bytes");
+  const mask = randomBytes(4);
+  const header = Buffer.from([0x81, 0x80 | data.length]);
+  return Buffer.concat([header, mask, data.map((byte, i) => byte ^ mask.readUInt8(i % 4))]);
+}
+
+/** What a fake runner reports in its hello (CA-02): Docker's version or why it is unusable. */
+export interface FakeRunnerHello {
+  docker_version?: string;
+  docker_error?: string;
+  containers?: { name: string; state: string; error?: string }[];
+}
+
+/** What the server asked the fake runner to do, for the assertions of a spec. */
+export interface RunnerCommand {
+  op: "run" | "start" | "stop" | "restart" | "remove" | "logs" | "state";
+  name?: string;
+  run?: { name: string };
+}
+
+/** A live fake `partyline runner`: its socket and the commands it answered. */
+export interface FakeRunner {
+  close: () => void;
+  commands: RunnerCommand[];
+}
+
+/**
+ * A fake runner client (CA-01, CA-02, CA-09): the runner WebSocket with a runner token, a hello,
+ * and an answer to every command the way the real executor answers — a result, plus the state
+ * event the runner would report, so the page shows the container change without waiting for a poll.
+ * It runs no Docker: `run`, `start`, `stop`, `restart` and `remove` all succeed and report the state
+ * they leave behind.
+ */
+export function startFakeRunner(
+  instance: Instance,
+  token: string,
+  hello: FakeRunnerHello = { docker_version: "27.3.1", containers: [] },
+): Promise<FakeRunner> {
+  return new Promise<FakeRunner>((done, fail) => {
+    const commands: RunnerCommand[] = [];
+    const headers: Record<string, string> = {
+      Connection: "Upgrade",
+      Upgrade: "websocket",
+      "Sec-WebSocket-Version": "13",
+      "Sec-WebSocket-Key": randomBytes(16).toString("base64"),
+      Authorization: `Bearer ${token}`,
+    };
+    const req = request(`${instance.url}/api/v1/runner/ws`, { headers });
+    const giveUp = setTimeout(() => {
+      req.destroy();
+      fail(new Error("the runner's connection did not open in time"));
+    }, 10_000);
+    req.on("upgrade", (_res, socket, head) => {
+      clearTimeout(giveUp);
+      const send = (frame: unknown) => socket.write(maskedText(JSON.stringify(frame)));
+      const state = (name: string, value: string) =>
+        send({ type: "state", containers: [{ name, state: value }] });
+      send({ type: "hello", ...hello });
+
+      let buffered = head;
+      const read = (chunk: Buffer) => {
+        buffered = Buffer.concat([buffered, chunk]);
+        for (;;) {
+          const frame = takeFrame(buffered);
+          if (!frame) return;
+          buffered = buffered.subarray(frame.size);
+          if (frame.opcode === 0x9) {
+            socket.write(pongFrame(frame.payload));
+            continue;
+          }
+          if (frame.opcode === 0x8) {
+            socket.destroy();
+            return;
+          }
+          if (frame.opcode !== 0x1) continue;
+          const message = JSON.parse(frame.payload.toString()) as {
+            type: string;
+            id?: string;
+            op?: RunnerCommand["op"];
+            name?: string;
+            run?: RunnerCommand["run"];
+          };
+          if (message.type !== "command" || !message.id || !message.op) continue;
+          commands.push({ op: message.op, name: message.name, run: message.run });
+          const result: Record<string, unknown> = { type: "result", id: message.id, ok: true };
+          if (message.op === "logs") result.logs = "fake runner: the container started\n";
+          if (message.op === "state") {
+            result.containers = hello.containers ?? [];
+          }
+          send(result);
+          // The real runner reports what it sees on `docker events`: the operation's outcome.
+          const name = message.run?.name ?? message.name;
+          if (!name) continue;
+          if (message.op === "run" || message.op === "start" || message.op === "restart") {
+            state(name, "running");
+          } else if (message.op === "stop") {
+            state(name, "stopped");
+          }
+        }
+      };
+      socket.on("data", read);
+      read(Buffer.alloc(0));
+      done({
+        commands,
+        close: () => socket.destroy(),
+      });
+    });
+    req.on("response", (res) => {
+      clearTimeout(giveUp);
+      fail(new Error(`the runner's connection was refused: ${res.statusCode}`));
+    });
+    req.on("error", (err) => {
+      clearTimeout(giveUp);
+      fail(err);
+    });
+    req.end();
+  });
+}
