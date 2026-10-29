@@ -168,7 +168,7 @@ function ProfileView({ profile }: { profile: IntelligenceProfile }) {
             <YouBadge intelligence={profile} viewerId={me?.intelligence.id} />
             <IntelligenceHandle
               handle={profile.handle}
-              className="whitespace-normal text-sm [overflow-wrap:anywhere]"
+              className="text-sm [overflow-wrap:anywhere]"
             />
           </p>
           {profile.bio ? (

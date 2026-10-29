@@ -93,7 +93,9 @@ export function ConversationHeader({
           {isDM ? (
             counterpart ? (
               <>
-                {counterpart.handle ? <IntelligenceHandle handle={counterpart.handle} /> : null}
+                {counterpart.handle ? (
+                  <IntelligenceHandle handle={counterpart.handle} className="truncate" />
+                ) : null}
                 {counterpart.role === "ai" ? (
                   <AiStatusLine id={counterpart.id} appClassName="max-sm:hidden" />
                 ) : null}

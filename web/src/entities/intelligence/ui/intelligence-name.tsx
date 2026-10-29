@@ -83,7 +83,7 @@ export function IntelligenceName({
       )}
       <YouBadge intelligence={intelligence} viewerId={viewerId} />
       {showHandle && intelligence.handle ? (
-        <IntelligenceHandle handle={intelligence.handle} />
+        <IntelligenceHandle handle={intelligence.handle} className="min-w-0 truncate" />
       ) : null}
     </span>
   );

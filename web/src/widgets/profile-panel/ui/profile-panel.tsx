@@ -237,7 +237,7 @@ function ProfileCard({ profile }: { profile: IntelligenceProfile }) {
               {profile.handle ? (
                 <IntelligenceHandle
                   handle={profile.handle}
-                  className="whitespace-normal text-sm [overflow-wrap:anywhere]"
+                  className="text-sm [overflow-wrap:anywhere]"
                 />
               ) : null}
             </p>

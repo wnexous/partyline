@@ -6,7 +6,7 @@ import { cn } from "@/shared/lib/utils";
  * inline in a sentence, and it looks the same in a row, a detail view and a dialog.
  */
 
-const HANDLE = "min-w-0 truncate font-mono text-xs text-muted-foreground";
+const HANDLE = "font-mono text-xs text-muted-foreground";
 
 export interface IntelligenceHandleProps {
   handle: string;
