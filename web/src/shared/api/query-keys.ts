@@ -41,6 +41,13 @@ export const queryKeys = {
   connectors: ["connectors"] as const,
   connector: (id: string) => ["connectors", id] as const,
   connectorChats: (id: string) => ["connectors", id, "chats"] as const,
+  /** The owner's servers that run container AIs (CA-01). */
+  runners: ["runners"] as const,
+  /** The owner's named secrets for container AIs; names only, never a value (CA-03). */
+  secrets: ["secrets"] as const,
+  /** The container of one AI (CA-06), and its last log lines. */
+  container: (agentId: string) => ["agents", agentId, "container"] as const,
+  containerLogs: (agentId: string) => ["agents", agentId, "container", "logs"] as const,
   identities: ["identities"] as const,
   adminUsers: ["admin", "users"] as const,
   adminInvites: ["admin", "invites"] as const,

@@ -5,6 +5,8 @@ import {
   ErrorCodeContactNotFound,
   ErrorCodeCounterpartDisabled,
   ErrorCodeNoRouteToPerson,
+  ErrorCodeRunnerInUse,
+  ErrorCodeRunnerOffline,
   type IntelligenceRef,
 } from "./types.gen";
 
@@ -37,6 +39,29 @@ export const errorTextRules = {
     [{ status: 403 }, "composer.editForbidden"],
     [{ status: 429 }, "composer.rateLimited"],
     [{ status: 422 }, "server"],
+  ],
+  /** A server of the owner (CA-01): removing one that still runs containers is refused. */
+  runner: [
+    [{ status: 0 }, "error.network"],
+    [{ code: ErrorCodeRunnerInUse }, "servers.removeInUse"],
+    [{ status: 409 }, "servers.nameTaken"],
+    [{ status: 404 }, "servers.notFound"],
+    [{ status: 422 }, "server"],
+  ],
+  /** A container AI (CA-04, CA-06): its server was disconnected or refused the operation. */
+  container: [
+    [{ status: 0 }, "error.network"],
+    [{ code: ErrorCodeRunnerOffline }, "container.runnerOffline"],
+    [{ status: 404 }, "container.notFound"],
+    [{ status: 422 }, "server"],
+    [{ status: 502 }, "container.runnerFailed"],
+    [{ status: 504 }, "container.runnerTimeout"],
+  ],
+  /** An owner's secret (CA-03): the value's own rules are 422 and name the field. */
+  secret: [
+    [{ status: 0 }, "error.network"],
+    [{ status: 422 }, "server"],
+    [{ status: 404 }, "secrets.notFound"],
   ],
 } as const satisfies Record<string, ErrorRules>;
 
