@@ -38,6 +38,24 @@ type Config struct {
 	RunnerImages []string
 }
 
+// ParseRunnerImages reads the extra image repositories a container AI may use from
+// PARTYLINE_RUNNER_IMAGES (comma-separated, CA-09). The server and `partyline runner` read the
+// same variable with it, so both sides accept the same images.
+func ParseRunnerImages(getenv func(string) string) ([]string, error) {
+	var images []string
+	for _, repo := range strings.Split(getenv("PARTYLINE_RUNNER_IMAGES"), ",") {
+		repo = strings.TrimSpace(repo)
+		if repo == "" {
+			continue
+		}
+		if !spec.ValidImageRepo(repo) {
+			return nil, fmt.Errorf("PARTYLINE_RUNNER_IMAGES: %q is not an image repository (registry/name)", repo)
+		}
+		images = append(images, repo)
+	}
+	return images, nil
+}
+
 // SecureCookies reports whether cookies must carry the Secure attribute.
 func (c *Config) SecureCookies() bool {
 	return c.PublicURL.Scheme == "https"
@@ -96,15 +114,9 @@ func Load(getenv func(string) string) (*Config, error) {
 		cfg.MemoryLimit = &limit
 	}
 
-	for _, repo := range strings.Split(get("PARTYLINE_RUNNER_IMAGES", ""), ",") {
-		repo = strings.TrimSpace(repo)
-		if repo == "" {
-			continue
-		}
-		if !spec.ValidImageRepo(repo) {
-			return nil, fmt.Errorf("PARTYLINE_RUNNER_IMAGES: %q is not an image repository (registry/name)", repo)
-		}
-		cfg.RunnerImages = append(cfg.RunnerImages, repo)
+	cfg.RunnerImages, err = ParseRunnerImages(getenv)
+	if err != nil {
+		return nil, err
 	}
 
 	for _, item := range strings.Split(get("PARTYLINE_TRUSTED_PROXIES", ""), ",") {
