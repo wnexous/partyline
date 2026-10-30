@@ -40,6 +40,9 @@ const (
 	writeTimeout        = 10 * time.Second
 )
 
+// queueSize is the capacity of each connection's live push queue; tests shrink it to fill one.
+var queueSize = QueueSize
+
 // ErrAgentTokenRequired answers user credentials on agent endpoints (403).
 var ErrAgentTokenRequired = httpx.NewError(http.StatusForbidden, dto.ErrorCodeForbidden, "agent token required")
 
@@ -510,7 +513,7 @@ func (g *Gateway) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	defer stopReq()
 
 	c := &conn{
-		ws: ws, queue: make(chan outbound, QueueSize), cancel: cancel,
+		ws: ws, queue: make(chan outbound, queueSize), cancel: cancel,
 		liveID: hs.liveID, owner: ownerKey(hs.liveID),
 		delivered: map[string]struct{}{}, pushed: map[string]struct{}{},
 	}

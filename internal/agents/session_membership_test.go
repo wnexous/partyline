@@ -438,3 +438,61 @@ func TestAMentionsPrincipalFollowsOnlyTheEditsOfMessagesItHas(t *testing.T) {
 	f.edit(t, mentioned.ID, "for you, edited")
 	require.Equal(t, mentioned.ID, principal.Edited(time.Minute).Message.ID)
 }
+
+// SN-03: a plain push to an AI whose only session is the principal writes no delivery row: its cursor covers
+// the message. With a parallel session live the row is written, because it is what routes an edit back and
+// dedupes the message.
+func TestAPrincipalOnlyAIGetsNoCopyRowPerPush(t *testing.T) {
+	f := newSessionFixture(t)
+	principal := f.dial(t)
+	f.settle(t, principal)
+
+	plain := f.post(t, "plain")
+	require.Equal(t, plain.ID, principal.Message(time.Minute).Message.ID)
+	principal.Ack(plain.ID)
+	f.waitReadSeq(t, "principal", plain.Seq)
+	require.Empty(t, f.rows(t, ""), "the cursor already covers the only session's message")
+
+	parallel := f.dialHarness(t, "pi")
+	f.settle(t, parallel)
+	addressed := f.post(t, "plain with a sibling live")
+	require.Equal(t, addressed.ID, principal.Message(time.Minute).Message.ID)
+	require.Eventually(t, func() bool {
+		rows := f.rows(t, "")
+		return len(rows) == 1 && rows[0].MessageID == addressed.ID
+	}, 5*time.Second, 10*time.Millisecond, "the row routes the edits and the copies (SN-09)")
+}
+
+// SN-03: a catch-up batch larger than the free queue sends the newest frames that fit and counts the rest as
+// skipped, leaving a slot for the message itself instead of overflowing the queue.
+func TestACatchUpBatchKeepsTheNewestThatFitTheQueue(t *testing.T) {
+	agents.SetQueueSize(4)
+	t.Cleanup(func() { agents.SetQueueSize(agents.QueueSize) })
+	f := newSessionFixture(t)
+	principal, parallel := f.dial(t), f.dialHarness(t, "pi")
+	f.settle(t, principal)
+	f.settle(t, parallel)
+
+	var plain []dto.Message
+	for i := range 6 {
+		m := f.post(t, fmt.Sprintf("plain %d", i))
+		require.Equal(t, m.ID, principal.Message(time.Minute).Message.ID)
+		plain = append(plain, m)
+	}
+	addressed := f.post(t, "@atlas:pi-2 now")
+
+	var contexts []dto.AgentMessageFrame
+	for {
+		frame := parallel.Message(time.Minute)
+		if frame.Message.ID == addressed.ID {
+			break
+		}
+		require.True(t, frame.Context)
+		contexts = append(contexts, frame)
+	}
+	require.LessOrEqual(t, len(contexts), 3, "the queue of four holds the message and at most three context frames")
+	require.NotEmpty(t, contexts, "the newest unread messages still come")
+	require.EqualValues(t, 6-len(contexts), contexts[0].Skipped, "the frames that did not fit are counted as skipped")
+	require.Equal(t, plain[len(plain)-len(contexts)].ID, contexts[0].Message.ID, "the batch keeps the newest")
+	require.Equal(t, plain[len(plain)-1].ID, contexts[len(contexts)-1].Message.ID)
+}

@@ -37,6 +37,11 @@ type pushSession struct {
 	// the session no untrusted message as context either, because untrusted text is not a boundary the
 	// model may follow (SN-03, POS-10).
 	trustedOnly bool
+	// writeRow says the principal's delivery row is needed (SN-03, SN-04, SN-09): there is a live parallel
+	// session to dedupe against, the message also addresses a sibling (so the principal's ack must consume
+	// it), or the principal reads the room on mentions only (its rows are how it follows what it got). A
+	// plain push to the only session of the AI needs no row: its cursor already covers the message.
+	writeRow bool
 }
 
 // pushPlan is what one non-self-authored room message is delivered as.
@@ -147,6 +152,12 @@ func (g *Gateway) planPush(agentID, target string, m dto.AgentMessage) (pushPlan
 		mentions = delivery.MentionsPrincipal(m.Message.Text, profile.Handle)
 	}
 	addressedLive := target != "" && live[target]
+	parallelLive := false
+	for _, l := range lives {
+		if l.Label != "" {
+			parallelLive = true
+		}
+	}
 	for _, it := range items {
 		if it.live.Label == "" {
 			principalGets = plan.note != "" || it.notify == NotifyOn || mentions
@@ -166,9 +177,11 @@ func (g *Gateway) planPush(agentID, target string, m dto.AgentMessage) (pushPlan
 			continue
 		}
 		addressed := target != "" && target == it.live.Label
+		copyOfSibling := it.live.Label == "" && !addressed && addressedLive
 		plan.sessions = append(plan.sessions, pushSession{
 			label: it.live.Label, conn: it.conn, readSeq: it.readSeq,
-			addressed: addressed, copyOfSibling: !addressed && addressedLive, trustedOnly: trustedOnly,
+			addressed: addressed, copyOfSibling: copyOfSibling, trustedOnly: trustedOnly,
+			writeRow: parallelLive || copyOfSibling || (it.live.Label == "" && it.notify != NotifyOn),
 		})
 	}
 	return plan, nil
@@ -196,9 +209,13 @@ func (g *Gateway) pushToSession(agentID string, t pushSession, m dto.AgentMessag
 	}
 	if t.label == "" {
 		// The principal has no label: its queue is its cursor, and its acknowledgement moves the read
-		// position through it. The row that routes an edit back to it is its copy row (SN-09).
-		if err := g.createSessionDelivery(g.ctx, m.Message.ID, agentID, "", t.conn.sessionKey, t.conn.owner, time.Now().UnixMilli(), sql.NullInt64{}, true); err != nil {
-			g.d.Logger.Error("agent: principal copy row write failed", "agent_id", agentID, "message_id", m.Message.ID, "err", err)
+		// position through it. Its copy row is written only when it routes something: an edit back to it,
+		// the dedupe of a message another session also receives, or the ack of a sibling's message (SN-03,
+		// SN-04, SN-09). A plain push to the only session of the AI needs none.
+		if t.writeRow {
+			if err := g.createSessionDelivery(g.ctx, m.Message.ID, agentID, "", t.conn.sessionKey, t.conn.owner, time.Now().UnixMilli(), sql.NullInt64{}, true); err != nil {
+				g.d.Logger.Error("agent: principal copy row write failed", "agent_id", agentID, "message_id", m.Message.ID, "err", err)
+			}
 		}
 		if t.copyOfSibling {
 			return g.pushToPrincipalCopy(agentID, m)
@@ -263,7 +280,17 @@ func (g *Gateway) pushCatchUp(agentID string, t pushSession, m dto.AgentMessage)
 	if err != nil {
 		return err
 	}
-	skipped := count - int64(len(views))
+	// The batch leaves a slot for the message that comes after it. When the connection's queue cannot hold
+	// all of a batch, the newest frames that fit are sent and the rest is counted as skipped: the session
+	// acknowledges the message that notified it, which moves its read position past all of them anyway.
+	if free := cap(t.conn.queue) - len(t.conn.queue) - 1; len(msgs) > free {
+		if free > 0 {
+			msgs = msgs[len(msgs)-free:]
+		} else {
+			msgs = nil
+		}
+	}
+	skipped := count - int64(len(msgs))
 	trust := g.d.Trust.Open()
 	// The row of a frame is written only once the frame is in the queue: a connection that dropped before
 	// taking the frame leaves no record that the message was given, so the next catch-up has it again
