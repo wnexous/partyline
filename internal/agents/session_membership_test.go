@@ -123,3 +123,33 @@ func TestMessagesMissedWhileOutOfTheRoomNeverComeBack(t *testing.T) {
 	}
 	require.Contains(t, got, after.ID, "the backlog carries what the principal missed after the re-add")
 }
+
+// SN-04 (SESS-24): the principal's acknowledgement of its copy of a message addressed to a sibling consumes
+// the message for the AI: when that sibling dies without acknowledging it, the end of its session hands the
+// principal no duplicate, live or in its backlog.
+func TestAnAckedCopyIsNotHandedBackWhenItsSiblingDies(t *testing.T) {
+	f := newSessionFixture(t)
+	principal, parallel := f.dial(t), f.dialHarness(t, "pi")
+	f.settle(t, principal)
+	f.settle(t, parallel)
+
+	addressed := f.post(t, "@atlas:pi-2 for you")
+	require.Equal(t, addressed.ID, parallel.Message(time.Minute).Message.ID)
+	require.Equal(t, addressed.ID, principal.Message(time.Minute).Message.ID, "the principal follows the room (SN-04)")
+	principal.Ack(addressed.ID)
+	f.waitReadSeq(t, "principal", addressed.Seq)
+	require.True(t, f.waitRow(t, "", addressed.ID).AckedAt.Valid, "the principal's copy is a tombstone")
+
+	// The principal leaves, and the sibling dies without acknowledging the message: nothing may fall back to
+	// the principal's queue.
+	principal.Close()
+	f.waitPrincipalGone(t)
+	parallel.Close()
+	require.Eventually(t, func() bool {
+		rows := f.rows(t, "pi-2")
+		return len(rows) == 1 && rows[0].AckedAt.Valid
+	}, 5*time.Second, 10*time.Millisecond, "the sibling's row is a tombstone too (SN-04)")
+
+	again := f.dial(t)
+	again.ExpectNone(700 * time.Millisecond)
+}

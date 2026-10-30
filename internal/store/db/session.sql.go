@@ -10,6 +10,30 @@ import (
 	"database/sql"
 )
 
+const ackAddressedDeliveries = `-- name: AckAddressedDeliveries :execrows
+UPDATE agent_session_deliveries SET acked_at = ?1
+WHERE message_id = ?2 AND agent_id = ?3
+  AND label <> '' AND acked_at IS NULL
+`
+
+type AckAddressedDeliveriesParams struct {
+	AckedAt   sql.NullInt64
+	MessageID string
+	AgentID   string
+}
+
+// The principal's acknowledgement of a message consumes it for the whole AI (SN-04): the addressed row of a
+// sibling, pending or fallen back, becomes a tombstone too, so the end of that session does not hand the
+// principal a duplicate of a message it already has. It is the counterpart of the copy row the principal
+// gets when its sibling is addressed while it follows the room.
+func (q *Queries) AckAddressedDeliveries(ctx context.Context, arg AckAddressedDeliveriesParams) (int64, error) {
+	result, err := q.db.ExecContext(ctx, ackAddressedDeliveries, arg.AckedAt, arg.MessageID, arg.AgentID)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected()
+}
+
 const ackFallbackDelivery = `-- name: AckFallbackDelivery :execrows
 UPDATE agent_session_deliveries SET acked_at = ?1
 WHERE message_id = ?2 AND agent_id = ?3
@@ -107,8 +131,15 @@ SET fell_back_at = CASE WHEN EXISTS (
         WHERE m.id = agent_session_deliveries.message_id
           AND m.author_kind = 'agent' AND m.author_id = ?1)
     THEN ?2 ELSE NULL END
-WHERE agent_id = ?1 AND owner_live = ?3
-  AND context = 0 AND fell_back_at IS NULL AND acked_at IS NULL
+WHERE agent_session_deliveries.agent_id = ?1
+  AND agent_session_deliveries.owner_live = ?3
+  AND agent_session_deliveries.context = 0 AND agent_session_deliveries.fell_back_at IS NULL
+  AND agent_session_deliveries.acked_at IS NULL
+  AND NOT EXISTS (
+      SELECT 1 FROM agent_session_deliveries p
+      WHERE p.message_id = agent_session_deliveries.message_id
+        AND p.agent_id = agent_session_deliveries.agent_id
+        AND p.label = '' AND p.acked_at IS NOT NULL)
 RETURNING message_id, label, fell_back_at
 `
 

@@ -23,6 +23,15 @@ UPDATE agent_session_deliveries SET acked_at = sqlc.arg(acked_at)
 WHERE message_id = sqlc.arg(message_id) AND agent_id = sqlc.arg(agent_id)
   AND fell_back_at IS NOT NULL AND acked_at IS NULL;
 
+-- name: AckAddressedDeliveries :execrows
+-- The principal's acknowledgement of a message consumes it for the whole AI (SN-04): the addressed row of a
+-- sibling, pending or fallen back, becomes a tombstone too, so the end of that session does not hand the
+-- principal a duplicate of a message it already has. It is the counterpart of the copy row the principal
+-- gets when its sibling is addressed while it follows the room.
+UPDATE agent_session_deliveries SET acked_at = sqlc.arg(acked_at)
+WHERE message_id = sqlc.arg(message_id) AND agent_id = sqlc.arg(agent_id)
+  AND label <> '' AND acked_at IS NULL;
+
 -- name: FallBackOwnedDeliveries :many
 -- The end of one connection: its pending addressed rows (and only its: owner_live is the connection's live
 -- id, so a later connection that reused the label is untouched) become the principal's, and the rows that
@@ -42,8 +51,15 @@ SET fell_back_at = CASE WHEN EXISTS (
         WHERE m.id = agent_session_deliveries.message_id
           AND m.author_kind = 'agent' AND m.author_id = sqlc.arg(agent_id))
     THEN sqlc.arg(now) ELSE NULL END
-WHERE agent_id = sqlc.arg(agent_id) AND owner_live = sqlc.arg(owner_live)
-  AND context = 0 AND fell_back_at IS NULL AND acked_at IS NULL
+WHERE agent_session_deliveries.agent_id = sqlc.arg(agent_id)
+  AND agent_session_deliveries.owner_live = sqlc.arg(owner_live)
+  AND agent_session_deliveries.context = 0 AND agent_session_deliveries.fell_back_at IS NULL
+  AND agent_session_deliveries.acked_at IS NULL
+  AND NOT EXISTS (
+      SELECT 1 FROM agent_session_deliveries p
+      WHERE p.message_id = agent_session_deliveries.message_id
+        AND p.agent_id = agent_session_deliveries.agent_id
+        AND p.label = '' AND p.acked_at IS NOT NULL)
 RETURNING message_id, label, fell_back_at;
 
 -- name: ListOwnedPending :many

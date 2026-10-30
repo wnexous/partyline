@@ -1157,7 +1157,7 @@ func (g *Gateway) readAcks(ctx context.Context, c *conn, agentID string) {
 				}
 				continue
 			}
-			if err := g.ack(ctx, agentID, head.MessageID); err != nil && ctx.Err() == nil {
+			if err := g.ack(ctx, c, agentID, head.MessageID); err != nil && ctx.Err() == nil {
 				g.d.Logger.Error("agent: ack failed", "agent_id", agentID, "err", err)
 			}
 		case head.Type == dto.AgentFrameTypePlatformAck && head.ItemID != "" && g.d.Platform != nil:
@@ -1175,9 +1175,11 @@ func (g *Gateway) readAcks(ctx context.Context, c *conn, agentID string) {
 }
 
 // ack moves the agent's cursor in the message's room to the message, never backwards, and mirrors it into
-// the principal's read position in the same transaction (SN-01). Messages of rooms the agent is not in are
-// ignored.
-func (g *Gateway) ack(ctx context.Context, agentID, messageID string) error {
+// the principal's read position in the same transaction (SN-01). The principal's copy row of the message
+// becomes a tombstone, and so does every addressed row of it for the AI: the principal's acknowledgement
+// consumes the message for the AI, so the end of the addressed session hands it no duplicate (SN-04).
+// Messages of rooms the agent is not in are ignored.
+func (g *Gateway) ack(ctx context.Context, c *conn, agentID, messageID string) error {
 	q := g.d.Store.R()
 	m, err := q.GetMessageRoomSeq(ctx, messageID)
 	if errors.Is(err, sql.ErrNoRows) {
@@ -1196,6 +1198,18 @@ func (g *Gateway) ack(ctx context.Context, agentID, messageID string) error {
 			// tombstone, so the message is not read twice (SESS-24).
 			fellBack, err := ackFallbackDelivery(ctx, q, messageID, agentID)
 			if err != nil {
+				return err
+			}
+			// The principal's own copy of the message (SN-04) is a tombstone like a labelled row, and the
+			// acknowledgement consumes the addressed rows of the AI as well (SN-04, SESS-24).
+			if _, err := q.AckSessionDelivery(ctx, db.AckSessionDeliveryParams{
+				AckedAt: nullNow(), MessageID: messageID, AgentID: agentID, OwnerLive: c.owner,
+			}); err != nil {
+				return err
+			}
+			if _, err := q.AckAddressedDeliveries(ctx, db.AckAddressedDeliveriesParams{
+				AckedAt: nullNow(), MessageID: messageID, AgentID: agentID,
+			}); err != nil {
 				return err
 			}
 			if fellBack {
