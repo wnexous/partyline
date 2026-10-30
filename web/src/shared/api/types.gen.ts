@@ -94,6 +94,18 @@ export interface AgentMessage {
    * instead of that session (SESS-22, SESS-24): the channel renders the note. Empty otherwise.
    */
   for_label?: string;
+  /**
+   * Context marks a message of the catch-up batch that goes before the message that notified the
+   * session (SN-03): earlier conversation of the room the session had not read yet, given as context
+   * and not as a request. The channel renders context="true".
+   */
+  context?: boolean;
+  /**
+   * Skipped is how many earlier unread messages of the catch-up batch were left out because the batch
+   * keeps the newest (SN-03): the first frame of the batch carries the count, the channel renders
+   * skipped="N". Zero when nothing was left out.
+   */
+  skipped?: number /* int64 */;
   message: Message;
 }
 /**

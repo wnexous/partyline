@@ -282,3 +282,24 @@ func TestFormatNamesTheWritingSession(t *testing.T) {
 	require.Equal(t, "true", own.Meta["from_own_session"])
 	require.Contains(t, Frame(map[string]string{"author": "Atlas", "author_session": "pi-2", "from_own_session": own.Meta["from_own_session"], "content": own.Content}), `from_own_session="true"`)
 }
+
+// SN-03: a message of the catch-up batch says so (context="true") and, on its first frame, how many
+// earlier unread messages the batch left out (skipped="N"); the message that notified the session
+// carries neither.
+func TestFormatMarksTheCatchUpContext(t *testing.T) {
+	m := sample()
+	m.Context, m.Skipped = true, 7
+	n := Format(m)
+	require.Equal(t, "true", n.Meta["context"])
+	require.Equal(t, "7", n.Meta["skipped"])
+	framed := Frame(Record(m))
+	require.Contains(t, framed, `context="true" skipped="7" trusted`)
+
+	m.Context, m.Skipped = true, 0
+	require.Contains(t, Frame(Record(m)), `context="true" trusted`, "a batch that skipped nothing names no count")
+	require.NotContains(t, Format(m).Meta, "skipped")
+
+	m.Context = false
+	require.NotContains(t, Format(m).Meta, "context")
+	require.NotContains(t, Frame(Record(m)), `context="true"`)
+}

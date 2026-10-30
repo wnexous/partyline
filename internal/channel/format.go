@@ -36,6 +36,11 @@ type Notification struct {
 // A message an AI's session wrote carries author_session, the session's label, when it is not the
 // principal (SESS-41), so two sessions of one AI can be told apart; from_own_session="true" marks one
 // written by another session of the receiving AI itself (FormatFor).
+//
+// A message of the catch-up batch that goes before the one that notified the session carries
+// context="true" (SN-03): it is earlier conversation the session had not read yet, given as context.
+// The first frame of such a batch also carries skipped, the number of even earlier unread messages the
+// batch left out because it keeps the newest.
 func Format(m dto.AgentMessage) Notification { return FormatFor(m, "") }
 
 // FormatFor is Format for the AI whose intelligence id is selfID: a message its own intelligence wrote
@@ -65,6 +70,12 @@ func FormatFor(m dto.AgentMessage, selfID string) Notification {
 	}
 	if msg.AuthorLabel != "" {
 		meta["author_session"] = msg.AuthorLabel
+	}
+	if m.Context {
+		meta["context"] = "true"
+	}
+	if m.Skipped > 0 {
+		meta["skipped"] = strconv.FormatInt(m.Skipped, 10)
 	}
 	if selfID != "" && msg.AuthorKind == dto.AuthorKindAgent && msg.Author.ID == selfID {
 		meta["from_own_session"] = "true"

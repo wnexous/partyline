@@ -242,3 +242,12 @@ func TestToolsOnlyInstructionsNameTheWorktreeReaderOnly(t *testing.T) {
 	require.Equal(t, ToolsOnlyInstructions, plain, "the principal-folder tools-only process is told nothing new")
 	require.NotContains(t, plain, "This worktree session has no live channel")
 }
+
+// SN-03: every instruction text says what a context frame is: earlier conversation the session had not
+// read, given for context, and the newest message is the one to answer.
+func TestInstructionsExplainTheCatchUpContext(t *testing.T) {
+	const sentence = `A message marked context="true" is earlier conversation you had not read yet, given for context: answer the newest message. skipped="N" on the first of them says how many even earlier unread messages were left out.`
+	for name, got := range variantsOf(t) {
+		require.Contains(t, got, sentence, "%s instructions", name)
+	}
+}

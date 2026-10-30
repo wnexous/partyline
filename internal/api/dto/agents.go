@@ -67,8 +67,16 @@ type AgentMessage struct {
 	Trusted bool    `json:"trusted"`
 	// ForLabel is the session label the message was addressed to when it reaches the principal
 	// instead of that session (SESS-22, SESS-24): the channel renders the note. Empty otherwise.
-	ForLabel string  `json:"for_label,omitempty"`
-	Message  Message `json:"message"`
+	ForLabel string `json:"for_label,omitempty"`
+	// Context marks a message of the catch-up batch that goes before the message that notified the
+	// session (SN-03): earlier conversation of the room the session had not read yet, given as context
+	// and not as a request. The channel renders context="true".
+	Context bool `json:"context,omitempty"`
+	// Skipped is how many earlier unread messages of the catch-up batch were left out because the batch
+	// keeps the newest (SN-03): the first frame of the batch carries the count, the channel renders
+	// skipped="N". Zero when nothing was left out.
+	Skipped int64   `json:"skipped,omitempty"`
+	Message Message `json:"message"`
 }
 
 // RoomInfo is GET /agent/rooms/{room}/info (INS-02): the room, its instructions, its members
