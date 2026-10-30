@@ -85,8 +85,9 @@ func (q *Queries) AckSessionDelivery(ctx context.Context, arg AckSessionDelivery
 }
 
 const createSessionDelivery = `-- name: CreateSessionDelivery :exec
-INSERT INTO agent_session_deliveries (message_id, agent_id, label, owner_live, created_at, fell_back_at, context)
-VALUES (?, ?, ?, ?, ?, ?, ?)
+INSERT INTO agent_session_deliveries (message_id, agent_id, label, session_key, owner_live, created_at,
+                                    fell_back_at, context)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?)
 ON CONFLICT (message_id, agent_id, label) DO NOTHING
 `
 
@@ -94,6 +95,7 @@ type CreateSessionDeliveryParams struct {
 	MessageID  string
 	AgentID    string
 	Label      string
+	SessionKey string
 	OwnerLive  string
 	CreatedAt  int64
 	FellBackAt sql.NullInt64
@@ -111,6 +113,7 @@ func (q *Queries) CreateSessionDelivery(ctx context.Context, arg CreateSessionDe
 		arg.MessageID,
 		arg.AgentID,
 		arg.Label,
+		arg.SessionKey,
 		arg.OwnerLive,
 		arg.CreatedAt,
 		arg.FellBackAt,
@@ -186,7 +189,7 @@ func (q *Queries) FallBackOwnedDeliveries(ctx context.Context, arg FallBackOwned
 }
 
 const getSessionDelivery = `-- name: GetSessionDelivery :one
-SELECT message_id, agent_id, label, owner_live, created_at, fell_back_at, acked_at, context FROM agent_session_deliveries WHERE message_id = ? AND agent_id = ? AND label = ?
+SELECT message_id, agent_id, label, session_key, owner_live, created_at, fell_back_at, acked_at, context FROM agent_session_deliveries WHERE message_id = ? AND agent_id = ? AND label = ?
 `
 
 type GetSessionDeliveryParams struct {
@@ -204,6 +207,7 @@ func (q *Queries) GetSessionDelivery(ctx context.Context, arg GetSessionDelivery
 		&i.MessageID,
 		&i.AgentID,
 		&i.Label,
+		&i.SessionKey,
 		&i.OwnerLive,
 		&i.CreatedAt,
 		&i.FellBackAt,
@@ -287,7 +291,7 @@ func (q *Queries) ListOwnedPending(ctx context.Context, arg ListOwnedPendingPara
 }
 
 const listSessionDeliveries = `-- name: ListSessionDeliveries :many
-SELECT message_id, agent_id, label, owner_live, created_at, fell_back_at, acked_at, context FROM agent_session_deliveries WHERE message_id = ? AND agent_id = ? ORDER BY label
+SELECT message_id, agent_id, label, session_key, owner_live, created_at, fell_back_at, acked_at, context FROM agent_session_deliveries WHERE message_id = ? AND agent_id = ? ORDER BY label
 `
 
 type ListSessionDeliveriesParams struct {
@@ -310,6 +314,7 @@ func (q *Queries) ListSessionDeliveries(ctx context.Context, arg ListSessionDeli
 			&i.MessageID,
 			&i.AgentID,
 			&i.Label,
+			&i.SessionKey,
 			&i.OwnerLive,
 			&i.CreatedAt,
 			&i.FellBackAt,
@@ -330,7 +335,7 @@ func (q *Queries) ListSessionDeliveries(ctx context.Context, arg ListSessionDeli
 }
 
 const listSessionDeliveriesByLabel = `-- name: ListSessionDeliveriesByLabel :many
-SELECT message_id, agent_id, label, owner_live, created_at, fell_back_at, acked_at, context FROM agent_session_deliveries
+SELECT message_id, agent_id, label, session_key, owner_live, created_at, fell_back_at, acked_at, context FROM agent_session_deliveries
 WHERE agent_id = ? AND label = ?
 ORDER BY created_at, message_id
 `
@@ -355,6 +360,7 @@ func (q *Queries) ListSessionDeliveriesByLabel(ctx context.Context, arg ListSess
 			&i.MessageID,
 			&i.AgentID,
 			&i.Label,
+			&i.SessionKey,
 			&i.OwnerLive,
 			&i.CreatedAt,
 			&i.FellBackAt,
@@ -493,4 +499,37 @@ func (q *Queries) ListSessionFallbacks(ctx context.Context, arg ListSessionFallb
 		return nil, err
 	}
 	return items, nil
+}
+
+const upgradeSessionDelivery = `-- name: UpgradeSessionDelivery :execrows
+UPDATE agent_session_deliveries SET context = 0, session_key = ?1,
+    owner_live = ?2, fell_back_at = NULL
+WHERE message_id = ?3 AND agent_id = ?4 AND label = ?5
+  AND context = 1 AND acked_at IS NULL
+`
+
+type UpgradeSessionDeliveryParams struct {
+	SessionKey string
+	OwnerLive  string
+	MessageID  string
+	AgentID    string
+	Label      string
+}
+
+// An addressed push of a message the session already has as a copy of an earlier catch-up batch upgrades the
+// row: the message is the session's own from now on, its owner is the connection that is receiving it, and a
+// later edit or delete follows it through the delivery (SN-03, SN-09). An acknowledged row is left alone: the
+// session saw the message already.
+func (q *Queries) UpgradeSessionDelivery(ctx context.Context, arg UpgradeSessionDeliveryParams) (int64, error) {
+	result, err := q.db.ExecContext(ctx, upgradeSessionDelivery,
+		arg.SessionKey,
+		arg.OwnerLive,
+		arg.MessageID,
+		arg.AgentID,
+		arg.Label,
+	)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected()
 }

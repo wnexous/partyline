@@ -5,8 +5,9 @@
 -- acknowledgement, so a retried push is a no-op: the first row keeps the ownership it was given, and an
 -- acknowledged message is never delivered again. context marks a copy that never falls back (SN-03): the
 -- context of a catch-up batch, or a notification the session follows the room for.
-INSERT INTO agent_session_deliveries (message_id, agent_id, label, owner_live, created_at, fell_back_at, context)
-VALUES (?, ?, ?, ?, ?, ?, ?)
+INSERT INTO agent_session_deliveries (message_id, agent_id, label, session_key, owner_live, created_at,
+                                    fell_back_at, context)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?)
 ON CONFLICT (message_id, agent_id, label) DO NOTHING;
 
 -- name: AckSessionDelivery :execrows
@@ -22,6 +23,16 @@ WHERE message_id = sqlc.arg(message_id) AND agent_id = sqlc.arg(agent_id) AND ow
 UPDATE agent_session_deliveries SET acked_at = sqlc.arg(acked_at)
 WHERE message_id = sqlc.arg(message_id) AND agent_id = sqlc.arg(agent_id)
   AND fell_back_at IS NOT NULL AND acked_at IS NULL;
+
+-- name: UpgradeSessionDelivery :execrows
+-- An addressed push of a message the session already has as a copy of an earlier catch-up batch upgrades the
+-- row: the message is the session's own from now on, its owner is the connection that is receiving it, and a
+-- later edit or delete follows it through the delivery (SN-03, SN-09). An acknowledged row is left alone: the
+-- session saw the message already.
+UPDATE agent_session_deliveries SET context = 0, session_key = sqlc.arg(session_key),
+    owner_live = sqlc.arg(owner_live), fell_back_at = NULL
+WHERE message_id = sqlc.arg(message_id) AND agent_id = sqlc.arg(agent_id) AND label = sqlc.arg(label)
+  AND context = 1 AND acked_at IS NULL;
 
 -- name: AckAddressedDeliveries :execrows
 -- The principal's acknowledgement of a message consumes it for the whole AI (SN-04): the addressed row of a

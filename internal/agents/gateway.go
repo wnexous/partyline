@@ -190,7 +190,7 @@ func (g *Gateway) Push(agentID, target string, m dto.AgentMessage) bool {
 		// The addressed label has no live session: the message is the principal's from the start, and also
 		// waits in its fallback queue while it is offline (SESS-22, SESS-23).
 		now := time.Now().UnixMilli()
-		if err := g.createSessionDelivery(g.ctx, m.Message.ID, agentID, plan.note, "", now,
+		if err := g.createSessionDelivery(g.ctx, m.Message.ID, agentID, plan.note, "", "", now,
 			sql.NullInt64{Int64: now, Valid: true}, false); err != nil {
 			g.d.Logger.Error("agent: session delivery write failed", "agent_id", agentID, "message_id", m.Message.ID, "err", err)
 			return false
@@ -226,7 +226,7 @@ func (g *Gateway) pushToSelfSession(agentID, target string, m dto.AgentMessage) 
 	if c == nil || c.labelOf() != target {
 		return false
 	}
-	if err := g.createSessionDelivery(g.ctx, m.Message.ID, agentID, target, c.owner, time.Now().UnixMilli(), sql.NullInt64{}, false); err != nil {
+	if err := g.createSessionDelivery(g.ctx, m.Message.ID, agentID, target, c.sessionKey, c.owner, time.Now().UnixMilli(), sql.NullInt64{}, false); err != nil {
 		g.d.Logger.Error("agent: session delivery write failed", "agent_id", agentID, "message_id", m.Message.ID, "err", err)
 		return false
 	}
@@ -264,14 +264,16 @@ func (g *Gateway) pushUpdateToPrincipal(agentID string, t dto.AgentFrameType, m 
 // as it is now. targets are the session labels the text addressed before and after the change, "" for the
 // principal (SESS-27). The update reaches every session that has a delivery row for the original message
 // (SN-09), plus the addressed sessions, and each of them once: a pending row goes to the connection that owns
-// it, or to the principal when that connection is gone; a fallen-back row goes to the principal; a row the label
-// acknowledged, and a copy of a catch-up batch, go to the label while it is live and to nobody otherwise. An
-// addressed target with no row is routed by liveness: a live label receives it, else the principal does,
-// because it may hold the message as a fallback. A message the AI wrote is the exception: only the addressed
-// live sibling receives its update, and a dead target receives nothing (SESS-39). Like Push it reports false
-// when the agent is offline or its queue overflowed. Such a frame is never acknowledged and never sent again: a
-// connection that was not there hears nothing of it, and reads the current state of the message when it
-// connects (EDT-07, DLT-07).
+// it, or to the principal when that connection is gone; a fallen-back row goes to the principal; a row the
+// session acknowledged, and a copy of a catch-up batch, go to the session with that key while it is live and
+// to nobody otherwise, so a label that a later session took over never receives the update of a message it
+// never saw. An addressed target with no row is routed by liveness: a live label receives it, else the
+// principal does, because it may hold the message as a fallback. The principal set to mentions only receives
+// an update of a message it has a row for and of no other (SN-09). A message the AI wrote is the exception:
+// the addressed live sibling and every session that holds a row receive its update, and a dead target
+// receives nothing (SESS-39, SN-09). Like Push it reports false when the agent is offline or its queue
+// overflowed. Such a frame is never acknowledged and never sent again: a connection that was not there hears
+// nothing of it, and reads the current state of the message when it connects (EDT-07, DLT-07).
 func (g *Gateway) PushUpdate(agentID string, targets []string, t dto.AgentFrameType, m dto.AgentMessage) bool {
 	if selfAuthored(m.Message, agentID) {
 		return g.pushUpdateToSelfSessions(agentID, targets, t, m)
@@ -281,6 +283,10 @@ func (g *Gateway) PushUpdate(agentID string, targets []string, t dto.AgentFrameT
 	})
 	if err != nil {
 		g.d.Logger.Error("agent: session delivery read failed", "agent_id", agentID, "message_id", m.Message.ID, "err", err)
+	}
+	mentionsOnly, err := g.principalMentionsOnly(agentID, m.Room.ID)
+	if err != nil {
+		g.d.Logger.Error("agent: session state read failed", "agent_id", agentID, "room_id", m.Room.ID, "err", err)
 	}
 	// A fallen-back row is the principal's whole copy of the message, so it is routed before the copies
 	// that say the same thing without the note (SESS-24, SN-09).
@@ -314,9 +320,10 @@ func (g *Gateway) PushUpdate(agentID string, targets []string, t dto.AgentFrameT
 			}
 			m.ForLabel = ""
 		case row.Context != 0 || row.AckedAt.Valid:
-			// A copy or an acknowledged message: the label reads the change while it is live (SN-09).
+			// A copy or an acknowledged message: the session with that key reads the change while it is live
+			// (SN-09), never another session that took its label over.
 			handed[label] = true
-			route(g.labelConn(agentID, label))
+			route(g.rowConn(agentID, row))
 		default:
 			handed[label] = true
 			if c := g.ownerConn(agentID, row.OwnerLive, label); c != nil {
@@ -338,6 +345,9 @@ func (g *Gateway) PushUpdate(agentID string, targets []string, t dto.AgentFrameT
 		handed[target] = true
 		if target == "" {
 			handed[""] = true
+			if mentionsOnly {
+				continue // SN-09: a mentions-only principal follows only the messages it has a row for
+			}
 			if g.pushUpdateToPrincipal(agentID, t, m) {
 				delivered = true
 			}
@@ -355,6 +365,29 @@ func (g *Gateway) PushUpdate(agentID string, targets []string, t dto.AgentFrameT
 		m.ForLabel = ""
 	}
 	return delivered
+}
+
+// principalMentionsOnly reports whether the AI's principal session reads the room on mentions only, the
+// setting under which an edit or a delete reaches it only when it has a delivery row for the message
+// (SN-02, SN-09). A principal with no state row in the room follows it.
+func (g *Gateway) principalMentionsOnly(agentID, roomID string) (bool, error) {
+	a, err := g.d.Store.R().GetAgent(g.ctx, agentID)
+	if errors.Is(err, sql.ErrNoRows) {
+		return false, nil
+	}
+	if err != nil {
+		return false, err
+	}
+	state, err := g.d.Store.R().GetSessionRoomState(g.ctx, db.GetSessionRoomStateParams{
+		AgentID: agentID, SessionKey: SessionKey("", "", a.PrincipalSession), RoomID: roomID,
+	})
+	if errors.Is(err, sql.ErrNoRows) {
+		return false, nil
+	}
+	if err != nil {
+		return false, err
+	}
+	return state.Notify == NotifyMentions, nil
 }
 
 // boolRank orders false before true, for a stable sort.
@@ -399,7 +432,7 @@ func (g *Gateway) pushUpdateToSelfSessions(agentID string, targets []string, t d
 			}
 			continue
 		}
-		route(g.labelConn(agentID, label))
+		route(g.rowConn(agentID, row))
 	}
 	for _, target := range targets {
 		if handed[target] {

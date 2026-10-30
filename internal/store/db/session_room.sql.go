@@ -297,28 +297,6 @@ func (q *Queries) GetSessionRoomState(ctx context.Context, arg GetSessionRoomSta
 	return i, err
 }
 
-const hasSessionDelivery = `-- name: HasSessionDelivery :one
-SELECT EXISTS (
-    SELECT 1 FROM agent_session_deliveries d
-    WHERE d.message_id = ?1 AND d.agent_id = ?2 AND d.label = ?3
-) AS delivered
-`
-
-type HasSessionDeliveryParams struct {
-	MessageID string
-	AgentID   string
-	Label     string
-}
-
-// Whether a message already reached one session of the AI (as the addressed delivery or as a copy of a
-// catch-up batch), so a retried push is not written again (SN-03).
-func (q *Queries) HasSessionDelivery(ctx context.Context, arg HasSessionDeliveryParams) (bool, error) {
-	row := q.db.QueryRowContext(ctx, hasSessionDelivery, arg.MessageID, arg.AgentID, arg.Label)
-	var delivered bool
-	err := row.Scan(&delivered)
-	return delivered, err
-}
-
 const listSessionRoomStates = `-- name: ListSessionRoomStates :many
 SELECT agent_id, session_key, room_id, read_seq, notify, updated_at FROM session_room_state WHERE agent_id = ? AND session_key = ? ORDER BY room_id
 `

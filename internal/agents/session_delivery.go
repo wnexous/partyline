@@ -118,16 +118,29 @@ func trustedFor(ctx context.Context, trust delivery.Trust, view db.MessageView, 
 }
 
 // createSessionDelivery records that a message was pushed to one session of the AI. label is the
-// session's label ("" for the principal, whose row only routes an edit back to it). owner is the owner key
-// of the connection it was pushed to; for a row born fallen back it is "" and fellBackAt is the dispatch
-// time. context marks a copy, which never falls back (SN-03). A retried push keeps the first row
-// (ON CONFLICT DO NOTHING).
-func (g *Gateway) createSessionDelivery(ctx context.Context, messageID, agentID, label, owner string, createdAt int64, fellBackAt sql.NullInt64, context bool) error {
+// session's label ("" for the principal, whose row only routes an edit back to it) and sessionKey the key
+// the session is persisted under, which is what an edit or a delete follows (SN-09); it is "" for a row
+// born fallen back, whose session is not known. owner is the owner key of the connection it was pushed
+// to; for a row born fallen back it is "" and fellBackAt is the dispatch time. context marks a copy, which
+// never falls back (SN-03). A retried push keeps the first row (ON CONFLICT DO NOTHING).
+func (g *Gateway) createSessionDelivery(ctx context.Context, messageID, agentID, label, sessionKey, owner string, createdAt int64, fellBackAt sql.NullInt64, context bool) error {
 	return g.d.Store.WithTx(ctx, func(q *db.Queries) error {
 		return q.CreateSessionDelivery(ctx, db.CreateSessionDeliveryParams{
-			MessageID: messageID, AgentID: agentID, Label: label, OwnerLive: owner, CreatedAt: createdAt,
-			FellBackAt: fellBackAt, Context: boolToInt64(context),
+			MessageID: messageID, AgentID: agentID, Label: label, SessionKey: sessionKey,
+			OwnerLive: owner, CreatedAt: createdAt, FellBackAt: fellBackAt, Context: boolToInt64(context),
 		})
+	})
+}
+
+// upgradeSessionDelivery turns the copy of an earlier catch-up batch into the addressed delivery of the
+// session that is receiving the message (SN-03): it becomes its own, owned by the connection now, and an
+// edit or a delete follows it as for any addressed message.
+func (g *Gateway) upgradeSessionDelivery(agentID, label, sessionKey, owner, messageID string) error {
+	return g.d.Store.WithTx(g.ctx, func(q *db.Queries) error {
+		_, err := q.UpgradeSessionDelivery(g.ctx, db.UpgradeSessionDeliveryParams{
+			SessionKey: sessionKey, OwnerLive: owner, MessageID: messageID, AgentID: agentID, Label: label,
+		})
+		return err
 	})
 }
 
@@ -223,6 +236,37 @@ func (g *Gateway) ownerConn(agentID, owner, label string) *conn {
 		return nil
 	}
 	return s.(*conn)
+}
+
+// sessionConn returns the connection whose session key is key, if it is live: the lookup an edit or a
+// delete follows a delivery row through, so the session that was given the message receives it whatever
+// label it holds now (SN-09).
+func (g *Gateway) sessionConn(agentID, sessionKey string) *conn {
+	if sessionKey == "" {
+		return nil
+	}
+	s, ok := g.d.Presence.Find(agentID, func(s Session) bool {
+		c, ok := s.(*conn)
+		return ok && c.sessionKey == sessionKey
+	})
+	if !ok {
+		return nil
+	}
+	c, _ := s.(*conn)
+	return c
+}
+
+// rowConn returns the live connection of the session a delivery row belongs to. The session key is the
+// lookup; a row that has none (one written before the key was stored, or a row born fallen back) falls back
+// to its label.
+func (g *Gateway) rowConn(agentID string, row db.AgentSessionDelivery) *conn {
+	if c := g.sessionConn(agentID, row.SessionKey); c != nil {
+		return c
+	}
+	if row.SessionKey != "" {
+		return nil
+	}
+	return g.labelConn(agentID, row.Label)
 }
 
 // labelConn returns the connection that holds a label now, if it is one the gateway serves.

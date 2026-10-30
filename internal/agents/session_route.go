@@ -136,10 +136,10 @@ func (g *Gateway) planPush(agentID, target string, m dto.AgentMessage) (pushPlan
 	}
 	mentions := false
 	switch {
-	case target != "":
 	case m.Room.Kind == dto.ConversationKindDM:
 		mentions = true // a DM is addressed to the AI
 	case principalLive && principalNotify != NotifyOn:
+		// A bare @handle names the principal even when the same text also addresses a sibling (SN-04).
 		profile, err := delivery.IntelligenceOf(g.ctx, g.d.Store.R(), agentID)
 		if err != nil {
 			return plan, err
@@ -197,7 +197,7 @@ func (g *Gateway) pushToSession(agentID string, t pushSession, m dto.AgentMessag
 	if t.label == "" {
 		// The principal has no label: its queue is its cursor, and its acknowledgement moves the read
 		// position through it. The row that routes an edit back to it is its copy row (SN-09).
-		if err := g.createSessionDelivery(g.ctx, m.Message.ID, agentID, "", t.conn.owner, time.Now().UnixMilli(), sql.NullInt64{}, true); err != nil {
+		if err := g.createSessionDelivery(g.ctx, m.Message.ID, agentID, "", t.conn.sessionKey, t.conn.owner, time.Now().UnixMilli(), sql.NullInt64{}, true); err != nil {
 			g.d.Logger.Error("agent: principal copy row write failed", "agent_id", agentID, "message_id", m.Message.ID, "err", err)
 		}
 		if t.copyOfSibling {
@@ -205,17 +205,25 @@ func (g *Gateway) pushToSession(agentID string, t pushSession, m dto.AgentMessag
 		}
 		return g.pushToPrincipal(agentID, m)
 	}
-	already, err := g.d.Store.R().HasSessionDelivery(g.ctx, db.HasSessionDeliveryParams{
+	row, err := g.d.Store.R().GetSessionDelivery(g.ctx, db.GetSessionDeliveryParams{
 		MessageID: m.Message.ID, AgentID: agentID, Label: t.label,
 	})
-	if err != nil {
+	switch {
+	case err == nil && t.addressed && row.Context != 0 && !row.AckedAt.Valid:
+		// An addressed push out of order: an earlier catch-up batch already gave the session the message as
+		// context. It is the session's own from now on, and the frame goes without the context flag (SN-03).
+		if err := g.upgradeSessionDelivery(agentID, t.label, t.conn.sessionKey, t.conn.owner, m.Message.ID); err != nil {
+			g.d.Logger.Error("agent: session delivery upgrade failed", "agent_id", agentID, "message_id", m.Message.ID, "err", err)
+			return false
+		}
+		return g.deliverOwned(agentID, t.label, m)
+	case err == nil:
+		return false // it already reached that session: SN-03 pushes a message once
+	case !errors.Is(err, sql.ErrNoRows):
 		g.d.Logger.Error("agent: session delivery read failed", "agent_id", agentID, "message_id", m.Message.ID, "err", err)
 		return false
 	}
-	if already {
-		return false // it already reached that session: SN-03 pushes a message once
-	}
-	if err := g.createSessionDelivery(g.ctx, m.Message.ID, agentID, t.label, t.conn.owner, time.Now().UnixMilli(), sql.NullInt64{}, !t.addressed); err != nil {
+	if err := g.createSessionDelivery(g.ctx, m.Message.ID, agentID, t.label, t.conn.sessionKey, t.conn.owner, time.Now().UnixMilli(), sql.NullInt64{}, !t.addressed); err != nil {
 		g.d.Logger.Error("agent: session delivery write failed", "agent_id", agentID, "message_id", m.Message.ID, "err", err)
 		return false
 	}
@@ -282,8 +290,8 @@ func (g *Gateway) pushCatchUp(agentID string, t pushSession, m dto.AgentMessage)
 		}
 		sent++
 		rows = append(rows, db.CreateSessionDeliveryParams{
-			MessageID: msg.ID, AgentID: agentID, Label: t.label, OwnerLive: t.conn.owner,
-			CreatedAt: time.Now().UnixMilli(), Context: 1,
+			MessageID: msg.ID, AgentID: agentID, Label: t.label, SessionKey: t.conn.sessionKey,
+			OwnerLive: t.conn.owner, CreatedAt: time.Now().UnixMilli(), Context: 1,
 		})
 	}
 	return g.createSessionDeliveries(rows)

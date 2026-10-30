@@ -342,3 +342,99 @@ func TestMessagesWrittenWhileTheRoomWasPausedAreNotContext(t *testing.T) {
 	require.Equal(t, want, got,
 		"the human messages and the agent messages of the burst before the pause are the context")
 }
+
+// SN-03: an addressed push overrides the copy an earlier catch-up batch left on the session: the row is
+// upgraded to the addressed delivery and the frame goes without the context flag (an out-of-order publish).
+func TestALateAddressedPushOverridesAContextCopy(t *testing.T) {
+	f := newSessionFixture(t)
+	principal, parallel := f.dial(t), f.dialHarness(t, "pi")
+	f.settle(t, principal)
+	f.settle(t, parallel)
+
+	plain := f.post(t, "plain")
+	require.Equal(t, plain.ID, principal.Message(time.Minute).Message.ID)
+	addressed := f.post(t, "@atlas:pi-2 now")
+	context := parallel.Message(time.Minute)
+	require.Equal(t, plain.ID, context.Message.ID)
+	require.True(t, context.Context)
+	require.Equal(t, addressed.ID, parallel.Message(time.Minute).Message.ID)
+
+	// The dispatcher hands the plain message to the sibling late: it is the message itself now, not context.
+	require.True(t, f.pushRow(t, plain, "pi-2"))
+	frame := parallel.Message(time.Minute)
+	require.Equal(t, plain.ID, frame.Message.ID)
+	require.False(t, frame.Context, "the addressed push is not a context copy")
+	require.Zero(t, f.rowOf(t, "pi-2", plain.ID).Context, "the copy row was upgraded")
+}
+
+// SN-04: a text that addresses a sibling and mentions the AI by its bare handle reaches the principal even
+// when its setting is mentions only.
+func TestABareMentionAlongsideASiblingAddressReachesThePrincipal(t *testing.T) {
+	f := newSessionFixture(t)
+	principal, parallel := f.dial(t), f.dialHarness(t, "pi")
+	f.settle(t, principal)
+	f.settle(t, parallel)
+	f.setNotify(t, "", agents.NotifyMentions)
+
+	m := f.post(t, "@atlas:pi-2 and @atlas")
+	require.Equal(t, m.ID, parallel.Message(time.Minute).Message.ID)
+	got := principal.Message(time.Minute)
+	require.Equal(t, m.ID, got.Message.ID, "the bare mention names the principal too")
+	require.False(t, got.Context)
+}
+
+// SN-09: edits and deletes follow the session that was given the message, by its session key: a label that
+// was reassigned to another session never receives an update of a message it never saw.
+func TestAnEditFollowsTheSessionKeyNotTheReassignedLabel(t *testing.T) {
+	f := newSessionFixture(t)
+	principal := f.dial(t)
+	f.settle(t, principal)
+
+	// A session with a harness session id has a key that survives its label.
+	named := testkit.FolderOf("atlas")
+	named.Harness = "pi"
+	named.Live = testkit.NewLiveID()
+	named.HarnessSession = "pi-session-1"
+	first, resp := f.token.DialFolder(named)
+	require.NotNil(t, first, "upgrade refused: %d %s", resp.Status, resp.Body)
+	first.Welcome(time.Minute)
+	require.Equal(t, "pi-2", f.env.App.Presence.Sessions(f.agentID)[1].Label)
+	m := f.post(t, "@atlas:pi-2 hello")
+	require.Equal(t, m.ID, first.Message(time.Minute).Message.ID)
+	require.Equal(t, m.ID, principal.Message(time.Minute).Message.ID, "the principal's copy (SN-04)")
+	first.Ack(m.ID)
+	f.waitReadSeq(t, "pi-session-1", m.Seq)
+	first.Close()
+	f.waitSessionGone(t, "pi-2")
+
+	// A new session without a harness session id takes the label back, with a key of its own.
+	again := f.dialHarness(t, "pi")
+	f.settle(t, again)
+
+	f.edit(t, m.ID, "edited")
+	require.Equal(t, m.ID, principal.Edited(time.Minute).Message.ID)
+	again.ExpectNone(500 * time.Millisecond)
+}
+
+// SN-09 (decision): the principal set to mentions only follows the edits and deletes of the messages it has a
+// row for, not of the ones it never received.
+func TestAMentionsPrincipalFollowsOnlyTheEditsOfMessagesItHas(t *testing.T) {
+	f := newSessionFixture(t)
+	principal := f.dial(t)
+	f.settle(t, principal)
+	f.setNotify(t, "", agents.NotifyMentions)
+
+	plain := f.post(t, "plain")
+	principal.ExpectNone(300 * time.Millisecond)
+	f.edit(t, plain.ID, "plain edited")
+	principal.ExpectNone(500 * time.Millisecond)
+
+	mentioned := f.post(t, "@atlas for you")
+	context := principal.Message(time.Minute)
+	require.Equal(t, plain.ID, context.Message.ID, "the message it never read comes as context")
+	require.True(t, context.Context)
+	require.Equal(t, "plain edited", context.Message.Text)
+	require.Equal(t, mentioned.ID, principal.Message(time.Minute).Message.ID)
+	f.edit(t, mentioned.ID, "for you, edited")
+	require.Equal(t, mentioned.ID, principal.Edited(time.Minute).Message.ID)
+}

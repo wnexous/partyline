@@ -12,6 +12,7 @@ CREATE TABLE agent_session_deliveries_new (
     message_id   TEXT NOT NULL REFERENCES messages (id) ON DELETE CASCADE,
     agent_id     TEXT NOT NULL REFERENCES agents (id) ON DELETE CASCADE,
     label        TEXT NOT NULL,
+    session_key  TEXT NOT NULL DEFAULT '',
     owner_live   TEXT NOT NULL DEFAULT '',
     created_at   INTEGER NOT NULL,
     fell_back_at INTEGER,
@@ -19,9 +20,11 @@ CREATE TABLE agent_session_deliveries_new (
     context      INTEGER NOT NULL DEFAULT 0 CHECK (context IN (0, 1)),
     PRIMARY KEY (message_id, agent_id, label)
 );
-INSERT INTO agent_session_deliveries_new (message_id, agent_id, label, owner_live, created_at, fell_back_at,
-                                          acked_at, context)
-SELECT message_id, agent_id, label, owner_live, created_at, fell_back_at, acked_at, 0
+INSERT INTO agent_session_deliveries_new (message_id, agent_id, label, session_key, owner_live, created_at,
+                                          fell_back_at, acked_at, context)
+SELECT message_id, agent_id, label,
+       CASE WHEN label = '' THEN 'principal' ELSE 'label:' || label END,
+       owner_live, created_at, fell_back_at, acked_at, 0
 FROM agent_session_deliveries;
 DROP TABLE agent_session_deliveries;
 ALTER TABLE agent_session_deliveries_new RENAME TO agent_session_deliveries;

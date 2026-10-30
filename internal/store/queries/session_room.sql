@@ -17,14 +17,6 @@ ON CONFLICT (agent_id, session_key, room_id) DO NOTHING;
 -- The state of one session in one room (SN-01, SN-02); sql.ErrNoRows for a session that has not joined it.
 SELECT * FROM session_room_state WHERE agent_id = ? AND session_key = ? AND room_id = ?;
 
--- name: HasSessionDelivery :one
--- Whether a message already reached one session of the AI (as the addressed delivery or as a copy of a
--- catch-up batch), so a retried push is not written again (SN-03).
-SELECT EXISTS (
-    SELECT 1 FROM agent_session_deliveries d
-    WHERE d.message_id = sqlc.arg(message_id) AND d.agent_id = sqlc.arg(agent_id) AND d.label = sqlc.arg(label)
-) AS delivered;
-
 -- name: AdvanceSessionReadSeq :exec
 -- Moves a read position forward, never back: an acknowledgement that arrives late, or a catch-up older
 -- than a live push that already moved it, cannot make a session unread what it has read. notify is the

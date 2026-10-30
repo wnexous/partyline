@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"fmt"
+	"slices"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -56,6 +57,8 @@ func (e *schemaEnv) authorLabelOfView(id string) string {
 // deliveryRow is what one delivery row holds.
 type deliveryRow struct {
 	label      string
+	sessionKey string
+	context    int64
 	ownerLive  string
 	createdAt  int64
 	fellBackAt sql.NullInt64
@@ -65,6 +68,12 @@ type deliveryRow struct {
 func (e *schemaEnv) deliveryRow(messageID, agentID string) deliveryRow {
 	e.t.Helper()
 	var r deliveryRow
+	if slices.Contains(e.columnsOf("agent_session_deliveries"), "session_key") {
+		require.NoError(e.t, e.s.write.QueryRowContext(context.Background(),
+			`SELECT label, session_key, context, owner_live, created_at, fell_back_at, acked_at FROM agent_session_deliveries WHERE message_id = ? AND agent_id = ?`,
+			messageID, agentID).Scan(&r.label, &r.sessionKey, &r.context, &r.ownerLive, &r.createdAt, &r.fellBackAt, &r.ackedAt))
+		return r
+	}
 	require.NoError(e.t, e.s.write.QueryRowContext(context.Background(),
 		`SELECT label, owner_live, created_at, fell_back_at, acked_at FROM agent_session_deliveries WHERE message_id = ? AND agent_id = ?`,
 		messageID, agentID).Scan(&r.label, &r.ownerLive, &r.createdAt, &r.fellBackAt, &r.ackedAt))
@@ -235,7 +244,7 @@ func TestMigration0027AddsTheSessionLabelAndTheDeliveryRows(t *testing.T) {
 	// by session (SN-03).
 	fresh := newSchemaEnv(t)
 	require.Contains(t, fresh.columnsOf("messages"), "author_label")
-	require.Equal(t, []string{"message_id", "agent_id", "label", "owner_live", "created_at", "fell_back_at", "acked_at", "context"},
+	require.Equal(t, []string{"message_id", "agent_id", "label", "session_key", "owner_live", "created_at", "fell_back_at", "acked_at", "context"},
 		fresh.columnsOf("agent_session_deliveries"))
 	require.Contains(t, fresh.indexes("agent_session_deliveries"), "agent_session_deliveries_pending")
 	require.Contains(t, fresh.indexes("agent_session_deliveries"), "agent_session_deliveries_fallback")
@@ -595,4 +604,51 @@ func TestSessionJoinSeqUsesTheMembershipRow(t *testing.T) {
 	join, err = e.s.R().GetSessionJoinSeq(ctx, db.GetSessionJoinSeqParams{RoomID: "r1", AgentID: "a1"})
 	require.NoError(t, err)
 	require.Equal(t, int64(2), join, "the messages of the room before the AI joined are not its unread ones")
+}
+
+// SN-09 (data): a delivery row remembers the session key of the session it was pushed to, and an addressed
+// push upgrades the copy an earlier catch-up batch left on that session instead of being lost. An
+// acknowledged copy is not upgraded: the session already saw the message.
+func TestDeliveryRowsStoreTheSessionKeyAndUpgradeCopies(t *testing.T) {
+	ctx := context.Background()
+	e := newSchemaEnv(t)
+	sessionsFixture(e)
+	sessionsRoom(e, "r1")
+	sessionsMessage(e, "m1", "r1", 1, "user", "u1")
+
+	require.NoError(t, e.s.WithTx(ctx, func(q *db.Queries) error {
+		return q.CreateSessionDelivery(ctx, db.CreateSessionDeliveryParams{
+			MessageID: "m1", AgentID: "a1", Label: "pi-2", SessionKey: "pi-session-1",
+			OwnerLive: "live-wt", CreatedAt: 10, Context: 1,
+		})
+	}))
+	row := e.deliveryRow("m1", "a1")
+	require.Equal(t, "pi-session-1", row.sessionKey, "the row follows the session, not only its label")
+	require.Equal(t, int64(1), row.context)
+
+	var n int64
+	require.NoError(t, e.s.WithTx(ctx, func(q *db.Queries) error {
+		var err error
+		n, err = q.UpgradeSessionDelivery(ctx, db.UpgradeSessionDeliveryParams{
+			SessionKey: "pi-session-2", OwnerLive: "live-wt-2", MessageID: "m1", AgentID: "a1", Label: "pi-2",
+		})
+		return err
+	}))
+	require.Equal(t, int64(1), n)
+	row = e.deliveryRow("m1", "a1")
+	require.Zero(t, row.context, "the addressed push owns the message now")
+	require.Equal(t, "pi-session-2", row.sessionKey)
+	require.Equal(t, "live-wt-2", row.ownerLive)
+	require.False(t, row.ackedAt.Valid)
+
+	// An acknowledged copy is left alone: the session already saw the message.
+	require.Equal(t, int64(1), e.ackDelivery("m1", "a1", "live-wt-2", 20))
+	require.NoError(t, e.s.WithTx(ctx, func(q *db.Queries) error {
+		var err error
+		n, err = q.UpgradeSessionDelivery(ctx, db.UpgradeSessionDeliveryParams{
+			SessionKey: "pi-session-3", OwnerLive: "live-wt-3", MessageID: "m1", AgentID: "a1", Label: "pi-2",
+		})
+		return err
+	}))
+	require.Zero(t, n, "an acknowledged row is not upgraded")
 }

@@ -36,6 +36,7 @@ type AgentSessionDelivery struct {
 	MessageID  string
 	AgentID    string
 	Label      string
+	SessionKey string
 	OwnerLive  string
 	CreatedAt  int64
 	FellBackAt sql.NullInt64
