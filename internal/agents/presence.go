@@ -257,6 +257,9 @@ func decideRole(req AttachRequest, main presenceEntry, mainLive bool) (principal
 	case req.Pinned != "":
 		return req.SessionID == req.Pinned, nil
 	case req.SessionID == "" && req.HadSessionID:
+		if mainLive && main.sessionID != "" {
+			return false, set(main.sessionID) // the identified principal in place is pinned
+		}
 		return false, nil
 	case !mainLive || sameProcess || sameSession:
 		if req.SessionID == "" {
