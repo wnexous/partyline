@@ -66,12 +66,13 @@ const (
 
 // Audit actions of the container lifecycle (CA-07); the target is the AI the container runs.
 const (
-	ActionCreate  = "container.create"
-	ActionStart   = "container.start"
-	ActionStop    = "container.stop"
-	ActionRestart = "container.restart"
-	ActionLogs    = "container.logs"
-	ActionDelete  = "container.delete"
+	ActionCreate    = "container.create"
+	ActionStart     = "container.start"
+	ActionStop      = "container.stop"
+	ActionRestart   = "container.restart"
+	ActionLogs      = "container.logs"
+	ActionDelete    = "container.delete"
+	ActionUpdateEnv = "container.update_env"
 )
 
 // Requested actions of POST /api/v1/agents/{id}/container (CA-06).
@@ -374,6 +375,80 @@ func (s *Service) Restart(ctx context.Context, p authn.Principal, agentID string
 	return s.operate(ctx, p, agentID, spec.OpRestart)
 }
 
+// UpdateEnv replaces the environment mapping of an AI's container and creates the container again
+// with it, keeping the workspace volume (CA-04, CA-06). The mapping is validated like a create,
+// including at least one variable the harness reads; the AI's token is rotated because the secret
+// of the old one is not stored, and the audit entry carries the variable names only (CA-08). The
+// row is written only once the runner accepted the removal: a runner that is offline or that
+// refuses it leaves the mapping and the container as they were, and a container the runner no
+// longer has is simply created again. A run that fails keeps the new mapping with last_error, so
+// Start retries it.
+func (s *Service) UpdateEnv(ctx context.Context, p authn.Principal, agentID string, env []EnvVar) (Container, error) {
+	row, err := s.load(ctx, p, agentID)
+	if err != nil {
+		return Container{}, err
+	}
+	env, fields := cleanEnv(env)
+	if len(fields) > 0 {
+		return Container{}, &spec.ValidationError{Fields: fields}
+	}
+	if err := requireCredential(row.Harness, env); err != nil {
+		return Container{}, err
+	}
+	ai, err := s.d.Store.R().GetAgent(ctx, row.AgentID)
+	if err != nil {
+		return Container{}, err
+	}
+	mapped, ids, err := s.resolveSecrets(ctx, ai.OwnerID, env)
+	if err != nil {
+		return Container{}, err
+	}
+	if err := validateMapped(mapped); err != nil {
+		return Container{}, err
+	}
+	if !s.d.Runners.Hub().Online(row.RunnerID) {
+		return Container{}, runners.ErrOffline
+	}
+	// The old container goes first, keeping its volume. A container the runner no longer has is not
+	// an error (Docker answers `rm -f` with "No such container"), so an operation error is ignored
+	// exactly as Delete does; anything else is a runner that never saw the command.
+	if _, err := s.d.Runners.Hub().Do(ctx, row.RunnerID, spec.Command{
+		Op: spec.OpRemove, Name: row.ContainerName,
+	}); err != nil {
+		var opErr *runners.OpError
+		if !errors.As(err, &opErr) {
+			s.setLastError(ctx, row.AgentID, err)
+			return Container{}, err
+		}
+	}
+	vars := make([]string, len(ids))
+	for i, e := range ids {
+		vars[i] = e.Var
+	}
+	secret, row, err := s.rotateTokenWith(ctx, row, func(q *db.Queries, now time.Time) error {
+		return q.SetContainerAgentEnv(ctx, db.SetContainerAgentEnvParams{
+			Env: marshalEnv(ids), Desired: DesiredRunning, UpdatedAt: now.UnixMilli(), AgentID: row.AgentID,
+		})
+	})
+	if err != nil {
+		s.setLastError(ctx, row.AgentID, err)
+		return Container{}, err
+	}
+	row.Env = marshalEnv(ids)
+	row.Desired = DesiredRunning
+	values, err := s.freshEnv(ctx, row, secret)
+	if err != nil {
+		s.setLastError(ctx, row.AgentID, err)
+		return Container{}, err
+	}
+	run := s.runSpec(row, values)
+	if _, err := s.d.Runners.Hub().Do(ctx, row.RunnerID, spec.Command{Op: spec.OpRun, Run: &run}); err != nil {
+		s.setLastError(ctx, row.AgentID, err)
+		return Container{}, err
+	}
+	return s.succeededWith(ctx, row, ActionUpdateEnv, spec.OpRun, map[string]any{"vars": vars})
+}
+
 // operate runs one lifecycle operation for a caller who manages the AI (CA-07) and writes what it
 // implies: the desired state, the state after a success and, on a failure, last_error. Start on a
 // missing container falls back to run with a rotated token, so a container removed on the host
@@ -425,6 +500,11 @@ func (s *Service) operate(ctx context.Context, p authn.Principal, agentID string
 // succeeded records the state an operation left the container in and clears last_error, auditing
 // the action.
 func (s *Service) succeeded(ctx context.Context, row db.ContainerAgent, action string, op spec.Op) (Container, error) {
+	return s.succeededWith(ctx, row, action, op, nil)
+}
+
+// succeededWith is succeeded with extra facts in the audit entry (variable names, never values).
+func (s *Service) succeededWith(ctx context.Context, row db.ContainerAgent, action string, op spec.Op, extra map[string]any) (Container, error) {
 	state := string(spec.StateRunning)
 	if op == spec.OpStop {
 		state = string(spec.StateStopped)
@@ -443,11 +523,15 @@ func (s *Service) succeeded(ctx context.Context, row db.ContainerAgent, action s
 				return err
 			}
 		}
+		detail := map[string]any{
+			"runner_id": row.RunnerID, "container": row.ContainerName, "state": state,
+		}
+		for key, value := range extra {
+			detail[key] = value
+		}
 		if err := s.d.Audit.Record(ctx, q, audit.Entry{
 			ActorID: principalID(ctx), Action: action, TargetKind: audit.TargetAgent, TargetID: row.AgentID,
-			Detail: map[string]any{
-				"runner_id": row.RunnerID, "container": row.ContainerName, "state": state,
-			},
+			Detail: detail,
 		}); err != nil {
 			return err
 		}
@@ -667,6 +751,12 @@ func (s *Service) setLastError(ctx context.Context, agentID string, err error) {
 // container that has to be created again (CA-04). The old token is revoked and its sessions are
 // announced after the commit.
 func (s *Service) rotateToken(ctx context.Context, row db.ContainerAgent) (string, db.ContainerAgent, error) {
+	return s.rotateTokenWith(ctx, row, nil)
+}
+
+// rotateTokenWith is rotateToken with extra writes that must commit with the new token; they run in
+// the same transaction, after the AI's row holds the fresh token.
+func (s *Service) rotateTokenWith(ctx context.Context, row db.ContainerAgent, extra func(q *db.Queries, now time.Time) error) (string, db.ContainerAgent, error) {
 	var (
 		secret  string
 		ownerID string
@@ -704,6 +794,9 @@ func (s *Service) rotateToken(ctx context.Context, row db.ContainerAgent) (strin
 			return err
 		}
 		row.TokenID = sql.NullString{String: tok.ID, Valid: true}
+		if extra != nil {
+			return extra(q, now)
+		}
 		return nil
 	})
 	if err != nil {

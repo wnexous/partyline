@@ -19,6 +19,7 @@ func (s *server) containerAgentRoutes(mux *http.ServeMux) {
 	}
 	s.handle(mux, "POST /api/v1/container-agents", userOnly(s.createContainerAgent))
 	s.handle(mux, "GET /api/v1/agents/{id}/container", userOnly(s.getContainerAgent))
+	s.handle(mux, "PATCH /api/v1/agents/{id}/container", userOnly(s.updateContainerAgent))
 	s.handle(mux, "POST /api/v1/agents/{id}/container", userOnly(s.operateContainerAgent))
 	s.handle(mux, "GET /api/v1/agents/{id}/container/logs", userOnly(s.containerAgentLogs))
 	s.handle(mux, "DELETE /api/v1/agents/{id}/container", userOnly(s.deleteContainerAgent))
@@ -71,6 +72,26 @@ func (s *server) createContainerAgent(w http.ResponseWriter, r *http.Request, p 
 // it (CA-06, CA-07).
 func (s *server) getContainerAgent(w http.ResponseWriter, r *http.Request, p authn.Principal) error {
 	c, err := s.Containers.State(r.Context(), p, r.PathValue("id"))
+	if err != nil {
+		return err
+	}
+	httpx.WriteJSON(w, http.StatusOK, containerDTO(c))
+	return nil
+}
+
+// updateContainerAgent replaces the environment of a container the caller manages and creates the
+// container again with it (CA-04): 200 with the container, 422 when a row or the app's credential is
+// refused, 409 for an offline runner and 502/504 when it refuses or does not answer.
+func (s *server) updateContainerAgent(w http.ResponseWriter, r *http.Request, p authn.Principal) error {
+	var req dto.UpdateContainerAgentRequest
+	if err := httpx.DecodeJSON(w, r, &req); err != nil {
+		return err
+	}
+	env := make([]containeragents.EnvVar, len(req.Env))
+	for i, e := range req.Env {
+		env[i] = containeragents.EnvVar{Var: e.Var, SecretName: e.SecretName}
+	}
+	c, err := s.Containers.UpdateEnv(r.Context(), p, r.PathValue("id"), env)
 	if err != nil {
 		return err
 	}

@@ -50,6 +50,12 @@ type ContainerAgent struct {
 	UpdatedAt time.Time `json:"updated_at"`
 }
 
+// UpdateContainerAgentRequest is the body of PATCH /api/v1/agents/{id}/container (CA-04): the
+// environment the container is created again with, same variables and secret names as a create.
+type UpdateContainerAgentRequest struct {
+	Env []ContainerEnvVar `json:"env"`
+}
+
 // ContainerActionRequest is the body of POST /api/v1/agents/{id}/container: start, stop or restart
 // (CA-06).
 type ContainerActionRequest struct {

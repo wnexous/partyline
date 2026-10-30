@@ -847,9 +847,15 @@ export const ErrorCodeAlreadyAnswered = "already_answered";
 export const ErrorCodeRunnerOffline = "runner_offline";
 export const ErrorCodeRunnerInUse = "runner_in_use";
 /**
+ * ErrorCodeCredentialsRequired is a container AI created, or its environment updated, without a
+ * variable the chosen app reads its provider key from: the app inside the container could never
+ * sign in (422, CA-04). The message names the variables, never a value.
+ */
+export const ErrorCodeCredentialsRequired = "credentials_required";
+/**
  * Error codes and the HTTP status they come with.
  */
-export type ErrorCode = typeof ErrorCodeInvalid | typeof ErrorCodeUnauthorized | typeof ErrorCodeForbidden | typeof ErrorCodeNotFound | typeof ErrorCodeConflict | typeof ErrorCodeGone | typeof ErrorCodeTooLarge | typeof ErrorCodeRateLimited | typeof ErrorCodeInternal | typeof ErrorCodeUnavailable | typeof ErrorCodeHandleTaken | typeof ErrorCodeAvatarInvalid | typeof ErrorCodeLastInstanceAdmin | typeof ErrorCodeLastAdmin | typeof ErrorCodeHomeOrganization | typeof ErrorCodeAlreadyMember | typeof ErrorCodeNotOperator | typeof ErrorCodeUnknownChat | typeof ErrorCodeUnsupported | typeof ErrorCodeFolderRequired | typeof ErrorCodeFolderInvalid | typeof ErrorCodeHarnessRemoved | typeof ErrorCodePositionUnknown | typeof ErrorCodeOrganizationMismatch | typeof ErrorCodeIdentityBusy | typeof ErrorCodeDMMembersFixed | typeof ErrorCodeReactionLimit | typeof ErrorCodeDMSelf | typeof ErrorCodeContactNotFound | typeof ErrorCodeNoRouteToPerson | typeof ErrorCodeHistoryOnly | typeof ErrorCodeCounterpartDisabled | typeof ErrorCodeChatsNotMembers | typeof ErrorCodeMembersRefused | typeof ErrorCodeOrganizationRequired | typeof ErrorCodeOrganizationNotEmpty | typeof ErrorCodePositionCycle | typeof ErrorCodeIdentityOnline | typeof ErrorCodeAlreadyAnswered | typeof ErrorCodeRunnerOffline | typeof ErrorCodeRunnerInUse;
+export type ErrorCode = typeof ErrorCodeInvalid | typeof ErrorCodeUnauthorized | typeof ErrorCodeForbidden | typeof ErrorCodeNotFound | typeof ErrorCodeConflict | typeof ErrorCodeGone | typeof ErrorCodeTooLarge | typeof ErrorCodeRateLimited | typeof ErrorCodeInternal | typeof ErrorCodeUnavailable | typeof ErrorCodeHandleTaken | typeof ErrorCodeAvatarInvalid | typeof ErrorCodeLastInstanceAdmin | typeof ErrorCodeLastAdmin | typeof ErrorCodeHomeOrganization | typeof ErrorCodeAlreadyMember | typeof ErrorCodeNotOperator | typeof ErrorCodeUnknownChat | typeof ErrorCodeUnsupported | typeof ErrorCodeFolderRequired | typeof ErrorCodeFolderInvalid | typeof ErrorCodeHarnessRemoved | typeof ErrorCodePositionUnknown | typeof ErrorCodeOrganizationMismatch | typeof ErrorCodeIdentityBusy | typeof ErrorCodeDMMembersFixed | typeof ErrorCodeReactionLimit | typeof ErrorCodeDMSelf | typeof ErrorCodeContactNotFound | typeof ErrorCodeNoRouteToPerson | typeof ErrorCodeHistoryOnly | typeof ErrorCodeCounterpartDisabled | typeof ErrorCodeChatsNotMembers | typeof ErrorCodeMembersRefused | typeof ErrorCodeOrganizationRequired | typeof ErrorCodeOrganizationNotEmpty | typeof ErrorCodePositionCycle | typeof ErrorCodeIdentityOnline | typeof ErrorCodeAlreadyAnswered | typeof ErrorCodeRunnerOffline | typeof ErrorCodeRunnerInUse | typeof ErrorCodeCredentialsRequired;
 /**
  * ErrorBody is the envelope of every error response.
  */
@@ -1390,6 +1396,13 @@ export interface ContainerAgent {
   last_error?: string;
   created_at: string /* RFC 3339 */;
   updated_at: string /* RFC 3339 */;
+}
+/**
+ * UpdateContainerAgentRequest is the body of PATCH /api/v1/agents/{id}/container (CA-04): the
+ * environment the container is created again with, same variables and secret names as a create.
+ */
+export interface UpdateContainerAgentRequest {
+  env: ContainerEnvVar[];
 }
 /**
  * ContainerActionRequest is the body of POST /api/v1/agents/{id}/container: start, stop or restart

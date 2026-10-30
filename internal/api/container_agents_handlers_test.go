@@ -650,3 +650,115 @@ func TestCreateContainerAgentRequiresACredential(t *testing.T) {
 	require.NoError(t, err)
 	require.Empty(t, rows, "a refused create writes nothing")
 }
+
+// CA-04, CA-06: editing the credentials of a container rewrites the mapping and recreates the
+// container with the new environment, the same workspace volume and a fresh agent token; the answer
+// is the container as it is afterwards, and a refused edit writes nothing.
+func TestUpdateContainerEnvRecreatesTheContainer(t *testing.T) {
+	env := testkit.New(t)
+	admin := env.SetupAdmin()
+	alice := env.NewUser("alice")
+	runner, _, conn := onlineRunner(t, alice, "devbox")
+	f := fake(t, conn, nil)
+	putSecret(t, alice, "OPENCODE_KEY", "sk-opencode-value")
+	putSecret(t, alice, "ANTHROPIC_KEY", "sk-anthropic-value")
+	created := createContainer(t, alice, dto.CreateContainerAgentRequest{
+		RunnerID: runner.ID, Harness: "opencode", DisplayName: "Atlas", Handle: "atlas",
+		Env: []dto.ContainerEnvVar{{Var: "OPENCODE_API_KEY", SecretName: "OPENCODE_KEY"}},
+	})
+	first := f.next()
+	before := storedContainer(t, env, created.Agent.ID)
+	path := "/api/v1/agents/" + created.Agent.ID + "/container"
+
+	// A refused edit is validated like a create and changes nothing.
+	alice.Patch(path, dto.UpdateContainerAgentRequest{}).
+		RequireError(http.StatusUnprocessableEntity, dto.ErrorCodeCredentialsRequired)
+	alice.Patch(path, dto.UpdateContainerAgentRequest{
+		Env: []dto.ContainerEnvVar{{Var: "MODEL_NAME", SecretName: "ANTHROPIC_KEY"}},
+	}).RequireError(http.StatusUnprocessableEntity, dto.ErrorCodeCredentialsRequired)
+	resp := alice.Patch(path, dto.UpdateContainerAgentRequest{
+		Env: []dto.ContainerEnvVar{{Var: "ANTHROPIC_API_KEY", SecretName: "NO_SUCH_SECRET"}},
+	})
+	e := resp.RequireError(http.StatusUnprocessableEntity, dto.ErrorCodeInvalid)
+	require.Contains(t, e.Fields, "env[0].secret_name")
+	require.NotContains(t, string(resp.Body), "sk-opencode-value")
+	require.Equal(t, before.Env, storedContainer(t, env, created.Agent.ID).Env, "a refused edit keeps the mapping")
+
+	// The accepted edit: the container goes (keeping its volume) and comes back with the new env.
+	updated := testkit.Decode[dto.ContainerAgent](alice.Patch(path, dto.UpdateContainerAgentRequest{
+		Env: []dto.ContainerEnvVar{{Var: "ANTHROPIC_API_KEY", SecretName: "ANTHROPIC_KEY"}},
+	}).RequireStatus(http.StatusOK))
+	require.Equal(t, []dto.ContainerEnvVar{{Var: "ANTHROPIC_API_KEY", SecretName: "ANTHROPIC_KEY"}}, updated.Env)
+	remove := f.next()
+	require.Equal(t, spec.OpRemove, remove.Op)
+	require.False(t, remove.RemoveVolume, "the workspace volume stays")
+	require.Equal(t, created.ContainerName, remove.Name)
+	run := f.next()
+	require.Equal(t, spec.OpRun, run.Op)
+	require.NotNil(t, run.Run)
+	require.Equal(t, created.Volume, run.Run.Volume, "the container is created again with the same volume")
+	require.Equal(t, "sk-anthropic-value", run.Run.Env["ANTHROPIC_API_KEY"])
+	require.NotContains(t, run.Run.Env, "OPENCODE_API_KEY", "the replaced variable goes")
+	require.NotEqual(t, first.Run.Env["PARTYLINE_TOKEN"], run.Run.Env["PARTYLINE_TOKEN"],
+		"the recreated container gets a fresh token")
+	require.Equal(t, string(spec.StateRunning), updated.State)
+	require.Equal(t, containeragents.DesiredRunning, updated.Desired)
+
+	after := storedContainer(t, env, created.Agent.ID)
+	require.NotEqual(t, before.TokenID.String, after.TokenID.String)
+	require.Equal(t, containeragents.DesiredRunning, after.Desired)
+	for _, tok := range tokensOf(t, alice) {
+		if tok.ID == before.TokenID.String {
+			require.NotNil(t, tok.RevokedAt, "the token of the old container is revoked")
+		}
+	}
+
+	// The audit records the edit with variable names only, never a value.
+	raw, err := json.Marshal(auditPage(admin, ""))
+	require.NoError(t, err)
+	require.NotContains(t, string(raw), "sk-anthropic-value")
+	require.NotContains(t, string(raw), run.Run.Env["PARTYLINE_TOKEN"])
+	var audited bool
+	for _, entry := range auditPage(admin, "").Items {
+		if entry.Action == containeragents.ActionUpdateEnv {
+			audited = true
+			require.Equal(t, created.Agent.ID, entry.TargetID)
+			require.Equal(t, []any{"ANTHROPIC_API_KEY"}, entry.Detail["vars"])
+		}
+	}
+	require.True(t, audited)
+}
+
+// CA-04, CA-07: editing the credentials needs to manage the AI, and an offline runner keeps the
+// mapping, the token and the container as they were.
+func TestUpdateContainerEnvRefusalsKeepTheContainer(t *testing.T) {
+	env := testkit.New(t)
+	alice, bob := env.NewUser("alice"), env.NewUser("bob")
+	runner, _, conn := onlineRunner(t, alice, "devbox")
+	f := fake(t, conn, nil)
+	putSecret(t, alice, "PROVIDER_KEY", "sk-value")
+	created := createContainer(t, alice, dto.CreateContainerAgentRequest{
+		RunnerID: runner.ID, Harness: "claude", DisplayName: "Atlas", Handle: "atlas",
+		Env: []dto.ContainerEnvVar{{Var: "ANTHROPIC_API_KEY", SecretName: "PROVIDER_KEY"}},
+	})
+	f.next()
+	path := "/api/v1/agents/" + created.Agent.ID + "/container"
+	before := storedContainer(t, env, created.Agent.ID)
+	body := dto.UpdateContainerAgentRequest{
+		Env: []dto.ContainerEnvVar{{Var: "CLAUDE_CODE_OAUTH_TOKEN", SecretName: "PROVIDER_KEY"}},
+	}
+
+	// Another owner does not see the AI.
+	bob.Patch(path, body).RequireError(http.StatusNotFound, dto.ErrorCodeNotFound)
+
+	// The runner goes away: the edit fails fast and changes nothing, not even the token.
+	conn.Close()
+	require.Eventually(t, func() bool {
+		list := runnerList(t, alice)
+		return len(list) == 1 && !list[0].Online
+	}, 5*time.Second, 10*time.Millisecond)
+	alice.Patch(path, body).RequireError(http.StatusConflict, dto.ErrorCodeRunnerOffline)
+	after := storedContainer(t, env, created.Agent.ID)
+	require.Equal(t, before.Env, after.Env)
+	require.Equal(t, before.TokenID.String, after.TokenID.String)
+}
