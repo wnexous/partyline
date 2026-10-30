@@ -1,4 +1,5 @@
 export type { VoiceFailure } from "./lib/voice";
+export { type LiveTranscript, useLiveTranscript } from "./model/use-live-transcript";
 export {
   useVoiceRecorder,
   type VoicePhase,

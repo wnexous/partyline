@@ -8,9 +8,11 @@
  * or a drop, all through the same list; the attachment row previews them (images as thumbnails,
  * other kinds as an icon with name and size) and scrolls sideways instead of growing the composer.
  *
- * A microphone button records a voice message (VOI-01..VOI-06, features/send-voice-message): a tap
- * records until Send or Cancel, a hold records while held. It is sent as a message of its own, an
- * audio attachment with no text, and the draft stays where it is. The recording bar takes the text
+ * A microphone button records a voice message (VOI-01..VOI-06, VOI-09, features/send-voice-message): a tap
+ * records until Send or Cancel, a hold records while held. The browser hears it as it happens, so
+ * the message carries the transcript as its text (a caption already in the box comes first, on its
+ * own line); without a transcript it is an audio attachment with no text, as before, and the draft
+ * stays where it is. The recording bar takes the text
  * box's place, so focus moves to the button that sends it and, when the recording ends, goes back
  * to the text box if it was there and stays on the microphone otherwise (no keyboard pops up
  * after a hold).
@@ -64,6 +66,7 @@ import {
   type HoldState,
   MicButton,
   RecordingBar,
+  useLiveTranscript,
   useVoiceRecorder,
   type VoiceFailure,
 } from "@/features/send-voice-message";
@@ -109,10 +112,11 @@ export function ComposerForm({
   const voiceFile = useRef<File | null>(null);
   // A post that went through clears this conversation's draft, even when the person has already
   // moved to another conversation (the composer is gone, the callbacks of `mutate` are not run).
+  // A voice message is one by its file, with or without the transcript as text: it takes the reply
+  // back but leaves the typed draft (and its files) for the message the person was writing.
   const post = usePostMessage(roomId, (input) => {
     const store = useDraftStore.getState();
-    const isVoice =
-      input.text === "" && input.files?.length === 1 && input.files[0] === voiceFile.current;
+    const isVoice = input.files?.length === 1 && input.files[0] === voiceFile.current;
     if (isVoice) store.setReply(roomId, null);
     else store.clear(roomId);
   });
@@ -150,6 +154,8 @@ export function ComposerForm({
   // False on a touch device, where Enter is a new line (ENT-01).
   const sendsOnEnter = useEnterSends();
   const voice = useVoiceRecorder();
+  // The browser hears the recording as it happens (VOI-09): its final text goes with the audio.
+  const transcript = useLiveTranscript(voice.phase === "recording");
   // A finger that is down on the microphone: a hold, and whether it has slid far enough to cancel.
   const [hold, setHold] = useState<HoldState>("off");
   const [announcement, setAnnouncement] = useState("");
@@ -282,12 +288,18 @@ export function ComposerForm({
 
   const startVoice = () => {
     voiceRun.current += 1;
+    transcript.reset();
     typing.current = document.activeElement === textRef.current;
     refocus.current = null;
     void voice.start();
   };
 
-  /** Stops the recording and posts it as a message of its own: one audio file, no text (VOI-04). */
+  /**
+   * Stops the recording and posts it as a message of its own: one audio file, and the text the
+   * browser heard as its transcript (VOI-04, VOI-09). Text already in the box is the caption and
+   * comes first, on its own line; it is sent with the recording and the draft keeps only the rest.
+   * Without a transcript the audio goes alone, as before, and the draft is untouched.
+   */
   const sendVoice = async () => {
     if (post.isPending) return;
     sendingVoice.current = true;
@@ -296,14 +308,23 @@ export function ComposerForm({
       sendingVoice.current = false;
       return;
     }
+    const spoken = await transcript.finish();
+    const typed = editing ? "" : draft.text.trim();
+    const messageText = spoken ? [typed, spoken].filter(Boolean).join("\n") : "";
     const run = voiceRun.current;
     voiceFile.current = recorded.file;
     setError(null);
     post.mutate(
-      { text: "", files: [recorded.file], ...(replyTo ? { reply_to: replyTo.id } : {}) },
+      {
+        text: messageText,
+        files: [recorded.file],
+        ...(replyTo ? { reply_to: replyTo.id } : {}),
+      },
       {
         onSuccess: () => {
           sendingVoice.current = false;
+          // The text that went with the recording is not left behind in the draft.
+          if (messageText) draftStore.setText(roomId, "");
           refocus.current = typing.current ? "text" : "mic";
           setAnnouncement("");
           if (replyTo) onClearReply?.();
@@ -320,6 +341,7 @@ export function ComposerForm({
   };
 
   const cancelVoice = () => {
+    transcript.reset();
     refocus.current = typing.current ? "text" : "mic";
     voice.cancel();
     setHold("off");
@@ -562,6 +584,8 @@ export function ComposerForm({
             phase={voice.phase as "recording" | "recorded"}
             elapsedMs={voice.elapsedMs}
             hold={hold}
+            transcript={voice.phase === "recording" ? transcript.text : transcript.final}
+            unavailable={transcript.unavailable}
           />
         ) : null}
         {editing ? <EditBar id={barId} message={editing} onLeave={leaveEdit} /> : null}
