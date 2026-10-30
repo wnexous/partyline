@@ -11,6 +11,7 @@ import (
 
 	"github.com/stretchr/testify/require"
 
+	"github.com/wnexous/partyline/internal/agents"
 	"github.com/wnexous/partyline/internal/api/dto"
 	"github.com/wnexous/partyline/internal/containeragents"
 	"github.com/wnexous/partyline/internal/orgs"
@@ -163,7 +164,7 @@ func TestCreateContainerAgentRunsTheImageWithSecrets(t *testing.T) {
 	ctx := context.Background()
 	agentRow, err := env.App.Store.R().GetAgent(ctx, created.Agent.ID)
 	require.NoError(t, err)
-	require.Equal(t, "runner:"+runner.ID, agentRow.Machine)
+	require.Equal(t, agents.ContainerMachine(created.ContainerName), agentRow.Machine)
 	require.Equal(t, "/workspace/repo", agentRow.Folder)
 	require.Equal(t, "opencode", agentRow.Harness)
 	require.True(t, agentRow.OrgID.Valid, "the AI joined the owner's default organization")
@@ -565,4 +566,36 @@ func tokenPrefix(t *testing.T, owner *testkit.Client, id string) string {
 	}
 	t.Fatalf("token %s not found", id)
 	return ""
+}
+
+// CA-04: two container AIs on one runner without a repository are two AIs with their own identity:
+// a shared machine (the runner) and folder (the workspace) would make the second create collide
+// with the first and answer the generic 500 instead of creating it.
+func TestCreateTwoContainerAgentsWithoutRepo(t *testing.T) {
+	env := testkit.New(t)
+	alice := env.NewUser("alice")
+	runner, _, conn := onlineRunner(t, alice, "devbox")
+	f := fake(t, conn, nil)
+	putSecret(t, alice, "OPENCODE_KEY", "sk-value")
+	request := func(name, handle string) dto.CreateContainerAgentRequest {
+		return dto.CreateContainerAgentRequest{
+			RunnerID: runner.ID, Harness: "opencode", DisplayName: name, Handle: handle,
+			Env: []dto.ContainerEnvVar{{Var: "OPENCODE_API_KEY", SecretName: "OPENCODE_KEY"}},
+		}
+	}
+	first := createContainer(t, alice, request("Atlas", "atlas"))
+	f.next()
+	second := createContainer(t, alice, request("Nova", "nova"))
+	f.next()
+	require.NotEqual(t, first.Agent.ID, second.Agent.ID)
+
+	ctx := context.Background()
+	one, err := env.App.Store.R().GetAgent(ctx, first.Agent.ID)
+	require.NoError(t, err)
+	two, err := env.App.Store.R().GetAgent(ctx, second.Agent.ID)
+	require.NoError(t, err)
+	require.Equal(t, agents.ContainerRootFolder, one.Folder, "a container without a repository works in the root workspace")
+	require.Equal(t, one.Folder, two.Folder)
+	require.NotEqual(t, one.Machine, two.Machine, "each container AI has its own machine")
+	require.Equal(t, agents.ContainerMachine(first.ContainerName), one.Machine, "the machine is the container's own name")
 }

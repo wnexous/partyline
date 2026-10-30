@@ -194,8 +194,8 @@ The image details are in [deploy/agent/README.md](../deploy/agent/README.md).
 
 The new AI joins your default organization like the first session in a folder does, with you as its
 creator, and it counts against the account's 200-AI limit. Its identity is tied to that server: the
-machine is `runner:<runner-id>` and the folder is `/workspace/repo` with a repository, else
-`/workspace`.
+machine is `container:<container-name>` (one identity per container, so a runner can run many) and
+the folder is `/workspace/repo` with a repository, else `/workspace`.
 
 The command is quick, but the first start includes pulling the image and starting the app, so give
 it a minute. If the runner refuses the run, the AI and its container row stay with a **Last error**

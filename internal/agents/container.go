@@ -3,6 +3,8 @@ package agents
 import (
 	"context"
 	"database/sql"
+	"errors"
+	"strings"
 
 	"github.com/wnexous/partyline/internal/audit"
 	"github.com/wnexous/partyline/internal/authn"
@@ -16,9 +18,13 @@ import (
 
 // Container machine and folder.
 const (
-	// ContainerMachinePrefix starts the machine of a container AI: runner:<runner id> (CA-04). It is
-	// not a host any session reports, so a container AI never collides with the AI of a folder.
-	ContainerMachinePrefix = "runner:"
+	// ContainerMachinePrefix starts the machine of a container AI: container:<container name>
+	// (CA-04). A runner runs many containers, so the machine is the container's own name and not the
+	// runner's: two container AIs of one runner without a repository would otherwise share the
+	// machine runner:<id> and the folder /workspace, and the agents_folder unique index would refuse
+	// the second one. It is not a host any session reports, so a container AI never collides with
+	// the AI of a folder.
+	ContainerMachinePrefix = "container:"
 	// ContainerRepoFolder and ContainerFolder are the folders of a container AI: the cloned
 	// repository when it has one, else the bare workspace (CA-04, CA-05).
 	ContainerRepoFolder = "/workspace/repo"
@@ -28,8 +34,12 @@ const (
 // ContainerIdentity describes the AI a container runs (CA-04): where it lives, its app and the
 // profile its owner asked for.
 type ContainerIdentity struct {
-	// RunnerID is the runner that runs the container; the AI's machine is runner:<runner-id>.
-	RunnerID string
+	// ID is the AI's id. The caller makes it before the transaction so that the container name and
+	// so the machine of the AI are known before the row exists; empty takes a fresh one.
+	ID string
+	// ContainerName is the Docker name of the AI's container (pl-<short id>, unique among the
+	// owner's containers) and the AI's machine: each container is an identity of its own.
+	ContainerName string
 	// Harness is the app the container runs (claude, pi, opencode, omp).
 	Harness string
 	// Repo reports whether the workspace is a cloned repository.
@@ -38,8 +48,9 @@ type ContainerIdentity struct {
 	DisplayName, Handle string
 }
 
-// ContainerMachine is the machine of the AI that runs on the runner (CA-04).
-func ContainerMachine(runnerID string) string { return ContainerMachinePrefix + runnerID }
+// ContainerMachine is the machine of the AI a container runs (CA-04): its container name, so that
+// every container of one runner is a distinct identity.
+func ContainerMachine(containerName string) string { return ContainerMachinePrefix + containerName }
 
 // ContainerFolderFor is the folder of a container AI: /workspace/repo with a repository,
 // /workspace without one (CA-04).
@@ -52,8 +63,8 @@ func ContainerFolderFor(repo bool) string {
 
 // CreateContainerIdentity creates the AI of a container inside the caller's write transaction, so
 // that the AI, its token and its container_agents row commit together (CA-04): the machine is
-// runner:<runner-id>, the folder /workspace/repo or /workspace, the app the harness, and the profile
-// the requested display name and handle. It joins an organization and gets a creator as the first
+// container:<container name>, the folder /workspace/repo or /workspace, the app the harness, and the
+// profile the requested display name and handle. It joins an organization and gets a creator as the first
 // session of a folder does (place, ORG-04), is audited like one, and stops at MaxAgentsPerOwner.
 // A handle another intelligence has is intelligences.ErrHandleTaken (409) and an invalid one is a
 // validation error; nothing is created then.
@@ -81,13 +92,20 @@ func (r *Registry) CreateContainerIdentity(ctx context.Context, q *db.Queries, o
 		return db.Agent{}, ErrAgentLimit
 	}
 	now := r.now()
-	machine := ContainerMachine(in.RunnerID)
+	name := strings.TrimSpace(in.ContainerName)
+	if name == "" {
+		return db.Agent{}, errors.New("agents: a container identity needs its container name")
+	}
+	machine := ContainerMachine(name)
 	folder := ContainerFolderFor(in.Repo)
 	where, err := place(ctx, q, ownerID, FolderID{Machine: machine, Folder: folder, Harness: in.Harness})
 	if err != nil {
 		return db.Agent{}, err
 	}
-	id := store.NewID()
+	id := in.ID
+	if id == "" {
+		id = store.NewID()
+	}
 	if err := q.InsertFolderAgent(ctx, db.InsertFolderAgentParams{
 		ID: id, OwnerID: ownerID, Name: id, CreatedAt: now.UnixMilli(), Harness: HarnessID(in.Harness),
 		Machine: machine, Folder: folder,

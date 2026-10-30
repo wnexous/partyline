@@ -252,6 +252,9 @@ func (s *Service) Create(ctx context.Context, p authn.Principal, in CreateInput)
 		return Container{}, err
 	}
 	image := ImageFor(s.d.Version)
+	// The id is made before the transaction: the container's name (and so the AI's machine) follows
+	// from it, and the machine is part of the identity (CA-04).
+	agentID := store.NewID()
 	var (
 		agent  db.Agent
 		secret string
@@ -260,8 +263,8 @@ func (s *Service) Create(ctx context.Context, p authn.Principal, in CreateInput)
 	now := s.d.Now()
 	err = s.d.Store.WithTx(ctx, func(q *db.Queries) error {
 		agent, err = s.d.Agents.CreateContainerIdentity(ctx, q, p.UserID, agents.ContainerIdentity{
-			RunnerID: runner.ID, Harness: in.Harness, Repo: in.RepoURL != "",
-			DisplayName: in.DisplayName, Handle: in.Handle,
+			ID: agentID, ContainerName: ContainerName(agentID), Harness: in.Harness,
+			Repo: in.RepoURL != "", DisplayName: in.DisplayName, Handle: in.Handle,
 		})
 		if err != nil {
 			return err

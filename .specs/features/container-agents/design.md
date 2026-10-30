@@ -55,7 +55,7 @@ no inbound port, works behind NAT.
   owner's runner) and hub of live runner connections (`Do(ctx, runnerID, cmd) (Result, error)` with
   per-op timeouts), state updates into container_agents, audit of register/rename/delete.
 - `internal/ownersecrets`: CRUD; `Open(ctx, owner, ids)` for the container service only.
-- `internal/containeragents`: create (identity with machine `runner:<runner-id>` and folder
+- `internal/containeragents`: create (identity with machine `container:<container-name>` and folder
   `/workspace`, agent token, env = PARTYLINE_URL, PARTYLINE_TOKEN, PARTYLINE_HARNESS,
   PARTYLINE_REPO, PARTYLINE_REPO_REF + mapped secrets), lifecycle, logs, delete (+ volume) and
   token revoke, audit, last_error.
