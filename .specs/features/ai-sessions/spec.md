@@ -33,6 +33,11 @@ changed by this spec:
   main session is offline, messages wait in its queue as today (SES-08); they are not given to other
   sessions. A message for a label whose session ends before delivery falls back to the main session's
   queue with a short note saying it was for `:label`.
+  *Amended by session-notifications SN-03, SN-04 and SN-09: `@handle:label` no longer goes to that session
+  only. Each session of the AI has a per-conversation notification setting (`on | mentions`), so a message
+  also reaches the sessions that follow the room, and the principal receives a message that addresses one
+  of its siblings when its own setting there is `on`; the addressed session is given the conversation it
+  had not read yet as context, and an edit or a delete follows every session the message reached.*
 - **D4 parallel by default.** A second connection in the same folder no longer gets `identity_busy`; it
   becomes a parallel session with a `<harness>-<n>` label. `--take-over` keeps today's meaning for the
   main label only. The SES-01 prompt is replaced by a one-line notice.
@@ -182,13 +187,13 @@ ending every session).
 **Acceptance Criteria**:
 
 1. WHEN a DM is posted to an AI, or a message mentions the AI as `@handle` without a label, or a group message reaches the AI under its delivery mode THEN the system SHALL deliver it to the principal session only. (SESS-20)
-2. WHEN a message's text contains `@handle:label` for the receiving AI THEN the system SHALL deliver it to the session with that label only, also in a DM; the handle SHALL match case-insensitively on a word boundary, the label SHALL be `a-z0-9-` with 1 to 40 characters, and the first such address in the text SHALL win. (SESS-21)
+2. WHEN a message's text contains `@handle:label` for the receiving AI THEN the system SHALL deliver it to the session with that label, also in a DM; the handle SHALL match case-insensitively on a word boundary, the label SHALL be `a-z0-9-` with 1 to 40 characters, and the first such address in the text SHALL win. (SESS-21 — amended by SN-04: the message also reaches the principal and every sibling that follows the room, each with the conversation it had not read as context, so "only" is gone; the address still decides which session owns the message.)
 3. WHEN a message addressed to a label has no live session with that label and the AI has a live session THEN the system SHALL keep it for the principal session's queue and deliver it there with a short note saying it was for `:label`. (SESS-22)
 4. WHILE the principal session is offline the system SHALL keep its undelivered messages in its queue and SHALL NOT deliver them to another live session of the same AI; a message addressed to a label that arrives while the AI has no live session at all SHALL wait there too, with the address still in its text. (SESS-23)
 5. WHEN a labelled delivery was not acknowledged before its session ended THEN the system SHALL fall back to the principal with the note, and the labelled session SHALL NOT receive a message that already fell back. (SESS-24)
-6. A message delivered to one session of an AI SHALL NOT be delivered to another session of the same AI (the echo rule, AD-009), except the session of that same AI which the message explicitly addresses with `@handle:label` (SESS-37). (SESS-25)
+6. A message delivered to one session of an AI SHALL NOT be delivered to another session of the same AI (the echo rule, AD-009), except the session of that same AI which the message explicitly addresses with `@handle:label` (SESS-37). (SESS-25 — amended by SN-03 and SN-04: a message of another author now reaches every session that follows the room and the principal when the text addresses a sibling; a message an AI's own session writes keeps the echo rule exactly as SESS-37/SESS-38/SESS-49 state it.)
 7. The delivery mode of the AI's room membership (`all`, `mentions`, `trusted`) and the loop guard SHALL still decide whether the AI receives a message from another author; an addressed label SHALL NOT bypass them. (SESS-26)
-8. WHEN a message is edited or deleted THEN the update SHALL follow the session addressed by its text at that moment (the text before the delete), and a deleted placeholder SHALL reach the principal if its old text named no label. (SESS-27)
+8. WHEN a message is edited or deleted THEN the update SHALL follow the session addressed by its text at that moment (the text before the delete), and a deleted placeholder SHALL reach the principal if its old text named no label. (SESS-27 — extended by SN-09: it also reaches every session that was given the message, including one that had it only as context of its catch-up batch.)
 9. WHEN a message written by a session of an AI addresses `@handle:label` to another live session of the same AI THEN the system SHALL deliver it to that session through an `agent_session_deliveries` row even though the AI is the author, SHALL carry `trusted: true` on the frame, and SHALL NOT filter it by the membership's delivery mode because the author is the AI itself; the loop guard SHALL still apply. (SESS-37)
 10. WHEN a message is written by a session of an AI and names no label (and, from a labelled session, does not mention the AI by its bare `@handle`, SESS-49), or names the label of the writing session itself, or names a label of the same AI that has no live session THEN the system SHALL NOT deliver it to any session of that AI (the author) and SHALL NOT fall it back to the principal. (SESS-38)
 11. WHEN a message written by a session of an AI is edited or deleted and its text before or after the change addresses another live session of the same AI THEN the update SHALL reach that session and SHALL reach no other session of that AI. (SESS-39)
