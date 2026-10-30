@@ -376,7 +376,7 @@ func (g *Gateway) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}()
 	lock := g.lifeLock(row.Agent.ID)
 	lock.Lock()
-	live, err := g.d.Registry.AttachSession(ctx, row.Agent, c, AttachRequest{
+	live, sessionKey, err := g.d.Registry.AttachSession(ctx, row.Agent, c, AttachRequest{
 		Harness: hs.harness, LiveID: hs.liveID, Preferred: hs.label, Takeover: hs.takeover,
 		SessionID: hs.sessionID, Principal: hs.principal, ClientVersion: hs.clientVersion,
 	})
@@ -386,6 +386,8 @@ func (g *Gateway) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		_ = ws.Close(websocket.StatusInternalError, "attach failed")
 		return
 	}
+	// A session joins each room of the AI caught up: its state rows are created at its join point (SN-01).
+	g.ensureSessionRooms(ctx, row.Agent.ID, sessionKey, live.Label == "")
 	// Only the principal session receives the platform events of the AI it operates (SESS-18).
 	if hs.platform && g.d.Platform != nil && live.Label == "" {
 		c.feed = newPlatformFeed(g.d.Platform, row.Agent.ID)
@@ -989,9 +991,31 @@ func listBacklog(ctx context.Context, q *db.Queries, agentID string, st RoomStat
 	return q.ListAgentBacklog(ctx, db.ListAgentBacklogParams{RoomID: st.ID, AfterSeq: st.Cursor, AgentID: agentID, Limit: BacklogLimit})
 }
 
-// advanceRoom moves the cursor of the room's delivery for the agent.
+// advanceRoom moves the cursor of the room's delivery for the agent and mirrors it into the principal's read
+// position (SN-01).
 func (g *Gateway) advanceRoom(ctx context.Context, agentID string, st RoomState, seq int64) error {
 	return g.advance(ctx, agentID, st.ID, seq)
+}
+
+// ensureSessionRooms creates the state row of a session that just attached in each room the AI is a member
+// of, at its join point, so a new session starts caught up and one that comes back keeps its read position
+// and its setting (SN-01, SN-02). A failure is logged and is not fatal: the connection asked for a live
+// session, and the unread bookkeeping is not what it is here for.
+func (g *Gateway) ensureSessionRooms(ctx context.Context, agentID, sessionKey string, isPrincipal bool) {
+	if sessionKey == "" {
+		return
+	}
+	rooms, err := g.d.Registry.SessionRooms(ctx, agentID)
+	if err != nil {
+		g.d.Logger.Error("agent: session rooms read failed", "agent_id", agentID, "err", err)
+		return
+	}
+	for _, st := range rooms {
+		if err := g.d.Registry.EnsureRoomState(ctx, agentID, sessionKey, st.ID, isPrincipal); err != nil {
+			g.d.Logger.Error("agent: session state write failed", "agent_id", agentID, "room_id", st.ID, "err", err)
+			return
+		}
+	}
 }
 
 // readAcks reads frames from the agent and records acks (AGT-07, CID-09) until the connection
@@ -1038,8 +1062,9 @@ func (g *Gateway) readAcks(ctx context.Context, c *conn, agentID string) {
 	}
 }
 
-// ack moves the agent's cursor in the message's room to the message, never backwards. Messages
-// of rooms the agent is not in are ignored.
+// ack moves the agent's cursor in the message's room to the message, never backwards, and mirrors it into
+// the principal's read position in the same transaction (SN-01). Messages of rooms the agent is not in are
+// ignored.
 func (g *Gateway) ack(ctx context.Context, agentID, messageID string) error {
 	q := g.d.Store.R()
 	m, err := q.GetMessageRoomSeq(ctx, messageID)
@@ -1066,15 +1091,26 @@ func (g *Gateway) ack(ctx context.Context, agentID, messageID string) error {
 				// messages below it that the principal has not acknowledged.
 				return nil
 			}
-			return q.AdvanceAgentCursor(ctx, db.AdvanceAgentCursorParams{AgentID: agentID, RoomID: m.RoomID, Seq: m.Seq})
+			if err := q.AdvanceAgentCursor(ctx, db.AdvanceAgentCursorParams{AgentID: agentID, RoomID: m.RoomID, Seq: m.Seq}); err != nil {
+				return err
+			}
+			return q.AdvancePrincipalReadSeq(ctx, db.AdvancePrincipalReadSeqParams{
+				AgentID: agentID, RoomID: m.RoomID, ReadSeq: m.Seq, UpdatedAt: time.Now().UnixMilli(),
+			})
 		})
 	}
 	return nil
 }
 
+// advance moves the agent's cursor and the principal's read position together, in one transaction (SN-01).
 func (g *Gateway) advance(ctx context.Context, agentID, roomID string, seq int64) error {
 	return g.d.Store.WithTx(ctx, func(q *db.Queries) error {
-		return q.AdvanceAgentCursor(ctx, db.AdvanceAgentCursorParams{AgentID: agentID, RoomID: roomID, Seq: seq})
+		if err := q.AdvanceAgentCursor(ctx, db.AdvanceAgentCursorParams{AgentID: agentID, RoomID: roomID, Seq: seq}); err != nil {
+			return err
+		}
+		return q.AdvancePrincipalReadSeq(ctx, db.AdvancePrincipalReadSeqParams{
+			AgentID: agentID, RoomID: roomID, ReadSeq: seq, UpdatedAt: time.Now().UnixMilli(),
+		})
 	})
 }
 

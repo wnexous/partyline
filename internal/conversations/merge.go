@@ -122,6 +122,27 @@ func (s *Service) manages(ctx context.Context, p authn.Principal, agentID string
 	return home, nil
 }
 
+// mirrorPrincipalReadSeqs follows the AI's delivery cursors with the read position of its principal, in the
+// merge transaction (SN-01). AdvancePrincipalReadSeq resolves the principal's key (its pinned harness session
+// id, or "principal" when nothing is pinned) and creates its row when it has none.
+func mirrorPrincipalReadSeqs(ctx context.Context, q *db.Queries, agentID string, now time.Time) error {
+	states, err := q.ListAgentRoomStates(ctx, agentID)
+	if err != nil {
+		return err
+	}
+	for _, st := range states {
+		if st.Cursor == 0 {
+			continue
+		}
+		if err := q.AdvancePrincipalReadSeq(ctx, db.AdvancePrincipalReadSeqParams{
+			AgentID: agentID, RoomID: st.ID, ReadSeq: st.Cursor, UpdatedAt: now.UnixMilli(),
+		}); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
 // mergeOutcome is what changed, for the events published once the merge committed.
 type mergeOutcome struct {
 	// groups are the groups whose members changed.
@@ -178,6 +199,11 @@ func (s *Service) merge(ctx context.Context, q *db.Queries, actorID, fromID, int
 		if err := s.mergeDM(ctx, q, dm, fromID, intoID, fromHandle, now, out); err != nil {
 			return err
 		}
+	}
+	// The surviving AI's principal reads up to its delivery cursors, which the merge moved: a read position
+	// follows its cursor everywhere a cursor is written (SN-01), so a merged room does not become all unread.
+	if err := mirrorPrincipalReadSeqs(ctx, q, intoID, now); err != nil {
+		return err
 	}
 
 	if err := q.ReassignAgentMessages(ctx, db.ReassignAgentMessagesParams{FromID: fromID, IntoID: intoID}); err != nil {
