@@ -99,6 +99,7 @@ func Run(ctx context.Context, o Options) error {
 	id := Identity{
 		Machine: o.Machine, Folder: o.Folder, MainFolder: o.MainFolder, Home: o.Home, Harness: o.Harness, Adopt: o.Adopt,
 		Org: o.Org, Position: o.Position, Parent: o.Parent, HarnessSession: o.HarnessSession,
+		ClientVersion: o.Version,
 	}
 	if id.Harness == "" && !o.ToolsOnly {
 		id.Harness = HarnessClaude

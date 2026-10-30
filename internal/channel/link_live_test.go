@@ -457,6 +457,42 @@ func TestLinkSendsTheHarnessSessionAndAsksForThePrincipalOnce(t *testing.T) {
 	}
 }
 
+// SESS-63: a welcome whose session is outdated makes the channel print one stderr line suggesting
+// `partyline update`, once even across a reconnect; a current session prints nothing.
+func TestChannelSaysWhenItsClientIsOutdated(t *testing.T) {
+	for name, outdated := range map[string]bool{"outdated": true, "current": false} {
+		t.Run(name, func(t *testing.T) {
+			base, dials := welcomeSessionServer(t, dto.SessionInfo{Harness: "claude", Outdated: outdated})
+			stderr := &syncBuffer{}
+			l := newLink(mustURL(t, base), "pl_agent_x", builderIdentity, http.DefaultClient, discard{}, stderr, fastTiming)
+			ctx, cancel := context.WithCancel(context.Background())
+			done := make(chan struct{})
+			go func() { _ = l.run(ctx); close(done) }()
+			t.Cleanup(func() { cancel(); <-done })
+
+			require.Eventually(t, func() bool { return dials() >= 2 }, wait, 5*time.Millisecond, "the channel reconnects")
+			if !outdated {
+				require.Empty(t, stderr.String())
+				return
+			}
+			require.Eventually(t, func() bool { return strings.Count(stderr.String(), outdatedClientLine) == 1 }, wait, 5*time.Millisecond)
+			require.Never(t, func() bool { return strings.Count(stderr.String(), outdatedClientLine) > 1 }, 200*time.Millisecond, 10*time.Millisecond,
+				"the line is printed once across two connections")
+		})
+	}
+}
+
+// SESS-63: the client version is sent on every dial, so the server can mark an outdated session.
+func TestLinkSendsTheClientVersion(t *testing.T) {
+	var log dialLog
+	base := refuseWith(t, &log, http.StatusServiceUnavailable, dto.ErrorCodeUnavailable, "later")
+	id := builderIdentity
+	id.ClientVersion = "v0.13.0"
+	runLinkAs(t, base, id, fastTiming, false)
+	require.Eventually(t, func() bool { return log.count() >= 1 }, wait, 5*time.Millisecond)
+	require.Equal(t, "v0.13.0", log.all()[0].Get(dto.HeaderClientVersion))
+}
+
 // SESS-51: a session whose harness has no session id sends no header.
 func TestLinkSendsNoHarnessSessionWhenThereIsNone(t *testing.T) {
 	var log dialLog

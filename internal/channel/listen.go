@@ -33,6 +33,9 @@ type ListenOptions struct {
 	// HarnessSession and Principal mean what they mean for Run.
 	HarnessSession string
 	Principal      bool
+	// Version is the partyline client version, sent as X-Partyline-Client-Version on every connection so
+	// the server can tell an outdated session (SESS-63); empty sends none.
+	Version string
 
 	// Stdin ending (the harness that spawned listen went away) stops Listen; nil never does.
 	Stdin  io.Reader
@@ -77,6 +80,7 @@ func Listen(ctx context.Context, o ListenOptions) error {
 	id := Identity{
 		Machine: o.Machine, Folder: o.Folder, MainFolder: o.MainFolder, Home: o.Home, Harness: o.Harness, Adopt: o.Adopt,
 		Org: o.Org, Position: o.Position, Parent: o.Parent, HarnessSession: o.HarnessSession,
+		ClientVersion: o.Version,
 	}
 	out := &lineWriter{w: o.Stdout}
 	l := newLink(base, o.Token, id, o.HTTPClient, out, o.Stderr, o.timing)
