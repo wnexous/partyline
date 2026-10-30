@@ -3,7 +3,7 @@
 ## T1 — data + session keys (SN-01, SN-02)
 Migration 0031 `session_room_state`, sqlc queries (get/upsert read_seq, get/set notify, list per
 session, unread counts per room for a session), session_key resolution helpers in internal/agents,
-join-point initialisation, principal read_seq mirroring agent_cursors. Tests. Status: pending
+join-point initialisation, principal read_seq mirroring agent_cursors. Tests. Status: done
 
 ## T2 — routing + catch-up (SN-03, SN-04, SN-06, SN-07, SN-09)
 Gateway Push targets per the design, catch-up batches with `context="true"` frames (channel

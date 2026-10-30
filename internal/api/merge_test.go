@@ -14,6 +14,7 @@ import (
 
 	"github.com/stretchr/testify/require"
 
+	"github.com/wnexous/partyline/internal/agents"
 	"github.com/wnexous/partyline/internal/api/dto"
 	"github.com/wnexous/partyline/internal/app"
 	"github.com/wnexous/partyline/internal/authn"
@@ -251,6 +252,16 @@ func TestMergeMovesGroupsCursorsAndMessages(t *testing.T) {
 	// Cursors: the larger of the two.
 	require.Equal(t, []int64{3, 4, 5, 1}, []int64{w.cursor(t, w.atlas, ops.ID), w.cursor(t, w.atlas, dev.ID), w.cursor(t, w.atlas, ahead.ID), w.cursor(t, w.atlas, solo.ID)})
 	require.Equal(t, int64(-1), w.cursor(t, w.old, ops.ID), "the old cursors went with it")
+
+	// SN-01: the survivor's principal read position followed the cursors the merge moved, so the merged rooms
+	// are not all unread for it.
+	for room, seq := range map[string]int64{ops.ID: 3, dev.ID: 4, ahead.ID: 5, solo.ID: 1} {
+		state, err := w.env.App.Store.R().GetSessionRoomState(context.Background(), db.GetSessionRoomStateParams{
+			AgentID: w.atlas, SessionKey: agents.SessionKey("", "", ""), RoomID: room,
+		})
+		require.NoError(t, err, room)
+		require.Equal(t, []any{seq, agents.NotifyOn}, []any{state.ReadSeq, state.Notify}, room)
+	}
 
 	// Who sees the survivor is who belongs to its organizations: bob, a member of alice's, still does.
 	require.Contains(t, visibleAgents(t, w.bob), w.atlas, "bob sees the survivor")

@@ -532,23 +532,24 @@ func (r *Registry) setApp(ctx context.Context, agentID, harness string) error {
 
 // Attach is AttachSession for a connection that sends no harness session id.
 func (r *Registry) Attach(ctx context.Context, a db.Agent, s Session, harness, liveID, preferred string, takeover bool) (Live, error) {
-	return r.AttachSession(ctx, a, s, AttachRequest{Harness: harness, LiveID: liveID, Preferred: preferred, Takeover: takeover})
+	live, _, err := r.AttachSession(ctx, a, s, AttachRequest{Harness: harness, LiveID: liveID, Preferred: preferred, Takeover: takeover})
+	return live, err
 }
 
 // AttachSession makes s the live session the connection prefers (Presence.Attach) and returns the session it
-// became. The AI's pinned principal session is read here, under the same lock that serializes every attach, and
-// written back when the connection changes it (the first session with an id, --principal, --take-over;
-// SESS-52, SESS-57). Only the principal session ("") stamps the AI's connect time and makes the session's
-// harness its app (AID-02): a parallel or worktree session shares the AI without relabeling it (SESS-17). A
-// session that replaces an older socket of the same process is not a new session: it keeps the label, the app
-// and the connect time.
-func (r *Registry) AttachSession(ctx context.Context, a db.Agent, s Session, req AttachRequest) (Live, error) {
+// became and the key its per-room state is stored under (SessionKey, SN-01). The AI's pinned principal session
+// is read here, under the same lock that serializes every attach, and written back when the connection changes
+// it (the first session with an id, --principal, --take-over; SESS-52, SESS-57). Only the principal session
+// ("") stamps the AI's connect time and makes the session's harness its app (AID-02): a parallel or worktree
+// session shares the AI without relabeling it (SESS-17). A session that replaces an older socket of the same
+// process is not a new session: it keeps the label, the app and the connect time.
+func (r *Registry) AttachSession(ctx context.Context, a db.Agent, s Session, req AttachRequest) (Live, string, error) {
 	r.appMu.Lock()
 	defer r.appMu.Unlock()
 	req.Harness = cleanHarness(req.Harness)
 	current, err := r.store.R().GetAgent(ctx, a.ID)
 	if err != nil {
-		return Live{}, err
+		return Live{}, "", err
 	}
 	req.Pinned = current.PrincipalSession
 	if req.Pinned == "" {
@@ -556,7 +557,7 @@ func (r *Registry) AttachSession(ctx context.Context, a db.Agent, s Session, req
 		// a client that sends no id must not take the principal role from it (SESS-64).
 		had, err := r.store.R().HasSessionLabels(ctx, a.ID)
 		if err != nil {
-			return Live{}, err
+			return Live{}, "", err
 		}
 		req.HadSessionID = had
 	} else {
@@ -568,30 +569,37 @@ func (r *Registry) AttachSession(ctx context.Context, a db.Agent, s Session, req
 			AgentID: a.ID, HarnessSession: req.SessionID, UpdatedAt: r.now().Add(-sessionLabelRetention).UnixMilli(),
 		})
 		if err != nil && !errors.Is(err, sql.ErrNoRows) {
-			return Live{}, err
+			return Live{}, "", err
 		}
 		req.StoredLabel = label
 	}
 	out := r.presence.Attach(ctx, a, s, req)
+	// The key of the principal is its pinned id, or "principal" when nothing is pinned (SN-01); the role this
+	// attach pins is the one the session has now, not the one the AI had when the attach started.
+	pinned := req.Pinned
+	if out.Pin != nil {
+		pinned = *out.Pin
+	}
+	key := SessionKey(req.SessionID, out.Live.Label, pinned)
 	if req.SessionID != "" && out.Fresh {
 		if err := r.rememberLabel(ctx, a.ID, req.SessionID, out.Live.Label); err != nil {
-			return out.Live, err
+			return out.Live, key, err
 		}
 	}
 	if out.Pin != nil {
 		if err := r.setPin(ctx, a.ID, *out.Pin); err != nil {
-			return out.Live, err
+			return out.Live, key, err
 		}
 	}
 	if !out.Fresh || out.Live.Label != "" {
-		return out.Live, nil
+		return out.Live, key, nil
 	}
 	if req.Harness != "" {
 		if err := r.setApp(ctx, a.ID, req.Harness); err != nil {
-			return out.Live, err
+			return out.Live, key, err
 		}
 	}
-	return out.Live, r.MarkConnected(ctx, a.ID)
+	return out.Live, key, r.MarkConnected(ctx, a.ID)
 }
 
 // sessionLabelRetention is how long the database remembers the label of a parallel session that did not come back.

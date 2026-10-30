@@ -461,6 +461,15 @@ type Session struct {
 	Ip         string
 }
 
+type SessionRoomState struct {
+	AgentID    string
+	SessionKey string
+	RoomID     string
+	ReadSeq    int64
+	Notify     string
+	UpdatedAt  int64
+}
+
 type User struct {
 	ID           string
 	Username     string
