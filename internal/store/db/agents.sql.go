@@ -402,6 +402,19 @@ func (q *Queries) GetUnlinkedAgentByName(ctx context.Context, arg GetUnlinkedAge
 	return i, err
 }
 
+const hasSessionLabels = `-- name: HasSessionLabels :one
+SELECT EXISTS(SELECT 1 FROM agent_session_labels WHERE agent_id = ?)
+`
+
+// Whether the AI has any session label remembered by harness session id: it has had an identified
+// session, so a client that sends none must wait as a parallel session (SESS-64).
+func (q *Queries) HasSessionLabels(ctx context.Context, agentID string) (bool, error) {
+	row := q.db.QueryRowContext(ctx, hasSessionLabels, agentID)
+	var exists bool
+	err := row.Scan(&exists)
+	return exists, err
+}
+
 const insertFolderAgent = `-- name: InsertFolderAgent :exec
 INSERT INTO agents (id, owner_id, name, description, created_at, harness, machine, folder, org_id, creator_iid)
 VALUES (?, ?, ?, '', ?, ?, ?, ?, ?, ?)

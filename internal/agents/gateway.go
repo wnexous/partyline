@@ -378,7 +378,7 @@ func (g *Gateway) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	lock.Lock()
 	live, err := g.d.Registry.AttachSession(ctx, row.Agent, c, AttachRequest{
 		Harness: hs.harness, LiveID: hs.liveID, Preferred: hs.label, Takeover: hs.takeover,
-		SessionID: hs.sessionID, Principal: hs.principal,
+		SessionID: hs.sessionID, Principal: hs.principal, ClientVersion: hs.clientVersion,
 	})
 	lock.Unlock()
 	if err != nil {
@@ -479,6 +479,9 @@ type handshake struct {
 	sessionID string
 	// principal asks for the principal role and pins the session (--principal, SESS-57).
 	principal bool
+	// clientVersion is the version of the partyline client that holds the connection (SESS-63); empty
+	// for a client older than the header.
+	clientVersion string
 	// platform is set when the client understands platform events (dto.FeaturePlatform, CID-06).
 	platform bool
 }
@@ -515,6 +518,7 @@ func (g *Gateway) register(ctx context.Context, p authn.Principal, h http.Header
 		return db.GetAgentWithOwnerRow{}, handshake{}, err
 	}
 	d := handshake{harness: cleanHarness(id.Harness), takeover: h.Get(dto.HeaderTakeover) == "1", platform: hasFeature(h, dto.FeaturePlatform)}
+	d.clientVersion = ClientVersionFromHeader(h, dto.HeaderClientVersion)
 	if v := h.Get(dto.HeaderLive); liveIDPattern.MatchString(v) {
 		d.liveID = v
 	}
@@ -717,7 +721,7 @@ func (g *Gateway) run(ctx context.Context, c *conn, row db.GetAgentWithOwnerRow,
 		Intelligence: ai, Owner: owner,
 		Organization: where.org, Position: where.position, Managers: where.managers,
 		Connections: connections,
-		Session:     dto.SessionInfo{Label: live.Label, Harness: live.Harness, ConnectedAt: live.Since.UTC()},
+		Session:     dto.SessionInfo{Label: live.Label, Harness: live.Harness, ConnectedAt: live.Since.UTC(), Outdated: live.Outdated},
 	}); err != nil {
 		return err
 	}

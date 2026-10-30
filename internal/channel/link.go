@@ -176,6 +176,9 @@ type link struct {
 	// announcedSession is set once the process said which parallel session it became: a reconnect of the
 	// same process says it again neither on stderr nor in the identity notice (SESS-15).
 	announcedSession bool
+	// announcedOutdated is set once the process told the person its client is outdated: a reconnect says it
+	// once, not on every drop (SESS-63).
+	announcedOutdated bool
 	// self is the AI this session is, as the last welcome named it; empty before the first.
 	self dto.IntelligenceRef
 	// expectReconnect is set once a channel told onLost that it keeps trying while busy: the welcome of
@@ -444,6 +447,7 @@ func (l *link) announceSession(w dto.AgentWelcomeFrame) {
 // reconnect, which follows a dropped connection of the same session, says nothing.
 func (l *link) announceIdentity(w dto.AgentWelcomeFrame) error {
 	l.announceSession(w)
+	l.announceOutdatedClient(w)
 	text := identityText(w)
 	l.mu.Lock()
 	skip := !l.announce || l.announced || text == ""
@@ -458,6 +462,27 @@ func (l *link) announceIdentity(w dto.AgentWelcomeFrame) error {
 	l.announced = true
 	l.mu.Unlock()
 	return nil
+}
+
+// outdatedClientLine is the one line a session prints on stderr when the server says its client is older
+// than the first one whose sessions send a harness session id (v0.11.0): an old client cannot send the id
+// that pins the principal role, so the person is told how to fix it (SESS-63).
+const outdatedClientLine = "partyline: this client is outdated; run `partyline update` and reopen this session\n"
+
+// announceOutdatedClient prints outdatedClientLine once per process when the welcome says the session's
+// client is outdated (SESS-63).
+func (l *link) announceOutdatedClient(w dto.AgentWelcomeFrame) {
+	if !w.Session.Outdated {
+		return
+	}
+	l.mu.Lock()
+	said := l.announcedOutdated
+	l.announcedOutdated = true
+	l.mu.Unlock()
+	if said {
+		return
+	}
+	fmt.Fprint(l.stderr, outdatedClientLine)
 }
 
 var errDeleted = errors.New("partyline: this agent was deleted; restart the session to register it again")

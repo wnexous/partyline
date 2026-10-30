@@ -297,6 +297,22 @@ pi and OpenCode run `partyline listen` (the WebSocket and the live id) and, from
 
 ---
 
+### P1: Outdated clients (v0.13.0)
+
+**User Story**: As the owner of an AI whose sessions were opened before an update, I want an old-client session to be marked in the web and told to update, and I want it never to take the pinned principal role, so that the wrong session does not receive my DMs while it runs a client that cannot say which conversation it is.
+
+**What happened.** After the v0.12.0 deploy an AI's two Claude Code sessions were still running channels of client 0.10.5, opened before the update. Those clients send no `X-Partyline-Harness-Session`, so nothing was pinned, and the first session to reconnect took the principal label: the wrong one. The fixed principal (SESS-51..SESS-62) only works once a session sends its id.
+
+**Acceptance Criteria**:
+
+1. WHEN an agent connection carries `X-Partyline-Client-Version` THEN the server SHALL record that version and whether the connection sent a harness session id, and it SHALL expose on every live session `outdated: true` exactly when the session's harness is Claude Code or pi AND (it sent no harness session id OR its client version is missing or older than v0.11.0, the first version whose sessions send one); a session of any other harness SHALL never be outdated. `partyline channel` and `partyline listen` SHALL send their own version (`internal/cli.Version`) as that header on every connection. (SESS-63)
+2. WHEN a connection without a harness session id arrives and the AI has a pinned principal id THEN the server SHALL attach it as a parallel session and SHALL NOT give it the principal label; it SHALL do the same when the pin is empty but the AI has had an identified session before, which any `agent_session_labels` row proves. The legacy behaviour (the folder's first live session is the principal) SHALL remain only for an AI that has never had a session id at all, and `--principal` and `--take-over` SHALL keep replacing the principal and setting or clearing the pin as in SESS-57 and SESS-58. (SESS-64)
+3. WHEN a live session is outdated THEN the web SHALL show the warning "Cliente desatualizado — rode `partyline update` e reabra esta sessão" (English and Brazilian Portuguese) in the AI's session list on its profile and on a member card, and one line on the profile header while its principal is outdated, in the notes-and-cautions style of DESIGN.md (a muted panel with a `tape-strong` hairline and an alert icon, no new colour); and WHEN a channel's welcome says its session is outdated THEN it SHALL print one stderr line suggesting `partyline update`, once per process. (SESS-65)
+
+**Independent Test**: A session with a pinned id and a second connection that sends no id: the second is `:claude-2`, the profile and the member card show the warning on the sessions that are outdated, and the profile header says the principal is outdated; messages for the principal keep waiting until the pinned session returns. An AI that never had a session id keeps the first-session-is-principal behaviour, and a channel older than v0.11.0 prints the update line on connect.
+
+---
+
 ## Edge Cases
 
 - WHEN a message's text names `@handle:label` where the label belongs to no live session, including a typo or a label whose worktree was deleted THEN the message SHALL go to the principal with the note (SESS-22).
@@ -397,8 +413,11 @@ pi and OpenCode run `partyline listen` (the WebSocket and the live id) and, from
 | SESS-60 | P1: Fixed principal | v0.11.0 | Done |
 | SESS-61 | P1: Fixed principal | v0.11.0 | Done |
 | SESS-62 | P1: Fixed principal | v0.11.0 | Done |
+| SESS-63 | P1: Outdated clients | v0.13.0 | Done |
+| SESS-64 | P1: Outdated clients | v0.13.0 | Done |
+| SESS-65 | P1: Outdated clients | v0.13.0 | Done |
 
-**Coverage:** 62 total (SESS-51..62 shipped in v0.11.0, tests listed in the design note), 39 mapped to tasks (`tasks.md` T1-T16), 5 shipped directly in v0.10.1 (SESS-40..44), 5 in v0.10.2 (SESS-45..49), status Pending (the plan is not executed
+**Coverage:** 65 total (SESS-51..62 shipped in v0.11.0, SESS-63..65 in v0.13.0, tests listed in the design note), 39 mapped to tasks (`tasks.md` T1-T16), 5 shipped directly in v0.10.1 (SESS-40..44), 5 in v0.10.2 (SESS-45..49), status Pending (the plan is not executed
 yet).
 
 ---

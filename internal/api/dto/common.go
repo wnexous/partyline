@@ -57,6 +57,11 @@ const (
 	// ([A-Za-z0-9_-], 16 to 64 characters): the same process reconnecting is not another
 	// session of the AI (SES-02).
 	HeaderLive = "X-Partyline-Live"
+	// HeaderClientVersion is the version of the partyline client that holds the connection
+	// (internal/cli.Version, or the version the binary was built from); absent from a client older than
+	// v0.13.0. The server records it per live session and marks a session whose client is older than the
+	// version that sends its harness session id as outdated (SESS-63).
+	HeaderClientVersion = "X-Partyline-Client-Version"
 	// HeaderHarnessSession is the harness's own id of the conversation the session belongs to
 	// (Claude Code's session id, pi's session id), matching HarnessSessionPattern. It stays the same
 	// when the conversation is resumed in a new process, so the server can tell which session is the

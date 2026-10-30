@@ -98,8 +98,8 @@ func TestASecondSessionIsAParallelSession(t *testing.T) {
 	require.Equal(t, "claude", s.App, "the app follows the principal")
 	require.True(t, l.start.Equal(*s.ConnectedAt), "and so does its time")
 	require.Equal(t, []dto.SessionInfo{
-		{Label: "", Harness: "claude", ConnectedAt: l.start},
-		{Label: "claude-2", Harness: "claude", ConnectedAt: l.start.Add(time.Hour)},
+		{Label: "", Harness: "claude", ConnectedAt: l.start, Outdated: true},
+		{Label: "claude-2", Harness: "claude", ConnectedAt: l.start.Add(time.Hour), Outdated: true},
 	}, s.Sessions, "the principal first, then the parallel session")
 }
 

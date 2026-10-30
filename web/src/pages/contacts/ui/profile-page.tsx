@@ -22,6 +22,7 @@ import {
   mergeTargets,
   PrincipalOfflineLine,
   SessionLabel,
+  SessionOutdatedWarning,
   useIntelligence,
   useIsOnline,
   usePresenceEntry,
@@ -154,6 +155,8 @@ function ProfileView({ profile }: { profile: IntelligenceProfile }) {
   const canMerge = manages && mergeCandidates.length > 0;
   // There is a session to end only while the AI is connected.
   const canEnd = profile.can_end_session && online;
+  // An outdated principal session cannot hold the pinned role and its person must update it (SESS-63).
+  const principalOutdated = (profile.ai?.sessions ?? []).some((s) => s.label === "" && s.outdated);
 
   return (
     <div className="mx-auto w-full max-w-3xl space-y-8 px-4 py-5 md:px-8 md:py-8">
@@ -176,6 +179,13 @@ function ProfileView({ profile }: { profile: IntelligenceProfile }) {
             <p className="max-w-[65ch] text-sm text-pretty whitespace-pre-wrap [overflow-wrap:anywhere]">
               {profile.bio}
             </p>
+          ) : null}
+          {principalOutdated ? (
+            <SessionOutdatedWarning
+              text={t("profile.principalOutdated")}
+              testId="profile-principal-outdated"
+              className="max-w-[65ch]"
+            />
           ) : null}
         </div>
         <div className="flex w-full flex-wrap items-center gap-2 sm:w-auto">
@@ -244,6 +254,12 @@ function ProfileView({ profile }: { profile: IntelligenceProfile }) {
                 >
                   {(time) => t("profile.sessionConnected", { time })}
                 </RelativeTime>
+                {session.outdated ? (
+                  <SessionOutdatedWarning
+                    testId={`session-outdated-${session.label || "principal"}`}
+                    className="w-full"
+                  />
+                ) : null}
                 {/* Only whoever manages the AI changes its principal, and only to a session that
                     sent a harness session id (SESS-59). */}
                 {profile.can_end_session && session.label !== "" && session.can_be_principal ? (

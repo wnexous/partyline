@@ -249,7 +249,7 @@ func listenCmd(ctx context.Context, args []string, io stdio) int {
 		URL: c.url, Token: c.token, Machine: c.id.Machine, Folder: c.id.Folder, MainFolder: c.id.MainFolder,
 		Home: c.id.Home, Harness: c.id.Harness, Adopt: c.id.Adopt, LiveID: sessionLiveID(withLauncherEnv(io)),
 		Org: c.id.Org, Position: c.id.Position, Parent: c.id.Parent,
-		Takeover: c.takeover, HarnessSession: c.id.HarnessSession, Principal: c.principal,
+		Takeover: c.takeover, HarnessSession: c.id.HarnessSession, Principal: c.principal, Version: buildVersion(),
 		Stdin: io.stdin, Stdout: io.stdout, Stderr: io.stderr,
 	})
 	switch {

@@ -258,6 +258,9 @@ export const en = {
   "profile.sessionPrincipal": "principal",
   "profile.sessionConnected": "connected {time}",
   "profile.principalOffline": "Principal offline since {time}",
+  "profile.sessionOutdated": "Outdated client — run partyline update and reopen this session",
+  "profile.principalOutdated":
+    "The principal session's client is outdated — run partyline update and reopen it",
   "profile.makePrincipal": "Make principal",
   "profile.makePrincipalFor": "Make :{label} the principal session of {name}",
   "profile.principalChanged": ":{label} is taking over as {name}’s principal session",

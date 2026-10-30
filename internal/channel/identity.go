@@ -39,6 +39,10 @@ type Identity struct {
 	// when the conversation is resumed in a new process, which is what makes the AI's principal session a fixed
 	// one (SESS-51). Empty for a harness that has none.
 	HarnessSession string
+	// ClientVersion is the version of this client, sent as X-Partyline-Client-Version on connect: the server
+	// marks a session of a client older than v0.11.0 as outdated, because such a client sends no harness
+	// session id (SESS-63). Empty for a process that does not know its version.
+	ClientVersion string
 	// Adopt is the handle or v0.3 agent name of an unlinked AI to link to the folder when it has
 	// none yet (--as, PARTYLINE_AGENT) (MIG-02).
 	Adopt string
@@ -63,9 +67,9 @@ func (id Identity) setHeaders(h http.Header) {
 	h.Set(dto.HeaderFolder, url.PathEscape(id.Folder))
 	for k, v := range map[string]string{
 		dto.HeaderHarness: id.Harness, dto.HeaderAdopt: id.Adopt, dto.HeaderLive: id.LiveID,
-		dto.HeaderHarnessSession: id.HarnessSession,
-		dto.HeaderMainFolder:     escapeHeader(id.MainFolder),
-		dto.HeaderOrg:            id.Org, dto.HeaderPosition: escapeHeader(id.Position), dto.HeaderParent: id.Parent,
+		dto.HeaderHarnessSession: id.HarnessSession, dto.HeaderClientVersion: id.ClientVersion,
+		dto.HeaderMainFolder: escapeHeader(id.MainFolder),
+		dto.HeaderOrg:        id.Org, dto.HeaderPosition: escapeHeader(id.Position), dto.HeaderParent: id.Parent,
 	} {
 		if v != "" {
 			h.Set(k, v)

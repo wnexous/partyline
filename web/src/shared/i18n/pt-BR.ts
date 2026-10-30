@@ -259,6 +259,9 @@ export const ptBR: Dictionary = {
   "profile.sessionPrincipal": "principal",
   "profile.sessionConnected": "conectada {time}",
   "profile.principalOffline": "Principal offline desde {time}",
+  "profile.sessionOutdated": "Cliente desatualizado — rode partyline update e reabra esta sessão",
+  "profile.principalOutdated":
+    "O cliente da sessão principal está desatualizado — rode partyline update e reabra a sessão",
   "profile.makePrincipal": "Tornar principal",
   "profile.makePrincipalFor": "Tornar :{label} a sessão principal de {name}",
   "profile.principalChanged": ":{label} está assumindo como sessão principal de {name}",

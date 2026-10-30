@@ -76,10 +76,10 @@ func TestChannelAsAdoptsTheUnlinkedIdentity(t *testing.T) {
 // --project is accepted and ignored with one line on stderr: an AI is identified by its folder.
 func TestChannelIgnoresProject(t *testing.T) {
 	e := newChannelEnv(t)
-	c := startChannel(t, []string{"--project", "Atlas Videos"}, e.launched("claude"), "/work/acme")
+	c := startChannel(t, []string{"--project", "Atlas Videos"}, e.launched("claude", "PARTYLINE_HARNESS_SESSION", "sess-project-01"), "/work/acme")
 	initialize(c)
 	e.ai(t, "/work/acme")
-	require.Equal(t, "partyline channel: --project is ignored: an AI is identified by its folder\n", c.stderr.String())
+	require.Equal(t, "partyline channel: --project is ignored: an AI is identified by its folder\n", c.stderr.String(), "a session with its harness session id is current and says nothing else")
 }
 
 // AID-07: the identity a process gathers: the canonical folder (PARTYLINE_FOLDER, else the

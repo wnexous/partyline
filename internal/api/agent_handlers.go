@@ -117,7 +117,7 @@ func (s *server) agentSession(w http.ResponseWriter, r *http.Request) error {
 		}
 		out = dto.SessionState{Exists: true, Intelligence: &ref, App: a.Harness, Sessions: []dto.SessionInfo{}}
 		for _, live := range s.Agents.Sessions(a.ID) {
-			out.Sessions = append(out.Sessions, dto.SessionInfo{Label: live.Label, Harness: live.Harness, ConnectedAt: live.Since.UTC(), CanBePrincipal: live.CanBePrincipal})
+			out.Sessions = append(out.Sessions, dto.SessionInfo{Label: live.Label, Harness: live.Harness, ConnectedAt: live.Since.UTC(), CanBePrincipal: live.CanBePrincipal, Outdated: live.Outdated})
 		}
 		// Online is true while any session is live; ConnectedAt is the principal's start when it is live, else
 		// the earliest live session's (SESS-19).

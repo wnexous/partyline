@@ -255,18 +255,18 @@ func TestPresenceGivesEachSessionItsLabel(t *testing.T) {
 
 	live, fresh := p.attachLabeled(t, principal, "claude", "process-one", "", false)
 	require.True(t, fresh)
-	require.Equal(t, Live{Label: "", Harness: "claude", Since: t0}, live)
+	require.Equal(t, Live{Label: "", Harness: "claude", Since: t0, Outdated: true}, live)
 	live, fresh = p.attachLabeled(t, second, "claude", "process-two", "claude-2", false)
 	require.True(t, fresh)
-	require.Equal(t, Live{Label: "claude-2", Harness: "claude", Since: t0}, live)
+	require.Equal(t, Live{Label: "claude-2", Harness: "claude", Since: t0, Outdated: true}, live)
 	live, fresh = p.attachLabeled(t, third, "claude", "process-three", "claude-3", false)
 	require.True(t, fresh)
-	require.Equal(t, Live{Label: "claude-3", Harness: "claude", Since: t0}, live)
+	require.Equal(t, Live{Label: "claude-3", Harness: "claude", Since: t0, Outdated: true}, live)
 
 	require.Equal(t, []Live{
-		{Label: "", Harness: "claude", Since: t0},
-		{Label: "claude-2", Harness: "claude", Since: t0},
-		{Label: "claude-3", Harness: "claude", Since: t0},
+		{Label: "", Harness: "claude", Since: t0, Outdated: true},
+		{Label: "claude-2", Harness: "claude", Since: t0, Outdated: true},
+		{Label: "claude-3", Harness: "claude", Since: t0, Outdated: true},
 	}, p.presence.Sessions(p.agent.ID))
 	require.True(t, p.presence.Online(p.agent.ID))
 	byLabel, ok := p.presence.SessionByLabel(p.agent.ID, "claude-2")
@@ -342,7 +342,7 @@ func TestReconnectKeepsTheLabel(t *testing.T) {
 	p, _ := newPresenceFixture(t)
 	first := &fakeSession{}
 	live, _ := p.attachLabeled(t, first, "claude", "P", "claude-2", false)
-	require.Equal(t, Live{Label: "claude-2", Harness: "claude", Since: t0}, live)
+	require.Equal(t, Live{Label: "claude-2", Harness: "claude", Since: t0, Outdated: true}, live)
 	require.True(t, p.presence.Detach(context.Background(), p.agent.ID, first))
 	p.clock.Advance(5 * time.Minute)
 

@@ -233,6 +233,10 @@ type SessionInfo struct {
 	// CanBePrincipal tells whether the session sent a harness session id, which is what the principal
 	// role is pinned to: only such a session can be made the principal (SESS-59).
 	CanBePrincipal bool `json:"can_be_principal,omitempty"`
+	// Outdated tells whether the session's client is older than the first one that sends its harness
+	// session id (v0.11.0 on Claude Code and pi): such a session cannot take the pinned principal role,
+	// and its person is told to run `partyline update` and reopen it (SESS-63).
+	Outdated bool `json:"outdated,omitempty"`
 }
 
 // MakePrincipalRequest is the body of POST /agents/{id}/principal: the label of the live session to make

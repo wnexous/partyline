@@ -34,4 +34,5 @@ export { PrincipalOfflineLine } from "./ui/principal-offline-line";
 export * from "./ui/profile-link";
 export { SessionLabel } from "./ui/session-label";
 export { SessionList } from "./ui/session-list";
+export { SessionOutdatedWarning } from "./ui/session-outdated-warning";
 export { YouBadge, type YouBadgeProps } from "./ui/you-badge";
