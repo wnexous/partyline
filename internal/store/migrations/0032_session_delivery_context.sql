@@ -20,11 +20,11 @@ CREATE TABLE agent_session_deliveries_new (
     context      INTEGER NOT NULL DEFAULT 0 CHECK (context IN (0, 1)),
     PRIMARY KEY (message_id, agent_id, label)
 );
+-- A row written before the key existed keeps the empty key: an edit or a delete follows its label, which
+-- is the best a row without a session can offer, and never a session the key would have guessed wrong.
 INSERT INTO agent_session_deliveries_new (message_id, agent_id, label, session_key, owner_live, created_at,
                                           fell_back_at, acked_at, context)
-SELECT message_id, agent_id, label,
-       CASE WHEN label = '' THEN 'principal' ELSE 'label:' || label END,
-       owner_live, created_at, fell_back_at, acked_at, 0
+SELECT message_id, agent_id, label, '', owner_live, created_at, fell_back_at, acked_at, 0
 FROM agent_session_deliveries;
 DROP TABLE agent_session_deliveries;
 ALTER TABLE agent_session_deliveries_new RENAME TO agent_session_deliveries;
