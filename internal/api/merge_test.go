@@ -140,7 +140,7 @@ func (w *mergeWorld) readCursor(t *testing.T, user *testkit.Client, room string)
 func (w *mergeWorld) undelivered(t *testing.T, ai, room string) []string {
 	t.Helper()
 	views, err := w.env.App.Store.R().ListAgentBacklog(context.Background(), db.ListAgentBacklogParams{
-		RoomID: room, AfterSeq: max(w.cursor(t, ai, room), 0), AgentID: ai, Limit: 100,
+		RoomID: room, AfterSeq: max(w.cursor(t, ai, room), 0), AgentID: ai, Limit: 100, IncludeAddressed: false,
 	})
 	require.NoError(t, err)
 	out := make([]string, len(views))

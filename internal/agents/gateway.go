@@ -984,7 +984,11 @@ func (g *Gateway) backlog(ctx context.Context, c *conn, a db.Agent) (map[string]
 		var fallbacks []sessionFallback
 		err := g.d.Store.ReadTx(ctx, func(q *db.Queries) error {
 			var err error
-			pending, err = countBacklog(ctx, q, a.ID, st)
+			includeAddressed, err := principalIncludesAddressed(ctx, q, a.ID, c.sessionKey, st.ID)
+			if err != nil {
+				return err
+			}
+			pending, err = countBacklog(ctx, q, a.ID, st, includeAddressed)
 			if err != nil {
 				return err
 			}
@@ -992,7 +996,7 @@ func (g *Gateway) backlog(ctx context.Context, c *conn, a db.Agent) (map[string]
 				if g.afterBacklogCount != nil {
 					g.afterBacklogCount()
 				}
-				if views, err = listBacklog(ctx, q, a.ID, st); err != nil {
+				if views, err = listBacklog(ctx, q, a.ID, st, includeAddressed); err != nil {
 					return err
 				}
 			}
@@ -1122,14 +1126,38 @@ func (g *Gateway) writeOwned(ctx context.Context, c *conn, a db.Agent, ref dto.R
 	return nil
 }
 
+// principalIncludesAddressed reports whether the principal's backlog of a room also holds the messages that
+// address a sibling (SN-04): while its notification setting is on it follows the room, and when it is
+// mentions only it reads them only as fallbacks (SESS-24). A principal with no state row in the room follows
+// it, which is the default of the role (SN-02).
+func principalIncludesAddressed(ctx context.Context, q *db.Queries, agentID, sessionKey, roomID string) (bool, error) {
+	if sessionKey == "" {
+		return true, nil
+	}
+	state, err := q.GetSessionRoomState(ctx, db.GetSessionRoomStateParams{
+		AgentID: agentID, SessionKey: sessionKey, RoomID: roomID,
+	})
+	if errors.Is(err, sql.ErrNoRows) {
+		return true, nil
+	}
+	if err != nil {
+		return false, err
+	}
+	return state.Notify == NotifyOn, nil
+}
+
 // countBacklog counts the room's undelivered messages for the agent.
-func countBacklog(ctx context.Context, q *db.Queries, agentID string, st RoomState) (int64, error) {
-	return q.CountAgentBacklog(ctx, db.CountAgentBacklogParams{RoomID: st.ID, AfterSeq: st.Cursor, AgentID: agentID})
+func countBacklog(ctx context.Context, q *db.Queries, agentID string, st RoomState, includeAddressed bool) (int64, error) {
+	return q.CountAgentBacklog(ctx, db.CountAgentBacklogParams{
+		RoomID: st.ID, AfterSeq: st.Cursor, AgentID: agentID, IncludeAddressed: includeAddressed,
+	})
 }
 
 // listBacklog lists the newest BacklogLimit undelivered messages counted by countBacklog.
-func listBacklog(ctx context.Context, q *db.Queries, agentID string, st RoomState) ([]db.MessageView, error) {
-	return q.ListAgentBacklog(ctx, db.ListAgentBacklogParams{RoomID: st.ID, AfterSeq: st.Cursor, AgentID: agentID, Limit: BacklogLimit})
+func listBacklog(ctx context.Context, q *db.Queries, agentID string, st RoomState, includeAddressed bool) ([]db.MessageView, error) {
+	return q.ListAgentBacklog(ctx, db.ListAgentBacklogParams{
+		RoomID: st.ID, AfterSeq: st.Cursor, AgentID: agentID, Limit: BacklogLimit, IncludeAddressed: includeAddressed,
+	})
 }
 
 // advanceRoom moves the cursor of the room's delivery for the agent and mirrors it into the principal's read

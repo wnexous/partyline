@@ -149,7 +149,15 @@ func (e *schemaEnv) ownedPending(agentID, ownerLive string) []string {
 
 func (e *schemaEnv) backlog(agentID, roomID string) []string {
 	e.t.Helper()
-	rows, err := e.s.R().ListAgentBacklog(context.Background(), db.ListAgentBacklogParams{RoomID: roomID, AfterSeq: 0, AgentID: agentID, Limit: 10})
+	return e.backlogOf(agentID, roomID, false)
+}
+
+// backlogOf reads the principal's queue, optionally with the messages that address a sibling (SN-04).
+func (e *schemaEnv) backlogOf(agentID, roomID string, includeAddressed bool) []string {
+	e.t.Helper()
+	rows, err := e.s.R().ListAgentBacklog(context.Background(), db.ListAgentBacklogParams{
+		RoomID: roomID, AfterSeq: 0, AgentID: agentID, Limit: 10, IncludeAddressed: includeAddressed,
+	})
 	require.NoError(e.t, err)
 	return messageIDs(rows)
 }
@@ -260,7 +268,7 @@ func TestSessionDeliveryIsIdempotentAndTombstoned(t *testing.T) {
 	require.Equal(t, int64(50), row.ackedAt.Int64)
 	require.False(t, row.fellBackAt.Valid)
 	require.Empty(t, e.backlog("a1", "r1"), "the acknowledged message does not come back to the principal")
-	n, err := e.s.R().CountAgentBacklog(ctx, db.CountAgentBacklogParams{RoomID: "r1", AfterSeq: 0, AgentID: "a1"})
+	n, err := e.s.R().CountAgentBacklog(ctx, db.CountAgentBacklogParams{RoomID: "r1", AfterSeq: 0, AgentID: "a1", IncludeAddressed: false})
 	require.NoError(t, err)
 	require.Zero(t, n)
 	cursor, err := e.s.R().GetAgentCursor(ctx, db.GetAgentCursorParams{AgentID: "a1", RoomID: "r1"})
@@ -459,13 +467,20 @@ func TestFallbacksArePerRoomAndOrdered(t *testing.T) {
 	require.Equal(t, []string{"m-fb"}, messageIDs(e.listFallbacks("a1", "r1")), "a fallback is read in its room only")
 	require.Equal(t, []string{"m-fb-other-room"}, messageIDs(e.listFallbacks("a1", "r2")))
 
-	backlog, err := e.s.R().ListAgentBacklog(ctx, db.ListAgentBacklogParams{RoomID: "r1", AfterSeq: 0, AgentID: "a1", Limit: 10})
+	backlog, err := e.s.R().ListAgentBacklog(ctx, db.ListAgentBacklogParams{
+		RoomID: "r1", AfterSeq: 0, AgentID: "a1", Limit: 10, IncludeAddressed: false,
+	})
 	require.NoError(t, err)
-	require.Equal(t, []string{"m-new"}, messageIDs(backlog), "only the message without a delivery row is the principal's queue")
+	require.Equal(t, []string{"m-new"}, messageIDs(backlog), "only a message without a pending row is the mentions-principal's queue")
+	require.Equal(t, []string{"m-pending", "m-new"}, e.backlogOf("a1", "r1", true),
+		"the principal that follows the room also has the message addressed to its sibling")
 
-	n, err := e.s.R().CountAgentBacklog(ctx, db.CountAgentBacklogParams{RoomID: "r1", AfterSeq: 0, AgentID: "a1"})
+	n, err := e.s.R().CountAgentBacklog(ctx, db.CountAgentBacklogParams{RoomID: "r1", AfterSeq: 0, AgentID: "a1", IncludeAddressed: false})
 	require.NoError(t, err)
 	require.Equal(t, int64(1), n)
+	n, err = e.s.R().CountAgentBacklog(ctx, db.CountAgentBacklogParams{RoomID: "r1", AfterSeq: 0, AgentID: "a1", IncludeAddressed: true})
+	require.NoError(t, err)
+	require.Equal(t, int64(2), n, "the count and the list agree")
 }
 
 // createCopyDelivery runs CreateSessionDelivery for a copy of a catch-up batch: a row that records that the

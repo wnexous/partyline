@@ -59,24 +59,40 @@ WHERE messages.room_id = ?2 AND messages.seq > ?3
   AND messages.seq > COALESCE((SELECT MAX(b.seq) FROM messages b
                               WHERE b.room_id = messages.room_id AND b.created_at < rm.created_at), 0)
   AND NOT (messages.author_kind = 'agent' AND messages.author_id = ?1)
+  AND (?4 = 1
+       OR NOT EXISTS (
+           SELECT 1 FROM agent_session_deliveries d
+           WHERE d.message_id = messages.id AND d.agent_id = ?1 AND d.context = 0))
   AND NOT EXISTS (
       SELECT 1 FROM agent_session_deliveries d
-      WHERE d.message_id = messages.id AND d.agent_id = ?1 AND d.context = 0)
+      WHERE d.message_id = messages.id AND d.agent_id = ?1 AND d.context = 0
+        AND (d.acked_at IS NOT NULL OR d.fell_back_at IS NOT NULL))
+  AND NOT EXISTS (
+      SELECT 1 FROM agent_session_deliveries d
+      WHERE d.message_id = messages.id AND d.agent_id = ?1 AND d.label = ''
+        AND d.acked_at IS NOT NULL)
 `
 
 type CountAgentBacklogParams struct {
-	AgentID  string
-	RoomID   string
-	AfterSeq int64
+	AgentID          string
+	RoomID           string
+	AfterSeq         int64
+	IncludeAddressed interface{}
 }
 
-// A message with an addressed agent_session_deliveries row belongs to a label (or already fell back to the
-// principal through its fallback list), so it is not read twice (SESS-24). A copy of a catch-up batch is
-// not one of those: it only says a session was given the message as context, so the principal's queue
-// still holds it (SN-03). Nothing from before the AI's current membership of the room is part of the
-// queue (ROOM-01): a member that was taken out forgot what it missed while it was away.
+// The messages of the room the principal still has to read. A message addressed to a session belongs to
+// that session, so it is not read twice (SESS-24), unless include_addressed is set: the principal follows
+// the room, so a message that addresses a sibling is part of its queue too (SN-04), and only its own copy
+// tombstone or the fallback list takes one out. A copy of a catch-up batch never keeps a message out
+// (SN-03). Nothing from before the AI's current membership of the room is part of the queue (ROOM-01): a
+// member that was taken out forgot what it missed while it was away.
 func (q *Queries) CountAgentBacklog(ctx context.Context, arg CountAgentBacklogParams) (int64, error) {
-	row := q.db.QueryRowContext(ctx, countAgentBacklog, arg.AgentID, arg.RoomID, arg.AfterSeq)
+	row := q.db.QueryRowContext(ctx, countAgentBacklog,
+		arg.AgentID,
+		arg.RoomID,
+		arg.AfterSeq,
+		arg.IncludeAddressed,
+	)
 	var count int64
 	err := row.Scan(&count)
 	return count, err
@@ -462,18 +478,28 @@ WHERE mv.room_id = ?2 AND mv.seq > ?3
   AND mv.seq > COALESCE((SELECT MAX(b.seq) FROM messages b
                          WHERE b.room_id = mv.room_id AND b.created_at < rm.created_at), 0)
   AND NOT (mv.author_kind = 'agent' AND mv.author_id = ?1)
+  AND (?4 = 1
+       OR NOT EXISTS (
+           SELECT 1 FROM agent_session_deliveries d
+           WHERE d.message_id = mv.id AND d.agent_id = ?1 AND d.context = 0))
   AND NOT EXISTS (
       SELECT 1 FROM agent_session_deliveries d
-      WHERE d.message_id = mv.id AND d.agent_id = ?1 AND d.context = 0)
+      WHERE d.message_id = mv.id AND d.agent_id = ?1 AND d.context = 0
+        AND (d.acked_at IS NOT NULL OR d.fell_back_at IS NOT NULL))
+  AND NOT EXISTS (
+      SELECT 1 FROM agent_session_deliveries d
+      WHERE d.message_id = mv.id AND d.agent_id = ?1 AND d.label = ''
+        AND d.acked_at IS NOT NULL)
 ORDER BY seq DESC
-LIMIT ?4
+LIMIT ?5
 `
 
 type ListAgentBacklogParams struct {
-	AgentID  string
-	RoomID   string
-	AfterSeq int64
-	Limit    int64
+	AgentID          string
+	RoomID           string
+	AfterSeq         int64
+	IncludeAddressed interface{}
+	Limit            int64
 }
 
 func (q *Queries) ListAgentBacklog(ctx context.Context, arg ListAgentBacklogParams) ([]MessageView, error) {
@@ -481,6 +507,7 @@ func (q *Queries) ListAgentBacklog(ctx context.Context, arg ListAgentBacklogPara
 		arg.AgentID,
 		arg.RoomID,
 		arg.AfterSeq,
+		arg.IncludeAddressed,
 		arg.Limit,
 	)
 	if err != nil {
