@@ -33,6 +33,7 @@ type Result = { error?: unknown } | undefined;
 type PromptOptions = { path: { id: string }; body: { parts: Array<{ type: "text"; text: string }> } };
 type Client = {
 	session: {
+		create?: (options: { body?: { title?: string } }) => Promise<unknown>;
 		promptAsync?: (options: PromptOptions) => Promise<Result>;
 		prompt: (options: PromptOptions) => Promise<Result>;
 	};
@@ -219,10 +220,26 @@ function listening(always: boolean, env: Record<string, string | undefined> = pr
 // bridge connects `partyline listen` to the sessions of one OpenCode project. It is the part of
 // the plugin that does not depend on the OpenCode version: both plugin APIs below hand it the
 // session ids they learn about and a function that puts text into a session.
-function startBridge(opts: { directory?: string; log: (message: string) => void; send: (id: string, text: string) => void }) {
+// sessionIdOf reads the id of a session that OpenCode's create returned, in either API shape.
+function sessionIdOf(res: unknown): string | undefined {
+	const r = res as { id?: unknown; data?: { id?: unknown } } | undefined;
+	const id = r?.data?.id ?? r?.id;
+	return typeof id === "string" && id !== "" ? id : undefined;
+}
+
+function startBridge(opts: {
+	directory?: string;
+	log: (message: string) => void;
+	send: (id: string, text: string) => void;
+	// create opens a new top-level session; a message that arrives while no session is active
+	// (an unattended OpenCode, e.g. in a container, where nobody ever types) opens one instead of
+	// waiting forever.
+	create?: () => Promise<unknown>;
+}) {
 	let active: string | undefined;
 	const children = new Set<string>(); // subagent sessions never become the active one
 	const waiting: string[] = [];
+	let creating = false;
 
 	const listener = superviseListen({
 		binary: PARTYLINE_BINARY,
@@ -237,12 +254,31 @@ function startBridge(opts: { directory?: string; log: (message: string) => void;
 				return;
 			}
 			const text = frame(record);
-			if (active) opts.send(active, text);
-			else waiting.push(text);
+			if (active) {
+				opts.send(active, text);
+				return;
+			}
+			waiting.push(text);
+			if (!opts.create || creating) return;
+			creating = true;
+			opts
+				.create()
+				.then((res) => {
+					const id = sessionIdOf(res);
+					// A session the person opened meanwhile already took the messages.
+					if (id && !active) bridge.activate(id);
+					else if (!id) opts.log("partyline: could not open a session for room messages");
+				})
+				.catch((err: unknown) => {
+					opts.log(`partyline: could not open a session for room messages: ${err instanceof Error ? err.message : String(err)}`);
+				})
+				.finally(() => {
+					creating = false;
+				});
 		},
 	});
 
-	return {
+	const bridge = {
 		stop: () => listener.stop(),
 		children,
 		// activate makes id the session messages go to and hands it what waited for a session.
@@ -252,6 +288,7 @@ function startBridge(opts: { directory?: string; log: (message: string) => void;
 			for (const text of waiting.splice(0)) opts.send(id, text);
 		},
 	};
+	return bridge;
 }
 
 // --- OpenCode 1: the plugin function (and `server` of the default export) ---
@@ -283,7 +320,8 @@ export const PartylinePlugin = async ({ client, directory }: { client: Client; d
 		);
 	};
 
-	const bridge = startBridge({ directory, log, send: prompt });
+	const create = client.session.create ? () => client.session.create!({ body: { title: "Partyline" } }) : undefined;
+	const bridge = startBridge({ directory, log, send: prompt, create });
 
 	return {
 		event: async ({ event }: { event: Event }) => {
@@ -318,6 +356,7 @@ type Context2 = {
 	session: {
 		prompt: (input: { sessionID: string; text: string; delivery?: "steer" | "queue" }) => Promise<unknown>;
 		get: (input: { sessionID: string }) => Promise<SessionInfo | { data?: SessionInfo } | undefined>;
+		create?: (input?: { title?: string }) => Promise<unknown>;
 	};
 	event: {
 		subscribe: (options?: { types?: string[]; signal?: AbortSignal }) => AsyncIterable<{ type: string; data?: Record<string, unknown> }>;
@@ -345,7 +384,8 @@ export async function setupOpenCode2(ctx: Context2): Promise<(() => Promise<void
 			log(`partyline: could not deliver a room message: ${err instanceof Error ? err.message : String(err)}`);
 		});
 	};
-	const bridge = startBridge({ directory: ctx.location?.directory, log, send });
+	const create = ctx.session.create ? () => ctx.session.create!({ title: "Partyline" }) : undefined;
+	const bridge = startBridge({ directory: ctx.location?.directory, log, send, create });
 
 	// A session met through a status event may be a subagent that was created before this
 	// plugin subscribed: ask OpenCode for its parent once.

@@ -8,7 +8,7 @@ type Api = typeof plugin;
 
 type Prompt = { path: { id: string }; body: { parts: Array<{ type: string; text: string }> } };
 
-function fakeClient(opts: { promptAsync?: boolean; result?: unknown; reject?: boolean } = {}) {
+function fakeClient(opts: { promptAsync?: boolean; result?: unknown; reject?: boolean; create?: string } = {}) {
 	const prompts: Prompt[] = [];
 	const syncPrompts: Prompt[] = [];
 	const logs: Array<{ service: string; level: string; message: string }> = [];
@@ -25,6 +25,13 @@ function fakeClient(opts: { promptAsync?: boolean; result?: unknown; reject?: bo
 			return answer();
 		};
 	}
+	const creates: unknown[] = [];
+	if (opts.create) {
+		(session as Record<string, (o: never) => Promise<unknown>>).create = (o) => {
+			creates.push(o);
+			return Promise.resolve({ data: { id: opts.create } });
+		};
+	}
 	const client = {
 		session,
 		app: {
@@ -34,7 +41,7 @@ function fakeClient(opts: { promptAsync?: boolean; result?: unknown; reject?: bo
 			},
 		},
 	};
-	return { client, prompts, syncPrompts, logs };
+	return { client, prompts, syncPrompts, logs, creates };
 }
 
 async function load(opts: Parameters<typeof fakeClient>[0] = {}, api: Api = plugin) {
@@ -196,6 +203,24 @@ describe("OpenCode plugin", () => {
 		await oc.emit("session.idle", { sessionID: "ses_1" });
 		spawned[0].out(`${JSON.stringify(framingCases[0].record)}\n`);
 		expect(oc.syncPrompts).toEqual([sent(framingCases[0].text, "ses_1")]);
+	});
+
+	test("an unattended OpenCode with no session opens one for the first room message", async () => {
+		const oc = await load({ create: "ses_new" });
+		spawned[0].out(`${JSON.stringify(framingCases[0].record)}\n`);
+		spawned[0].out(`${JSON.stringify(framingCases[0].record)}\n`);
+		for (let i = 0; i < 5; i++) await flush();
+		expect(oc.creates.length).toBe(1);
+		expect(oc.prompts).toEqual([sent(framingCases[0].text, "ses_new"), sent(framingCases[0].text, "ses_new")]);
+	});
+
+	test("a session the person opens first takes the messages; no session is created", async () => {
+		const oc = await load({ create: "ses_new" });
+		await oc.emit("session.idle", { sessionID: "ses_1" });
+		spawned[0].out(`${JSON.stringify(framingCases[0].record)}\n`);
+		for (let i = 0; i < 5; i++) await flush();
+		expect(oc.creates.length).toBe(0);
+		expect(oc.prompts).toEqual([sent(framingCases[0].text, "ses_1")]);
 	});
 
 	for (const c of framingCases) {
