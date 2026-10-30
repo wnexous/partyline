@@ -49,14 +49,18 @@ RETURNING message_id, label, fell_back_at;
 -- name: ListOwnedPending :many
 -- What a connection owns and has not acknowledged, in sequence order: what a reconnecting session of the
 -- same live id must receive again. Only the addressed deliveries (context = 0) are the session's own
--- backlog; a copy of a catch-up batch is re-read from the session's read position instead (SN-03).
-SELECT * FROM message_views
-WHERE EXISTS (
+-- backlog; a copy of a catch-up batch is re-read from the session's read position instead (SN-03). Nothing
+-- from before the AI's current membership of the room is replayed (ROOM-01).
+SELECT mv.* FROM message_views mv
+JOIN room_members rm ON rm.room_id = mv.room_id AND rm.kind = 'agent' AND rm.member_id = sqlc.arg(agent_id)
+WHERE mv.seq > COALESCE((SELECT MAX(b.seq) FROM messages b
+                         WHERE b.room_id = mv.room_id AND b.created_at < rm.created_at), 0)
+  AND EXISTS (
       SELECT 1 FROM agent_session_deliveries d
-      WHERE d.message_id = message_views.id AND d.agent_id = sqlc.arg(agent_id)
+      WHERE d.message_id = mv.id AND d.agent_id = sqlc.arg(agent_id)
         AND d.owner_live = sqlc.arg(owner_live)
         AND d.context = 0 AND d.fell_back_at IS NULL AND d.acked_at IS NULL)
-ORDER BY seq ASC, id ASC;
+ORDER BY mv.seq ASC, mv.id ASC;
 
 -- name: GetSessionDelivery :one
 -- The delivery row of a message for one session of an AI (label, owner, fallback and acknowledgement),
@@ -71,15 +75,19 @@ SELECT * FROM agent_session_deliveries WHERE message_id = ? AND agent_id = ? ORD
 -- name: ListSessionFallbacks :many
 -- The principal's fallback queue of one room: the messages whose delivery to a label was not
 -- acknowledged before that session ended, in the order they arrived. An acknowledged row is a tombstone
--- and is not listed, and neither is a message the AI wrote itself (SESS-38).
-SELECT * FROM message_views
-WHERE room_id = sqlc.arg(room_id)
+-- and is not listed, and neither is a message the AI wrote itself (SESS-38), nor one from before the AI's
+-- current membership of the room (ROOM-01).
+SELECT mv.* FROM message_views mv
+JOIN room_members rm ON rm.room_id = mv.room_id AND rm.kind = 'agent' AND rm.member_id = sqlc.arg(agent_id)
+WHERE mv.room_id = sqlc.arg(room_id)
+  AND mv.seq > COALESCE((SELECT MAX(b.seq) FROM messages b
+                         WHERE b.room_id = mv.room_id AND b.created_at < rm.created_at), 0)
   AND EXISTS (
       SELECT 1 FROM agent_session_deliveries d
-      WHERE d.message_id = message_views.id AND d.agent_id = sqlc.arg(agent_id)
+      WHERE d.message_id = mv.id AND d.agent_id = sqlc.arg(agent_id)
         AND d.context = 0 AND d.fell_back_at IS NOT NULL AND d.acked_at IS NULL)
-  AND NOT (author_kind = 'agent' AND author_id = sqlc.arg(agent_id))
-ORDER BY seq ASC;
+  AND NOT (mv.author_kind = 'agent' AND mv.author_id = sqlc.arg(agent_id))
+ORDER BY mv.seq ASC;
 
 -- name: ListSessionFallbackLabels :many
 -- The label each fallback row of one room belongs to, so the principal's backlog and pending reads can
@@ -87,7 +95,10 @@ ORDER BY seq ASC;
 SELECT d.message_id, d.label
 FROM agent_session_deliveries d
 JOIN messages m ON m.id = d.message_id
+JOIN room_members rm ON rm.room_id = m.room_id AND rm.kind = 'agent' AND rm.member_id = sqlc.arg(agent_id)
 WHERE d.agent_id = sqlc.arg(agent_id) AND m.room_id = sqlc.arg(room_id)
+  AND m.seq > COALESCE((SELECT MAX(b.seq) FROM messages b
+                        WHERE b.room_id = m.room_id AND b.created_at < rm.created_at), 0)
   AND d.context = 0 AND d.fell_back_at IS NOT NULL AND d.acked_at IS NULL
   AND NOT (m.author_kind = 'agent' AND m.author_id = sqlc.arg(agent_id))
 ORDER BY m.seq ASC;

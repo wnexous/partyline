@@ -183,13 +183,16 @@ func (q *Queries) GetSessionDelivery(ctx context.Context, arg GetSessionDelivery
 }
 
 const listOwnedPending = `-- name: ListOwnedPending :many
-SELECT id, room_id, seq, author_kind, author_id, author_user_id, author_iid, sender_id, sender_alt_id, sender_name, kind, text, reply_to, recipients_json, external_id, created_at, edited_at, deleted_at, interactive_json, answers_json, author_label, author_name, author_handle, author_ikind, author_avatar FROM message_views
-WHERE EXISTS (
+SELECT mv.id, mv.room_id, mv.seq, mv.author_kind, mv.author_id, mv.author_user_id, mv.author_iid, mv.sender_id, mv.sender_alt_id, mv.sender_name, mv.kind, mv.text, mv.reply_to, mv.recipients_json, mv.external_id, mv.created_at, mv.edited_at, mv.deleted_at, mv.interactive_json, mv.answers_json, mv.author_label, mv.author_name, mv.author_handle, mv.author_ikind, mv.author_avatar FROM message_views mv
+JOIN room_members rm ON rm.room_id = mv.room_id AND rm.kind = 'agent' AND rm.member_id = ?1
+WHERE mv.seq > COALESCE((SELECT MAX(b.seq) FROM messages b
+                         WHERE b.room_id = mv.room_id AND b.created_at < rm.created_at), 0)
+  AND EXISTS (
       SELECT 1 FROM agent_session_deliveries d
-      WHERE d.message_id = message_views.id AND d.agent_id = ?1
+      WHERE d.message_id = mv.id AND d.agent_id = ?1
         AND d.owner_live = ?2
         AND d.context = 0 AND d.fell_back_at IS NULL AND d.acked_at IS NULL)
-ORDER BY seq ASC, id ASC
+ORDER BY mv.seq ASC, mv.id ASC
 `
 
 type ListOwnedPendingParams struct {
@@ -199,7 +202,8 @@ type ListOwnedPendingParams struct {
 
 // What a connection owns and has not acknowledged, in sequence order: what a reconnecting session of the
 // same live id must receive again. Only the addressed deliveries (context = 0) are the session's own
-// backlog; a copy of a catch-up batch is re-read from the session's read position instead (SN-03).
+// backlog; a copy of a catch-up batch is re-read from the session's read position instead (SN-03). Nothing
+// from before the AI's current membership of the room is replayed (ROOM-01).
 func (q *Queries) ListOwnedPending(ctx context.Context, arg ListOwnedPendingParams) ([]MessageView, error) {
 	rows, err := q.db.QueryContext(ctx, listOwnedPending, arg.AgentID, arg.OwnerLive)
 	if err != nil {
@@ -341,7 +345,10 @@ const listSessionFallbackLabels = `-- name: ListSessionFallbackLabels :many
 SELECT d.message_id, d.label
 FROM agent_session_deliveries d
 JOIN messages m ON m.id = d.message_id
+JOIN room_members rm ON rm.room_id = m.room_id AND rm.kind = 'agent' AND rm.member_id = ?1
 WHERE d.agent_id = ?1 AND m.room_id = ?2
+  AND m.seq > COALESCE((SELECT MAX(b.seq) FROM messages b
+                        WHERE b.room_id = m.room_id AND b.created_at < rm.created_at), 0)
   AND d.context = 0 AND d.fell_back_at IS NOT NULL AND d.acked_at IS NULL
   AND NOT (m.author_kind = 'agent' AND m.author_id = ?1)
 ORDER BY m.seq ASC
@@ -383,26 +390,30 @@ func (q *Queries) ListSessionFallbackLabels(ctx context.Context, arg ListSession
 }
 
 const listSessionFallbacks = `-- name: ListSessionFallbacks :many
-SELECT id, room_id, seq, author_kind, author_id, author_user_id, author_iid, sender_id, sender_alt_id, sender_name, kind, text, reply_to, recipients_json, external_id, created_at, edited_at, deleted_at, interactive_json, answers_json, author_label, author_name, author_handle, author_ikind, author_avatar FROM message_views
-WHERE room_id = ?1
+SELECT mv.id, mv.room_id, mv.seq, mv.author_kind, mv.author_id, mv.author_user_id, mv.author_iid, mv.sender_id, mv.sender_alt_id, mv.sender_name, mv.kind, mv.text, mv.reply_to, mv.recipients_json, mv.external_id, mv.created_at, mv.edited_at, mv.deleted_at, mv.interactive_json, mv.answers_json, mv.author_label, mv.author_name, mv.author_handle, mv.author_ikind, mv.author_avatar FROM message_views mv
+JOIN room_members rm ON rm.room_id = mv.room_id AND rm.kind = 'agent' AND rm.member_id = ?1
+WHERE mv.room_id = ?2
+  AND mv.seq > COALESCE((SELECT MAX(b.seq) FROM messages b
+                         WHERE b.room_id = mv.room_id AND b.created_at < rm.created_at), 0)
   AND EXISTS (
       SELECT 1 FROM agent_session_deliveries d
-      WHERE d.message_id = message_views.id AND d.agent_id = ?2
+      WHERE d.message_id = mv.id AND d.agent_id = ?1
         AND d.context = 0 AND d.fell_back_at IS NOT NULL AND d.acked_at IS NULL)
-  AND NOT (author_kind = 'agent' AND author_id = ?2)
-ORDER BY seq ASC
+  AND NOT (mv.author_kind = 'agent' AND mv.author_id = ?1)
+ORDER BY mv.seq ASC
 `
 
 type ListSessionFallbacksParams struct {
-	RoomID  string
 	AgentID string
+	RoomID  string
 }
 
 // The principal's fallback queue of one room: the messages whose delivery to a label was not
 // acknowledged before that session ended, in the order they arrived. An acknowledged row is a tombstone
-// and is not listed, and neither is a message the AI wrote itself (SESS-38).
+// and is not listed, and neither is a message the AI wrote itself (SESS-38), nor one from before the AI's
+// current membership of the room (ROOM-01).
 func (q *Queries) ListSessionFallbacks(ctx context.Context, arg ListSessionFallbacksParams) ([]MessageView, error) {
-	rows, err := q.db.QueryContext(ctx, listSessionFallbacks, arg.RoomID, arg.AgentID)
+	rows, err := q.db.QueryContext(ctx, listSessionFallbacks, arg.AgentID, arg.RoomID)
 	if err != nil {
 		return nil, err
 	}

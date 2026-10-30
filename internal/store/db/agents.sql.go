@@ -54,25 +54,29 @@ func (q *Queries) AdvanceAgentCursor(ctx context.Context, arg AdvanceAgentCursor
 
 const countAgentBacklog = `-- name: CountAgentBacklog :one
 SELECT COUNT(*) FROM messages
-WHERE room_id = ?1 AND seq > ?2
-  AND NOT (author_kind = 'agent' AND author_id = ?3)
+JOIN room_members rm ON rm.room_id = messages.room_id AND rm.kind = 'agent' AND rm.member_id = ?1
+WHERE messages.room_id = ?2 AND messages.seq > ?3
+  AND messages.seq > COALESCE((SELECT MAX(b.seq) FROM messages b
+                              WHERE b.room_id = messages.room_id AND b.created_at < rm.created_at), 0)
+  AND NOT (messages.author_kind = 'agent' AND messages.author_id = ?1)
   AND NOT EXISTS (
       SELECT 1 FROM agent_session_deliveries d
-      WHERE d.message_id = messages.id AND d.agent_id = ?3 AND d.context = 0)
+      WHERE d.message_id = messages.id AND d.agent_id = ?1 AND d.context = 0)
 `
 
 type CountAgentBacklogParams struct {
+	AgentID  string
 	RoomID   string
 	AfterSeq int64
-	AgentID  string
 }
 
 // A message with an addressed agent_session_deliveries row belongs to a label (or already fell back to the
 // principal through its fallback list), so it is not read twice (SESS-24). A copy of a catch-up batch is
 // not one of those: it only says a session was given the message as context, so the principal's queue
-// still holds it (SN-03).
+// still holds it (SN-03). Nothing from before the AI's current membership of the room is part of the
+// queue (ROOM-01): a member that was taken out forgot what it missed while it was away.
 func (q *Queries) CountAgentBacklog(ctx context.Context, arg CountAgentBacklogParams) (int64, error) {
-	row := q.db.QueryRowContext(ctx, countAgentBacklog, arg.RoomID, arg.AfterSeq, arg.AgentID)
+	row := q.db.QueryRowContext(ctx, countAgentBacklog, arg.AgentID, arg.RoomID, arg.AfterSeq)
 	var count int64
 	err := row.Scan(&count)
 	return count, err
@@ -452,28 +456,31 @@ func (q *Queries) InsertFolderAgent(ctx context.Context, arg InsertFolderAgentPa
 }
 
 const listAgentBacklog = `-- name: ListAgentBacklog :many
-SELECT id, room_id, seq, author_kind, author_id, author_user_id, author_iid, sender_id, sender_alt_id, sender_name, kind, text, reply_to, recipients_json, external_id, created_at, edited_at, deleted_at, interactive_json, answers_json, author_label, author_name, author_handle, author_ikind, author_avatar FROM message_views
-WHERE room_id = ?1 AND seq > ?2
-  AND NOT (author_kind = 'agent' AND author_id = ?3)
+SELECT mv.id, mv.room_id, mv.seq, mv.author_kind, mv.author_id, mv.author_user_id, mv.author_iid, mv.sender_id, mv.sender_alt_id, mv.sender_name, mv.kind, mv.text, mv.reply_to, mv.recipients_json, mv.external_id, mv.created_at, mv.edited_at, mv.deleted_at, mv.interactive_json, mv.answers_json, mv.author_label, mv.author_name, mv.author_handle, mv.author_ikind, mv.author_avatar FROM message_views mv
+JOIN room_members rm ON rm.room_id = mv.room_id AND rm.kind = 'agent' AND rm.member_id = ?1
+WHERE mv.room_id = ?2 AND mv.seq > ?3
+  AND mv.seq > COALESCE((SELECT MAX(b.seq) FROM messages b
+                         WHERE b.room_id = mv.room_id AND b.created_at < rm.created_at), 0)
+  AND NOT (mv.author_kind = 'agent' AND mv.author_id = ?1)
   AND NOT EXISTS (
       SELECT 1 FROM agent_session_deliveries d
-      WHERE d.message_id = message_views.id AND d.agent_id = ?3 AND d.context = 0)
+      WHERE d.message_id = mv.id AND d.agent_id = ?1 AND d.context = 0)
 ORDER BY seq DESC
 LIMIT ?4
 `
 
 type ListAgentBacklogParams struct {
+	AgentID  string
 	RoomID   string
 	AfterSeq int64
-	AgentID  string
 	Limit    int64
 }
 
 func (q *Queries) ListAgentBacklog(ctx context.Context, arg ListAgentBacklogParams) ([]MessageView, error) {
 	rows, err := q.db.QueryContext(ctx, listAgentBacklog,
+		arg.AgentID,
 		arg.RoomID,
 		arg.AfterSeq,
-		arg.AgentID,
 		arg.Limit,
 	)
 	if err != nil {

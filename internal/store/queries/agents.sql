@@ -86,21 +86,28 @@ ORDER BY name, r.id;
 -- A message with an addressed agent_session_deliveries row belongs to a label (or already fell back to the
 -- principal through its fallback list), so it is not read twice (SESS-24). A copy of a catch-up batch is
 -- not one of those: it only says a session was given the message as context, so the principal's queue
--- still holds it (SN-03).
+-- still holds it (SN-03). Nothing from before the AI's current membership of the room is part of the
+-- queue (ROOM-01): a member that was taken out forgot what it missed while it was away.
 SELECT COUNT(*) FROM messages
-WHERE room_id = sqlc.arg(room_id) AND seq > sqlc.arg(after_seq)
-  AND NOT (author_kind = 'agent' AND author_id = sqlc.arg(agent_id))
+JOIN room_members rm ON rm.room_id = messages.room_id AND rm.kind = 'agent' AND rm.member_id = sqlc.arg(agent_id)
+WHERE messages.room_id = sqlc.arg(room_id) AND messages.seq > sqlc.arg(after_seq)
+  AND messages.seq > COALESCE((SELECT MAX(b.seq) FROM messages b
+                              WHERE b.room_id = messages.room_id AND b.created_at < rm.created_at), 0)
+  AND NOT (messages.author_kind = 'agent' AND messages.author_id = sqlc.arg(agent_id))
   AND NOT EXISTS (
       SELECT 1 FROM agent_session_deliveries d
       WHERE d.message_id = messages.id AND d.agent_id = sqlc.arg(agent_id) AND d.context = 0);
 
 -- name: ListAgentBacklog :many
-SELECT * FROM message_views
-WHERE room_id = sqlc.arg(room_id) AND seq > sqlc.arg(after_seq)
-  AND NOT (author_kind = 'agent' AND author_id = sqlc.arg(agent_id))
+SELECT mv.* FROM message_views mv
+JOIN room_members rm ON rm.room_id = mv.room_id AND rm.kind = 'agent' AND rm.member_id = sqlc.arg(agent_id)
+WHERE mv.room_id = sqlc.arg(room_id) AND mv.seq > sqlc.arg(after_seq)
+  AND mv.seq > COALESCE((SELECT MAX(b.seq) FROM messages b
+                         WHERE b.room_id = mv.room_id AND b.created_at < rm.created_at), 0)
+  AND NOT (mv.author_kind = 'agent' AND mv.author_id = sqlc.arg(agent_id))
   AND NOT EXISTS (
       SELECT 1 FROM agent_session_deliveries d
-      WHERE d.message_id = message_views.id AND d.agent_id = sqlc.arg(agent_id) AND d.context = 0)
+      WHERE d.message_id = mv.id AND d.agent_id = sqlc.arg(agent_id) AND d.context = 0)
 ORDER BY seq DESC
 LIMIT sqlc.arg(limit);
 

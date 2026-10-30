@@ -139,10 +139,29 @@ func (s *Service) AddMember(ctx context.Context, p authn.Principal, roomID strin
 		if n > 0 {
 			return ErrAlreadyMember
 		}
-		return q.CreateRoomMember(ctx, db.CreateRoomMemberParams{
+		if err := q.CreateRoomMember(ctx, db.CreateRoomMemberParams{
 			ID: id, RoomID: roomID, Kind: string(in.Kind), MemberID: in.MemberID,
 			AddedBy: p.UserID, CreatedAt: s.now().UnixMilli(),
-		})
+		}); err != nil {
+			return err
+		}
+		if in.Kind != dto.MemberKindAgent {
+			return nil
+		}
+		// An AI that was in the room before comes back caught up (ROOM-01): its cursor was left at the point
+		// it left, so what the room wrote during the absence is skipped, and an AI that is added for the
+		// first time keeps the cursor it has (none, so its backlog starts at the room's beginning, AGT-08).
+		if _, err := q.GetAgentCursor(ctx, db.GetAgentCursorParams{AgentID: in.MemberID, RoomID: roomID}); err != nil {
+			if errors.Is(err, sql.ErrNoRows) {
+				return nil
+			}
+			return err
+		}
+		high, err := q.GetRoomHighSeq(ctx, roomID)
+		if err != nil {
+			return err
+		}
+		return q.AdvanceAgentCursor(ctx, db.AdvanceAgentCursorParams{AgentID: in.MemberID, RoomID: roomID, Seq: high})
 	})
 	if err != nil {
 		return Member{}, err
@@ -323,7 +342,27 @@ func (s *Service) RemoveMember(ctx context.Context, p authn.Principal, roomID, m
 			return err
 		}
 		removedKind = m.Kind
-		return q.DeleteRoomMember(ctx, memberRowID)
+		if err := q.DeleteRoomMember(ctx, memberRowID); err != nil {
+			return err
+		}
+		if m.Kind != string(dto.MemberKindAgent) {
+			return nil
+		}
+		// An AI taken out of a room forgets what it had read and what it had not (ROOM-01): the next time it
+		// is added, its sessions join at the new membership, so nothing from the absence comes back as
+		// context, as unread or as the principal's backlog. Its cursor is reset to the point it left rather
+		// than dropped: the row is also what tells a later membership that the AI was in the room before
+		// (AddMember), so the absence is skipped exactly, in the room's sequence and not by its clock.
+		if err := q.DeleteSessionRoomStatesInRoom(ctx, db.DeleteSessionRoomStatesInRoomParams{
+			AgentID: m.MemberID, RoomID: roomID,
+		}); err != nil {
+			return err
+		}
+		high, err := q.GetRoomHighSeq(ctx, roomID)
+		if err != nil {
+			return err
+		}
+		return q.AdvanceAgentCursor(ctx, db.AdvanceAgentCursorParams{AgentID: m.MemberID, RoomID: roomID, Seq: high})
 	})
 	if err != nil {
 		return err

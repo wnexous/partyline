@@ -50,13 +50,16 @@ SELECT * FROM session_room_state WHERE agent_id = ? AND session_key = ? ORDER BY
 -- (SN-05, SN-06): a message a sibling session wrote is unread for it, its own never is. A deleted
 -- message keeps its place in the stream but does not count, and a room with nothing unread has no row. A
 -- missing state row counts from 0, so a caller that wants the join-point default creates it first
--- (CreateSessionRoomState).
+-- (CreateSessionRoomState). What the AI missed while it was not a member of the room does not count
+-- (ROOM-01): nothing at or below the sequence the room had when the membership row was created is.
 SELECT m.room_id, COUNT(*) AS unread
 FROM messages m
 JOIN room_members rm ON rm.room_id = m.room_id AND rm.kind = 'agent' AND rm.member_id = sqlc.arg(agent_id)
 LEFT JOIN session_room_state st ON st.room_id = m.room_id AND st.agent_id = sqlc.arg(agent_id)
                                AND st.session_key = sqlc.arg(session_key)
 WHERE m.seq > COALESCE(st.read_seq, 0)
+  AND m.seq > COALESCE((SELECT MAX(b.seq) FROM messages b
+                        WHERE b.room_id = m.room_id AND b.created_at < rm.created_at), 0)
   AND m.deleted_at IS NULL
   AND NOT (m.author_kind = 'agent' AND m.author_id = sqlc.arg(agent_id) AND m.author_label = sqlc.arg(author_label))
 GROUP BY m.room_id;
@@ -67,10 +70,14 @@ GROUP BY m.room_id;
 -- limit of 50 reads the last 50 and the caller notes how many earlier ones it skipped) and the batch is
 -- ordered oldest first. The session's own messages are not part of it (SN-06), the message that is being
 -- pushed now is not either (before_seq), and neither is one that already reached the session as a copy
--- (a delivery row for its label): SN-03 pushes a message to a session once.
+-- (a delivery row for its label): SN-03 pushes a message to a session once. Nothing from before the AI's
+-- current membership of the room is part of it (ROOM-01).
 SELECT * FROM (
-    SELECT * FROM message_views mv
+    SELECT mv.* FROM message_views mv
+    JOIN room_members rm ON rm.room_id = mv.room_id AND rm.kind = 'agent' AND rm.member_id = sqlc.arg(agent_id)
     WHERE mv.room_id = sqlc.arg(room_id) AND mv.seq > sqlc.arg(after_seq) AND mv.seq < sqlc.arg(before_seq)
+      AND mv.seq > COALESCE((SELECT MAX(b.seq) FROM messages b
+                             WHERE b.room_id = mv.room_id AND b.created_at < rm.created_at), 0)
       AND mv.deleted_at IS NULL
       AND NOT (mv.author_kind = 'agent' AND mv.author_id = sqlc.arg(agent_id) AND mv.author_label = sqlc.arg(author_label))
       AND NOT EXISTS (
@@ -84,9 +91,13 @@ ORDER BY seq ASC, id ASC;
 -- name: CountSessionUnreadInRoom :one
 -- How many messages of one room a session has not read and that ListSessionUnread would list (SN-03): the
 -- difference between this count and the number listed is the "N earlier messages skipped" note of the
--- catch-up batch.
+-- catch-up batch. The messages of the room from before the AI's current membership are not part of it
+-- (ROOM-01).
 SELECT COUNT(*) FROM messages m
+JOIN room_members rm ON rm.room_id = m.room_id AND rm.kind = 'agent' AND rm.member_id = sqlc.arg(agent_id)
 WHERE m.room_id = sqlc.arg(room_id) AND m.seq > sqlc.arg(after_seq) AND m.seq < sqlc.arg(before_seq)
+  AND m.seq > COALESCE((SELECT MAX(b.seq) FROM messages b
+                        WHERE b.room_id = m.room_id AND b.created_at < rm.created_at), 0)
   AND m.deleted_at IS NULL
   AND NOT (m.author_kind = 'agent' AND m.author_id = sqlc.arg(agent_id) AND m.author_label = sqlc.arg(author_label))
   AND NOT EXISTS (
@@ -97,6 +108,15 @@ WHERE m.room_id = sqlc.arg(room_id) AND m.seq > sqlc.arg(after_seq) AND m.seq < 
 -- Every state row of the AI in one room, whatever its session: the notification setting and the read
 -- position of each session a message may notify (SN-02, SN-03).
 SELECT * FROM session_room_state WHERE agent_id = sqlc.arg(agent_id) AND room_id = sqlc.arg(room_id);
+
+-- name: DeleteSessionRoomStatesInRoom :exec
+-- The read positions of an AI in one room, dropped when it is taken out of it (ROOM-01): what it missed
+-- while it was away never comes back as context or as unread after it is added again.
+DELETE FROM session_room_state WHERE agent_id = sqlc.arg(agent_id) AND room_id = sqlc.arg(room_id);
+
+-- name: DeleteAgentCursor :exec
+-- The principal's queue position in one room, dropped when the AI is taken out of it (ROOM-01).
+DELETE FROM agent_cursors WHERE agent_id = sqlc.arg(agent_id) AND room_id = sqlc.arg(room_id);
 
 -- name: AdvancePrincipalReadSeq :exec
 -- Mirrors the agent's delivery cursor into the read position of its principal session, in the transaction
