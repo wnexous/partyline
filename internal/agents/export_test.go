@@ -23,3 +23,7 @@ func SetAfterFolderMiss(r *Registry, f func()) { r.afterFolderMiss = f }
 // SetAfterOwnerMiss makes g run f when a pending row found no owner connection, before the release
 // re-checks under the life lock.
 func SetAfterOwnerMiss(g *Gateway, f func()) { g.afterOwnerMiss = f }
+
+// SetQueueSize changes the capacity of the live push queue every connection created from now on has. Tests
+// use it to fill a queue; QueueSize is the production value.
+func SetQueueSize(n int) { queueSize = n }

@@ -20,9 +20,10 @@ type AgentPusher interface {
 	// addresses (SESS-21), or "" for the principal session.
 	Push(agentID, target string, m dto.AgentMessage) bool
 	// PushUpdate queues, without blocking, the frame that tells the agent that a message was edited
-	// (dto.AgentFrameTypeMessageEdited) or deleted (dto.AgentFrameTypeMessageDeleted). target is the
-	// session label the text addressed before or after the change.
-	PushUpdate(agentID, target string, t dto.AgentFrameType, m dto.AgentMessage) bool
+	// (dto.AgentFrameTypeMessageEdited) or deleted (dto.AgentFrameTypeMessageDeleted). targets are the
+	// session labels the text addressed before and after the change, "" for the principal: the gateway also
+	// follows every delivery row the message has (SN-09).
+	PushUpdate(agentID string, targets []string, t dto.AgentFrameType, m dto.AgentMessage) bool
 }
 
 // MessageLoader renders a stored message as agents receive it.
@@ -116,7 +117,7 @@ type selfTarget struct {
 // (SESS-39), and is empty for a new message. ok is false when there is nobody to tell: the room or the
 // message is gone, the loop guard paused the room (DLV-08), or neither another AI member nor a session
 // of the author AI is a target.
-func (d *AgentDispatcher) audienceOf(ctx context.Context, roomID, messageID, prevText string) (a audience, ok bool, err error) {
+func (d *AgentDispatcher) audienceOf(ctx context.Context, roomID, messageID, prevText string, update bool) (a audience, ok bool, err error) {
 	q := d.o.Store.R()
 	a.room, err = q.GetRoom(ctx, roomID)
 	if errors.Is(err, sql.ErrNoRows) {
@@ -152,7 +153,11 @@ func (d *AgentDispatcher) audienceOf(ctx context.Context, roomID, messageID, pre
 	if a.self, err = d.selfTargets(ctx, q, a.view, prevText); err != nil {
 		return a, false, err
 	}
-	return a, len(a.pushes) > 0 || len(a.self) > 0, nil
+	// An update of a message one of the AI's own sessions wrote may follow the delivery rows of the
+	// sessions that were given it as context or as a copy, so the author AI is an audience even when the
+	// text addresses no sibling (SN-09); the gateway finds those rows.
+	selfAuthored := a.view.AuthorKind == string(dto.AuthorKindAgent) && a.view.AuthorID != ""
+	return a, len(a.pushes) > 0 || len(a.self) > 0 || (update && selfAuthored), nil
 }
 
 // selfTargets returns the sessions of the AI that wrote a message that its text addresses
@@ -188,7 +193,7 @@ func (d *AgentDispatcher) selfTargets(ctx context.Context, q *db.Queries, view d
 
 func (d *AgentDispatcher) dispatch(ctx context.Context, e events.MessageCreated) error {
 	q := d.o.Store.R()
-	a, ok, err := d.audienceOf(ctx, e.RoomID, e.MessageID, "")
+	a, ok, err := d.audienceOf(ctx, e.RoomID, e.MessageID, "", false)
 	if err != nil || !ok {
 		return err
 	}
@@ -243,7 +248,7 @@ func (d *AgentDispatcher) dispatch(ctx context.Context, e events.MessageCreated)
 // that was told of it. The frame carries the message as it is now, with the trust of its author for that AI.
 func (d *AgentDispatcher) dispatchUpdate(ctx context.Context, e events.MessageUpdated) error {
 	q := d.o.Store.R()
-	a, ok, err := d.audienceOf(ctx, e.RoomID, e.MessageID, e.PrevText)
+	a, ok, err := d.audienceOf(ctx, e.RoomID, e.MessageID, e.PrevText, true)
 	if err != nil || !ok {
 		return err
 	}
@@ -297,14 +302,22 @@ func (d *AgentDispatcher) dispatchUpdate(ctx context.Context, e events.MessageUp
 		if !e.Deleted {
 			targets = append(targets, SessionLabel(a.view.Text, profile.Handle))
 		}
-		for _, target := range dedupeTargets(targets) {
-			d.o.Agents.PushUpdate(agentID, target, frame, dto.AgentMessage{Room: refs.of(agentID), Trusted: trusted, Message: msg})
-		}
+		// One call: the gateway follows the addressed sessions and every delivery row of the message, and
+		// writes each of them once (SN-09).
+		d.o.Agents.PushUpdate(agentID, dedupeTargets(targets), frame, dto.AgentMessage{Room: refs.of(agentID), Trusted: trusted, Message: msg})
 	}
-	// SESS-39: the update reaches the sibling the message addressed before or after the change, and
-	// never another session of the author AI.
-	for _, t := range a.self {
-		d.o.Agents.PushUpdate(t.agentID, t.label, frame, dto.AgentMessage{Room: refs.of(t.agentID), Trusted: true, Message: msg})
+	// SESS-39, SN-09: the update reaches the sibling the message addressed before or after the change,
+	// and every session of the author AI that holds a delivery row for it (the gateway follows them);
+	// never the writer itself.
+	if a.view.AuthorKind == string(dto.AuthorKindAgent) && a.view.AuthorID != "" {
+		var targets []string
+		for _, t := range a.self {
+			if t.agentID == a.view.AuthorID {
+				targets = append(targets, t.label)
+			}
+		}
+		d.o.Agents.PushUpdate(a.view.AuthorID, dedupeTargets(targets), frame,
+			dto.AgentMessage{Room: refs.of(a.view.AuthorID), Trusted: true, Message: msg})
 	}
 	return nil
 }

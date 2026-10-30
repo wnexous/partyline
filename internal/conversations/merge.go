@@ -466,7 +466,9 @@ func agentUpToDate(ctx context.Context, q *db.Queries, roomID, agentID string) (
 	if err != nil && !errors.Is(err, sql.ErrNoRows) {
 		return false, err
 	}
-	pending, err := q.CountAgentBacklog(ctx, db.CountAgentBacklogParams{RoomID: roomID, AfterSeq: cursor, AgentID: agentID})
+	pending, err := q.CountAgentBacklog(ctx, db.CountAgentBacklogParams{
+		RoomID: roomID, AfterSeq: cursor, AgentID: agentID, IncludeAddressed: false,
+	})
 	return pending == 0, err
 }
 

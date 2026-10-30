@@ -81,6 +81,8 @@ JOIN room_members rm ON rm.room_id = m.room_id AND rm.kind = 'agent' AND rm.memb
 LEFT JOIN session_room_state st ON st.room_id = m.room_id AND st.agent_id = ?1
                                AND st.session_key = ?2
 WHERE m.seq > COALESCE(st.read_seq, 0)
+  AND m.seq > COALESCE((SELECT MAX(b.seq) FROM messages b
+                        WHERE b.room_id = m.room_id AND b.created_at < rm.created_at), 0)
   AND m.deleted_at IS NULL
   AND NOT (m.author_kind = 'agent' AND m.author_id = ?1 AND m.author_label = ?3)
 GROUP BY m.room_id
@@ -101,7 +103,8 @@ type CountSessionUnreadByRoomRow struct {
 // (SN-05, SN-06): a message a sibling session wrote is unread for it, its own never is. A deleted
 // message keeps its place in the stream but does not count, and a room with nothing unread has no row. A
 // missing state row counts from 0, so a caller that wants the join-point default creates it first
-// (CreateSessionRoomState).
+// (CreateSessionRoomState). What the AI missed while it was not a member of the room does not count
+// (ROOM-01): nothing at or below the sequence the room had when the membership row was created is.
 func (q *Queries) CountSessionUnreadByRoom(ctx context.Context, arg CountSessionUnreadByRoomParams) ([]CountSessionUnreadByRoomRow, error) {
 	rows, err := q.db.QueryContext(ctx, countSessionUnreadByRoom, arg.AgentID, arg.SessionKey, arg.AuthorLabel)
 	if err != nil {
@@ -123,6 +126,49 @@ func (q *Queries) CountSessionUnreadByRoom(ctx context.Context, arg CountSession
 		return nil, err
 	}
 	return items, nil
+}
+
+const countSessionUnreadInRoom = `-- name: CountSessionUnreadInRoom :one
+SELECT COUNT(*) FROM messages m
+JOIN room_members rm ON rm.room_id = m.room_id AND rm.kind = 'agent' AND rm.member_id = ?1
+WHERE m.room_id = ?2 AND m.seq > ?3 AND m.seq < ?4
+  AND m.seq > COALESCE((SELECT MAX(b.seq) FROM messages b
+                        WHERE b.room_id = m.room_id AND b.created_at < rm.created_at), 0)
+  AND m.deleted_at IS NULL
+  AND m.during_pause = 0
+  AND NOT (m.author_kind = 'agent' AND m.author_id = ?1 AND m.author_label = ?5)
+  AND NOT EXISTS (
+      SELECT 1 FROM agent_session_deliveries d
+      WHERE d.message_id = m.id AND d.agent_id = ?1 AND d.label = ?6
+        AND d.acked_at IS NOT NULL)
+`
+
+type CountSessionUnreadInRoomParams struct {
+	AgentID     string
+	RoomID      string
+	AfterSeq    int64
+	BeforeSeq   int64
+	AuthorLabel string
+	Label       string
+}
+
+// How many messages of one room a session has not read and that ListSessionUnread would list (SN-03): the
+// difference between this count and the number listed is the "N earlier messages skipped" note of the
+// catch-up batch. Only an acknowledged message is left out, so an unacknowledged batch counts again
+// (SN-03). The messages of the room from before the AI's current membership are not part of it (ROOM-01),
+// and neither are the agent messages written while the loop guard had paused the room (SN-03, DLV-08).
+func (q *Queries) CountSessionUnreadInRoom(ctx context.Context, arg CountSessionUnreadInRoomParams) (int64, error) {
+	row := q.db.QueryRowContext(ctx, countSessionUnreadInRoom,
+		arg.AgentID,
+		arg.RoomID,
+		arg.AfterSeq,
+		arg.BeforeSeq,
+		arg.AuthorLabel,
+		arg.Label,
+	)
+	var count int64
+	err := row.Scan(&count)
+	return count, err
 }
 
 const createSessionRoomState = `-- name: CreateSessionRoomState :exec
@@ -155,6 +201,37 @@ func (q *Queries) CreateSessionRoomState(ctx context.Context, arg CreateSessionR
 	return err
 }
 
+const deleteAgentCursor = `-- name: DeleteAgentCursor :exec
+DELETE FROM agent_cursors WHERE agent_id = ?1 AND room_id = ?2
+`
+
+type DeleteAgentCursorParams struct {
+	AgentID string
+	RoomID  string
+}
+
+// The principal's queue position in one room, dropped when the AI is taken out of it (ROOM-01).
+func (q *Queries) DeleteAgentCursor(ctx context.Context, arg DeleteAgentCursorParams) error {
+	_, err := q.db.ExecContext(ctx, deleteAgentCursor, arg.AgentID, arg.RoomID)
+	return err
+}
+
+const deleteSessionRoomStatesInRoom = `-- name: DeleteSessionRoomStatesInRoom :exec
+DELETE FROM session_room_state WHERE agent_id = ?1 AND room_id = ?2
+`
+
+type DeleteSessionRoomStatesInRoomParams struct {
+	AgentID string
+	RoomID  string
+}
+
+// The read positions of an AI in one room, dropped when it is taken out of it (ROOM-01): what it missed
+// while it was away never comes back as context or as unread after it is added again.
+func (q *Queries) DeleteSessionRoomStatesInRoom(ctx context.Context, arg DeleteSessionRoomStatesInRoomParams) error {
+	_, err := q.db.ExecContext(ctx, deleteSessionRoomStatesInRoom, arg.AgentID, arg.RoomID)
+	return err
+}
+
 const getRoomHighSeq = `-- name: GetRoomHighSeq :one
 SELECT CAST(next_seq - 1 AS INTEGER) AS seq FROM rooms WHERE id = ?
 `
@@ -165,6 +242,31 @@ SELECT CAST(next_seq - 1 AS INTEGER) AS seq FROM rooms WHERE id = ?
 // move back.
 func (q *Queries) GetRoomHighSeq(ctx context.Context, id string) (int64, error) {
 	row := q.db.QueryRowContext(ctx, getRoomHighSeq, id)
+	var seq int64
+	err := row.Scan(&seq)
+	return seq, err
+}
+
+const getSessionJoinSeq = `-- name: GetSessionJoinSeq :one
+SELECT CAST(COALESCE(MAX(m.seq), 0) AS INTEGER) AS seq
+FROM room_members rm
+LEFT JOIN messages m ON m.room_id = rm.room_id AND m.created_at <= rm.created_at
+WHERE rm.room_id = ?1 AND rm.kind = 'agent' AND rm.member_id = ?2
+`
+
+type GetSessionJoinSeqParams struct {
+	RoomID  string
+	AgentID string
+}
+
+// The join point of a session that has no state row in a room: the highest sequence the room had assigned
+// when the AI became a member of it (SN-01). A session with a live connection that joins a room after it
+// attached - a DM created for the AI, a group it was added to - starts caught up at that moment, not at 0,
+// so it is not flooded with the room's history, and the messages of the room that arrive afterwards are
+// unread for it. The AI's membership row is created with the room (a DM) or when it is added (a group),
+// and messages carry the same creation clock.
+func (q *Queries) GetSessionJoinSeq(ctx context.Context, arg GetSessionJoinSeqParams) (int64, error) {
+	row := q.db.QueryRowContext(ctx, getSessionJoinSeq, arg.RoomID, arg.AgentID)
 	var seq int64
 	err := row.Scan(&seq)
 	return seq, err
@@ -235,36 +337,93 @@ func (q *Queries) ListSessionRoomStates(ctx context.Context, arg ListSessionRoom
 	return items, nil
 }
 
+const listSessionRoomStatesInRoom = `-- name: ListSessionRoomStatesInRoom :many
+SELECT agent_id, session_key, room_id, read_seq, notify, updated_at FROM session_room_state WHERE agent_id = ?1 AND room_id = ?2
+`
+
+type ListSessionRoomStatesInRoomParams struct {
+	AgentID string
+	RoomID  string
+}
+
+// Every state row of the AI in one room, whatever its session: the notification setting and the read
+// position of each session a message may notify (SN-02, SN-03).
+func (q *Queries) ListSessionRoomStatesInRoom(ctx context.Context, arg ListSessionRoomStatesInRoomParams) ([]SessionRoomState, error) {
+	rows, err := q.db.QueryContext(ctx, listSessionRoomStatesInRoom, arg.AgentID, arg.RoomID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []SessionRoomState
+	for rows.Next() {
+		var i SessionRoomState
+		if err := rows.Scan(
+			&i.AgentID,
+			&i.SessionKey,
+			&i.RoomID,
+			&i.ReadSeq,
+			&i.Notify,
+			&i.UpdatedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const listSessionUnread = `-- name: ListSessionUnread :many
-SELECT id, room_id, seq, author_kind, author_id, author_user_id, author_iid, sender_id, sender_alt_id, sender_name, kind, text, reply_to, recipients_json, external_id, created_at, edited_at, deleted_at, interactive_json, answers_json, author_label, author_name, author_handle, author_ikind, author_avatar FROM (
-    SELECT id, room_id, seq, author_kind, author_id, author_user_id, author_iid, sender_id, sender_alt_id, sender_name, kind, text, reply_to, recipients_json, external_id, created_at, edited_at, deleted_at, interactive_json, answers_json, author_label, author_name, author_handle, author_ikind, author_avatar FROM message_views
-    WHERE room_id = ?1 AND seq > ?2
-      AND deleted_at IS NULL
-      AND NOT (author_kind = 'agent' AND author_id = ?3 AND author_label = ?4)
-    ORDER BY seq DESC, id DESC
-    LIMIT ?5
+SELECT id, room_id, seq, author_kind, author_id, author_user_id, author_iid, sender_id, sender_alt_id, sender_name, kind, text, reply_to, recipients_json, external_id, created_at, edited_at, deleted_at, interactive_json, answers_json, author_label, author_name, author_handle, author_ikind, author_avatar, during_pause FROM (
+    SELECT mv.id, mv.room_id, mv.seq, mv.author_kind, mv.author_id, mv.author_user_id, mv.author_iid, mv.sender_id, mv.sender_alt_id, mv.sender_name, mv.kind, mv.text, mv.reply_to, mv.recipients_json, mv.external_id, mv.created_at, mv.edited_at, mv.deleted_at, mv.interactive_json, mv.answers_json, mv.author_label, mv.author_name, mv.author_handle, mv.author_ikind, mv.author_avatar, mv.during_pause FROM message_views mv
+    JOIN room_members rm ON rm.room_id = mv.room_id AND rm.kind = 'agent' AND rm.member_id = ?1
+    WHERE mv.room_id = ?2 AND mv.seq > ?3 AND mv.seq < ?4
+      AND mv.seq > COALESCE((SELECT MAX(b.seq) FROM messages b
+                             WHERE b.room_id = mv.room_id AND b.created_at < rm.created_at), 0)
+      AND mv.deleted_at IS NULL
+      AND mv.during_pause = 0
+      AND NOT (mv.author_kind = 'agent' AND mv.author_id = ?1 AND mv.author_label = ?5)
+      AND NOT EXISTS (
+          SELECT 1 FROM agent_session_deliveries d
+          WHERE d.message_id = mv.id AND d.agent_id = ?1 AND d.label = ?6
+            AND d.acked_at IS NOT NULL)
+    ORDER BY mv.seq DESC, mv.id DESC
+    LIMIT ?7
 )
 ORDER BY seq ASC, id ASC
 `
 
 type ListSessionUnreadParams struct {
+	AgentID     string
 	RoomID      string
 	AfterSeq    int64
-	AgentID     string
+	BeforeSeq   int64
 	AuthorLabel string
+	Label       string
 	Limit       int64
 }
 
 // The messages of one room a session has not read, at most limit of them, oldest first: the catch-up
 // batch that goes with a message that notifies the session (SN-03). The cap keeps the newest ones (a
 // limit of 50 reads the last 50 and the caller notes how many earlier ones it skipped) and the batch is
-// ordered oldest first. The session's own messages are not part of it (SN-06).
+// ordered oldest first. The session's own messages are not part of it (SN-06), the message that is being
+// pushed now is not either (before_seq), and neither is one that session acknowledged. A message it was
+// given but never acknowledged is part of it again: a batch lost with its connection comes back (SN-03).
+// Nothing from before the AI's current membership of the room is part of it (ROOM-01), and neither is an
+// agent message written while the loop guard had paused the room (SN-03, DLV-08).
 func (q *Queries) ListSessionUnread(ctx context.Context, arg ListSessionUnreadParams) ([]MessageView, error) {
 	rows, err := q.db.QueryContext(ctx, listSessionUnread,
+		arg.AgentID,
 		arg.RoomID,
 		arg.AfterSeq,
-		arg.AgentID,
+		arg.BeforeSeq,
 		arg.AuthorLabel,
+		arg.Label,
 		arg.Limit,
 	)
 	if err != nil {
@@ -300,6 +459,7 @@ func (q *Queries) ListSessionUnread(ctx context.Context, arg ListSessionUnreadPa
 			&i.AuthorHandle,
 			&i.AuthorIkind,
 			&i.AuthorAvatar,
+			&i.DuringPause,
 		); err != nil {
 			return nil, err
 		}

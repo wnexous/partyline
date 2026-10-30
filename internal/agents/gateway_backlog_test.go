@@ -60,21 +60,56 @@ func TestBacklogDeliversAFallbackBelowTheCursorOnce(t *testing.T) {
 	again.ExpectNone(500 * time.Millisecond)
 }
 
-// SESS-24: a delivery row still owned by a live label is not part of the principal's backlog.
-func TestBacklogDoesNotReadAPendingLabelsMessage(t *testing.T) {
-	f := newSessionFixture(t)
-	principal, parallel := f.dial(t), f.dial(t)
-	f.settle(t, principal)
-	f.settle(t, parallel)
-	m := f.post(t, "@atlas:claude-2 hello")
-	require.Equal(t, m.ID, parallel.Message(time.Minute).Message.ID)
-	f.waitRow(t, "claude-2", m.ID)
+// SN-04 (SESS-24): the principal that follows the room also has the messages addressed to a sibling in its
+// backlog while that sibling holds them, and its acknowledgement consumes the message for the AI. A
+// principal set to mentions only reads them only as fallbacks.
+func TestBacklogCarriesAMessageAddressedToASibling(t *testing.T) {
+	t.Run("the principal follows the room", func(t *testing.T) {
+		f := newSessionFixture(t)
+		principal, parallel := f.dial(t), f.dial(t)
+		f.settle(t, principal)
+		f.settle(t, parallel)
+		principal.Close()
+		f.waitPrincipalGone(t)
 
-	principal.Close()
-	f.waitPrincipalGone(t)
-	again := f.dial(t)
-	again.ExpectNone(500 * time.Millisecond)
-	require.Len(t, f.rows(t, "claude-2"), 1)
+		// The sibling is addressed while the principal is away: it is delivered live to the sibling and stays
+		// in the principal's queue, which follows the room (SN-04).
+		m := f.post(t, "@atlas:claude-2 hello")
+		require.Equal(t, m.ID, parallel.Message(time.Minute).Message.ID)
+		f.waitRow(t, "claude-2", m.ID)
+		again := f.dial(t)
+		got := again.Message(time.Minute)
+		require.Equal(t, m.ID, got.Message.ID)
+		require.Empty(t, got.ForLabel, "the principal follows the room: no fallback note")
+		again.Ack(m.ID)
+		require.Eventually(t, func() bool { return f.rowOf(t, "claude-2", m.ID).AckedAt.Valid },
+			5*time.Second, 10*time.Millisecond, "the principal's ack consumes the addressed row (SN-04)")
+
+		// The sibling dies without acknowledging: nothing falls back, and a new connection reads nothing.
+		parallel.Close()
+		f.waitSessionGone(t, "claude-2")
+		again.Close()
+		f.waitPrincipalGone(t)
+		once := f.dial(t)
+		once.ExpectNone(500 * time.Millisecond)
+		require.Len(t, f.rows(t, "claude-2"), 1)
+	})
+	t.Run("the principal is mentions only", func(t *testing.T) {
+		f := newSessionFixture(t)
+		principal, parallel := f.dial(t), f.dial(t)
+		f.settle(t, principal)
+		f.settle(t, parallel)
+		f.setNotify(t, "", agents.NotifyMentions)
+		m := f.post(t, "@atlas:claude-2 hello")
+		require.Equal(t, m.ID, parallel.Message(time.Minute).Message.ID)
+		principal.ExpectNone(400 * time.Millisecond)
+
+		principal.Close()
+		f.waitPrincipalGone(t)
+		again := f.dial(t)
+		again.ExpectNone(500 * time.Millisecond)
+		require.Len(t, f.rows(t, "claude-2"), 1)
+	})
 }
 
 // AGT-09, S6: a message posted between the backlog count and the backlog list does not

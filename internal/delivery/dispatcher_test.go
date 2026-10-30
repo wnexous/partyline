@@ -65,10 +65,12 @@ func (r *recordingPusher) Push(agentID, target string, m dto.AgentMessage) bool 
 	return true
 }
 
-func (r *recordingPusher) PushUpdate(agentID, target string, t dto.AgentFrameType, m dto.AgentMessage) bool {
+func (r *recordingPusher) PushUpdate(agentID string, targets []string, t dto.AgentFrameType, m dto.AgentMessage) bool {
 	r.mu.Lock()
 	defer r.mu.Unlock()
-	r.updates = append(r.updates, updateCall{agentID: agentID, target: target, typ: t, message: m})
+	for _, target := range targets {
+		r.updates = append(r.updates, updateCall{agentID: agentID, target: target, typ: t, message: m})
+	}
 	return true
 }
 

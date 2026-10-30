@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"fmt"
+	"math"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -177,7 +178,8 @@ func TestListSessionUnreadKeepsTheNewestAndReturnsThemOldestFirst(t *testing.T) 
 	list := func(after, limit int64, label string) []string {
 		t.Helper()
 		rows, err := e.s.R().ListSessionUnread(ctx, db.ListSessionUnreadParams{
-			RoomID: "r1", AfterSeq: after, AgentID: "a1", AuthorLabel: label, Limit: limit,
+			RoomID: "r1", AfterSeq: after, BeforeSeq: math.MaxInt64, AgentID: "a1", AuthorLabel: label, Label: label,
+			Limit: limit,
 		})
 		require.NoError(t, err)
 		return messageIDs(rows)

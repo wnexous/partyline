@@ -11,7 +11,9 @@ Format/Frame attribute), acks moving read_seq, edits/deletes following delivery 
 kept, platform events principal-only. Server tests for every rule incl. the incident: owner
 mentions `@atlas:pi-2` in a group → pi-2 gets the unread context + the message, principal also gets
 it; plain group message → principal only, pi-2 unread grows; pi-2 with notify on → gets it.
-Status: pending
+Review fixes (SN-03a, SN-09a): membership clamp and removal cleanup, acked-copy fallback, replay of
+unacked context, own-message updates for context holders, trusted/loop-guard context filters,
+offline principal backlog, session-key routing, principal row and queue hygiene. Status: done
 
 ## T3 — tools (SN-05, SN-02)
 `list_rooms`/`room_info` unread + notify per calling session; `read_unread`; `set_notifications`;

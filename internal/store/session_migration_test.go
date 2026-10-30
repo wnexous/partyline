@@ -3,6 +3,8 @@ package store
 import (
 	"context"
 	"database/sql"
+	"fmt"
+	"slices"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -55,6 +57,8 @@ func (e *schemaEnv) authorLabelOfView(id string) string {
 // deliveryRow is what one delivery row holds.
 type deliveryRow struct {
 	label      string
+	sessionKey string
+	context    int64
 	ownerLive  string
 	createdAt  int64
 	fellBackAt sql.NullInt64
@@ -64,6 +68,12 @@ type deliveryRow struct {
 func (e *schemaEnv) deliveryRow(messageID, agentID string) deliveryRow {
 	e.t.Helper()
 	var r deliveryRow
+	if slices.Contains(e.columnsOf("agent_session_deliveries"), "session_key") {
+		require.NoError(e.t, e.s.write.QueryRowContext(context.Background(),
+			`SELECT label, session_key, context, owner_live, created_at, fell_back_at, acked_at FROM agent_session_deliveries WHERE message_id = ? AND agent_id = ?`,
+			messageID, agentID).Scan(&r.label, &r.sessionKey, &r.context, &r.ownerLive, &r.createdAt, &r.fellBackAt, &r.ackedAt))
+		return r
+	}
 	require.NoError(e.t, e.s.write.QueryRowContext(context.Background(),
 		`SELECT label, owner_live, created_at, fell_back_at, acked_at FROM agent_session_deliveries WHERE message_id = ? AND agent_id = ?`,
 		messageID, agentID).Scan(&r.label, &r.ownerLive, &r.createdAt, &r.fellBackAt, &r.ackedAt))
@@ -148,7 +158,15 @@ func (e *schemaEnv) ownedPending(agentID, ownerLive string) []string {
 
 func (e *schemaEnv) backlog(agentID, roomID string) []string {
 	e.t.Helper()
-	rows, err := e.s.R().ListAgentBacklog(context.Background(), db.ListAgentBacklogParams{RoomID: roomID, AfterSeq: 0, AgentID: agentID, Limit: 10})
+	return e.backlogOf(agentID, roomID, false)
+}
+
+// backlogOf reads the principal's queue, optionally with the messages that address a sibling (SN-04).
+func (e *schemaEnv) backlogOf(agentID, roomID string, includeAddressed bool) []string {
+	e.t.Helper()
+	rows, err := e.s.R().ListAgentBacklog(context.Background(), db.ListAgentBacklogParams{
+		RoomID: roomID, AfterSeq: 0, AgentID: agentID, Limit: 10, IncludeAddressed: includeAddressed,
+	})
 	require.NoError(e.t, err)
 	return messageIDs(rows)
 }
@@ -222,10 +240,11 @@ func TestMigration0027AddsTheSessionLabelAndTheDeliveryRows(t *testing.T) {
 	e.must(`DELETE FROM agents WHERE id = 'a1'`)
 	require.Zero(t, e.deliveryCount("m-labelled", "a1"), "the row goes with its AI")
 
-	// A fresh database gets the same column, table and indexes.
+	// A fresh database gets the same column, table and indexes; 0032 adds context to the row and keys it
+	// by session (SN-03).
 	fresh := newSchemaEnv(t)
 	require.Contains(t, fresh.columnsOf("messages"), "author_label")
-	require.Equal(t, []string{"message_id", "agent_id", "label", "owner_live", "created_at", "fell_back_at", "acked_at"},
+	require.Equal(t, []string{"message_id", "agent_id", "label", "session_key", "owner_live", "created_at", "fell_back_at", "acked_at", "context"},
 		fresh.columnsOf("agent_session_deliveries"))
 	require.Contains(t, fresh.indexes("agent_session_deliveries"), "agent_session_deliveries_pending")
 	require.Contains(t, fresh.indexes("agent_session_deliveries"), "agent_session_deliveries_fallback")
@@ -258,7 +277,7 @@ func TestSessionDeliveryIsIdempotentAndTombstoned(t *testing.T) {
 	require.Equal(t, int64(50), row.ackedAt.Int64)
 	require.False(t, row.fellBackAt.Valid)
 	require.Empty(t, e.backlog("a1", "r1"), "the acknowledged message does not come back to the principal")
-	n, err := e.s.R().CountAgentBacklog(ctx, db.CountAgentBacklogParams{RoomID: "r1", AfterSeq: 0, AgentID: "a1"})
+	n, err := e.s.R().CountAgentBacklog(ctx, db.CountAgentBacklogParams{RoomID: "r1", AfterSeq: 0, AgentID: "a1", IncludeAddressed: false})
 	require.NoError(t, err)
 	require.Zero(t, n)
 	cursor, err := e.s.R().GetAgentCursor(ctx, db.GetAgentCursorParams{AgentID: "a1", RoomID: "r1"})
@@ -387,12 +406,12 @@ func TestTheFallbackListHidesAcknowledgedRows(t *testing.T) {
 	require.Equal(t, "m2", labels[0].MessageID)
 	require.Empty(t, e.backlog("a1", "r1"), "the tombstone keeps the message out of the principal's queue")
 
-	row, err := e.s.R().GetSessionDelivery(context.Background(), db.GetSessionDeliveryParams{MessageID: "m1", AgentID: "a1"})
+	row, err := e.s.R().GetSessionDelivery(context.Background(), db.GetSessionDeliveryParams{MessageID: "m1", AgentID: "a1", Label: "wt"})
 	require.NoError(t, err)
 	require.Equal(t, "wt", row.Label)
 	require.True(t, row.FellBackAt.Valid)
 	require.True(t, row.AckedAt.Valid)
-	_, err = e.s.R().GetSessionDelivery(context.Background(), db.GetSessionDeliveryParams{MessageID: "none", AgentID: "a1"})
+	_, err = e.s.R().GetSessionDelivery(context.Background(), db.GetSessionDeliveryParams{MessageID: "none", AgentID: "a1", Label: "wt"})
 	require.ErrorIs(t, err, sql.ErrNoRows)
 }
 
@@ -457,11 +476,179 @@ func TestFallbacksArePerRoomAndOrdered(t *testing.T) {
 	require.Equal(t, []string{"m-fb"}, messageIDs(e.listFallbacks("a1", "r1")), "a fallback is read in its room only")
 	require.Equal(t, []string{"m-fb-other-room"}, messageIDs(e.listFallbacks("a1", "r2")))
 
-	backlog, err := e.s.R().ListAgentBacklog(ctx, db.ListAgentBacklogParams{RoomID: "r1", AfterSeq: 0, AgentID: "a1", Limit: 10})
+	backlog, err := e.s.R().ListAgentBacklog(ctx, db.ListAgentBacklogParams{
+		RoomID: "r1", AfterSeq: 0, AgentID: "a1", Limit: 10, IncludeAddressed: false,
+	})
 	require.NoError(t, err)
-	require.Equal(t, []string{"m-new"}, messageIDs(backlog), "only the message without a delivery row is the principal's queue")
+	require.Equal(t, []string{"m-new"}, messageIDs(backlog), "only a message without a pending row is the mentions-principal's queue")
+	require.Equal(t, []string{"m-pending", "m-new"}, e.backlogOf("a1", "r1", true),
+		"the principal that follows the room also has the message addressed to its sibling")
 
-	n, err := e.s.R().CountAgentBacklog(ctx, db.CountAgentBacklogParams{RoomID: "r1", AfterSeq: 0, AgentID: "a1"})
+	n, err := e.s.R().CountAgentBacklog(ctx, db.CountAgentBacklogParams{RoomID: "r1", AfterSeq: 0, AgentID: "a1", IncludeAddressed: false})
 	require.NoError(t, err)
 	require.Equal(t, int64(1), n)
+	n, err = e.s.R().CountAgentBacklog(ctx, db.CountAgentBacklogParams{RoomID: "r1", AfterSeq: 0, AgentID: "a1", IncludeAddressed: true})
+	require.NoError(t, err)
+	require.Equal(t, int64(2), n, "the count and the list agree")
+}
+
+// createCopyDelivery runs CreateSessionDelivery for a copy of a catch-up batch: a row that records that the
+// session was given the message and that never falls back (SN-03).
+func (e *schemaEnv) createCopyDelivery(messageID, agentID, label, ownerLive string) error {
+	e.t.Helper()
+	return e.s.WithTx(context.Background(), func(q *db.Queries) error {
+		return q.CreateSessionDelivery(context.Background(), db.CreateSessionDeliveryParams{
+			MessageID: messageID, AgentID: agentID, Label: label, OwnerLive: ownerLive, CreatedAt: 10, Context: 1,
+		})
+	})
+}
+
+// SN-03, SN-09 (data): one message can have a delivery row per session it reached, the old one-row key is
+// gone, and a copy (context = 1) is not swept to the principal when its connection ends: the addressed row
+// is the only one that falls back. The principal's queue still excludes only the addressed rows.
+func TestDeliveryRowsAreKeyedBySessionAndCopiesNeverFallBack(t *testing.T) {
+	ctx := context.Background()
+	e := newSchemaEnv(t)
+	sessionsFixture(e)
+	sessionsRoom(e, "r1")
+	sessionsMessage(e, "m1", "r1", 1, "user", "u1")
+	sessionsMessage(e, "m2", "r1", 2, "user", "u1")
+	sessionsMessage(e, "m3", "r1", 3, "user", "u1")
+
+	// m1 was addressed to :wt and copied to the principal's session; m2 only copied to :wt; m3 only addressed.
+	require.NoError(t, e.createDelivery("m1", "a1", "wt", "live-wt", sql.NullInt64{}))
+	require.NoError(t, e.createCopyDelivery("m1", "a1", "", "live-p"))
+	require.NoError(t, e.createCopyDelivery("m2", "a1", "wt", "live-wt"))
+	require.NoError(t, e.createDelivery("m3", "a1", "wt", "live-wt", sql.NullInt64{}))
+	require.Equal(t, 2, e.deliveryCount("m1", "a1"), "the same message reached two sessions")
+
+	row, err := e.s.R().GetSessionDelivery(ctx, db.GetSessionDeliveryParams{MessageID: "m1", AgentID: "a1", Label: ""})
+	require.NoError(t, err)
+	require.Equal(t, int64(1), row.Context, "the principal's row is a copy")
+	rows, err := e.s.R().ListSessionDeliveries(ctx, db.ListSessionDeliveriesParams{MessageID: "m1", AgentID: "a1"})
+	require.NoError(t, err)
+	require.Len(t, rows, 2, "every session an edit or a delete follows (SN-09)")
+
+	// m2 is a copy: the principal's queue still holds it. m1 and m3 are addressed: it does not.
+	require.Contains(t, e.backlog("a1", "r1"), "m2")
+	require.NotContains(t, e.backlog("a1", "r1"), "m1")
+	require.NotContains(t, e.backlog("a1", "r1"), "m3")
+
+	// The end of the connection sweeps the addressed rows only; the copy stays where it is.
+	require.NoError(t, e.s.WithTx(ctx, func(q *db.Queries) error {
+		_, err := q.FallBackOwnedDeliveries(ctx, db.FallBackOwnedDeliveriesParams{AgentID: "a1", OwnerLive: "live-wt", Now: sql.NullInt64{Int64: 20, Valid: true}})
+		return err
+	}))
+	require.Equal(t, []string{"m1", "m3"}, messageIDs(e.listFallbacks("a1", "r1")))
+	copyRow, err := e.s.R().GetSessionDelivery(ctx, db.GetSessionDeliveryParams{MessageID: "m2", AgentID: "a1", Label: "wt"})
+	require.NoError(t, err)
+	require.False(t, copyRow.FellBackAt.Valid, "a copy never falls back")
+	require.False(t, copyRow.AckedAt.Valid)
+}
+
+// SN-03 (data): the catch-up batch leaves out the session's own messages and the ones it acknowledged, and
+// counts what it would list, so the skipped count matches. A message it was given but never acknowledged is
+// part of the batch again: a batch lost with its connection comes back.
+func TestSessionUnreadLeavesOutOnlyAcknowledgedMessages(t *testing.T) {
+	e := sessionRoomFixture(t)
+	ctx := context.Background()
+	for i := 1; i <= 5; i++ {
+		sessionsMessage(e, fmt.Sprintf("m%d", i), "r1", int64(i), "user", "u1")
+	}
+	sessionsMessage(e, "own", "r1", 6, "agent", "a1")
+	e.must(`UPDATE messages SET author_label = 'cli-2' WHERE id = 'own'`)
+	require.NoError(t, e.createCopyDelivery("m2", "a1", "cli-2", "live"))
+
+	params := db.CountSessionUnreadInRoomParams{RoomID: "r1", AfterSeq: 0, BeforeSeq: 100, AgentID: "a1", AuthorLabel: "cli-2", Label: "cli-2"}
+	count, err := e.s.R().CountSessionUnreadInRoom(ctx, params)
+	require.NoError(t, err)
+	require.Equal(t, int64(5), count, "m1 to m5: the copy it was given but did not acknowledge is still unread")
+	rows, err := e.s.R().ListSessionUnread(ctx, db.ListSessionUnreadParams{
+		RoomID: "r1", AfterSeq: 0, BeforeSeq: 100, AgentID: "a1", AuthorLabel: "cli-2", Label: "cli-2", Limit: 50,
+	})
+	require.NoError(t, err)
+	require.Equal(t, []string{"m1", "m2", "m3", "m4", "m5"}, messageIDs(rows), "the count and the batch agree")
+
+	// The acknowledgement is what takes a message out of the next batch.
+	e.must(`UPDATE agent_session_deliveries SET acked_at = 25 WHERE message_id = 'm2' AND agent_id = 'a1' AND label = 'cli-2'`)
+	count, err = e.s.R().CountSessionUnreadInRoom(ctx, params)
+	require.NoError(t, err)
+	require.Equal(t, int64(4), count, "m1, m3, m4 and m5; not its own message and not the one it acknowledged")
+	rows, err = e.s.R().ListSessionUnread(ctx, db.ListSessionUnreadParams{
+		RoomID: "r1", AfterSeq: 0, BeforeSeq: 100, AgentID: "a1", AuthorLabel: "cli-2", Label: "cli-2", Limit: 50,
+	})
+	require.NoError(t, err)
+	require.Equal(t, []string{"m1", "m3", "m4", "m5"}, messageIDs(rows))
+
+	// The message that is being pushed is not part of its own catch-up batch.
+	before, err := e.s.R().CountSessionUnreadInRoom(ctx, db.CountSessionUnreadInRoomParams{
+		RoomID: "r1", AfterSeq: 0, BeforeSeq: 4, AgentID: "a1", AuthorLabel: "cli-2", Label: "cli-2",
+	})
+	require.NoError(t, err)
+	require.Equal(t, int64(2), before)
+}
+
+// SN-01 (data): a session that joins a room after it attached starts at the room's join point, the highest
+// sequence assigned when the AI became a member, not at the room's history.
+func TestSessionJoinSeqUsesTheMembershipRow(t *testing.T) {
+	e := sessionRoomFixture(t)
+	ctx := context.Background()
+	for i := 1; i <= 3; i++ {
+		sessionsMessage(e, fmt.Sprintf("m%d", i), "r1", int64(i), "user", "u1")
+	}
+	join, err := e.s.R().GetSessionJoinSeq(ctx, db.GetSessionJoinSeqParams{RoomID: "r1", AgentID: "a1"})
+	require.NoError(t, err)
+	require.Zero(t, join, "the AI was a member before the first message")
+
+	e.must(`UPDATE room_members SET created_at = 1790000000002 WHERE room_id = 'r1' AND kind = 'agent' AND member_id = 'a1'`)
+	join, err = e.s.R().GetSessionJoinSeq(ctx, db.GetSessionJoinSeqParams{RoomID: "r1", AgentID: "a1"})
+	require.NoError(t, err)
+	require.Equal(t, int64(2), join, "the messages of the room before the AI joined are not its unread ones")
+}
+
+// SN-09 (data): a delivery row remembers the session key of the session it was pushed to, and an addressed
+// push upgrades the copy an earlier catch-up batch left on that session instead of being lost. An
+// acknowledged copy is not upgraded: the session already saw the message.
+func TestDeliveryRowsStoreTheSessionKeyAndUpgradeCopies(t *testing.T) {
+	ctx := context.Background()
+	e := newSchemaEnv(t)
+	sessionsFixture(e)
+	sessionsRoom(e, "r1")
+	sessionsMessage(e, "m1", "r1", 1, "user", "u1")
+
+	require.NoError(t, e.s.WithTx(ctx, func(q *db.Queries) error {
+		return q.CreateSessionDelivery(ctx, db.CreateSessionDeliveryParams{
+			MessageID: "m1", AgentID: "a1", Label: "pi-2", SessionKey: "pi-session-1",
+			OwnerLive: "live-wt", CreatedAt: 10, Context: 1,
+		})
+	}))
+	row := e.deliveryRow("m1", "a1")
+	require.Equal(t, "pi-session-1", row.sessionKey, "the row follows the session, not only its label")
+	require.Equal(t, int64(1), row.context)
+
+	var n int64
+	require.NoError(t, e.s.WithTx(ctx, func(q *db.Queries) error {
+		var err error
+		n, err = q.UpgradeSessionDelivery(ctx, db.UpgradeSessionDeliveryParams{
+			SessionKey: "pi-session-2", OwnerLive: "live-wt-2", MessageID: "m1", AgentID: "a1", Label: "pi-2",
+		})
+		return err
+	}))
+	require.Equal(t, int64(1), n)
+	row = e.deliveryRow("m1", "a1")
+	require.Zero(t, row.context, "the addressed push owns the message now")
+	require.Equal(t, "pi-session-2", row.sessionKey)
+	require.Equal(t, "live-wt-2", row.ownerLive)
+	require.False(t, row.ackedAt.Valid)
+
+	// An acknowledged copy is left alone: the session already saw the message.
+	require.Equal(t, int64(1), e.ackDelivery("m1", "a1", "live-wt-2", 20))
+	require.NoError(t, e.s.WithTx(ctx, func(q *db.Queries) error {
+		var err error
+		n, err = q.UpgradeSessionDelivery(ctx, db.UpgradeSessionDeliveryParams{
+			SessionKey: "pi-session-3", OwnerLive: "live-wt-3", MessageID: "m1", AgentID: "a1", Label: "pi-2",
+		})
+		return err
+	}))
+	require.Zero(t, n, "an acknowledged row is not upgraded")
 }

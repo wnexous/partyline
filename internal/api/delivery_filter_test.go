@@ -88,15 +88,19 @@ func TestMentionsModePushesOnlyMentions(t *testing.T) {
 	f.post(f.alice, "after the reply")
 	want = append(want, f.post(f.alice, "@builder last").ID)
 
-	for i, id := range want {
-		require.Equal(t, id, conn.Message(wsWait).Message.ID, "frame %d", i)
-	}
+	// SN-03: every wanted message also carries the messages it had not read as context, so only the
+	// notifications are compared here.
+	messages, context := deliveredFrames(t, conn, quiet)
+	require.Equal(t, want, frameIDs(messages), "only the mentions, replies, DMs and keywords notify it")
+	require.NotEmpty(t, context, "the messages it was not notified of come as context")
 	page := testkit.Decode[dto.Page[dto.Message]](f.alice.Get("/api/v1/rooms/" + f.room.ID + "/messages?limit=50").RequireStatus(http.StatusOK))
 	require.Len(t, page.Items, 13, "every message is stored")
 }
 
 // MEM-04 (live): an agent member in trusted mode gets only messages trusted for it (authored
-// by its owner); the other agent, in the default all mode, gets both.
+// by its owner); the other agent, in the default all mode, gets both. SN-03 (decision): in trusted
+// mode the untrusted message is not given as context either, while the all-mode agent reads the
+// whole conversation.
 func TestTrustedModePushesOnlyTrusted(t *testing.T) {
 	f := newTwoAgents(t)
 	setMember(t, f.alice, f.room.ID, f.helperID, dto.UpdateMemberRequest{Delivery: ptr(dto.DeliveryModeTrusted)})
@@ -104,8 +108,10 @@ func TestTrustedModePushesOnlyTrusted(t *testing.T) {
 	fromAlice := f.post(f.alice, "from alice")
 	fromBob := f.post(f.bob, "from bob")
 	got := f.helper.Message(wsWait)
-	require.Equal(t, fromBob.ID, got.Message.ID, "alice's message is not trusted for bob's agent")
+	require.Equal(t, fromBob.ID, got.Message.ID, "alice's message is neither a notification nor context")
 	require.True(t, got.Trusted)
+	require.False(t, got.Context)
+	f.helper.ExpectNone(300 * time.Millisecond)
 	require.Equal(t, fromAlice.ID, f.builder.Message(wsWait).Message.ID)
 	require.Equal(t, fromBob.ID, f.builder.Message(wsWait).Message.ID)
 }
@@ -128,7 +134,8 @@ func TestMentionsModeBacklogSkipsAndAdvancesCursor(t *testing.T) {
 	require.Equal(t, b.ID, conn.Message(wsWait).Message.ID)
 	require.Equal(t, a.Seq, f.cursor(t), "skipped a advanced the cursor; b awaits its ack")
 	d := f.post(f.alice, "@builder d")
-	require.Equal(t, d.ID, conn.Message(wsWait).Message.ID, "c was skipped")
+	// c was not wanted, so it comes as context of the mention (SN-03).
+	require.Equal(t, d.ID, conn.Message(wsWait).Message.ID, "c was skipped, as context")
 	conn.Ack(d.ID)
 	require.Eventually(t, func() bool { return f.cursor(t) == d.Seq }, wsWait, 20*time.Millisecond)
 	conn.Close()
@@ -156,6 +163,10 @@ func TestMentionsModeReplyReachesOnlyTheRepliedAgent(t *testing.T) {
 	marker := f.post(f.alice, "@helper marker")
 
 	require.Equal(t, reply.ID, f.builder.Message(wsWait).Message.ID, "the reply reaches the replied agent")
+	// SN-03: helper is not notified of the reply to builder's message, but reads it as context of the
+	// mention that follows.
+	require.Equal(t, own.ID, f.helper.Message(wsWait).Message.ID)
+	require.Equal(t, reply.ID, f.helper.Message(wsWait).Message.ID)
 	require.Equal(t, marker.ID, f.helper.Message(wsWait).Message.ID, "the reply to builder skips helper")
 
 	f.helper.Ack(marker.ID)

@@ -79,8 +79,8 @@ func (q *Queries) CreateAttachment(ctx context.Context, arg CreateAttachmentPara
 const createMessage = `-- name: CreateMessage :exec
 INSERT INTO messages (id, room_id, seq, author_kind, author_id, author_user_id, author_iid, sender_id, sender_alt_id,
                       sender_name, kind, text, reply_to, recipients_json, external_id, created_at,
-                      interactive_json, answers_json, author_label)
-VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                      interactive_json, answers_json, author_label, during_pause)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 `
 
 type CreateMessageParams struct {
@@ -103,11 +103,13 @@ type CreateMessageParams struct {
 	InteractiveJson string
 	AnswersJson     string
 	AuthorLabel     string
+	DuringPause     int64
 }
 
 // interactive_json and answers_json are written once, with the message (QR-01, QR-08); every other
 // message writes them empty. author_label is the session that wrote an AI's message; it is "" for the
-// principal and for every other author (SESS-28, SESS-29).
+// principal and for every other author (SESS-28, SESS-29). during_pause marks an agent message written
+// while the loop guard had paused the room: it is never context for a session (SN-03).
 func (q *Queries) CreateMessage(ctx context.Context, arg CreateMessageParams) error {
 	_, err := q.db.ExecContext(ctx, createMessage,
 		arg.ID,
@@ -129,6 +131,7 @@ func (q *Queries) CreateMessage(ctx context.Context, arg CreateMessageParams) er
 		arg.InteractiveJson,
 		arg.AnswersJson,
 		arg.AuthorLabel,
+		arg.DuringPause,
 	)
 	return err
 }
@@ -215,7 +218,7 @@ func (q *Queries) GetMessageIDByExternalID(ctx context.Context, arg GetMessageID
 }
 
 const getMessageView = `-- name: GetMessageView :one
-SELECT id, room_id, seq, author_kind, author_id, author_user_id, author_iid, sender_id, sender_alt_id, sender_name, kind, text, reply_to, recipients_json, external_id, created_at, edited_at, deleted_at, interactive_json, answers_json, author_label, author_name, author_handle, author_ikind, author_avatar FROM message_views WHERE id = ?
+SELECT id, room_id, seq, author_kind, author_id, author_user_id, author_iid, sender_id, sender_alt_id, sender_name, kind, text, reply_to, recipients_json, external_id, created_at, edited_at, deleted_at, interactive_json, answers_json, author_label, author_name, author_handle, author_ikind, author_avatar, during_pause FROM message_views WHERE id = ?
 `
 
 func (q *Queries) GetMessageView(ctx context.Context, id string) (MessageView, error) {
@@ -247,6 +250,7 @@ func (q *Queries) GetMessageView(ctx context.Context, id string) (MessageView, e
 		&i.AuthorHandle,
 		&i.AuthorIkind,
 		&i.AuthorAvatar,
+		&i.DuringPause,
 	)
 	return i, err
 }
@@ -298,7 +302,7 @@ func (q *Queries) ListAttachmentsByMessages(ctx context.Context, messageIds []st
 }
 
 const listLatestMessagesInRooms = `-- name: ListLatestMessagesInRooms :many
-SELECT id, room_id, seq, author_kind, author_id, author_user_id, author_iid, sender_id, sender_alt_id, sender_name, kind, text, reply_to, recipients_json, external_id, created_at, edited_at, deleted_at, interactive_json, answers_json, author_label, author_name, author_handle, author_ikind, author_avatar FROM message_views
+SELECT id, room_id, seq, author_kind, author_id, author_user_id, author_iid, sender_id, sender_alt_id, sender_name, kind, text, reply_to, recipients_json, external_id, created_at, edited_at, deleted_at, interactive_json, answers_json, author_label, author_name, author_handle, author_ikind, author_avatar, during_pause FROM message_views
 WHERE room_id IN (/*SLICE:room_ids*/?)
 ORDER BY created_at DESC, id DESC
 LIMIT ?
@@ -356,6 +360,7 @@ func (q *Queries) ListLatestMessagesInRooms(ctx context.Context, arg ListLatestM
 			&i.AuthorHandle,
 			&i.AuthorIkind,
 			&i.AuthorAvatar,
+			&i.DuringPause,
 		); err != nil {
 			return nil, err
 		}
@@ -371,7 +376,7 @@ func (q *Queries) ListLatestMessagesInRooms(ctx context.Context, arg ListLatestM
 }
 
 const listMessagesAfter = `-- name: ListMessagesAfter :many
-SELECT id, room_id, seq, author_kind, author_id, author_user_id, author_iid, sender_id, sender_alt_id, sender_name, kind, text, reply_to, recipients_json, external_id, created_at, edited_at, deleted_at, interactive_json, answers_json, author_label, author_name, author_handle, author_ikind, author_avatar FROM message_views
+SELECT id, room_id, seq, author_kind, author_id, author_user_id, author_iid, sender_id, sender_alt_id, sender_name, kind, text, reply_to, recipients_json, external_id, created_at, edited_at, deleted_at, interactive_json, answers_json, author_label, author_name, author_handle, author_ikind, author_avatar, during_pause FROM message_views
 WHERE room_id = ?1 AND seq > ?2 AND seq < ?3
 ORDER BY seq ASC
 LIMIT ?4
@@ -424,6 +429,7 @@ func (q *Queries) ListMessagesAfter(ctx context.Context, arg ListMessagesAfterPa
 			&i.AuthorHandle,
 			&i.AuthorIkind,
 			&i.AuthorAvatar,
+			&i.DuringPause,
 		); err != nil {
 			return nil, err
 		}
@@ -439,7 +445,7 @@ func (q *Queries) ListMessagesAfter(ctx context.Context, arg ListMessagesAfterPa
 }
 
 const listMessagesBefore = `-- name: ListMessagesBefore :many
-SELECT id, room_id, seq, author_kind, author_id, author_user_id, author_iid, sender_id, sender_alt_id, sender_name, kind, text, reply_to, recipients_json, external_id, created_at, edited_at, deleted_at, interactive_json, answers_json, author_label, author_name, author_handle, author_ikind, author_avatar FROM message_views
+SELECT id, room_id, seq, author_kind, author_id, author_user_id, author_iid, sender_id, sender_alt_id, sender_name, kind, text, reply_to, recipients_json, external_id, created_at, edited_at, deleted_at, interactive_json, answers_json, author_label, author_name, author_handle, author_ikind, author_avatar, during_pause FROM message_views
 WHERE room_id = ?1 AND seq < ?2
 ORDER BY seq DESC
 LIMIT ?3
@@ -486,6 +492,7 @@ func (q *Queries) ListMessagesBefore(ctx context.Context, arg ListMessagesBefore
 			&i.AuthorHandle,
 			&i.AuthorIkind,
 			&i.AuthorAvatar,
+			&i.DuringPause,
 		); err != nil {
 			return nil, err
 		}
@@ -519,6 +526,17 @@ func (q *Queries) MarkMessageDeleted(ctx context.Context, arg MarkMessageDeleted
 		return 0, err
 	}
 	return result.RowsAffected()
+}
+
+const markMessageDuringPause = `-- name: MarkMessageDuringPause :exec
+UPDATE messages SET during_pause = 1 WHERE id = ?
+`
+
+// The message that tripped the loop guard is part of the burst too: it was written just before the pause
+// and no dispatch delivered it (DLV-08, SN-03).
+func (q *Queries) MarkMessageDuringPause(ctx context.Context, id string) error {
+	_, err := q.db.ExecContext(ctx, markMessageDuringPause, id)
+	return err
 }
 
 const nextRoomSeq = `-- name: NextRoomSeq :one

@@ -465,6 +465,14 @@
 - **Date**: 2026-10-29
 - **Status**: active
 
+### AD-037
+- **Decision**: The catch-up context of a session is a trust boundary, not only a convenience. In a room whose AI member is in `trusted` delivery mode, an untrusted message is never given as context (`mentions` keeps the whole conversation, which is the point of SN-03). Messages written by AIs while the loop guard had the room paused are never context: migration 0032 marks them with the message (`messages.during_pause`). Only an acknowledged message leaves the batch, so a batch lost with its connection is replayed; delivery rows are written only for frames that reached the queue, and a batch larger than the free queue keeps the newest frames that fit plus `skipped`. The principal's `''` copy row is written only when it routes something (a live parallel session, a sibling-addressed message, or a mentions-only principal), and its acknowledgement consumes the addressed row of that message. Delivery rows store the session key (`agent_session_deliveries.session_key`) and edits/deletes route by it, never by a reassigned label.
+  - **Reason**: The T2 review reproduced eight defects: context leaked from before a membership, an acked copy came back as a fallback, unacked context was lost after a drop, own-message updates missed their context holders, trusted mode gave untrusted context, the offline principal lost sibling-addressed messages, a reassigned label received updates it never saw, and every principal push paid for a row it did not need.
+  - **Trade-off**: migration 0032 grows by a message flag and a session key (it is unreleased, changed in place); rows written before the key (and rows born fallen back) fall back to their label for routing; a batch that a session acknowledges still moves its read position past the frames the queue could not hold, which the `skipped` note covers.
+  - **Scope**: store (`0032`, queries args/backlog/unread/deliveries), agents (`session_route`, `gateway`, `session_delivery`), delivery dispatcher (own-message updates), rooms (member removal/cursor, `during_pause`), api tests, spec session-notifications SN-03a/SN-04/SN-09a.
+  - **Date**: 2026-10-30
+  - **Status**: active
+
 ## Handoff
 
 - **Feature**: organizations

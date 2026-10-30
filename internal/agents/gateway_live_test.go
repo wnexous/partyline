@@ -220,6 +220,7 @@ func TestALabelledSessionAckDoesNotMoveTheAICursor(t *testing.T) {
 	// A message addressed to it reaches it, and its acknowledgement moves nothing of the AI's.
 	addressed := testkit.Decode[dto.Message](alice.Post("/api/v1/rooms/"+room.ID+"/messages", dto.PostMessageRequest{Text: "@builder:claude-2 for the session"}).RequireStatus(http.StatusCreated))
 	require.Equal(t, addressed.ID, second.Message(time.Minute).Message.ID)
+	require.Equal(t, addressed.ID, principal.Message(time.Minute).Message.ID, "the principal follows the room: it gets a copy (SN-04)")
 	second.Ack(addressed.ID)
 	second.ExpectNone(300 * time.Millisecond)
 	_, err := env.App.Store.R().GetAgentCursor(ctx, db.GetAgentCursorParams{AgentID: id, RoomID: room.ID})

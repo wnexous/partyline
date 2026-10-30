@@ -32,9 +32,11 @@ func (f *sessionFixture) sameFolderPair(t *testing.T) (principal, second *testki
 	return principal, second, p, s
 }
 
-// SESS-47: a parallel session in the AI's own folder (not a worktree) never receives a plain message,
-// the principal's own plain message or the AI's own message of any session; a message that addresses
-// it reaches it alone. A reconnect of the parallel session brings no principal backlog either.
+// SESS-47: a parallel session in the AI's own folder (not a worktree) never receives a plain message live,
+// the principal's own plain message or the AI's own message of any session; a message that addresses it
+// reaches it, with the conversation it had not read as context (SN-03), and the principal follows the room
+// so it receives the addressed message too (SN-04). A reconnect of the parallel session brings no principal
+// backlog either.
 func TestAParallelSessionOfTheSameFolderReceivesOnlyWhatAddressesIt(t *testing.T) {
 	f := newSessionFixture(t)
 	principal, second, p, s := f.sameFolderPair(t)
@@ -54,8 +56,25 @@ func TestAParallelSessionOfTheSameFolderReceivesOnlyWhatAddressesIt(t *testing.T
 	second.ExpectNone(400 * time.Millisecond)
 
 	addressed := f.post(t, "@atlas:pi-2 only you")
+	// pi-2 read none of the conversation, so the addressed message brings it as context (SN-03): alice's
+	// plain message and the principal's own, whose every sibling sees as context (SN-06); pi-2's own is not
+	// part of it.
+	for _, want := range []struct{ id, authorLabel string }{{plain.ID, ""}, {own.ID, ""}} {
+		context := second.Message(time.Minute)
+		require.Equal(t, want.id, context.Message.ID)
+		require.True(t, context.Context, "earlier conversation is marked as context")
+		require.Equal(t, want.authorLabel, context.Message.AuthorLabel)
+	}
 	require.Equal(t, addressed.ID, second.Message(time.Minute).Message.ID)
-	principal.ExpectNone(300 * time.Millisecond)
+	// The principal sees pi-2's own message as context, never as a notification (SN-06), and then the copy of
+	// the message that addresses its sibling (SN-04).
+	context := principal.Message(time.Minute)
+	require.Equal(t, ownSecond.ID, context.Message.ID)
+	require.True(t, context.Context)
+	require.Equal(t, "pi-2", context.Message.AuthorLabel)
+	principalFrame := principal.Message(time.Minute)
+	require.Equal(t, addressed.ID, principalFrame.Message.ID, "the principal follows the room (SN-04)")
+	require.False(t, principalFrame.Context)
 
 	// The principal never acknowledged its plain message; pi-2 coming back as the same process gets no principal backlog.
 	second.Close()
@@ -81,8 +100,12 @@ func TestAnAddressInCodeIsNotDeliveredToItsSession(t *testing.T) {
 	require.Empty(t, f.rows(t, "pi-2"))
 
 	outside := f.post(t, "`@atlas:other` is gone, ask @atlas:pi-2")
+	// The example message was never delivered live to pi-2 (the address was in code), so it is now context.
+	context := second.Message(time.Minute)
+	require.Equal(t, example.ID, context.Message.ID)
+	require.True(t, context.Context)
 	require.Equal(t, outside.ID, second.Message(time.Minute).Message.ID)
-	principal.ExpectNone(300 * time.Millisecond)
+	require.Equal(t, outside.ID, principal.Message(time.Minute).Message.ID, "the principal follows the room (SN-04)")
 }
 
 // SESS-49: a labelled session that mentions its AI by the bare @handle reaches the principal once, as the

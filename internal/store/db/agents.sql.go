@@ -54,23 +54,45 @@ func (q *Queries) AdvanceAgentCursor(ctx context.Context, arg AdvanceAgentCursor
 
 const countAgentBacklog = `-- name: CountAgentBacklog :one
 SELECT COUNT(*) FROM messages
-WHERE room_id = ?1 AND seq > ?2
-  AND NOT (author_kind = 'agent' AND author_id = ?3)
+JOIN room_members rm ON rm.room_id = messages.room_id AND rm.kind = 'agent' AND rm.member_id = ?1
+WHERE messages.room_id = ?2 AND messages.seq > ?3
+  AND messages.seq > COALESCE((SELECT MAX(b.seq) FROM messages b
+                              WHERE b.room_id = messages.room_id AND b.created_at < rm.created_at), 0)
+  AND NOT (messages.author_kind = 'agent' AND messages.author_id = ?1)
+  AND (?4 = 1
+       OR NOT EXISTS (
+           SELECT 1 FROM agent_session_deliveries d
+           WHERE d.message_id = messages.id AND d.agent_id = ?1 AND d.context = 0))
   AND NOT EXISTS (
       SELECT 1 FROM agent_session_deliveries d
-      WHERE d.message_id = messages.id AND d.agent_id = ?3)
+      WHERE d.message_id = messages.id AND d.agent_id = ?1 AND d.context = 0
+        AND (d.acked_at IS NOT NULL OR d.fell_back_at IS NOT NULL))
+  AND NOT EXISTS (
+      SELECT 1 FROM agent_session_deliveries d
+      WHERE d.message_id = messages.id AND d.agent_id = ?1 AND d.label = ''
+        AND d.acked_at IS NOT NULL)
 `
 
 type CountAgentBacklogParams struct {
-	RoomID   string
-	AfterSeq int64
-	AgentID  string
+	AgentID          string
+	RoomID           string
+	AfterSeq         int64
+	IncludeAddressed interface{}
 }
 
-// A message with any agent_session_deliveries row belongs to a label (or already fell back to the
-// principal through its fallback list), so it is not read twice (SESS-24).
+// The messages of the room the principal still has to read. A message addressed to a session belongs to
+// that session, so it is not read twice (SESS-24), unless include_addressed is set: the principal follows
+// the room, so a message that addresses a sibling is part of its queue too (SN-04), and only its own copy
+// tombstone or the fallback list takes one out. A copy of a catch-up batch never keeps a message out
+// (SN-03). Nothing from before the AI's current membership of the room is part of the queue (ROOM-01): a
+// member that was taken out forgot what it missed while it was away.
 func (q *Queries) CountAgentBacklog(ctx context.Context, arg CountAgentBacklogParams) (int64, error) {
-	row := q.db.QueryRowContext(ctx, countAgentBacklog, arg.RoomID, arg.AfterSeq, arg.AgentID)
+	row := q.db.QueryRowContext(ctx, countAgentBacklog,
+		arg.AgentID,
+		arg.RoomID,
+		arg.AfterSeq,
+		arg.IncludeAddressed,
+	)
 	var count int64
 	err := row.Scan(&count)
 	return count, err
@@ -450,28 +472,42 @@ func (q *Queries) InsertFolderAgent(ctx context.Context, arg InsertFolderAgentPa
 }
 
 const listAgentBacklog = `-- name: ListAgentBacklog :many
-SELECT id, room_id, seq, author_kind, author_id, author_user_id, author_iid, sender_id, sender_alt_id, sender_name, kind, text, reply_to, recipients_json, external_id, created_at, edited_at, deleted_at, interactive_json, answers_json, author_label, author_name, author_handle, author_ikind, author_avatar FROM message_views
-WHERE room_id = ?1 AND seq > ?2
-  AND NOT (author_kind = 'agent' AND author_id = ?3)
+SELECT mv.id, mv.room_id, mv.seq, mv.author_kind, mv.author_id, mv.author_user_id, mv.author_iid, mv.sender_id, mv.sender_alt_id, mv.sender_name, mv.kind, mv.text, mv.reply_to, mv.recipients_json, mv.external_id, mv.created_at, mv.edited_at, mv.deleted_at, mv.interactive_json, mv.answers_json, mv.author_label, mv.author_name, mv.author_handle, mv.author_ikind, mv.author_avatar, mv.during_pause FROM message_views mv
+JOIN room_members rm ON rm.room_id = mv.room_id AND rm.kind = 'agent' AND rm.member_id = ?1
+WHERE mv.room_id = ?2 AND mv.seq > ?3
+  AND mv.seq > COALESCE((SELECT MAX(b.seq) FROM messages b
+                         WHERE b.room_id = mv.room_id AND b.created_at < rm.created_at), 0)
+  AND NOT (mv.author_kind = 'agent' AND mv.author_id = ?1)
+  AND (?4 = 1
+       OR NOT EXISTS (
+           SELECT 1 FROM agent_session_deliveries d
+           WHERE d.message_id = mv.id AND d.agent_id = ?1 AND d.context = 0))
   AND NOT EXISTS (
       SELECT 1 FROM agent_session_deliveries d
-      WHERE d.message_id = message_views.id AND d.agent_id = ?3)
+      WHERE d.message_id = mv.id AND d.agent_id = ?1 AND d.context = 0
+        AND (d.acked_at IS NOT NULL OR d.fell_back_at IS NOT NULL))
+  AND NOT EXISTS (
+      SELECT 1 FROM agent_session_deliveries d
+      WHERE d.message_id = mv.id AND d.agent_id = ?1 AND d.label = ''
+        AND d.acked_at IS NOT NULL)
 ORDER BY seq DESC
-LIMIT ?4
+LIMIT ?5
 `
 
 type ListAgentBacklogParams struct {
-	RoomID   string
-	AfterSeq int64
-	AgentID  string
-	Limit    int64
+	AgentID          string
+	RoomID           string
+	AfterSeq         int64
+	IncludeAddressed interface{}
+	Limit            int64
 }
 
 func (q *Queries) ListAgentBacklog(ctx context.Context, arg ListAgentBacklogParams) ([]MessageView, error) {
 	rows, err := q.db.QueryContext(ctx, listAgentBacklog,
+		arg.AgentID,
 		arg.RoomID,
 		arg.AfterSeq,
-		arg.AgentID,
+		arg.IncludeAddressed,
 		arg.Limit,
 	)
 	if err != nil {
@@ -507,6 +543,7 @@ func (q *Queries) ListAgentBacklog(ctx context.Context, arg ListAgentBacklogPara
 			&i.AuthorHandle,
 			&i.AuthorIkind,
 			&i.AuthorAvatar,
+			&i.DuringPause,
 		); err != nil {
 			return nil, err
 		}

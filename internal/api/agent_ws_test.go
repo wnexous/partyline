@@ -3,6 +3,7 @@ package api_test
 import (
 	"context"
 	"database/sql"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"net/http"
@@ -359,4 +360,33 @@ func TestAgentWSCapsAgentsPerOwner(t *testing.T) {
 	conn, resp = tok.DialAgent("still-too-many")
 	require.Nil(t, conn)
 	resp.RequireError(http.StatusConflict, dto.ErrorCodeConflict)
+}
+
+// delivered reads every message frame that arrives within d, in order. Context frames are the earlier
+// conversation a session had not read when a message notified it (SN-03); the others are the messages
+// themselves, in the order they were delivered.
+func deliveredFrames(t *testing.T, conn *testkit.AgentConn, d time.Duration) (messages, context []dto.AgentMessageFrame) {
+	t.Helper()
+	for _, frame := range conn.Drain(d) {
+		if frame.Type != dto.AgentFrameTypeMessage {
+			continue
+		}
+		var m dto.AgentMessageFrame
+		require.NoError(t, json.Unmarshal(frame.Raw, &m))
+		if m.Context {
+			context = append(context, m)
+			continue
+		}
+		messages = append(messages, m)
+	}
+	return messages, context
+}
+
+// frameIDs is the ids of the frames, for an equality assertion on the delivered order.
+func frameIDs(frames []dto.AgentMessageFrame) []string {
+	ids := make([]string, len(frames))
+	for i, f := range frames {
+		ids[i] = f.Message.ID
+	}
+	return ids
 }

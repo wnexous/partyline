@@ -23,9 +23,16 @@ and the principal misses what was said to its siblings.
    pushed to that session TOGETHER WITH every message of that conversation it had not read yet
    (oldest first, capped at 50, with an "N earlier messages skipped" note beyond), and the
    session's read position moves to the newest pushed message when it acknowledges. (SN-03)
+   Context is filtered by the delivery mode: in `trusted` mode an untrusted message is not context
+   (and `mentions` keeps the whole conversation, which is the point of SN-03); agent messages
+   written while the loop guard paused the room (DLV-08) are never context; only an acknowledged
+   message leaves the batch, so a batch lost with its connection comes back; and a batch larger
+   than the free queue keeps the newest frames that fit and counts the rest as skipped. (SN-03a)
 4. A message that mentions a parallel session (`@handle:label`) SHALL also reach the principal
    when the principal's setting for that conversation is `on` (it no longer goes to the labelled
-   session only). (SN-04)
+   session only). A bare `@handle` in the same text names the principal too. The principal's
+   acknowledgement of its copy consumes the addressed row, and its backlog carries the sibling's
+   message while that row is unacknowledged and the principal has no acknowledged copy. (SN-04)
 5. A session that is not notified SHALL NOT receive the message live; it only counts as unread.
    `list_rooms`/`room_info` SHALL show the session's unread count per conversation, and a new
    tool `read_unread {room}` SHALL return the unread messages of that conversation (same framing
@@ -39,7 +46,11 @@ and the principal misses what was said to its siblings.
    owner switch it; the member card's session line marks muted sessions. (SN-08)
 9. Existing behaviour that is not about sessions (delivery modes, loop guard, trust, edits and
    deletes following the addressed session, backlog on connect for the principal) SHALL keep
-   working; edits/deletes reach every session that had the original message pushed. (SN-09)
+   working; edits/deletes reach every session that had the original message pushed. A delivery row
+   stores the session key, and updates follow it rather than the label, so a label a later session
+   takes over receives no update of a message it never saw; a mentions-only principal follows the
+   updates of the messages it has a row for; an own message's update also follows its context
+   holders. (SN-09a)
 
 ## Out of scope
 Per-session notification for platform chats; notification sounds; per-message read receipts in the

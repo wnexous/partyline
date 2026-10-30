@@ -36,10 +36,12 @@ type AgentSessionDelivery struct {
 	MessageID  string
 	AgentID    string
 	Label      string
+	SessionKey string
 	OwnerLive  string
 	CreatedAt  int64
 	FellBackAt sql.NullInt64
 	AckedAt    sql.NullInt64
+	Context    int64
 }
 
 type AgentSessionLabel struct {
@@ -228,6 +230,7 @@ type Message struct {
 	InteractiveJson string
 	AnswersJson     string
 	AuthorLabel     string
+	DuringPause     int64
 }
 
 type MessageReaction struct {
@@ -264,6 +267,7 @@ type MessageView struct {
 	AuthorHandle    string
 	AuthorIkind     string
 	AuthorAvatar    string
+	DuringPause     int64
 }
 
 type OrgInvitation struct {

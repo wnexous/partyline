@@ -85,6 +85,14 @@ func (f *sessionFixture) waitRow(t *testing.T, label, messageID string) db.Agent
 	return row
 }
 
+// setNotify sets the notification setting of one of the fixture's sessions in its room (SN-02); label ""
+// is the principal.
+func (f *sessionFixture) setNotify(t *testing.T, label, notify string) {
+	t.Helper()
+	key := agents.SessionKey("", label, "")
+	require.NoError(t, f.env.App.Agents.SetSessionNotify(context.Background(), f.agentID, key, f.room.ID, label == "", notify))
+}
+
 // waitPrincipalGone waits until the principal session of the AI has ended.
 func (f *sessionFixture) waitPrincipalGone(t *testing.T) {
 	t.Helper()
@@ -103,6 +111,9 @@ func TestALabelledMessageFallsBackWhenItsSessionEnds(t *testing.T) {
 	require.Equal(t, "claude-2", f.env.App.Presence.Sessions(f.agentID)[1].Label)
 	f.settle(t, principal)
 	f.settle(t, parallel)
+	// The fallback is what a principal set to mentions only sees (SN-02, SN-04): when it follows the room
+	// it receives the message live, and the copy makes the fallback a non-event.
+	f.setNotify(t, "", agents.NotifyMentions)
 
 	m := f.post(t, "@atlas:claude-2 hello")
 	require.Equal(t, m.ID, parallel.Message(time.Minute).Message.ID)
@@ -201,9 +212,12 @@ func TestAnEditAfterTheLabelledSessionEndedReachesThePrincipal(t *testing.T) {
 	require.Equal(t, m.ID, frame.Message.ID)
 	require.Equal(t, "@atlas:claude-2 updated", frame.Message.Text)
 
-	// The fallback row is still the principal's until it acknowledges it.
-	row := f.waitRow(t, "claude-2", m.ID)
-	require.True(t, row.FellBackAt.Valid)
+	// The fallback row is still the principal's until it acknowledges it (the sweep of the ended session
+	// runs next to the edit, so it is waited for).
+	require.Eventually(t, func() bool {
+		rows := f.rows(t, "claude-2")
+		return len(rows) == 1 && rows[0].MessageID == m.ID && rows[0].FellBackAt.Valid
+	}, 5*time.Second, 10*time.Millisecond)
 }
 
 // SESS-24: once a message fell back to the principal, the label cannot read it again, not even from
@@ -372,10 +386,12 @@ func (f *sessionFixture) dialWorktreeAs(t *testing.T, live string) *testkit.Agen
 	return conn
 }
 
-// rowOf reads the delivery row of a message.
-func (f *sessionFixture) rowOf(t *testing.T, messageID string) db.AgentSessionDelivery {
+// rowOf reads the delivery row of a message for one session label.
+func (f *sessionFixture) rowOf(t *testing.T, label, messageID string) db.AgentSessionDelivery {
 	t.Helper()
-	row, err := f.env.App.Store.R().GetSessionDelivery(context.Background(), db.GetSessionDeliveryParams{MessageID: messageID, AgentID: f.agentID})
+	row, err := f.env.App.Store.R().GetSessionDelivery(context.Background(), db.GetSessionDeliveryParams{
+		MessageID: messageID, AgentID: f.agentID, Label: label,
+	})
 	require.NoError(t, err)
 	return row
 }
@@ -430,8 +446,8 @@ func TestALabelledAckKeepsTheMessageOutOfThePrincipalsBacklog(t *testing.T) {
 	m := f.post(t, "@atlas:wt hello")
 	require.Equal(t, m.ID, sibling.Message(time.Minute).Message.ID)
 	sibling.Ack(m.ID)
-	require.Eventually(t, func() bool { return f.rowOf(t, m.ID).AckedAt.Valid }, 5*time.Second, 10*time.Millisecond)
-	row := f.rowOf(t, m.ID)
+	require.Eventually(t, func() bool { return f.rowOf(t, "wt", m.ID).AckedAt.Valid }, 5*time.Second, 10*time.Millisecond)
+	row := f.rowOf(t, "wt", m.ID)
 	require.False(t, row.FellBackAt.Valid)
 
 	principal.Close()
@@ -453,15 +469,16 @@ func TestAnAckOfAnotherConnectionsRowIsIgnored(t *testing.T) {
 
 	m := f.post(t, "@atlas:wt on a row the new connection owns")
 	require.Equal(t, m.ID, mine.Message(time.Minute).Message.ID)
+	require.Equal(t, m.ID, principal.Message(time.Minute).Message.ID, "the principal follows the room: it gets a copy (SN-04)")
 	mine.Ack(m.ID)
-	require.Eventually(t, func() bool { return f.rowOf(t, m.ID).AckedAt.Valid }, 5*time.Second, 10*time.Millisecond)
+	require.Eventually(t, func() bool { return f.rowOf(t, "wt", m.ID).AckedAt.Valid }, 5*time.Second, 10*time.Millisecond)
 
 	foreign := f.post(t, "plain, with a row another connection owns")
 	require.Equal(t, foreign.ID, principal.Message(time.Minute).Message.ID)
 	f.ownPending(t, foreign.ID, "wt", other)
 	mine.Ack(foreign.ID)
 	mine.ExpectNone(400 * time.Millisecond)
-	row := f.rowOf(t, foreign.ID)
+	row := f.rowOf(t, "wt", foreign.ID)
 	require.False(t, row.AckedAt.Valid, "the ack of a connection that does not own the row changes nothing")
 	require.False(t, row.FellBackAt.Valid)
 }
@@ -479,16 +496,17 @@ func TestTheEndOfAnOldConnectionLeavesTheRowsOfANewOneAlone(t *testing.T) {
 
 	r := f.post(t, "@atlas:wt for the connection that comes next")
 	require.Equal(t, r.ID, old.Message(time.Minute).Message.ID)
+	require.Equal(t, r.ID, principal.Message(time.Minute).Message.ID, "the principal follows the room: it gets a copy (SN-04)")
 	own := f.post(t, "plain row the old connection does not own")
 	require.Equal(t, own.ID, principal.Message(time.Minute).Message.ID)
 	f.ownPending(t, own.ID, "wt", newLive)
 
 	old.Close()
 	f.waitSessionGone(t, "wt")
-	principal.Message(time.Minute) // the old connection's own row fell back
-	principal.ExpectNone(400 * time.Millisecond)
-	require.False(t, f.rowOf(t, own.ID).FellBackAt.Valid, "the old sweep did not touch the new owner's row")
-	require.True(t, f.rowOf(t, r.ID).FellBackAt.Valid, "its own unacknowledged row fell back")
+	// The principal already has a copy of r (SN-04): its row falls back but the principal is not told twice.
+	principal.ExpectNone(500 * time.Millisecond)
+	require.False(t, f.rowOf(t, "wt", own.ID).FellBackAt.Valid, "the old sweep did not touch the new owner's row")
+	require.True(t, f.rowOf(t, "wt", r.ID).FellBackAt.Valid, "its own unacknowledged row fell back")
 
 	fresh := f.dialWorktreeAs(t, newLive)
 	require.Equal(t, own.ID, fresh.Message(time.Minute).Message.ID, "the new connection receives the row it owns")
@@ -506,7 +524,7 @@ func TestAKickFallsBackThePendingLabelledRows(t *testing.T) {
 	require.Equal(t, m.ID, sibling.Message(time.Minute).Message.ID)
 
 	f.env.App.Presence.Kick(context.Background(), f.agentID, agents.CloseTakenOver, "ended")
-	require.Eventually(t, func() bool { return f.rowOf(t, m.ID).FellBackAt.Valid }, 5*time.Second, 10*time.Millisecond,
+	require.Eventually(t, func() bool { return f.rowOf(t, "wt", m.ID).FellBackAt.Valid }, 5*time.Second, 10*time.Millisecond,
 		"the row fell back")
 
 	again := f.dial(t)
@@ -526,16 +544,17 @@ func TestTheSameLiveIDReconnectingGetsItsUnackedRowAgain(t *testing.T) {
 	f.settle(t, first)
 	m := f.post(t, "@atlas:wt unacknowledged")
 	require.Equal(t, m.ID, first.Message(time.Minute).Message.ID)
+	require.Equal(t, m.ID, principal.Message(time.Minute).Message.ID, "the principal follows the room: it gets a copy (SN-04)")
 
 	second := f.dialWorktreeAs(t, live)
 	require.Equal(t, m.ID, second.Message(time.Minute).Message.ID, "the new socket receives its own unacknowledged row")
 	principal.ExpectNone(500 * time.Millisecond)
-	row := f.rowOf(t, m.ID)
+	row := f.rowOf(t, "wt", m.ID)
 	require.False(t, row.FellBackAt.Valid, "nothing fell back")
 	require.False(t, row.AckedAt.Valid)
 
 	second.Ack(m.ID)
-	require.Eventually(t, func() bool { return f.rowOf(t, m.ID).AckedAt.Valid }, 5*time.Second, 10*time.Millisecond)
+	require.Eventually(t, func() bool { return f.rowOf(t, "wt", m.ID).AckedAt.Valid }, 5*time.Second, 10*time.Millisecond)
 }
 
 // SESS-27: an edit of a message whose row fell back reaches the principal only, even when a newer
@@ -570,16 +589,20 @@ func TestAnEditFollowsTheOwnerOfThePendingRow(t *testing.T) {
 	f.settle(t, owner)
 	m := f.post(t, "@atlas:wt first")
 	require.Equal(t, m.ID, owner.Message(time.Minute).Message.ID)
+	require.Equal(t, m.ID, principal.Message(time.Minute).Message.ID, "the principal follows the room: it gets a copy (SN-04)")
 
 	f.edit(t, m.ID, "@atlas:wt second")
 	require.Equal(t, m.ID, owner.Edited(time.Minute).Message.ID)
-	principal.ExpectNone(400 * time.Millisecond)
+	// The principal has a copy of the message too, so the edit follows it as well (SN-09).
+	require.Equal(t, m.ID, principal.Edited(time.Minute).Message.ID)
 
 	owner.Ack(m.ID)
-	require.Eventually(t, func() bool { return f.rowOf(t, m.ID).AckedAt.Valid }, 5*time.Second, 10*time.Millisecond)
+	require.Eventually(t, func() bool { return f.rowOf(t, "wt", m.ID).AckedAt.Valid }, 5*time.Second, 10*time.Millisecond)
 	f.edit(t, m.ID, "@atlas:wt third")
 	require.Equal(t, m.ID, owner.Edited(time.Minute).Message.ID, "acknowledged by its label: the label is live")
-	principal.ExpectNone(400 * time.Millisecond)
+	// The principal keeps its copy row, so its edit comes too (SN-09).
+	require.Equal(t, m.ID, principal.Edited(time.Minute).Message.ID)
+	principal.ExpectNone(300 * time.Millisecond)
 }
 
 // SESS-27: an edit of a message the label acknowledged reaches nobody once that label is gone.
@@ -591,13 +614,17 @@ func TestAnEditOfAnAcknowledgedMessageReachesNobodyWhenTheLabelIsGone(t *testing
 	f.settle(t, owner)
 	m := f.post(t, "@atlas:wt first")
 	require.Equal(t, m.ID, owner.Message(time.Minute).Message.ID)
+	require.Equal(t, m.ID, principal.Message(time.Minute).Message.ID, "the principal follows the room: it gets a copy (SN-04)")
 	owner.Ack(m.ID)
-	require.Eventually(t, func() bool { return f.rowOf(t, m.ID).AckedAt.Valid }, 5*time.Second, 10*time.Millisecond)
+	require.Eventually(t, func() bool { return f.rowOf(t, "wt", m.ID).AckedAt.Valid }, 5*time.Second, 10*time.Millisecond)
 	owner.Close()
 	f.waitSessionGone(t, "wt")
 
+	// The label is gone and the message acknowledged by it; the principal's copy is still its own delivery
+	// row, so the edit reaches it (SN-09).
 	f.edit(t, m.ID, "@atlas:wt second")
-	principal.ExpectNone(600 * time.Millisecond)
+	require.Equal(t, m.ID, principal.Edited(time.Minute).Message.ID)
+	principal.ExpectNone(300 * time.Millisecond)
 }
 
 // SESS-38: the gateway never hands a session its own message, whatever the dispatcher asks: a push
@@ -649,7 +676,7 @@ func TestBacklogWithOnlyAFallbackKeepsTheCursor(t *testing.T) {
 		require.Equal(t, fallback.ID, got.Message.ID)
 		require.Equal(t, "wt", got.ForLabel)
 		again.Ack(fallback.ID)
-		require.Eventually(t, func() bool { return f.rowOf(t, fallback.ID).AckedAt.Valid }, 5*time.Second, 10*time.Millisecond,
+		require.Eventually(t, func() bool { return f.rowOf(t, "wt", fallback.ID).AckedAt.Valid }, 5*time.Second, 10*time.Millisecond,
 			"the acknowledgement consumed the fallback and left a tombstone")
 		seq, err := f.cursor(t)
 		require.NoError(t, err)
@@ -673,7 +700,7 @@ func TestBacklogWithOnlyAFallbackKeepsTheCursor(t *testing.T) {
 		got := again.Message(time.Minute)
 		require.Equal(t, fallback.ID, got.Message.ID)
 		again.Ack(fallback.ID)
-		require.Eventually(t, func() bool { return f.rowOf(t, fallback.ID).AckedAt.Valid }, 5*time.Second, 10*time.Millisecond)
+		require.Eventually(t, func() bool { return f.rowOf(t, "wt", fallback.ID).AckedAt.Valid }, 5*time.Second, 10*time.Millisecond)
 		_, err := f.cursor(t)
 		require.ErrorIs(t, err, sql.ErrNoRows, "a fallback's sequence never becomes the cursor")
 	})
@@ -715,7 +742,7 @@ func TestAPrincipalWithTheOwnersLiveIDIsNotGivenALabelledRow(t *testing.T) {
 	got := principal.Message(time.Minute)
 	require.Equal(t, m.ID, got.Message.ID)
 	require.Equal(t, "wt", got.ForLabel, "the principal receives the row with the note")
-	require.Eventually(t, func() bool { return f.rowOf(t, m.ID).FellBackAt.Valid }, 5*time.Second, 10*time.Millisecond,
+	require.Eventually(t, func() bool { return f.rowOf(t, "wt", m.ID).FellBackAt.Valid }, 5*time.Second, 10*time.Millisecond,
 		"the row fell back instead of staying pending")
 }
 
@@ -738,7 +765,7 @@ func TestAReconnectDuringTheReleaseDoesNotDeliverTwice(t *testing.T) {
 	require.Equal(t, m.ID, sibling.Message(time.Minute).Message.ID, "the reconnected owner receives its row")
 	sibling.ExpectNone(400 * time.Millisecond)
 	principal.ExpectNone(400 * time.Millisecond)
-	require.False(t, f.rowOf(t, m.ID).FellBackAt.Valid, "the release found the owner attached and swept nothing")
+	require.False(t, f.rowOf(t, "wt", m.ID).FellBackAt.Valid, "the release found the owner attached and swept nothing")
 }
 
 // A connection's label is set before it is visible, and the Kick sweep and the owner lookup read it
@@ -760,7 +787,7 @@ func TestAConnectionsLabelIsSetBeforeItIsVisible(t *testing.T) {
 		var row db.AgentSessionDelivery
 		require.Eventually(t, func() bool {
 			var err error
-			row, err = f.env.App.Store.R().GetSessionDelivery(context.Background(), db.GetSessionDeliveryParams{MessageID: m.ID, AgentID: f.agentID})
+			row, err = f.env.App.Store.R().GetSessionDelivery(context.Background(), db.GetSessionDeliveryParams{MessageID: m.ID, AgentID: f.agentID, Label: "wt"})
 			return err == nil
 		}, 5*time.Second, time.Millisecond)
 		require.False(t, row.FellBackAt.Valid, "the session owns the row it was visible for")
@@ -783,7 +810,7 @@ func TestAFallbackAckDoesNotMoveTheCursorPastAnUnackedMessage(t *testing.T) {
 	require.Greater(t, fallback.Seq, plain.Seq)
 
 	principal.Ack(fallback.ID)
-	require.Eventually(t, func() bool { return f.rowOf(t, fallback.ID).AckedAt.Valid }, 5*time.Second, 10*time.Millisecond)
+	require.Eventually(t, func() bool { return f.rowOf(t, "wt", fallback.ID).AckedAt.Valid }, 5*time.Second, 10*time.Millisecond)
 	_, err := f.cursor(t)
 	require.ErrorIs(t, err, sql.ErrNoRows, "the cursor did not jump over the unacknowledged plain message")
 

@@ -8,11 +8,17 @@ UPDATE rooms SET agent_streak = ?, agents_paused = ? WHERE id = ?;
 -- name: CreateMessage :exec
 -- interactive_json and answers_json are written once, with the message (QR-01, QR-08); every other
 -- message writes them empty. author_label is the session that wrote an AI's message; it is "" for the
--- principal and for every other author (SESS-28, SESS-29).
+-- principal and for every other author (SESS-28, SESS-29). during_pause marks an agent message written
+-- while the loop guard had paused the room: it is never context for a session (SN-03).
 INSERT INTO messages (id, room_id, seq, author_kind, author_id, author_user_id, author_iid, sender_id, sender_alt_id,
                       sender_name, kind, text, reply_to, recipients_json, external_id, created_at,
-                      interactive_json, answers_json, author_label)
-VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
+                      interactive_json, answers_json, author_label, during_pause)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
+
+-- name: MarkMessageDuringPause :exec
+-- The message that tripped the loop guard is part of the burst too: it was written just before the pause
+-- and no dispatch delivered it (DLV-08, SN-03).
+UPDATE messages SET during_pause = 1 WHERE id = ?;
 
 -- name: GetMessageView :one
 SELECT * FROM message_views WHERE id = ?;

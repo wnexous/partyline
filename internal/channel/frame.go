@@ -21,12 +21,14 @@ var (
 
 // Frame renders a message record (the channel notification's meta fields plus "content", as
 // `partyline listen` prints it) the way the omp, pi and OpenCode adapters do (PUSH-06):
-// <partyline room=… conversation=… chat=… platform=… from=… author_session=… from_own_session=… trusted=… message_id=… interactive=… answers=… connection_id=… chat_id=…>text</partyline>
+// <partyline room=… conversation=… chat=… platform=… from=… author_session=… from_own_session=… context=… skipped=… trusted=… message_id=… interactive=… answers=… connection_id=… chat_id=…>text</partyline>
 // and the trust line (TrustedLine or DataLine). Absent fields are left out; markup in the text
 // is escaped. interactive and answers are the stored question and answer documents as JSON
 // (QR-21). connection_id and chat_id are what send_message takes to write to a chat of a
 // connection (CID-16): a harness fed by listen sees the message, and so the connection
-// and the chat, only through this frame.
+// and the chat, only through this frame. context="true" marks a message of the catch-up batch that
+// goes before the one that notified the session, and skipped="N" how many earlier unread messages the
+// batch left out (SN-03).
 func Frame(r map[string]string) string {
 	first := func(keys ...string) string {
 		for _, k := range keys {
@@ -53,6 +55,8 @@ func Frame(r map[string]string) string {
 		{"from", from},
 		{"author_session", r["author_session"]},
 		{"from_own_session", r["from_own_session"]},
+		{"context", r["context"]},
+		{"skipped", r["skipped"]},
 		{"trusted", trusted},
 		{"message_id", r["message_id"]},
 		{"interactive", r["interactive"]},

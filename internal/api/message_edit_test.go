@@ -357,6 +357,7 @@ func TestUpdateFramesFollowTheDeliveryMode(t *testing.T) {
 	conn.Welcome(wsWait)
 	plain := f.post(f.alice, "nothing for you")
 	asked := f.post(f.alice, "please @builder look")
+	require.Equal(t, plain.ID, conn.Message(wsWait).Message.ID, "the earlier message comes as context (SN-03)")
 	require.Equal(t, asked.ID, conn.Message(wsWait).Message.ID, "only the mention was delivered")
 
 	editMessage(t, f.alice, f.room.ID, plain.ID, "now it says @builder")
