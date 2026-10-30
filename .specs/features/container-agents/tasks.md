@@ -38,3 +38,16 @@ Slices per design "Web"; vitest; one e2e with a fake runner client. Status: done
 ## T8 — docs + live smoke (all)
 `docs/container-agents.md`, README line, AD-036 in STATE.md. Status: done
 Live smoke on the dev box after deploy. Status: pending
+
+## T9 — hotfix after the first live test (CA-04, CA-06, CA-11, CA-12)
+Found on prod v0.12.0: a second container AI on one runner without a repository collided with the
+first (same machine `runner:<id>` and folder `/workspace`, so the `agents_folder` unique index
+refused it and the web showed the generic 500); a create without a credential restart-looped with no
+way to add one; Docker's `Restarting` was shown as running; and known error codes fell through to
+the generic failure. The machine is now `container:<container-name>`; a create requires a variable
+the harness reads (422 `credentials_required`); `PATCH /agents/{id}/container` edits the mapping and
+recreates the container with the same volume; the protocol reports `restarting` with `last_log`
+(redacted) as `last_error`; the web has a sentence per known code, a Credentials dialog and a logs
+shortcut next to the last error. Tests: two containers on one runner, credential refusals, the
+credential PATCH (success and offline), spec/executor/hub for `restarting` and `last_log`, web unit
+tests. Status: done

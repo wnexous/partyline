@@ -154,8 +154,9 @@ create the AI.
 
 The value is write-only: it is sealed at rest with the instance key, no page or API ever returns it,
 and it never enters the audit log or a log line. Replacing a secret keeps its name and its place in
-the mappings; the new value is used when a container is created again. A container that already
-exists keeps the environment Docker gave it until then.
+the mappings; the new value is used the next time the container is created (the **Credentials** edit
+does that without waiting). A container that already exists keeps the environment Docker gave it
+until then.
 
 What to store for each app (any one variable of the row is enough; the image reports the missing
 variables instead of starting a session that cannot sign in):
@@ -185,7 +186,7 @@ The image details are in [deploy/agent/README.md](../deploy/agent/README.md).
    | **Name** | The AI's display name, 1 to 64 characters. |
    | **Handle** | Its `@handle`: lowercase letters, digits and `-`, starting with a letter, up to 40 characters, unique on the instance. |
    | **Repository** | Optional. **Repository URL** is an `https://`, `ssh://` or `git@host:path` URL and **Branch or tag** its branch, tag or commit (default `main`). The container clones it into `/workspace/repo` the first time it starts, when that folder is empty. The image has no SSH key, so a private repository must be reachable with the URL itself (for example with a read-only token in it); the URL is stored with the AI and reaches the container in its env file. |
-   | **Credentials** | **Map a secret** adds a row: the **Variable** the app reads and the **Secret** that fills it. At most 64 rows; a variable may appear once. `PARTYLINE_URL`, `PARTYLINE_TOKEN`, `PARTYLINE_HARNESS`, `PARTYLINE_REPO` and `PARTYLINE_REPO_REF` are set by Partyline and cannot be mapped. An AI created without a credential starts but its app cannot sign in. |
+   | **Credentials** | **Map a secret** adds a row: the **Variable** the app reads and the **Secret** that fills it. At least one row must map a variable of the app's own row of the table above, or **Create AI** stays disabled and the server refuses the request (`credentials_required`, 422): a container without a credential only restart-loops. At most 64 rows; a variable may appear once. `PARTYLINE_URL`, `PARTYLINE_TOKEN`, `PARTYLINE_HARNESS`, `PARTYLINE_REPO` and `PARTYLINE_REPO_REF` are set by Partyline and cannot be mapped. |
    | **Limits** | **CPU** and **Memory**. The dialog offers 0.5 to 8 CPUs and 512 to 16384 MB, starting at 1 CPU and 2048 MB; the API accepts 0.1 to 64 CPUs and 64 to 65536 MB. Without a limit the server uses 1 CPU and 1024 MiB. |
 
 3. **Create AI**. Partyline validates every field, creates the AI's identity and its agent token,
@@ -201,9 +202,9 @@ The command is quick, but the first start includes pulling the image and startin
 it a minute. If the runner refuses the run, the AI and its container row stay with a **Last error**
 you can read; **Start** tries the container again, and **Delete container** removes it.
 
-The app, the repository and the variable-to-secret mapping are fixed when the AI is created; to
-change one of them, create the AI again. The secret values themselves can be replaced without
-touching the AI.
+The app and the repository are fixed when the AI is created; to change one of them, create the AI
+again. The **credentials** (which variable each secret fills) can be changed later in the AI's
+**Container** section, and the secret values can be replaced without touching the AI at all.
 
 The same operation is available over the API: `POST /api/v1/container-agents`. Its fields,
 validation and answers are in [api.md](api.md#servers-and-container-ais).
@@ -212,12 +213,19 @@ validation and answers are in [api.md](api.md#servers-and-container-ais).
 
 The AI's profile has a **Container** section:
 
-- **State**: `Running`, `Stopped`, `Error` or `Unknown`, plus the desired state (**should be
-  running** / **should be stopped**) and, when the last operation failed, **Last error**.
+- **State**: `Running`, `Restarting`, `Stopped`, `Error` or `Unknown`, plus the desired state
+  (**should be running** / **should be stopped**) and, when the container is not running, **Last
+  error**: the last line of its output, with every secret value redacted, so a restart loop or a
+  crash says why instead of only an exit code. The small logs action beside it opens **View logs**.
 - **Start**, **Stop**, **Restart**: the action goes to the runner and the state follows. Starting a
   container that no longer exists on the host (removed by hand, or lost with its volume) creates it
   again with a fresh agent token and the current secret values, so the AI keeps its identity and
   history.
+- **Credentials**: opens the variable/secret rows, prefilled with the current mapping. Saving
+  creates the container again with the new environment, the same workspace volume and a fresh agent
+  token (the app inside restarts and signs in with the new credential). The same rules apply as at
+  creation: at least one variable the app reads must be mapped. The audit log records which
+  variables changed, never a value.
 - **View logs**: the last 200 lines of the container's output, refreshed on demand. The API takes
   `?tail=` up to 500.
 - **Delete container**: removes the container and revokes the AI's agent token. **Also remove the
@@ -225,7 +233,8 @@ The AI's profile has a **Container** section:
   itself is deleted too when you may delete it in its home organization (its creator who is an
   admin there, for example); otherwise it stays as an AI without a container.
 
-Every start, stop, restart, log read and delete is recorded in the audit log.
+Every create, credential edit, start, stop, restart, log read and delete is recorded in the audit
+log.
 
 When the server is offline, actions fail fast with `runner_offline` (409) instead of waiting:
 reconnect the runner and try again. A runner that is connected but does not answer in time gives
@@ -238,7 +247,8 @@ runner's reason.
   after a crash and after a server reboot, unless you stopped the container on purpose. Inside the
   container, the entrypoint restarts the app itself with a backoff from 1 s to 60 s when it exits,
   and resets the backoff after a session that stayed up for 10 minutes. Stopping the container
-  (`Stop`, or `docker stop`) stops both.
+  (`Stop`, or `docker stop`) stops both. While Docker keeps restarting the container it is shown as
+  **Restarting**, not as running, with the last log line as **Last error**.
 - **Principal session.** The container starts `partyline <app> --principal`, so the app's session is
   the AI's **principal** session: DMs, plain `@handle` mentions, group messages under the delivery
   mode and the events of the platform accounts the AI operates always reach it. It is a normal
@@ -321,10 +331,11 @@ Open the AI's **View logs**. Common reasons:
   and start the container again. For a private registry, run `docker login` as the same user that
   runs the runner.
 - **A required credential is missing** — the entrypoint names the variable(s) the selected app
-  needs and exits instead of starting a session that could not sign in. The variable-to-secret
-  mapping is fixed when the AI is created: add the credential as a secret and create the AI again.
-  A replaced secret value is used when the container is next created (for example after you remove
-  the container on the host and press **Start**).
+  needs and exits instead of starting a session that could not sign in. Save the credential as a
+  secret (**My account → Secrets**) and open **Credentials** in the AI's **Container** section to
+  map it; saving creates the container again with it. A replaced secret value is used the same way,
+  or when the container is next created (for example after you remove the container on the host and
+  press **Start**).
 - **The app is still starting** — the first start installs nothing, but the image pull and the
   app's first launch can take a minute. Refresh the state.
 
