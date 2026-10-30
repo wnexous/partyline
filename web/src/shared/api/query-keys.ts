@@ -21,6 +21,9 @@ export const queryKeys = {
   /** The people one connector has seen, filtered by a search text ("" = all of them). */
   people: (connectorId: string, q: string) => ["contacts", "people", connectorId, q] as const,
   intelligence: (id: string) => ["intelligences", id] as const,
+  /** One live session's notification setting per conversation (SN-08); the principal's label is "". */
+  agentSessionNotifications: (agentId: string, label: string) =>
+    ["agents", agentId, "sessions", label || "principal", "notifications"] as const,
   /** The viewer's organizations; every query of one organization is under `org(id)`. */
   orgs: ["orgs"] as const,
   org: (id: string) => ["orgs", id] as const,

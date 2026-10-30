@@ -8,6 +8,7 @@ import (
 	"io"
 	"mime"
 	"net/http"
+	"net/url"
 	"path/filepath"
 	"slices"
 	"strings"
@@ -54,6 +55,8 @@ func (s *server) agentAPIRoutes(mux *http.ServeMux) {
 	s.handle(mux, "GET /api/v1/agent/rooms", s.agentOnly(s.agentRooms))
 	s.handle(mux, "GET /api/v1/agent/rooms/{room}/info", s.agentOnly(s.agentRoomInfo))
 	s.handle(mux, "GET /api/v1/agent/rooms/{room}/messages", s.agentOnly(s.agentHistory))
+	s.handle(mux, "GET /api/v1/agent/rooms/{room}/unread", s.agentOnly(s.agentUnread))
+	s.handle(mux, "PUT /api/v1/agent/rooms/{room}/notifications", s.agentOnly(s.agentSetNotifications))
 	s.handle(mux, "POST /api/v1/agent/rooms/{room}/messages", s.agentOnly(s.agentPost))
 	s.handle(mux, "POST /api/v1/agent/messages/{id}/reply", s.agentOnly(s.agentReply))
 	s.handle(mux, "PATCH /api/v1/agent/messages/{id}", s.agentOnly(s.agentEdit))
@@ -366,11 +369,120 @@ func (s *server) agentOnly(h principalFunc) apiFunc {
 	}
 }
 
-// agentRooms lists the agent's rooms with their members (TOOL-09).
+// callingSession resolves the session an agent API request acts as (SN-01, SN-05): the live id and the
+// folder headers give its label, and the harness session id its key, which outlives the label. A
+// malformed harness session header is refused as on connect, so a typo never reads another session's
+// state.
+func (s *server) callingSession(r *http.Request, p authn.Principal) (agents.CallingSession, error) {
+	harness, err := agents.HarnessSessionFromHeader(r.Header)
+	if err != nil {
+		return agents.CallingSession{}, err
+	}
+	folder, err := url.PathUnescape(r.Header.Get(dto.HeaderFolder))
+	if err != nil {
+		folder = "" // an unusable folder header names no worktree, as for a post (SESS-29)
+	}
+	return s.Agents.CallingSessionOf(r.Context(), p.AgentID, r.Header.Get(dto.HeaderLive), folder, harness)
+}
+
+// agentUnread returns the messages of the room the calling session had not read yet, oldest first and at
+// most agents.UnreadLimit of them, and marks them read (SN-05). The filters are the ones of the pushed
+// catch-up (SN-03, SN-03a): the session's own messages are not part of it (SN-06), nothing from before the
+// AI's membership (ROOM-01), no agent message written while the loop guard paused the room (DLV-08), no
+// message it acknowledged, and in trusted mode no untrusted message. The frames carry the trust of their
+// author for the AI and never the context flag: they are what the session reads, not the catch-up of a
+// pushed message.
+func (s *server) agentUnread(w http.ResponseWriter, r *http.Request, p authn.Principal) error {
+	room, err := s.resolveRoom(r.Context(), p, r.PathValue("room"))
+	if err != nil {
+		return err
+	}
+	cs, err := s.callingSession(r, p)
+	if err != nil {
+		return err
+	}
+	views, skipped, err := s.Agents.ReadSessionUnread(r.Context(), p.AgentID, room.ID, cs, agents.UnreadLimit)
+	if err != nil {
+		return err
+	}
+	trustedOnly, err := s.Agents.TrustedOnly(r.Context(), p.AgentID, room.ID)
+	if err != nil {
+		return err
+	}
+	list, err := s.Rooms.Details(r.Context(), views)
+	if err != nil {
+		return err
+	}
+	out := dto.AgentUnread{Room: delivery.RoomRef(room.ID, room.Name, room.Kind), Messages: make([]dto.AgentMessage, 0, len(list)), Skipped: skipped}
+	trust := s.Trust.Open()
+	for _, m := range list {
+		// A message the AI wrote itself is trusted for its own sessions, as the live push says (SESS-37).
+		trusted := true
+		if dto.AuthorKind(m.AuthorKind) != dto.AuthorKindAgent || m.AuthorID != p.AgentID {
+			if trusted, err = trust.Trusts(r.Context(), delivery.AuthorOf(m.MessageView), p.AgentID); err != nil {
+				return err
+			}
+		}
+		if trustedOnly && !trusted {
+			continue // SN-03, POS-10: in trusted mode an untrusted message is no context either
+		}
+		out.Messages = append(out.Messages, agentMessage(room, m, trusted))
+	}
+	httpx.WriteJSON(w, http.StatusOK, out)
+	return nil
+}
+
+// agentSetNotifications sets the notification setting of the calling session in one room (SN-02).
+func (s *server) agentSetNotifications(w http.ResponseWriter, r *http.Request, p authn.Principal) error {
+	var req dto.NotifyRequest
+	if err := httpx.DecodeJSON(w, r, &req); err != nil {
+		return err
+	}
+	if !agents.ValidNotify(req.Notify) {
+		return httpx.Invalid(map[string]string{"notify": "must be on or mentions"})
+	}
+	room, err := s.resolveRoom(r.Context(), p, r.PathValue("room"))
+	if err != nil {
+		return err
+	}
+	cs, err := s.callingSession(r, p)
+	if err != nil {
+		return err
+	}
+	if err := s.Agents.SetSessionNotify(r.Context(), p.AgentID, cs.Key, room.ID, cs.IsPrincipal, req.Notify); err != nil {
+		return err
+	}
+	notification, _, err := s.Agents.SessionNotification(r.Context(), p.AgentID, room.ID, cs)
+	if err != nil {
+		return err
+	}
+	httpx.WriteJSON(w, http.StatusOK, roomNotification(notification))
+	return nil
+}
+
+// roomNotification renders one session's notification state of a room for the API.
+func roomNotification(n agents.SessionRoomNotification) dto.RoomNotification {
+	return dto.RoomNotification{RoomID: n.RoomID, Name: n.Name, Kind: n.Kind, Notify: n.Notify, Unread: n.Unread}
+}
+
+// agentRooms lists the agent's rooms with their members (TOOL-09), and for the calling session its unread
+// count and notification setting in each (SN-05).
 func (s *server) agentRooms(w http.ResponseWriter, r *http.Request, p authn.Principal) error {
 	states, err := s.Agents.SessionRooms(r.Context(), p.AgentID)
 	if err != nil {
 		return err
+	}
+	cs, err := s.callingSession(r, p)
+	if err != nil {
+		return err
+	}
+	notifications, err := s.Agents.SessionNotifications(r.Context(), p.AgentID, cs)
+	if err != nil {
+		return err
+	}
+	byRoom := make(map[string]agents.SessionRoomNotification, len(notifications))
+	for _, n := range notifications {
+		byRoom[n.RoomID] = n
 	}
 	out := dto.List[dto.AgentRoom]{Items: make([]dto.AgentRoom, 0, len(states))}
 	for _, st := range states {
@@ -382,9 +494,10 @@ func (s *server) agentRooms(w http.ResponseWriter, r *http.Request, p authn.Prin
 		if err != nil {
 			return err
 		}
+		n := byRoom[st.ID]
 		ar := dto.AgentRoom{
 			ID: room.ID, Kind: dto.ConversationKind(room.Kind), Name: st.Name, Description: room.Description,
-			Members: make([]dto.RoomMember, len(members)),
+			Members: make([]dto.RoomMember, len(members)), Unread: n.Unread, Notify: n.Notify,
 		}
 		for _, part := range room.Participants {
 			if part.ID != p.AgentID { // a DM, seen from the AI: the other participant
@@ -393,7 +506,7 @@ func (s *server) agentRooms(w http.ResponseWriter, r *http.Request, p authn.Prin
 			}
 		}
 		for i, m := range members {
-			ar.Members[i] = s.toMember(m)
+			ar.Members[i] = s.toMember(r.Context(), m)
 		}
 		out.Items = append(out.Items, ar)
 	}
@@ -434,8 +547,17 @@ func (s *server) agentRoomInfo(w http.ResponseWriter, r *http.Request, p authn.P
 		RoomTextTrusted:     textTrusted,
 		Members:             make([]dto.RoomMember, len(members)),
 	}
+	cs, err := s.callingSession(r, p)
+	if err != nil {
+		return err
+	}
+	notification, _, err := s.Agents.SessionNotification(r.Context(), p.AgentID, st.ID, cs)
+	if err != nil {
+		return err
+	}
+	out.Unread, out.Notify = notification.Unread, notification.Notify
 	for i, m := range members {
-		out.Members[i] = s.toMember(m)
+		out.Members[i] = s.toMember(r.Context(), m)
 		if out.Members[i].Kind == dto.MemberKindAgent && m.MemberID == p.AgentID {
 			out.Me = out.Members[i]
 		}

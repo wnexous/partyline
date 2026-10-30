@@ -1,6 +1,7 @@
 package api
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"io"
@@ -61,7 +62,7 @@ func (s *server) principalOfflineSince(agentID string) *time.Time {
 }
 
 // toMember renders a member; agent members carry their online state and live sessions.
-func (s *server) toMember(m rooms.Member) dto.RoomMember {
+func (s *server) toMember(ctx context.Context, m rooms.Member) dto.RoomMember {
 	out := dto.RoomMember{
 		ID: m.ID, Kind: dto.MemberKind(m.Kind), MemberID: m.MemberID, Name: m.Name,
 		Owner: m.AgentOwner, ConnectorKind: m.ConnectorKind, ChatKind: dto.ChatKind(m.ChatKind),
@@ -72,6 +73,10 @@ func (s *server) toMember(m rooms.Member) dto.RoomMember {
 		online := s.Agents.Online(m.MemberID)
 		out.Online = &online
 		out.Sessions = liveSessions(s.Agents.Sessions(m.MemberID))
+		for i := range out.Sessions {
+			// The member card marks a session muted in this room (SN-02, SN-08).
+			out.Sessions[i].Notify = s.Agents.SessionNotifyOf(ctx, m.MemberID, out.Sessions[i].Label, m.RoomID)
+		}
 		out.PrincipalOfflineSince = s.principalOfflineSince(m.MemberID)
 	}
 	if m.Intelligence.ID != "" && (out.Kind == dto.MemberKindAgent || out.Kind == dto.MemberKindUser) {
@@ -163,7 +168,7 @@ func (s *server) listMembers(w http.ResponseWriter, r *http.Request, p authn.Pri
 	}
 	out := dto.List[dto.RoomMember]{Items: make([]dto.RoomMember, len(list))}
 	for i, m := range list {
-		out.Items[i] = s.toMember(m)
+		out.Items[i] = s.toMember(r.Context(), m)
 		for _, person := range people[m.MemberID] {
 			out.Items[i].People = append(out.Items[i].People, convert.IntelligenceRef(person.Intelligence, dto.IntelligenceRolePerson, person.Platform))
 		}
@@ -182,7 +187,7 @@ func (s *server) addMember(w http.ResponseWriter, r *http.Request, p authn.Princ
 	if err != nil {
 		return err
 	}
-	httpx.WriteJSON(w, http.StatusCreated, s.toMember(m))
+	httpx.WriteJSON(w, http.StatusCreated, s.toMember(r.Context(), m))
 	return nil
 }
 
@@ -197,7 +202,7 @@ func (s *server) updateMember(w http.ResponseWriter, r *http.Request, p authn.Pr
 	if err != nil {
 		return err
 	}
-	httpx.WriteJSON(w, http.StatusOK, s.toMember(m))
+	httpx.WriteJSON(w, http.StatusOK, s.toMember(r.Context(), m))
 	return nil
 }
 

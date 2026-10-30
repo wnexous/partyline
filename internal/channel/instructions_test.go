@@ -40,6 +40,8 @@ const (
 	groupsSentence = `Start a group with create_group (name, members as "@handle" or id, optional description, optional organization): the group belongs to an organization you are a member of, not a guest, named by its address in organization (your home organization when you leave it out); you are added automatically, everyone else only when listed, and each of them must belong to that organization; if any member cannot be added nothing is created and the refused ones are named.`
 	// identityNoticeSentence is what the full channel says the connect notice tells.
 	identityNoticeSentence = `When Partyline connects you get a notice that says who you are, which organization you belong to and who manages you (names and @handles).`
+	// notificationsSentence is what every text says about the session's unread messages and setting (SN-02, SN-05).
+	notificationsSentence = `You may not be notified of every message of a room: list_rooms and room_info show, per room, this session's unread count and notification setting (on, or mentions only), read_unread reads what this session missed and marks it read, set_notifications changes the setting, and a mention of this session always reaches it.`
 	// changesSentence is what every text says about changing a message (EDT-08, EDT-09, DLT-08): the two tools, and what
 	// the event of a change is.
 	changesSentence = `edit_message (message_id, text) corrects a message you sent and delete_message (message_id) takes one back. When someone changes a message you were given, you get it again with the same message_id, saying that it was edited (its new text follows) or deleted: that is not a new message.`
@@ -207,6 +209,17 @@ func TestEveryVariantDescribesContactsAsSharedOrganizationsAndUsers(t *testing.T
 
 // Only the full channel of Claude Code gets the connect notice that says who the AI is, so only its instructions say what the
 // notice tells (POS-10): the tools-only server never gets one and omp shows it to the person only.
+// SN-02, SN-05: every variant says that a session may miss messages, how to read them and how to change
+// the setting, so a harness decides with the same words to catch up instead of asking the person.
+func TestEveryVariantExplainsUnreadMessagesAndNotifications(t *testing.T) {
+	for name, got := range variantsOf(t) {
+		t.Run(name, func(t *testing.T) {
+			require.Contains(t, got, notificationsSentence)
+			require.Equal(t, 1, strings.Count(got, notificationsSentence), "said once")
+		})
+	}
+}
+
 func TestOnlyTheChannelPromisesTheNoticeOfWhoManagesTheAI(t *testing.T) {
 	v := variantsOf(t)
 	require.Contains(t, v["channel"], identityNoticeSentence)

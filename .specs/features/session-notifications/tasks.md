@@ -17,8 +17,8 @@ offline principal backlog, session-key routing, principal row and queue hygiene.
 
 ## T3 — tools (SN-05, SN-02)
 `list_rooms`/`room_info` unread + notify per calling session; `read_unread`; `set_notifications`;
-docs/agents.md; channel tests. Status: pending
+docs/agents.md; channel tests. Status: done
 
 ## T4 — API + web (SN-08)
 Per-session notification routes (manage level), web Sessions "Notificações" sheet + member card
-muted marker, i18n, vitest + e2e. Status: pending
+muted marker, i18n, vitest + e2e. Status: done

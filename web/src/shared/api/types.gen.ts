@@ -80,6 +80,44 @@ export interface AgentRoom {
    */
   with?: IntelligenceRef;
   members: RoomMember[];
+  /**
+   * Unread is how many messages of the room the calling session has not read, and Notify its
+   * notification setting there (SN-02, SN-05): on, or mentions only.
+   */
+  unread: number /* int64 */;
+  notify: string;
+}
+/**
+ * AgentUnread is GET /agent/rooms/{room}/unread: the messages of the room the calling session has not
+ * read yet, oldest first and marked read by the call (SN-05). Context is never set: nothing here is the
+ * catch-up of a pushed message.
+ */
+export interface AgentUnread {
+  room: RoomRef;
+  messages: AgentMessage[];
+  /**
+   * Skipped is how many earlier unread messages were left out because the answer keeps the newest
+   * UnreadLimit of them (SN-05).
+   */
+  skipped: number /* int64 */;
+}
+/**
+ * NotifyRequest is the body of PUT /agent/rooms/{room}/notifications and of
+ * PUT /agents/{id}/sessions/{label}/notifications/{room}: on, or mentions only (SN-02).
+ */
+export interface NotifyRequest {
+  notify: string;
+}
+/**
+ * RoomNotification is one conversation's notification state for one session, as the owner's
+ * notification route lists it (GET /agents/{id}/sessions/{label}/notifications, SN-08).
+ */
+export interface RoomNotification {
+  room_id: string;
+  name: string;
+  kind: ConversationKind;
+  notify: string;
+  unread: number /* int64 */;
 }
 /**
  * AgentMessage is a message delivered to an agent. Trusted is computed for the receiving
@@ -132,6 +170,12 @@ export interface RoomInfo {
   room_text_trusted: boolean;
   members: RoomMember[];
   me: RoomMember;
+  /**
+   * Unread is how many messages of the room the calling session has not read, and Notify its
+   * notification setting there (SN-02, SN-05).
+   */
+  unread: number /* int64 */;
+  notify: string;
 }
 /**
  * MergeAgentRequest is the body of POST /agents/{id}/merge: the AI the one in the path is merged
@@ -323,6 +367,11 @@ export interface SessionInfo {
   label: string;
   harness: string;
   connected_at: string /* RFC 3339 */;
+  /**
+   * Notify is the session's notification setting in the room whose members carry it (SN-02, SN-08):
+   * on, or mentions only. Absent where the session is not shown in a room (the AI's profile).
+   */
+  notify?: string;
   /**
    * CanBePrincipal tells whether the session sent a harness session id, which is what the principal
    * role is pinned to: only such a session can be made the principal (SESS-59).

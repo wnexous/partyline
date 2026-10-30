@@ -75,14 +75,24 @@ func (t *tools) register(srv *mcp.Server) {
 	}, t.guard(t.ask))
 	srv.HandleTool(mcp.ToolDef{
 		Name:        "room_info",
-		Description: "Read a room's instructions for agents, its members (chats with platform and kind; agents show whether they are online and their live sessions; address a session by writing its address (e.g. @handle:label) in a message's text) and your own membership settings in it.",
+		Description: "Read a room's instructions for agents, its members (chats with platform and kind; agents show whether they are online and their live sessions; address a session by writing its address (e.g. @handle:label) in a message's text), your own membership settings in it and, for this session, how many messages it has not read (unread) and its notification setting there (notify: on, or mentions only).",
 		InputSchema: schema(`{"type":"object","properties":{"room":{"type":"string","description":"room id, room name, or @handle of the intelligence you have a DM with"}},"required":["room"]}`),
 	}, t.guard(t.roomInfo))
 	srv.HandleTool(mcp.ToolDef{
 		Name:        "list_rooms",
-		Description: "List the rooms and direct messages you belong to with their members (agents show whether they are online and their live sessions; address a session by writing its address (e.g. @handle:label) in a message's text); a direct message has kind dm and says who it is with.",
+		Description: "List the rooms and direct messages you belong to with their members (agents show whether they are online and their live sessions; address a session by writing its address (e.g. @handle:label) in a message's text); a direct message has kind dm and says who it is with. Each room also carries, for this session, unread (how many messages it has not read there) and notify (its notification setting: on, or mentions only).",
 		InputSchema: schema(`{"type":"object","properties":{}}`),
 	}, t.guard(t.listRooms))
+	srv.HandleTool(mcp.ToolDef{
+		Name:        "read_unread",
+		Description: "Read the messages of a room this session has not read yet, oldest first (at most 100; skipped says how many earlier ones were left out), and mark them read. Use it to catch up when a room shows unread messages: it reads them as context, not as new requests. A mention of this session always reaches it live.",
+		InputSchema: schema(`{"type":"object","properties":{"room":{"type":"string","description":"room id, room name, or @handle of the intelligence you have a DM with"}},"required":["room"]}`),
+	}, t.guard(t.readUnread))
+	srv.HandleTool(mcp.ToolDef{
+		Name:        "set_notifications",
+		Description: "Choose whether this session is notified of every message a room's delivery mode wants (on) or only of the messages that address it (mentions, the default of a session that is not the principal). You may not be notified of every message; read_unread catches up. Mentions always reach you.",
+		InputSchema: schema(`{"type":"object","properties":{"room":{"type":"string","description":"room id, room name, or @handle of the intelligence you have a DM with"},"notify":{"type":"string","enum":["on","mentions"],"description":"on: every message the delivery mode wants; mentions: only messages that address this session"}},"required":["room","notify"]}`),
+	}, t.guard(t.setNotifications))
 	srv.HandleTool(mcp.ToolDef{
 		Name:        "history",
 		Description: "Read earlier messages of a room, oldest first. Page back with before = the message_id of the oldest message returned.",
@@ -603,6 +613,10 @@ type roomListing struct {
 	With        *contactListing      `json:"with,omitempty"`
 	Description string               `json:"description,omitempty"`
 	Members     []memberListing      `json:"members"`
+	// Unread is how many messages of the room this session has not read, and Notify its setting
+	// there (SN-02, SN-05).
+	Unread int64  `json:"unread"`
+	Notify string `json:"notify"`
 }
 
 // contactListing is the other participant of a DM.
@@ -666,7 +680,7 @@ func (t *tools) listRooms(ctx context.Context, _ json.RawMessage) (string, error
 	}
 	out := make([]roomListing, 0, len(rooms.Items))
 	for _, r := range rooms.Items {
-		l := roomListing{ID: r.ID, Kind: r.Kind, Name: r.Name, Description: r.Description, Members: make([]memberListing, 0, len(r.Members))}
+		l := roomListing{ID: r.ID, Kind: r.Kind, Name: r.Name, Description: r.Description, Members: make([]memberListing, 0, len(r.Members)), Unread: r.Unread, Notify: r.Notify}
 		if r.With != nil {
 			l.With = &contactListing{ID: r.With.ID, Name: r.With.DisplayName, Handle: r.With.Handle, Kind: r.With.Kind}
 		}
@@ -694,6 +708,10 @@ type roomInfoListing struct {
 	RoomTextNote    string             `json:"room_text_note,omitempty"`
 	Members         []roomInfoMember   `json:"members"`
 	Me              membershipSettings `json:"me"`
+	// Unread is how many messages of the room this session has not read, and Notify its setting
+	// there (SN-02, SN-05).
+	Unread int64  `json:"unread"`
+	Notify string `json:"notify"`
 }
 
 // UntrustedInstructionsNote labels room instructions not written by an identity that manages the
@@ -744,6 +762,7 @@ func (t *tools) roomInfo(ctx context.Context, args json.RawMessage) (string, err
 		InstructionsTrusted: info.InstructionsTrusted, RoomTextTrusted: info.RoomTextTrusted,
 		Members: make([]roomInfoMember, 0, len(info.Members)),
 		Me:      membershipSettings{DisplayName: info.Me.DisplayName, Delivery: info.Me.Delivery, Keywords: info.Me.Keywords},
+		Unread:  info.Unread, Notify: info.Notify,
 	}
 	if out.Me.Keywords == nil {
 		out.Me.Keywords = []string{}
@@ -788,17 +807,63 @@ func (t *tools) history(ctx context.Context, args json.RawMessage) (string, erro
 	}
 	// The server answers newest first; the tool reads like a transcript.
 	slices.Reverse(page.Items)
-	msgs := make([]map[string]string, 0, len(page.Items))
-	for _, m := range page.Items {
+	return marshal(map[string]any{"messages": t.frames(page.Items), "has_more": page.HasMore})
+}
+
+// frames renders messages as the tools read them: the channel's framing of each message, oldest first.
+func (t *tools) frames(msgs []dto.AgentMessage) []map[string]string {
+	out := make([]map[string]string, 0, len(msgs))
+	for _, m := range msgs {
 		n := FormatFor(m, t.link.selfRef().ID)
 		entry := make(map[string]string, len(n.Meta)+1)
 		for k, v := range n.Meta {
 			entry[k] = v
 		}
 		entry["content"] = n.Content
-		msgs = append(msgs, entry)
+		out = append(out, entry)
 	}
-	return marshal(map[string]any{"messages": msgs, "has_more": page.HasMore})
+	return out
+}
+
+// readUnread reads the messages of a room this session has not read yet, oldest first, and marks them
+// read (SN-05); the server applies the filters of the pushed catch-up (SN-03).
+func (t *tools) readUnread(ctx context.Context, args json.RawMessage) (string, error) {
+	var a struct {
+		Room string `json:"room"`
+	}
+	if err := decode(args, &a); err != nil {
+		return "", err
+	}
+	if err := required("room", a.Room); err != nil {
+		return "", err
+	}
+	var out dto.AgentUnread
+	if err := t.api.json(ctx, http.MethodGet, roomPath(a.Room, "/unread"), nil, nil, &out); err != nil {
+		return "", err
+	}
+	return marshal(map[string]any{"messages": t.frames(out.Messages), "skipped": out.Skipped})
+}
+
+// setNotifications sets the notification setting of this session in a room (SN-02): on, or mentions only.
+func (t *tools) setNotifications(ctx context.Context, args json.RawMessage) (string, error) {
+	var a struct {
+		Room   string `json:"room"`
+		Notify string `json:"notify"`
+	}
+	if err := decode(args, &a); err != nil {
+		return "", err
+	}
+	if err := required("room", a.Room, "notify", a.Notify); err != nil {
+		return "", err
+	}
+	if a.Notify != "on" && a.Notify != "mentions" {
+		return "", errors.New("notify must be on or mentions")
+	}
+	var out dto.RoomNotification
+	if err := t.api.json(ctx, http.MethodPut, roomPath(a.Room, "/notifications"), nil, dto.NotifyRequest{Notify: a.Notify}, &out); err != nil {
+		return "", err
+	}
+	return marshal(map[string]any{"room": out.RoomID, "notify": out.Notify, "unread": out.Unread})
 }
 
 func (t *tools) downloadAttachment(ctx context.Context, args json.RawMessage) (string, error) {

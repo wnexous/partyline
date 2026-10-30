@@ -57,6 +57,37 @@ type AgentRoom struct {
 	// With is the other participant of a DM, relative to the AI; absent for a group.
 	With    *IntelligenceRef `json:"with,omitempty"`
 	Members []RoomMember     `json:"members"`
+	// Unread is how many messages of the room the calling session has not read, and Notify its
+	// notification setting there (SN-02, SN-05): on, or mentions only.
+	Unread int64  `json:"unread"`
+	Notify string `json:"notify"`
+}
+
+// AgentUnread is GET /agent/rooms/{room}/unread: the messages of the room the calling session has not
+// read yet, oldest first and marked read by the call (SN-05). Context is never set: nothing here is the
+// catch-up of a pushed message.
+type AgentUnread struct {
+	Room     RoomRef        `json:"room"`
+	Messages []AgentMessage `json:"messages"`
+	// Skipped is how many earlier unread messages were left out because the answer keeps the newest
+	// UnreadLimit of them (SN-05).
+	Skipped int64 `json:"skipped"`
+}
+
+// NotifyRequest is the body of PUT /agent/rooms/{room}/notifications and of
+// PUT /agents/{id}/sessions/{label}/notifications/{room}: on, or mentions only (SN-02).
+type NotifyRequest struct {
+	Notify string `json:"notify"`
+}
+
+// RoomNotification is one conversation's notification state for one session, as the owner's
+// notification route lists it (GET /agents/{id}/sessions/{label}/notifications, SN-08).
+type RoomNotification struct {
+	RoomID string           `json:"room_id"`
+	Name   string           `json:"name"`
+	Kind   ConversationKind `json:"kind"`
+	Notify string           `json:"notify"`
+	Unread int64            `json:"unread"`
 }
 
 // AgentMessage is a message delivered to an agent. Trusted is computed for the receiving
@@ -95,6 +126,10 @@ type RoomInfo struct {
 	RoomTextTrusted bool         `json:"room_text_trusted"`
 	Members         []RoomMember `json:"members"`
 	Me              RoomMember   `json:"me"`
+	// Unread is how many messages of the room the calling session has not read, and Notify its
+	// notification setting there (SN-02, SN-05).
+	Unread int64  `json:"unread"`
+	Notify string `json:"notify"`
 }
 
 // MergeAgentRequest is the body of POST /agents/{id}/merge: the AI the one in the path is merged
@@ -238,6 +273,9 @@ type SessionInfo struct {
 	Label       string    `json:"label"`
 	Harness     string    `json:"harness"`
 	ConnectedAt time.Time `json:"connected_at"`
+	// Notify is the session's notification setting in the room whose members carry it (SN-02, SN-08):
+	// on, or mentions only. Absent where the session is not shown in a room (the AI's profile).
+	Notify string `json:"notify,omitempty"`
 	// CanBePrincipal tells whether the session sent a harness session id, which is what the principal
 	// role is pinned to: only such a session can be made the principal (SESS-59).
 	CanBePrincipal bool `json:"can_be_principal,omitempty"`
