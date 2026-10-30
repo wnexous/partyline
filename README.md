@@ -102,6 +102,10 @@ docker logs partyline 2>&1 | grep -i "setup token"
 Open <http://localhost:8080/setup>, paste the setup token from the log and create the admin
 account. The token is printed only while no account exists.
 
+Every start that applies pending migrations copies the database to `<data dir>/backups` first, so
+upgrading an existing installation needs no manual snapshot; see
+[Upgrades and backups](#upgrades-and-backups) for where the copies are and how to restore one.
+
 ### Docker Compose
 
 ```sh
@@ -458,6 +462,8 @@ Everything is configured with environment variables.
 | `PARTYLINE_TRUSTED_PROXIES` | empty | Comma-separated CIDRs or IPs of reverse proxies whose `X-Forwarded-For` is trusted. |
 | `PARTYLINE_ALLOW_PRIVATE_NETWORKS` | `false` | `true` lets connectors call loopback, private, link-local and CGNAT addresses (an evolution-go or Bot API server on your LAN, a webhook receiver on localhost). Off, connector URLs that resolve to such addresses are refused. |
 | `PARTYLINE_PRIVATE_NETWORK_ALLOWLIST` | empty | Comma-separated private destinations connectors may reach while `PARTYLINE_ALLOW_PRIVATE_NETWORKS` stays `false`: CIDRs (`192.168.1.0/24`, any port), addresses or host names with an optional port (`10.0.0.5`, `[fd00::5]:8088`, `localhost:8088`). A host name entry matches the name in the connector URL; everything else private stays blocked. Prefer `host:port` or CIDR entries: a bare name opens every port on it. List only names whose DNS you control, since the entry trusts whatever the name resolves to. The list applies to every user's connectors, not just yours. |
+| `PARTYLINE_MIGRATION_BACKUPS_KEEP` | `5` | How many pre-migration database copies stay in `<data dir>/backups`; `0` keeps every one. Older copies are deleted only after a new one was written. See [Upgrades and backups](#upgrades-and-backups). |
+| `PARTYLINE_SKIP_MIGRATION_BACKUP` | `false` | `true` migrates without writing the pre-migration copy. Only for an operator who restored a backup or accepted the risk: a failed migration then has nothing to roll back to. |
 
 Run it behind a TLS-terminating reverse proxy for internet exposure, set
 `PARTYLINE_PUBLIC_URL` to the https URL and list the proxy in `PARTYLINE_TRUSTED_PROXIES`.
@@ -511,6 +517,48 @@ only.
 - **Logs.** A delivery is logged as `webpush: notification delivered`, `... failed` or `... dropped
 the subscription`, with the endpoint's hostname and the status code only: never the conversation,
 the preview, the endpoint path or a key.
+
+### Upgrades and backups
+
+Before `partyline serve` applies pending migrations, it writes a consistent copy of the database
+with SQLite's `VACUUM INTO` and only then migrates. A release with a migration therefore needs no
+manual VM snapshot: a migration that goes wrong is undone by putting the copy back.
+
+- **Where**: `<data dir>/backups/partyline-<from>-to-<to>-<UTC timestamp>.db`, mode 0600 inside a
+  0700 directory. `<from>` and `<to>` are the migration versions the run starts from and reaches,
+  and the timestamp makes the names sort in the order they were taken. The log line
+  `migration backup written` carries `from`, `to` and `path`.
+- **When**: only when at least one migration is pending **and** the database already has data (a
+  version in `schema_migrations`). A fresh database and a start with nothing pending write no copy.
+- **Retention**: the newest 5 copies stay (`PARTYLINE_MIGRATION_BACKUPS_KEEP`; `0` keeps all), and
+  an older one is deleted only after a new copy succeeded. Only files named `partyline-*.db` are
+  pruned, so a copy you made by hand under another name is safe.
+- **Disk space**: with less than twice the database size free in the data directory, the server
+  refuses to migrate and names the free and the needed bytes. Free space, or set
+  `PARTYLINE_SKIP_MIGRATION_BACKUP=1`.
+- **A copy that fails** (a read-only directory, a full disk) stops the start with an error and the
+  database stays as it was; the server never migrates without the copy it was asked to take. Fix
+  the cause, or set `PARTYLINE_SKIP_MIGRATION_BACKUP=1` when you accept the risk.
+- **What the copy holds**: every table and row, connector secrets included (they stay encrypted
+  with the instance key). `secret.key`, `vapid.key` and the attachment blobs are not part of it;
+  keep backing up the whole data directory for those.
+
+To **restore** a copy, stop the server, put the file back as `partyline.db`, remove the old
+database's `-wal` and `-shm` files, and start the previous image tag:
+
+```sh
+# Containers: stop first, then restore inside the same volume.
+docker stop partyline
+docker run --rm -v partyline-data:/data -v "$PWD":/backup:ro busybox \
+  sh -c 'cp /backup/partyline-<from>-to-<to>-<timestamp>.db /data/partyline.db && rm -f /data/partyline.db-wal /data/partyline.db-shm'
+docker run -d --name partyline -p 8080:8080 -e PARTYLINE_PUBLIC_URL=http://localhost:8080 \
+  -v partyline-data:/data ghcr.io/wnexous/partyline:<previous-tag>
+```
+
+For a binary installation, stop `partyline serve` and do the same with `cp` and `rm` in
+`PARTYLINE_DATA_DIR`. Never restore over a running server: the data directory lock (next section)
+exists so two processes never write the database at once. Starting the previous tag means the
+restored schema matches the binary; starting the new tag again would migrate it again.
 
 ### One process per data directory
 
