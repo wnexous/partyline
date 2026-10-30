@@ -212,9 +212,12 @@ func TestAnEditAfterTheLabelledSessionEndedReachesThePrincipal(t *testing.T) {
 	require.Equal(t, m.ID, frame.Message.ID)
 	require.Equal(t, "@atlas:claude-2 updated", frame.Message.Text)
 
-	// The fallback row is still the principal's until it acknowledges it.
-	row := f.waitRow(t, "claude-2", m.ID)
-	require.True(t, row.FellBackAt.Valid)
+	// The fallback row is still the principal's until it acknowledges it (the sweep of the ended session
+	// runs next to the edit, so it is waited for).
+	require.Eventually(t, func() bool {
+		rows := f.rows(t, "claude-2")
+		return len(rows) == 1 && rows[0].MessageID == m.ID && rows[0].FellBackAt.Valid
+	}, 5*time.Second, 10*time.Millisecond)
 }
 
 // SESS-24: once a message fell back to the principal, the label cannot read it again, not even from

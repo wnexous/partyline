@@ -45,14 +45,6 @@ func (f *sessionFixture) addMember(t *testing.T) {
 		dto.AddMemberRequest{Kind: dto.MemberKindAgent, MemberID: f.agentID}).RequireStatus(http.StatusCreated)
 }
 
-// messageSeq returns the sequence number of a posted message.
-func (f *sessionFixture) messageSeq(t *testing.T, messageID string) int64 {
-	t.Helper()
-	seq, err := f.env.App.Store.R().GetMessageRoomSeq(context.Background(), messageID)
-	require.NoError(t, err)
-	return seq.Seq
-}
-
 // SN-03, SN-04 (ROOM-01): messages posted while the AI was not a member of the room never come back. Its
 // read positions and its cursor are forgotten when it is taken out, so neither the catch-up of a mention
 // nor the principal's backlog reaches the absence.
