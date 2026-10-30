@@ -1,4 +1,5 @@
 import {
+  KeyRoundIcon,
   PlayIcon,
   RefreshCwIcon,
   RotateCwIcon,
@@ -35,6 +36,7 @@ import { Button } from "@/shared/ui/primitives/button";
 import { Checkbox } from "@/shared/ui/primitives/checkbox";
 import { Label } from "@/shared/ui/primitives/label";
 import { Skeleton } from "@/shared/ui/primitives/skeleton";
+import { ContainerCredentialsDialog } from "./credentials-dialog";
 
 /** The actions of the container, in the order the row lists them. */
 const ACTIONS = [
@@ -93,6 +95,7 @@ export function ContainerSection({
   const container = useContainerAgent(agentId, { enabled: manages, poll: manages });
   const run = useContainerAction(agentId);
   const [logsOpen, setLogsOpen] = useState(false);
+  const [credentialsOpen, setCredentialsOpen] = useState(false);
   const [deleting, setDeleting] = useState(false);
 
   if (!manages) return null;
@@ -158,6 +161,10 @@ export function ContainerSection({
             </Button>
           );
         })}
+        <Button variant="outline" size="sm" onClick={() => setCredentialsOpen(true)}>
+          <KeyRoundIcon aria-hidden="true" />
+          {t("container.credentials")}
+        </Button>
         <Button variant="outline" size="sm" onClick={() => setLogsOpen(true)}>
           <ScrollTextIcon aria-hidden="true" />
           {t("container.logs")}
@@ -173,6 +180,14 @@ export function ContainerSection({
         </Button>
       </div>
 
+      {credentialsOpen ? (
+        <ContainerCredentialsDialog
+          agentId={agentId}
+          harness={data.harness}
+          env={data.env}
+          onClose={() => setCredentialsOpen(false)}
+        />
+      ) : null}
       {logsOpen ? (
         <ContainerLogs
           agentId={agentId}

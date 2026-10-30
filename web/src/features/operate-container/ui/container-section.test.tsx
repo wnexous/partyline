@@ -2,7 +2,7 @@ import { screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { apiError, json, mockApi } from "@/test/fetch";
-import { makeContainer } from "@/test/fixtures";
+import { makeContainer, makeSecret } from "@/test/fixtures";
 import { useLiveStore } from "@/test/live-store";
 import { renderWithProviders } from "@/test/render";
 import { ContainerSection } from "./container-section";
@@ -123,6 +123,77 @@ describe("operating the container (CA-06)", () => {
     await waitFor(() => expect(calls.some((c) => c.method === "POST")).toBe(true));
     answer();
     await waitFor(() => expect(screen.getByRole("button", { name: "Start" })).toBeEnabled());
+  });
+});
+
+describe("editing the credentials of the container (CA-04)", () => {
+  it("prefills the mapping, refuses an empty one and sends the edited rows", async () => {
+    const updated = makeContainer({
+      env: [{ var: "ANTHROPIC_API_KEY", secret_name: "OPENCODE_API_KEY" }],
+    });
+    const { calls, user } = render({
+      "GET /secrets": json(200, { items: [makeSecret()] }),
+      "PATCH /agents/a1/container": json(200, updated),
+    });
+    await screen.findByRole("heading", { name: "Container" });
+    await user.click(screen.getByRole("button", { name: "Credentials" }));
+    const dialog = await screen.findByRole("dialog", { name: "Credentials of the container" });
+    const variable = within(dialog).getByRole("textbox", { name: "Variable" });
+    expect(variable).toHaveValue("OPENCODE_API_KEY");
+    expect(within(dialog).getByRole("combobox", { name: "Secret" })).toHaveValue(
+      "OPENCODE_API_KEY",
+    );
+    await user.clear(variable);
+    await user.type(variable, "ANTHROPIC_API_KEY");
+    await user.click(within(dialog).getByRole("button", { name: "Save credentials" }));
+    await waitFor(() =>
+      expect(calls.some((c) => c.method === "PATCH" && c.path === "/agents/a1/container")).toBe(
+        true,
+      ),
+    );
+    expect(calls.find((c) => c.method === "PATCH")?.body).toEqual({
+      env: [{ var: "ANTHROPIC_API_KEY", secret_name: "OPENCODE_API_KEY" }],
+    });
+    await waitFor(() =>
+      expect(toast.success).toHaveBeenCalledWith(
+        "Credentials updated; the container is being created again",
+      ),
+    );
+    expect(screen.queryByRole("dialog", { name: "Credentials of the container" })).toBeNull();
+  });
+
+  it("keeps Save disabled while no credential the app reads is mapped", async () => {
+    const { user } = render({ "GET /secrets": json(200, { items: [makeSecret()] }) });
+    await screen.findByRole("heading", { name: "Container" });
+    await user.click(screen.getByRole("button", { name: "Credentials" }));
+    const dialog = await screen.findByRole("dialog", { name: "Credentials of the container" });
+    await user.clear(within(dialog).getByRole("textbox", { name: "Variable" }));
+    await user.type(within(dialog).getByRole("textbox", { name: "Variable" }), "MODEL_NAME");
+    expect(within(dialog).getByRole("button", { name: "Save credentials" })).toBeDisabled();
+    expect(
+      within(dialog).getByText("Map at least one credential before creating the AI."),
+    ).toBeInTheDocument();
+  });
+
+  it("says the server's credentials_required sentence instead of the generic failure", async () => {
+    const { user } = render({
+      "GET /secrets": json(200, { items: [makeSecret()] }),
+      "PATCH /agents/a1/container": apiError(
+        422,
+        "credentials_required",
+        "the opencode app needs a credential",
+        { env: "the opencode app needs a credential" },
+      ),
+    });
+    await screen.findByRole("heading", { name: "Container" });
+    await user.click(screen.getByRole("button", { name: "Credentials" }));
+    const dialog = await screen.findByRole("dialog", { name: "Credentials of the container" });
+    await user.click(within(dialog).getByRole("button", { name: "Save credentials" }));
+    expect(
+      await within(dialog).findByText(
+        "Map one of the variables the app reads to a secret: without a credential it can’t sign in.",
+      ),
+    ).toBeInTheDocument();
   });
 });
 

@@ -1404,6 +1404,12 @@ export const en = {
   "container.runnerTimeout": "The server did not answer in time.",
   "container.notFound": "This AI has no container any more.",
   "container.logs": "View logs",
+  "container.credentials": "Credentials",
+  "container.credentialsTitle": "Credentials of the container",
+  "container.credentialsBody":
+    "The app reads these variables. Saving them creates the container again with the same workspace; whoever is connected restarts.",
+  "container.credentialsSave": "Save credentials",
+  "container.credentialsSaved": "Credentials updated; the container is being created again",
   "container.logsTitle": "Last {count} log lines",
   "container.logsBody": "Container {name}",
   "container.logsEmpty": "No log lines yet.",

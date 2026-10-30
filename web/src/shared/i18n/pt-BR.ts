@@ -1413,6 +1413,12 @@ export const ptBR: Dictionary = {
   "container.runnerTimeout": "O servidor não respondeu a tempo.",
   "container.notFound": "Esta IA não tem mais contêiner.",
   "container.logs": "Ver logs",
+  "container.credentials": "Credenciais",
+  "container.credentialsTitle": "Credenciais do contêiner",
+  "container.credentialsBody":
+    "O aplicativo lê estas variáveis. Salvar cria o contêiner de novo com o mesmo workspace; quem estiver conectado reinicia.",
+  "container.credentialsSave": "Salvar credenciais",
+  "container.credentialsSaved": "Credenciais atualizadas; o contêiner está sendo criado de novo",
   "container.logsTitle": "Últimas {count} linhas de log",
   "container.logsBody": "Contêiner {name}",
   "container.logsEmpty": "Nenhuma linha de log ainda.",
