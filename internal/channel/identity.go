@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"net/url"
 	"path/filepath"
+	"strings"
 
 	"github.com/wnexous/partyline/internal/api/dto"
 )
@@ -13,12 +14,56 @@ import (
 // UnknownMachine is the machine name sent when the hostname cannot be read.
 const UnknownMachine = "unknown"
 
+// MachineEnvVar names the machine a process reports when it is not the computer it runs on
+// (AID-07): the agent image sets it to the machine of the AI it runs (CA-04), so the session inside
+// the container joins that AI instead of one named after the container's own hostname. Only the
+// agent image sets it; a normal session reports its hostname.
+const MachineEnvVar = "PARTYLINE_MACHINE"
+
+// MaxMachineName is the longest machine name the server keeps, in characters (DEV-01).
+const MaxMachineName = 64
+
+// MachineName is the machine a process reports (AID-07): PARTYLINE_MACHINE when it names one, else
+// the hostname, cut to what the server accepts. Control characters are dropped and the name is
+// trimmed; empty means the process could not tell, which the server refuses with folder_required.
+func MachineName(getenv func(string) string, hostname func() (string, error)) string {
+	name := ""
+	if getenv != nil {
+		name = cleanMachineName(getenv(MachineEnvVar))
+	}
+	if name == "" && hostname != nil {
+		n, err := hostname()
+		if err != nil {
+			return ""
+		}
+		name = cleanMachineName(n)
+	}
+	return name
+}
+
+// cleanMachineName trims a machine name and drops control characters, so a name travels in a
+// header; it is cut to what the server keeps.
+func cleanMachineName(name string) string {
+	name = strings.Map(func(r rune) rune {
+		if r < 0x20 || r == 0x7f {
+			return -1
+		}
+		return r
+	}, name)
+	name = strings.TrimSpace(name)
+	if r := []rune(name); len(r) > MaxMachineName {
+		name = strings.TrimSpace(string(r[:MaxMachineName]))
+	}
+	return name
+}
+
 // Identity is what a process of an AI session tells the server about itself with every
 // connection and call (AID-07): where it works and which harness it is. The server resolves the
 // AI from the token's owner, the machine and the folder; processes of one session started in
 // one folder are therefore the same AI, whatever their harness or process.
 type Identity struct {
-	// Machine is the hostname; an empty one is sent as UnknownMachine.
+	// Machine is the machine of the session: PARTYLINE_MACHINE (the agent image), else the hostname
+	// (MachineName); an empty one is sent as UnknownMachine.
 	Machine string
 	// Folder is the canonical folder (CanonicalFolder): absolute, symlinks resolved, no trailing
 	// separator.

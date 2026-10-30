@@ -3,12 +3,14 @@ package channel
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
 	"os"
 	"path/filepath"
 	"regexp"
+	"strings"
 	"testing"
 	"time"
 
@@ -322,4 +324,32 @@ func everyConnectionSendsTheIdentity(t *testing.T, id Identity) {
 		cancel()
 		require.NoError(t, <-done)
 	})
+}
+
+// AID-07, CA-04: the machine a process reports is PARTYLINE_MACHINE when it is set — the agent
+// image sets the machine of the AI the container runs, whose own hostname belongs to the container
+// runtime and changes with every container — else the hostname; the name is cut to what the server
+// keeps, and empty only when neither can be read.
+func TestMachineName(t *testing.T) {
+	env := func(v string) func(string) string {
+		return func(k string) string {
+			if k == MachineEnvVar {
+				return v
+			}
+			return ""
+		}
+	}
+	host := func(v string, err error) func() (string, error) {
+		return func() (string, error) { return v, err }
+	}
+
+	require.Equal(t, "container:pl-a1b2c3d4e5f6", MachineName(env(" container:pl-a1b2c3d4e5f6 \n"), host("f38b3aaa1710", nil)),
+		"PARTYLINE_MACHINE wins over the hostname, so the session is the AI of the container")
+	require.Equal(t, "devbox", MachineName(env(""), host(" devbox\n", nil)))
+	require.Equal(t, "devbox", MachineName(nil, host("devbox", nil)), "no getenv at all still reads the hostname")
+	require.Equal(t, "devbox", MachineName(env("  "), host("devbox", nil)), "a blank PARTYLINE_MACHINE is no machine")
+	require.Empty(t, MachineName(env(""), host("", errors.New("no hostname"))), "what cannot be told is empty")
+	require.Equal(t, MachineName(env(strings.Repeat("m", 80)), nil), strings.Repeat("m", MaxMachineName), "cut to what the server keeps")
+	name := MachineName(env("de\x00vbox\x07"), nil)
+	require.Equal(t, "devbox", name, "control characters are dropped")
 }

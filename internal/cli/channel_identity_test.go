@@ -1,6 +1,7 @@
 package cli
 
 import (
+	"context"
 	"errors"
 	"os"
 	"path/filepath"
@@ -8,6 +9,8 @@ import (
 
 	"github.com/stretchr/testify/require"
 
+	"github.com/wnexous/partyline/internal/agents"
+	"github.com/wnexous/partyline/internal/api/dto"
 	"github.com/wnexous/partyline/internal/channel"
 )
 
@@ -54,6 +57,58 @@ func TestChannelSendsTheHomeFolder(t *testing.T) {
 	require.NoError(t, os.MkdirAll(work, 0o755))
 	initialize(startChannel(t, nil, e.launched("claude", "HOME", home), work))
 	require.Equal(t, "~/src/acme", e.ai(t, work).AI.FolderLabel)
+}
+
+// AID-07, CA-04: `partyline setup` and `partyline runner` name the machine they get approved for;
+// inside a container that is the AI's machine (PARTYLINE_MACHINE), never the container's hostname.
+func TestMachineNameUsesPARTYLINE_MACHINE(t *testing.T) {
+	std := func(env map[string]string, hostname func() (string, error)) stdio {
+		return stdio{getenv: func(k string) string { return env[k] }, hostname: hostname}
+	}
+	require.Equal(t, "container:pl-a1b2c3d4e5f6", machineName(std(
+		map[string]string{"PARTYLINE_MACHINE": " container:pl-a1b2c3d4e5f6 "},
+		func() (string, error) { return "f38b3aaa1710", nil })), "the AI's machine wins over the container's hostname")
+	require.Equal(t, "devbox", machineName(std(map[string]string{}, func() (string, error) { return " devbox\n", nil })))
+	require.Equal(t, "devbox", machineName(std(map[string]string{"PARTYLINE_MACHINE": "  "}, func() (string, error) { return "devbox", nil })),
+		"a blank PARTYLINE_MACHINE falls back to the hostname")
+	require.Equal(t, "partyline", machineName(std(map[string]string{}, func() (string, error) { return "", errors.New("no hostname") })))
+}
+
+// CA-04: the session inside a container is the AI that was created for it. The agent image hands the
+// CLI the AI's machine and folder (PARTYLINE_MACHINE, PARTYLINE_FOLDER), so the session joins that AI
+// even though the container's own hostname and working directory are different, and no second AI
+// appears (the prod bug: the session joined an AI named after the container's hostname).
+func TestContainerSessionJoinsTheCreatedAI(t *testing.T) {
+	e := newChannelEnv(t)
+	const machine, folder = "container:pl-a1b2c3d4e5f6", agents.ContainerRepoFolder
+	created, err := e.env.App.Agents.ResolveFolder(context.Background(), e.alice.User.ID,
+		agents.FolderID{Machine: machine, Folder: folder, Harness: "claude"}, false)
+	require.NoError(t, err)
+
+	env := e.launched("claude", "PARTYLINE_MACHINE", machine, "PARTYLINE_FOLDER", folder)
+	initialize(startChannel(t, nil, env, "/src/elsewhere"))
+	prof := e.ai(t, folder)
+	require.Equal(t, created.ID, prof.ID, "the session is the AI of the container, not another one")
+	require.Equal(t, machine, e.machineOf(t, prof.ID), "the AI keeps its machine, not the container's hostname")
+	require.Equal(t, []string{folder}, e.folders(t), "no other AI was created")
+}
+
+// CA-04: the pushed session (`partyline listen`, which the pi and OpenCode adapters run) joins the
+// same container AI from the same two variables, and receives its messages.
+func TestListenUsesTheContainerIdentity(t *testing.T) {
+	e := newChannelEnv(t)
+	const machine, folder = "container:pl-0f0e0d0c0b0a", agents.ContainerRootFolder
+	created, err := e.env.App.Agents.ResolveFolder(context.Background(), e.alice.User.ID,
+		agents.FolderID{Machine: machine, Folder: folder, Harness: "pi"}, false)
+	require.NoError(t, err)
+
+	p := startListen(t, e.vars("PARTYLINE_HARNESS", "pi", "PARTYLINE_MACHINE", machine, "PARTYLINE_FOLDER", folder), "/src/elsewhere", nil)
+	online := e.ai(t, folder)
+	require.Equal(t, created.ID, online.ID, "listen is the AI of the container")
+	room := e.room(t, dto.CreateRoomRequest{Name: "Box"}, online.ID)
+	msg := e.post(t, room.ID, "hello from the box")
+	require.Equal(t, msg.ID, p.line()["message_id"], "the container AI receives its messages")
+	require.Equal(t, []string{folder}, e.folders(t), "no other AI was created")
 }
 
 // MIG-02: --as names the unlinked identity of an earlier version that the folder adopts: it
@@ -104,6 +159,11 @@ func TestSessionIdentity(t *testing.T) {
 
 	id = sessionIdentity("", std(map[string]string{"USERPROFILE": home}, target))
 	require.Equal(t, home, id.Home, "USERPROFILE is the home folder where HOME is not set")
+
+	// CA-04: inside a container the image names the machine of the AI it runs, because the
+	// container's own hostname changes with every container; it wins over the hostname.
+	id = sessionIdentity("", std(map[string]string{"PARTYLINE_MACHINE": " container:pl-a1b2c3d4e5f6 ", "PARTYLINE_FOLDER": target}, "/ignored"))
+	require.Equal(t, channel.Identity{Machine: "container:pl-a1b2c3d4e5f6", Folder: target}, id, "PARTYLINE_MACHINE wins over the hostname")
 
 	// AD-020: what the session asked for comes from the PARTYLINE_LAUNCH_* variables the launcher set, trimmed ...
 	id = sessionIdentity("", std(map[string]string{
