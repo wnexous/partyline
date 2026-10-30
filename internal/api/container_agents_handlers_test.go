@@ -158,7 +158,11 @@ func TestCreateContainerAgentRunsTheImageWithSecrets(t *testing.T) {
 	require.Equal(t, secretValue, run.Env["OPENCODE_API_KEY"], "the mapped secret reaches the container")
 	require.Regexp(t, `^pl_agent_[0-9A-Za-z]{43}$`, run.Env["PARTYLINE_TOKEN"])
 	token := run.Env["PARTYLINE_TOKEN"]
-	require.Len(t, run.Env, 6, "no other variable is passed")
+	// CA-04: the container is handed the identity of the AI it runs, so the session inside it joins
+	// that AI whatever its own hostname and working directory are.
+	require.Equal(t, agents.ContainerMachine(created.ContainerName), run.Env["PARTYLINE_MACHINE"])
+	require.Equal(t, "/workspace/repo", run.Env["PARTYLINE_FOLDER"], "the entrypoint works in the folder of the AI")
+	require.Len(t, run.Env, 8, "no other variable is passed")
 
 	// The AI has the machine and folder of a container and the app of the harness (CA-04).
 	ctx := context.Background()
@@ -225,6 +229,8 @@ func TestCreateContainerAgentRunsTheImageWithSecrets(t *testing.T) {
 	run2 := f.next()
 	require.NotContains(t, run2.Run.Env, "PARTYLINE_REPO")
 	require.NotContains(t, run2.Run.Env, "PARTYLINE_REPO_REF")
+	require.Equal(t, agents.ContainerMachine(second.ContainerName), run2.Run.Env["PARTYLINE_MACHINE"], "every container has its own machine")
+	require.Equal(t, "/workspace", run2.Run.Env["PARTYLINE_FOLDER"], "without a repository the AI works in the bare workspace")
 	withoutRepo, err := env.App.Store.R().GetAgent(ctx, second.Agent.ID)
 	require.NoError(t, err)
 	require.Equal(t, "/workspace", withoutRepo.Folder)
@@ -475,6 +481,9 @@ func TestContainerStartRecreatesAMissingContainer(t *testing.T) {
 	require.Equal(t, spec.OpRun, runCmd.Op)
 	require.NotNil(t, runCmd.Run)
 	require.Regexp(t, `^pl_agent_[0-9A-Za-z]{43}$`, runCmd.Run.Env["PARTYLINE_TOKEN"])
+	// CA-04: a container created again is still the same AI, so it gets its machine and folder again.
+	require.Equal(t, agents.ContainerMachine(created.ContainerName), runCmd.Run.Env["PARTYLINE_MACHINE"])
+	require.Equal(t, agents.ContainerRootFolder, runCmd.Run.Env["PARTYLINE_FOLDER"])
 
 	after := storedContainer(t, env, created.Agent.ID)
 	require.NotEqual(t, before.TokenID.String, after.TokenID.String, "the recreated container got a fresh token")
@@ -698,6 +707,9 @@ func TestUpdateContainerEnvRecreatesTheContainer(t *testing.T) {
 	require.NotNil(t, run.Run)
 	require.Equal(t, created.Volume, run.Run.Volume, "the container is created again with the same volume")
 	require.Equal(t, "sk-anthropic-value", run.Run.Env["ANTHROPIC_API_KEY"])
+	require.Equal(t, agents.ContainerMachine(created.ContainerName), run.Run.Env["PARTYLINE_MACHINE"],
+		"the container is created again as the same AI")
+	require.Equal(t, agents.ContainerRootFolder, run.Run.Env["PARTYLINE_FOLDER"], "and works in the AI's folder")
 	require.NotContains(t, run.Run.Env, "OPENCODE_API_KEY", "the replaced variable goes")
 	require.NotEqual(t, first.Run.Env["PARTYLINE_TOKEN"], run.Run.Env["PARTYLINE_TOKEN"],
 		"the recreated container gets a fresh token")

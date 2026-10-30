@@ -7,7 +7,9 @@ import (
 
 	"github.com/stretchr/testify/require"
 
+	"github.com/wnexous/partyline/internal/agents"
 	"github.com/wnexous/partyline/internal/runners/spec"
+	"github.com/wnexous/partyline/internal/store/db"
 )
 
 // CA-04: a release build runs the agent image of its own version; a development build runs :latest,
@@ -76,6 +78,8 @@ func TestValidateCreate(t *testing.T) {
 			in.Env = []EnvVar{{Var: "OPENCODE_API_KEY", SecretName: "OPENCODE_KEY"}, {Var: "OPENCODE_API_KEY", SecretName: "X"}}
 		}, "env[1].var"},
 		{"reserved var", func(in *CreateInput) { in.Env = []EnvVar{{Var: "PARTYLINE_HARNESS", SecretName: "X"}} }, "env[0].var"},
+		{"the AI's machine", func(in *CreateInput) { in.Env = []EnvVar{{Var: "PARTYLINE_MACHINE", SecretName: "X"}} }, "env[0].var"},
+		{"the AI's folder", func(in *CreateInput) { in.Env = []EnvVar{{Var: "PARTYLINE_FOLDER", SecretName: "X"}} }, "env[0].var"},
 	}
 	for _, c := range bad {
 		t.Run(c.name, func(t *testing.T) {
@@ -133,4 +137,28 @@ func TestValidateCreateRequiresACredential(t *testing.T) {
 	var missing *CredentialsRequiredError
 	require.ErrorAs(t, err, &missing)
 	require.Contains(t, missing.Error(), "CLAUDE_CODE_OAUTH_TOKEN")
+}
+
+// CA-04: the container's environment carries the AI's own machine and folder (PARTYLINE_MACHINE,
+// PARTYLINE_FOLDER), so the session inside it joins that AI and not one named after the container's
+// hostname and working directory; the folder is the one the entrypoint clones into and works in.
+func TestContainerEnvCarriesTheAIsIdentity(t *testing.T) {
+	svc := &Service{d: Deps{PublicURL: "https://partyline.example.com"}}
+	repo := db.Agent{Machine: "container:pl-a1b2c3d4e5f6", Folder: "/workspace/repo"}
+	env := svc.containerEnv(
+		CreateInput{Harness: "opencode", RepoURL: "https://github.com/example/repo", RepoRef: "main"},
+		"main", "pl_agent_synthetic", repo,
+		map[string]string{"OPENCODE_API_KEY": "sk-live", EnvMachine: "another-machine", EnvFolder: "/elsewhere"})
+	require.Equal(t, repo.Machine, env[EnvMachine])
+	require.Equal(t, agents.ContainerRepoFolder, env[EnvFolder])
+	require.Equal(t, "sk-live", env["OPENCODE_API_KEY"], "the mapped secret still reaches the container")
+	require.Equal(t, "https://github.com/example/repo", env[EnvRepo])
+
+	// A container without a repository works in the bare workspace, and a mapping never replaces the
+	// identity Partyline sets (reservedEnv).
+	bare := db.Agent{Machine: "container:pl-0f0e0d0c0b0a", Folder: "/workspace"}
+	env = svc.containerEnv(CreateInput{Harness: "pi"}, "", "pl_agent_synthetic", bare, map[string]string{})
+	require.Equal(t, bare.Machine, env[EnvMachine])
+	require.Equal(t, agents.ContainerRootFolder, env[EnvFolder])
+	require.NotContains(t, env, EnvRepo, "no repository, no clone")
 }

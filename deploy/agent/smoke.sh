@@ -67,6 +67,40 @@ if run run --rm \
 fi
 echo "ok: a missing credential exits non-zero"
 
+# The session must work in exactly the AI's folder and report the AI's machine (CA-04): inside the
+# container the CLI would otherwise report the container's hostname and its own working directory
+# and join another AI. A stand-in partyline binary replaces the image's one, so nothing here needs
+# a Partyline instance: `setup` succeeds and the harness session prints where it runs.
+echo "==> the entrypoint works in PARTYLINE_FOLDER and reports PARTYLINE_MACHINE"
+fake_dir=$(mktemp -d)
+trap 'rm -rf "$fake_dir"' EXIT
+cat >"$fake_dir/partyline" <<'EOF'
+#!/bin/sh
+case "$1" in
+setup) exit 0 ;;
+esac
+printf 'smoke: cwd=%s folder=%s machine=%s\n' "$PWD" "${PARTYLINE_FOLDER:-}" "${PARTYLINE_MACHINE:-}"
+exit 1
+EOF
+chmod 0755 "$fake_dir/partyline"
+session_out=$(timeout -k 10 30 "${docker[@]}" run --rm \
+	--volume "$fake_dir/partyline:/usr/local/bin/partyline:ro" \
+	--env PARTYLINE_URL=https://partyline.example.com \
+	--env PARTYLINE_TOKEN=pl_agent_smoke \
+	--env PARTYLINE_HARNESS=opencode \
+	--env OPENCODE_API_KEY=sk-smoke \
+	--env PARTYLINE_FOLDER=/workspace/team/atlas \
+	--env PARTYLINE_MACHINE=container:pl-atlas \
+	"$image" 2>&1 || true)
+expected='smoke: cwd=/workspace/team/atlas folder=/workspace/team/atlas machine=container:pl-atlas'
+# The session runs under a pty (`script`), so its lines end with a carriage return.
+if ! printf '%s\n' "$session_out" | tr -d '\r' | grep -Fqx "$expected"; then
+	echo "FAIL: the session did not run in the AI's folder with its machine" >&2
+	printf '%s\n' "$session_out" | tail -20 >&2
+	exit 1
+fi
+echo "ok: the session's cwd, PARTYLINE_FOLDER and PARTYLINE_MACHINE are the AI's"
+
 echo "==> image size"
 run image inspect --format '{{.Size}}' "$image" |
 	awk '{printf "%.0f MiB uncompressed\n", $1 / 1048576}'

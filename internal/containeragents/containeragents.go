@@ -54,6 +54,11 @@ const (
 	EnvHarness = "PARTYLINE_HARNESS"
 	EnvRepo    = "PARTYLINE_REPO"
 	EnvRepoRef = "PARTYLINE_REPO_REF"
+	// EnvMachine and EnvFolder are the identity the session inside the container reports (CA-04): the
+	// AI's machine and folder, so it joins this AI whatever the container's hostname and working
+	// directory are (channel.MachineEnvVar, PARTYLINE_FOLDER).
+	EnvMachine = "PARTYLINE_MACHINE"
+	EnvFolder  = "PARTYLINE_FOLDER"
 	// AgentLabel is the Docker label that ties a container to its AI (CA-09).
 	AgentLabel = "partyline.agent"
 	// DefaultRepoRef is the branch cloned when a repository is given without one.
@@ -116,6 +121,7 @@ func (e *CredentialsRequiredError) Error() string {
 // reservedEnv are the variables Partyline sets; a mapping of the owner may not replace them.
 var reservedEnv = map[string]bool{
 	EnvURL: true, EnvToken: true, EnvHarness: true, EnvRepo: true, EnvRepoRef: true,
+	EnvMachine: true, EnvFolder: true,
 }
 
 // releaseVersion matches a release tag whose agent image exists (v1.2.3, 1.2.3-rc.1), and
@@ -341,7 +347,7 @@ func (s *Service) Create(ctx context.Context, p authn.Principal, in CreateInput)
 	if err != nil {
 		return Container{}, err
 	}
-	env := s.containerEnv(in, in.RepoRef, secret, mapped)
+	env := s.containerEnv(in, in.RepoRef, secret, agent, mapped)
 	run := spec.RunSpec{
 		Name: row.ContainerName, Image: row.Image, Volume: row.Volume, CPUs: row.Cpus, MemoryMB: row.MemoryMb,
 		Labels: map[string]string{AgentLabel: agent.ID}, Env: env,
@@ -836,16 +842,20 @@ func (s *Service) freshEnv(ctx context.Context, row db.ContainerAgent, token str
 	}
 	repo, ref := row.RepoUrl.String, row.RepoRef.String
 	in := CreateInput{Harness: row.Harness, RepoURL: repo, RepoRef: ref}
-	return s.containerEnv(in, ref, token, mapped), nil
+	return s.containerEnv(in, ref, token, ai, mapped), nil
 }
 
 // containerEnv builds the environment of the container: the Partyline variables first, then the
-// owner's mapped secrets (CA-04). A variable of a mapping never overrides one of Partyline's.
-func (s *Service) containerEnv(in CreateInput, ref, token string, mapped map[string]string) map[string]string {
+// owner's mapped secrets (CA-04). A variable of a mapping never overrides one of Partyline's. The
+// machine and the folder are the AI's own (the agent row), so the session inside the container
+// resolves to this AI instead of one named after the container's hostname and working directory.
+func (s *Service) containerEnv(in CreateInput, ref, token string, agent db.Agent, mapped map[string]string) map[string]string {
 	env := map[string]string{
 		EnvURL:     s.d.PublicURL,
 		EnvToken:   token,
 		EnvHarness: in.Harness,
+		EnvMachine: agent.Machine,
+		EnvFolder:  agent.Folder,
 	}
 	if in.RepoURL != "" {
 		if ref == "" {

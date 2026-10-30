@@ -22,7 +22,22 @@ die() {
 umask 077
 
 workspace=${PARTYLINE_WORKSPACE:-/workspace}
-repo_dir="$workspace/repo"
+# PARTYLINE_FOLDER is the folder of the AI this container runs (CA-04): the CLI reports it and the
+# session works in it, whatever the container's own hostname or working directory is. Without one,
+# a repository clones into $workspace/repo and a session without a repository runs in $workspace.
+folder=${PARTYLINE_FOLDER:-}
+if [ -z "$folder" ]; then
+	if [ -n "${PARTYLINE_REPO:-}" ]; then
+		folder="$workspace/repo"
+	else
+		folder="$workspace"
+	fi
+fi
+# The CLI reports this folder with the AI's identity, so a relative one would join another AI.
+case "$folder" in
+/*) ;;
+*) die 2 "PARTYLINE_FOLDER must be an absolute path" ;;
+esac
 
 # --- environment contract (CA-04) ------------------------------------------------------------
 
@@ -85,6 +100,7 @@ esac
 
 # --- workspace (CA-05) -----------------------------------------------------------------------
 
+mkdir -p "$folder"
 if [ -n "${PARTYLINE_REPO:-}" ]; then
 	case "$PARTYLINE_REPO" in
 	*[!A-Za-z0-9._:/@+~-]*) die 2 "PARTYLINE_REPO must be a repository URL: letters, digits and . _ : / @ + ~ - only" ;;
@@ -93,21 +109,22 @@ if [ -n "${PARTYLINE_REPO:-}" ]; then
 	case "$ref" in
 	*[!A-Za-z0-9._/-]*) die 2 "PARTYLINE_REPO_REF has unexpected characters: expected letters, digits and . _ / -" ;;
 	esac
-	mkdir -p "$workspace"
-	if [ ! -e "$repo_dir/.git" ] && [ -z "$(ls -A "$repo_dir" 2>/dev/null)" ]; then
-		log "cloning $PARTYLINE_REPO ($ref) into $repo_dir"
+	# The clone lands in exactly the AI's folder, so the files the AI sees are the folder it reports.
+	if [ ! -e "$folder/.git" ] && [ -z "$(ls -A "$folder" 2>/dev/null)" ]; then
+		log "cloning $PARTYLINE_REPO ($ref) into $folder"
 		# --depth 50 keeps the clone small and still lets the AI see recent history.
-		git clone --depth 50 --branch "$ref" "$PARTYLINE_REPO" "$repo_dir"
+		git clone --depth 50 --branch "$ref" "$PARTYLINE_REPO" "$folder"
 	else
-		log "$repo_dir already holds a workspace: not cloning"
+		log "$folder already holds a workspace: not cloning"
 	fi
 fi
 
-if [ -d "$repo_dir" ]; then
-	cd "$repo_dir"
-else
-	mkdir -p "$workspace"
-	cd "$workspace"
+cd "$folder"
+# The harness and the partyline processes it starts read both variables: the machine and the folder
+# of the AI, so the session joins the AI the container was created for (CA-04).
+export PARTYLINE_FOLDER="$folder"
+if [ -n "${PARTYLINE_MACHINE:-}" ]; then
+	export PARTYLINE_MACHINE
 fi
 
 # --- Partyline login and harness registration ------------------------------------------------
