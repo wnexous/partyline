@@ -159,7 +159,7 @@ export function MemberSessionNotifyButton({
         type="button"
         data-testid={`session-notify-${label || "principal"}`}
         aria-label={t("notifications.open", { session: sessionName })}
-        className="inline-flex min-h-6 items-center rounded-sm font-mono text-xs outline-none hover:text-foreground hover:underline focus-visible:ring-2 focus-visible:ring-ring"
+        className="relative z-10 inline-flex min-h-6 items-center rounded-sm font-mono text-xs outline-none hover:text-foreground hover:underline focus-visible:ring-2 focus-visible:ring-ring"
         onClick={() => setOpen(true)}
       >
         <SessionLabel label={label} />
