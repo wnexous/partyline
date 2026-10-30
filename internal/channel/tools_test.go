@@ -73,6 +73,8 @@ func TestToolsList(t *testing.T) {
 		"send_message":        {"text"}, // room or to, exactly one: the schema cannot say so
 		"reply":               {"message_id", "text"},
 		"list_rooms":          nil,
+		"read_unread":         {"room"},
+		"set_notifications":   {"room", "notify"},
 		"history":             {"room"},
 		"download_attachment": {"attachment_id"},
 		"send_file":           {"path"}, // room or connection with chat, exactly one: the schema cannot say so
