@@ -213,6 +213,30 @@ describe("member sessions (SESS-44)", () => {
     expect(screen.queryByTestId("member-sessions-mb-solo")).toBeNull();
     expect(screen.queryByTestId("member-sessions-mb-off")).toBeNull();
   });
+
+  it("warns in the member card when a session runs an outdated client (SESS-63)", async () => {
+    mockApi({ "GET /me": json(200, makeMe()) });
+    const outdated = makeMember({
+      id: "mb-atlas",
+      member_id: "a1",
+      name: "Atlas",
+      intelligence: atlas,
+      online: true,
+      sessions: [
+        { label: "", harness: "claude", connected_at: at, outdated: true },
+        { label: "claude-2", harness: "claude", connected_at: at },
+      ],
+    });
+    renderWithRouter(
+      <MemberPanel roomId="r1" members={[outdated]} canManage={false} loading={false} />,
+    );
+
+    const warning = await screen.findByTestId("session-outdated");
+    expect(warning).toHaveTextContent(
+      "Outdated client — run partyline update and reopen this session",
+    );
+    expect(warning).not.toHaveTextContent(":claude-2");
+  });
 });
 
 describe("member principal (SESS-59, SESS-61)", () => {
