@@ -8,7 +8,9 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"regexp"
 	"runtime"
+	"strconv"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -356,6 +358,81 @@ func TestRunnerForgetsARejectedToken(t *testing.T) {
 	require.Empty(t, docker.calls(t), "nothing reached Docker")
 }
 
+// CA-01: a server that is restarting answers 502 (or the connection is refused) for a while; the
+// runner stays up, retries with the connection backoff and registers again once the server answers.
+// Only a token the server refuses may end it.
+func TestRunnerRetriesADeployingServer(t *testing.T) {
+	docker := newFakeDocker(t)
+	server := newFakeRunnerServer(t)
+	var failures atomic.Int32
+	failures.Store(3)
+	server.onRegister = func(w http.ResponseWriter, _ *http.Request) bool {
+		if failures.Add(-1) >= 0 {
+			http.Error(w, `{"error":{"code":"internal","message":"the server is starting"}}`, http.StatusBadGateway)
+			return true
+		}
+		return false
+	}
+	server.onConn = func(_ int, ctx context.Context, ws *websocket.Conn, _ spec.Hello) {
+		_, _, _ = ws.Read(ctx) // hold the connection until the test stops the runner
+	}
+	home := t.TempDir()
+	writeConfig(t, home, cliconfig.Config{URL: server.srv.URL, Token: "pl_agent_synthetic", RunnerToken: "pl_runner_synthetic"})
+	process := startRunner(t, setupOpts{env: map[string]string{"HOME": home}, hostname: "devbox", dockerPath: docker.path}, "runner")
+
+	process.waitFor(t, "Registered runner \"devbox\"")
+	// What the runner printed until it registered: the connection that comes after that one may end
+	// with the test and print a retry of its own.
+	out := process.output()
+	registered := strings.Index(out, "Registered runner")
+	require.Positive(t, registered, "stdout: %s", out)
+	out = out[:registered]
+	require.Equal(t, 3, strings.Count(out, "Not connected:"), "every 502 was retried; stdout: %s", out)
+	require.Equal(t, 3, strings.Count(out, "the server answered 502"), "the reason is Docker's proxy answer; stdout: %s", out)
+	require.NotContains(t, process.errOut.String(), "refused the runner", "a 5xx never ends the runner")
+	// The same backoff as a lost connection: 1s, 2s, 4s, each spread up to a quarter more.
+	for i, want := range []time.Duration{time.Second, 2 * time.Second, 4 * time.Second} {
+		got := printedWait(t, out, i)
+		require.GreaterOrEqual(t, got, want, "retry %d waits at least %s", i, want)
+		require.LessOrEqual(t, got, want+want/4+100*time.Millisecond, "retry %d waits at most a quarter more than %s", i, want)
+	}
+}
+
+// printedWait reads the n-th "retrying in <d>" of the runner's output.
+func printedWait(t *testing.T, out string, n int) time.Duration {
+	t.Helper()
+	matches := regexp.MustCompile(`retrying in ([0-9.]+)(ms|s)`).FindAllStringSubmatch(out, -1)
+	require.Greater(t, len(matches), n, "no %d-th retry in %q", n, out)
+	value, err := strconv.ParseFloat(matches[n][1], 64)
+	require.NoError(t, err)
+	if matches[n][2] == "ms" {
+		return time.Duration(value * float64(time.Millisecond))
+	}
+	return time.Duration(value * float64(time.Second))
+}
+
+// CA-01: a runner token the server refuses (403: revoked or its runner deleted) still ends the
+// command with a clear message and is forgotten, so the next run approves the machine again.
+func TestRunnerStopsOnAForbiddenRegister(t *testing.T) {
+	docker := newFakeDocker(t)
+	server := newFakeRunnerServer(t)
+	server.onRegister = func(w http.ResponseWriter, _ *http.Request) bool {
+		http.Error(w, `{"error":{"code":"forbidden","message":"this runner token was revoked"}}`, http.StatusForbidden)
+		return true
+	}
+	home := t.TempDir()
+	writeConfig(t, home, cliconfig.Config{URL: server.srv.URL, Token: "pl_agent_synthetic", RunnerToken: "pl_runner_synthetic"})
+	process := startRunner(t, setupOpts{env: map[string]string{"HOME": home}, hostname: "devbox", dockerPath: docker.path}, "runner")
+
+	require.Equal(t, 1, process.wait(t))
+	require.Contains(t, process.errOut.String(), "does not accept the saved runner token")
+	require.Contains(t, process.errOut.String(), "run partyline runner again", "the message says what to do")
+	cfg, err := cliconfig.Load(configPath(home))
+	require.NoError(t, err)
+	require.Empty(t, cfg.RunnerToken, "the refused token is forgotten")
+	require.Zero(t, server.connections.Load(), "no WebSocket was opened")
+}
+
 // CA-09: the runner refuses a command whose values the server should never send, without running
 // docker, and reconnects when the connection ends (CA-01).
 func TestRunnerRefusesInvalidCommandsAndReconnects(t *testing.T) {
@@ -492,6 +569,8 @@ type fakeRunnerServer struct {
 	auths       chan string
 	connections atomic.Int32
 	onConn      func(n int, ctx context.Context, ws *websocket.Conn, hello spec.Hello)
+	// onRegister answers one register call when set; returning false lets the default 201 run.
+	onRegister func(w http.ResponseWriter, r *http.Request) bool
 }
 
 // newFakeRunnerServer starts the server; the test sets onConn before starting the runner.
@@ -503,6 +582,9 @@ func newFakeRunnerServer(t *testing.T) *fakeRunnerServer {
 	mux := http.NewServeMux()
 	mux.HandleFunc("POST /api/v1/runner/register", func(w http.ResponseWriter, r *http.Request) {
 		f.auths <- r.Header.Get("Authorization")
+		if f.onRegister != nil && f.onRegister(w, r) {
+			return
+		}
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusCreated)
 		_, _ = io.WriteString(w, `{"id":"runner-1","name":"devbox","machine":"devbox","online":true,"created_at":"2026-10-29T09:00:00Z"}`)
