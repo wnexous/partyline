@@ -229,6 +229,7 @@ type Message struct {
 	InteractiveJson string
 	AnswersJson     string
 	AuthorLabel     string
+	DuringPause     int64
 }
 
 type MessageReaction struct {
@@ -265,6 +266,7 @@ type MessageView struct {
 	AuthorHandle    string
 	AuthorIkind     string
 	AuthorAvatar    string
+	DuringPause     int64
 }
 
 type OrgInvitation struct {

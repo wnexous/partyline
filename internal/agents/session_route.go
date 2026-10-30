@@ -33,6 +33,10 @@ type pushSession struct {
 	// addresses a sibling of it (SN-04): it is a copy, and a later fallback of the same message adds
 	// nothing to it.
 	copyOfSibling bool
+	// trustedOnly is set when the AI's delivery mode in the room is trusted (MEM-04): the catch-up gives
+	// the session no untrusted message as context either, because untrusted text is not a boundary the
+	// model may follow (SN-03, POS-10).
+	trustedOnly bool
 }
 
 // pushPlan is what one non-self-authored room message is delivered as.
@@ -69,6 +73,13 @@ func (g *Gateway) planPush(agentID, target string, m dto.AgentMessage) (pushPlan
 	if err != nil {
 		return plan, err
 	}
+	member, err := g.d.Store.R().GetRoomMemberByMember(g.ctx, db.GetRoomMemberByMemberParams{
+		RoomID: m.Room.ID, Kind: string(dto.MemberKindAgent), MemberID: agentID,
+	})
+	if err != nil && !errors.Is(err, sql.ErrNoRows) {
+		return plan, err
+	}
+	trustedOnly := dto.DeliveryMode(member.Delivery) == dto.DeliveryModeTrusted
 	byKey := make(map[string]db.SessionRoomState, len(states))
 	for _, st := range states {
 		byKey[st.SessionKey] = st
@@ -157,7 +168,7 @@ func (g *Gateway) planPush(agentID, target string, m dto.AgentMessage) (pushPlan
 		addressed := target != "" && target == it.live.Label
 		plan.sessions = append(plan.sessions, pushSession{
 			label: it.live.Label, conn: it.conn, readSeq: it.readSeq,
-			addressed: addressed, copyOfSibling: !addressed && addressedLive,
+			addressed: addressed, copyOfSibling: !addressed && addressedLive, trustedOnly: trustedOnly,
 		})
 	}
 	return plan, nil
@@ -251,20 +262,25 @@ func (g *Gateway) pushCatchUp(agentID string, t pushSession, m dto.AgentMessage)
 	// (SN-03). An unacknowledged message is replayed whether or not its row exists, so the rows only route
 	// an edit or a delete and keep the copy's ownership.
 	rows := make([]db.CreateSessionDeliveryParams, 0, len(msgs))
-	for i, msg := range msgs {
+	sent := 0
+	for _, msg := range msgs {
 		trusted := true // the AI wrote it: its sessions trust it, as the live push says (SESS-37)
 		if !selfAuthored(convert.Message(msg), agentID) {
 			if trusted, err = trustedFor(g.ctx, trust, msg.MessageView, agentID); err != nil {
 				return err
 			}
 		}
+		if t.trustedOnly && !trusted {
+			continue // SN-03, POS-10: in trusted mode an untrusted message is not context either
+		}
 		frame := dto.AgentMessage{Room: m.Room, Trusted: trusted, Context: true, Message: convert.Message(msg)}
-		if i == 0 {
+		if sent == 0 {
 			frame.Skipped = skipped
 		}
 		if !t.conn.push(frame) {
 			break // the queue overflowed and closed the connection: it reads its unread when it returns
 		}
+		sent++
 		rows = append(rows, db.CreateSessionDeliveryParams{
 			MessageID: msg.ID, AgentID: agentID, Label: t.label, OwnerLive: t.conn.owner,
 			CreatedAt: time.Now().UnixMilli(), Context: 1,

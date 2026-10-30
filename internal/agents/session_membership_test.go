@@ -13,6 +13,8 @@ import (
 
 	"github.com/wnexous/partyline/internal/agents"
 	"github.com/wnexous/partyline/internal/api/dto"
+	"github.com/wnexous/partyline/internal/orgs"
+	"github.com/wnexous/partyline/internal/rooms"
 	"github.com/wnexous/partyline/internal/store/db"
 	"github.com/wnexous/partyline/internal/testkit"
 )
@@ -213,4 +215,130 @@ func TestAnUpdateOfASelfWrittenMessageFollowsItsContextHolders(t *testing.T) {
 	deleted := principal.Deleted(time.Minute)
 	require.Equal(t, posted.ID, deleted.Message.ID, "the principal had the message as context, so it hears of the delete")
 	writer.ExpectNone(400 * time.Millisecond)
+}
+
+// addUserMember puts another user in the fixture's room and its organization, so their messages are
+// untrusted for the AI (POS-10).
+func (f *sessionFixture) addUserMember(t *testing.T, u *testkit.Client) {
+	t.Helper()
+	f.env.AddMember(f.alice.PersonalOrg().ID, u.User.ID, orgs.PermissionMember, "")
+	f.alice.Post("/api/v1/rooms/"+f.room.ID+"/members",
+		dto.AddMemberRequest{Kind: dto.MemberKindUser, MemberID: u.User.ID}).RequireStatus(http.StatusCreated)
+}
+
+// setDelivery sets the AI's delivery mode in its room (MEM-03, MEM-04).
+func (f *sessionFixture) setDelivery(t *testing.T, mode dto.DeliveryMode) {
+	t.Helper()
+	m := f.memberRow(t)
+	f.alice.Patch("/api/v1/rooms/"+f.room.ID+"/members/"+m.ID, dto.UpdateMemberRequest{Delivery: &mode}).
+		RequireStatus(http.StatusOK)
+}
+
+// SN-03 (decision): the delivery mode filters the context too. A trusted-mode session never receives an
+// untrusted message, not even as context, while a mentions-mode session keeps the whole conversation as
+// context: that is what SN-03 is for.
+func TestTrustedModeLeavesUntrustedMessagesOutOfContext(t *testing.T) {
+	t.Run("trusted mode", func(t *testing.T) {
+		f := newSessionFixture(t)
+		bob := f.env.NewUser("bobby")
+		f.addUserMember(t, bob)
+		f.setDelivery(t, dto.DeliveryModeTrusted)
+		principal := f.dial(t)
+		f.settle(t, principal)
+
+		untrusted := testkit.Decode[dto.Message](bob.Post("/api/v1/rooms/"+f.room.ID+"/messages",
+			dto.PostMessageRequest{Text: "from bob"}).RequireStatus(http.StatusCreated))
+		trusted := f.post(t, "from alice")
+		got := principal.Message(time.Minute)
+		require.Equal(t, trusted.ID, got.Message.ID, "the untrusted message is not context in trusted mode")
+		require.False(t, got.Context)
+		require.True(t, got.Trusted)
+		principal.ExpectNone(400 * time.Millisecond)
+		require.NotEqual(t, untrusted.ID, got.Message.ID)
+	})
+	t.Run("mentions mode", func(t *testing.T) {
+		f := newSessionFixture(t)
+		bob := f.env.NewUser("bobby")
+		f.addUserMember(t, bob)
+		f.setDelivery(t, dto.DeliveryModeMentions)
+		principal := f.dial(t)
+		f.settle(t, principal)
+
+		untrusted := testkit.Decode[dto.Message](bob.Post("/api/v1/rooms/"+f.room.ID+"/messages",
+			dto.PostMessageRequest{Text: "from bob"}).RequireStatus(http.StatusCreated))
+		trusted := f.post(t, "from alice")
+		addressed := f.post(t, "@atlas ping")
+		for _, want := range []struct {
+			id      string
+			trusted bool
+		}{{untrusted.ID, false}, {trusted.ID, true}} {
+			frame := principal.Message(time.Minute)
+			require.Equal(t, want.id, frame.Message.ID, "mentions mode keeps the whole context (SN-03)")
+			require.True(t, frame.Context)
+			require.Equal(t, want.trusted, frame.Trusted)
+		}
+		require.Equal(t, addressed.ID, principal.Message(time.Minute).Message.ID)
+	})
+}
+
+// SN-03 (decision): the messages the AI's own sessions wrote while the loop guard had paused the room are
+// not context. The pause is a loop boundary, not something the next session has to read; what humans wrote
+// in the meantime is.
+func TestMessagesWrittenWhileTheRoomWasPausedAreNotContext(t *testing.T) {
+	f := newSessionFixture(t)
+	principal, parallel := f.dial(t), f.dialHarness(t, "pi")
+	f.settle(t, principal)
+	f.settle(t, parallel)
+	folder := testkit.FolderOf("atlas")
+
+	before := f.post(t, "before the burst")
+	require.Equal(t, before.ID, principal.Message(time.Minute).Message.ID)
+
+	// The loop guard (DLV-08) pauses the room at the 25th consecutive agent message: that message and the
+	// ones that follow are written while the guard holds the room.
+	var burst []dto.Message
+	for i := range 25 + 3 {
+		burst = append(burst, f.postFrom(t, folder, fmt.Sprintf("agent message %d", i)))
+	}
+	duringThePause := map[string]bool{}
+	for _, m := range burst[24:] {
+		duringThePause[m.ID] = true
+	}
+	require.True(t, testkit.Decode[dto.Room](f.alice.Get("/api/v1/rooms/"+f.room.ID).RequireStatus(http.StatusOK)).AgentsPaused,
+		"the burst paused the room")
+
+	duringPause := f.post(t, "a human while the room is paused")
+	f.alice.Post("/api/v1/rooms/"+f.room.ID+"/resume", nil).RequireStatus(http.StatusOK)
+	afterResume := f.post(t, "after the resume")
+
+	addressed := f.post(t, "@atlas:pi-2 what happened")
+	var got []string
+	for {
+		frame := parallel.Message(time.Minute)
+		if frame.Message.ID == addressed.ID {
+			require.False(t, frame.Context)
+			break
+		}
+		require.True(t, frame.Context)
+		require.NotContains(t, duringThePause, frame.Message.ID,
+			"an agent message written while the loop guard paused the room is not context")
+		got = append(got, frame.Message.ID)
+	}
+	// The loop guard's own notice is a system message: it is the one message of the pause that is context.
+	page := testkit.Decode[dto.Page[dto.Message]](f.alice.Get("/api/v1/rooms/" + f.room.ID + "/messages?limit=50").RequireStatus(http.StatusOK))
+	var notice dto.Message
+	for _, m := range page.Items {
+		if m.Text == rooms.PauseNotice {
+			notice = m
+		}
+	}
+	require.NotEmpty(t, notice.ID, "the pause notice is in the room")
+
+	want := []string{before.ID}
+	for _, m := range burst[:24] {
+		want = append(want, m.ID)
+	}
+	want = append(want, notice.ID, duringPause.ID, afterResume.ID)
+	require.Equal(t, want, got,
+		"the human messages and the agent messages of the burst before the pause are the context")
 }

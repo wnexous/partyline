@@ -357,7 +357,13 @@ func (s *Service) post(ctx context.Context, roomID string, d draft) (Message, er
 		} else if len(last) > 0 {
 			previousAt = time.UnixMilli(last[0].CreatedAt)
 		}
-		room, msg, err := s.insert(ctx, q, roomID, d)
+		// An agent message written while the loop guard has the room paused is never context for a later
+		// session (SN-03).
+		var duringPause int64
+		if d.authorKind == dto.AuthorKindAgent && previous.AgentsPaused {
+			duringPause = 1
+		}
+		room, msg, err := s.insert(ctx, q, roomID, d, duringPause)
 		if err != nil {
 			return err
 		}
@@ -372,7 +378,13 @@ func (s *Service) post(ctx context.Context, roomID string, d draft) (Message, er
 			return err
 		}
 		if pausedNow { // DLV-08
-			_, notice, err := s.insert(ctx, q, roomID, draft{authorKind: dto.AuthorKindSystem, kind: dto.MessageKindSystem, text: PauseNotice})
+			// The message that tripped the guard starts the burst: it is not context either.
+			if d.authorKind == dto.AuthorKindAgent {
+				if err := q.MarkMessageDuringPause(ctx, msg.MessageID); err != nil {
+					return err
+				}
+			}
+			_, notice, err := s.insert(ctx, q, roomID, draft{authorKind: dto.AuthorKindSystem, kind: dto.MessageKindSystem, text: PauseNotice}, 0)
 			if err != nil {
 				return err
 			}
@@ -437,7 +449,7 @@ func (s *Service) checkReplyTo(ctx context.Context, q *db.Queries, roomID string
 
 // insert takes the next sequence number and stores the message and its attachments. It returns the
 // room as updated by the sequence bump.
-func (s *Service) insert(ctx context.Context, q *db.Queries, roomID string, d draft) (db.Room, events.MessageCreated, error) {
+func (s *Service) insert(ctx context.Context, q *db.Queries, roomID string, d draft, duringPause int64) (db.Room, events.MessageCreated, error) {
 	now := s.now().UnixMilli()
 	room, err := q.NextRoomSeq(ctx, db.NextRoomSeqParams{UpdatedAt: now, ID: roomID})
 	if errors.Is(err, sql.ErrNoRows) {
@@ -454,6 +466,7 @@ func (s *Service) insert(ctx context.Context, q *db.Queries, roomID string, d dr
 		Kind: string(d.kind), Text: d.text, ReplyTo: d.replyTo, RecipientsJson: "[]",
 		ExternalID: sql.NullString{String: d.externalID, Valid: d.externalID != ""}, CreatedAt: now,
 		InteractiveJson: d.interactive, AnswersJson: d.answers, AuthorLabel: d.authorLabel,
+		DuringPause: duringPause,
 	})
 	if err != nil {
 		return db.Room{}, events.MessageCreated{}, err

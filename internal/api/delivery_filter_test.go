@@ -98,18 +98,20 @@ func TestMentionsModePushesOnlyMentions(t *testing.T) {
 }
 
 // MEM-04 (live): an agent member in trusted mode gets only messages trusted for it (authored
-// by its owner); the other agent, in the default all mode, gets both.
+// by its owner); the other agent, in the default all mode, gets both. SN-03 (decision): in trusted
+// mode the untrusted message is not given as context either, while the all-mode agent reads the
+// whole conversation.
 func TestTrustedModePushesOnlyTrusted(t *testing.T) {
 	f := newTwoAgents(t)
 	setMember(t, f.alice, f.room.ID, f.helperID, dto.UpdateMemberRequest{Delivery: ptr(dto.DeliveryModeTrusted)})
 
 	fromAlice := f.post(f.alice, "from alice")
 	fromBob := f.post(f.bob, "from bob")
-	// SN-03: alice's message is context for bob's agent, not a notification; bob's is.
-	require.Equal(t, fromAlice.ID, f.helper.Message(wsWait).Message.ID)
 	got := f.helper.Message(wsWait)
-	require.Equal(t, fromBob.ID, got.Message.ID, "alice's message is not trusted for bob's agent")
+	require.Equal(t, fromBob.ID, got.Message.ID, "alice's message is neither a notification nor context")
 	require.True(t, got.Trusted)
+	require.False(t, got.Context)
+	f.helper.ExpectNone(300 * time.Millisecond)
 	require.Equal(t, fromAlice.ID, f.builder.Message(wsWait).Message.ID)
 	require.Equal(t, fromBob.ID, f.builder.Message(wsWait).Message.ID)
 }

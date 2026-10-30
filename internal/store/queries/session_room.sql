@@ -71,7 +71,8 @@ GROUP BY m.room_id;
 -- ordered oldest first. The session's own messages are not part of it (SN-06), the message that is being
 -- pushed now is not either (before_seq), and neither is one that session acknowledged. A message it was
 -- given but never acknowledged is part of it again: a batch lost with its connection comes back (SN-03).
--- Nothing from before the AI's current membership of the room is part of it (ROOM-01).
+-- Nothing from before the AI's current membership of the room is part of it (ROOM-01), and neither is an
+-- agent message written while the loop guard had paused the room (SN-03, DLV-08).
 SELECT * FROM (
     SELECT mv.* FROM message_views mv
     JOIN room_members rm ON rm.room_id = mv.room_id AND rm.kind = 'agent' AND rm.member_id = sqlc.arg(agent_id)
@@ -79,6 +80,7 @@ SELECT * FROM (
       AND mv.seq > COALESCE((SELECT MAX(b.seq) FROM messages b
                              WHERE b.room_id = mv.room_id AND b.created_at < rm.created_at), 0)
       AND mv.deleted_at IS NULL
+      AND mv.during_pause = 0
       AND NOT (mv.author_kind = 'agent' AND mv.author_id = sqlc.arg(agent_id) AND mv.author_label = sqlc.arg(author_label))
       AND NOT EXISTS (
           SELECT 1 FROM agent_session_deliveries d
@@ -93,13 +95,15 @@ ORDER BY seq ASC, id ASC;
 -- How many messages of one room a session has not read and that ListSessionUnread would list (SN-03): the
 -- difference between this count and the number listed is the "N earlier messages skipped" note of the
 -- catch-up batch. Only an acknowledged message is left out, so an unacknowledged batch counts again
--- (SN-03). The messages of the room from before the AI's current membership are not part of it (ROOM-01).
+-- (SN-03). The messages of the room from before the AI's current membership are not part of it (ROOM-01),
+-- and neither are the agent messages written while the loop guard had paused the room (SN-03, DLV-08).
 SELECT COUNT(*) FROM messages m
 JOIN room_members rm ON rm.room_id = m.room_id AND rm.kind = 'agent' AND rm.member_id = sqlc.arg(agent_id)
 WHERE m.room_id = sqlc.arg(room_id) AND m.seq > sqlc.arg(after_seq) AND m.seq < sqlc.arg(before_seq)
   AND m.seq > COALESCE((SELECT MAX(b.seq) FROM messages b
                         WHERE b.room_id = m.room_id AND b.created_at < rm.created_at), 0)
   AND m.deleted_at IS NULL
+  AND m.during_pause = 0
   AND NOT (m.author_kind = 'agent' AND m.author_id = sqlc.arg(agent_id) AND m.author_label = sqlc.arg(author_label))
   AND NOT EXISTS (
       SELECT 1 FROM agent_session_deliveries d

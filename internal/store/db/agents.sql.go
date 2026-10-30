@@ -456,7 +456,7 @@ func (q *Queries) InsertFolderAgent(ctx context.Context, arg InsertFolderAgentPa
 }
 
 const listAgentBacklog = `-- name: ListAgentBacklog :many
-SELECT mv.id, mv.room_id, mv.seq, mv.author_kind, mv.author_id, mv.author_user_id, mv.author_iid, mv.sender_id, mv.sender_alt_id, mv.sender_name, mv.kind, mv.text, mv.reply_to, mv.recipients_json, mv.external_id, mv.created_at, mv.edited_at, mv.deleted_at, mv.interactive_json, mv.answers_json, mv.author_label, mv.author_name, mv.author_handle, mv.author_ikind, mv.author_avatar FROM message_views mv
+SELECT mv.id, mv.room_id, mv.seq, mv.author_kind, mv.author_id, mv.author_user_id, mv.author_iid, mv.sender_id, mv.sender_alt_id, mv.sender_name, mv.kind, mv.text, mv.reply_to, mv.recipients_json, mv.external_id, mv.created_at, mv.edited_at, mv.deleted_at, mv.interactive_json, mv.answers_json, mv.author_label, mv.author_name, mv.author_handle, mv.author_ikind, mv.author_avatar, mv.during_pause FROM message_views mv
 JOIN room_members rm ON rm.room_id = mv.room_id AND rm.kind = 'agent' AND rm.member_id = ?1
 WHERE mv.room_id = ?2 AND mv.seq > ?3
   AND mv.seq > COALESCE((SELECT MAX(b.seq) FROM messages b
@@ -516,6 +516,7 @@ func (q *Queries) ListAgentBacklog(ctx context.Context, arg ListAgentBacklogPara
 			&i.AuthorHandle,
 			&i.AuthorIkind,
 			&i.AuthorAvatar,
+			&i.DuringPause,
 		); err != nil {
 			return nil, err
 		}

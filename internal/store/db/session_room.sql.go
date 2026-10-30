@@ -135,6 +135,7 @@ WHERE m.room_id = ?2 AND m.seq > ?3 AND m.seq < ?4
   AND m.seq > COALESCE((SELECT MAX(b.seq) FROM messages b
                         WHERE b.room_id = m.room_id AND b.created_at < rm.created_at), 0)
   AND m.deleted_at IS NULL
+  AND m.during_pause = 0
   AND NOT (m.author_kind = 'agent' AND m.author_id = ?1 AND m.author_label = ?5)
   AND NOT EXISTS (
       SELECT 1 FROM agent_session_deliveries d
@@ -154,7 +155,8 @@ type CountSessionUnreadInRoomParams struct {
 // How many messages of one room a session has not read and that ListSessionUnread would list (SN-03): the
 // difference between this count and the number listed is the "N earlier messages skipped" note of the
 // catch-up batch. Only an acknowledged message is left out, so an unacknowledged batch counts again
-// (SN-03). The messages of the room from before the AI's current membership are not part of it (ROOM-01).
+// (SN-03). The messages of the room from before the AI's current membership are not part of it (ROOM-01),
+// and neither are the agent messages written while the loop guard had paused the room (SN-03, DLV-08).
 func (q *Queries) CountSessionUnreadInRoom(ctx context.Context, arg CountSessionUnreadInRoomParams) (int64, error) {
 	row := q.db.QueryRowContext(ctx, countSessionUnreadInRoom,
 		arg.AgentID,
@@ -399,13 +401,14 @@ func (q *Queries) ListSessionRoomStatesInRoom(ctx context.Context, arg ListSessi
 }
 
 const listSessionUnread = `-- name: ListSessionUnread :many
-SELECT id, room_id, seq, author_kind, author_id, author_user_id, author_iid, sender_id, sender_alt_id, sender_name, kind, text, reply_to, recipients_json, external_id, created_at, edited_at, deleted_at, interactive_json, answers_json, author_label, author_name, author_handle, author_ikind, author_avatar FROM (
-    SELECT mv.id, mv.room_id, mv.seq, mv.author_kind, mv.author_id, mv.author_user_id, mv.author_iid, mv.sender_id, mv.sender_alt_id, mv.sender_name, mv.kind, mv.text, mv.reply_to, mv.recipients_json, mv.external_id, mv.created_at, mv.edited_at, mv.deleted_at, mv.interactive_json, mv.answers_json, mv.author_label, mv.author_name, mv.author_handle, mv.author_ikind, mv.author_avatar FROM message_views mv
+SELECT id, room_id, seq, author_kind, author_id, author_user_id, author_iid, sender_id, sender_alt_id, sender_name, kind, text, reply_to, recipients_json, external_id, created_at, edited_at, deleted_at, interactive_json, answers_json, author_label, author_name, author_handle, author_ikind, author_avatar, during_pause FROM (
+    SELECT mv.id, mv.room_id, mv.seq, mv.author_kind, mv.author_id, mv.author_user_id, mv.author_iid, mv.sender_id, mv.sender_alt_id, mv.sender_name, mv.kind, mv.text, mv.reply_to, mv.recipients_json, mv.external_id, mv.created_at, mv.edited_at, mv.deleted_at, mv.interactive_json, mv.answers_json, mv.author_label, mv.author_name, mv.author_handle, mv.author_ikind, mv.author_avatar, mv.during_pause FROM message_views mv
     JOIN room_members rm ON rm.room_id = mv.room_id AND rm.kind = 'agent' AND rm.member_id = ?1
     WHERE mv.room_id = ?2 AND mv.seq > ?3 AND mv.seq < ?4
       AND mv.seq > COALESCE((SELECT MAX(b.seq) FROM messages b
                              WHERE b.room_id = mv.room_id AND b.created_at < rm.created_at), 0)
       AND mv.deleted_at IS NULL
+      AND mv.during_pause = 0
       AND NOT (mv.author_kind = 'agent' AND mv.author_id = ?1 AND mv.author_label = ?5)
       AND NOT EXISTS (
           SELECT 1 FROM agent_session_deliveries d
@@ -433,7 +436,8 @@ type ListSessionUnreadParams struct {
 // ordered oldest first. The session's own messages are not part of it (SN-06), the message that is being
 // pushed now is not either (before_seq), and neither is one that session acknowledged. A message it was
 // given but never acknowledged is part of it again: a batch lost with its connection comes back (SN-03).
-// Nothing from before the AI's current membership of the room is part of it (ROOM-01).
+// Nothing from before the AI's current membership of the room is part of it (ROOM-01), and neither is an
+// agent message written while the loop guard had paused the room (SN-03, DLV-08).
 func (q *Queries) ListSessionUnread(ctx context.Context, arg ListSessionUnreadParams) ([]MessageView, error) {
 	rows, err := q.db.QueryContext(ctx, listSessionUnread,
 		arg.AgentID,
@@ -477,6 +481,7 @@ func (q *Queries) ListSessionUnread(ctx context.Context, arg ListSessionUnreadPa
 			&i.AuthorHandle,
 			&i.AuthorIkind,
 			&i.AuthorAvatar,
+			&i.DuringPause,
 		); err != nil {
 			return nil, err
 		}
