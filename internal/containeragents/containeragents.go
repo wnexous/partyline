@@ -84,6 +84,34 @@ const (
 // harnesses are the apps a container may run (CA-04): the four with a live channel.
 var harnesses = map[string]bool{"claude": true, "opencode": true, "pi": true, "omp": true}
 
+// HarnessCredentials are the variables each app reads its provider credentials from
+// (deploy/agent/README.md, "Environment contract"). At least one of them must be mapped: without a
+// credential the container starts and its app can never sign in, so a create is refused instead.
+var HarnessCredentials = map[string][]string{
+	"claude":   {"CLAUDE_CODE_OAUTH_TOKEN", "ANTHROPIC_API_KEY", "ANTHROPIC_AUTH_TOKEN"},
+	"opencode": {"OPENCODE_API_KEY", "ANTHROPIC_API_KEY", "OPENAI_API_KEY", "GEMINI_API_KEY", "OPENROUTER_API_KEY"},
+	"pi":       {"OPENCODE_API_KEY", "ANTHROPIC_API_KEY", "OPENAI_API_KEY", "GEMINI_API_KEY", "OPENROUTER_API_KEY"},
+	"omp":      {"OPENCODE_API_KEY", "ANTHROPIC_API_KEY", "OPENAI_API_KEY", "GEMINI_API_KEY", "OPENROUTER_API_KEY"},
+}
+
+// CredentialVars are the variables the harness reads (CA-04); a harness without a row has none.
+func CredentialVars(harness string) []string { return HarnessCredentials[harness] }
+
+// CredentialsRequiredError is a create or an environment update without a variable the chosen app
+// reads (CA-04): the container would run an app that cannot sign in. It names the variables only,
+// never a value (CA-08); the API answers 422 credentials_required.
+type CredentialsRequiredError struct {
+	// Harness is the app the container runs.
+	Harness string
+	// Vars are the variables the app reads, any one of them enough.
+	Vars []string
+}
+
+func (e *CredentialsRequiredError) Error() string {
+	return "the " + e.Harness + " app needs a credential: map one of " +
+		strings.Join(e.Vars, ", ") + " to one of your secrets"
+}
+
 // reservedEnv are the variables Partyline sets; a mapping of the owner may not replace them.
 var reservedEnv = map[string]bool{
 	EnvURL: true, EnvToken: true, EnvHarness: true, EnvRepo: true, EnvRepoRef: true,
@@ -928,11 +956,32 @@ func validateCreate(in CreateInput) (CreateInput, error) {
 	if !spec.ValidMemoryMB(in.MemoryMB) {
 		fields["memory_mb"] = "must be between 64 and 65536"
 	}
-	if len(in.Env) > spec.MaxEnvVars {
+	var envFields map[string]string
+	in.Env, envFields = cleanEnv(in.Env)
+	for k, v := range envFields {
+		fields[k] = v
+	}
+	if len(fields) > 0 {
+		return CreateInput{}, &spec.ValidationError{Fields: fields}
+	}
+	// The app's credential is required (CA-04): a container without one only restart-loops.
+	if err := requireCredential(in.Harness, in.Env); err != nil {
+		return CreateInput{}, err
+	}
+	return in, nil
+}
+
+// cleanEnv checks the environment rows of a container AI (CA-04) and returns them trimmed: the
+// variables follow the protocol pattern, none is set by Partyline, none appears twice, the secret
+// names are usable and there are at most spec.MaxEnvVars rows. The refused fields name the row and
+// never a value (CA-08).
+func cleanEnv(env []EnvVar) ([]EnvVar, map[string]string) {
+	fields := map[string]string{}
+	if len(env) > spec.MaxEnvVars {
 		fields["env"] = fmt.Sprintf("at most %d environment variables", spec.MaxEnvVars)
 	}
-	seen := make(map[string]bool, len(in.Env))
-	for i, e := range in.Env {
+	seen := make(map[string]bool, len(env))
+	for i, e := range env {
 		e.Var = strings.TrimSpace(e.Var)
 		if !spec.ValidEnvName(e.Var) {
 			fields[fmt.Sprintf("env[%d].var", i)] = "must match " + spec.EnvNamePattern.String()
@@ -948,12 +997,21 @@ func validateCreate(in CreateInput) (CreateInput, error) {
 		if !ownersecrets.ValidName(e.SecretName) {
 			fields[fmt.Sprintf("env[%d].secret_name", i)] = "must be the name of one of your secrets"
 		}
-		in.Env[i] = e
+		env[i] = e
 	}
-	if len(fields) > 0 {
-		return CreateInput{}, &spec.ValidationError{Fields: fields}
+	return env, fields
+}
+
+// requireCredential refuses an environment without one of the variables the harness reads (CA-04).
+func requireCredential(harness string, env []EnvVar) error {
+	for _, e := range env {
+		for _, want := range CredentialVars(harness) {
+			if e.Var == want {
+				return nil
+			}
+		}
 	}
-	return in, nil
+	return &CredentialsRequiredError{Harness: harness, Vars: CredentialVars(harness)}
 }
 
 // validateMapped checks the values of the mapped secrets against the protocol limits, without

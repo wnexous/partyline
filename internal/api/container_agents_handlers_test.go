@@ -218,6 +218,7 @@ func TestCreateContainerAgentRunsTheImageWithSecrets(t *testing.T) {
 	// A create without a repository uses the workspace folder and passes no repository.
 	second := createContainer(t, alice, dto.CreateContainerAgentRequest{
 		RunnerID: runner.ID, Harness: "pi", DisplayName: "Nova", Handle: "nova",
+		Env: []dto.ContainerEnvVar{{Var: "OPENCODE_API_KEY", SecretName: "OPENCODE_KEY"}},
 	})
 	require.Empty(t, second.RepoURL)
 	require.Empty(t, second.RepoRef)
@@ -237,6 +238,7 @@ func TestCreateContainerAgentRefusals(t *testing.T) {
 	offline := registerRunner(t, alice.RunnerToken("offline"), "box-offline")
 	valid := dto.CreateContainerAgentRequest{
 		RunnerID: offline.ID, Harness: "claude", DisplayName: "Atlas", Handle: "nova", CPUs: 1, MemoryMB: 512,
+		Env: []dto.ContainerEnvVar{{Var: "ANTHROPIC_API_KEY", SecretName: "OPENCODE_KEY"}},
 	}
 	alice.Post("/api/v1/container-agents", valid).RequireError(http.StatusConflict, dto.ErrorCodeRunnerOffline)
 	bob.Post("/api/v1/container-agents", valid).RequireError(http.StatusNotFound, dto.ErrorCodeNotFound)
@@ -280,7 +282,7 @@ func TestCreateContainerAgentRefusals(t *testing.T) {
 			}
 		}, "env[1].var", dto.ErrorCodeInvalid, http.StatusUnprocessableEntity},
 		{"missing secret", func(r *dto.CreateContainerAgentRequest) {
-			r.Env = []dto.ContainerEnvVar{{Var: "OPENCODE_API_KEY", SecretName: "NO_SUCH_KEY"}}
+			r.Env = []dto.ContainerEnvVar{{Var: "ANTHROPIC_API_KEY", SecretName: "NO_SUCH_KEY"}}
 		}, "env[0].secret_name", dto.ErrorCodeInvalid, http.StatusUnprocessableEntity},
 	}
 	for _, c := range cases {
@@ -315,8 +317,10 @@ func TestContainerLifecycleAuthzAndDelete(t *testing.T) {
 	require.NoError(t, env.App.Orgs.SetDefault(context.Background(), alice.User.ID, org.ID))
 	runner, _, conn := onlineRunner(t, alice, "devbox")
 	f := fake(t, conn, nil)
+	putSecret(t, alice, "PROVIDER_KEY", "sk-value")
 	created := createContainer(t, alice, dto.CreateContainerAgentRequest{
 		RunnerID: runner.ID, Harness: "claude", DisplayName: "Atlas", Handle: "atlas",
+		Env: []dto.ContainerEnvVar{{Var: "ANTHROPIC_API_KEY", SecretName: "PROVIDER_KEY"}},
 	})
 	f.next()
 	// The container AI holds the worker position, so the manager above it manages it as the chart
@@ -412,8 +416,10 @@ func TestContainerDeleteVolumeAndOffline(t *testing.T) {
 	alice := env.NewUser("alice")
 	runner, client, conn := onlineRunner(t, alice, "devbox")
 	f := fake(t, conn, nil)
+	putSecret(t, alice, "PROVIDER_KEY", "sk-value")
 	created := createContainer(t, alice, dto.CreateContainerAgentRequest{
 		RunnerID: runner.ID, Harness: "omp", DisplayName: "Nova", Handle: "nova",
+		Env: []dto.ContainerEnvVar{{Var: "ANTHROPIC_API_KEY", SecretName: "PROVIDER_KEY"}},
 	})
 	f.next()
 
@@ -446,8 +452,10 @@ func TestContainerStartRecreatesAMissingContainer(t *testing.T) {
 	alice := env.NewUser("alice")
 	runner, _, conn := onlineRunner(t, alice, "devbox")
 	f := fake(t, conn, nil)
+	putSecret(t, alice, "PROVIDER_KEY", "sk-value")
 	created := createContainer(t, alice, dto.CreateContainerAgentRequest{
 		RunnerID: runner.ID, Harness: "opencode", DisplayName: "Atlas", Handle: "atlas",
+		Env: []dto.ContainerEnvVar{{Var: "ANTHROPIC_API_KEY", SecretName: "PROVIDER_KEY"}},
 	})
 	f.next()
 	before := storedContainer(t, env, created.Agent.ID)
@@ -520,8 +528,10 @@ func TestAccountDeletionRemovesContainers(t *testing.T) {
 	alice := env.NewUser("alice")
 	runner, _, conn := onlineRunner(t, alice, "devbox")
 	f := fake(t, conn, nil)
+	putSecret(t, alice, "PROVIDER_KEY", "sk-value")
 	createContainer(t, alice, dto.CreateContainerAgentRequest{
 		RunnerID: runner.ID, Harness: "pi", DisplayName: "Atlas", Handle: "atlas",
+		Env: []dto.ContainerEnvVar{{Var: "ANTHROPIC_API_KEY", SecretName: "PROVIDER_KEY"}},
 	})
 	f.next()
 
@@ -598,4 +608,45 @@ func TestCreateTwoContainerAgentsWithoutRepo(t *testing.T) {
 	require.Equal(t, one.Folder, two.Folder)
 	require.NotEqual(t, one.Machine, two.Machine, "each container AI has its own machine")
 	require.Equal(t, agents.ContainerMachine(first.ContainerName), one.Machine, "the machine is the container's own name")
+}
+
+// CA-04: a create without a variable the chosen app reads its provider key from is 422
+// credentials_required: the container would run an app that can never sign in. The message names
+// the app's variables and never a value, and nothing is created.
+func TestCreateContainerAgentRequiresACredential(t *testing.T) {
+	env := testkit.New(t)
+	alice := env.NewUser("alice")
+	runner, _, conn := onlineRunner(t, alice, "devbox")
+	fake(t, conn, nil)
+	putSecret(t, alice, "PROVIDER_KEY", "sk-value")
+	request := func(harness string, rows ...dto.ContainerEnvVar) dto.CreateContainerAgentRequest {
+		return dto.CreateContainerAgentRequest{
+			RunnerID: runner.ID, Harness: harness, DisplayName: "Atlas", Handle: "atlas", Env: rows,
+		}
+	}
+	cases := []struct {
+		name    string
+		request dto.CreateContainerAgentRequest
+		vars    []string
+	}{
+		{"no environment", request("opencode"), []string{"OPENCODE_API_KEY", "ANTHROPIC_API_KEY"}},
+		{"another app's variable", request("claude", dto.ContainerEnvVar{Var: "OPENCODE_API_KEY", SecretName: "PROVIDER_KEY"}),
+			[]string{"CLAUDE_CODE_OAUTH_TOKEN", "ANTHROPIC_AUTH_TOKEN"}},
+		{"a variable no app reads", request("pi", dto.ContainerEnvVar{Var: "MODEL_NAME", SecretName: "PROVIDER_KEY"}),
+			[]string{"OPENROUTER_API_KEY", "OPENCODE_API_KEY"}},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			resp := alice.Post("/api/v1/container-agents", c.request)
+			e := resp.RequireError(http.StatusUnprocessableEntity, dto.ErrorCodeCredentialsRequired)
+			require.Contains(t, e.Fields, "env", "the refused field is the credential mapping")
+			for _, want := range c.vars {
+				require.Contains(t, e.Message, want, "the message names the variables the app reads")
+			}
+			require.NotContains(t, string(resp.Body), "sk-value", "an error never carries a secret value")
+		})
+	}
+	rows, err := env.App.Store.R().ListContainerAgentsByRunner(context.Background(), runner.ID)
+	require.NoError(t, err)
+	require.Empty(t, rows, "a refused create writes nothing")
 }

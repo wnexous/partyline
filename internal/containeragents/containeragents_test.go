@@ -40,7 +40,10 @@ func TestContainerNamesAreValid(t *testing.T) {
 // CA-04, CA-08: a create is validated field by field, the defaults are filled in, and no error
 // message carries a value.
 func TestValidateCreate(t *testing.T) {
-	in, err := validateCreate(CreateInput{Harness: "Claude", DisplayName: " Atlas ", Handle: "Atlas"})
+	in, err := validateCreate(CreateInput{
+		Harness: "Claude", DisplayName: " Atlas ", Handle: "Atlas",
+		Env: []EnvVar{{Var: "ANTHROPIC_API_KEY", SecretName: "PROVIDER_KEY"}},
+	})
 	require.NoError(t, err)
 	require.Equal(t, "claude", in.Harness)
 	require.Equal(t, "Atlas", in.DisplayName)
@@ -100,4 +103,34 @@ func TestErrorText(t *testing.T) {
 	require.Contains(t, text, "\n")
 	require.LessOrEqual(t, len([]rune(text)), spec.MaxMessage)
 	require.Equal(t, "name: must match x", errorText(&spec.ValidationError{Fields: map[string]string{"name": "must match x"}}))
+}
+
+// CA-04: a create needs one of the variables the chosen app reads its provider key from. Any one
+// of the app's variables is enough; a variable of another app is not one of them.
+func TestValidateCreateRequiresACredential(t *testing.T) {
+	for harness, vars := range HarnessCredentials {
+		for _, v := range vars {
+			in, err := validateCreate(CreateInput{
+				Harness: harness, DisplayName: "Atlas", Handle: "atlas",
+				Env: []EnvVar{{Var: v, SecretName: "PROVIDER_KEY"}},
+			})
+			require.NoError(t, err, v)
+			require.Equal(t, v, in.Env[0].Var)
+		}
+		_, err := validateCreate(CreateInput{Harness: harness, DisplayName: "Atlas", Handle: "atlas"})
+		var missing *CredentialsRequiredError
+		require.ErrorAs(t, err, &missing, harness)
+		require.Equal(t, harness, missing.Harness)
+		for _, v := range vars {
+			require.Contains(t, missing.Error(), v, "the refusal names the variables")
+		}
+	}
+	// OpenCode's key is not one Claude Code reads.
+	_, err := validateCreate(CreateInput{
+		Harness: "claude", DisplayName: "Atlas", Handle: "atlas",
+		Env: []EnvVar{{Var: "OPENCODE_API_KEY", SecretName: "PROVIDER_KEY"}},
+	})
+	var missing *CredentialsRequiredError
+	require.ErrorAs(t, err, &missing)
+	require.Contains(t, missing.Error(), "CLAUDE_CODE_OAUTH_TOKEN")
 }
