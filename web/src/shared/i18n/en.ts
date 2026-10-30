@@ -1382,6 +1382,7 @@ export const en = {
 
   "container.title": "Container",
   "container.state.running": "Running",
+  "container.state.restarting": "Restarting",
   "container.state.stopped": "Stopped",
   "container.state.error": "Error",
   "container.state.unknown": "Unknown",
@@ -1389,6 +1390,7 @@ export const en = {
   "container.desired.running": "should be running",
   "container.desired.stopped": "should be stopped",
   "container.lastError": "Last error",
+  "container.lastErrorLogs": "Open the container logs",
   "container.start": "Start",
   "container.stop": "Stop",
   "container.restart": "Restart",

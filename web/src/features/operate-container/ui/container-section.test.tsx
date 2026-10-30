@@ -49,6 +49,38 @@ describe("the container section (CA-06)", () => {
     expect(screen.getByRole("button", { name: "View logs" })).toBeInTheDocument();
   });
 
+  it("shows a restart loop as restarting with the line that explains it (CA-06)", async () => {
+    render({
+      [CONTAINER_PATH]: json(
+        200,
+        makeContainer({
+          state: "restarting",
+          last_error: "partyline-agent: error: opencode: set OPENCODE_API_KEY in the environment",
+        }),
+      ),
+    });
+    expect(await screen.findByText("Restarting")).toBeInTheDocument();
+    expect(screen.queryByText("Running")).toBeNull();
+    expect(screen.getByText(/set OPENCODE_API_KEY in the environment/)).toBeInTheDocument();
+    // The reason is usually a log line: the shortcut opens the same logs sheet.
+    expect(screen.getByRole("button", { name: "Open the container logs" })).toBeInTheDocument();
+  });
+
+  it("opens the logs from the last error", async () => {
+    const { calls, user } = render({
+      [CONTAINER_PATH]: json(
+        200,
+        makeContainer({ state: "error", last_error: "partyline-agent: error: boom" }),
+      ),
+      "GET /agents/a1/container/logs": json(200, { logs: "partyline-agent: error: boom" }),
+    });
+    await screen.findByText("partyline-agent: error: boom");
+    await user.click(screen.getByRole("button", { name: "Open the container logs" }));
+    const sheet = await screen.findByRole("dialog", { name: "Last 200 log lines" });
+    expect(within(sheet).getByText(/partyline-agent: error: boom/)).toBeInTheDocument();
+    expect(calls.some((c) => c.path.endsWith("/logs"))).toBe(true);
+  });
+
   it("is absent for an AI without a container, and for one the viewer does not manage", async () => {
     const { calls } = render({ [CONTAINER_PATH]: apiError(404, "not_found") });
     await waitFor(() => expect(calls.some((c) => c.path === "/agents/a1/container")).toBe(true));

@@ -134,7 +134,19 @@ export function ContainerSection({
         {data.last_error ? (
           <>
             <dt className="text-muted-foreground">{t("container.lastError")}</dt>
-            <dd className="min-w-0 text-destructive [overflow-wrap:anywhere]">{data.last_error}</dd>
+            <dd className="flex min-w-0 flex-wrap items-start gap-1 text-destructive [overflow-wrap:anywhere]">
+              <span className="min-w-0 flex-1">{data.last_error}</span>
+              {/* The reason is usually a line of the output: the logs are one tap away. */}
+              <Button
+                variant="ghost"
+                size="icon"
+                className="pointer-coarse:size-11 shrink-0 text-muted-foreground hover:text-foreground"
+                aria-label={t("container.lastErrorLogs")}
+                onClick={() => setLogsOpen(true)}
+              >
+                <ScrollTextIcon aria-hidden="true" />
+              </Button>
+            </dd>
           </>
         ) : null}
       </dl>

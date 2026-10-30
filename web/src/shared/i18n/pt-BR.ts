@@ -1391,6 +1391,7 @@ export const ptBR: Dictionary = {
 
   "container.title": "Contêiner",
   "container.state.running": "Rodando",
+  "container.state.restarting": "Reiniciando",
   "container.state.stopped": "Parado",
   "container.state.error": "Erro",
   "container.state.unknown": "Desconhecido",
@@ -1398,6 +1399,7 @@ export const ptBR: Dictionary = {
   "container.desired.running": "deve estar rodando",
   "container.desired.stopped": "deve estar parado",
   "container.lastError": "Último erro",
+  "container.lastErrorLogs": "Abrir os logs do contêiner",
   "container.start": "Iniciar",
   "container.stop": "Parar",
   "container.restart": "Reiniciar",
