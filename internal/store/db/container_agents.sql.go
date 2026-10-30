@@ -461,6 +461,29 @@ func (q *Queries) SetContainerAgentDesired(ctx context.Context, arg SetContainer
 	return err
 }
 
+const setContainerAgentEnv = `-- name: SetContainerAgentEnv :exec
+UPDATE container_agents SET env = ?, desired = ?, updated_at = ? WHERE agent_id = ?
+`
+
+type SetContainerAgentEnvParams struct {
+	Env       string
+	Desired   string
+	UpdatedAt int64
+	AgentID   string
+}
+
+// The environment mapping the owner edited (variables to secret ids); the container is created
+// again with the values opened from it (CA-04).
+func (q *Queries) SetContainerAgentEnv(ctx context.Context, arg SetContainerAgentEnvParams) error {
+	_, err := q.db.ExecContext(ctx, setContainerAgentEnv,
+		arg.Env,
+		arg.Desired,
+		arg.UpdatedAt,
+		arg.AgentID,
+	)
+	return err
+}
+
 const setContainerAgentLastError = `-- name: SetContainerAgentLastError :exec
 UPDATE container_agents SET last_error = ?, updated_at = ? WHERE agent_id = ?
 `

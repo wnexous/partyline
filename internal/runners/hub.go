@@ -271,15 +271,19 @@ func (h *Hub) applyStates(ctx context.Context, runnerID string, containers []spe
 		if !ok {
 			continue
 		}
-		// The error travels with the state, and a running container has none (CA-06).
+		// The reason travels with the state: the container's own last log line when the runner sent
+		// one (it read and redacted it), else Docker's reason. A running container has none (CA-06).
 		var lastError sql.NullString
-		if c.Error != "" {
+		switch {
+		case c.LastLog != "":
+			lastError = sql.NullString{String: c.LastLog, Valid: true}
+		case c.Error != "":
 			lastError = sql.NullString{String: c.Error, Valid: true}
 		}
 		if row.State == string(c.State) && row.LastError.String == lastError.String && row.LastError.Valid == lastError.Valid {
 			continue
 		}
-		if c.Error == "" && c.State != spec.StateRunning && row.LastError.Valid {
+		if !lastError.Valid && c.State != spec.StateRunning && row.LastError.Valid {
 			lastError = row.LastError // keep the last failure until a running report clears it
 		}
 		changes[c.Name] = change{state: string(c.State), err: lastError}

@@ -54,6 +54,11 @@ const (
 	EnvHarness = "PARTYLINE_HARNESS"
 	EnvRepo    = "PARTYLINE_REPO"
 	EnvRepoRef = "PARTYLINE_REPO_REF"
+	// EnvMachine and EnvFolder are the identity the session inside the container reports (CA-04): the
+	// AI's machine and folder, so it joins this AI whatever the container's hostname and working
+	// directory are (channel.MachineEnvVar, PARTYLINE_FOLDER).
+	EnvMachine = "PARTYLINE_MACHINE"
+	EnvFolder  = "PARTYLINE_FOLDER"
 	// AgentLabel is the Docker label that ties a container to its AI (CA-09).
 	AgentLabel = "partyline.agent"
 	// DefaultRepoRef is the branch cloned when a repository is given without one.
@@ -66,12 +71,13 @@ const (
 
 // Audit actions of the container lifecycle (CA-07); the target is the AI the container runs.
 const (
-	ActionCreate  = "container.create"
-	ActionStart   = "container.start"
-	ActionStop    = "container.stop"
-	ActionRestart = "container.restart"
-	ActionLogs    = "container.logs"
-	ActionDelete  = "container.delete"
+	ActionCreate    = "container.create"
+	ActionStart     = "container.start"
+	ActionStop      = "container.stop"
+	ActionRestart   = "container.restart"
+	ActionLogs      = "container.logs"
+	ActionDelete    = "container.delete"
+	ActionUpdateEnv = "container.update_env"
 )
 
 // Requested actions of POST /api/v1/agents/{id}/container (CA-06).
@@ -84,9 +90,38 @@ const (
 // harnesses are the apps a container may run (CA-04): the four with a live channel.
 var harnesses = map[string]bool{"claude": true, "opencode": true, "pi": true, "omp": true}
 
+// HarnessCredentials are the variables each app reads its provider credentials from
+// (deploy/agent/README.md, "Environment contract"). At least one of them must be mapped: without a
+// credential the container starts and its app can never sign in, so a create is refused instead.
+var HarnessCredentials = map[string][]string{
+	"claude":   {"CLAUDE_CODE_OAUTH_TOKEN", "ANTHROPIC_API_KEY", "ANTHROPIC_AUTH_TOKEN"},
+	"opencode": {"OPENCODE_API_KEY", "ANTHROPIC_API_KEY", "OPENAI_API_KEY", "GEMINI_API_KEY", "OPENROUTER_API_KEY"},
+	"pi":       {"OPENCODE_API_KEY", "ANTHROPIC_API_KEY", "OPENAI_API_KEY", "GEMINI_API_KEY", "OPENROUTER_API_KEY"},
+	"omp":      {"OPENCODE_API_KEY", "ANTHROPIC_API_KEY", "OPENAI_API_KEY", "GEMINI_API_KEY", "OPENROUTER_API_KEY"},
+}
+
+// CredentialVars are the variables the harness reads (CA-04); a harness without a row has none.
+func CredentialVars(harness string) []string { return HarnessCredentials[harness] }
+
+// CredentialsRequiredError is a create or an environment update without a variable the chosen app
+// reads (CA-04): the container would run an app that cannot sign in. It names the variables only,
+// never a value (CA-08); the API answers 422 credentials_required.
+type CredentialsRequiredError struct {
+	// Harness is the app the container runs.
+	Harness string
+	// Vars are the variables the app reads, any one of them enough.
+	Vars []string
+}
+
+func (e *CredentialsRequiredError) Error() string {
+	return "the " + e.Harness + " app needs a credential: map one of " +
+		strings.Join(e.Vars, ", ") + " to one of your secrets"
+}
+
 // reservedEnv are the variables Partyline sets; a mapping of the owner may not replace them.
 var reservedEnv = map[string]bool{
 	EnvURL: true, EnvToken: true, EnvHarness: true, EnvRepo: true, EnvRepoRef: true,
+	EnvMachine: true, EnvFolder: true,
 }
 
 // releaseVersion matches a release tag whose agent image exists (v1.2.3, 1.2.3-rc.1), and
@@ -252,6 +287,9 @@ func (s *Service) Create(ctx context.Context, p authn.Principal, in CreateInput)
 		return Container{}, err
 	}
 	image := ImageFor(s.d.Version)
+	// The id is made before the transaction: the container's name (and so the AI's machine) follows
+	// from it, and the machine is part of the identity (CA-04).
+	agentID := store.NewID()
 	var (
 		agent  db.Agent
 		secret string
@@ -260,8 +298,8 @@ func (s *Service) Create(ctx context.Context, p authn.Principal, in CreateInput)
 	now := s.d.Now()
 	err = s.d.Store.WithTx(ctx, func(q *db.Queries) error {
 		agent, err = s.d.Agents.CreateContainerIdentity(ctx, q, p.UserID, agents.ContainerIdentity{
-			RunnerID: runner.ID, Harness: in.Harness, Repo: in.RepoURL != "",
-			DisplayName: in.DisplayName, Handle: in.Handle,
+			ID: agentID, ContainerName: ContainerName(agentID), Harness: in.Harness,
+			Repo: in.RepoURL != "", DisplayName: in.DisplayName, Handle: in.Handle,
 		})
 		if err != nil {
 			return err
@@ -309,7 +347,7 @@ func (s *Service) Create(ctx context.Context, p authn.Principal, in CreateInput)
 	if err != nil {
 		return Container{}, err
 	}
-	env := s.containerEnv(in, in.RepoRef, secret, mapped)
+	env := s.containerEnv(in, in.RepoRef, secret, agent, mapped)
 	run := spec.RunSpec{
 		Name: row.ContainerName, Image: row.Image, Volume: row.Volume, CPUs: row.Cpus, MemoryMB: row.MemoryMb,
 		Labels: map[string]string{AgentLabel: agent.ID}, Env: env,
@@ -341,6 +379,80 @@ func (s *Service) Stop(ctx context.Context, p authn.Principal, agentID string) (
 // Restart asks the runner to restart the AI's container (CA-06).
 func (s *Service) Restart(ctx context.Context, p authn.Principal, agentID string) (Container, error) {
 	return s.operate(ctx, p, agentID, spec.OpRestart)
+}
+
+// UpdateEnv replaces the environment mapping of an AI's container and creates the container again
+// with it, keeping the workspace volume (CA-04, CA-06). The mapping is validated like a create,
+// including at least one variable the harness reads; the AI's token is rotated because the secret
+// of the old one is not stored, and the audit entry carries the variable names only (CA-08). The
+// row is written only once the runner accepted the removal: a runner that is offline or that
+// refuses it leaves the mapping and the container as they were, and a container the runner no
+// longer has is simply created again. A run that fails keeps the new mapping with last_error, so
+// Start retries it.
+func (s *Service) UpdateEnv(ctx context.Context, p authn.Principal, agentID string, env []EnvVar) (Container, error) {
+	row, err := s.load(ctx, p, agentID)
+	if err != nil {
+		return Container{}, err
+	}
+	env, fields := cleanEnv(env)
+	if len(fields) > 0 {
+		return Container{}, &spec.ValidationError{Fields: fields}
+	}
+	if err := requireCredential(row.Harness, env); err != nil {
+		return Container{}, err
+	}
+	ai, err := s.d.Store.R().GetAgent(ctx, row.AgentID)
+	if err != nil {
+		return Container{}, err
+	}
+	mapped, ids, err := s.resolveSecrets(ctx, ai.OwnerID, env)
+	if err != nil {
+		return Container{}, err
+	}
+	if err := validateMapped(mapped); err != nil {
+		return Container{}, err
+	}
+	if !s.d.Runners.Hub().Online(row.RunnerID) {
+		return Container{}, runners.ErrOffline
+	}
+	// The old container goes first, keeping its volume. A container the runner no longer has is not
+	// an error (Docker answers `rm -f` with "No such container"), so an operation error is ignored
+	// exactly as Delete does; anything else is a runner that never saw the command.
+	if _, err := s.d.Runners.Hub().Do(ctx, row.RunnerID, spec.Command{
+		Op: spec.OpRemove, Name: row.ContainerName,
+	}); err != nil {
+		var opErr *runners.OpError
+		if !errors.As(err, &opErr) {
+			s.setLastError(ctx, row.AgentID, err)
+			return Container{}, err
+		}
+	}
+	vars := make([]string, len(ids))
+	for i, e := range ids {
+		vars[i] = e.Var
+	}
+	secret, row, err := s.rotateTokenWith(ctx, row, func(q *db.Queries, now time.Time) error {
+		return q.SetContainerAgentEnv(ctx, db.SetContainerAgentEnvParams{
+			Env: marshalEnv(ids), Desired: DesiredRunning, UpdatedAt: now.UnixMilli(), AgentID: row.AgentID,
+		})
+	})
+	if err != nil {
+		s.setLastError(ctx, row.AgentID, err)
+		return Container{}, err
+	}
+	row.Env = marshalEnv(ids)
+	row.Desired = DesiredRunning
+	values, err := s.freshEnv(ctx, row, secret)
+	if err != nil {
+		s.setLastError(ctx, row.AgentID, err)
+		return Container{}, err
+	}
+	run := s.runSpec(row, values)
+	if _, err := s.d.Runners.Hub().Do(ctx, row.RunnerID, spec.Command{Op: spec.OpRun, Run: &run}); err != nil {
+		s.setLastError(ctx, row.AgentID, err)
+		return Container{}, err
+	}
+	return s.succeededWith(ctx, row, ActionUpdateEnv, spec.OpRun, map[string]any{"vars": vars})
 }
 
 // operate runs one lifecycle operation for a caller who manages the AI (CA-07) and writes what it
@@ -394,6 +506,11 @@ func (s *Service) operate(ctx context.Context, p authn.Principal, agentID string
 // succeeded records the state an operation left the container in and clears last_error, auditing
 // the action.
 func (s *Service) succeeded(ctx context.Context, row db.ContainerAgent, action string, op spec.Op) (Container, error) {
+	return s.succeededWith(ctx, row, action, op, nil)
+}
+
+// succeededWith is succeeded with extra facts in the audit entry (variable names, never values).
+func (s *Service) succeededWith(ctx context.Context, row db.ContainerAgent, action string, op spec.Op, extra map[string]any) (Container, error) {
 	state := string(spec.StateRunning)
 	if op == spec.OpStop {
 		state = string(spec.StateStopped)
@@ -412,11 +529,15 @@ func (s *Service) succeeded(ctx context.Context, row db.ContainerAgent, action s
 				return err
 			}
 		}
+		detail := map[string]any{
+			"runner_id": row.RunnerID, "container": row.ContainerName, "state": state,
+		}
+		for key, value := range extra {
+			detail[key] = value
+		}
 		if err := s.d.Audit.Record(ctx, q, audit.Entry{
 			ActorID: principalID(ctx), Action: action, TargetKind: audit.TargetAgent, TargetID: row.AgentID,
-			Detail: map[string]any{
-				"runner_id": row.RunnerID, "container": row.ContainerName, "state": state,
-			},
+			Detail: detail,
 		}); err != nil {
 			return err
 		}
@@ -636,6 +757,12 @@ func (s *Service) setLastError(ctx context.Context, agentID string, err error) {
 // container that has to be created again (CA-04). The old token is revoked and its sessions are
 // announced after the commit.
 func (s *Service) rotateToken(ctx context.Context, row db.ContainerAgent) (string, db.ContainerAgent, error) {
+	return s.rotateTokenWith(ctx, row, nil)
+}
+
+// rotateTokenWith is rotateToken with extra writes that must commit with the new token; they run in
+// the same transaction, after the AI's row holds the fresh token.
+func (s *Service) rotateTokenWith(ctx context.Context, row db.ContainerAgent, extra func(q *db.Queries, now time.Time) error) (string, db.ContainerAgent, error) {
 	var (
 		secret  string
 		ownerID string
@@ -673,6 +800,9 @@ func (s *Service) rotateToken(ctx context.Context, row db.ContainerAgent) (strin
 			return err
 		}
 		row.TokenID = sql.NullString{String: tok.ID, Valid: true}
+		if extra != nil {
+			return extra(q, now)
+		}
 		return nil
 	})
 	if err != nil {
@@ -712,16 +842,20 @@ func (s *Service) freshEnv(ctx context.Context, row db.ContainerAgent, token str
 	}
 	repo, ref := row.RepoUrl.String, row.RepoRef.String
 	in := CreateInput{Harness: row.Harness, RepoURL: repo, RepoRef: ref}
-	return s.containerEnv(in, ref, token, mapped), nil
+	return s.containerEnv(in, ref, token, ai, mapped), nil
 }
 
 // containerEnv builds the environment of the container: the Partyline variables first, then the
-// owner's mapped secrets (CA-04). A variable of a mapping never overrides one of Partyline's.
-func (s *Service) containerEnv(in CreateInput, ref, token string, mapped map[string]string) map[string]string {
+// owner's mapped secrets (CA-04). A variable of a mapping never overrides one of Partyline's. The
+// machine and the folder are the AI's own (the agent row), so the session inside the container
+// resolves to this AI instead of one named after the container's hostname and working directory.
+func (s *Service) containerEnv(in CreateInput, ref, token string, agent db.Agent, mapped map[string]string) map[string]string {
 	env := map[string]string{
 		EnvURL:     s.d.PublicURL,
 		EnvToken:   token,
 		EnvHarness: in.Harness,
+		EnvMachine: agent.Machine,
+		EnvFolder:  agent.Folder,
 	}
 	if in.RepoURL != "" {
 		if ref == "" {
@@ -925,11 +1059,32 @@ func validateCreate(in CreateInput) (CreateInput, error) {
 	if !spec.ValidMemoryMB(in.MemoryMB) {
 		fields["memory_mb"] = "must be between 64 and 65536"
 	}
-	if len(in.Env) > spec.MaxEnvVars {
+	var envFields map[string]string
+	in.Env, envFields = cleanEnv(in.Env)
+	for k, v := range envFields {
+		fields[k] = v
+	}
+	if len(fields) > 0 {
+		return CreateInput{}, &spec.ValidationError{Fields: fields}
+	}
+	// The app's credential is required (CA-04): a container without one only restart-loops.
+	if err := requireCredential(in.Harness, in.Env); err != nil {
+		return CreateInput{}, err
+	}
+	return in, nil
+}
+
+// cleanEnv checks the environment rows of a container AI (CA-04) and returns them trimmed: the
+// variables follow the protocol pattern, none is set by Partyline, none appears twice, the secret
+// names are usable and there are at most spec.MaxEnvVars rows. The refused fields name the row and
+// never a value (CA-08).
+func cleanEnv(env []EnvVar) ([]EnvVar, map[string]string) {
+	fields := map[string]string{}
+	if len(env) > spec.MaxEnvVars {
 		fields["env"] = fmt.Sprintf("at most %d environment variables", spec.MaxEnvVars)
 	}
-	seen := make(map[string]bool, len(in.Env))
-	for i, e := range in.Env {
+	seen := make(map[string]bool, len(env))
+	for i, e := range env {
 		e.Var = strings.TrimSpace(e.Var)
 		if !spec.ValidEnvName(e.Var) {
 			fields[fmt.Sprintf("env[%d].var", i)] = "must match " + spec.EnvNamePattern.String()
@@ -945,12 +1100,21 @@ func validateCreate(in CreateInput) (CreateInput, error) {
 		if !ownersecrets.ValidName(e.SecretName) {
 			fields[fmt.Sprintf("env[%d].secret_name", i)] = "must be the name of one of your secrets"
 		}
-		in.Env[i] = e
+		env[i] = e
 	}
-	if len(fields) > 0 {
-		return CreateInput{}, &spec.ValidationError{Fields: fields}
+	return env, fields
+}
+
+// requireCredential refuses an environment without one of the variables the harness reads (CA-04).
+func requireCredential(harness string, env []EnvVar) error {
+	for _, e := range env {
+		for _, want := range CredentialVars(harness) {
+			if e.Var == want {
+				return nil
+			}
+		}
 	}
-	return in, nil
+	return &CredentialsRequiredError{Harness: harness, Vars: CredentialVars(harness)}
 }
 
 // validateMapped checks the values of the mapped secrets against the protocol limits, without

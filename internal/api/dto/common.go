@@ -208,6 +208,10 @@ const (
 	// ErrorCodeRunnerInUse is the refusal to delete a runner that still has containers (409).
 	ErrorCodeRunnerOffline ErrorCode = "runner_offline"
 	ErrorCodeRunnerInUse   ErrorCode = "runner_in_use"
+	// ErrorCodeCredentialsRequired is a container AI created, or its environment updated, without a
+	// variable the chosen app reads its provider key from: the app inside the container could never
+	// sign in (422, CA-04). The message names the variables, never a value.
+	ErrorCodeCredentialsRequired ErrorCode = "credentials_required"
 )
 
 // ErrorBody is the envelope of every error response.

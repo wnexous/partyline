@@ -94,6 +94,11 @@ UPDATE container_agents SET state = ?, updated_at = ? WHERE agent_id = ?;
 -- A container that is created again gets a fresh agent token; the old one is revoked (CA-08).
 UPDATE container_agents SET token_id = ?, updated_at = ? WHERE agent_id = ?;
 
+-- name: SetContainerAgentEnv :exec
+-- The environment mapping the owner edited (variables to secret ids); the container is created
+-- again with the values opened from it (CA-04).
+UPDATE container_agents SET env = ?, desired = ?, updated_at = ? WHERE agent_id = ?;
+
 -- name: SetContainerAgentLastError :exec
 -- The last failure (NULL clears it), CA-06.
 UPDATE container_agents SET last_error = ?, updated_at = ? WHERE agent_id = ?;

@@ -11,6 +11,7 @@ import (
 
 	"github.com/stretchr/testify/require"
 
+	"github.com/wnexous/partyline/internal/agents"
 	"github.com/wnexous/partyline/internal/api/dto"
 	"github.com/wnexous/partyline/internal/containeragents"
 	"github.com/wnexous/partyline/internal/orgs"
@@ -157,13 +158,17 @@ func TestCreateContainerAgentRunsTheImageWithSecrets(t *testing.T) {
 	require.Equal(t, secretValue, run.Env["OPENCODE_API_KEY"], "the mapped secret reaches the container")
 	require.Regexp(t, `^pl_agent_[0-9A-Za-z]{43}$`, run.Env["PARTYLINE_TOKEN"])
 	token := run.Env["PARTYLINE_TOKEN"]
-	require.Len(t, run.Env, 6, "no other variable is passed")
+	// CA-04: the container is handed the identity of the AI it runs, so the session inside it joins
+	// that AI whatever its own hostname and working directory are.
+	require.Equal(t, agents.ContainerMachine(created.ContainerName), run.Env["PARTYLINE_MACHINE"])
+	require.Equal(t, "/workspace/repo", run.Env["PARTYLINE_FOLDER"], "the entrypoint works in the folder of the AI")
+	require.Len(t, run.Env, 8, "no other variable is passed")
 
 	// The AI has the machine and folder of a container and the app of the harness (CA-04).
 	ctx := context.Background()
 	agentRow, err := env.App.Store.R().GetAgent(ctx, created.Agent.ID)
 	require.NoError(t, err)
-	require.Equal(t, "runner:"+runner.ID, agentRow.Machine)
+	require.Equal(t, agents.ContainerMachine(created.ContainerName), agentRow.Machine)
 	require.Equal(t, "/workspace/repo", agentRow.Folder)
 	require.Equal(t, "opencode", agentRow.Harness)
 	require.True(t, agentRow.OrgID.Valid, "the AI joined the owner's default organization")
@@ -217,12 +222,15 @@ func TestCreateContainerAgentRunsTheImageWithSecrets(t *testing.T) {
 	// A create without a repository uses the workspace folder and passes no repository.
 	second := createContainer(t, alice, dto.CreateContainerAgentRequest{
 		RunnerID: runner.ID, Harness: "pi", DisplayName: "Nova", Handle: "nova",
+		Env: []dto.ContainerEnvVar{{Var: "OPENCODE_API_KEY", SecretName: "OPENCODE_KEY"}},
 	})
 	require.Empty(t, second.RepoURL)
 	require.Empty(t, second.RepoRef)
 	run2 := f.next()
 	require.NotContains(t, run2.Run.Env, "PARTYLINE_REPO")
 	require.NotContains(t, run2.Run.Env, "PARTYLINE_REPO_REF")
+	require.Equal(t, agents.ContainerMachine(second.ContainerName), run2.Run.Env["PARTYLINE_MACHINE"], "every container has its own machine")
+	require.Equal(t, "/workspace", run2.Run.Env["PARTYLINE_FOLDER"], "without a repository the AI works in the bare workspace")
 	withoutRepo, err := env.App.Store.R().GetAgent(ctx, second.Agent.ID)
 	require.NoError(t, err)
 	require.Equal(t, "/workspace", withoutRepo.Folder)
@@ -236,6 +244,7 @@ func TestCreateContainerAgentRefusals(t *testing.T) {
 	offline := registerRunner(t, alice.RunnerToken("offline"), "box-offline")
 	valid := dto.CreateContainerAgentRequest{
 		RunnerID: offline.ID, Harness: "claude", DisplayName: "Atlas", Handle: "nova", CPUs: 1, MemoryMB: 512,
+		Env: []dto.ContainerEnvVar{{Var: "ANTHROPIC_API_KEY", SecretName: "OPENCODE_KEY"}},
 	}
 	alice.Post("/api/v1/container-agents", valid).RequireError(http.StatusConflict, dto.ErrorCodeRunnerOffline)
 	bob.Post("/api/v1/container-agents", valid).RequireError(http.StatusNotFound, dto.ErrorCodeNotFound)
@@ -279,7 +288,7 @@ func TestCreateContainerAgentRefusals(t *testing.T) {
 			}
 		}, "env[1].var", dto.ErrorCodeInvalid, http.StatusUnprocessableEntity},
 		{"missing secret", func(r *dto.CreateContainerAgentRequest) {
-			r.Env = []dto.ContainerEnvVar{{Var: "OPENCODE_API_KEY", SecretName: "NO_SUCH_KEY"}}
+			r.Env = []dto.ContainerEnvVar{{Var: "ANTHROPIC_API_KEY", SecretName: "NO_SUCH_KEY"}}
 		}, "env[0].secret_name", dto.ErrorCodeInvalid, http.StatusUnprocessableEntity},
 	}
 	for _, c := range cases {
@@ -314,8 +323,10 @@ func TestContainerLifecycleAuthzAndDelete(t *testing.T) {
 	require.NoError(t, env.App.Orgs.SetDefault(context.Background(), alice.User.ID, org.ID))
 	runner, _, conn := onlineRunner(t, alice, "devbox")
 	f := fake(t, conn, nil)
+	putSecret(t, alice, "PROVIDER_KEY", "sk-value")
 	created := createContainer(t, alice, dto.CreateContainerAgentRequest{
 		RunnerID: runner.ID, Harness: "claude", DisplayName: "Atlas", Handle: "atlas",
+		Env: []dto.ContainerEnvVar{{Var: "ANTHROPIC_API_KEY", SecretName: "PROVIDER_KEY"}},
 	})
 	f.next()
 	// The container AI holds the worker position, so the manager above it manages it as the chart
@@ -411,8 +422,10 @@ func TestContainerDeleteVolumeAndOffline(t *testing.T) {
 	alice := env.NewUser("alice")
 	runner, client, conn := onlineRunner(t, alice, "devbox")
 	f := fake(t, conn, nil)
+	putSecret(t, alice, "PROVIDER_KEY", "sk-value")
 	created := createContainer(t, alice, dto.CreateContainerAgentRequest{
 		RunnerID: runner.ID, Harness: "omp", DisplayName: "Nova", Handle: "nova",
+		Env: []dto.ContainerEnvVar{{Var: "ANTHROPIC_API_KEY", SecretName: "PROVIDER_KEY"}},
 	})
 	f.next()
 
@@ -445,8 +458,10 @@ func TestContainerStartRecreatesAMissingContainer(t *testing.T) {
 	alice := env.NewUser("alice")
 	runner, _, conn := onlineRunner(t, alice, "devbox")
 	f := fake(t, conn, nil)
+	putSecret(t, alice, "PROVIDER_KEY", "sk-value")
 	created := createContainer(t, alice, dto.CreateContainerAgentRequest{
 		RunnerID: runner.ID, Harness: "opencode", DisplayName: "Atlas", Handle: "atlas",
+		Env: []dto.ContainerEnvVar{{Var: "ANTHROPIC_API_KEY", SecretName: "PROVIDER_KEY"}},
 	})
 	f.next()
 	before := storedContainer(t, env, created.Agent.ID)
@@ -466,6 +481,9 @@ func TestContainerStartRecreatesAMissingContainer(t *testing.T) {
 	require.Equal(t, spec.OpRun, runCmd.Op)
 	require.NotNil(t, runCmd.Run)
 	require.Regexp(t, `^pl_agent_[0-9A-Za-z]{43}$`, runCmd.Run.Env["PARTYLINE_TOKEN"])
+	// CA-04: a container created again is still the same AI, so it gets its machine and folder again.
+	require.Equal(t, agents.ContainerMachine(created.ContainerName), runCmd.Run.Env["PARTYLINE_MACHINE"])
+	require.Equal(t, agents.ContainerRootFolder, runCmd.Run.Env["PARTYLINE_FOLDER"])
 
 	after := storedContainer(t, env, created.Agent.ID)
 	require.NotEqual(t, before.TokenID.String, after.TokenID.String, "the recreated container got a fresh token")
@@ -519,8 +537,10 @@ func TestAccountDeletionRemovesContainers(t *testing.T) {
 	alice := env.NewUser("alice")
 	runner, _, conn := onlineRunner(t, alice, "devbox")
 	f := fake(t, conn, nil)
+	putSecret(t, alice, "PROVIDER_KEY", "sk-value")
 	createContainer(t, alice, dto.CreateContainerAgentRequest{
 		RunnerID: runner.ID, Harness: "pi", DisplayName: "Atlas", Handle: "atlas",
+		Env: []dto.ContainerEnvVar{{Var: "ANTHROPIC_API_KEY", SecretName: "PROVIDER_KEY"}},
 	})
 	f.next()
 
@@ -565,4 +585,192 @@ func tokenPrefix(t *testing.T, owner *testkit.Client, id string) string {
 	}
 	t.Fatalf("token %s not found", id)
 	return ""
+}
+
+// CA-04: two container AIs on one runner without a repository are two AIs with their own identity:
+// a shared machine (the runner) and folder (the workspace) would make the second create collide
+// with the first and answer the generic 500 instead of creating it.
+func TestCreateTwoContainerAgentsWithoutRepo(t *testing.T) {
+	env := testkit.New(t)
+	alice := env.NewUser("alice")
+	runner, _, conn := onlineRunner(t, alice, "devbox")
+	f := fake(t, conn, nil)
+	putSecret(t, alice, "OPENCODE_KEY", "sk-value")
+	request := func(name, handle string) dto.CreateContainerAgentRequest {
+		return dto.CreateContainerAgentRequest{
+			RunnerID: runner.ID, Harness: "opencode", DisplayName: name, Handle: handle,
+			Env: []dto.ContainerEnvVar{{Var: "OPENCODE_API_KEY", SecretName: "OPENCODE_KEY"}},
+		}
+	}
+	first := createContainer(t, alice, request("Atlas", "atlas"))
+	f.next()
+	second := createContainer(t, alice, request("Nova", "nova"))
+	f.next()
+	require.NotEqual(t, first.Agent.ID, second.Agent.ID)
+
+	ctx := context.Background()
+	one, err := env.App.Store.R().GetAgent(ctx, first.Agent.ID)
+	require.NoError(t, err)
+	two, err := env.App.Store.R().GetAgent(ctx, second.Agent.ID)
+	require.NoError(t, err)
+	require.Equal(t, agents.ContainerRootFolder, one.Folder, "a container without a repository works in the root workspace")
+	require.Equal(t, one.Folder, two.Folder)
+	require.NotEqual(t, one.Machine, two.Machine, "each container AI has its own machine")
+	require.Equal(t, agents.ContainerMachine(first.ContainerName), one.Machine, "the machine is the container's own name")
+}
+
+// CA-04: a create without a variable the chosen app reads its provider key from is 422
+// credentials_required: the container would run an app that can never sign in. The message names
+// the app's variables and never a value, and nothing is created.
+func TestCreateContainerAgentRequiresACredential(t *testing.T) {
+	env := testkit.New(t)
+	alice := env.NewUser("alice")
+	runner, _, conn := onlineRunner(t, alice, "devbox")
+	fake(t, conn, nil)
+	putSecret(t, alice, "PROVIDER_KEY", "sk-value")
+	request := func(harness string, rows ...dto.ContainerEnvVar) dto.CreateContainerAgentRequest {
+		return dto.CreateContainerAgentRequest{
+			RunnerID: runner.ID, Harness: harness, DisplayName: "Atlas", Handle: "atlas", Env: rows,
+		}
+	}
+	cases := []struct {
+		name    string
+		request dto.CreateContainerAgentRequest
+		vars    []string
+	}{
+		{"no environment", request("opencode"), []string{"OPENCODE_API_KEY", "ANTHROPIC_API_KEY"}},
+		{"another app's variable", request("claude", dto.ContainerEnvVar{Var: "OPENCODE_API_KEY", SecretName: "PROVIDER_KEY"}),
+			[]string{"CLAUDE_CODE_OAUTH_TOKEN", "ANTHROPIC_AUTH_TOKEN"}},
+		{"a variable no app reads", request("pi", dto.ContainerEnvVar{Var: "MODEL_NAME", SecretName: "PROVIDER_KEY"}),
+			[]string{"OPENROUTER_API_KEY", "OPENCODE_API_KEY"}},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			resp := alice.Post("/api/v1/container-agents", c.request)
+			e := resp.RequireError(http.StatusUnprocessableEntity, dto.ErrorCodeCredentialsRequired)
+			require.Contains(t, e.Fields, "env", "the refused field is the credential mapping")
+			for _, want := range c.vars {
+				require.Contains(t, e.Message, want, "the message names the variables the app reads")
+			}
+			require.NotContains(t, string(resp.Body), "sk-value", "an error never carries a secret value")
+		})
+	}
+	rows, err := env.App.Store.R().ListContainerAgentsByRunner(context.Background(), runner.ID)
+	require.NoError(t, err)
+	require.Empty(t, rows, "a refused create writes nothing")
+}
+
+// CA-04, CA-06: editing the credentials of a container rewrites the mapping and recreates the
+// container with the new environment, the same workspace volume and a fresh agent token; the answer
+// is the container as it is afterwards, and a refused edit writes nothing.
+func TestUpdateContainerEnvRecreatesTheContainer(t *testing.T) {
+	env := testkit.New(t)
+	admin := env.SetupAdmin()
+	alice := env.NewUser("alice")
+	runner, _, conn := onlineRunner(t, alice, "devbox")
+	f := fake(t, conn, nil)
+	putSecret(t, alice, "OPENCODE_KEY", "sk-opencode-value")
+	putSecret(t, alice, "ANTHROPIC_KEY", "sk-anthropic-value")
+	created := createContainer(t, alice, dto.CreateContainerAgentRequest{
+		RunnerID: runner.ID, Harness: "opencode", DisplayName: "Atlas", Handle: "atlas",
+		Env: []dto.ContainerEnvVar{{Var: "OPENCODE_API_KEY", SecretName: "OPENCODE_KEY"}},
+	})
+	first := f.next()
+	before := storedContainer(t, env, created.Agent.ID)
+	path := "/api/v1/agents/" + created.Agent.ID + "/container"
+
+	// A refused edit is validated like a create and changes nothing.
+	alice.Patch(path, dto.UpdateContainerAgentRequest{}).
+		RequireError(http.StatusUnprocessableEntity, dto.ErrorCodeCredentialsRequired)
+	alice.Patch(path, dto.UpdateContainerAgentRequest{
+		Env: []dto.ContainerEnvVar{{Var: "MODEL_NAME", SecretName: "ANTHROPIC_KEY"}},
+	}).RequireError(http.StatusUnprocessableEntity, dto.ErrorCodeCredentialsRequired)
+	resp := alice.Patch(path, dto.UpdateContainerAgentRequest{
+		Env: []dto.ContainerEnvVar{{Var: "ANTHROPIC_API_KEY", SecretName: "NO_SUCH_SECRET"}},
+	})
+	e := resp.RequireError(http.StatusUnprocessableEntity, dto.ErrorCodeInvalid)
+	require.Contains(t, e.Fields, "env[0].secret_name")
+	require.NotContains(t, string(resp.Body), "sk-opencode-value")
+	require.Equal(t, before.Env, storedContainer(t, env, created.Agent.ID).Env, "a refused edit keeps the mapping")
+
+	// The accepted edit: the container goes (keeping its volume) and comes back with the new env.
+	updated := testkit.Decode[dto.ContainerAgent](alice.Patch(path, dto.UpdateContainerAgentRequest{
+		Env: []dto.ContainerEnvVar{{Var: "ANTHROPIC_API_KEY", SecretName: "ANTHROPIC_KEY"}},
+	}).RequireStatus(http.StatusOK))
+	require.Equal(t, []dto.ContainerEnvVar{{Var: "ANTHROPIC_API_KEY", SecretName: "ANTHROPIC_KEY"}}, updated.Env)
+	remove := f.next()
+	require.Equal(t, spec.OpRemove, remove.Op)
+	require.False(t, remove.RemoveVolume, "the workspace volume stays")
+	require.Equal(t, created.ContainerName, remove.Name)
+	run := f.next()
+	require.Equal(t, spec.OpRun, run.Op)
+	require.NotNil(t, run.Run)
+	require.Equal(t, created.Volume, run.Run.Volume, "the container is created again with the same volume")
+	require.Equal(t, "sk-anthropic-value", run.Run.Env["ANTHROPIC_API_KEY"])
+	require.Equal(t, agents.ContainerMachine(created.ContainerName), run.Run.Env["PARTYLINE_MACHINE"],
+		"the container is created again as the same AI")
+	require.Equal(t, agents.ContainerRootFolder, run.Run.Env["PARTYLINE_FOLDER"], "and works in the AI's folder")
+	require.NotContains(t, run.Run.Env, "OPENCODE_API_KEY", "the replaced variable goes")
+	require.NotEqual(t, first.Run.Env["PARTYLINE_TOKEN"], run.Run.Env["PARTYLINE_TOKEN"],
+		"the recreated container gets a fresh token")
+	require.Equal(t, string(spec.StateRunning), updated.State)
+	require.Equal(t, containeragents.DesiredRunning, updated.Desired)
+
+	after := storedContainer(t, env, created.Agent.ID)
+	require.NotEqual(t, before.TokenID.String, after.TokenID.String)
+	require.Equal(t, containeragents.DesiredRunning, after.Desired)
+	for _, tok := range tokensOf(t, alice) {
+		if tok.ID == before.TokenID.String {
+			require.NotNil(t, tok.RevokedAt, "the token of the old container is revoked")
+		}
+	}
+
+	// The audit records the edit with variable names only, never a value.
+	raw, err := json.Marshal(auditPage(admin, ""))
+	require.NoError(t, err)
+	require.NotContains(t, string(raw), "sk-anthropic-value")
+	require.NotContains(t, string(raw), run.Run.Env["PARTYLINE_TOKEN"])
+	var audited bool
+	for _, entry := range auditPage(admin, "").Items {
+		if entry.Action == containeragents.ActionUpdateEnv {
+			audited = true
+			require.Equal(t, created.Agent.ID, entry.TargetID)
+			require.Equal(t, []any{"ANTHROPIC_API_KEY"}, entry.Detail["vars"])
+		}
+	}
+	require.True(t, audited)
+}
+
+// CA-04, CA-07: editing the credentials needs to manage the AI, and an offline runner keeps the
+// mapping, the token and the container as they were.
+func TestUpdateContainerEnvRefusalsKeepTheContainer(t *testing.T) {
+	env := testkit.New(t)
+	alice, bob := env.NewUser("alice"), env.NewUser("bob")
+	runner, _, conn := onlineRunner(t, alice, "devbox")
+	f := fake(t, conn, nil)
+	putSecret(t, alice, "PROVIDER_KEY", "sk-value")
+	created := createContainer(t, alice, dto.CreateContainerAgentRequest{
+		RunnerID: runner.ID, Harness: "claude", DisplayName: "Atlas", Handle: "atlas",
+		Env: []dto.ContainerEnvVar{{Var: "ANTHROPIC_API_KEY", SecretName: "PROVIDER_KEY"}},
+	})
+	f.next()
+	path := "/api/v1/agents/" + created.Agent.ID + "/container"
+	before := storedContainer(t, env, created.Agent.ID)
+	body := dto.UpdateContainerAgentRequest{
+		Env: []dto.ContainerEnvVar{{Var: "CLAUDE_CODE_OAUTH_TOKEN", SecretName: "PROVIDER_KEY"}},
+	}
+
+	// Another owner does not see the AI.
+	bob.Patch(path, body).RequireError(http.StatusNotFound, dto.ErrorCodeNotFound)
+
+	// The runner goes away: the edit fails fast and changes nothing, not even the token.
+	conn.Close()
+	require.Eventually(t, func() bool {
+		list := runnerList(t, alice)
+		return len(list) == 1 && !list[0].Online
+	}, 5*time.Second, 10*time.Millisecond)
+	alice.Patch(path, body).RequireError(http.StatusConflict, dto.ErrorCodeRunnerOffline)
+	after := storedContainer(t, env, created.Agent.ID)
+	require.Equal(t, before.Env, after.Env)
+	require.Equal(t, before.TokenID.String, after.TokenID.String)
 }

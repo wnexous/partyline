@@ -135,8 +135,9 @@ func TestOwnerSecretsHaveCheckedNamesPerOwner(t *testing.T) {
 }
 
 // CA-04, CA-05, CA-06 (data): one container row per AI; desired is running or stopped, the reported
-// state is one of the four the design names (unknown until the runner reports), the limits are
-// positive and at least 64 MB, the AI takes the row with it, and a runner in use cannot be deleted.
+// state is one of the five the design names (unknown until the runner reports, restarting while
+// Docker loops it), the limits are positive and at least 64 MB, the AI takes the row with it, and a
+// runner in use cannot be deleted.
 func TestContainerAgentsConstraintsAndCascades(t *testing.T) {
 	e := newSchemaEnv(t)
 	containerAgentsFixture(e)
@@ -153,7 +154,7 @@ func TestContainerAgentsConstraintsAndCascades(t *testing.T) {
 	var state string
 	require.NoError(t, e.s.write.QueryRow(`SELECT state FROM container_agents WHERE agent_id = 'a1'`).Scan(&state))
 	require.Equal(t, "unknown", state, "nothing is reported before the first hello")
-	for _, ok := range []string{"running", "stopped", "error", "unknown"} {
+	for _, ok := range []string{"running", "restarting", "stopped", "error", "unknown"} {
 		require.NoError(t, e.exec(`UPDATE container_agents SET state = ? WHERE agent_id = 'a1'`, ok), "state %q is accepted", ok)
 	}
 	require.Error(t, e.exec(`UPDATE container_agents SET state = 'starting' WHERE agent_id = 'a1'`), "an unreported state is refused")
@@ -192,4 +193,37 @@ func TestDeletingTheOwnerTakesTheRunnersAndSecrets(t *testing.T) {
 	require.Zero(t, e.count(`SELECT COUNT(*) FROM owner_secrets`), "alice's secrets are gone")
 	require.Equal(t, 1, e.count(`SELECT COUNT(*) FROM runners WHERE owner_id = 'u2'`), "bob's runner stays")
 	require.Zero(t, e.count(`SELECT COUNT(*) FROM pragma_foreign_key_check`), "no foreign key is left dangling")
+}
+
+// CA-06 (data): migration 0033 adds the restarting state to the CHECK of container_agents without
+// losing a row: the container of a restart loop has its own state, and the foreign keys and the
+// index are back on the rebuilt table.
+func TestMigration0033AddsTheRestartingState(t *testing.T) {
+	ctx := context.Background()
+	e := &schemaEnv{t: t, s: openMigratedBefore(t, "0033")}
+	containerAccounts(e)
+	containerAgentsRows(e)
+	e.must(`UPDATE container_agents SET state = 'error', last_error = 'the container exited with code 2' WHERE agent_id = 'a1'`)
+	require.Error(t, e.exec(`UPDATE container_agents SET state = 'restarting' WHERE agent_id = 'a1'`),
+		"before 0033 the state is refused")
+
+	require.NoError(t, e.s.applyMigration(ctx, "0033_container_agents_restarting.sql"))
+	require.Equal(t, "0033_container_agents_restarting", versions(t, e.s)[len(versions(t, e.s))-1])
+
+	var state string
+	var lastError sql.NullString
+	require.NoError(t, e.s.write.QueryRow(`SELECT state, last_error FROM container_agents WHERE agent_id = 'a1'`).
+		Scan(&state, &lastError))
+	require.Equal(t, "error", state, "the reported state survives the rebuild")
+	require.Equal(t, "the container exited with code 2", lastError.String, "so does the last error")
+
+	require.NoError(t, e.exec(`UPDATE container_agents SET state = 'restarting' WHERE agent_id = 'a1'`),
+		"the restart loop has its own state")
+	require.Zero(t, e.count(`SELECT COUNT(*) FROM pragma_foreign_key_check`), "no foreign key is left dangling")
+
+	// The rebuilt table keeps the constraints and the index of the original.
+	require.Error(t, e.containerAgent("a1", "r1", "t1", "paused", 1, 1024), "desired is still running or stopped")
+	require.Error(t, e.exec(`DELETE FROM runners WHERE id = 'r1'`), "a runner in use is still restricted")
+	require.NoError(t, e.exec(`DELETE FROM agents WHERE id = 'a1'`), "the AI delete still cascades its container")
+	require.NoError(t, e.exec(`DELETE FROM runners WHERE id = 'r1'`), "the runner is free once no container uses it")
 }

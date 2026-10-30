@@ -84,8 +84,9 @@ func homeFolder(io stdio) string {
 	return folder
 }
 
-// sessionIdentity gathers what a process tells the server about itself (AID-07): the
-// hostname, the canonical folder (sessionFolder), the main worktree folder of a linked worktree
+// sessionIdentity gathers what a process tells the server about itself (AID-07): the machine
+// (PARTYLINE_MACHINE, which only the agent image sets, else the hostname), the canonical folder
+// (sessionFolder), the main worktree folder of a linked worktree
 // (PARTYLINE_MAIN_FOLDER, else computed once, SESS-01), the canonical home folder, the harness
 // (PARTYLINE_HARNESS, set by the launchers), the identity to adopt (adopt, else
 // PARTYLINE_AGENT) (MIG-02) and what the session asked for when it was launched: the organization,
@@ -93,7 +94,8 @@ func homeFolder(io stdio) string {
 // (ORG-04, POS-07, POS-08). Only those are read: PARTYLINE_ORG and the others are the launcher's input.
 func sessionIdentity(adopt string, io stdio) channel.Identity {
 	id := channel.Identity{
-		Folder: sessionFolder(io), Home: homeFolder(io),
+		Machine: channel.MachineName(io.getenv, hostnameOf(io)),
+		Folder:  sessionFolder(io), Home: homeFolder(io),
 		Harness: strings.TrimSpace(io.getenv("PARTYLINE_HARNESS")), Adopt: strings.TrimSpace(adopt),
 		Org:      strings.TrimSpace(io.getenv(launchOrgVar)),
 		Position: strings.TrimSpace(io.getenv(launchPositionVar)),
@@ -111,14 +113,15 @@ func sessionIdentity(adopt string, io stdio) channel.Identity {
 	case id.Folder != "":
 		id.MainFolder = launchMainFolder(id.Folder, "") // a session started by hand computes it once
 	}
-	hostname := io.hostname
-	if hostname == nil {
-		hostname = os.Hostname
-	}
-	if h, err := hostname(); err == nil {
-		id.Machine = strings.TrimSpace(h)
-	}
 	return id
+}
+
+// hostnameOf is the hostname function of a process, os.Hostname when it has none.
+func hostnameOf(io stdio) func() (string, error) {
+	if io.hostname != nil {
+		return io.hostname
+	}
+	return os.Hostname
 }
 
 // resolveAgent applies flags > PARTYLINE_URL, PARTYLINE_TOKEN > the config file written by

@@ -1,7 +1,13 @@
 import { queryOptions, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { api } from "@/shared/api/client";
 import { queryKeys } from "@/shared/api/query-keys";
-import type { ContainerActionRequest, ContainerAgent, ContainerLogs } from "@/shared/api/types.gen";
+import type {
+  ContainerActionRequest,
+  ContainerAgent,
+  ContainerEnvVar,
+  ContainerLogs,
+  UpdateContainerAgentRequest,
+} from "@/shared/api/types.gen";
 
 /**
  * How often an open "Container" section reads the state again (CA-06): the runner reports the
@@ -42,6 +48,23 @@ export const useContainerLogs = (agentId: string, enabled: boolean) =>
     staleTime: 0,
     retry: false,
   });
+
+/**
+ * Replaces the environment of the container (CA-04): the server creates it again with the new
+ * mapping, the same workspace and a fresh token, and answers with the container as it is after.
+ */
+export function useUpdateContainerEnv(agentId: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (env: ContainerEnvVar[]) =>
+      api<ContainerAgent>("PATCH", `/agents/${agentId}/container`, {
+        env,
+      } satisfies UpdateContainerAgentRequest),
+    onSuccess: (container) => {
+      qc.setQueryData(queryKeys.container(agentId), container);
+    },
+  });
+}
 
 /** Starts, stops or restarts the container (CA-06); the answer is the container as it is after. */
 export function useContainerAction(agentId: string) {

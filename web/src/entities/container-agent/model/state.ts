@@ -7,10 +7,12 @@ import type { StatusVariant } from "@/shared/ui/atoms/status-dot";
  * is stopped while wanted running is on its way back.
  */
 
-export type ContainerState = "running" | "stopped" | "error" | "unknown";
+export type ContainerState = "running" | "restarting" | "stopped" | "error" | "unknown";
 
 const VARIANTS = {
   running: "online",
+  // A restart loop is not serving anything: the dot is the destructive one, never the green.
+  restarting: "error",
   stopped: "stopped",
   error: "error",
   unknown: "connecting",
@@ -18,6 +20,7 @@ const VARIANTS = {
 
 const LABELS: Record<ContainerState, MessageKey> = {
   running: "container.state.running",
+  restarting: "container.state.restarting",
   stopped: "container.state.stopped",
   error: "container.state.error",
   unknown: "container.state.unknown",

@@ -201,6 +201,23 @@ func TestRunnerHubRoundTrip(t *testing.T) {
 		return row.State == "running" && !row.LastError.Valid
 	}, 5*time.Second, 10*time.Millisecond)
 
+	// A restart loop is its own state, not running, and the reason is the container's last log line
+	// the runner read and redacted, not Docker's exit code (CA-06).
+	conn.State(spec.Container{
+		Name: "pl-atlas", State: spec.StateRestarting,
+		LastLog: "partyline-agent: error: opencode: set OPENCODE_API_KEY in the environment",
+	})
+	require.Eventually(t, func() bool {
+		row := storedContainer(t, env, agentID)
+		return row.State == "restarting" &&
+			row.LastError.String == "partyline-agent: error: opencode: set OPENCODE_API_KEY in the environment"
+	}, 5*time.Second, 10*time.Millisecond)
+	conn.State(spec.Container{Name: "pl-atlas", State: spec.StateError, Error: "the container exited with code 2"})
+	require.Eventually(t, func() bool {
+		row := storedContainer(t, env, agentID)
+		return row.State == "error" && row.LastError.String == "the container exited with code 2"
+	}, 5*time.Second, 10*time.Millisecond)
+
 	// A runner that is gone fails a command at once instead of queueing it (no queue in v1).
 	conn.Close()
 	require.Eventually(t, func() bool {

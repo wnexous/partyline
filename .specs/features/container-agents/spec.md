@@ -19,10 +19,12 @@ started and managed from the web app (owner request 2026-10-26, defaults agreed 
 
 ## Requirements
 1. `partyline runner` on a server SHALL log in (device-code flow, or the saved login), register a
-   runner for the owner (name defaults to the hostname) and keep a live outbound connection; the
-   web app SHALL list the owner's runners with online state, last seen, Docker version and the
-   containers on each, and let the owner rename or remove a runner (removal revokes its token).
-   (CA-01)
+   runner for the owner (name defaults to the hostname) and keep a live outbound connection; a 5xx
+   answer or a network error on register or on the WebSocket SHALL be retried forever with the same
+   backoff, so a deploy never leaves the machine unregistered, and only a refused or revoked token
+   (401 or 403) SHALL end the command. The web app SHALL list the owner's runners with online state,
+   last seen, Docker version and the containers on each, and let the owner rename or remove a runner
+   (removal revokes its token). (CA-01)
 2. On connect the runner SHALL report whether Docker is usable (version, or why not); `partyline
    runner --check` prints the same locally; `partyline runner install` writes a systemd user
    service so it survives reboots. (CA-02)
@@ -30,15 +32,24 @@ started and managed from the web app (owner request 2026-10-26, defaults agreed 
    API, never logged), can be replaced or deleted, and are sealed at rest. (CA-03)
 4. An owner SHALL create a container AI by choosing a server, a harness, a display name/handle, an
    optional git repository (URL + branch) for the workspace, the secrets to expose as environment
-   variables (secret name → variable name) and limits (CPU, memory). Partyline SHALL create the
-   AI's identity and an agent token, and start a container on that server that runs the harness
-   with Partyline connected; the AI SHALL come online as a normal AI with the container session as
-   its principal. (CA-04)
+   variables (secret name → variable name) and limits (CPU, memory). The AI's identity SHALL be its
+   own container (machine `container:<container-name>`), so one runner can run many container AIs.
+   Partyline SHALL create the AI's identity and an agent token, and start a container on that
+   server that runs the harness with Partyline connected; the container SHALL be handed that
+   machine and folder as `PARTYLINE_MACHINE` and `PARTYLINE_FOLDER`, SHALL work in that folder, and
+   the CLI SHALL report them as the session's machine and folder, so the session inside the
+   container IS that AI (no second AI named after the container's hostname is created); the AI
+   SHALL come online as a normal AI with the container session as its principal. A create whose mapping lacks a variable the chosen
+   harness reads SHALL be refused (422 `credentials_required`), because the app could never sign in.
+   (CA-04)
 5. The container SHALL restart by itself after a crash or a server reboot (restart policy) and keep
    its workspace in a named volume. (CA-05)
-6. From the AI's profile the owner SHALL see the container state (running, stopped, error, last
-   error) and start, stop, restart, view the last log lines, and delete it (delete removes the
-   container, and asks whether to also remove the workspace volume). (CA-06)
+6. From the AI's profile the owner SHALL see the container state (`running`, `restarting`,
+   `stopped`, `error`), the desired state and the last error, and SHALL start, stop, restart, edit
+   the credentials, view the last log lines, and delete it (delete removes the container, and asks
+   whether to also remove the workspace volume). A container in Docker's restart loop SHALL be
+   shown as `restarting`, never as running, and its last error SHALL be the last non-empty line of
+   its output (every environment value redacted), so the reason is visible. (CA-06)
 7. Only the owner of a runner can use it; only whoever manages a container AI can operate its
    container; every create/start/stop/restart/delete/check is recorded in the audit log. (CA-07)
 8. No secret value, token or private key SHALL appear in a log line, an error message, an audit
@@ -48,6 +59,13 @@ started and managed from the web app (owner request 2026-10-26, defaults agreed 
    the server AND on the runner; the runner only executes the operations of this protocol. (CA-09)
 10. The web pages SHALL work at 360 px with large font (mobile first) and follow `web/AGENTS.md`.
     (CA-10)
+11. An owner SHALL change the credentials of a container AI after it exists: `PATCH
+    /api/v1/agents/{id}/container {env}` with the same rows and validation as a create SHALL update
+    the mapping and create the container again with the new environment, the same workspace volume
+    and a fresh agent token; the audit entry names the variables, never a value. (CA-11)
+12. Every known container error SHALL have its own web sentence (offline runner, credentials
+    required, a taken @handle, a refused or timed-out operation), never only the generic failure.
+    (CA-12)
 
 ## Out of scope (later)
 Sleep/wake on message; several containers per AI; non-Docker runtimes; scheduling across servers.

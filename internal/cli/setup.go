@@ -11,11 +11,11 @@ import (
 	"io"
 	"net/http"
 	"net/url"
-	"os"
 	"strings"
 	"time"
 
 	"github.com/wnexous/partyline/internal/api/dto"
+	"github.com/wnexous/partyline/internal/channel"
 	"github.com/wnexous/partyline/internal/cliconfig"
 	"github.com/wnexous/partyline/internal/harness"
 )
@@ -23,9 +23,6 @@ import (
 // devicePollInterval is how often `setup --browser` asks whether the machine was approved;
 // the server refuses faster polls (DEV-04).
 const devicePollInterval = 2 * time.Second
-
-// maxMachineName is the longest machine name the server accepts (DEV-01).
-const maxMachineName = 64
 
 // setupHTTP is the client setup talks to the server with.
 var setupHTTP = &http.Client{Timeout: 30 * time.Second}
@@ -363,24 +360,13 @@ func displayCode(code string) string {
 	return code[:4] + "-" + code[4:]
 }
 
-// machineName is the hostname cut to what the server accepts.
+// machineName is the machine of this process cut to what the server accepts (channel.MachineName):
+// PARTYLINE_MACHINE when the agent image set it, else the hostname, and "partyline" when neither
+// can be read.
 func machineName(io stdio) string {
-	hostname := io.hostname
-	if hostname == nil {
-		hostname = os.Hostname
-	}
-	name, err := hostname()
-	name = strings.Map(func(r rune) rune {
-		if r < 0x20 || r == 0x7f {
-			return -1
-		}
-		return r
-	}, strings.TrimSpace(name))
-	if err != nil || name == "" {
-		name = "partyline"
-	}
-	if r := []rune(name); len(r) > maxMachineName {
-		name = string(r[:maxMachineName])
+	name := channel.MachineName(io.getenv, hostnameOf(io))
+	if name == "" {
+		return "partyline"
 	}
 	return name
 }

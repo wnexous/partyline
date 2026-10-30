@@ -219,8 +219,8 @@ func TestLogsTail(t *testing.T) {
 	require.NotContains(t, calls(t, log), "logs --tail 1001 pl-atlas")
 }
 
-// CA-06: state maps Docker's states onto running, stopped, error and unknown and ignores a
-// container that is not a container AI.
+// CA-06: state maps Docker's states onto running, restarting, stopped, error and unknown and
+// ignores a container that is not a container AI.
 func TestStateMapsDockerStates(t *testing.T) {
 	log := fakeDocker(t)
 	rows := strings.Join([]string{
@@ -229,6 +229,7 @@ func TestStateMapsDockerStates(t *testing.T) {
 		`{"Names":"pl-juno","State":"exited","Status":"Exited (137) 1 minute ago"}`,
 		`{"Names":"pl-kilo","State":"created","Status":"Created"}`,
 		`{"Names":"pl-leo","State":"dead","Status":"Dead"}`,
+		`{"Names":"pl-mode","State":"restarting","Status":"Restarting (2) 3 seconds ago"}`,
 		`{"Names":"other","State":"running","Status":"Up"}`,
 	}, "\n") + "\n"
 	path := filepath.Join(t.TempDir(), "ps.jsonl")
@@ -244,12 +245,45 @@ func TestStateMapsDockerStates(t *testing.T) {
 		{Name: "pl-juno", State: spec.StateError, Error: "the container exited with code 137"},
 		{Name: "pl-kilo", State: spec.StateStopped},
 		{Name: "pl-leo", State: spec.StateError, Error: "Dead"},
+		{Name: "pl-mode", State: spec.StateRestarting},
 	}, containers)
 	require.Contains(t, calls(t, log), "ps -a --filter label=partyline.agent --format {{json .}}")
 
 	one, err := executor.State(context.Background(), "pl-atlas")
 	require.NoError(t, err)
 	require.Equal(t, []spec.Container{{Name: "pl-atlas", State: spec.StateRunning}}, one)
+}
+
+// CA-06, CA-08: a container that is not running reports the last line of its output as its reason,
+// with every environment value redacted; without the env file nothing is read, so a value can never
+// reach the server.
+func TestStateReportsTheLastLogLineRedacted(t *testing.T) {
+	fakeDocker(t)
+	dir := t.TempDir()
+	ps := filepath.Join(dir, "ps.jsonl")
+	require.NoError(t, os.WriteFile(ps, []byte(strings.Join([]string{
+		`{"Names":"pl-loop","State":"restarting","Status":"Restarting (2) 4 seconds ago"}`,
+		`{"Names":"pl-crash","State":"exited","Status":"Exited (2) 4 seconds ago"}`,
+		`{"Names":"pl-up","State":"running","Status":"Up 1 minute"}`,
+	}, "\n")+"\n"), 0o600))
+	t.Setenv("DOCKER_PS", ps)
+	logs := filepath.Join(dir, "logs.txt")
+	require.NoError(t, os.WriteFile(logs, []byte(
+		"partyline-agent: starting\npartyline-agent: error: opencode: set "+syntheticSecret+" in the environment\n\n"), 0o600))
+	t.Setenv("DOCKER_LOGS", logs)
+	stateDir := t.TempDir()
+	require.NoError(t, os.WriteFile(filepath.Join(stateDir, "pl-loop.env"),
+		[]byte("OPENCODE_API_KEY="+syntheticSecret+"\n"), 0o600))
+	executor := New(Options{StateDir: stateDir})
+
+	containers, err := executor.State(context.Background(), "")
+	require.NoError(t, err)
+	require.Equal(t, []spec.Container{
+		{Name: "pl-loop", State: spec.StateRestarting, LastLog: "partyline-agent: error: opencode: set [redacted] in the environment"},
+		{Name: "pl-crash", State: spec.StateError, Error: "the container exited with code 2"},
+		{Name: "pl-up", State: spec.StateRunning},
+	}, containers)
+	require.NotContains(t, containers[0].LastLog, syntheticSecret, "an environment value never leaves this machine")
 }
 
 // CA-02, CA-09: a bad name is refused before Docker sees it.

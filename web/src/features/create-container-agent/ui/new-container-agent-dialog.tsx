@@ -1,9 +1,14 @@
 import { zodResolver } from "@hookform/resolvers/zod";
 import { useNavigate } from "@tanstack/react-router";
-import { PlusIcon, XIcon } from "lucide-react";
 import { useEffect, useState } from "react";
-import { useFieldArray, useForm, useWatch } from "react-hook-form";
+import { useForm, useWatch } from "react-hook-form";
 import { toast } from "sonner";
+import {
+  CONTAINER_HARNESSES,
+  ContainerEnvRows,
+  formPathOf,
+  hasCredential,
+} from "@/entities/container-agent";
 import { harnessLabel } from "@/entities/intelligence";
 import { useRunners } from "@/entities/runner";
 import { useSecrets } from "@/entities/secret";
@@ -12,21 +17,13 @@ import { errorText } from "@/shared/api/error-text";
 import { useT } from "@/shared/i18n";
 import { FormDialog } from "@/shared/ui/molecules/form-dialog";
 import { FormAlert, SelectField, TextField } from "@/shared/ui/molecules/form-fields";
-import { Button } from "@/shared/ui/primitives/button";
 import { Form } from "@/shared/ui/primitives/form";
 import { useCreateContainerAgent } from "../api/create-container-agent";
-import {
-  CONTAINER_HARNESSES,
-  CPU_OPTIONS,
-  CREDENTIAL_HINT,
-  CREDENTIAL_SUGGESTION,
-  MEMORY_OPTIONS,
-} from "../model/harness-env";
+import { CPU_OPTIONS, MEMORY_OPTIONS } from "../model/harness-env";
 import {
   type CreateContainerAgentForm,
   createContainerAgentDefaults,
   createContainerAgentSchema,
-  formPathOf,
 } from "../model/schema";
 
 /**
@@ -58,11 +55,13 @@ function NewContainerAgentForm({ onOpenChange }: { onOpenChange: (open: boolean)
     resolver: zodResolver(createContainerAgentSchema),
     defaultValues: createContainerAgentDefaults(online[0]?.id ?? ""),
   });
-  const env = useFieldArray({ control: form.control, name: "env" });
   const harness = useWatch({ control: form.control, name: "harness" });
   const runnerId = useWatch({ control: form.control, name: "runner_id" });
+  const envRows = useWatch({ control: form.control, name: "env" });
   const runnerIds = online.map((r) => r.id).join(",");
-  const suggestions = CREDENTIAL_SUGGESTION[harness];
+  // A create without a credential the app reads only restart-loops, so the server refuses it; the
+  // form refuses to send it at all and says what to map.
+  const credentialMapped = hasCredential(harness, envRows);
 
   // The servers arrive after the form mounts: the first connected one becomes the choice when the
   // form has none (or one that is not connected).
@@ -71,13 +70,6 @@ function NewContainerAgentForm({ onOpenChange }: { onOpenChange: (open: boolean)
     const current = form.getValues("runner_id");
     if (!ids.includes(current) && ids[0]) form.setValue("runner_id", ids[0]);
   }, [runnerIds, form]);
-
-  const addEnv = () => {
-    env.append({
-      var_name: suggestions,
-      secret_name: secrets.data?.[0]?.name ?? "",
-    });
-  };
 
   const onSubmit = form.handleSubmit((values) => {
     if (create.isPending) return;
@@ -134,7 +126,7 @@ function NewContainerAgentForm({ onOpenChange }: { onOpenChange: (open: boolean)
       onSubmit={onSubmit}
       submitLabel={create.isPending ? t("containerAgent.creating") : t("containerAgent.create")}
       pending={create.isPending}
-      submitDisabled={noRunners}
+      submitDisabled={noRunners || !credentialMapped}
       formLabel={t("containerAgent.title")}
       contentClassName="max-h-[calc(100dvh-2rem)] overflow-y-auto overscroll-contain sm:max-w-xl"
     >
@@ -207,74 +199,17 @@ function NewContainerAgentForm({ onOpenChange }: { onOpenChange: (open: boolean)
           />
         </fieldset>
 
-        <fieldset className="space-y-3">
-          <legend className="text-sm font-medium">{t("containerAgent.credentials")}</legend>
+        <ContainerEnvRows
+          control={form.control}
+          harness={harness}
+          app={harnessLabel(harness) ?? harness}
+          secrets={secretList}
+        />
+        {!credentialMapped ? (
           <p className="text-xs text-pretty text-muted-foreground">
-            {t("containerAgent.credentialsBody", {
-              app: harnessLabel(harness) ?? harness,
-              vars: suggestions,
-            })}
+            {t("containerAgent.credentialsNeeded")}
           </p>
-          <p className="text-xs text-pretty text-muted-foreground">{t(CREDENTIAL_HINT[harness])}</p>
-          {secretList.length === 0 ? (
-            <p className="text-xs text-pretty text-muted-foreground">
-              {t("containerAgent.noSecrets")}
-            </p>
-          ) : null}
-          {env.fields.length > 0 ? (
-            <ul className="space-y-3">
-              {env.fields.map((row, index) => (
-                <li
-                  key={row.id}
-                  className="grid gap-3 rounded-md border px-3 py-3 sm:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_auto] sm:items-end"
-                >
-                  <TextField
-                    control={form.control}
-                    name={`env.${index}.var_name`}
-                    label={t("containerAgent.varName")}
-                    autoComplete="off"
-                    inputClassName="font-mono"
-                  />
-                  <SelectField
-                    control={form.control}
-                    name={`env.${index}.secret_name`}
-                    label={t("containerAgent.secretName")}
-                  >
-                    {secretList.length === 0 ? <option value="">—</option> : null}
-                    {secretList.map((secret) => (
-                      <option key={secret.name} value={secret.name}>
-                        {secret.name}
-                      </option>
-                    ))}
-                  </SelectField>
-                  <Button
-                    type="button"
-                    variant="ghost"
-                    size="icon"
-                    className="pointer-coarse:size-11"
-                    aria-label={t("containerAgent.removeEnv", {
-                      name: row.var_name || t("containerAgent.varName"),
-                    })}
-                    disabled={env.fields.length === 0}
-                    onClick={() => env.remove(index)}
-                  >
-                    <XIcon aria-hidden="true" />
-                  </Button>
-                </li>
-              ))}
-            </ul>
-          ) : null}
-          <Button
-            type="button"
-            variant="outline"
-            size="sm"
-            disabled={secretList.length === 0}
-            onClick={addEnv}
-          >
-            <PlusIcon aria-hidden="true" />
-            {t("containerAgent.addEnv")}
-          </Button>
-        </fieldset>
+        ) : null}
 
         <fieldset className="grid gap-4 sm:grid-cols-2">
           <legend className="text-sm font-medium">{t("containerAgent.limits")}</legend>

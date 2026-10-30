@@ -53,8 +53,6 @@ var (
 	// errRunnerNotRegistered means the token is valid but its runner registration is gone; the
 	// runner registers again.
 	errRunnerNotRegistered = errors.New("the runner token is not registered")
-	// errRunnerRefused wraps a definite answer from the server that retrying will not change.
-	errRunnerRefused = errors.New("the server refused the runner")
 )
 
 // runnerCmd runs `partyline runner` (CA-01, CA-02): this machine joins Partyline as a server that
@@ -199,9 +197,6 @@ func (l *runnerLoop) run(ctx context.Context) int {
 			case errors.Is(err, errRunnerTokenRejected):
 				l.reject()
 				return 1
-			case errors.Is(err, errRunnerRefused):
-				fmt.Fprintf(l.io.stderr, "partyline runner: %v\n", err)
-				return 1
 			case ctx.Err() != nil:
 				return 0
 			}
@@ -238,7 +233,9 @@ func (l *runnerLoop) run(ctx context.Context) int {
 }
 
 // register records this machine with the runner token (POST /api/v1/runner/register), which is
-// idempotent per token: 201 the first time, 200 after (CA-01).
+// idempotent per token: 201 the first time, 200 after (CA-01). Only a token the server refuses ends
+// the runner: everything else is a server that is restarting or a network that is down, and is
+// retried with the connection backoff, so a deploy never leaves a machine without its runner.
 func (l *runnerLoop) register(ctx context.Context) (dto.Runner, error) {
 	h := http.Header{}
 	h.Set("Authorization", "Bearer "+l.token)
@@ -258,7 +255,12 @@ func (l *runnerLoop) register(ctx context.Context) (dto.Runner, error) {
 	case http.StatusUnauthorized, http.StatusForbidden:
 		return dto.Runner{}, errRunnerTokenRejected
 	default:
-		return dto.Runner{}, fmt.Errorf("%w: %d %s", errRunnerRefused, resp.StatusCode, decodeError(resp).Message)
+		// A server restarting behind a proxy answers 502, 503 or 504 for a moment and a server that is
+		// still starting may answer 404: retrying is what the backoff is for (CA-01).
+		if msg := decodeError(resp).Message; msg != "" {
+			return dto.Runner{}, fmt.Errorf("register: the server answered %d: %s", resp.StatusCode, msg)
+		}
+		return dto.Runner{}, fmt.Errorf("register: the server answered %d", resp.StatusCode)
 	}
 }
 

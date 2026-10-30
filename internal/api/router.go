@@ -230,11 +230,16 @@ func mapError(err error) error {
 	var notEmpty *orgs.NotEmptyError
 	var specErr *spec.ValidationError
 	var opErr *runners.OpError
+	var credErr *containeragents.CredentialsRequiredError
 	switch {
 	case errors.As(err, &verr):
 		return httpx.Invalid(verr.Fields)
 	case errors.As(err, &specErr):
 		return httpx.Invalid(specErr.Fields)
+	case errors.As(err, &credErr):
+		he := httpx.NewError(http.StatusUnprocessableEntity, dto.ErrorCodeCredentialsRequired, credErr.Error())
+		he.Fields = map[string]string{"env": credErr.Error()}
+		return he
 	case errors.As(err, &opErr):
 		return httpx.NewError(http.StatusBadGateway, dto.ErrorCodeUnavailable, opErr.Error())
 	case errors.Is(err, runners.ErrTokenRequired):
