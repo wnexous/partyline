@@ -24,9 +24,20 @@ const pragmas = "_pragma=journal_mode(WAL)&_pragma=busy_timeout(5000)&_pragma=fo
 
 // Store holds a read pool (4 connections) and a single-connection write pool.
 type Store struct {
-	read  *sql.DB
-	write *sql.DB
-	rq    *db.Queries
+	read   *sql.DB
+	write  *sql.DB
+	rq     *db.Queries
+	path   string
+	backup MigrationBackupOptions
+}
+
+// Option configures Open.
+type Option func(*Store)
+
+// WithMigrationBackup sets how Migrate backs the database up before it applies pending
+// migrations (OPS-07). Without it, Migrate keeps the newest DefaultBackupsKeep backups.
+func WithMigrationBackup(opts MigrationBackupOptions) Option {
+	return func(s *Store) { s.backup = opts }
 }
 
 // testPragmas are added in test binaries only: every test opens its own short-lived database,
@@ -36,7 +47,7 @@ type Store struct {
 const testPragmas = "&_pragma=synchronous(OFF)"
 
 // Open opens the database file at path. Call Migrate before using it.
-func Open(path string) (*Store, error) {
+func Open(path string, opts ...Option) (*Store, error) {
 	dsn := "file:" + path + "?" + pragmas
 	if testing.Testing() {
 		dsn += testPragmas
@@ -57,7 +68,11 @@ func Open(path string) (*Store, error) {
 		return nil, fmt.Errorf("open read pool: %w", err)
 	}
 	read.SetMaxOpenConns(4)
-	return &Store{read: read, write: write, rq: db.New(read)}, nil
+	s := &Store{read: read, write: write, rq: db.New(read), path: path, backup: MigrationBackupOptions{Keep: DefaultBackupsKeep}}
+	for _, opt := range opts {
+		opt(s)
+	}
+	return s, nil
 }
 
 // Close closes both pools.
@@ -121,13 +136,19 @@ var migrations = func() fs.FS {
 }()
 
 // Migrate applies every embedded migration not yet recorded in schema_migrations, with their
-// Go hooks, in one write transaction (MIG-05, AD-012): any error rolls all of them back.
+// Go hooks, in one write transaction (MIG-05, AD-012): any error rolls all of them back. When the
+// database already has data, it first writes a consistent copy of it next to the database
+// (OPS-07): a migration that goes wrong is undone by restoring the file.
 func (s *Store) Migrate(ctx context.Context) error {
+	if err := s.backupBeforeMigrate(ctx, migrations); err != nil {
+		return err
+	}
 	return s.migrate(ctx, migrations, hooks)
 }
 
 // MigrateBefore applies the embedded migrations older than version (e.g. "0015"), in one
-// transaction like Migrate. Upgrade tests use it to build databases of an older schema.
+// transaction like Migrate, without the pre-migration backup: it builds an old database, it does
+// not upgrade one. Upgrade tests use it.
 func (s *Store) MigrateBefore(ctx context.Context, version string) error {
 	return s.migrate(ctx, olderThan{FS: migrations, version: version}, hooks)
 }
@@ -202,8 +223,22 @@ func (s *Store) migrate(ctx context.Context, fsys fs.FS, hooks map[string]Hook) 
 	return nil
 }
 
-func appliedVersions(ctx context.Context, tx *sql.Tx) (map[string]bool, error) {
-	rows, err := tx.QueryContext(ctx, "SELECT version FROM schema_migrations")
+// queryer is what *sql.DB and *sql.Tx have in common, so a read works inside and outside a
+// migration transaction.
+type queryer interface {
+	QueryContext(ctx context.Context, query string, args ...any) (*sql.Rows, error)
+	QueryRowContext(ctx context.Context, query string, args ...any) *sql.Row
+}
+
+func appliedVersions(ctx context.Context, q queryer) (map[string]bool, error) {
+	var tables int
+	if err := q.QueryRowContext(ctx, `SELECT COUNT(*) FROM sqlite_master WHERE type = 'table' AND name = 'schema_migrations'`).Scan(&tables); err != nil {
+		return nil, fmt.Errorf("read schema_migrations: %w", err)
+	}
+	if tables == 0 {
+		return map[string]bool{}, nil
+	}
+	rows, err := q.QueryContext(ctx, "SELECT version FROM schema_migrations")
 	if err != nil {
 		return nil, fmt.Errorf("read schema_migrations: %w", err)
 	}

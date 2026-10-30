@@ -192,7 +192,9 @@ func New(cfg *config.Config, opts Options) (*App, error) {
 			"file", webpush.VAPIDKeyFile, "err", err)
 		vapid = nil
 	}
-	st, err := store.Open(filepath.Join(cfg.DataDir, DatabaseFile))
+	st, err := store.Open(filepath.Join(cfg.DataDir, DatabaseFile), store.WithMigrationBackup(store.MigrationBackupOptions{
+		Skip: cfg.SkipMigrationBackup, Keep: cfg.MigrationBackupsKeep, Logger: opts.Logger,
+	}))
 	if err != nil {
 		return nil, err
 	}

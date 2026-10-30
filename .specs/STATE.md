@@ -473,6 +473,14 @@
   - **Date**: 2026-10-30
   - **Status**: active
 
+### AD-038
+- **Decision**: Before applying pending migrations, the server writes a consistent copy of the SQLite database with `VACUUM INTO` to `<data dir>/backups/partyline-<from>-to-<to>-<UTC timestamp>.db` (mode 0600 in a 0700 directory) and migrates only after the copy is on disk. A fresh database (no applied version) and a start with nothing pending write no copy; a copy that fails stops the start with an error that names the bypass, and the database is unchanged. The operator can bypass the copy with `PARTYLINE_SKIP_MIGRATION_BACKUP=1`, which is also the only way past the disk check (free space below twice the database size). The newest 5 copies are kept (`PARTYLINE_MIGRATION_BACKUPS_KEEP`; 0 keeps all), and an older one is deleted only after a new copy succeeded. `Migrate` owns the step, so `partyline serve` and `partyline admin` behave the same; `MigrateBefore` (the upgrade tests' builder of old schemas) does not copy.
+  - **Reason**: Every release with a migration needed a manual VM snapshot before deploy, which blocked automatic deploys. The server now protects itself: a bad migration is rolled back by restoring one file, and the operator needs no memory of the procedure.
+  - **Trade-off**: The copy needs up to twice the database size free and the migration waits for it, so the first start after an upgrade is slower on a large database. The copy holds every row, connector secrets included (still encrypted with `secret.key`, which is not part of the copy), so the directory must stay private. Retention orders copies by the timestamp in their names and only touches `partyline-*.db`, so a hand-made copy under another name is never deleted.
+  - **Scope**: store (`backup.go`, `space_unix.go`, `space_windows.go`, `space_other.go`, the `Open` option and `Migrate`), config (two variables), app (wiring), cli (serve test), README, tests. No migration, no DTO, no API and no web change; the architecture layer table is unchanged.
+  - **Date**: 2026-10-30
+  - **Status**: active
+
 ## Handoff
 
 - **Feature**: organizations
