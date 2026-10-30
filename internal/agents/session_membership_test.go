@@ -189,3 +189,28 @@ func TestAContextBatchThatWasNotAckedComesBack(t *testing.T) {
 	require.Equal(t, second.ID, last.Message.ID)
 	require.False(t, last.Context)
 }
+
+// SN-09: an edit or a delete of a message an AI's own session wrote follows every session that was given it,
+// also the ones that had it only as context, and never the session that wrote it.
+func TestAnUpdateOfASelfWrittenMessageFollowsItsContextHolders(t *testing.T) {
+	f := newSessionFixture(t)
+	principal := f.dial(t)
+	f.settle(t, principal)
+	folder, writer := f.dialWorktree(t)
+	f.settle(t, writer)
+
+	posted := f.postFrom(t, folder, "a note from the worktree")
+	principal.ExpectNone(300 * time.Millisecond) // SESS-38: a plain own message notifies nobody
+
+	// The principal had not read it, so it comes as context of the next mention, with a copy row.
+	mention := f.post(t, "@atlas what about the note")
+	context := principal.Message(time.Minute)
+	require.Equal(t, posted.ID, context.Message.ID)
+	require.True(t, context.Context)
+	require.Equal(t, mention.ID, principal.Message(time.Minute).Message.ID)
+
+	f.deleteFrom(t, folder, posted.ID)
+	deleted := principal.Deleted(time.Minute)
+	require.Equal(t, posted.ID, deleted.Message.ID, "the principal had the message as context, so it hears of the delete")
+	writer.ExpectNone(400 * time.Millisecond)
+}

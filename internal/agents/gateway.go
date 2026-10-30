@@ -366,11 +366,46 @@ func boolRank(b bool) int {
 }
 
 // pushUpdateToSelfSessions queues an edit or a delete of a message the AI wrote for the live siblings its text
-// addresses, and for the principal only when a labelled writer mentions the AI by its bare @handle (SESS-39,
-// SESS-49). No other session of the author AI receives it.
+// addresses, and for the principal when a labelled writer mentions the AI by its bare @handle (SESS-39).
+// It also follows every session that has a delivery row for the message, as an update of any other message
+// does (SN-09): a sibling that had it as context of its catch-up batch, or the principal as a copy, hears of
+// the change too. The session that wrote the message never receives its own update.
 func (g *Gateway) pushUpdateToSelfSessions(agentID string, targets []string, t dto.AgentFrameType, m dto.AgentMessage) bool {
 	delivered := false
+	handed := make(map[string]bool, len(targets))
+	route := func(c *conn) {
+		if c != nil && c.enqueue(outbound{typ: t, msg: m}) {
+			delivered = true
+		}
+	}
+	rows, err := g.d.Store.R().ListSessionDeliveries(g.ctx, db.ListSessionDeliveriesParams{
+		MessageID: m.Message.ID, AgentID: agentID,
+	})
+	if err != nil {
+		g.d.Logger.Error("agent: session delivery read failed", "agent_id", agentID, "message_id", m.Message.ID, "err", err)
+	}
+	for _, row := range rows {
+		label := row.Label
+		if label == m.Message.AuthorLabel {
+			continue // the session that wrote it has its own message already
+		}
+		if handed[label] {
+			continue
+		}
+		handed[label] = true
+		if label == "" {
+			if g.pushUpdateToPrincipal(agentID, t, m) {
+				delivered = true
+			}
+			continue
+		}
+		route(g.labelConn(agentID, label))
+	}
 	for _, target := range targets {
+		if handed[target] {
+			continue
+		}
+		handed[target] = true
 		if target == delivery.PrincipalTarget {
 			if m.Message.AuthorLabel != "" && g.pushUpdateToPrincipal(agentID, t, m) {
 				delivered = true
@@ -380,13 +415,7 @@ func (g *Gateway) pushUpdateToSelfSessions(agentID string, targets []string, t d
 		if target == "" {
 			continue
 		}
-		s, ok := g.d.Presence.SessionByLabel(agentID, target)
-		if !ok {
-			continue
-		}
-		if c, ok := s.(*conn); ok && c.enqueue(outbound{typ: t, msg: m}) {
-			delivered = true
-		}
+		route(g.labelConn(agentID, target))
 	}
 	return delivered
 }
