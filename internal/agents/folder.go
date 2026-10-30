@@ -551,6 +551,17 @@ func (r *Registry) AttachSession(ctx context.Context, a db.Agent, s Session, req
 		return Live{}, err
 	}
 	req.Pinned = current.PrincipalSession
+	if req.Pinned == "" {
+		// With no pin, a remembered parallel label still proves the AI has had an identified session:
+		// a client that sends no id must not take the principal role from it (SESS-64).
+		had, err := r.store.R().HasSessionLabels(ctx, a.ID)
+		if err != nil {
+			return Live{}, err
+		}
+		req.HadSessionID = had
+	} else {
+		req.HadSessionID = true
+	}
 	if req.SessionID != "" {
 		// A parallel session's label by harness session id outlives the server (SESS-54).
 		label, err := r.store.R().GetSessionLabel(ctx, db.GetSessionLabelParams{

@@ -60,7 +60,10 @@ type presenceEntry struct {
 	liveID  string
 	// sessionID is the harness session id the session connected with ("" when its harness has none).
 	sessionID string
-	since     time.Time
+	// clientVersion is the version of the partyline client that holds the connection, as it sent it; ""
+	// for a client older than the header (SESS-63).
+	clientVersion string
+	since         time.Time
 }
 
 // setSessionLabel tells a session the label it attached with, when it wants to know (a gateway
@@ -73,7 +76,10 @@ func setSessionLabel(s Session, label string) {
 
 // live is the exported view of an entry.
 func (e presenceEntry) live() Live {
-	return Live{Label: e.label, Harness: e.harness, Since: e.since, CanBePrincipal: e.sessionID != ""}
+	return Live{
+		Label: e.label, Harness: e.harness, Since: e.since, CanBePrincipal: e.sessionID != "",
+		Outdated: sessionOutdated(e.harness, e.sessionID, e.clientVersion),
+	}
 }
 
 // retiredLabel is the memory a dropped socket leaves: the label and the start time its process gets back
@@ -95,6 +101,10 @@ type Live struct {
 	// CanBePrincipal is whether the session has a harness session id, which the principal role is pinned
 	// to: only such a session can be made the principal (SESS-59).
 	CanBePrincipal bool
+	// Outdated is whether the session's client is too old to send its harness session id (a harness that
+	// has one), or older than the first version that sends it: only Claude Code and pi can be outdated
+	// (SESS-63).
+	Outdated bool
 }
 
 // Presence tracks which agents are connected. One AI has any number of labelled live sessions, at most
@@ -196,6 +206,13 @@ type AttachRequest struct {
 	StoredLabel string
 	// Pinned is the AI's pinned principal session id as stored when the attach starts ("" pins none).
 	Pinned string
+	// ClientVersion is the partyline client version the connection sent (X-Partyline-Client-Version);
+	// empty for a client older than the header (SESS-63).
+	ClientVersion string
+	// HadSessionID is whether the AI has had a session with a harness session id before: its pin names
+	// one, or agent_session_labels remembers a parallel one. A session that sends no id then waits as a
+	// parallel session instead of taking the principal role (SESS-64).
+	HadSessionID bool
 }
 
 // Attached is the outcome of Presence.Attach.
@@ -216,8 +233,12 @@ type Attached struct {
 //     (SESS-57, SESS-58);
 //   - with an id pinned, only a session with that id is, whoever is connected and whether or not the label
 //     is free: no session is promoted because the principal left (SESS-53, SESS-55);
-//   - with nothing pinned the folder's first live session acts as the principal, as before the feature
-//     (SESS-56), and the id of the first session that holds the role gets pinned (SESS-52).
+//   - a session that sends no harness session id never takes the role once the AI has had an identified
+//     session (a pin or a stored parallel label), so an old client cannot take it from the pinned one
+//     (SESS-64);
+//   - with nothing pinned and no identified session before, the folder's first live session acts as the
+//     principal, as before the feature (SESS-56), and the id of the first session that holds the role
+//     gets pinned (SESS-52).
 func decideRole(req AttachRequest, main presenceEntry, mainLive bool) (principal bool, pin *string) {
 	if req.Preferred != "" {
 		return false, nil
@@ -235,6 +256,8 @@ func decideRole(req AttachRequest, main presenceEntry, mainLive bool) (principal
 		return true, set(req.SessionID)
 	case req.Pinned != "":
 		return req.SessionID == req.Pinned, nil
+	case req.SessionID == "" && req.HadSessionID:
+		return false, nil
 	case !mainLive || sameProcess || sameSession:
 		if req.SessionID == "" {
 			return true, nil
@@ -288,6 +311,7 @@ func (p *Presence) Attach(ctx context.Context, agent db.Agent, s Session, req At
 			next := prev
 			next.session = s
 			next.sessionID = req.SessionID
+			next.clientVersion = req.ClientVersion
 			setSessionLabel(s, next.label)
 			held[label] = next
 			delete(p.retired[agent.ID], req.LiveID)
@@ -300,7 +324,7 @@ func (p *Presence) Attach(ctx context.Context, agent db.Agent, s Session, req At
 	if held == nil {
 		held = map[string]presenceEntry{}
 	}
-	entry := presenceEntry{ownerID: agent.OwnerID, session: s, harness: req.Harness, liveID: req.LiveID, sessionID: req.SessionID, since: now}
+	entry := presenceEntry{ownerID: agent.OwnerID, session: s, harness: req.Harness, liveID: req.LiveID, sessionID: req.SessionID, clientVersion: req.ClientVersion, since: now}
 	memory, remembered := p.memoryLocked(agent.ID, req.LiveID, req.SessionID)
 	if !remembered && req.StoredLabel != "" {
 		memory = retiredLabel{label: req.StoredLabel, since: now} // the database's memory; no start time to keep

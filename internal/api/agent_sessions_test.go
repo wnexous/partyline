@@ -158,8 +158,8 @@ func TestAProfileListsTheAIsLiveSessions(t *testing.T) {
 	require.NotNil(t, profile.AI)
 	require.True(t, profile.AI.Online)
 	require.Equal(t, []dto.SessionInfo{
-		{Label: "", Harness: "claude", ConnectedAt: l.start},
-		{Label: "claude-2", Harness: "pi", ConnectedAt: l.start.Add(time.Hour)},
+		{Label: "", Harness: "claude", ConnectedAt: l.start, Outdated: true},
+		{Label: "claude-2", Harness: "pi", ConnectedAt: l.start.Add(time.Hour), Outdated: true},
 	}, profile.AI.Sessions, "the principal first, then the parallel session")
 
 	parallelConn.Close()

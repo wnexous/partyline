@@ -45,7 +45,7 @@ func (s *server) roomRoutes(mux *http.ServeMux) {
 func liveSessions(lives []agents.Live) []dto.SessionInfo {
 	out := make([]dto.SessionInfo, 0, len(lives))
 	for _, live := range lives {
-		out = append(out, dto.SessionInfo{Label: live.Label, Harness: live.Harness, ConnectedAt: live.Since.UTC(), CanBePrincipal: live.CanBePrincipal})
+		out = append(out, dto.SessionInfo{Label: live.Label, Harness: live.Harness, ConnectedAt: live.Since.UTC(), CanBePrincipal: live.CanBePrincipal, Outdated: live.Outdated})
 	}
 	return out
 }

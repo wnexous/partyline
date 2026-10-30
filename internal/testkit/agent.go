@@ -219,6 +219,9 @@ type Folder struct {
 	// HarnessSession is the harness's session id (Claude Code's CLAUDE_CODE_SESSION_ID) the session
 	// sends as X-Partyline-Harness-Session; empty sends none, as a harness without one does.
 	HarnessSession string
+	// ClientVersion is the partyline client version the session sends as X-Partyline-Client-Version
+	// (SESS-63); empty sends none, as a client older than the header does.
+	ClientVersion string
 	// Principal sends X-Partyline-Principal: the session asks to be the AI's principal (--principal).
 	Principal bool
 	Org       string
@@ -247,8 +250,9 @@ func (f Folder) Headers() http.Header {
 		dto.HeaderMachine: f.Machine, dto.HeaderHarness: f.Harness, dto.HeaderAdopt: f.Adopt,
 		dto.HeaderFolder: escapePath(f.Path), dto.HeaderMainFolder: escapePath(f.MainFolder),
 		dto.HeaderHome: escapePath(f.Home), dto.HeaderLive: f.Live, dto.HeaderHarnessSession: f.HarnessSession,
-		dto.HeaderFeatures: strings.Join(f.Features, ","),
-		dto.HeaderOrg:      f.Org, dto.HeaderPosition: escapePath(f.Position), dto.HeaderParent: f.Parent,
+		dto.HeaderClientVersion: f.ClientVersion,
+		dto.HeaderFeatures:      strings.Join(f.Features, ","),
+		dto.HeaderOrg:           f.Org, dto.HeaderPosition: escapePath(f.Position), dto.HeaderParent: f.Parent,
 	} {
 		if v != "" {
 			h.Set(k, v)

@@ -344,8 +344,8 @@ func TestRoomMembersCarryTheAgentLiveSessions(t *testing.T) {
 	require.NotNil(t, agent.Online)
 	require.True(t, *agent.Online)
 	require.Equal(t, []dto.SessionInfo{
-		{Label: "", Harness: "claude", ConnectedAt: l.start},
-		{Label: "claude-2", Harness: "pi", ConnectedAt: l.start.Add(time.Hour)},
+		{Label: "", Harness: "claude", ConnectedAt: l.start, Outdated: true},
+		{Label: "claude-2", Harness: "pi", ConnectedAt: l.start.Add(time.Hour), Outdated: true},
 	}, agent.Sessions, "the principal first, then the parallel session")
 	require.Empty(t, human.Sessions, "a human has no sessions")
 	require.Empty(t, chatMember.Sessions, "a chat has no sessions")

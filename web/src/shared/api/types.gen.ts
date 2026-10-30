@@ -316,6 +316,12 @@ export interface SessionInfo {
    * role is pinned to: only such a session can be made the principal (SESS-59).
    */
   can_be_principal?: boolean;
+  /**
+   * Outdated tells whether the session's client is older than the first one that sends its harness
+   * session id (v0.11.0 on Claude Code and pi): such a session cannot take the pinned principal role,
+   * and its person is told to run `partyline update` and reopen it (SESS-63).
+   */
+  outdated?: boolean;
 }
 /**
  * MakePrincipalRequest is the body of POST /agents/{id}/principal: the label of the live session to make
@@ -555,6 +561,13 @@ export const HeaderHome = "X-Partyline-Home";
  * session of the AI (SES-02).
  */
 export const HeaderLive = "X-Partyline-Live";
+/**
+ * HeaderClientVersion is the version of the partyline client that holds the connection
+ * (internal/cli.Version, or the version the binary was built from); absent from a client older than
+ * v0.13.0. The server records it per live session and marks a session whose client is older than the
+ * version that sends its harness session id as outdated (SESS-63).
+ */
+export const HeaderClientVersion = "X-Partyline-Client-Version";
 /**
  * HeaderHarnessSession is the harness's own id of the conversation the session belongs to
  * (Claude Code's session id, pi's session id), matching HarnessSessionPattern. It stays the same

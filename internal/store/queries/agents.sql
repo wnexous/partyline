@@ -167,3 +167,8 @@ DELETE FROM agent_session_labels WHERE agent_id = ? AND harness_session = ?;
 
 -- name: PruneSessionLabels :exec
 DELETE FROM agent_session_labels WHERE agent_id = ? AND updated_at < ?;
+
+-- name: HasSessionLabels :one
+-- Whether the AI has any session label remembered by harness session id: it has had an identified
+-- session, so a client that sends none must wait as a parallel session (SESS-64).
+SELECT EXISTS(SELECT 1 FROM agent_session_labels WHERE agent_id = ?);
