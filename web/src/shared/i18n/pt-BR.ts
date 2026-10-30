@@ -1382,6 +1382,12 @@ export const ptBR: Dictionary = {
   "containerAgent.creating": "Criando…",
   "containerAgent.created": "{name} está sendo criada",
   "containerAgent.createFailed": "Não foi possível criar a IA. Tente de novo.",
+  "containerAgent.credentialsRequired":
+    "Mapeie uma das variáveis que o aplicativo lê para um segredo: sem credencial ele não consegue entrar.",
+  "containerAgent.credentialsNeeded": "Mapeie pelo menos uma credencial antes de criar a IA.",
+  "containerAgent.handleTaken": "Outra IA já usa este @handle.",
+  "containerAgent.conflict":
+    "Esse nome ou @handle já está em uso, ou sua conta atingiu o limite de IAs.",
 
   "container.title": "Contêiner",
   "container.state.running": "Rodando",
@@ -1426,6 +1432,7 @@ export const ptBR: Dictionary = {
   "validation.secretName": "1 a 64 caracteres: comece com letra, depois letras, dígitos, _ ou -",
   "validation.secretValue": "Pelo menos 1 byte, no máximo 16384",
   "validation.envName": "Use A-Z, 0-9 e _, começando por letra ou _",
+  "validation.credentials": "Mapeie pelo menos uma variável que o aplicativo lê",
   "validation.cpus": "Entre 0.1 e 64",
   "validation.memory": "Entre 64 e 65536 MB",
   "validation.repoUrl": "Uma URL de repositório git https:// ou ssh://",

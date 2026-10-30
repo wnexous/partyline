@@ -66,6 +66,9 @@ function render(routes: Parameters<typeof mockApi>[0] = {}) {
 const name = () => screen.getByRole("textbox", { name: "Name" });
 const handle = () => screen.getByRole("textbox", { name: "Handle" });
 const submit = () => screen.getByRole("button", { name: "Create AI" });
+// A create without a credential only restart-loops, so every valid form maps one first.
+const mapCredential = async (user: ReturnType<typeof userEvent.setup>) =>
+  user.click(screen.getByRole("button", { name: "Map a secret" }));
 const posted = (calls: { method: string; path: string; body: unknown }[]) =>
   calls.filter((c) => c.method === "POST" && c.path === "/container-agents");
 
@@ -81,11 +84,15 @@ describe("the new container AI form (CA-04)", () => {
     expect(within(dialog).getByRole("combobox", { name: "Memory" })).toHaveValue("2048");
     expect(within(dialog).getByRole("textbox", { name: "Name" })).toBeInTheDocument();
     expect(within(dialog).getByRole("textbox", { name: "Handle" })).toBeInTheDocument();
-    // The repository is optional and no credential row is mapped yet.
+    // The repository is optional, and the form asks for a credential before it can be sent.
     expect(within(dialog).getByRole("textbox", { name: /Repository URL/ })).toHaveValue("");
     expect(within(dialog).queryByRole("textbox", { name: "Variable" })).toBeNull();
+    expect(submit()).toBeDisabled();
+    expect(
+      within(dialog).getByText("Map at least one credential before creating the AI."),
+    ).toBeInTheDocument();
+    await mapCredential(user);
     expect(submit()).toBeEnabled();
-    void user;
   });
 
   it("creates the AI with the suggested variable of its app and opens its profile", async () => {
@@ -143,6 +150,7 @@ describe("the new container AI form (CA-04)", () => {
       "https://github.com/acme/atlas.git",
     );
     await user.type(within(dialog).getByRole("textbox", { name: /Branch or tag/ }), "next");
+    await mapCredential(user);
     await user.click(submit());
     await waitFor(() => expect(posted(calls)).toHaveLength(1));
     expect(posted(calls)[0]?.body).toMatchObject({
@@ -157,6 +165,7 @@ describe("the new container AI form (CA-04)", () => {
     await waitFor(() =>
       expect(within(dialog).getByRole("combobox", { name: "Server" })).toHaveValue("r1"),
     );
+    await mapCredential(user);
     await user.click(submit());
     expect(await within(dialog).findByText("Required")).toBeInTheDocument();
     expect(
@@ -195,9 +204,36 @@ describe("the new container AI form (CA-04)", () => {
     );
     await user.type(name(), "Atlas");
     await user.type(handle(), "atlas");
+    await mapCredential(user);
     await user.click(submit());
     expect(
       await within(dialog).findByText("The server is offline. Reconnect it and try again."),
+    ).toBeInTheDocument();
+  });
+
+  it("shows the credential refusal inline with its own sentence", async () => {
+    // A stale form (a credential the server no longer accepts) still needs a sentence that says what
+    // to do, not the generic failure (CA-04).
+    const { user } = render({
+      "POST /container-agents": apiError(
+        422,
+        "credentials_required",
+        "the claude app needs a credential",
+        { env: "the claude app needs a credential" },
+      ),
+    });
+    const dialog = await screen.findByRole("dialog", { name: "New AI in a container" });
+    await waitFor(() =>
+      expect(within(dialog).getByRole("combobox", { name: "Server" })).toHaveValue("r1"),
+    );
+    await user.type(name(), "Atlas");
+    await user.type(handle(), "atlas");
+    await mapCredential(user);
+    await user.click(submit());
+    expect(
+      await within(dialog).findByText(
+        "Map one of the variables the app reads to a secret: without a credential it can’t sign in.",
+      ),
     ).toBeInTheDocument();
   });
 
@@ -213,6 +249,7 @@ describe("the new container AI form (CA-04)", () => {
     );
     await user.type(name(), "Atlas");
     await user.type(handle(), "atlas");
+    await mapCredential(user);
     await user.click(submit());
     expect(await within(dialog).findByText("must match the handle pattern")).toBeInTheDocument();
     expect(handle()).toHaveAttribute("aria-invalid", "true");

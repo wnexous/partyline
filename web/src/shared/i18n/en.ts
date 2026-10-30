@@ -1373,6 +1373,12 @@ export const en = {
   "containerAgent.creating": "Creating…",
   "containerAgent.created": "{name} is being created",
   "containerAgent.createFailed": "Couldn’t create the AI. Try again.",
+  "containerAgent.credentialsRequired":
+    "Map one of the variables the app reads to a secret: without a credential it can’t sign in.",
+  "containerAgent.credentialsNeeded": "Map at least one credential before creating the AI.",
+  "containerAgent.handleTaken": "Another AI already uses this @handle.",
+  "containerAgent.conflict":
+    "That name or @handle is already taken, or your account reached its limit of AIs.",
 
   "container.title": "Container",
   "container.state.running": "Running",
@@ -1417,6 +1423,7 @@ export const en = {
   "validation.secretName": "1 to 64 characters: start with a letter, then letters, digits, _ or -",
   "validation.secretValue": "At least 1 byte, at most 16384",
   "validation.envName": "Use A-Z, 0-9 and _, starting with a letter or _",
+  "validation.credentials": "Map at least one variable the app reads",
   "validation.cpus": "Between 0.1 and 64",
   "validation.memory": "Between 64 and 65536 MB",
   "validation.repoUrl": "An https:// or ssh:// git repository URL",
