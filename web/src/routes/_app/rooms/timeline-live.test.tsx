@@ -711,6 +711,13 @@ describe("audio attachments (VOI-07)", () => {
         makeMessage({ seq: 1, text: "listen to this" }),
         makeMessage({ seq: 2, text: "", attachments: [recording] }),
         makeMessage({ seq: 3, text: "and this", attachments: [{ ...recording, id: "v2" }] }),
+        makeMessage({
+          seq: 4,
+          text: "the report",
+          attachments: [
+            { id: "f1", name: "report.txt", mime: "text/plain", size: 10, status: "stored" },
+          ],
+        }),
       ]),
     });
     renderTimeline();
@@ -718,8 +725,10 @@ describe("audio attachments (VOI-07)", () => {
     const list = (n: number) => players[n]?.closest("ul");
     // Grouped under the first message and with no text of its own: the time sits above the player.
     expect(list(0)).toHaveClass("mt-5");
-    // With text above it, the attachments follow the text as usual.
-    expect(list(1)).not.toHaveClass("mt-5");
+    // The text of a recording is its transcript under the player, so nothing is above it either.
+    expect(list(1)).toHaveClass("mt-5");
+    // With text above it, a file's attachment follows the text as usual.
+    expect(screen.getByText("report.txt").closest("ul")).not.toHaveClass("mt-5");
   });
 
   it("plays any audio file, named by the file, and leaves other files as downloads", async () => {

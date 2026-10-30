@@ -1,10 +1,11 @@
-import { FileIcon, PauseIcon, PlayIcon } from "lucide-react";
+import { DownloadIcon, FileIcon, PauseIcon, PlayIcon } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import type { Attachment } from "@/shared/api/types.gen";
 import { useI18n } from "@/shared/i18n";
 import { Button } from "@/shared/ui/primitives/button";
 import { attachmentUrl } from "../lib/attachments";
 import { formatDuration, isVoiceName } from "../lib/voice";
+import { VoiceTranscript } from "./transcript";
 
 /*
  * The compact player of an audio attachment (VOI-07, VOI-08): play and pause, the time and a seek
@@ -18,7 +19,14 @@ let playing: HTMLAudioElement | null = null;
 /** Past the end of any recording: asking for it makes the element work out how long the file is. */
 const FAR_PAST_THE_END = 1e101;
 
-export function AudioPlayer({ attachment: a }: { attachment: Attachment }) {
+export function AudioPlayer({
+  attachment: a,
+  transcript,
+}: {
+  attachment: Attachment;
+  /** The text of the voice note, shown under the player (VOI-09). */
+  transcript?: string;
+}) {
   const { t } = useI18n();
   const audio = useRef<HTMLAudioElement>(null);
   const [isPlaying, setIsPlaying] = useState(false);
@@ -77,91 +85,107 @@ export function AudioPlayer({ attachment: a }: { attachment: Attachment }) {
 
   if (failed) {
     return (
-      <div className="flex max-w-full flex-col items-start gap-1">
-        <a
-          href={url}
-          download={a.name}
-          className="inline-flex max-w-full items-center gap-1.5 rounded-md border bg-card px-2 py-1 text-xs shadow-xs transition-colors hover:bg-accent"
-        >
-          <FileIcon className="size-3.5 shrink-0 text-muted-foreground" aria-hidden="true" />
-          <span className="truncate font-medium">{a.name}</span>
-        </a>
-        <p className="text-xs text-muted-foreground">{t("player.unavailable")}</p>
+      <div className="flex min-w-0 max-w-full flex-col gap-1">
+        <div className="flex max-w-full flex-col items-start gap-1">
+          <a
+            href={url}
+            download={a.name}
+            className="inline-flex max-w-full items-center gap-1.5 rounded-md border bg-card px-2 py-1 text-xs shadow-xs transition-colors hover:bg-accent"
+          >
+            <FileIcon className="size-3.5 shrink-0 text-muted-foreground" aria-hidden="true" />
+            <span className="truncate font-medium">{a.name}</span>
+          </a>
+          <p className="text-xs text-muted-foreground">{t("player.unavailable")}</p>
+        </div>
+        {transcript ? <VoiceTranscript text={transcript} /> : null}
       </div>
     );
   }
 
   const total = duration ?? 0;
   return (
-    // biome-ignore lint/a11y/useSemanticElements: a row of controls named as one group; a fieldset brings a border, a legend and a min-width of its own
-    <div
-      role="group"
-      aria-label={isVoiceName(a.name) ? t("player.voice") : a.name}
-      className="flex h-11 w-72 max-w-full items-center gap-1.5 rounded-md border bg-card pr-3 pl-1.5 shadow-xs pointer-coarse:h-12"
-    >
-      {/* biome-ignore lint/a11y/useMediaCaption: a voice message has no captions to offer */}
-      <audio
-        ref={audio}
-        src={url}
-        preload="metadata"
-        onLoadedMetadata={learnLength}
-        onDurationChange={learnLength}
-        onTimeUpdate={(e) => {
-          if (!probing.current) setTime(e.currentTarget.currentTime);
-        }}
-        onPlay={(e) => {
-          const el = e.currentTarget;
-          // One at a time: whatever was playing gives way.
-          if (playing && playing !== el) playing.pause();
-          playing = el;
-          setIsPlaying(true);
-        }}
-        onPause={(e) => {
-          if (playing === e.currentTarget) playing = null;
-          setIsPlaying(false);
-        }}
-        onEnded={(e) => {
-          if (playing === e.currentTarget) playing = null;
-          setIsPlaying(false);
-          e.currentTarget.currentTime = 0;
-          setTime(0);
-        }}
-        onError={() => setFailed(true)}
-      />
-      <Button
-        type="button"
-        variant="secondary"
-        size="icon-sm"
-        className="size-8 rounded-full pointer-coarse:size-11"
-        aria-label={isPlaying ? t("player.pause") : t("player.play")}
-        onClick={toggle}
+    <div className="flex min-w-0 max-w-full flex-col gap-1">
+      {/* biome-ignore lint/a11y/useSemanticElements: a row of controls named as one group; a fieldset brings a border, a legend and a min-width of its own */}
+      <div
+        role="group"
+        aria-label={isVoiceName(a.name) ? t("player.voice") : a.name}
+        className="flex h-11 w-72 max-w-full items-center gap-1.5 rounded-md border bg-card pr-1 pl-1.5 shadow-xs pointer-coarse:h-12"
       >
-        {isPlaying ? <PauseIcon aria-hidden="true" /> : <PlayIcon aria-hidden="true" />}
-      </Button>
-      <input
-        type="range"
-        min={0}
-        max={total}
-        step={1}
-        value={Math.min(time, total)}
-        disabled={duration === null}
-        aria-label={t("player.seek")}
-        aria-valuetext={t("player.position", {
-          time: formatDuration(time),
-          total: formatDuration(total),
-        })}
-        onChange={(e) => {
-          const next = Number(e.target.value);
-          if (audio.current) audio.current.currentTime = next;
-          setTime(next);
-        }}
-        className="h-6 min-w-0 flex-1 cursor-pointer pointer-coarse:h-11 disabled:cursor-default"
-      />
-      <span className="shrink-0 font-mono text-[0.7rem] text-muted-foreground tabular">
-        {duration === null
-          ? formatDuration(time)
-          : `${formatDuration(time)} / ${formatDuration(duration)}`}
-      </span>
+        {/* biome-ignore lint/a11y/useMediaCaption: a voice message has no captions to offer */}
+        <audio
+          ref={audio}
+          src={url}
+          preload="metadata"
+          onLoadedMetadata={learnLength}
+          onDurationChange={learnLength}
+          onTimeUpdate={(e) => {
+            if (!probing.current) setTime(e.currentTarget.currentTime);
+          }}
+          onPlay={(e) => {
+            const el = e.currentTarget;
+            // One at a time: whatever was playing gives way.
+            if (playing && playing !== el) playing.pause();
+            playing = el;
+            setIsPlaying(true);
+          }}
+          onPause={(e) => {
+            if (playing === e.currentTarget) playing = null;
+            setIsPlaying(false);
+          }}
+          onEnded={(e) => {
+            if (playing === e.currentTarget) playing = null;
+            setIsPlaying(false);
+            e.currentTarget.currentTime = 0;
+            setTime(0);
+          }}
+          onError={() => setFailed(true)}
+        />
+        <Button
+          type="button"
+          variant="secondary"
+          size="icon-sm"
+          className="size-8 rounded-full pointer-coarse:size-11"
+          aria-label={isPlaying ? t("player.pause") : t("player.play")}
+          onClick={toggle}
+        >
+          {isPlaying ? <PauseIcon aria-hidden="true" /> : <PlayIcon aria-hidden="true" />}
+        </Button>
+        <input
+          type="range"
+          min={0}
+          max={total}
+          step={1}
+          value={Math.min(time, total)}
+          disabled={duration === null}
+          aria-label={t("player.seek")}
+          aria-valuetext={t("player.position", {
+            time: formatDuration(time),
+            total: formatDuration(total),
+          })}
+          onChange={(e) => {
+            const next = Number(e.target.value);
+            if (audio.current) audio.current.currentTime = next;
+            setTime(next);
+          }}
+          className="h-6 min-w-0 flex-1 cursor-pointer pointer-coarse:h-11 disabled:cursor-default"
+        />
+        <span className="shrink-0 font-mono text-[0.7rem] text-muted-foreground tabular">
+          {duration === null
+            ? formatDuration(time)
+            : `${formatDuration(time)} / ${formatDuration(duration)}`}
+        </span>
+        <Button
+          asChild
+          variant="ghost"
+          size="icon-sm"
+          className="size-8 shrink-0 rounded-full text-muted-foreground pointer-coarse:size-11"
+        >
+          <a href={url} download={a.name} aria-label={t("player.download")}>
+            <DownloadIcon aria-hidden="true" />
+          </a>
+        </Button>
+      </div>
+      {transcript ? <VoiceTranscript text={transcript} /> : null}
     </div>
   );
 }

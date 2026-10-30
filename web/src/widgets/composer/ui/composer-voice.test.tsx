@@ -10,6 +10,7 @@ import { useLiveStore } from "@/test/live-store";
 import { stubPointer } from "@/test/media";
 import { type FakeMicrophone, FakeRecorder, stubMicrophone } from "@/test/recorder";
 import { renderWithProviders } from "@/test/render";
+import { FakeRecognition, removeSpeech, stubSpeech } from "@/test/speech";
 import { Composer } from "@/widgets/composer";
 
 /*
@@ -646,5 +647,112 @@ describe("a hold records while held (VOI-03)", () => {
     await screen.findByRole("alert");
     const bar = screen.getByText("Voice message").closest("div") as HTMLElement;
     expect(within(bar.parentElement as HTMLElement).queryByText("Slide left to cancel")).toBeNull();
+  });
+});
+
+describe("the live transcript (VOI-09)", () => {
+  it("shows what the browser hears while recording and sends the final text with the audio", async () => {
+    stubSpeech();
+    const { calls } = mockApi({ "POST /rooms/r1/messages": json(201, makeMessage({ seq: 9 })) });
+    const user = userEvent.setup();
+    renderComposer();
+    await user.click(record());
+    await screen.findByText("Recording");
+
+    const recognition = FakeRecognition.instances[0] as FakeRecognition;
+    expect(recognition.lang).toBe("en");
+    act(() => recognition.say([], "deploy is"));
+    expect(screen.getByTestId("live-transcript")).toHaveTextContent("deploy is");
+    act(() => recognition.say(["deploy is green"]));
+    expect(screen.getByTestId("live-transcript")).toHaveTextContent("deploy is green");
+
+    await user.click(sendVoice());
+    await waitFor(() => expect(posts(calls)).toHaveLength(1));
+    expect(voicePost(calls).message).toEqual({ text: "deploy is green" });
+    expect(recognition.started).toBe(false);
+  });
+
+  it("puts text typed before recording first, on its own line, and clears it once sent", async () => {
+    stubSpeech();
+    const { calls } = mockApi({ "POST /rooms/r1/messages": json(201, makeMessage({ seq: 9 })) });
+    const user = userEvent.setup();
+    renderComposer();
+    await user.type(textbox() as HTMLElement, "caption");
+    await user.click(record());
+    await screen.findByText("Recording");
+    act(() => (FakeRecognition.instances[0] as FakeRecognition).say(["the deploy is green"]));
+    await user.click(sendVoice());
+
+    await waitFor(() => expect(posts(calls)).toHaveLength(1));
+    expect(voicePost(calls).message).toEqual({ text: "caption\nthe deploy is green" });
+    await waitFor(() => expect(textbox()).toHaveValue(""));
+  });
+
+  it("sends the audio without text where the browser has no speech API", async () => {
+    removeSpeech();
+    const { calls } = mockApi({ "POST /rooms/r1/messages": json(201, makeMessage({ seq: 9 })) });
+    const user = userEvent.setup();
+    renderComposer();
+    await user.click(record());
+    await screen.findByText("Recording");
+    expect(screen.queryByTestId("live-transcript")).toBeNull();
+    expect(screen.queryByText("Transcription unavailable")).toBeNull();
+    await user.click(sendVoice());
+
+    await waitFor(() => expect(posts(calls)).toHaveLength(1));
+    expect(voicePost(calls).message).toEqual({ text: "" });
+  });
+
+  it("says one muted line when recognition fails, never an alert, and sends the audio alone", async () => {
+    stubSpeech();
+    const { calls } = mockApi({ "POST /rooms/r1/messages": json(201, makeMessage({ seq: 9 })) });
+    const user = userEvent.setup();
+    renderComposer();
+    await user.click(record());
+    await screen.findByText("Recording");
+    act(() => (FakeRecognition.instances[0] as FakeRecognition).fail("not-allowed"));
+
+    expect(screen.getByText("Transcription unavailable")).toBeInTheDocument();
+    expect(screen.queryByRole("alert")).toBeNull();
+    await user.click(sendVoice());
+    await waitFor(() => expect(posts(calls)).toHaveLength(1));
+    expect(voicePost(calls).message).toEqual({ text: "" });
+  });
+
+  it("stops listening when the recording is cancelled", async () => {
+    stubSpeech();
+    mockApi({});
+    const user = userEvent.setup();
+    renderComposer();
+    await user.click(record());
+    await screen.findByText("Recording");
+    const recognition = FakeRecognition.instances[0] as FakeRecognition;
+    act(() => recognition.say([], "never mind"));
+    await user.click(cancelVoice());
+
+    expect(recognition.started).toBe(false);
+    expect(screen.queryByTestId("live-transcript")).toBeNull();
+    // Its end starts nothing again.
+    act(() => recognition.onend?.());
+    expect(FakeRecognition.instances).toHaveLength(1);
+  });
+
+  it("stops listening when the recording ends by itself, keeping its words for the send", async () => {
+    stubSpeech();
+    const { calls } = mockApi({ "POST /rooms/r1/messages": json(201, makeMessage({ seq: 9 })) });
+    const user = userEvent.setup();
+    renderComposer();
+    await user.click(record());
+    await screen.findByText("Recording");
+    const recognition = FakeRecognition.instances[0] as FakeRecognition;
+    act(() => recognition.say(["a word first"]));
+    act(() => (FakeRecorder.instances[0] as FakeRecorder).end());
+
+    expect(await screen.findByText("Voice message")).toBeInTheDocument();
+    expect(recognition.started).toBe(false);
+    expect(screen.getByTestId("live-transcript")).toHaveTextContent("a word first");
+    await user.click(sendVoice());
+    await waitFor(() => expect(posts(calls)).toHaveLength(1));
+    expect(voicePost(calls).message).toEqual({ text: "a word first" });
   });
 });

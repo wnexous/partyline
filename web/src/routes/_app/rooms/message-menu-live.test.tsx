@@ -243,7 +243,7 @@ describe("Copy text (ACT-05)", () => {
     expect(toast).not.toHaveBeenCalled();
   });
 
-  it("is not offered for a message that has no text, which offers Reply alone", async () => {
+  it("is not offered for a message that has no text, which offers Reply and Download", async () => {
     renderTimeline([ana(1, { text: "", attachments: [recording] })]);
     await screen.findByRole("group", { name: "Voice message" });
     await longPress(row(1));
@@ -251,6 +251,7 @@ describe("Copy text (ACT-05)", () => {
     expect(sheet).toHaveAccessibleDescription("Voice message");
     expect(within(sheet).getByRole("button", { name: "Reply" })).toBeInTheDocument();
     expect(within(sheet).queryByRole("button", { name: "Copy text" })).toBeNull();
+    expect(within(sheet).getByRole("link", { name: "Download" })).toBeInTheDocument();
   });
 });
 
@@ -267,14 +268,16 @@ describe("what offers nothing (ACT-05)", () => {
     expect(fireEvent.contextMenu(row(2))).toBe(true);
   });
 
-  it("a message with nothing to copy, to someone who cannot post: no sheet", async () => {
+  it("a recording with nothing to copy, to someone who cannot post: Download alone", async () => {
     renderTimeline([ana(1, { text: "", attachments: [recording] })], { reply: false });
     await screen.findByRole("group", { name: "Voice message" });
-    fireEvent.pointerDown(row(1), finger());
-    await act(() => wait(HOLD));
-    fireEvent.pointerUp(row(1), finger());
-    expect(screen.queryByRole("dialog")).toBeNull();
-    expect(fireEvent.contextMenu(row(1))).toBe(true);
+    await longPress(row(1));
+    const sheet = await screen.findByRole("dialog", { name: "Ana" });
+    expect(within(sheet).queryByRole("button", { name: "Reply" })).toBeNull();
+    expect(within(sheet).queryByRole("button", { name: "Copy text" })).toBeNull();
+    const download = within(sheet).getByRole("link", { name: "Download" });
+    expect(download).toHaveAttribute("href", "/api/v1/attachments/v1");
+    expect(download).toHaveAttribute("download", recording.name);
   });
 });
 
@@ -328,6 +331,7 @@ describe("which messages have actions (ACT-05, EDT-10, DLT-09)", () => {
       copy: true,
       edit: true,
       remove: true,
+      download: false,
     });
   });
 
@@ -338,6 +342,7 @@ describe("which messages have actions (ACT-05, EDT-10, DLT-09)", () => {
       copy: true,
       edit: false,
       remove: false,
+      download: false,
     });
     expect(messageActionSet(other, viewer({ canModerate: true }))).toEqual({
       react: true,
@@ -345,6 +350,7 @@ describe("which messages have actions (ACT-05, EDT-10, DLT-09)", () => {
       copy: true,
       edit: false,
       remove: true,
+      download: false,
     });
   });
 
@@ -361,6 +367,7 @@ describe("which messages have actions (ACT-05, EDT-10, DLT-09)", () => {
       copy: false,
       edit: true,
       remove: true,
+      download: true,
     });
   });
 
@@ -386,6 +393,7 @@ describe("which messages have actions (ACT-05, EDT-10, DLT-09)", () => {
       copy: true,
       edit: false,
       remove: false,
+      download: false,
     });
   });
 });

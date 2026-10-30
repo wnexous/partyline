@@ -3,6 +3,7 @@ import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { Attachment } from "@/shared/api/types.gen";
 import { useLiveStore } from "@/test/live-store";
+import { stubViewport } from "@/test/media";
 import { media, pause, play, stubMedia } from "@/test/media-element";
 import { renderWithProviders } from "@/test/render";
 import { AudioPlayer } from "./audio-player";
@@ -148,6 +149,45 @@ describe("the audio player (VOI-07)", () => {
     expect(screen.getByRole("group", { name: "Mensagem de voz" })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Reproduzir" })).toBeInTheDocument();
     expect(screen.getByRole("slider", { name: "Posição" })).toBeInTheDocument();
+  });
+
+  it("offers a small download of the file beside the controls", () => {
+    renderPlayer();
+    const link = screen.getByRole("link", { name: "Download audio" });
+    expect(link).toHaveAttribute("href", "/api/v1/attachments/att-1");
+    expect(link).toHaveAttribute("download", voice.name);
+  });
+
+  it("shows the transcript under the player, with a small label", () => {
+    renderWithProviders(<AudioPlayer attachment={voice} transcript="the deploy is green" />);
+    expect(screen.getByText("Transcript")).toBeInTheDocument();
+    expect(screen.getByTestId("voice-transcript")).toHaveTextContent("the deploy is green");
+  });
+
+  it("shows no transcript label for a recording that has no text", () => {
+    renderPlayer();
+    expect(screen.queryByText("Transcript")).toBeNull();
+    expect(screen.queryByTestId("voice-transcript")).toBeNull();
+  });
+
+  it("names the transcript in Portuguese when the app is", () => {
+    useLiveStore.setState({ locale: "pt-BR" });
+    renderWithProviders(<AudioPlayer attachment={voice} transcript="o deploy está verde" />);
+    expect(screen.getByText("Transcrição")).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "Baixar áudio" })).toBeInTheDocument();
+  });
+
+  it("folds a long transcript to three lines on a phone, with a way to see the rest", async () => {
+    stubViewport(360);
+    const user = userEvent.setup();
+    const long = "the deploy is green and the tests are passing. ".repeat(4);
+    renderWithProviders(<AudioPlayer attachment={voice} transcript={long} />);
+    const body = screen.getByTestId("voice-transcript");
+    expect(body).toHaveClass("line-clamp-3");
+
+    await user.click(screen.getByRole("button", { name: "Show more" }));
+    expect(body).not.toHaveClass("line-clamp-3");
+    expect(screen.getByRole("button", { name: "Show less" })).toBeInTheDocument();
   });
 });
 

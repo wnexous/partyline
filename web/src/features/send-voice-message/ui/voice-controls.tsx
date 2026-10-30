@@ -156,43 +156,66 @@ export function MicButton({
   );
 }
 
-/** What replaces the text box while a recording is on, or waits to be sent: the state and the time. */
+/**
+ * What replaces the text box while a recording is on, or waits to be sent: the state and the time,
+ * and under them the live transcript (VOI-09), which scrolls inside a small box on a phone.
+ */
 export function RecordingBar({
   phase,
   elapsedMs,
   hold,
+  transcript,
+  unavailable = false,
 }: {
   phase: "recording" | "recorded";
   elapsedMs: number;
   hold: HoldState;
+  /** What the browser heard so far; empty when it hears nothing. */
+  transcript?: string;
+  /** The browser has speech recognition but it failed: one muted line, never an alert. */
+  unavailable?: boolean;
 }) {
   const { t } = useI18n();
   const recording = phase === "recording";
   return (
-    <div className="flex min-h-11 items-center gap-2.5 px-3 pt-1.5 pb-1 text-[0.9375rem]">
-      <span
-        aria-hidden="true"
-        className={cn(
-          "size-2.5 shrink-0 rounded-full",
-          recording ? "animate-line-pulse bg-primary" : "bg-muted-foreground",
-        )}
-      />
-      <span className="font-medium">
-        {t(recording ? "composer.recording" : "composer.recordingReady")}
-      </span>
-      <span role="timer" className="font-mono text-sm text-muted-foreground tabular">
-        {formatDuration(elapsedMs / 1000)}
-      </span>
-      {recording && hold !== "off" ? (
+    <div className="px-3 pt-1.5 pb-1">
+      <div className="flex min-h-11 items-center gap-2.5 text-[0.9375rem]">
         <span
+          aria-hidden="true"
           className={cn(
-            "ml-auto flex min-w-0 items-center gap-0.5 truncate text-xs",
-            hold === "cancel" ? "font-medium text-destructive" : "text-muted-foreground",
+            "size-2.5 shrink-0 rounded-full",
+            recording ? "animate-line-pulse bg-primary" : "bg-muted-foreground",
           )}
-        >
-          {hold === "cancel" ? null : <ChevronLeftIcon className="size-3.5" aria-hidden="true" />}
-          {t(hold === "cancel" ? "composer.recordingRelease" : "composer.recordingSlide")}
+        />
+        <span className="font-medium">
+          {t(recording ? "composer.recording" : "composer.recordingReady")}
         </span>
+        <span role="timer" className="font-mono text-sm text-muted-foreground tabular">
+          {formatDuration(elapsedMs / 1000)}
+        </span>
+        {recording && hold !== "off" ? (
+          <span
+            className={cn(
+              "ml-auto flex min-w-0 items-center gap-0.5 truncate text-xs",
+              hold === "cancel" ? "font-medium text-destructive" : "text-muted-foreground",
+            )}
+          >
+            {hold === "cancel" ? null : <ChevronLeftIcon className="size-3.5" aria-hidden="true" />}
+            {t(hold === "cancel" ? "composer.recordingRelease" : "composer.recordingSlide")}
+          </span>
+        ) : null}
+      </div>
+      {transcript ? (
+        <p
+          data-testid="live-transcript"
+          className="mt-0.5 max-h-20 overflow-y-auto overscroll-contain pr-1 text-xs leading-snug break-words text-muted-foreground"
+        >
+          {transcript}
+        </p>
+      ) : unavailable ? (
+        <p className="mt-0.5 text-xs leading-snug text-muted-foreground">
+          {t("composer.transcriptUnavailable")}
+        </p>
       ) : null}
     </div>
   );
