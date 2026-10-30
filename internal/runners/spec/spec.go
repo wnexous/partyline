@@ -45,12 +45,14 @@ const (
 // State is a container state as Partyline stores it (container_agents.state, CA-06).
 type State string
 
-// Container states; the runner maps Docker's own states onto these four.
+// Container states; the runner maps Docker's own states onto these five. Restarting is Docker's
+// restart loop: the container is not serving anything, so it is not reported as running.
 const (
-	StateRunning State = "running"
-	StateStopped State = "stopped"
-	StateError   State = "error"
-	StateUnknown State = "unknown"
+	StateRunning    State = "running"
+	StateRestarting State = "restarting"
+	StateStopped    State = "stopped"
+	StateError      State = "error"
+	StateUnknown    State = "unknown"
 )
 
 // Container is one container the runner reports: its name (always a valid container name) and the
@@ -60,6 +62,10 @@ type Container struct {
 	State State  `json:"state"`
 	// Error is why the container is in the error state; empty otherwise.
 	Error string `json:"error,omitempty"`
+	// LastLog is the last non-empty line of the container's output when it is not running (a crash,
+	// a restart loop): the reason the app gives, already redacted of every environment value by the
+	// runner (CA-06, CA-08). The server shows it as last_error.
+	LastLog string `json:"last_log,omitempty"`
 }
 
 // Hello is the first frame of a connection (CA-02). Exactly one of DockerVersion and DockerError

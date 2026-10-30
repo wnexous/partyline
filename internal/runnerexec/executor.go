@@ -55,6 +55,9 @@ const psFormat = "{{json .}}"
 // exitStatusPattern finds the exit code Docker prints in the status of an exited container.
 var exitStatusPattern = regexp.MustCompile(`^Exited \(([0-9]{1,3})\)`)
 
+// lastLogTail is how many output lines are read to find the reason a container is not running.
+const lastLogTail = 20
+
 // Options configure an Executor.
 type Options struct {
 	// StateDir is where env files are written, one per container
@@ -191,7 +194,9 @@ func (e *Executor) Logs(ctx context.Context, name string, tail int) (string, err
 	return out, nil
 }
 
-// State reports the state of the runner's containers, all of them when name is empty (CA-06).
+// State reports the state of the runner's containers, all of them when name is empty (CA-06). A
+// container that is not running carries the last line of its output, redacted of the values of its
+// environment, so the owner sees why it stopped instead of only Docker's exit code.
 func (e *Executor) State(ctx context.Context, name string) ([]spec.Container, error) {
 	if name != "" {
 		if err := validateContainerName(name); err != nil {
@@ -205,6 +210,9 @@ func (e *Executor) State(ctx context.Context, name string) ([]spec.Container, er
 		return nil, err
 	}
 	containers := parseContainers(out)
+	for i := range containers {
+		e.enrichLastLog(ctx, &containers[i])
+	}
 	if name == "" {
 		return containers, nil
 	}
@@ -410,9 +418,12 @@ func (e *Executor) streamEvents(ctx context.Context, out chan<- []spec.Container
 				_ = cmd.Wait()
 				return ctx.Err() == nil
 			}
-			if c, ok := parseEvent(line); ok && !sendStates(ctx, out, []spec.Container{c}) {
-				_ = cmd.Wait()
-				return false
+			if c, ok := parseEvent(line); ok {
+				e.enrichLastLog(ctx, &c)
+				if !sendStates(ctx, out, []spec.Container{c}) {
+					_ = cmd.Wait()
+					return false
+				}
 			}
 		}
 	}
@@ -525,11 +536,14 @@ func parseContainers(out string) []spec.Container {
 	return containers
 }
 
-// containerState maps Docker's container state onto the state Partyline stores (CA-06).
+// containerState maps Docker's container state onto the state Partyline stores (CA-06). Docker's
+// restarting is a restart loop, not a running container: the app inside is not serving anything.
 func containerState(name, dockerState, status string) spec.Container {
 	switch strings.ToLower(strings.TrimSpace(dockerState)) {
-	case "running", "restarting":
+	case "running":
 		return spec.Container{Name: name, State: spec.StateRunning}
+	case "restarting":
+		return spec.Container{Name: name, State: spec.StateRestarting}
 	case "exited":
 		if m := exitStatusPattern.FindStringSubmatch(strings.TrimSpace(status)); m != nil && m[1] != "0" {
 			return spec.Container{Name: name, State: spec.StateError, Error: "the container exited with code " + m[1]}
@@ -542,6 +556,65 @@ func containerState(name, dockerState, status string) spec.Container {
 	default:
 		return spec.Container{Name: name, State: spec.StateUnknown}
 	}
+}
+
+// enrichLastLog attaches the last non-empty line of the container's output to a container that is
+// not running, with every environment value redacted (CA-06, CA-08). The line is read only when the
+// runner still has the container's env file: without the values, a log line could not be redacted.
+func (e *Executor) enrichLastLog(ctx context.Context, c *spec.Container) {
+	if c.State != spec.StateError && c.State != spec.StateRestarting {
+		return
+	}
+	env, ok := e.readEnvFile(c.Name)
+	if !ok {
+		return
+	}
+	out, err := e.dockerCombined(ctx, "logs", "--tail", strconv.Itoa(lastLogTail), c.Name)
+	if err != nil {
+		return
+	}
+	c.LastLog = lastLogLine(out, env)
+}
+
+// lastLogLine is the last non-empty line of a container's output, on one line, at most
+// spec.MaxMessage characters, with every environment value replaced by [redacted] (CA-08).
+func lastLogLine(out string, env map[string]string) string {
+	lines := strings.Split(out, "\n")
+	for i := len(lines) - 1; i >= 0; i-- {
+		line := strings.TrimSpace(lines[i])
+		if line == "" {
+			continue
+		}
+		line = strings.Join(strings.Fields(redact(line, env)), " ")
+		if line == "" {
+			continue
+		}
+		if runes := []rune(line); len(runes) > spec.MaxMessage {
+			line = string(runes[:spec.MaxMessage])
+		}
+		return line
+	}
+	return ""
+}
+
+// readEnvFile reads the values of a container's env file for redaction; false when it is missing,
+// so no line is reported rather than one that may carry a value.
+func (e *Executor) readEnvFile(name string) (map[string]string, bool) {
+	if e.opts.StateDir == "" || !spec.ValidContainerName(name) {
+		return nil, false
+	}
+	data, err := os.ReadFile(filepath.Join(e.opts.StateDir, name+EnvFileSuffix))
+	if err != nil {
+		return nil, false
+	}
+	env := map[string]string{}
+	for _, line := range strings.Split(string(data), "\n") {
+		key, value, ok := strings.Cut(line, "=")
+		if ok && spec.ValidEnvName(key) && value != "" {
+			env[key] = value
+		}
+	}
+	return env, true
 }
 
 // dockerEvent is the part of one `docker events --format '{{json .}}'` line the runner reads.

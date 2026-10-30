@@ -93,6 +93,10 @@ func TestValidators(t *testing.T) {
 func TestValidateHello(t *testing.T) {
 	valid := Hello{Type: FrameHello, DockerVersion: "27.3.1", Containers: []Container{{Name: "pl-atlas", State: StateRunning}}}
 	require.NoError(t, ValidateHello(valid))
+	restarting := Hello{Type: FrameHello, DockerVersion: "27.3.1", Containers: []Container{
+		{Name: "pl-atlas", State: StateRestarting, LastLog: "partyline-agent: error: opencode: set OPENCODE_API_KEY"},
+	}}
+	require.NoError(t, ValidateHello(restarting), "a restart loop is a state the protocol accepts")
 
 	withError := Hello{Type: FrameHello, DockerError: "docker socket not found"}
 	require.NoError(t, ValidateHello(withError))
@@ -108,6 +112,7 @@ func TestValidateHello(t *testing.T) {
 		"bad error":     {Hello{Type: FrameHello, DockerError: "bad\x00error"}, "docker_error"},
 		"bad container": {Hello{Type: FrameHello, DockerVersion: "27.3.1", Containers: []Container{{Name: "atlas", State: StateRunning}}}, "containers"},
 		"bad state":     {Hello{Type: FrameHello, DockerVersion: "27.3.1", Containers: []Container{{Name: "pl-atlas", State: "exited"}}}, "containers"},
+		"bad last log":  {Hello{Type: FrameHello, DockerVersion: "27.3.1", Containers: []Container{{Name: "pl-atlas", State: StateError, LastLog: "two\x00lines"}}}, "containers"},
 		"duplicate container": {Hello{Type: FrameHello, DockerVersion: "27.3.1", Containers: []Container{
 			{Name: "pl-atlas", State: StateRunning}, {Name: "pl-atlas", State: StateStopped},
 		}}, "containers"},

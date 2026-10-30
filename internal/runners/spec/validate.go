@@ -97,7 +97,7 @@ func ValidDockerVersion(v string) bool { return versionPattern.MatchString(v) }
 // ValidState reports whether s is a state Partyline stores.
 func ValidState(s State) bool {
 	switch s {
-	case StateRunning, StateStopped, StateError, StateUnknown:
+	case StateRunning, StateRestarting, StateStopped, StateError, StateUnknown:
 		return true
 	}
 	return false
@@ -252,10 +252,13 @@ func checkContainers(cs []Container) error {
 		}
 		seen[c.Name] = true
 		if !ValidState(c.State) {
-			fields[fmt.Sprintf("containers[%d].state", i)] = "must be running, stopped, error or unknown"
+			fields[fmt.Sprintf("containers[%d].state", i)] = "must be running, restarting, stopped, error or unknown"
 		}
 		if c.Error != "" && !ValidMessage(c.Error) {
 			fields[fmt.Sprintf("containers[%d].error", i)] = fmt.Sprintf("must have 1 to %d characters without control characters", MaxMessage)
+		}
+		if c.LastLog != "" && !ValidMessage(c.LastLog) {
+			fields[fmt.Sprintf("containers[%d].last_log", i)] = fmt.Sprintf("must have 1 to %d characters without control characters", MaxMessage)
 		}
 	}
 	return check(fields)
