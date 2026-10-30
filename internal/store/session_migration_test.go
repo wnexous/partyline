@@ -522,9 +522,10 @@ func TestDeliveryRowsAreKeyedBySessionAndCopiesNeverFallBack(t *testing.T) {
 	require.False(t, copyRow.AckedAt.Valid)
 }
 
-// SN-03 (data): the catch-up batch leaves out what the session already has - its own messages and the ones it
-// was given - and counts what it would list, so the skipped count matches.
-func TestSessionUnreadLeavesOutWhatTheSessionAlreadyHas(t *testing.T) {
+// SN-03 (data): the catch-up batch leaves out the session's own messages and the ones it acknowledged, and
+// counts what it would list, so the skipped count matches. A message it was given but never acknowledged is
+// part of the batch again: a batch lost with its connection comes back.
+func TestSessionUnreadLeavesOutOnlyAcknowledgedMessages(t *testing.T) {
 	e := sessionRoomFixture(t)
 	ctx := context.Background()
 	for i := 1; i <= 5; i++ {
@@ -537,12 +538,23 @@ func TestSessionUnreadLeavesOutWhatTheSessionAlreadyHas(t *testing.T) {
 	params := db.CountSessionUnreadInRoomParams{RoomID: "r1", AfterSeq: 0, BeforeSeq: 100, AgentID: "a1", AuthorLabel: "cli-2", Label: "cli-2"}
 	count, err := e.s.R().CountSessionUnreadInRoom(ctx, params)
 	require.NoError(t, err)
-	require.Equal(t, int64(4), count, "m1, m3, m4 and m5; not its own message and not the one it has")
+	require.Equal(t, int64(5), count, "m1 to m5: the copy it was given but did not acknowledge is still unread")
 	rows, err := e.s.R().ListSessionUnread(ctx, db.ListSessionUnreadParams{
 		RoomID: "r1", AfterSeq: 0, BeforeSeq: 100, AgentID: "a1", AuthorLabel: "cli-2", Label: "cli-2", Limit: 50,
 	})
 	require.NoError(t, err)
-	require.Equal(t, []string{"m1", "m3", "m4", "m5"}, messageIDs(rows), "the count and the batch agree")
+	require.Equal(t, []string{"m1", "m2", "m3", "m4", "m5"}, messageIDs(rows), "the count and the batch agree")
+
+	// The acknowledgement is what takes a message out of the next batch.
+	e.must(`UPDATE agent_session_deliveries SET acked_at = 25 WHERE message_id = 'm2' AND agent_id = 'a1' AND label = 'cli-2'`)
+	count, err = e.s.R().CountSessionUnreadInRoom(ctx, params)
+	require.NoError(t, err)
+	require.Equal(t, int64(4), count, "m1, m3, m4 and m5; not its own message and not the one it acknowledged")
+	rows, err = e.s.R().ListSessionUnread(ctx, db.ListSessionUnreadParams{
+		RoomID: "r1", AfterSeq: 0, BeforeSeq: 100, AgentID: "a1", AuthorLabel: "cli-2", Label: "cli-2", Limit: 50,
+	})
+	require.NoError(t, err)
+	require.Equal(t, []string{"m1", "m3", "m4", "m5"}, messageIDs(rows))
 
 	// The message that is being pushed is not part of its own catch-up batch.
 	before, err := e.s.R().CountSessionUnreadInRoom(ctx, db.CountSessionUnreadInRoomParams{

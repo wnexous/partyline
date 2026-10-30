@@ -219,10 +219,10 @@ func (g *Gateway) pushToSession(agentID string, t pushSession, m dto.AgentMessag
 
 // pushCatchUp writes the messages of the room the session has not read yet, oldest first and at most
 // BacklogLimit of them, marked as context (SN-03). Messages the session wrote itself are not part of it
-// (SN-06), and neither is one that already reached it. When the room had more unread messages than the
-// batch holds, the first frame carries how many earlier ones were left out. Each frame of the batch gets
-// a copy delivery row for the session, so a message is never pushed to it twice and an edit follows it
-// (SN-09); the principal, whose rows carry the empty label, is no exception.
+// (SN-06), and neither is one it acknowledged. When the room had more unread messages than the batch
+// holds, the first frame carries how many earlier ones were left out. Each frame that reaches the queue
+// gets a copy delivery row for the session, so an edit follows it (SN-09); the principal, whose rows carry
+// the empty label, is no exception. A batch that was not acknowledged comes back with the next one.
 func (g *Gateway) pushCatchUp(agentID string, t pushSession, m dto.AgentMessage) error {
 	q := g.d.Store.R()
 	params := db.CountSessionUnreadInRoomParams{
@@ -244,20 +244,13 @@ func (g *Gateway) pushCatchUp(agentID string, t pushSession, m dto.AgentMessage)
 	if err != nil {
 		return err
 	}
-	// The rows go first: a message that reached the session is not part of a later batch, whatever becomes
-	// of the frames.
-	rows := make([]db.CreateSessionDeliveryParams, 0, len(views))
-	for _, v := range views {
-		rows = append(rows, db.CreateSessionDeliveryParams{
-			MessageID: v.ID, AgentID: agentID, Label: t.label, OwnerLive: t.conn.owner,
-			CreatedAt: time.Now().UnixMilli(), Context: 1,
-		})
-	}
-	if err := g.createSessionDeliveries(rows); err != nil {
-		return err
-	}
 	skipped := count - int64(len(views))
 	trust := g.d.Trust.Open()
+	// The row of a frame is written only once the frame is in the queue: a connection that dropped before
+	// taking the frame leaves no record that the message was given, so the next catch-up has it again
+	// (SN-03). An unacknowledged message is replayed whether or not its row exists, so the rows only route
+	// an edit or a delete and keep the copy's ownership.
+	rows := make([]db.CreateSessionDeliveryParams, 0, len(msgs))
 	for i, msg := range msgs {
 		trusted := true // the AI wrote it: its sessions trust it, as the live push says (SESS-37)
 		if !selfAuthored(convert.Message(msg), agentID) {
@@ -270,8 +263,12 @@ func (g *Gateway) pushCatchUp(agentID string, t pushSession, m dto.AgentMessage)
 			frame.Skipped = skipped
 		}
 		if !t.conn.push(frame) {
-			return nil // the queue overflowed and closed the connection: it reads its unread when it returns
+			break // the queue overflowed and closed the connection: it reads its unread when it returns
 		}
+		rows = append(rows, db.CreateSessionDeliveryParams{
+			MessageID: msg.ID, AgentID: agentID, Label: t.label, OwnerLive: t.conn.owner,
+			CreatedAt: time.Now().UnixMilli(), Context: 1,
+		})
 	}
-	return nil
+	return g.createSessionDeliveries(rows)
 }

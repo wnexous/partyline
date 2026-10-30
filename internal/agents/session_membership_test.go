@@ -153,3 +153,39 @@ func TestAnAckedCopyIsNotHandedBackWhenItsSiblingDies(t *testing.T) {
 	again := f.dial(t)
 	again.ExpectNone(700 * time.Millisecond)
 }
+
+// SN-03: a catch-up batch that was not acknowledged comes back. A session that drops between the batch and
+// its acknowledgement did not read those messages, so the next notification delivers them again instead of
+// leaving them behind the delivery rows of the lost frames.
+func TestAContextBatchThatWasNotAckedComesBack(t *testing.T) {
+	f := newSessionFixture(t)
+	principal, parallel := f.dial(t), f.dialHarness(t, "pi")
+	f.settle(t, principal)
+	f.settle(t, parallel)
+
+	one, two := f.post(t, "one"), f.post(t, "two")
+	require.Equal(t, one.ID, principal.Message(time.Minute).Message.ID)
+	require.Equal(t, two.ID, principal.Message(time.Minute).Message.ID)
+	first := f.post(t, "@atlas:pi-2 first")
+	for _, want := range []string{one.ID, two.ID} {
+		frame := parallel.Message(time.Minute)
+		require.Equal(t, want, frame.Message.ID)
+		require.True(t, frame.Context)
+	}
+	require.Equal(t, first.ID, parallel.Message(time.Minute).Message.ID)
+	// The session drops before acknowledging anything: the AI's cursor and the session's read position stay
+	// where they were.
+	parallel.Close()
+
+	again := f.dialHarness(t, "pi")
+	f.settle(t, again)
+	second := f.post(t, "@atlas:pi-2 second")
+	for _, want := range []string{one.ID, two.ID, first.ID} {
+		frame := again.Message(time.Minute)
+		require.Equal(t, want, frame.Message.ID, "the unacknowledged batch comes back as context")
+		require.True(t, frame.Context)
+	}
+	last := again.Message(time.Minute)
+	require.Equal(t, second.ID, last.Message.ID)
+	require.False(t, last.Context)
+}

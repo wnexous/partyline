@@ -138,7 +138,8 @@ WHERE m.room_id = ?2 AND m.seq > ?3 AND m.seq < ?4
   AND NOT (m.author_kind = 'agent' AND m.author_id = ?1 AND m.author_label = ?5)
   AND NOT EXISTS (
       SELECT 1 FROM agent_session_deliveries d
-      WHERE d.message_id = m.id AND d.agent_id = ?1 AND d.label = ?6)
+      WHERE d.message_id = m.id AND d.agent_id = ?1 AND d.label = ?6
+        AND d.acked_at IS NOT NULL)
 `
 
 type CountSessionUnreadInRoomParams struct {
@@ -152,8 +153,8 @@ type CountSessionUnreadInRoomParams struct {
 
 // How many messages of one room a session has not read and that ListSessionUnread would list (SN-03): the
 // difference between this count and the number listed is the "N earlier messages skipped" note of the
-// catch-up batch. The messages of the room from before the AI's current membership are not part of it
-// (ROOM-01).
+// catch-up batch. Only an acknowledged message is left out, so an unacknowledged batch counts again
+// (SN-03). The messages of the room from before the AI's current membership are not part of it (ROOM-01).
 func (q *Queries) CountSessionUnreadInRoom(ctx context.Context, arg CountSessionUnreadInRoomParams) (int64, error) {
 	row := q.db.QueryRowContext(ctx, countSessionUnreadInRoom,
 		arg.AgentID,
@@ -408,7 +409,8 @@ SELECT id, room_id, seq, author_kind, author_id, author_user_id, author_iid, sen
       AND NOT (mv.author_kind = 'agent' AND mv.author_id = ?1 AND mv.author_label = ?5)
       AND NOT EXISTS (
           SELECT 1 FROM agent_session_deliveries d
-          WHERE d.message_id = mv.id AND d.agent_id = ?1 AND d.label = ?6)
+          WHERE d.message_id = mv.id AND d.agent_id = ?1 AND d.label = ?6
+            AND d.acked_at IS NOT NULL)
     ORDER BY mv.seq DESC, mv.id DESC
     LIMIT ?7
 )
@@ -429,9 +431,9 @@ type ListSessionUnreadParams struct {
 // batch that goes with a message that notifies the session (SN-03). The cap keeps the newest ones (a
 // limit of 50 reads the last 50 and the caller notes how many earlier ones it skipped) and the batch is
 // ordered oldest first. The session's own messages are not part of it (SN-06), the message that is being
-// pushed now is not either (before_seq), and neither is one that already reached the session as a copy
-// (a delivery row for its label): SN-03 pushes a message to a session once. Nothing from before the AI's
-// current membership of the room is part of it (ROOM-01).
+// pushed now is not either (before_seq), and neither is one that session acknowledged. A message it was
+// given but never acknowledged is part of it again: a batch lost with its connection comes back (SN-03).
+// Nothing from before the AI's current membership of the room is part of it (ROOM-01).
 func (q *Queries) ListSessionUnread(ctx context.Context, arg ListSessionUnreadParams) ([]MessageView, error) {
 	rows, err := q.db.QueryContext(ctx, listSessionUnread,
 		arg.AgentID,

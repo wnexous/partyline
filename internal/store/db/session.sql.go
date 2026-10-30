@@ -233,8 +233,9 @@ type ListOwnedPendingParams struct {
 
 // What a connection owns and has not acknowledged, in sequence order: what a reconnecting session of the
 // same live id must receive again. Only the addressed deliveries (context = 0) are the session's own
-// backlog; a copy of a catch-up batch is re-read from the session's read position instead (SN-03). Nothing
-// from before the AI's current membership of the room is replayed (ROOM-01).
+// backlog; a copy of a catch-up batch is never replayed as an owned row: it is the next notification's
+// catch-up that delivers it again, since an unacknowledged message stays unread (SN-03). Nothing from
+// before the AI's current membership of the room is replayed (ROOM-01).
 func (q *Queries) ListOwnedPending(ctx context.Context, arg ListOwnedPendingParams) ([]MessageView, error) {
 	rows, err := q.db.QueryContext(ctx, listOwnedPending, arg.AgentID, arg.OwnerLive)
 	if err != nil {

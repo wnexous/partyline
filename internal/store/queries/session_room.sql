@@ -69,9 +69,9 @@ GROUP BY m.room_id;
 -- batch that goes with a message that notifies the session (SN-03). The cap keeps the newest ones (a
 -- limit of 50 reads the last 50 and the caller notes how many earlier ones it skipped) and the batch is
 -- ordered oldest first. The session's own messages are not part of it (SN-06), the message that is being
--- pushed now is not either (before_seq), and neither is one that already reached the session as a copy
--- (a delivery row for its label): SN-03 pushes a message to a session once. Nothing from before the AI's
--- current membership of the room is part of it (ROOM-01).
+-- pushed now is not either (before_seq), and neither is one that session acknowledged. A message it was
+-- given but never acknowledged is part of it again: a batch lost with its connection comes back (SN-03).
+-- Nothing from before the AI's current membership of the room is part of it (ROOM-01).
 SELECT * FROM (
     SELECT mv.* FROM message_views mv
     JOIN room_members rm ON rm.room_id = mv.room_id AND rm.kind = 'agent' AND rm.member_id = sqlc.arg(agent_id)
@@ -82,7 +82,8 @@ SELECT * FROM (
       AND NOT (mv.author_kind = 'agent' AND mv.author_id = sqlc.arg(agent_id) AND mv.author_label = sqlc.arg(author_label))
       AND NOT EXISTS (
           SELECT 1 FROM agent_session_deliveries d
-          WHERE d.message_id = mv.id AND d.agent_id = sqlc.arg(agent_id) AND d.label = sqlc.arg(label))
+          WHERE d.message_id = mv.id AND d.agent_id = sqlc.arg(agent_id) AND d.label = sqlc.arg(label)
+            AND d.acked_at IS NOT NULL)
     ORDER BY mv.seq DESC, mv.id DESC
     LIMIT sqlc.arg(limit)
 )
@@ -91,8 +92,8 @@ ORDER BY seq ASC, id ASC;
 -- name: CountSessionUnreadInRoom :one
 -- How many messages of one room a session has not read and that ListSessionUnread would list (SN-03): the
 -- difference between this count and the number listed is the "N earlier messages skipped" note of the
--- catch-up batch. The messages of the room from before the AI's current membership are not part of it
--- (ROOM-01).
+-- catch-up batch. Only an acknowledged message is left out, so an unacknowledged batch counts again
+-- (SN-03). The messages of the room from before the AI's current membership are not part of it (ROOM-01).
 SELECT COUNT(*) FROM messages m
 JOIN room_members rm ON rm.room_id = m.room_id AND rm.kind = 'agent' AND rm.member_id = sqlc.arg(agent_id)
 WHERE m.room_id = sqlc.arg(room_id) AND m.seq > sqlc.arg(after_seq) AND m.seq < sqlc.arg(before_seq)
@@ -102,7 +103,8 @@ WHERE m.room_id = sqlc.arg(room_id) AND m.seq > sqlc.arg(after_seq) AND m.seq < 
   AND NOT (m.author_kind = 'agent' AND m.author_id = sqlc.arg(agent_id) AND m.author_label = sqlc.arg(author_label))
   AND NOT EXISTS (
       SELECT 1 FROM agent_session_deliveries d
-      WHERE d.message_id = m.id AND d.agent_id = sqlc.arg(agent_id) AND d.label = sqlc.arg(label));
+      WHERE d.message_id = m.id AND d.agent_id = sqlc.arg(agent_id) AND d.label = sqlc.arg(label)
+        AND d.acked_at IS NOT NULL);
 
 -- name: ListSessionRoomStatesInRoom :many
 -- Every state row of the AI in one room, whatever its session: the notification setting and the read
