@@ -974,6 +974,74 @@ by API); `internal/channel/link_live_test.go`, `internal/cli/{procenv,launcher,c
 (the CLI side); `integrations/{pi,opencode}/partyline.test.ts` (the adapters);
 `web/src/**` unit tests for the button and the offline line; `web/e2e/principal-session.spec.ts`.
 
+## Outdated clients (v0.13.0)
+
+Spec: "P1: Outdated clients (v0.13.0)", SESS-63..SESS-65; AD-034 extended.
+
+### Why
+
+A session of a client older than v0.11.0 sends no `X-Partyline-Harness-Session`, so it can neither be
+pinned nor receive the pin: after the v0.12.0 deploy an AI's two long-running 0.10.5 Claude Code sessions
+reconnected with nothing pinned, and the first one took the principal label. The server had no way to say
+"this session's client is too old"; now it says so and refuses the role.
+
+### Version and outdated flag
+
+`X-Partyline-Client-Version` (dto.HeaderClientVersion) carries `internal/cli.Version` (the `buildVersion()`
+the MCP `initialize` already reports). `channel.Identity.ClientVersion` is set from
+`Options.Version`/`ListenOptions.Version`, and `partyline channel`/`partyline listen` pass it; the header is
+additive, so an old CLI simply sends none. `gateway.register` reads it with
+`agents.ClientVersionFromHeader`, which trims and accepts a release version or `dev` and drops anything else
+(an unrecognized value counts as old, and never refuses the connection).
+
+`AttachRequest.ClientVersion` is stored in the presence entry. `presenceEntry.live()` computes
+`Live.Outdated = sessionOutdated(harness, sessionID, clientVersion)`: only `claude` and `pi` (and the empty
+harness, which is Claude Code) have a harness session id to send (SESS-51), so only they can be outdated; a
+session with no id is outdated, and so is one whose version is missing, unparsable or older than
+`MinSessionClientVersion = "v0.11.0"`. `dev` is current. The flag rides `dto.SessionInfo.outdated` into the
+welcome frame, `GET /agent/session`, the profile's `ai.sessions` and the member list; it is `omitempty`, so
+the JSON of every existing session and every v0.11/v0.12 server stays the same.
+
+### The role policy
+
+`AttachRequest.HadSessionID` is computed by `Registry.AttachSession`: true when `agents.principal_session`
+is not empty, else `HasSessionLabels(agent_id)` (`SELECT EXISTS` over `agent_session_labels`). `decideRole`
+gets one new case, after the pin:
+
+```
+case req.SessionID == "" && req.HadSessionID:
+    return false, nil   // an old client waits as a parallel session
+```
+
+Everything else is unchanged: a pinned id keeps the role to itself (SESS-53), `--principal` and a live
+`--take-over` replace it and set or clear the pin (SESS-57, SESS-58), and an AI that never had an id keeps
+the legacy first-live-session-is-principal behaviour (SESS-56). The new case closes the gap where the pin is
+empty (an explicit take-over without an id cleared it) but the AI still remembers an identified session.
+The production case with no id anywhere keeps the legacy rule; the outdated warning is what tells the person
+to update and reopen, after which the session sends its id and is pinned.
+
+### Web and CLI
+
+`entities/intelligence/ui/session-outdated-warning` is the notes-and-cautions panel of DESIGN.md (muted
+surface, `tape-strong` hairline, `TriangleAlertIcon`, command in the mono face) with the sentence
+`profile.sessionOutdated` in English and Brazilian Portuguese; `SessionList` renders one per outdated session
+(also when the principal is alone, where the list used to show nothing) and the profile page adds one to each
+outdated session row and one to the header while the principal is outdated (`profile.principalOutdated`).
+No new colour, no new state.
+
+The channel prints `partyline: this client is outdated; run `partyline update` and reopen this session` to
+stderr once per process when `welcome.session.outdated` is true (`link.announceOutdatedClient`), also on a
+reconnect-triggered welcome: a session that is already open is told to reopen.
+
+### Tests
+
+`internal/agents/clientversion_test.go` (the matrix: harness, id, missing/old/current/dev version) and
+`internal/api/agent_outdated_test.go` (the flag on welcome, profile and member card; no-id waits for the pin;
+an empty pin with a stored label; the legacy AI); `internal/channel/link_live_test.go` (the version header, the
+stderr line once); `web/src/entities/intelligence/ui/session-list.test.tsx`,
+`web/src/pages/contacts/ui/profile-page.test.tsx` and the member-panel test (the warning in both places,
+English and Portuguese).
+
 ## Decision record (proposed)
 
 When the plan is approved, record AD-032 in `.specs/STATE.md`: *an AI is identified by the main worktree
