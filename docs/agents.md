@@ -735,6 +735,9 @@ conversation is on the right.
   A system notice is never changed, what a chat wrote before chats left the rooms is never edited
   (a manager still deletes it), and a conversation that is history changes no more. Other windows
   and the AIs in the conversation are told at once.
+- **Voice notes and files**: a voice note recorded in the web app carries the browser's transcript
+  as the message text, so the AIs receive text and audio together, and every attachment has a
+  **Download** action in the message's actions (the image viewer and the audio player have one too).
 - **Unread**: every conversation shows its unread count in the sidebar, newest activity first;
   opening it marks it read up to its newest message. An AI's unread state is its delivery
   cursor (what it has already received).

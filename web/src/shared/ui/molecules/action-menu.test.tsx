@@ -1,6 +1,6 @@
 import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { CheckCheckIcon, CopyIcon, Trash2Icon } from "lucide-react";
+import { CheckCheckIcon, CopyIcon, DownloadIcon, Trash2Icon } from "lucide-react";
 import { afterEach, beforeEach, describe, expect, it, type Mock, vi } from "vitest";
 import { axe } from "vitest-axe";
 import * as matchers from "vitest-axe/matchers";
@@ -351,5 +351,40 @@ describe("what it holds above the actions", () => {
     unmount();
     renderMenu({ header, touch: false });
     expect(await screen.findByText("quick reactions")).toBeInTheDocument();
+  });
+});
+
+describe("a download action (VOI-09)", () => {
+  const download = (onSelect: () => void): MenuAction[] => [
+    {
+      id: "download",
+      label: "Download",
+      icon: DownloadIcon,
+      href: "/api/v1/attachments/a1",
+      download: "voice-message.webm",
+      onSelect,
+    },
+  ];
+
+  it("is a link in the sheet, pointing at the file and named for the saved copy", async () => {
+    const user = userEvent.setup();
+    const onSelect = vi.fn();
+    renderMenu({ actions: download(onSelect) });
+    const link = await screen.findByRole("link", { name: "Download" });
+    expect(link).toHaveAttribute("href", "/api/v1/attachments/a1");
+    expect(link).toHaveAttribute("download", "voice-message.webm");
+    // The link saves the file; the menu still closes as any action does.
+    link.addEventListener("click", (event) => event.preventDefault());
+    await user.click(link);
+    expect(onSelect).toHaveBeenCalledTimes(1);
+    expect(close).toHaveBeenCalledTimes(1);
+  });
+
+  it("is a menu item that is a link with a mouse too", async () => {
+    renderMenu({ actions: download(vi.fn()), touch: false });
+    const item = await screen.findByRole("menuitem", { name: "Download" });
+    expect(item.tagName).toBe("A");
+    expect(item).toHaveAttribute("href", "/api/v1/attachments/a1");
+    expect(item).toHaveAttribute("download", "voice-message.webm");
   });
 });

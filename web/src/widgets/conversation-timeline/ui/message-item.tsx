@@ -8,6 +8,7 @@ import {
   authorProfile,
   chatTitle,
   chatTrust,
+  isAudio,
   LazyMarkdown,
   platformName,
   ReplyContext,
@@ -129,6 +130,14 @@ export const MessageItem = memo(function MessageItem({
   const kind = AUTHOR_KIND[message.author_kind] ?? AUTHOR_KIND.system;
   // A deleted message is a placeholder (DLT-10): its author and time stay, nothing it said does.
   const deleted = message.deleted_at !== undefined;
+  // A voice note with text: the text is its transcript, shown under the player instead of above
+  // the attachments (VOI-09). Any audio with a caption reads this way, whatever made the file.
+  const voice = deleted
+    ? undefined
+    : message.attachments.find((a) => a.status === "stored" && isAudio(a.mime));
+  const transcript = voice && message.text.trim() ? message.text : null;
+  // Whether the row shows text above its attachments, which decides their top margin when grouped.
+  const textAbove = message.text !== "" && transcript === null;
   const time = (
     <RelativeTime
       value={message.created_at}
@@ -314,7 +323,7 @@ export const MessageItem = memo(function MessageItem({
         <div className="text-[0.9375rem] leading-relaxed">
           {deleted ? (
             <DeletedPlaceholder />
-          ) : message.author_kind === "agent" && message.text ? (
+          ) : transcript ? null : message.author_kind === "agent" && message.text ? (
             <Suspense fallback={<PlainText text={message.text} />}>
               <LazyMarkdown text={message.text} />
             </Suspense>
@@ -339,12 +348,16 @@ export const MessageItem = memo(function MessageItem({
               "mt-1.5 flex flex-wrap gap-2",
               // The time of a grouped row shows at its top right on hover and focus: with no text
               // above them, the attachments start below it, so a player's own time stays readable.
-              grouped && !message.text && !CONTENT_KIND[message.kind] && "mt-5",
+              grouped && !textAbove && !CONTENT_KIND[message.kind] && "mt-5",
             )}
           >
             {message.attachments.map((a) => (
               <li key={a.id} className="max-w-full">
-                <AttachmentView attachment={a} onOpenImage={onOpenImage} />
+                <AttachmentView
+                  attachment={a}
+                  transcript={a.id === voice?.id ? (transcript ?? undefined) : undefined}
+                  onOpenImage={onOpenImage}
+                />
               </li>
             ))}
           </ul>

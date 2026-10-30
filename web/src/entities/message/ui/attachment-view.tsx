@@ -12,9 +12,12 @@ const IMAGE_BOX_RATIO = "4 / 3";
 
 export function AttachmentView({
   attachment: a,
+  transcript,
   onOpenImage,
 }: {
   attachment: Attachment;
+  /** The text of a voice note, shown under its player (VOI-09). */
+  transcript?: string;
   onOpenImage: (attachmentId: string) => void;
 }) {
   const { t, locale } = useI18n();
@@ -61,7 +64,7 @@ export function AttachmentView({
     );
   }
   // A recording or any audio file plays in the row (VOI-07); the player falls back to a download.
-  if (isAudio(a.mime)) return <AudioPlayer attachment={a} />;
+  if (isAudio(a.mime)) return <AudioPlayer attachment={a} transcript={transcript} />;
   return (
     <a
       href={url}

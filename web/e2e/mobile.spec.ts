@@ -499,6 +499,29 @@ test("a voice message is recorded, sent and played back in the timeline (VOI-01,
     // VOI-07, VOI-08: the player knows how long the recording is, plays it, and its targets are
     // finger-sized on a phone.
     const mine = players.first();
+    // The recording can be saved from the actions of its message: a link to the same-origin file
+    // with `download`, so the browser saves it instead of playing it in a tab.
+    if (isMobile(testInfo)) {
+      const voiceRow = log.getByTestId(`message-${sent?.seq}`);
+      const held = await openActions(
+        page,
+        context,
+        testInfo,
+        voiceRow.locator("time").first(),
+        OWNER.display_name,
+      );
+      const sheet = surface(page, testInfo, OWNER.display_name);
+      const download = sheet.getByRole("link", { name: "Download" });
+      await expect(download).toBeVisible();
+      await expect(download).toHaveAttribute(
+        "href",
+        `/api/v1/attachments/${sent?.attachments[0]?.id}`,
+      );
+      await expect(download).toHaveAttribute("download", sent?.attachments[0]?.name ?? "");
+      await held.release();
+      await page.keyboard.press("Escape");
+      await expect(page.getByRole("dialog")).toHaveCount(0);
+    }
     const play = mine.getByRole("button", { name: "Play" });
     const slider = mine.getByRole("slider", { name: "Seek" });
     await expect(mine.getByText("0:00 / 0:08")).toBeVisible();

@@ -17,4 +17,5 @@ export * from "./ui/image-viewer";
 export * from "./ui/lazy-markdown";
 export * from "./ui/question-view";
 export * from "./ui/reply-context";
+export * from "./ui/transcript";
 export * from "./ui/trust-badge";

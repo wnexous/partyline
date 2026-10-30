@@ -1,7 +1,8 @@
-import { CopyIcon, PencilIcon, ReplyIcon, Trash2Icon } from "lucide-react";
+import { CopyIcon, DownloadIcon, PencilIcon, ReplyIcon, Trash2Icon } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
 import {
+  attachmentUrl,
   authorDisplayName,
   canDeleteMessage,
   canEditMessage,
@@ -56,12 +57,13 @@ export interface MessageActionSet {
   copy: boolean;
   edit: boolean;
   remove: boolean;
+  download: boolean;
 }
 
 /** Which actions a message offers this viewer. */
 export function messageActionSet(message: Message, c: MessageCapabilities): MessageActionSet {
   if (message.author_kind === "system" || message.deleted_at !== undefined) {
-    return { react: false, reply: false, copy: false, edit: false, remove: false };
+    return { react: false, reply: false, copy: false, edit: false, remove: false, download: false };
   }
   return {
     react: c.canReact && !c.frozen,
@@ -69,13 +71,15 @@ export function messageActionSet(message: Message, c: MessageCapabilities): Mess
     copy: message.text.trim() !== "",
     edit: c.canEdit && !c.frozen && canEditMessage(message, c.meId),
     remove: !c.frozen && canDeleteMessage(message, c.meId, c.canModerate),
+    // Every stored file can be saved, whoever wrote it and whether the conversation is history.
+    download: message.attachments.some((a) => a.status === "stored"),
   };
 }
 
 /** Whether a message has anything to offer: a row with nothing leaves the browser's own menu alone. */
 export function hasMessageActions(message: Message, c: MessageCapabilities): boolean {
   const set = messageActionSet(message, c);
-  return set.react || set.reply || set.copy || set.edit || set.remove;
+  return set.react || set.reply || set.copy || set.edit || set.remove || set.download;
 }
 
 export function MessageMenu({
@@ -168,6 +172,21 @@ export function MessageMenu({
           );
         },
       });
+    }
+    if (set.download) {
+      const files = message.attachments.filter((a) => a.status === "stored");
+      for (const file of files) {
+        actions.push({
+          id: `download-${file.id}`,
+          label:
+            files.length === 1
+              ? t("actions.download")
+              : t("actions.downloadNamed", { name: file.name }),
+          icon: DownloadIcon,
+          href: attachmentUrl(file.id),
+          download: file.name,
+        });
+      }
     }
     if (set.edit && onEdit) {
       actions.push({

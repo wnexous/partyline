@@ -85,3 +85,48 @@ describe("the author's session (SESS-30)", () => {
     expect(row().querySelector("div.min-w-0")).not.toBeNull();
   });
 });
+
+describe("a voice note with text (VOI-09)", () => {
+  const recording = {
+    id: "v1",
+    name: "voice-message-2026-10-24-140509.webm",
+    mime: "audio/webm;codecs=opus",
+    size: 41_230,
+    status: "stored" as const,
+  };
+
+  it("shows the text as a transcript under the player, with its label", async () => {
+    renderItem(
+      makeMessage({
+        text: "the deploy is green",
+        attachments: [recording],
+      }),
+    );
+    await screen.findByRole("group", { name: "Voice message" });
+
+    expect(screen.getByText("Transcript")).toBeInTheDocument();
+    expect(screen.getByTestId("voice-transcript")).toHaveTextContent("the deploy is green");
+    // It is the transcript, not the ordinary message text above the attachment.
+    expect(screen.getAllByText("the deploy is green")).toHaveLength(1);
+  });
+
+  it("shows a caption of a non-audio file as ordinary message text", async () => {
+    renderItem(
+      makeMessage({
+        text: "the report",
+        attachments: [
+          {
+            id: "f1",
+            name: "report.txt",
+            mime: "text/plain",
+            size: 10,
+            status: "stored",
+          },
+        ],
+      }),
+    );
+    await screen.findByText("report.txt");
+    expect(screen.queryByText("Transcript")).toBeNull();
+    expect(screen.getByText("the report")).toBeInTheDocument();
+  });
+});

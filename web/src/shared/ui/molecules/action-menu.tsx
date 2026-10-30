@@ -31,10 +31,18 @@ export interface MenuAction {
   id: string;
   label: string;
   icon: LucideIcon;
-  onSelect: () => void;
+  /** What choosing it does. A link that downloads by itself needs none. */
+  onSelect?: () => void;
   /** Wrong or irreversible: the destructive colour, set apart from the rest. */
   destructive?: boolean;
   disabled?: boolean;
+  /**
+   * A download (or another navigation) the action is: the item is a link with this URL. The
+   * attachment URL is same-origin, so `download` names the saved file instead of opening it.
+   */
+  href?: string;
+  /** The file name a download link offers. */
+  download?: string;
 }
 
 export interface ActionMenuProps {
@@ -123,27 +131,54 @@ function ActionSheet({
         </SheetHeader>
         {header}
         <ul className="px-2 pb-1">
-          {actions.map((a, index) => (
-            <li key={a.id} className={cn(index === rule && "mt-1 border-t pt-1")}>
-              <button
-                type="button"
-                disabled={a.disabled}
-                onClick={() => {
-                  a.onSelect();
-                  onClose();
-                }}
-                className={cn(
-                  "flex min-h-12 w-full items-center gap-3 rounded-md px-3 text-left text-[0.9375rem] outline-none transition-colors hover:bg-accent focus-visible:bg-accent focus-visible:ring-2 focus-visible:ring-ring/70 focus-visible:ring-inset active:bg-accent disabled:pointer-events-none disabled:opacity-50 [&_svg]:size-5 [&_svg]:shrink-0",
-                  a.destructive
-                    ? "font-medium text-destructive [&_svg]:text-destructive"
-                    : "[&_svg]:text-muted-foreground",
-                )}
-              >
+          {actions.map((a, index) => {
+            const className = cn(
+              "flex min-h-12 w-full items-center gap-3 rounded-md px-3 text-left text-[0.9375rem] outline-none transition-colors hover:bg-accent focus-visible:bg-accent focus-visible:ring-2 focus-visible:ring-ring/70 focus-visible:ring-inset active:bg-accent disabled:pointer-events-none disabled:opacity-50 [&_svg]:size-5 [&_svg]:shrink-0",
+              a.destructive
+                ? "font-medium text-destructive [&_svg]:text-destructive"
+                : "[&_svg]:text-muted-foreground",
+            );
+            const content = (
+              <>
                 <a.icon aria-hidden="true" />
                 {a.label}
-              </button>
-            </li>
-          ))}
+              </>
+            );
+            return (
+              <li key={a.id} className={cn(index === rule && "mt-1 border-t pt-1")}>
+                {a.href ? (
+                  <a
+                    href={a.href}
+                    download={a.download}
+                    aria-disabled={a.disabled || undefined}
+                    onClick={(event) => {
+                      if (a.disabled) {
+                        event.preventDefault();
+                        return;
+                      }
+                      a.onSelect?.();
+                      onClose();
+                    }}
+                    className={className}
+                  >
+                    {content}
+                  </a>
+                ) : (
+                  <button
+                    type="button"
+                    disabled={a.disabled}
+                    onClick={() => {
+                      a.onSelect?.();
+                      onClose();
+                    }}
+                    className={className}
+                  >
+                    {content}
+                  </button>
+                )}
+              </li>
+            );
+          })}
         </ul>
         {/* Last in the page's order, drawn at the top right: Tab reaches the actions first. */}
         <SheetClose asChild>
@@ -200,14 +235,28 @@ function ActionPopup({
         {actions.map((a, index) => (
           <Fragment key={a.id}>
             {index === rule ? <DropdownMenuSeparator /> : null}
-            <DropdownMenuItem
-              variant={a.destructive ? "destructive" : "default"}
-              disabled={a.disabled}
-              onSelect={() => a.onSelect()}
-            >
-              <a.icon aria-hidden="true" />
-              {a.label}
-            </DropdownMenuItem>
+            {a.href ? (
+              <DropdownMenuItem
+                asChild
+                variant={a.destructive ? "destructive" : "default"}
+                disabled={a.disabled}
+                onSelect={() => a.onSelect?.()}
+              >
+                <a href={a.href} download={a.download}>
+                  <a.icon aria-hidden="true" />
+                  {a.label}
+                </a>
+              </DropdownMenuItem>
+            ) : (
+              <DropdownMenuItem
+                variant={a.destructive ? "destructive" : "default"}
+                disabled={a.disabled}
+                onSelect={() => a.onSelect?.()}
+              >
+                <a.icon aria-hidden="true" />
+                {a.label}
+              </DropdownMenuItem>
+            )}
           </Fragment>
         ))}
       </DropdownMenuContent>
