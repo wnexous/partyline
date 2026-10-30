@@ -56,9 +56,11 @@ no inbound port, works behind NAT.
   per-op timeouts), state updates into container_agents, audit of register/rename/delete.
 - `internal/ownersecrets`: CRUD; `Open(ctx, owner, ids)` for the container service only.
 - `internal/containeragents`: create (identity with machine `container:<container-name>` and folder
-  `/workspace`, agent token, env = PARTYLINE_URL, PARTYLINE_TOKEN, PARTYLINE_HARNESS,
-  PARTYLINE_REPO, PARTYLINE_REPO_REF + mapped secrets), lifecycle, logs, delete (+ volume) and
-  token revoke, audit, last_error.
+  `/workspace/repo`, else `/workspace`; agent token; env = PARTYLINE_URL, PARTYLINE_TOKEN,
+  PARTYLINE_HARNESS, PARTYLINE_MACHINE and PARTYLINE_FOLDER of that AI, PARTYLINE_REPO,
+  PARTYLINE_REPO_REF + mapped secrets), lifecycle, logs, delete (+ volume) and token revoke,
+  audit, last_error. `PARTYLINE_MACHINE`/`PARTYLINE_FOLDER` are reserved like the rest, and are
+  sent again on a recreate (start of a missing container, PATCH of the credentials).
 - CLI `internal/cli/runner.go`: `partyline runner [--name N] [--check]`, `partyline runner install`
   (systemd user unit `partyline-runner.service` with `Restart=always`; prints the
   `loginctl enable-linger` hint), `partyline runner uninstall`. Executor `internal/runnerexec` with
@@ -73,8 +75,10 @@ no inbound port, works behind NAT.
 util-linux `script` + node LTS + bun + pinned Claude Code, pi, OpenCode, omp + the partyline
 binary (built in a Go stage with the server Dockerfile's flags). Entrypoint (`deploy/agent/entrypoint.sh`,
 POSIX sh, `set -eu`, tracing off): validate `PARTYLINE_URL`, `PARTYLINE_TOKEN` and
-`PARTYLINE_HARNESS`; clone `PARTYLINE_REPO`@`PARTYLINE_REPO_REF` into `/workspace/repo` when
-empty; log the CLI in and register the harness in one non-interactive step
+`PARTYLINE_HARNESS`; create the session folder (`PARTYLINE_FOLDER`, else `/workspace/repo` with a
+repository and `/workspace` without one), clone `PARTYLINE_REPO`@`PARTYLINE_REPO_REF` into exactly
+that folder when it is empty, `cd` into it and export it as `PARTYLINE_FOLDER`; log the CLI in and
+register the harness in one non-interactive step
 (`partyline setup --url … --token-stdin --harness … --always --yes`, which writes
 `~/.config/partyline/config.json` mode 0600); run `partyline $PARTYLINE_HARNESS --principal`
 inside `script -qfec` (TTY), restarting with backoff 1s→60s, reset after 10 min up. `--always` is
@@ -96,7 +100,13 @@ itself, so the entrypoint writes no credential file and requires at least one va
 | omp | `omp` | `OPENCODE_API_KEY`, `ANTHROPIC_API_KEY`, `OPENAI_API_KEY`, `GEMINI_API_KEY`, `OPENROUTER_API_KEY` |
 
 `PARTYLINE_WORKSPACE` (default `/workspace`) is optional; `/workspace` is the one volume the
-container AI keeps (CA-05).
+container AI keeps (CA-05). The CLI in the container reports `PARTYLINE_MACHINE` (the AI's
+machine, `container:<container-name>`) and `PARTYLINE_FOLDER` (its folder) instead of the
+container's own hostname and working directory: without them the session would resolve to (and
+create) another AI named after the container runtime's hostname, which is exactly the live bug the
+identity variables fix. `PARTYLINE_MACHINE` is read by `channel.MachineName`, which
+`sessionIdentity`, `machineName` and the launcher all use, so `channel`, `listen`, `setup` and
+`runner` name the same machine.
 
 ## Unattended Claude Code (decision, T6)
 Claude Code 2.1.x shows a confirmation dialog on every launch of

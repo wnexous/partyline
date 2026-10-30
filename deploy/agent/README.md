@@ -26,15 +26,19 @@ the arguments below and a named volume for `/workspace`.
 
 1. validates `PARTYLINE_URL`, `PARTYLINE_TOKEN` and `PARTYLINE_HARNESS`, and that the harness has
    a credential variable set (below);
-2. when `PARTYLINE_REPO` is set and `/workspace/repo` is empty, runs
-   `git clone --depth 50 --branch "$PARTYLINE_REPO_REF"` into it;
-3. logs the partyline CLI in and registers the harness in one non-interactive step:
+2. creates the session's folder (`PARTYLINE_FOLDER`, else `$PARTYLINE_WORKSPACE/repo` with a
+   repository and `$PARTYLINE_WORKSPACE` without one) and, when `PARTYLINE_REPO` is set and the
+   folder is empty, runs `git clone --depth 50 --branch "$PARTYLINE_REPO_REF"` into exactly that
+   folder;
+3. `cd`s into that folder and exports it as `PARTYLINE_FOLDER`, so the AI the CLI reports is the AI
+   the container was created for, whatever the container's own working directory is;
+4. logs the partyline CLI in and registers the harness in one non-interactive step:
    `partyline setup --url "$PARTYLINE_URL" --token-stdin --harness "$HARNESS" --always --yes`
    (writes `/home/agent/.config/partyline/config.json`, mode 0600, and the harness's
    extension/plugin/MCP entry);
-4. loops `script -qfec "partyline $HARNESS --principal" /dev/null` in the workspace folder,
-   restarting with an exponential backoff of 1s doubling to 60s, reset after a session that
-   stayed up for 10 minutes.
+5. loops `script -qfec "partyline $HARNESS --principal" /dev/null` in that folder, restarting with
+   an exponential backoff of 1s doubling to 60s, reset after a session that stayed up for 10
+   minutes.
 
 `--principal` makes the harness session the AI's principal session, so Partyline pins the
 harness's session id and a message always reaches this session. `--always` is a `partyline setup`
@@ -93,9 +97,15 @@ Optional:
 
 | Variable | Default | Meaning |
 | --- | --- | --- |
-| `PARTYLINE_REPO` | unset | Repository to clone into `/workspace/repo` when it is empty (`https://…`). |
+| `PARTYLINE_MACHINE` | the container's hostname | The AI's machine, `container:<container-name>`. The CLI reports it instead of the container's hostname (which belongs to the container runtime and changes with every container), so the session joins the AI the container was created for. |
+| `PARTYLINE_FOLDER` | `$PARTYLINE_WORKSPACE/repo` with a repository, else `$PARTYLINE_WORKSPACE` | The AI's folder. The entrypoint works in exactly this folder and the CLI reports it. |
+| `PARTYLINE_REPO` | unset | Repository cloned into the session's folder when it is empty (`https://…`). |
 | `PARTYLINE_REPO_REF` | `main` | Branch or tag cloned from `PARTYLINE_REPO`. |
-| `PARTYLINE_WORKSPACE` | `/workspace` | Where the repository lives; the session's folder is `$PARTYLINE_WORKSPACE/repo` when it exists, else `$PARTYLINE_WORKSPACE`. |
+| `PARTYLINE_WORKSPACE` | `/workspace` | Where the workspace lives when `PARTYLINE_FOLDER` is not set: the session's folder is `$PARTYLINE_WORKSPACE/repo` with a repository, else `$PARTYLINE_WORKSPACE`. |
+
+`PARTYLINE_MACHINE` and `PARTYLINE_FOLDER` are set by Partyline (`internal/containeragents`) from the
+AI's own identity; a container started by hand needs both to join the AI it was created for. A
+mapping of the owner's secrets can never replace them.
 
 Harness credentials: exactly one of the variables in a row is enough; they are provider keys the
 harness reads from the environment itself, so the entrypoint writes no credential file.
@@ -118,7 +128,7 @@ session that could not authenticate.
 
 | Path | What lives there |
 | --- | --- |
-| `/workspace` | The workspace: `repo/` (the cloned repository) and everything the AI writes. Give each container AI its own named volume so a restart or a server reboot keeps it (CA-05). |
+| `/workspace` | The workspace: `repo/` (the cloned repository) and everything the AI writes. Give each container AI its own named volume so a restart or a server reboot keeps it (CA-05). The session folder is inside it (`/workspace/repo`, else `/workspace`), so a clone and the AI's own files share the volume. |
 
 The volume is created from this image, so a fresh named volume inherits `agent`'s ownership of
 `/workspace`. A pre-existing directory mounted there that another uid owns makes `git clone`

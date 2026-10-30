@@ -51,3 +51,21 @@ recreates the container with the same volume; the protocol reports `restarting` 
 shortcut next to the last error. Tests: two containers on one runner, credential refusals, the
 credential PATCH (success and offline), spec/executor/hub for `restarting` and `last_log`, web unit
 tests. Status: done
+
+## T10 — hotfix after the live container start (CA-01, CA-04)
+Found on prod after T9: the container came up running opencode in `/workspace/repo`, but the AI
+stayed offline because the CLI inside the container identified with the container's own hostname
+(`f38b3aaa1710`) and working directory, so it resolved (and created) a different AI. The CLI now
+honours `PARTYLINE_MACHINE` as the machine it reports (`channel.MachineName`, used by
+`sessionIdentity`, `machineName` for `setup`/`runner` and the launcher) and `PARTYLINE_FOLDER` as
+its folder; `internal/containeragents` passes the AI's machine and folder to the container as those
+two reserved variables on a create and on every recreate (start of a missing container, PATCH of
+the credentials); `deploy/agent/entrypoint.sh` creates exactly `$PARTYLINE_FOLDER`, clones the
+repository into it and `cd`s there; the docs and the image README record the contract. Also found:
+the runner exited with "the server refused the runner: 502" when a deploy restarted the server
+behind a proxy; a 5xx or a network error on register/WebSocket is now retried forever with the same
+backoff and only a 401/403 ends it. Tests: `channel.MachineName`, the session identity, a channel
+and a listen session that join the created container AI from the two variables, the container
+environment, the recreated container keeping the identity, a server test where headers built from
+the run's environment resolve to the created AI (online, no new AI), and a runner test with a
+server that answers 502 three times before it accepts. Status: done

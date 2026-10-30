@@ -19,10 +19,12 @@ started and managed from the web app (owner request 2026-10-26, defaults agreed 
 
 ## Requirements
 1. `partyline runner` on a server SHALL log in (device-code flow, or the saved login), register a
-   runner for the owner (name defaults to the hostname) and keep a live outbound connection; the
-   web app SHALL list the owner's runners with online state, last seen, Docker version and the
-   containers on each, and let the owner rename or remove a runner (removal revokes its token).
-   (CA-01)
+   runner for the owner (name defaults to the hostname) and keep a live outbound connection; a 5xx
+   answer or a network error on register or on the WebSocket SHALL be retried forever with the same
+   backoff, so a deploy never leaves the machine unregistered, and only a refused or revoked token
+   (401 or 403) SHALL end the command. The web app SHALL list the owner's runners with online state,
+   last seen, Docker version and the containers on each, and let the owner rename or remove a runner
+   (removal revokes its token). (CA-01)
 2. On connect the runner SHALL report whether Docker is usable (version, or why not); `partyline
    runner --check` prints the same locally; `partyline runner install` writes a systemd user
    service so it survives reboots. (CA-02)
@@ -33,8 +35,11 @@ started and managed from the web app (owner request 2026-10-26, defaults agreed 
    variables (secret name → variable name) and limits (CPU, memory). The AI's identity SHALL be its
    own container (machine `container:<container-name>`), so one runner can run many container AIs.
    Partyline SHALL create the AI's identity and an agent token, and start a container on that
-   server that runs the harness with Partyline connected; the AI SHALL come online as a normal AI
-   with the container session as its principal. A create whose mapping lacks a variable the chosen
+   server that runs the harness with Partyline connected; the container SHALL be handed that
+   machine and folder as `PARTYLINE_MACHINE` and `PARTYLINE_FOLDER`, SHALL work in that folder, and
+   the CLI SHALL report them as the session's machine and folder, so the session inside the
+   container IS that AI (no second AI named after the container's hostname is created); the AI
+   SHALL come online as a normal AI with the container session as its principal. A create whose mapping lacks a variable the chosen
    harness reads SHALL be refused (422 `credentials_required`), because the app could never sign in.
    (CA-04)
 5. The container SHALL restart by itself after a crash or a server reboot (restart policy) and keep
