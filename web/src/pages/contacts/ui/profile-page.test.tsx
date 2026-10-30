@@ -1,4 +1,5 @@
 import { screen } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { json, mockApi } from "@/test/fetch";
 import { makeAI, makeIntelligence, makeMe, makeProfile } from "@/test/fixtures";
@@ -57,6 +58,29 @@ describe("an outdated principal session on the profile (SESS-63)", () => {
     );
     expect(screen.queryByTestId("session-outdated-pi-2")).toBeNull();
     expect(screen.getAllByTestId("profile-principal-outdated")).toHaveLength(1);
+    expect(screen.queryByTestId("session-notifications-pi-2")).toBeNull();
+  });
+
+  it("offers each session's notifications to whoever manages the AI (SN-08)", async () => {
+    const managed = outdatedProfile();
+    if (managed.ai) managed.ai.my_level = "manage";
+    mockApi({
+      "GET /me": json(200, makeMe()),
+      "GET /conversations": json(200, { items: [] }),
+      "GET /intelligences/a1": json(200, managed),
+      "GET /agents/a1/sessions/pi-2/notifications": json(200, {
+        items: [{ room_id: "r1", name: "Support", kind: "group", notify: "mentions", unread: 2 }],
+      }),
+    });
+    renderRoute("/contacts/a1");
+    await screen.findByRole("heading", { name: "Atlas", level: 1 });
+
+    await userEvent.setup().click(screen.getByTestId("session-notifications-pi-2"));
+    expect(await screen.findByText("Notifications of Atlas :pi-2")).toBeInTheDocument();
+    expect(
+      await screen.findByRole("switch", { name: "Notifications in Support" }),
+    ).not.toBeChecked();
+    expect(screen.getByText(/2 unread/)).toBeInTheDocument();
   });
 
   it("says nothing when every session runs a current client", async () => {

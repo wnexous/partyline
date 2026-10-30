@@ -57,6 +57,13 @@ export const errorTextRules = {
     [{ status: 502 }, "container.runnerFailed"],
     [{ status: 504 }, "container.runnerTimeout"],
   ],
+  /** A session's notifications (SN-08): a setting is 422 and names the field. */
+  notifications: [
+    [{ status: 0 }, "error.network"],
+    [{ status: 403 }, "notifications.forbidden"],
+    [{ status: 404 }, "notifications.notFound"],
+    [{ status: 422 }, "server"],
+  ],
   /** An owner's secret (CA-03): the value's own rules are 422 and name the field. */
   secret: [
     [{ status: 0 }, "error.network"],

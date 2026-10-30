@@ -49,6 +49,31 @@ describe("SessionList (SESS-44)", () => {
   });
 });
 
+describe("SessionList notifications (SN-08)", () => {
+  it("marks only the sessions muted in this conversation, and lets the host render their label", () => {
+    renderWithProviders(
+      <SessionList
+        sessions={[session(""), session("pi-2", { notify: "mentions" })]}
+        testId="sessions"
+        renderSession={(s) => <button type="button">{s.label || "principal"}</button>}
+      />,
+    );
+    expect(screen.getAllByTestId("session-muted")).toHaveLength(1);
+    expect(screen.getByTestId("session-muted")).toHaveTextContent(
+      "Notifications off in this conversation",
+    );
+    expect(screen.getByText("pi-2").closest("button")).not.toBeNull();
+    expect(screen.queryAllByTestId("session-label")).toHaveLength(0);
+  });
+
+  it("shows no marker where the data carries no setting, as an AI's profile does not", () => {
+    renderWithProviders(
+      <SessionList sessions={[session(""), session("pi-2")]} testId="sessions" />,
+    );
+    expect(screen.queryByTestId("session-muted")).toBeNull();
+  });
+});
+
 describe("SessionList outdated clients (SESS-63)", () => {
   it("warns for an outdated session and names it", () => {
     renderWithProviders(

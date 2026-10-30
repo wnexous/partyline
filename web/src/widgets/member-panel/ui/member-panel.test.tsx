@@ -112,6 +112,68 @@ describe("member panel, group (CID-20, CID-22)", () => {
     expect(screen.queryByText(/^(Agents|Users)$/)).toBeNull();
   });
 
+  it("marks a session muted here and opens its notifications for a manager (SN-08)", async () => {
+    mockApi({
+      "GET /me": json(200, makeMe()),
+      "GET /agents/a1/sessions/claude-2/notifications": json(200, {
+        items: [{ room_id: "r1", name: "Support", kind: "group", notify: "mentions", unread: 2 }],
+      }),
+    });
+    const online = makeMember({
+      id: "mb-atlas",
+      member_id: "a1",
+      name: "Atlas",
+      intelligence: atlas,
+      online: true,
+      sessions: [
+        {
+          label: "claude-2",
+          harness: "claude",
+          connected_at: "2026-10-28T14:05:00Z",
+          notify: "mentions",
+        },
+      ],
+    });
+    renderWithRouter(<MemberPanel roomId="r1" members={[online]} canManage loading={false} />);
+
+    const row = within(await screen.findByTestId("member-mb-atlas"));
+    expect(row.getByTestId("session-muted")).toHaveTextContent(
+      "Notifications off in this conversation",
+    );
+    await userEvent
+      .setup()
+      .click(row.getByRole("button", { name: "Notification settings of Atlas" }));
+    expect(await screen.findByText("Notifications in this conversation")).toBeInTheDocument();
+    expect(
+      await screen.findByRole("switch", { name: "Notifications in Support" }),
+    ).not.toBeChecked();
+  });
+
+  it("offers no notification control to someone who does not manage the AI (SN-08)", async () => {
+    mockApi({ "GET /me": json(200, makeMe()) });
+    const online = makeMember({
+      id: "mb-atlas",
+      member_id: "a1",
+      name: "Atlas",
+      intelligence: atlas,
+      online: true,
+      sessions: [
+        {
+          label: "claude-2",
+          harness: "claude",
+          connected_at: "2026-10-28T14:05:00Z",
+          notify: "mentions",
+        },
+      ],
+    });
+    renderWithRouter(
+      <MemberPanel roomId="r1" members={[online]} canManage={false} loading={false} />,
+    );
+    const row = within(await screen.findByTestId("member-mb-atlas"));
+    expect(row.getByTestId("session-muted")).toBeInTheDocument();
+    expect(row.queryByRole("button", { name: /Notification settings/ })).toBeNull();
+  });
+
   it("puts no kind badge next to a member, and gives an AI and a user the same row", async () => {
     mockApi({ "GET /me": json(200, makeMe()) });
     renderWithRouter(

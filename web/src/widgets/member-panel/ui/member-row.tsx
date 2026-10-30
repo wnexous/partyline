@@ -14,6 +14,7 @@ import type { PersonRow } from "@/entities/room-member";
 import { memberSettingsSummary } from "@/entities/room-member";
 import { MemberSettings } from "@/features/edit-member-settings";
 import { MakePrincipalButton } from "@/features/make-principal";
+import { MemberSessionNotifyButton } from "@/features/session-notifications";
 import { useStartConversation } from "@/features/start-conversation";
 import { useI18n } from "@/shared/i18n";
 import { useTouchFirst } from "@/shared/lib/device";
@@ -81,6 +82,18 @@ export function MemberRow({
           sessions={row.sessions}
           online={online}
           testId={`member-sessions-${row.rowId}`}
+          renderSession={
+            group?.canManage
+              ? (session) => (
+                  <MemberSessionNotifyButton
+                    agentId={row.id}
+                    label={session.label}
+                    sessionName={row.name}
+                    roomId={group.roomId}
+                  />
+                )
+              : undefined
+          }
         />
         <PrincipalOfflineLine
           since={member.principal_offline_since}

@@ -39,6 +39,7 @@ import {
   RemoveFromOrgDialog,
 } from "@/features/manage-org-member";
 import { ContainerSection } from "@/features/operate-container";
+import { SessionNotificationsButton } from "@/features/session-notifications";
 import { MessageButton } from "@/features/start-conversation";
 import { isApiError } from "@/shared/api/client";
 import {
@@ -258,6 +259,14 @@ function ProfileView({ profile }: { profile: IntelligenceProfile }) {
                   <SessionOutdatedWarning
                     testId={`session-outdated-${session.label || "principal"}`}
                     className="w-full"
+                  />
+                ) : null}
+                {/* Whoever manages the AI chooses what each session is notified of (SN-08). */}
+                {manages ? (
+                  <SessionNotificationsButton
+                    agentId={profile.id}
+                    label={session.label}
+                    sessionName={`${name} ${session.label ? `:${session.label}` : t("profile.sessionPrincipal")}`}
                   />
                 ) : null}
                 {/* Only whoever manages the AI changes its principal, and only to a session that
