@@ -83,14 +83,16 @@ WHERE m.kind = 'agent' AND m.member_id = ?
 ORDER BY name, r.id;
 
 -- name: CountAgentBacklog :one
--- A message with any agent_session_deliveries row belongs to a label (or already fell back to the
--- principal through its fallback list), so it is not read twice (SESS-24).
+-- A message with an addressed agent_session_deliveries row belongs to a label (or already fell back to the
+-- principal through its fallback list), so it is not read twice (SESS-24). A copy of a catch-up batch is
+-- not one of those: it only says a session was given the message as context, so the principal's queue
+-- still holds it (SN-03).
 SELECT COUNT(*) FROM messages
 WHERE room_id = sqlc.arg(room_id) AND seq > sqlc.arg(after_seq)
   AND NOT (author_kind = 'agent' AND author_id = sqlc.arg(agent_id))
   AND NOT EXISTS (
       SELECT 1 FROM agent_session_deliveries d
-      WHERE d.message_id = messages.id AND d.agent_id = sqlc.arg(agent_id));
+      WHERE d.message_id = messages.id AND d.agent_id = sqlc.arg(agent_id) AND d.context = 0);
 
 -- name: ListAgentBacklog :many
 SELECT * FROM message_views
@@ -98,7 +100,7 @@ WHERE room_id = sqlc.arg(room_id) AND seq > sqlc.arg(after_seq)
   AND NOT (author_kind = 'agent' AND author_id = sqlc.arg(agent_id))
   AND NOT EXISTS (
       SELECT 1 FROM agent_session_deliveries d
-      WHERE d.message_id = message_views.id AND d.agent_id = sqlc.arg(agent_id))
+      WHERE d.message_id = message_views.id AND d.agent_id = sqlc.arg(agent_id) AND d.context = 0)
 ORDER BY seq DESC
 LIMIT sqlc.arg(limit);
 

@@ -125,6 +125,42 @@ func (q *Queries) CountSessionUnreadByRoom(ctx context.Context, arg CountSession
 	return items, nil
 }
 
+const countSessionUnreadInRoom = `-- name: CountSessionUnreadInRoom :one
+SELECT COUNT(*) FROM messages m
+WHERE m.room_id = ?1 AND m.seq > ?2 AND m.seq < ?3
+  AND m.deleted_at IS NULL
+  AND NOT (m.author_kind = 'agent' AND m.author_id = ?4 AND m.author_label = ?5)
+  AND NOT EXISTS (
+      SELECT 1 FROM agent_session_deliveries d
+      WHERE d.message_id = m.id AND d.agent_id = ?4 AND d.label = ?6)
+`
+
+type CountSessionUnreadInRoomParams struct {
+	RoomID      string
+	AfterSeq    int64
+	BeforeSeq   int64
+	AgentID     string
+	AuthorLabel string
+	Label       string
+}
+
+// How many messages of one room a session has not read and that ListSessionUnread would list (SN-03): the
+// difference between this count and the number listed is the "N earlier messages skipped" note of the
+// catch-up batch.
+func (q *Queries) CountSessionUnreadInRoom(ctx context.Context, arg CountSessionUnreadInRoomParams) (int64, error) {
+	row := q.db.QueryRowContext(ctx, countSessionUnreadInRoom,
+		arg.RoomID,
+		arg.AfterSeq,
+		arg.BeforeSeq,
+		arg.AgentID,
+		arg.AuthorLabel,
+		arg.Label,
+	)
+	var count int64
+	err := row.Scan(&count)
+	return count, err
+}
+
 const createSessionRoomState = `-- name: CreateSessionRoomState :exec
 INSERT INTO session_room_state (agent_id, session_key, room_id, read_seq, notify, updated_at)
 VALUES (?, ?, ?, ?, ?, ?)
@@ -170,6 +206,31 @@ func (q *Queries) GetRoomHighSeq(ctx context.Context, id string) (int64, error) 
 	return seq, err
 }
 
+const getSessionJoinSeq = `-- name: GetSessionJoinSeq :one
+SELECT CAST(COALESCE(MAX(m.seq), 0) AS INTEGER) AS seq
+FROM room_members rm
+LEFT JOIN messages m ON m.room_id = rm.room_id AND m.created_at <= rm.created_at
+WHERE rm.room_id = ?1 AND rm.kind = 'agent' AND rm.member_id = ?2
+`
+
+type GetSessionJoinSeqParams struct {
+	RoomID  string
+	AgentID string
+}
+
+// The join point of a session that has no state row in a room: the highest sequence the room had assigned
+// when the AI became a member of it (SN-01). A session with a live connection that joins a room after it
+// attached - a DM created for the AI, a group it was added to - starts caught up at that moment, not at 0,
+// so it is not flooded with the room's history, and the messages of the room that arrive afterwards are
+// unread for it. The AI's membership row is created with the room (a DM) or when it is added (a group),
+// and messages carry the same creation clock.
+func (q *Queries) GetSessionJoinSeq(ctx context.Context, arg GetSessionJoinSeqParams) (int64, error) {
+	row := q.db.QueryRowContext(ctx, getSessionJoinSeq, arg.RoomID, arg.AgentID)
+	var seq int64
+	err := row.Scan(&seq)
+	return seq, err
+}
+
 const getSessionRoomState = `-- name: GetSessionRoomState :one
 SELECT agent_id, session_key, room_id, read_seq, notify, updated_at FROM session_room_state WHERE agent_id = ? AND session_key = ? AND room_id = ?
 `
@@ -193,6 +254,28 @@ func (q *Queries) GetSessionRoomState(ctx context.Context, arg GetSessionRoomSta
 		&i.UpdatedAt,
 	)
 	return i, err
+}
+
+const hasSessionDelivery = `-- name: HasSessionDelivery :one
+SELECT EXISTS (
+    SELECT 1 FROM agent_session_deliveries d
+    WHERE d.message_id = ?1 AND d.agent_id = ?2 AND d.label = ?3
+) AS delivered
+`
+
+type HasSessionDeliveryParams struct {
+	MessageID string
+	AgentID   string
+	Label     string
+}
+
+// Whether a message already reached one session of the AI (as the addressed delivery or as a copy of a
+// catch-up batch), so a retried push is not written again (SN-03).
+func (q *Queries) HasSessionDelivery(ctx context.Context, arg HasSessionDeliveryParams) (bool, error) {
+	row := q.db.QueryRowContext(ctx, hasSessionDelivery, arg.MessageID, arg.AgentID, arg.Label)
+	var delivered bool
+	err := row.Scan(&delivered)
+	return delivered, err
 }
 
 const listSessionRoomStates = `-- name: ListSessionRoomStates :many
@@ -235,14 +318,58 @@ func (q *Queries) ListSessionRoomStates(ctx context.Context, arg ListSessionRoom
 	return items, nil
 }
 
+const listSessionRoomStatesInRoom = `-- name: ListSessionRoomStatesInRoom :many
+SELECT agent_id, session_key, room_id, read_seq, notify, updated_at FROM session_room_state WHERE agent_id = ?1 AND room_id = ?2
+`
+
+type ListSessionRoomStatesInRoomParams struct {
+	AgentID string
+	RoomID  string
+}
+
+// Every state row of the AI in one room, whatever its session: the notification setting and the read
+// position of each session a message may notify (SN-02, SN-03).
+func (q *Queries) ListSessionRoomStatesInRoom(ctx context.Context, arg ListSessionRoomStatesInRoomParams) ([]SessionRoomState, error) {
+	rows, err := q.db.QueryContext(ctx, listSessionRoomStatesInRoom, arg.AgentID, arg.RoomID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []SessionRoomState
+	for rows.Next() {
+		var i SessionRoomState
+		if err := rows.Scan(
+			&i.AgentID,
+			&i.SessionKey,
+			&i.RoomID,
+			&i.ReadSeq,
+			&i.Notify,
+			&i.UpdatedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const listSessionUnread = `-- name: ListSessionUnread :many
 SELECT id, room_id, seq, author_kind, author_id, author_user_id, author_iid, sender_id, sender_alt_id, sender_name, kind, text, reply_to, recipients_json, external_id, created_at, edited_at, deleted_at, interactive_json, answers_json, author_label, author_name, author_handle, author_ikind, author_avatar FROM (
-    SELECT id, room_id, seq, author_kind, author_id, author_user_id, author_iid, sender_id, sender_alt_id, sender_name, kind, text, reply_to, recipients_json, external_id, created_at, edited_at, deleted_at, interactive_json, answers_json, author_label, author_name, author_handle, author_ikind, author_avatar FROM message_views
-    WHERE room_id = ?1 AND seq > ?2
-      AND deleted_at IS NULL
-      AND NOT (author_kind = 'agent' AND author_id = ?3 AND author_label = ?4)
-    ORDER BY seq DESC, id DESC
-    LIMIT ?5
+    SELECT id, room_id, seq, author_kind, author_id, author_user_id, author_iid, sender_id, sender_alt_id, sender_name, kind, text, reply_to, recipients_json, external_id, created_at, edited_at, deleted_at, interactive_json, answers_json, author_label, author_name, author_handle, author_ikind, author_avatar FROM message_views mv
+    WHERE mv.room_id = ?1 AND mv.seq > ?2 AND mv.seq < ?3
+      AND mv.deleted_at IS NULL
+      AND NOT (mv.author_kind = 'agent' AND mv.author_id = ?4 AND mv.author_label = ?5)
+      AND NOT EXISTS (
+          SELECT 1 FROM agent_session_deliveries d
+          WHERE d.message_id = mv.id AND d.agent_id = ?4 AND d.label = ?6)
+    ORDER BY mv.seq DESC, mv.id DESC
+    LIMIT ?7
 )
 ORDER BY seq ASC, id ASC
 `
@@ -250,21 +377,27 @@ ORDER BY seq ASC, id ASC
 type ListSessionUnreadParams struct {
 	RoomID      string
 	AfterSeq    int64
+	BeforeSeq   int64
 	AgentID     string
 	AuthorLabel string
+	Label       string
 	Limit       int64
 }
 
 // The messages of one room a session has not read, at most limit of them, oldest first: the catch-up
 // batch that goes with a message that notifies the session (SN-03). The cap keeps the newest ones (a
 // limit of 50 reads the last 50 and the caller notes how many earlier ones it skipped) and the batch is
-// ordered oldest first. The session's own messages are not part of it (SN-06).
+// ordered oldest first. The session's own messages are not part of it (SN-06), the message that is being
+// pushed now is not either (before_seq), and neither is one that already reached the session as a copy
+// (a delivery row for its label): SN-03 pushes a message to a session once.
 func (q *Queries) ListSessionUnread(ctx context.Context, arg ListSessionUnreadParams) ([]MessageView, error) {
 	rows, err := q.db.QueryContext(ctx, listSessionUnread,
 		arg.RoomID,
 		arg.AfterSeq,
+		arg.BeforeSeq,
 		arg.AgentID,
 		arg.AuthorLabel,
+		arg.Label,
 		arg.Limit,
 	)
 	if err != nil {

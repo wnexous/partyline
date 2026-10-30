@@ -42,8 +42,10 @@ func TestAgentRenameShowsEverywhere(t *testing.T) {
 	after := f.postAsAgent(t, "after")
 	require.Equal(t, "Atlas bot", timelineAuthor(t, f.alice, f.room.ID, after.ID))
 
-	f.post(f.alice, "nobody is named here")
+	plain := f.post(f.alice, "nobody is named here")
 	mention := f.post(f.alice, "ping @atlas bot, please")
+	// SN-03: the message that was not a mention comes as context of the one that is.
+	require.Equal(t, plain.ID, conn.Message(wsWait).Message.ID)
 	require.Equal(t, mention.ID, conn.Message(wsWait).Message.ID, "only the mention by the new name is pushed")
 
 	setMember(t, f.alice, f.room.ID, f.agentID, dto.UpdateMemberRequest{DisplayName: ptr("Vega")})

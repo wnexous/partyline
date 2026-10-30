@@ -58,7 +58,7 @@ WHERE room_id = ?1 AND seq > ?2
   AND NOT (author_kind = 'agent' AND author_id = ?3)
   AND NOT EXISTS (
       SELECT 1 FROM agent_session_deliveries d
-      WHERE d.message_id = messages.id AND d.agent_id = ?3)
+      WHERE d.message_id = messages.id AND d.agent_id = ?3 AND d.context = 0)
 `
 
 type CountAgentBacklogParams struct {
@@ -67,8 +67,10 @@ type CountAgentBacklogParams struct {
 	AgentID  string
 }
 
-// A message with any agent_session_deliveries row belongs to a label (or already fell back to the
-// principal through its fallback list), so it is not read twice (SESS-24).
+// A message with an addressed agent_session_deliveries row belongs to a label (or already fell back to the
+// principal through its fallback list), so it is not read twice (SESS-24). A copy of a catch-up batch is
+// not one of those: it only says a session was given the message as context, so the principal's queue
+// still holds it (SN-03).
 func (q *Queries) CountAgentBacklog(ctx context.Context, arg CountAgentBacklogParams) (int64, error) {
 	row := q.db.QueryRowContext(ctx, countAgentBacklog, arg.RoomID, arg.AfterSeq, arg.AgentID)
 	var count int64
@@ -455,7 +457,7 @@ WHERE room_id = ?1 AND seq > ?2
   AND NOT (author_kind = 'agent' AND author_id = ?3)
   AND NOT EXISTS (
       SELECT 1 FROM agent_session_deliveries d
-      WHERE d.message_id = message_views.id AND d.agent_id = ?3)
+      WHERE d.message_id = message_views.id AND d.agent_id = ?3 AND d.context = 0)
 ORDER BY seq DESC
 LIMIT ?4
 `

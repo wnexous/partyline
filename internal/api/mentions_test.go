@@ -41,9 +41,10 @@ func TestMentionsFollowTheProfile(t *testing.T) {
 	setMember(t, f.alice, f.room.ID, f.agentID, dto.UpdateMemberRequest{DisplayName: ptr("Vega")})
 	byRoomName := f.post(f.alice, "and @vega too") // the name set for the AI in this room (GRP-04)
 
-	for _, want := range []string{byHandle.ID, byName.ID, byKeyword.ID, byRoomName.ID} {
-		require.Equal(t, want, conn.Message(wsWait).Message.ID)
-	}
+	// SN-03: the messages it was not notified of come as context of the next notification.
+	messages, context := deliveredFrames(t, conn, quiet)
+	require.Equal(t, []string{byHandle.ID, byName.ID, byKeyword.ID, byRoomName.ID}, frameIDs(messages))
+	require.NotEmpty(t, context)
 	conn.ExpectNone(quiet)
 }
 
@@ -72,6 +73,8 @@ func TestMentionOfAHandleDoesNotReachALongerHandle(t *testing.T) {
 	short := post("@atlas, a question")
 	long := post("@atlas-2, another question")
 	require.Equal(t, short.ID, conns[0].Message(wsWait).Message.ID)
+	// atlas-2 was not notified of the first message: it comes as context of the one that names it (SN-03).
+	require.Equal(t, short.ID, conns[1].Message(wsWait).Message.ID)
 	require.Equal(t, long.ID, conns[1].Message(wsWait).Message.ID)
 	conns[0].ExpectNone(quiet)
 	conns[1].ExpectNone(quiet)

@@ -20,9 +20,10 @@ type AgentPusher interface {
 	// addresses (SESS-21), or "" for the principal session.
 	Push(agentID, target string, m dto.AgentMessage) bool
 	// PushUpdate queues, without blocking, the frame that tells the agent that a message was edited
-	// (dto.AgentFrameTypeMessageEdited) or deleted (dto.AgentFrameTypeMessageDeleted). target is the
-	// session label the text addressed before or after the change.
-	PushUpdate(agentID, target string, t dto.AgentFrameType, m dto.AgentMessage) bool
+	// (dto.AgentFrameTypeMessageEdited) or deleted (dto.AgentFrameTypeMessageDeleted). targets are the
+	// session labels the text addressed before and after the change, "" for the principal: the gateway also
+	// follows every delivery row the message has (SN-09).
+	PushUpdate(agentID string, targets []string, t dto.AgentFrameType, m dto.AgentMessage) bool
 }
 
 // MessageLoader renders a stored message as agents receive it.
@@ -297,14 +298,14 @@ func (d *AgentDispatcher) dispatchUpdate(ctx context.Context, e events.MessageUp
 		if !e.Deleted {
 			targets = append(targets, SessionLabel(a.view.Text, profile.Handle))
 		}
-		for _, target := range dedupeTargets(targets) {
-			d.o.Agents.PushUpdate(agentID, target, frame, dto.AgentMessage{Room: refs.of(agentID), Trusted: trusted, Message: msg})
-		}
+		// One call: the gateway follows the addressed sessions and every delivery row of the message, and
+		// writes each of them once (SN-09).
+		d.o.Agents.PushUpdate(agentID, dedupeTargets(targets), frame, dto.AgentMessage{Room: refs.of(agentID), Trusted: trusted, Message: msg})
 	}
 	// SESS-39: the update reaches the sibling the message addressed before or after the change, and
 	// never another session of the author AI.
 	for _, t := range a.self {
-		d.o.Agents.PushUpdate(t.agentID, t.label, frame, dto.AgentMessage{Room: refs.of(t.agentID), Trusted: true, Message: msg})
+		d.o.Agents.PushUpdate(t.agentID, []string{t.label}, frame, dto.AgentMessage{Room: refs.of(t.agentID), Trusted: true, Message: msg})
 	}
 	return nil
 }

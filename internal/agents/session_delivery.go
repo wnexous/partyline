@@ -54,6 +54,13 @@ type sessionFallback struct {
 	label string
 }
 
+// fallbackRow is one pending addressed row a connection's end hands to the principal: the message and the
+// label whose session did not acknowledge it (SESS-24).
+type fallbackRow struct {
+	messageID string
+	label     string
+}
+
 // roomDelivery is one item of a merged per-room delivery list: a message read from the principal's
 // cursor, or a fallen-back message read from its session delivery row.
 type roomDelivery struct {
@@ -110,15 +117,41 @@ func trustedFor(ctx context.Context, trust delivery.Trust, view db.MessageView, 
 	return trust.Trusts(ctx, author, agentID)
 }
 
-// createSessionDelivery records the ownership of a message pushed towards a label. owner is the owner
-// key of the connection it was pushed to; for a row born fallen back it is "" and fellBackAt is the
-// dispatch time. A retried push keeps the first row (ON CONFLICT DO NOTHING).
-func (g *Gateway) createSessionDelivery(ctx context.Context, messageID, agentID, label, owner string, createdAt int64, fellBackAt sql.NullInt64) error {
+// createSessionDelivery records that a message was pushed to one session of the AI. label is the
+// session's label ("" for the principal, whose row only routes an edit back to it). owner is the owner key
+// of the connection it was pushed to; for a row born fallen back it is "" and fellBackAt is the dispatch
+// time. context marks a copy, which never falls back (SN-03). A retried push keeps the first row
+// (ON CONFLICT DO NOTHING).
+func (g *Gateway) createSessionDelivery(ctx context.Context, messageID, agentID, label, owner string, createdAt int64, fellBackAt sql.NullInt64, context bool) error {
 	return g.d.Store.WithTx(ctx, func(q *db.Queries) error {
 		return q.CreateSessionDelivery(ctx, db.CreateSessionDeliveryParams{
-			MessageID: messageID, AgentID: agentID, Label: label, OwnerLive: owner, CreatedAt: createdAt, FellBackAt: fellBackAt,
+			MessageID: messageID, AgentID: agentID, Label: label, OwnerLive: owner, CreatedAt: createdAt,
+			FellBackAt: fellBackAt, Context: boolToInt64(context),
 		})
 	})
+}
+
+// createSessionDeliveries writes the delivery rows of a catch-up batch in one transaction (SN-03).
+func (g *Gateway) createSessionDeliveries(rows []db.CreateSessionDeliveryParams) error {
+	if len(rows) == 0 {
+		return nil
+	}
+	return g.d.Store.WithTx(g.ctx, func(q *db.Queries) error {
+		for _, r := range rows {
+			if err := q.CreateSessionDelivery(g.ctx, r); err != nil {
+				return err
+			}
+		}
+		return nil
+	})
+}
+
+// boolToInt64 is the stored form of the delivery rows' context flag.
+func boolToInt64(b bool) int64 {
+	if b {
+		return 1
+	}
+	return 0
 }
 
 // ackSessionDelivery is the acknowledgement of the connection that owns a pending row: the row stays as
@@ -142,26 +175,27 @@ func ackFallbackDelivery(ctx context.Context, q *db.Queries, messageID, agentID 
 
 func nullNow() sql.NullInt64 { return sql.NullInt64{Int64: time.Now().UnixMilli(), Valid: true} }
 
-// fallBackOwned ends the ownership of one connection: its pending rows become the principal's and their
-// message ids come back. The rows of messages the AI wrote itself are acknowledged instead and are not
-// returned (SESS-38). It is idempotent: a second call finds nothing.
-func (g *Gateway) fallBackOwned(ctx context.Context, agentID, owner string) ([]string, error) {
+// fallBackOwned ends the ownership of one connection: its pending addressed rows become the principal's
+// and come back with their labels. The rows of messages the AI wrote itself are acknowledged instead and
+// are not returned (SESS-38), and the copies of a catch-up batch are left alone (SN-03). It is idempotent:
+// a second call finds nothing.
+func (g *Gateway) fallBackOwned(ctx context.Context, agentID, owner string) ([]fallbackRow, error) {
 	if owner == "" {
 		return nil, nil // the owner of a row born fallen back is nobody's
 	}
-	var ids []string
+	var out []fallbackRow
 	err := g.d.Store.WithTx(ctx, func(q *db.Queries) error {
 		rows, err := q.FallBackOwnedDeliveries(ctx, db.FallBackOwnedDeliveriesParams{
 			AgentID: agentID, OwnerLive: owner, Now: nullNow(),
 		})
 		for _, r := range rows {
 			if r.FellBackAt.Valid {
-				ids = append(ids, r.MessageID)
+				out = append(out, fallbackRow{messageID: r.MessageID, label: r.Label})
 			}
 		}
 		return err
 	})
-	return ids, err
+	return out, err
 }
 
 // pushToPrincipal queues a message for the AI's principal session without blocking.
@@ -201,14 +235,14 @@ func (g *Gateway) labelConn(agentID, label string) *conn {
 	return c
 }
 
-// deliverOwned routes a message that has a delivery row by what the row says now, which is the first
-// row written for it (a retried push does not change it): an acknowledged message is never delivered
-// again, a fallen-back one goes to the principal with the note, and a pending one goes to the connection
-// that owns it. When that connection ended meanwhile, with its sweep before the row existed, the sweep
-// runs now and the principal receives the row (idempotent: an earlier sweep leaves nothing to take). It
-// reports whether a connection received the message live.
-func (g *Gateway) deliverOwned(agentID string, m dto.AgentMessage) bool {
-	row, err := g.d.Store.R().GetSessionDelivery(g.ctx, db.GetSessionDeliveryParams{MessageID: m.Message.ID, AgentID: agentID})
+// deliverOwned routes a message that has a delivery row for one session by what the row says now, which
+// is the first row written for it (a retried push does not change it): an acknowledged message is never
+// delivered again, a fallen-back one goes to the principal with the note, and a pending one goes to the
+// connection that owns it. When that connection ended meanwhile, with its sweep before the row existed,
+// the sweep runs now and the principal receives the row (idempotent: an earlier sweep leaves nothing to
+// take). It reports whether a connection received the message live.
+func (g *Gateway) deliverOwned(agentID, label string, m dto.AgentMessage) bool {
+	row, err := g.d.Store.R().GetSessionDelivery(g.ctx, db.GetSessionDeliveryParams{MessageID: m.Message.ID, AgentID: agentID, Label: label})
 	if err != nil {
 		g.d.Logger.Error("agent: session delivery read failed", "agent_id", agentID, "message_id", m.Message.ID, "err", err)
 		return false
@@ -281,14 +315,14 @@ func (g *Gateway) connectionKicked(ctx context.Context, agentID string, s Sessio
 
 // sweepEnded falls back what the ended connection c owned, unless its process holds another connection
 // (a reconnect). The caller holds the AI's life lock. The principal owns no rows.
-func (g *Gateway) sweepEnded(ctx context.Context, agentID string, c *conn) ([]string, error) {
+func (g *Gateway) sweepEnded(ctx context.Context, agentID string, c *conn) ([]fallbackRow, error) {
 	if c.labelOf() == "" || g.d.Presence.HoldsLive(agentID, c.liveID) {
 		return nil, nil
 	}
 	return g.fallBackOwned(ctx, agentID, c.owner)
 }
 
-func (g *Gateway) finishSweep(ctx context.Context, agentID string, ids []string, err error) {
+func (g *Gateway) finishSweep(ctx context.Context, agentID string, ids []fallbackRow, err error) {
 	if err != nil {
 		g.d.Logger.Error("agent: session fallback failed", "agent_id", agentID, "err", err)
 		return
@@ -298,25 +332,21 @@ func (g *Gateway) finishSweep(ctx context.Context, agentID string, ids []string,
 
 // pushFallbacks pushes each fallen-back message to a live principal with the note. When the principal is
 // offline the rows stay in its fallback list. It returns the messages the principal received live.
-func (g *Gateway) pushFallbacks(ctx context.Context, agentID string, ids []string) []string {
-	if len(ids) == 0 {
+func (g *Gateway) pushFallbacks(ctx context.Context, agentID string, rows []fallbackRow) []string {
+	if len(rows) == 0 {
 		return nil
 	}
 	var pushed []string
 	trust := g.d.Trust.Open()
 	rooms := map[string]dto.RoomRef{}
-	for _, id := range ids {
+	for _, row := range rows {
+		id := row.messageID
 		view, err := g.d.Store.R().GetMessageView(ctx, id)
 		if errors.Is(err, sql.ErrNoRows) {
 			continue // deleted meanwhile
 		}
 		if err != nil {
 			g.d.Logger.Error("agent: fallback message read failed", "agent_id", agentID, "message_id", id, "err", err)
-			continue
-		}
-		row, err := g.d.Store.R().GetSessionDelivery(ctx, db.GetSessionDeliveryParams{MessageID: id, AgentID: agentID})
-		if err != nil {
-			g.d.Logger.Error("agent: fallback row read failed", "agent_id", agentID, "message_id", id, "err", err)
 			continue
 		}
 		ref, ok := rooms[view.RoomID]
@@ -339,7 +369,7 @@ func (g *Gateway) pushFallbacks(ctx context.Context, agentID string, ids []strin
 			g.d.Logger.Error("agent: fallback message load failed", "agent_id", agentID, "message_id", id, "err", err)
 			continue
 		}
-		if g.pushToPrincipal(agentID, dto.AgentMessage{Room: ref, Trusted: trusted, ForLabel: row.Label, Message: msg}) {
+		if g.pushToPrincipal(agentID, dto.AgentMessage{Room: ref, Trusted: trusted, ForLabel: row.label, Message: msg}) {
 			pushed = append(pushed, id)
 		}
 	}

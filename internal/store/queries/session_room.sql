@@ -17,6 +17,14 @@ ON CONFLICT (agent_id, session_key, room_id) DO NOTHING;
 -- The state of one session in one room (SN-01, SN-02); sql.ErrNoRows for a session that has not joined it.
 SELECT * FROM session_room_state WHERE agent_id = ? AND session_key = ? AND room_id = ?;
 
+-- name: HasSessionDelivery :one
+-- Whether a message already reached one session of the AI (as the addressed delivery or as a copy of a
+-- catch-up batch), so a retried push is not written again (SN-03).
+SELECT EXISTS (
+    SELECT 1 FROM agent_session_deliveries d
+    WHERE d.message_id = sqlc.arg(message_id) AND d.agent_id = sqlc.arg(agent_id) AND d.label = sqlc.arg(label)
+) AS delivered;
+
 -- name: AdvanceSessionReadSeq :exec
 -- Moves a read position forward, never back: an acknowledgement that arrives late, or a catch-up older
 -- than a live push that already moved it, cannot make a session unread what it has read. notify is the
@@ -57,16 +65,38 @@ GROUP BY m.room_id;
 -- The messages of one room a session has not read, at most limit of them, oldest first: the catch-up
 -- batch that goes with a message that notifies the session (SN-03). The cap keeps the newest ones (a
 -- limit of 50 reads the last 50 and the caller notes how many earlier ones it skipped) and the batch is
--- ordered oldest first. The session's own messages are not part of it (SN-06).
+-- ordered oldest first. The session's own messages are not part of it (SN-06), the message that is being
+-- pushed now is not either (before_seq), and neither is one that already reached the session as a copy
+-- (a delivery row for its label): SN-03 pushes a message to a session once.
 SELECT * FROM (
-    SELECT * FROM message_views
-    WHERE room_id = sqlc.arg(room_id) AND seq > sqlc.arg(after_seq)
-      AND deleted_at IS NULL
-      AND NOT (author_kind = 'agent' AND author_id = sqlc.arg(agent_id) AND author_label = sqlc.arg(author_label))
-    ORDER BY seq DESC, id DESC
+    SELECT * FROM message_views mv
+    WHERE mv.room_id = sqlc.arg(room_id) AND mv.seq > sqlc.arg(after_seq) AND mv.seq < sqlc.arg(before_seq)
+      AND mv.deleted_at IS NULL
+      AND NOT (mv.author_kind = 'agent' AND mv.author_id = sqlc.arg(agent_id) AND mv.author_label = sqlc.arg(author_label))
+      AND NOT EXISTS (
+          SELECT 1 FROM agent_session_deliveries d
+          WHERE d.message_id = mv.id AND d.agent_id = sqlc.arg(agent_id) AND d.label = sqlc.arg(label))
+    ORDER BY mv.seq DESC, mv.id DESC
     LIMIT sqlc.arg(limit)
 )
 ORDER BY seq ASC, id ASC;
+
+-- name: CountSessionUnreadInRoom :one
+-- How many messages of one room a session has not read and that ListSessionUnread would list (SN-03): the
+-- difference between this count and the number listed is the "N earlier messages skipped" note of the
+-- catch-up batch.
+SELECT COUNT(*) FROM messages m
+WHERE m.room_id = sqlc.arg(room_id) AND m.seq > sqlc.arg(after_seq) AND m.seq < sqlc.arg(before_seq)
+  AND m.deleted_at IS NULL
+  AND NOT (m.author_kind = 'agent' AND m.author_id = sqlc.arg(agent_id) AND m.author_label = sqlc.arg(author_label))
+  AND NOT EXISTS (
+      SELECT 1 FROM agent_session_deliveries d
+      WHERE d.message_id = m.id AND d.agent_id = sqlc.arg(agent_id) AND d.label = sqlc.arg(label));
+
+-- name: ListSessionRoomStatesInRoom :many
+-- Every state row of the AI in one room, whatever its session: the notification setting and the read
+-- position of each session a message may notify (SN-02, SN-03).
+SELECT * FROM session_room_state WHERE agent_id = sqlc.arg(agent_id) AND room_id = sqlc.arg(room_id);
 
 -- name: AdvancePrincipalReadSeq :exec
 -- Mirrors the agent's delivery cursor into the read position of its principal session, in the transaction
@@ -82,3 +112,15 @@ WHERE a.id = sqlc.arg(agent_id)
 ON CONFLICT (agent_id, session_key, room_id) DO UPDATE SET
     read_seq = MAX(session_room_state.read_seq, excluded.read_seq),
     updated_at = excluded.updated_at;
+
+-- name: GetSessionJoinSeq :one
+-- The join point of a session that has no state row in a room: the highest sequence the room had assigned
+-- when the AI became a member of it (SN-01). A session with a live connection that joins a room after it
+-- attached - a DM created for the AI, a group it was added to - starts caught up at that moment, not at 0,
+-- so it is not flooded with the room's history, and the messages of the room that arrive afterwards are
+-- unread for it. The AI's membership row is created with the room (a DM) or when it is added (a group),
+-- and messages carry the same creation clock.
+SELECT CAST(COALESCE(MAX(m.seq), 0) AS INTEGER) AS seq
+FROM room_members rm
+LEFT JOIN messages m ON m.room_id = rm.room_id AND m.created_at <= rm.created_at
+WHERE rm.room_id = sqlc.arg(room_id) AND rm.kind = 'agent' AND rm.member_id = sqlc.arg(agent_id);

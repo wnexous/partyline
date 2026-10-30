@@ -156,6 +156,8 @@ func TestDMPassesAllAndMentionsDelivery(t *testing.T) {
 	plain := say(f.bob, his.ID, "no mention needed")
 	require.Equal(t, plain.ID, f.conn.Message(wsWait).Message.ID)
 	mentioned := say(f.bob, group.ID, "@atlas please look")
+	// SN-03: the unmentioned message of the group comes as context of the mention.
+	require.NotEqual(t, mentioned.ID, f.conn.Message(wsWait).Message.ID)
 	require.Equal(t, mentioned.ID, f.conn.Message(wsWait).Message.ID)
 
 	// all: everything arrives.

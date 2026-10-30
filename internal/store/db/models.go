@@ -40,6 +40,7 @@ type AgentSessionDelivery struct {
 	CreatedAt  int64
 	FellBackAt sql.NullInt64
 	AckedAt    sql.NullInt64
+	Context    int64
 }
 
 type AgentSessionLabel struct {
