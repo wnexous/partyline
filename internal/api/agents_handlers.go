@@ -18,6 +18,8 @@ func (s *server) agentRoutes(mux *http.ServeMux) {
 	s.handle(mux, "PATCH /api/v1/agents/{id}", authed(s.updateAgent))
 	s.handle(mux, "DELETE /api/v1/agents/{id}", authed(s.deleteAgent))
 	s.handle(mux, "POST /api/v1/agents/{id}/merge", authed(s.mergeAgent))
+	s.handle(mux, "GET /api/v1/agents/{id}/sessions/{label}/notifications", authed(s.sessionNotifications))
+	s.handle(mux, "PUT /api/v1/agents/{id}/sessions/{label}/notifications/{room}", authed(s.setSessionNotification))
 }
 
 func toAgent(a agents.Agent) dto.Agent {
