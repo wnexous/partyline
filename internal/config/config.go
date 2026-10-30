@@ -36,6 +36,12 @@ type Config struct {
 	// RunnerImages lists the extra image repositories a container AI may use besides the default
 	// agent image (PARTYLINE_RUNNER_IMAGES, comma-separated); nil lists none (CA-09).
 	RunnerImages []string
+	// SkipMigrationBackup turns off the copy of the database written before pending migrations
+	// run (PARTYLINE_SKIP_MIGRATION_BACKUP); only an operator who accepted the risk sets it (OPS-07).
+	SkipMigrationBackup bool
+	// MigrationBackupsKeep is how many pre-migration backups stay in <data dir>/backups
+	// (PARTYLINE_MIGRATION_BACKUPS_KEEP); 0 keeps every backup (OPS-07).
+	MigrationBackupsKeep int
 }
 
 // ParseRunnerImages reads the extra image repositories a container AI may use from
@@ -118,6 +124,17 @@ func Load(getenv func(string) string) (*Config, error) {
 	if err != nil {
 		return nil, err
 	}
+
+	skipBackup, err := strconv.ParseBool(get("PARTYLINE_SKIP_MIGRATION_BACKUP", "false"))
+	if err != nil {
+		return nil, fmt.Errorf("PARTYLINE_SKIP_MIGRATION_BACKUP: must be true or false")
+	}
+	cfg.SkipMigrationBackup = skipBackup
+	keepBackups, err := strconv.Atoi(get("PARTYLINE_MIGRATION_BACKUPS_KEEP", "5"))
+	if err != nil || keepBackups < 0 {
+		return nil, fmt.Errorf("PARTYLINE_MIGRATION_BACKUPS_KEEP: must be a non-negative integer (0 keeps every backup)")
+	}
+	cfg.MigrationBackupsKeep = keepBackups
 
 	for _, item := range strings.Split(get("PARTYLINE_TRUSTED_PROXIES", ""), ",") {
 		item = strings.TrimSpace(item)

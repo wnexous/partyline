@@ -30,6 +30,8 @@ func TestLoadDefaults(t *testing.T) {
 	require.False(t, cfg.AllowPrivateNetworks, "CON-13: connectors reach only public addresses by default")
 	require.Nil(t, cfg.PrivateNetworkAllowlist, "S6: no private destination is listed by default")
 	require.Nil(t, cfg.MemoryLimit, "OPS-06: without PARTYLINE_MEMORY_LIMIT the container's limit applies")
+	require.False(t, cfg.SkipMigrationBackup, "OPS-07: the pre-migration backup is on by default")
+	require.Equal(t, 5, cfg.MigrationBackupsKeep, "OPS-07: the newest five backups are kept")
 }
 
 func TestLoadOverrides(t *testing.T) {
@@ -45,6 +47,8 @@ func TestLoadOverrides(t *testing.T) {
 		"PARTYLINE_ALLOW_PRIVATE_NETWORKS":    "true",
 		"PARTYLINE_PRIVATE_NETWORK_ALLOWLIST": "192.168.1.0/24, localhost:8088",
 		"PARTYLINE_RUNNER_IMAGES":             "registry.example.com:5000/team/agent, ghcr.io/wnexous/partyline-agent-dev",
+		"PARTYLINE_SKIP_MIGRATION_BACKUP":     "1",
+		"PARTYLINE_MIGRATION_BACKUPS_KEEP":    "12",
 	}))
 	require.NoError(t, err)
 	require.Equal(t, "127.0.0.1:9000", cfg.Addr)
@@ -64,6 +68,8 @@ func TestLoadOverrides(t *testing.T) {
 	require.Equal(t, want, cfg.PrivateNetworkAllowlist)
 	require.Equal(t, []string{"registry.example.com:5000/team/agent", "ghcr.io/wnexous/partyline-agent-dev"}, cfg.RunnerImages,
 		"CA-09: the image override allowlist is the list of repositories, in order")
+	require.True(t, cfg.SkipMigrationBackup)
+	require.Equal(t, 12, cfg.MigrationBackupsKeep)
 }
 
 func TestLoadInvalidValuesNameTheVariable(t *testing.T) {
@@ -77,6 +83,8 @@ func TestLoadInvalidValuesNameTheVariable(t *testing.T) {
 		"PARTYLINE_PRIVATE_NETWORK_ALLOWLIST": "10.0.0.0/8,not a host",
 		"PARTYLINE_MEMORY_LIMIT":              "512MB",
 		"PARTYLINE_RUNNER_IMAGES":             "docker.io/library/ubuntu:22.04",
+		"PARTYLINE_SKIP_MIGRATION_BACKUP":     "maybe",
+		"PARTYLINE_MIGRATION_BACKUPS_KEEP":    "-1",
 	}
 	for name, value := range cases {
 		t.Run(name, func(t *testing.T) {
@@ -101,6 +109,13 @@ func TestLoadMemoryLimit(t *testing.T) {
 		_, err := Load(env(map[string]string{"PARTYLINE_MEMORY_LIMIT": value}))
 		require.ErrorContains(t, err, "PARTYLINE_MEMORY_LIMIT: invalid size", value)
 	}
+}
+
+// OPS-07: 0 backups kept is a value (keep all), not an error.
+func TestLoadKeepsEveryMigrationBackup(t *testing.T) {
+	cfg, err := Load(env(map[string]string{"PARTYLINE_MIGRATION_BACKUPS_KEEP": "0"}))
+	require.NoError(t, err)
+	require.Zero(t, cfg.MigrationBackupsKeep)
 }
 
 func TestLoadRejectsBadPublicURLs(t *testing.T) {

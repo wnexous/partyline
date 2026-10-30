@@ -9,6 +9,7 @@ import (
 	"log/slog"
 	"maps"
 	"net/http"
+	"path/filepath"
 	"strings"
 	"sync"
 	"testing"
@@ -19,6 +20,7 @@ import (
 	"github.com/wnexous/partyline/internal/api/dto"
 	"github.com/wnexous/partyline/internal/app"
 	"github.com/wnexous/partyline/internal/config"
+	"github.com/wnexous/partyline/internal/store"
 	"github.com/wnexous/partyline/internal/users"
 )
 
@@ -206,6 +208,51 @@ func TestServeSetupTokenAndRedactedLogs(t *testing.T) {
 	srv = startServe(t, dataDir)
 	require.Nil(t, findLog(logLines(t, srv.logs), msgSetupToken))
 	require.NotContains(t, srv.logs.String(), token)
+	require.Equal(t, 0, srv.stop())
+}
+
+// oldDatabase writes a database with one applied migration to dir, so the next serve has
+// pending migrations and data to back up.
+func oldDatabase(t *testing.T, dir string) {
+	t.Helper()
+	st, err := store.Open(filepath.Join(dir, app.DatabaseFile))
+	require.NoError(t, err)
+	require.NoError(t, st.MigrateBefore(context.Background(), "0002"))
+	require.NoError(t, st.Close())
+}
+
+// OPS-07: `partyline serve` copies the database before it applies pending migrations, logs the
+// version it starts from and the path, writes nothing when nothing is pending, and
+// PARTYLINE_SKIP_MIGRATION_BACKUP=1 turns the copy off.
+func TestServeBacksUpBeforeMigrations(t *testing.T) {
+	dataDir := t.TempDir()
+	oldDatabase(t, dataDir)
+
+	srv := startServeWith(t, dataDir, nil)
+	backups, err := filepath.Glob(filepath.Join(dataDir, store.BackupsDirName, "partyline-*.db"))
+	require.NoError(t, err)
+	require.Len(t, backups, 1)
+	line := findLog(logLines(t, srv.logs), "migration backup written")
+	require.NotNil(t, line, "the backup is logged: %s", srv.logs.String())
+	require.Equal(t, "0001_init", line["from"])
+	require.Equal(t, backups[0], line["path"])
+	require.Equal(t, 0, srv.stop())
+
+	// The database is up to date now: a second start writes no second backup.
+	srv = startServe(t, dataDir)
+	backups, err = filepath.Glob(filepath.Join(dataDir, store.BackupsDirName, "partyline-*.db"))
+	require.NoError(t, err)
+	require.Len(t, backups, 1)
+	require.Equal(t, 0, srv.stop())
+
+	skipped := t.TempDir()
+	oldDatabase(t, skipped)
+	srv = startServeWith(t, skipped, map[string]string{"PARTYLINE_SKIP_MIGRATION_BACKUP": "1"})
+	backups, err = filepath.Glob(filepath.Join(skipped, store.BackupsDirName, "partyline-*.db"))
+	require.NoError(t, err)
+	require.Empty(t, backups)
+	require.NotNil(t, findLog(logLines(t, srv.logs), "migration backup skipped by PARTYLINE_SKIP_MIGRATION_BACKUP"),
+		"the bypass is logged: %s", srv.logs.String())
 	require.Equal(t, 0, srv.stop())
 }
 
