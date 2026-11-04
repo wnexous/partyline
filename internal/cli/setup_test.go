@@ -44,12 +44,6 @@ type setupOpts struct {
 	// terminal makes stdin and stdout terminals (the checklist menu) with the given width.
 	terminal bool
 	width    int
-	// dockerPath is the docker executable `partyline runner` uses; empty means a path that does
-	// not exist, so a test never runs the real docker.
-	dockerPath string
-	// systemctl records the `systemctl --user` calls of `partyline runner install` (nil: any call
-	// fails the test, so a test never runs the real systemctl).
-	systemctl func(args []string) ([]byte, error)
 }
 
 // testBinary is the partyline binary path setup registers in tests.
@@ -103,13 +97,8 @@ func runCommand(t *testing.T, o setupOpts, args ...string) setupRun {
 	return setupRun{code: code, stdout: out.String(), stderr: errOut.String()}
 }
 
-// testStdio is the stdio of a CLI test: a fake HOME, scripted stdin, a docker path under the temp
-// dir (never the real docker) and a recording systemctl.
+// testStdio is the stdio of a CLI test: a fake HOME, scripted stdin and a recording terminal.
 func testStdio(t *testing.T, o setupOpts, out, errOut *lockedBuffer) stdio {
-	dockerPath := o.dockerPath
-	if dockerPath == "" {
-		dockerPath = filepath.Join(os.TempDir(), "partyline-test-no-docker")
-	}
 	return stdio{
 		stdin: lineReader{strings.NewReader(o.stdin)}, stdout: out, stderr: errOut,
 		getenv:     func(k string) string { return o.env[k] },
@@ -137,14 +126,7 @@ func testStdio(t *testing.T, o setupOpts, out, errOut *lockedBuffer) stdio {
 			}
 			return w, 24, nil
 		},
-		rawTerm:    &fakeRawTerminal{terminal: o.terminal},
-		dockerPath: func() (string, error) { return dockerPath, nil },
-		systemctl: func(_ context.Context, args ...string) ([]byte, error) {
-			if o.systemctl == nil {
-				return nil, errors.New("unexpected systemctl call: " + strings.Join(args, " "))
-			}
-			return o.systemctl(args)
-		},
+		rawTerm: &fakeRawTerminal{terminal: o.terminal},
 		sleep: func(_ context.Context, d time.Duration) bool {
 			if o.waits != nil {
 				*o.waits = append(*o.waits, d)
