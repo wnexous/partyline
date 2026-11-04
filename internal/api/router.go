@@ -175,17 +175,6 @@ func authed(h principalFunc) apiFunc {
 	}
 }
 
-// userOnly requires a user principal: a session or a user token. An agent token never reaches
-// here (the middleware restricts it to the agent API).
-func userOnly(h principalFunc) apiFunc {
-	return authed(func(w http.ResponseWriter, r *http.Request, p authn.Principal) error {
-		if p.Kind != authn.KindUser {
-			return httpx.NewError(http.StatusForbidden, dto.ErrorCodeForbidden, "user credentials required")
-		}
-		return h(w, r, p)
-	})
-}
-
 // adminOnly requires an admin user principal; other users get 403.
 func adminOnly(h principalFunc) apiFunc {
 	return authed(func(w http.ResponseWriter, r *http.Request, p authn.Principal) error {
