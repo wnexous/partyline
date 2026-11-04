@@ -38,7 +38,6 @@ import {
   MergeAIDialog,
   RemoveFromOrgDialog,
 } from "@/features/manage-org-member";
-import { ContainerSection } from "@/features/operate-container";
 import { SessionNotificationsButton } from "@/features/session-notifications";
 import { MessageButton } from "@/features/start-conversation";
 import { isApiError } from "@/shared/api/client";
@@ -284,10 +283,6 @@ function ProfileView({ profile }: { profile: IntelligenceProfile }) {
           </ul>
         </PageSection>
       ) : null}
-
-      {/* The AI's container, where it runs on a server of the owner (CA-06): read only by whoever
-          manages it, and only when it has one. */}
-      <ContainerSection agentId={profile.id} name={name} manages={manages} />
 
       {profile.memberships.length > 0 ? (
         <PageSection layout="stacked" title={t("profile.orgs")}>
