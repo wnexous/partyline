@@ -11,7 +11,6 @@ import (
 
 	"github.com/wnexous/partyline/internal/connectors/safehttp"
 	"github.com/wnexous/partyline/internal/memlimit"
-	"github.com/wnexous/partyline/internal/runners/spec"
 )
 
 // Config is the validated server configuration.
@@ -33,33 +32,12 @@ type Config struct {
 	// MemoryLimit is the soft memory limit of the process (PARTYLINE_MEMORY_LIMIT); nil when the
 	// variable is not set, and the limit of the container applies (OPS-06).
 	MemoryLimit *memlimit.Limit
-	// RunnerImages lists the extra image repositories a container AI may use besides the default
-	// agent image (PARTYLINE_RUNNER_IMAGES, comma-separated); nil lists none (CA-09).
-	RunnerImages []string
 	// SkipMigrationBackup turns off the copy of the database written before pending migrations
 	// run (PARTYLINE_SKIP_MIGRATION_BACKUP); only an operator who accepted the risk sets it (OPS-07).
 	SkipMigrationBackup bool
 	// MigrationBackupsKeep is how many pre-migration backups stay in <data dir>/backups
 	// (PARTYLINE_MIGRATION_BACKUPS_KEEP); 0 keeps every backup (OPS-07).
 	MigrationBackupsKeep int
-}
-
-// ParseRunnerImages reads the extra image repositories a container AI may use from
-// PARTYLINE_RUNNER_IMAGES (comma-separated, CA-09). The server and `partyline runner` read the
-// same variable with it, so both sides accept the same images.
-func ParseRunnerImages(getenv func(string) string) ([]string, error) {
-	var images []string
-	for _, repo := range strings.Split(getenv("PARTYLINE_RUNNER_IMAGES"), ",") {
-		repo = strings.TrimSpace(repo)
-		if repo == "" {
-			continue
-		}
-		if !spec.ValidImageRepo(repo) {
-			return nil, fmt.Errorf("PARTYLINE_RUNNER_IMAGES: %q is not an image repository (registry/name)", repo)
-		}
-		images = append(images, repo)
-	}
-	return images, nil
 }
 
 // SecureCookies reports whether cookies must carry the Secure attribute.
@@ -118,11 +96,6 @@ func Load(getenv func(string) string) (*Config, error) {
 			return nil, fmt.Errorf("PARTYLINE_MEMORY_LIMIT: %w", err)
 		}
 		cfg.MemoryLimit = &limit
-	}
-
-	cfg.RunnerImages, err = ParseRunnerImages(getenv)
-	if err != nil {
-		return nil, err
 	}
 
 	skipBackup, err := strconv.ParseBool(get("PARTYLINE_SKIP_MIGRATION_BACKUP", "false"))

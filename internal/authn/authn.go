@@ -25,9 +25,6 @@ type PrincipalKind string
 const (
 	KindUser  PrincipalKind = "user"
 	KindAgent PrincipalKind = "agent"
-	// KindRunner is a `partyline runner` connection: it acts for its owner only on the runner
-	// routes (CA-01).
-	KindRunner PrincipalKind = "runner"
 )
 
 // Principal is the authenticated caller of a request.
@@ -130,9 +127,8 @@ type TokenKind string
 
 // API token kinds.
 const (
-	TokenAgent  TokenKind = "agent"
-	TokenUser   TokenKind = "user"
-	TokenRunner TokenKind = "runner"
+	TokenAgent TokenKind = "agent"
+	TokenUser  TokenKind = "user"
 )
 
 // TokenPrefixLen is the number of leading secret characters kept for display.
@@ -149,7 +145,7 @@ func NewToken(kind TokenKind) (string, error) {
 
 // ParseTokenKind reports the kind of a well-formed API token secret.
 func ParseTokenKind(secret string) (TokenKind, bool) {
-	for _, kind := range []TokenKind{TokenAgent, TokenUser, TokenRunner} {
+	for _, kind := range []TokenKind{TokenAgent, TokenUser} {
 		body, ok := strings.CutPrefix(secret, "pl_"+string(kind)+"_")
 		if ok && body != "" && isBase62(body) {
 			return kind, true

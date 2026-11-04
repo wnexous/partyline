@@ -34,10 +34,9 @@ type TokenInput struct {
 }
 
 // CreateToken creates an API token for userID and returns it with its secret, which is shown
-// once and stored only as a SHA-256 hash (TOK-01). The API creates agent and user tokens only:
-// a runner token comes from the device approval (CA-01).
+// once and stored only as a SHA-256 hash (TOK-01).
 func (s *Service) CreateToken(ctx context.Context, userID string, in TokenInput) (db.ApiToken, string, error) {
-	if err := validateTokenInput(in, false, s.now()); err != nil {
+	if err := validateTokenInput(in, s.now()); err != nil {
 		return db.ApiToken{}, "", err
 	}
 	var (
@@ -55,29 +54,11 @@ func (s *Service) CreateToken(ctx context.Context, userID string, in TokenInput)
 	return tok, secret, nil
 }
 
-// CreateRunnerToken creates a runner token for userID, as the device approval does when the CLI
-// asks for one (CA-01): the only other way to obtain the kind, and the one tests use.
-func (s *Service) CreateRunnerToken(ctx context.Context, userID, name string) (db.ApiToken, string, error) {
-	var (
-		tok    db.ApiToken
-		secret string
-	)
-	err := s.store.WithTx(ctx, func(q *db.Queries) error {
-		var err error
-		tok, secret, err = s.CreateTokenTx(ctx, q, userID, TokenInput{Kind: dto.TokenKindRunner, Name: name})
-		return err
-	})
-	return tok, secret, err
-}
-
-// validateTokenInput reports every rejected field of a new token. allowRunner admits the runner
-// kind, which only the device approval creates (CA-01).
-func validateTokenInput(in TokenInput, allowRunner bool, now time.Time) error {
+// validateTokenInput reports every rejected field of a new token.
+func validateTokenInput(in TokenInput, now time.Time) error {
 	name := strings.TrimSpace(in.Name)
 	fields := map[string]string{}
-	allowed := in.Kind == dto.TokenKindAgent || in.Kind == dto.TokenKindUser ||
-		(allowRunner && in.Kind == dto.TokenKindRunner)
-	if !allowed {
+	if in.Kind != dto.TokenKindAgent && in.Kind != dto.TokenKindUser {
 		fields["kind"] = "must be agent or user"
 	}
 	if name == "" || utf8.RuneCountInString(name) > maxTokenName {
@@ -93,12 +74,11 @@ func validateTokenInput(in TokenInput, allowRunner bool, now time.Time) error {
 }
 
 // CreateTokenTx is CreateToken inside the caller's write transaction q (the token and its
-// audit entry commit with the caller's changes). It admits the runner kind of the device
-// approval (CA-01).
+// audit entry commit with the caller's changes).
 func (s *Service) CreateTokenTx(ctx context.Context, q *db.Queries, userID string, in TokenInput) (db.ApiToken, string, error) {
 	now := s.now()
 	name := strings.TrimSpace(in.Name)
-	if err := validateTokenInput(in, true, now); err != nil {
+	if err := validateTokenInput(in, now); err != nil {
 		return db.ApiToken{}, "", err
 	}
 
@@ -223,11 +203,8 @@ func (s *Service) AuthenticateToken(ctx context.Context, secret string) (authn.P
 		}
 	}
 	kind := authn.KindUser
-	switch tok.Kind {
-	case string(dto.TokenKindAgent):
+	if tok.Kind == string(dto.TokenKindAgent) {
 		kind = authn.KindAgent
-	case string(dto.TokenKindRunner):
-		kind = authn.KindRunner
 	}
 	return authn.Principal{Kind: kind, UserID: u.ID, Role: u.Role, TokenID: tok.ID}, nil
 }

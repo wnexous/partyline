@@ -46,7 +46,6 @@ func TestLoadOverrides(t *testing.T) {
 		"PARTYLINE_TRUSTED_PROXIES":           "10.0.0.0/8, 192.168.1.1",
 		"PARTYLINE_ALLOW_PRIVATE_NETWORKS":    "true",
 		"PARTYLINE_PRIVATE_NETWORK_ALLOWLIST": "192.168.1.0/24, localhost:8088",
-		"PARTYLINE_RUNNER_IMAGES":             "registry.example.com:5000/team/agent, ghcr.io/wnexous/partyline-agent-dev",
 		"PARTYLINE_SKIP_MIGRATION_BACKUP":     "1",
 		"PARTYLINE_MIGRATION_BACKUPS_KEEP":    "12",
 	}))
@@ -66,8 +65,6 @@ func TestLoadOverrides(t *testing.T) {
 	want, err := safehttp.ParseAllowlist("192.168.1.0/24,localhost:8088")
 	require.NoError(t, err)
 	require.Equal(t, want, cfg.PrivateNetworkAllowlist)
-	require.Equal(t, []string{"registry.example.com:5000/team/agent", "ghcr.io/wnexous/partyline-agent-dev"}, cfg.RunnerImages,
-		"CA-09: the image override allowlist is the list of repositories, in order")
 	require.True(t, cfg.SkipMigrationBackup)
 	require.Equal(t, 12, cfg.MigrationBackupsKeep)
 }
@@ -82,7 +79,6 @@ func TestLoadInvalidValuesNameTheVariable(t *testing.T) {
 		"PARTYLINE_ALLOW_PRIVATE_NETWORKS":    "maybe",
 		"PARTYLINE_PRIVATE_NETWORK_ALLOWLIST": "10.0.0.0/8,not a host",
 		"PARTYLINE_MEMORY_LIMIT":              "512MB",
-		"PARTYLINE_RUNNER_IMAGES":             "docker.io/library/ubuntu:22.04",
 		"PARTYLINE_SKIP_MIGRATION_BACKUP":     "maybe",
 		"PARTYLINE_MIGRATION_BACKUPS_KEEP":    "-1",
 	}

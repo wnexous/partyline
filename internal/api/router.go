@@ -17,18 +17,14 @@ import (
 	"github.com/wnexous/partyline/internal/avatars"
 	"github.com/wnexous/partyline/internal/config"
 	"github.com/wnexous/partyline/internal/connectors"
-	"github.com/wnexous/partyline/internal/containeragents"
 	"github.com/wnexous/partyline/internal/conversations"
 	"github.com/wnexous/partyline/internal/delivery"
 	"github.com/wnexous/partyline/internal/devices"
 	"github.com/wnexous/partyline/internal/identities"
 	"github.com/wnexous/partyline/internal/intelligences"
 	"github.com/wnexous/partyline/internal/orgs"
-	"github.com/wnexous/partyline/internal/ownersecrets"
 	"github.com/wnexous/partyline/internal/platform"
 	"github.com/wnexous/partyline/internal/rooms"
-	"github.com/wnexous/partyline/internal/runners"
-	"github.com/wnexous/partyline/internal/runners/spec"
 	"github.com/wnexous/partyline/internal/users"
 	"github.com/wnexous/partyline/internal/validation"
 	"github.com/wnexous/partyline/internal/webpush"
@@ -62,8 +58,6 @@ type Deps struct {
 	Devices *devices.Service
 	Blobs   *attachments.Store
 	Audit   *audit.Log
-	// Secrets stores the owner's named credentials for container AIs (CA-03).
-	Secrets *ownersecrets.Service
 	// Platform is the delivery queue of the messages that arrive on connections: the agent WebSocket
 	// reads it for a session that opted in, and the agent attachments route serves its files.
 	Platform *platform.Queue
@@ -74,12 +68,6 @@ type Deps struct {
 	Live http.Handler
 	// AgentWS serves the agent WebSocket at GET /api/v1/agent/ws.
 	AgentWS http.Handler
-	// Runners is the registry of the servers that run container AIs (CA-01).
-	Runners *runners.Service
-	// Containers creates and operates the AIs that live in a container on a runner (CA-04, CA-06).
-	Containers *containeragents.Service
-	// RunnerWS serves the runner WebSocket at GET /api/v1/runner/ws (CA-02).
-	RunnerWS http.Handler
 	// Trust opens the trust of each request that tells an AI what it may trust: the history tool and the
 	// room's instructions (POS-10). Without it nothing is trusted.
 	Trust delivery.TrustSource
@@ -144,9 +132,6 @@ func (s *server) routes(mux *http.ServeMux) {
 	s.hookRoutes(mux)
 	s.pushRoutes(mux)
 	s.deviceRoutes(mux)
-	s.secretRoutes(mux)
-	s.runnerRoutes(mux)
-	s.containerAgentRoutes(mux)
 	if s.Live != nil {
 		mux.Handle("GET /api/v1/live", s.Live)
 	}
@@ -191,8 +176,7 @@ func authed(h principalFunc) apiFunc {
 }
 
 // userOnly requires a user principal: a session or a user token. An agent token never reaches
-// here (the middleware restricts it to the agent API) and any other credential kind, such as a
-// runner token, is refused.
+// here (the middleware restricts it to the agent API).
 func userOnly(h principalFunc) apiFunc {
 	return authed(func(w http.ResponseWriter, r *http.Request, p authn.Principal) error {
 		if p.Kind != authn.KindUser {
@@ -228,34 +212,9 @@ func mapError(err error) error {
 	var verr *validation.Error
 	var refused *conversations.MembersRefusedError
 	var notEmpty *orgs.NotEmptyError
-	var specErr *spec.ValidationError
-	var opErr *runners.OpError
-	var credErr *containeragents.CredentialsRequiredError
 	switch {
 	case errors.As(err, &verr):
 		return httpx.Invalid(verr.Fields)
-	case errors.As(err, &specErr):
-		return httpx.Invalid(specErr.Fields)
-	case errors.As(err, &credErr):
-		he := httpx.NewError(http.StatusUnprocessableEntity, dto.ErrorCodeCredentialsRequired, credErr.Error())
-		he.Fields = map[string]string{"env": credErr.Error()}
-		return he
-	case errors.As(err, &opErr):
-		return httpx.NewError(http.StatusBadGateway, dto.ErrorCodeUnavailable, opErr.Error())
-	case errors.Is(err, runners.ErrTokenRequired):
-		return httpx.NewError(http.StatusForbidden, dto.ErrorCodeForbidden, "runner token required")
-	case errors.Is(err, runners.ErrNotRegistered):
-		return httpx.NewError(http.StatusForbidden, dto.ErrorCodeForbidden, "runner token is not registered")
-	case errors.Is(err, runners.ErrNotFound):
-		return httpx.NewError(http.StatusNotFound, dto.ErrorCodeNotFound, "not found")
-	case errors.Is(err, runners.ErrInUse):
-		return httpx.NewError(http.StatusConflict, dto.ErrorCodeRunnerInUse, "the runner still runs containers: delete them first")
-	case errors.Is(err, runners.ErrOffline):
-		return httpx.NewError(http.StatusConflict, dto.ErrorCodeRunnerOffline, "the runner is offline")
-	case errors.Is(err, runners.ErrTimeout):
-		return httpx.NewError(http.StatusGatewayTimeout, dto.ErrorCodeUnavailable, "the runner did not answer in time")
-	case errors.Is(err, runners.ErrNameTaken):
-		return httpx.NewError(http.StatusConflict, dto.ErrorCodeConflict, "another runner already has this name")
 	case errors.Is(err, users.ErrSetupDone):
 		return httpx.NewError(http.StatusConflict, dto.ErrorCodeConflict, "setup already done")
 	case errors.Is(err, users.ErrBadSetupToken):
@@ -267,8 +226,6 @@ func mapError(err error) error {
 	case errors.Is(err, users.ErrRateLimited):
 		return httpx.NewError(http.StatusTooManyRequests, dto.ErrorCodeRateLimited, "too many failed logins, try again later")
 	case errors.Is(err, users.ErrNotFound):
-		return httpx.NewError(http.StatusNotFound, dto.ErrorCodeNotFound, "not found")
-	case errors.Is(err, ownersecrets.ErrNotFound), errors.Is(err, containeragents.ErrNotFound):
 		return httpx.NewError(http.StatusNotFound, dto.ErrorCodeNotFound, "not found")
 	case errors.Is(err, users.ErrInviteGone):
 		return httpx.NewError(http.StatusGone, dto.ErrorCodeGone, "invite already used, revoked or expired")
