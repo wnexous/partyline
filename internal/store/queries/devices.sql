@@ -5,7 +5,7 @@ DELETE FROM device_requests WHERE created_at <= ?;
 SELECT COUNT(*) FROM device_requests WHERE ip_key = ? AND created_at > ?;
 
 -- name: CreateDeviceRequest :exec
--- kind is what the approval creates: an agent token (setup) or a runner token (CA-01).
+-- kind is the token the approval creates; it is always agent now (the column stays NOT NULL).
 INSERT INTO device_requests (id, code_hash, poll_secret_hash, machine, kind, created_ip, ip_key, created_at, expires_at)
 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?);
 
