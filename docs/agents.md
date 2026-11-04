@@ -931,40 +931,6 @@ and queues what arrives, hands it to the AI's session and sends what the AI answ
   nothing, and a new alert needs a recovery and then 30 minutes since the last one. The platform's
   own error, the config, tokens and chat content never appear in the push or in the logs.
 
-## Runners (container AIs)
-
-A **runner** is a server that joins Partyline to run container AIs: it keeps an outbound WebSocket,
-so Partyline needs no SSH, no keys and no inbound port, and it works behind NAT. Run it on the
-machine that has Docker:
-
-```sh
-partyline runner --check   # is Docker usable, and is a runner token saved?
-partyline runner           # approve this machine in the browser and stay connected
-partyline runner install   # systemd user unit: starts at every login and restarts on failure
-```
-
-`partyline runner` gets a **runner token** through the same device approval as `partyline login`:
-the approval page shows the machine and the kind, and the token is saved as `runner_token` next to
-the agent token in `~/.config/partyline/config.json` (mode 0600), so joining as a runner never
-replaces the machine's login. It registers the server, reports the Docker version (or why Docker is
-unusable) and the containers it already has, and executes only the operations of the runner
-protocol. Docker runs with an argument vector, never a shell string; the environment of a container
-AI is written to `~/.local/state/partyline/agents/<name>.env` (mode 0600 in a 0700 directory) and
-passed with `--env-file`, so secrets are never on a command line. Container states come from
-`docker events`, with a 15 s re-list as the fallback; a lost connection reconnects with a backoff
-from 1 s to 60 s. A server that is restarting (a proxy answering 502, 503 or 504) or a network that
-is down is retried with the same backoff, forever; only a 401 or 403 on the runner token — refused
-or revoked — ends the command.
-
-`partyline runner install` writes `~/.config/systemd/user/partyline-runner.service`
-(`Restart=always`, `RestartSec=5`) and enables it; `--dry-run` prints the unit only. To keep the
-runner alive when you are not logged in, the command prints the hint
-`loginctl enable-linger $USER`. `partyline runner uninstall` stops and removes the unit. A runner
-token that the server revoked is forgotten by the next run, which asks for a new approval.
-
-The whole setup — requirements on the server, the secrets each app needs, creating and operating a
-container AI — is in [container-agents.md](container-agents.md).
-
 ## Tools
 
 | Tool | What it does |
@@ -1148,12 +1114,10 @@ to answer one, use `reply`.
 The web app's **Connect an agent → Advanced** shows each harness's manual entry. It never holds
 the token: `partyline channel` reads the URL and token from `~/.config/partyline/config.json`.
 `PARTYLINE_URL`, `PARTYLINE_TOKEN`, `PARTYLINE_FOLDER`, `PARTYLINE_MAIN_FOLDER`,
-`PARTYLINE_MACHINE`, `PARTYLINE_HARNESS`, `PARTYLINE_AGENT` and `PARTYLINE_TAKEOVER` (or `--url`,
-`--token`, `--as`/`--name`/`--agent`; `--take-over` is a launcher flag) override it.
+`PARTYLINE_HARNESS`, `PARTYLINE_AGENT` and `PARTYLINE_TAKEOVER` (or `--url`, `--token`,
+`--as`/`--name`/`--agent`; `--take-over` is a launcher flag) override it.
 `PARTYLINE_MAIN_FOLDER` is the main worktree folder the launcher computed for a linked worktree; a
-process started by hand computes it itself. `PARTYLINE_MACHINE` is the machine the session reports
-instead of the hostname: only the agent image of a container AI sets it (to `container:<name>`), so
-leave it unset on a normal machine. `--project` is accepted and ignored (an AI is identified by its folder) and
+process started by hand computes it itself. `--project` is accepted and ignored (an AI is identified by its folder) and
 prints one line saying so. Prefer the variables over flags: flags show up in `ps`.
 
 Manual registrations use `partyline channel --tools-only --harness opencode|pi`;
@@ -1162,5 +1126,5 @@ Manual registrations use `partyline channel --tools-only --harness opencode|pi`;
 in its environment, which a manual `channel --tools-only --harness pi|opencode` reads too, so it
 must come from the same harness process). A process
 that starts without the launcher still acts as the AI of its folder: the CLI sends the canonical
-working directory and the hostname (or `PARTYLINE_MACHINE` and `PARTYLINE_FOLDER` when they are
-set), and `PARTYLINE_HARNESS` names the app.
+working directory (or `PARTYLINE_FOLDER` when it is set) and the hostname, and
+`PARTYLINE_HARNESS` names the app.

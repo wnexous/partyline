@@ -1,3 +1,5 @@
+Status: REMOVED 2026-11-04 (AD-039)
+
 # Tasks: container agents (runner model)
 
 Every task: own branch, tests first, `make check SHARDS=2 GOFLAGS=-p=2` green (and `make e2e` if
