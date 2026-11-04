@@ -207,4 +207,3 @@ func TestResolveKeepsSavedTokenWithItsURL(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, cliconfig.Config{URL: "http://other.example.com", Token: "pl_agent_flag"}, got)
 }
-
