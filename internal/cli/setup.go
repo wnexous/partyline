@@ -355,10 +355,9 @@ func displayCode(code string) string {
 }
 
 // machineName is the machine of this process cut to what the server accepts (channel.MachineName):
-// PARTYLINE_MACHINE when the agent image set it, else the hostname, and "partyline" when neither
-// can be read.
+// the hostname, and "partyline" when it cannot be read.
 func machineName(io stdio) string {
-	name := channel.MachineName(io.getenv, hostnameOf(io))
+	name := channel.MachineName(hostnameOf(io))
 	if name == "" {
 		return "partyline"
 	}
