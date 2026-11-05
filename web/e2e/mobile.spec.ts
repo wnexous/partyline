@@ -560,7 +560,11 @@ test("a voice message is recorded, sent and played back in the timeline (VOI-01,
     // The picture: one player at rest, one part-way through.
     await press(testInfo, other.getByRole("button", { name: "Pause" }));
     const otherSlider = other.getByRole("slider", { name: "Seek" });
+    // The bar is disabled until the recording's length is known: a key pressed before that is lost.
+    await expect(otherSlider).toBeEnabled();
+    await expect(otherSlider).toHaveAttribute("aria-valuetext", / of 0:40$/);
     await otherSlider.focus();
+    await expect(otherSlider).toBeFocused();
     for (let step = 0; step < 18; step += 1) await page.keyboard.press("ArrowRight");
     await expect(otherSlider).toHaveAttribute("aria-valuetext", /^0:(1[89]|2\d) of 0:40$/);
     await mine.getByRole("button", { name: "Play" }).hover();
