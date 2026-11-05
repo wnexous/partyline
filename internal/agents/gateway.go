@@ -109,6 +109,10 @@ type Gateway struct {
 	// afterBacklogCount runs between the backlog count and list reads; tests use it to post
 	// a message in between. Nil in production.
 	afterBacklogCount func()
+	// beforeBounds runs after the session attached and before the backlog bounds are read, and
+	// afterWelcome right after the welcome frame; tests use them to post a message in each gap. Nil in
+	// production.
+	beforeBounds, afterWelcome func()
 	// beforeAttach runs after the upgrade and before the session attaches; tests use it to let
 	// another process win the race. Nil in production.
 	beforeAttach func()
@@ -881,6 +885,15 @@ func (g *Gateway) run(ctx context.Context, c *conn, row db.GetAgentWithOwnerRow,
 	if err != nil {
 		return err
 	}
+	// The backlog holds what was posted before the welcome; a message posted after it is the live
+	// push's, so the two never both judge the same message (the session is attached already).
+	if g.beforeBounds != nil {
+		g.beforeBounds()
+	}
+	bounds, err := g.backlogBounds(ctx, a.ID)
+	if err != nil {
+		return err
+	}
 	if err := c.write(ctx, dto.AgentWelcomeFrame{
 		Type:         dto.AgentFrameTypeWelcome,
 		Agent:        dto.AgentInfo{ID: a.ID, Name: row.Handle, DisplayName: row.ProfileName, Owner: row.OwnerUsername},
@@ -891,7 +904,10 @@ func (g *Gateway) run(ctx context.Context, c *conn, row db.GetAgentWithOwnerRow,
 	}); err != nil {
 		return err
 	}
-	sent, err := g.backlog(ctx, c, a)
+	if g.afterWelcome != nil {
+		g.afterWelcome()
+	}
+	sent, err := g.backlog(ctx, c, a, bounds)
 	if err != nil {
 		return err
 	}
@@ -960,7 +976,7 @@ func (g *Gateway) run(ctx context.Context, c *conn, row db.GetAgentWithOwnerRow,
 // InstructionsNotice, paused or not (INS-03). It returns, per room, the highest sequence number
 // the agent has already been through: its cursor, or the last message listed now when that is
 // later. A live push at or below it is not delivered again.
-func (g *Gateway) backlog(ctx context.Context, c *conn, a db.Agent) (map[string]int64, error) {
+func (g *Gateway) backlog(ctx context.Context, c *conn, a db.Agent, bounds map[string]int64) (map[string]int64, error) {
 	sent := map[string]int64{}
 	states, err := g.d.Registry.SessionRooms(ctx, a.ID)
 	if err != nil {
@@ -1046,6 +1062,21 @@ func (g *Gateway) backlog(ctx context.Context, c *conn, a db.Agent) (map[string]
 		if err != nil {
 			return nil, err
 		}
+		if bound, ok := bounds[st.ID]; ok {
+			// Posted after the welcome: the live push delivers it, with the unread context (SN-03).
+			kept := views[:0]
+			for _, v := range views {
+				if v.Seq <= bound {
+					kept = append(kept, v)
+				} else {
+					pending--
+				}
+			}
+			views = kept
+		}
+		if len(views) == 0 {
+			pending = 0 // nothing before the welcome is left to list: the rest is the live push's
+		}
 		if pending == 0 && len(fallbacks) == 0 {
 			continue
 		}
@@ -1121,6 +1152,9 @@ func (g *Gateway) backlog(ctx context.Context, c *conn, a db.Agent) (map[string]
 			if err := c.write(ctx, frame); err != nil {
 				return nil, err
 			}
+			// Until it is acknowledged the message is unread, so the next push's catch-up lists it
+			// again: this connection already has it and must not get it twice (SN-03).
+			c.pushed[m.ID] = struct{}{}
 		}
 		if !written && skippedTo > 0 {
 			if err := g.advanceRoom(ctx, a.ID, st, skippedTo); err != nil {
@@ -1129,6 +1163,24 @@ func (g *Gateway) backlog(ctx context.Context, c *conn, a db.Agent) (map[string]
 		}
 	}
 	return sent, nil
+}
+
+// backlogBounds returns, per room of the AI, the highest sequence number posted so far: the backlog of
+// a connection stops there, and what comes later reaches it as a live push.
+func (g *Gateway) backlogBounds(ctx context.Context, agentID string) (map[string]int64, error) {
+	states, err := g.d.Registry.SessionRooms(ctx, agentID)
+	if err != nil {
+		return nil, err
+	}
+	bounds := make(map[string]int64, len(states))
+	for _, st := range states {
+		high, err := g.d.Store.R().GetRoomHighSeq(ctx, st.ID)
+		if err != nil {
+			return nil, err
+		}
+		bounds[st.ID] = high
+	}
+	return bounds, nil
 }
 
 // writeOwned writes, in sequence order, the rows a labelled session's connection owns and has not
