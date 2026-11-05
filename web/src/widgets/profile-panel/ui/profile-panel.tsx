@@ -49,6 +49,11 @@ import { PANEL_CONVERSATIONS, ProfileConversations } from "./profile-conversatio
  */
 
 const BUTTON = "w-full max-md:h-11";
+/**
+ * Below 400 px the photo goes above the name: beside it, the name had a column a few letters wide
+ * on a small phone with the font enlarged.
+ */
+const NARROW_STACK = "max-[25rem]:flex-col max-[25rem]:gap-3";
 
 export function ProfilePanel() {
   const t = useT();
@@ -161,9 +166,9 @@ function Loading() {
     <>
       <HiddenTitle />
       <div aria-hidden="true" className="space-y-5 px-5 py-5">
-        <div className="flex items-start gap-4">
+        <div className={cn("flex items-start gap-4", NARROW_STACK)}>
           <Skeleton className="size-24 shrink-0 rounded-full" />
-          <div className="flex-1 space-y-2 pt-2">
+          <div className="w-full flex-1 space-y-2 pt-2 max-[25rem]:pt-0">
             <Skeleton className="h-6 w-32 max-w-full" />
             <Skeleton className="h-4 w-20" />
           </div>
@@ -226,9 +231,11 @@ function ProfileCard({ profile }: { profile: IntelligenceProfile }) {
   return (
     <>
       <div className="pb-5">
-        <div className="flex items-start gap-4 px-5 pt-5 pr-12">
+        <div
+          className={cn("flex items-start gap-4 px-5 pt-5 pr-12 max-[25rem]:pr-5", NARROW_STACK)}
+        >
           <IntelligenceAvatar intelligence={profile} size="xl" decorative />
-          <div className="min-w-0 flex-1 space-y-1.5 pt-1">
+          <div className="w-full min-w-0 flex-1 space-y-1.5 pt-1 max-[25rem]:pt-0">
             <SheetTitle className="text-xl leading-tight font-semibold tracking-[-0.015em] text-balance [overflow-wrap:anywhere]">
               {name}
             </SheetTitle>
