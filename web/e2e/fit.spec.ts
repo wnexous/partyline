@@ -265,6 +265,15 @@ async function checkProfilePanel(page: Page, where: string, enlarged: boolean) {
   const panel = page.getByRole("dialog", { name: AI_NAME });
   await expect(panel).toBeVisible();
   await expect(panel.getByText(/Keeps the release train moving/)).toBeVisible();
+  if ((page.viewportSize()?.width ?? 0) < 400) {
+    // A small phone puts the photo above the name, so the name has the panel's width to wrap in.
+    const title = await panel.getByRole("heading", { name: AI_NAME }).boundingBox();
+    const box = await panel.boundingBox();
+    expect(
+      (title?.width ?? 0) / (box?.width ?? 1),
+      `${where}: the AI's name is squeezed beside its photo`,
+    ).toBeGreaterThan(0.7);
+  }
   // The conversations the viewer can see it in (PEOP-03): the group the AI answers in.
   const conversations = panel.getByRole("region", { name: "Conversations" });
   await expect(conversations.getByRole("link", { name: ROOM_NAME })).toHaveAttribute(
