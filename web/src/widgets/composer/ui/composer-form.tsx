@@ -625,7 +625,7 @@ export function ComposerForm({
           enterKeyHint={sendsOnEnter ? (editing ? "done" : "send") : "enter"}
           placeholder={t("composer.placeholder", { room: roomName })}
           className={cn(
-            "block max-h-[min(10rem,calc(var(--app-height,100dvh)*0.4))] min-h-11 w-full resize-none overflow-y-auto bg-transparent px-3 pt-2.5 pb-1 text-[0.9375rem] leading-relaxed outline-none [field-sizing:content] placeholder:text-muted-foreground",
+            "block max-h-[min(10rem,calc(var(--app-height,100dvh)*0.4))] min-h-11 w-full resize-none overflow-y-auto bg-transparent px-3 pt-2.5 pb-1 text-[0.9375rem] leading-relaxed outline-none [field-sizing:content] placeholder:truncate placeholder:text-muted-foreground",
             voiceOn && "hidden",
           )}
         />
