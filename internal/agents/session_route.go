@@ -112,9 +112,25 @@ func (g *Gateway) planPush(agentID, target string, m dto.AgentMessage) (pushPlan
 		}
 		st, has := byKey[key]
 		notify, readSeq := DefaultNotify(l.Label == ""), int64(0)
-		if has {
+		c := g.labelConn(agentID, l.Label)
+		switch {
+		case has:
 			notify, readSeq = st.Notify, st.ReadSeq
-		} else {
+		case c != nil && !c.rooms.Load():
+			// The session is still attaching and its state rows are not written yet: what came before this
+			// message is its backlog's, not a catch-up from the room's join point (SN-01, SN-03).
+			readSeq = m.Message.Seq
+		default:
+			// The rows may have been written after the list above was read, while the session attached:
+			// read its row again before falling back to the join point.
+			if again, err := g.d.Store.R().GetSessionRoomState(g.ctx, db.GetSessionRoomStateParams{
+				AgentID: agentID, SessionKey: key, RoomID: m.Room.ID,
+			}); err == nil {
+				notify, readSeq = again.Notify, again.ReadSeq
+				break
+			} else if !errors.Is(err, sql.ErrNoRows) {
+				return plan, err
+			}
 			// A session whose state row is missing joined the room after it attached (a DM created for the
 			// AI, a group it was added to): it starts caught up at the room's join point, not at its history
 			// (SN-01).
@@ -128,7 +144,7 @@ func (g *Gateway) planPush(agentID, target string, m dto.AgentMessage) (pushPlan
 			readSeq = join
 		}
 		items = append(items, targetState{
-			live: l, conn: g.labelConn(agentID, l.Label), notify: notify, readSeq: readSeq,
+			live: l, conn: c, notify: notify, readSeq: readSeq,
 		})
 	}
 	// The principal follows the room, unless it is set to mentions only; then a plain @handle, or a DM

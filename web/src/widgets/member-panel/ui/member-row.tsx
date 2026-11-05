@@ -131,7 +131,7 @@ export function MemberRow({
         <Button
           variant="ghost"
           size="icon-xs"
-          className="shrink-0 text-muted-foreground opacity-60 group-hover/row:opacity-100 focus-visible:opacity-100"
+          className="shrink-0 text-muted-foreground opacity-60 pointer-coarse:size-11 pointer-coarse:opacity-100 group-hover/row:opacity-100 focus-visible:opacity-100"
           aria-label={t("members.remove", { name: row.name })}
           onClick={group.onRemove}
         >
@@ -219,7 +219,7 @@ function MessagePrivately({ row }: { row: PersonRow }) {
           opener.current = button;
           setMenu({ at });
         }}
-        className="shrink-0 opacity-60 group-hover/row:opacity-100 aria-expanded:opacity-100"
+        className="shrink-0 opacity-60 pointer-coarse:opacity-100 group-hover/row:opacity-100 aria-expanded:opacity-100"
       />
       <ActionMenu
         open={menu !== null}

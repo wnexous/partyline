@@ -113,6 +113,9 @@ type Gateway struct {
 	// afterWelcome right after the welcome frame; tests use them to post a message in each gap. Nil in
 	// production.
 	beforeBounds, afterWelcome func()
+	// afterAttach runs after the session attached and before its per-room state rows are written; tests
+	// use it to push a message in that gap. Nil in production.
+	afterAttach func()
 	// beforeAttach runs after the upgrade and before the session attaches; tests use it to let
 	// another process win the race. Nil in production.
 	beforeAttach func()
@@ -546,7 +549,11 @@ func (g *Gateway) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 	c.sessionKey = sessionKey
 	// A session joins each room of the AI caught up: its state rows are created at its join point (SN-01).
+	if g.afterAttach != nil {
+		g.afterAttach()
+	}
 	g.ensureSessionRooms(ctx, row.Agent.ID, sessionKey, live.Label == "")
+	c.rooms.Store(true)
 	// Only the principal session receives the platform events of the AI it operates (SESS-18).
 	if hs.platform && g.d.Platform != nil && live.Label == "" {
 		c.feed = newPlatformFeed(g.d.Platform, row.Agent.ID)
@@ -789,6 +796,9 @@ type conn struct {
 	// (SN-01): its harness session id, else "label:<label>", else the principal's pin or "principal". The
 	// attach sets it before the connection reads a frame or receives a push.
 	sessionKey string
+	// rooms is set once the session's per-room state rows exist (ensureSessionRooms). Before that a push
+	// has no read position to start a catch-up from: the connection's backlog covers that moment.
+	rooms atomic.Bool
 	// delivered holds the messages already written to this connection that can be written twice: the
 	// rows of a labelled session and the fallbacks of the principal. Only the run loop touches it.
 	delivered map[string]struct{}

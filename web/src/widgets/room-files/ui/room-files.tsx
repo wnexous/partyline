@@ -261,7 +261,7 @@ function FileRow({
       <Button
         variant="ghost"
         size="icon-xs"
-        className="shrink-0 text-muted-foreground opacity-70 group-hover/file:opacity-100 focus-visible:opacity-100"
+        className="shrink-0 text-muted-foreground opacity-70 pointer-coarse:size-11 pointer-coarse:opacity-100 group-hover/file:opacity-100 focus-visible:opacity-100"
         aria-label={t("files.openInTimeline", { name: f.name })}
         title={t("files.openInTimelineShort")}
         onClick={onOpen}
