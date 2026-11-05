@@ -970,7 +970,10 @@ describe("what the viewer may do, from the flags of the profile (POS-04, POS-05,
     await name();
     const home = screen.getByRole("listitem", { name: "acme" });
     const other = screen.getByRole("listitem", { name: "Globex" });
-    expect(within(home).getByRole("button", { name: "Delete Atlas" })).toBeInTheDocument();
+    // The button says what goes: the AI, not its place in the organization.
+    expect(within(home).getByRole("button", { name: "Delete Atlas" })).toHaveTextContent(
+      "Delete AI",
+    );
     expect(within(home).queryByRole("button", { name: /^Remove / })).toBeNull();
     expect(within(other).getByRole("button", { name: "Remove from Globex" })).toBeInTheDocument();
     expect(within(other).queryByRole("button", { name: /^Delete / })).toBeNull();

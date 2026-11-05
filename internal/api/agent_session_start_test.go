@@ -11,6 +11,7 @@ import (
 
 	"github.com/wnexous/partyline/internal/agents"
 	"github.com/wnexous/partyline/internal/api/dto"
+	"github.com/wnexous/partyline/internal/events"
 	"github.com/wnexous/partyline/internal/testkit"
 )
 
@@ -27,17 +28,25 @@ func launchFolder(name, org, position, parent string) testkit.Folder {
 	return f
 }
 
-// quiet watches the bus for events published while it is open; changes reports the first one.
+// quiet watches the bus for events published while it is open; changes reports the first one. An AI going
+// offline is not the check's: a check ends no session, and the session an earlier start opened may close
+// while this one runs.
 func (w *placementWorld) quiet(t *testing.T) func() {
 	t.Helper()
 	sub, unsubscribe := w.env.App.Bus.Subscribe(64)
 	t.Cleanup(unsubscribe)
 	return func() {
 		t.Helper()
-		select {
-		case e := <-sub:
-			require.Failf(t, "the check published an event", "%T %v", e, e)
-		default:
+		for {
+			select {
+			case e := <-sub:
+				if p, ok := e.(events.AgentPresence); ok && !p.Online {
+					continue
+				}
+				require.Failf(t, "the check published an event", "%T %v", e, e)
+			default:
+				return
+			}
 		}
 	}
 }
