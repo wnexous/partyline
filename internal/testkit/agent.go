@@ -70,6 +70,8 @@ func (a *AgentConn) Next(timeout time.Duration) AgentFrame {
 	a.T.Helper()
 	f, err := a.s.read(timeout)
 	require.NoError(a.T, err, "no agent frame within %s", timeout)
+	// The log is shown only when the test fails: it tells which frame came instead of the expected one.
+	a.T.Logf("agent frame: %s", f.Raw)
 	return f
 }
 

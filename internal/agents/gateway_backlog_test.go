@@ -151,3 +151,92 @@ func TestBacklogSkippedCountIgnoresConcurrentPost(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, posted[9].Seq, seq)
 }
+
+// SN-03: a message the backlog delivered is not given again as context of the next push while it
+// waits for its acknowledgement. The message is posted after the session's join point and before the
+// backlog bounds, so it is unread for the session and in the backlog.
+func TestABacklogMessageIsNotContextOfTheNextPush(t *testing.T) {
+	env := testkit.New(t)
+	alice := env.NewUser("alice")
+	ctx := context.Background()
+	agentID := env.NewAI(alice, "builder")
+	room := testkit.Decode[dto.Room](alice.Post("/api/v1/rooms", dto.CreateRoomRequest{Name: "Support"}).RequireStatus(http.StatusCreated))
+	alice.Post("/api/v1/rooms/"+room.ID+"/members", dto.AddMemberRequest{Kind: dto.MemberKindAgent, MemberID: agentID}).RequireStatus(http.StatusCreated)
+	p := authn.Principal{Kind: authn.KindUser, UserID: alice.User.ID, Role: string(dto.RoleMember)}
+	post := func(text string) rooms.Message {
+		m, err := env.App.Rooms.Post(ctx, p, room.ID, rooms.PostInput{Text: text})
+		require.NoError(t, err)
+		return m
+	}
+	var early rooms.Message
+	var once sync.Once
+	agents.SetBeforeBounds(env.App.Gateway, func() { once.Do(func() { early = post("posted while it attached") }) })
+
+	conn, resp := alice.Token(dto.TokenKindAgent, "laptop").DialAgent("builder")
+	require.NotNil(t, conn, "upgrade refused: %d %s", resp.Status, resp.Body)
+	conn.Welcome(time.Minute)
+	require.Equal(t, early.ID, conn.Message(time.Minute).Message.ID, "the backlog delivers it")
+	next := post("the next one")
+	require.Equal(t, next.ID, conn.Message(time.Minute).Message.ID, "not the backlog message again")
+	conn.ExpectNone(300 * time.Millisecond)
+}
+
+// SN-03, MEM-03: a message posted after the welcome is the live push's, not the backlog's: in
+// mentions mode it comes as context of the next mention instead of being skipped by the backlog.
+func TestAPostAfterTheWelcomeIsLiveNotBacklog(t *testing.T) {
+	env := testkit.New(t)
+	alice := env.NewUser("alice")
+	ctx := context.Background()
+	agentID := env.NewAI(alice, "builder")
+	room := testkit.Decode[dto.Room](alice.Post("/api/v1/rooms", dto.CreateRoomRequest{Name: "Support"}).RequireStatus(http.StatusCreated))
+	member := testkit.Decode[dto.RoomMember](alice.Post("/api/v1/rooms/"+room.ID+"/members", dto.AddMemberRequest{Kind: dto.MemberKindAgent, MemberID: agentID}).RequireStatus(http.StatusCreated))
+	mode := dto.DeliveryModeMentions
+	alice.Patch("/api/v1/rooms/"+room.ID+"/members/"+member.ID, dto.UpdateMemberRequest{Delivery: &mode}).RequireStatus(http.StatusOK)
+	p := authn.Principal{Kind: authn.KindUser, UserID: alice.User.ID, Role: string(dto.RoleMember)}
+	post := func(text string) rooms.Message {
+		m, err := env.App.Rooms.Post(ctx, p, room.ID, rooms.PostInput{Text: text})
+		require.NoError(t, err)
+		return m
+	}
+	var plain rooms.Message
+	var once sync.Once
+	hooked := make(chan struct{})
+	agents.SetAfterWelcome(env.App.Gateway, func() {
+		once.Do(func() { plain = post("nothing for you"); close(hooked) })
+	})
+
+	conn, resp := alice.Token(dto.TokenKindAgent, "laptop").DialAgent("builder")
+	require.NotNil(t, conn, "upgrade refused: %d %s", resp.Status, resp.Body)
+	conn.Welcome(time.Minute)
+	<-hooked // the client can read the welcome before the hook has posted
+	asked := post("please @builder look")
+	first := conn.Message(time.Minute)
+	require.Equal(t, plain.ID, first.Message.ID, "the earlier message comes as context")
+	require.True(t, first.Context)
+	require.Equal(t, asked.ID, conn.Message(time.Minute).Message.ID)
+	conn.ExpectNone(300 * time.Millisecond)
+}
+
+// SESS-24, SN-03: a fallback posted after the backlog bound does not hide an earlier live push. The
+// backlog writes the fallback, but its sequence must not cover the plain message before it, which the
+// backlog no longer lists and only the live push delivers.
+func TestAFallbackAfterTheBoundKeepsTheEarlierLivePush(t *testing.T) {
+	f := newSessionFixture(t)
+	var plain, fallback dto.Message
+	var once sync.Once
+	agents.SetAfterWelcome(f.env.App.Gateway, func() {
+		once.Do(func() {
+			plain = f.post(t, "plain")
+			fallback = f.post(t, "@atlas:wt one")
+			f.waitRow(t, "wt", fallback.ID) // the dispatcher queued plain before it wrote this row
+		})
+	})
+	principal := f.dial(t)
+	got := map[string]bool{}
+	for range 2 {
+		got[principal.Message(time.Minute).Message.ID] = true
+	}
+	require.True(t, got[plain.ID], "the plain message is delivered")
+	require.True(t, got[fallback.ID], "the fallback is delivered")
+	principal.ExpectNone(500 * time.Millisecond)
+}

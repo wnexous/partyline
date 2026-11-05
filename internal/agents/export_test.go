@@ -5,6 +5,12 @@ import "time"
 // SetAfterBacklogCount makes g run f between the backlog count and list reads.
 func SetAfterBacklogCount(g *Gateway, f func()) { g.afterBacklogCount = f }
 
+// SetBeforeBounds makes g run f after a session attached and before its backlog bounds are read.
+func SetBeforeBounds(g *Gateway, f func()) { g.beforeBounds = f }
+
+// SetAfterWelcome makes g run f right after it wrote a connection's welcome frame.
+func SetAfterWelcome(g *Gateway, f func()) { g.afterWelcome = f }
+
 // SetBeforeAttach makes g run f after a connection upgrades and before its session attaches.
 func SetBeforeAttach(g *Gateway, f func()) { g.beforeAttach = f }
 
