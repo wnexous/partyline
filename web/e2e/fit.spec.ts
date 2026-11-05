@@ -397,6 +397,48 @@ async function checkEveryPage(page: Page, where: string, enlarged: boolean) {
     () => page.getByRole("heading", { name: "Details" }),
     enlarged,
   );
+  await checkPage(
+    page,
+    `${where}: Contacts`,
+    "/contacts",
+    () => page.getByRole("heading", { level: 1, name: "Contacts" }),
+    enlarged,
+  );
+  await checkPage(
+    page,
+    `${where}: API tokens`,
+    "/tokens",
+    () => page.getByRole("heading", { level: 1, name: "API tokens" }),
+    enlarged,
+  );
+  await checkPage(
+    page,
+    `${where}: Organizations`,
+    "/orgs",
+    () => page.getByRole("heading", { level: 1, name: "Organizations" }),
+    enlarged,
+  );
+  await checkPage(
+    page,
+    `${where}: Users`,
+    "/admin/users",
+    () => page.getByRole("heading", { level: 1, name: "Users" }),
+    enlarged,
+  );
+  await checkPage(
+    page,
+    `${where}: Invites`,
+    "/admin/invites",
+    () => page.getByRole("heading", { level: 1, name: "Invites" }),
+    enlarged,
+  );
+  await checkPage(
+    page,
+    `${where}: the audit log`,
+    "/admin/audit",
+    () => page.getByRole("heading", { level: 1, name: "Audit log" }),
+    enlarged,
+  );
   await checkProfilePanel(page, `${where}: the profile panel`, enlarged);
   await checkFullProfile(page, `${where}: the full profile`, enlarged);
   await checkOpenMenu(
