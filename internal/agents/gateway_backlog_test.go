@@ -240,3 +240,44 @@ func TestAFallbackAfterTheBoundKeepsTheEarlierLivePush(t *testing.T) {
 	require.True(t, got[fallback.ID], "the fallback is delivered")
 	principal.ExpectNone(500 * time.Millisecond)
 }
+
+// SN-01, SN-03: a push that reaches a session while it attaches, before its state rows exist, brings
+// no catch-up from the room's join point: the messages before it are the backlog's, which skips what
+// the delivery mode does not want instead of handing it over as context.
+func TestAPushWhileAttachingBringsNoHistory(t *testing.T) {
+	env := testkit.New(t)
+	alice := env.NewUser("alice")
+	ctx := context.Background()
+	agentID := env.NewAI(alice, "builder")
+	room := testkit.Decode[dto.Room](alice.Post("/api/v1/rooms", dto.CreateRoomRequest{Name: "Support"}).RequireStatus(http.StatusCreated))
+	member := testkit.Decode[dto.RoomMember](alice.Post("/api/v1/rooms/"+room.ID+"/members", dto.AddMemberRequest{Kind: dto.MemberKindAgent, MemberID: agentID}).RequireStatus(http.StatusCreated))
+	mode := dto.DeliveryModeMentions
+	alice.Patch("/api/v1/rooms/"+room.ID+"/members/"+member.ID, dto.UpdateMemberRequest{Delivery: &mode}).RequireStatus(http.StatusOK)
+	p := authn.Principal{Kind: authn.KindUser, UserID: alice.User.ID, Role: string(dto.RoleMember)}
+	post := func(text string) rooms.Message {
+		m, err := env.App.Rooms.Post(ctx, p, room.ID, rooms.PostInput{Text: text})
+		require.NoError(t, err)
+		return m
+	}
+	post("chatter one")
+	post("chatter two")
+	var asked rooms.Message
+	var once sync.Once
+	agents.SetAfterAttach(env.App.Gateway, func() {
+		once.Do(func() {
+			asked = post("please @builder look")
+			// The dispatcher may be late: the push it makes is made here, inside the gap.
+			msg, err := env.App.Gateway.Message(ctx, asked.ID)
+			require.NoError(t, err)
+			env.App.Gateway.Push(agentID, "", dto.AgentMessage{Room: dto.RoomRef{ID: room.ID, Name: room.Name}, Message: msg})
+		})
+	})
+
+	conn, resp := alice.Token(dto.TokenKindAgent, "laptop").DialAgent("builder")
+	require.NotNil(t, conn, "upgrade refused: %d %s", resp.Status, resp.Body)
+	conn.Welcome(time.Minute)
+	got := conn.Message(time.Minute)
+	require.Equal(t, asked.ID, got.Message.ID, "only the mention: the chatter is not context")
+	require.False(t, got.Context)
+	conn.ExpectNone(300 * time.Millisecond)
+}

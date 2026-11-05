@@ -11,6 +11,9 @@ func SetBeforeBounds(g *Gateway, f func()) { g.beforeBounds = f }
 // SetAfterWelcome makes g run f right after it wrote a connection's welcome frame.
 func SetAfterWelcome(g *Gateway, f func()) { g.afterWelcome = f }
 
+// SetAfterAttach makes g run f after a session attached and before its per-room state rows are written.
+func SetAfterAttach(g *Gateway, f func()) { g.afterAttach = f }
+
 // SetBeforeAttach makes g run f after a connection upgrades and before its session attaches.
 func SetBeforeAttach(g *Gateway, f func()) { g.beforeAttach = f }
 
