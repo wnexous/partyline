@@ -323,6 +323,22 @@ async function checkEveryPage(page: Page, where: string, enlarged: boolean) {
     () => page.getByRole("tree", { name: /^Org chart of / }),
     enlarged,
   );
+  if (enlarged) {
+    // The phone has a finger, not a mouse: each arrow that opens or closes a branch is 44 px.
+    const arrows = await page.getByRole("button", { name: /^(Collapse|Expand) / }).all();
+    expect(arrows.length, `${where}: the org chart has no arrow to check`).toBeGreaterThan(0);
+    for (const arrow of arrows) {
+      const box = await arrow.boundingBox();
+      expect(
+        box?.height ?? 0,
+        `${where}: an org chart arrow is shorter than 44 px`,
+      ).toBeGreaterThanOrEqual(44);
+      expect(
+        box?.width ?? 0,
+        `${where}: an org chart arrow is narrower than 44 px`,
+      ).toBeGreaterThanOrEqual(44);
+    }
+  }
   await checkPage(
     page,
     `${where}: Identities`,

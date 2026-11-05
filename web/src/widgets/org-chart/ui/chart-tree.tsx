@@ -164,7 +164,7 @@ export function ChartTree({
                   toggle(node.id, !open);
                   focusItem(node.id);
                 }}
-                className="grid size-7 shrink-0 place-items-center rounded-md text-muted-foreground outline-none hover:bg-accent hover:text-foreground"
+                className="grid size-7 shrink-0 place-items-center rounded-md text-muted-foreground outline-none hover:bg-accent hover:text-foreground pointer-coarse:size-11"
               >
                 <ChevronRightIcon
                   aria-hidden="true"
@@ -172,7 +172,7 @@ export function ChartTree({
                 />
               </button>
             ) : (
-              <span aria-hidden="true" className="size-7 shrink-0" />
+              <span aria-hidden="true" className="size-7 shrink-0 pointer-coarse:size-11" />
             )}
             {row(node, { labelId, descId, tabbable: node.id === stop })}
           </div>
