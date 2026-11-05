@@ -71,7 +71,10 @@ export function IntelligenceName({
   return (
     <span
       data-testid="intelligence-name"
-      className={cn("inline-flex min-w-0 flex-wrap items-center gap-x-1.5 gap-y-0.5", className)}
+      className={cn(
+        "inline-flex max-w-full min-w-0 flex-wrap items-center gap-x-1.5 gap-y-0.5",
+        className,
+      )}
     >
       {handle && !showHandle ? (
         <Tooltip>
