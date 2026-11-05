@@ -99,6 +99,19 @@ func harnessSessionID(io stdio, harness string) string {
 	return id
 }
 
+// ownHarnessSessionID is harnessSessionID for a process that is never Claude Code itself: `partyline listen`
+// and `channel --tools-only`, the halves of a pi or OpenCode session. Only the adapter's own variable counts.
+// Such a harness started from a tool of a Claude Code session inherits CLAUDE_CODE_SESSION_ID and, through the
+// launcher, PARTYLINE_HARNESS=claude; sending that id made the server take it for the pinned principal coming
+// back, and it closed the real one as taken over.
+func ownHarnessSessionID(io stdio) string {
+	id := strings.TrimSpace(io.getenv(harnessSessionVar))
+	if !harnessSessionPattern.MatchString(id) {
+		return ""
+	}
+	return id
+}
+
 // launcherVars are the variables `partyline <harness>` sets for its session (see launch).
 // PARTYLINE_TAKEOVER is the one a launcher sets when the user agreed to take the AI's live
 // session over; the PARTYLINE_LAUNCH_* ones carry what the session asked for.

@@ -210,6 +210,9 @@ func channelCmd(ctx context.Context, args []string, io stdio) int {
 	if *harness != "" {
 		c.id.Harness = *harness
 	}
+	if *toolsOnly {
+		c.id.HarnessSession = ownHarnessSessionID(io) // the tools half is never Claude Code itself
+	}
 	// The tools half of pi and OpenCode acts as the session its listen process holds: it sends that
 	// process's live id (SESS-45).
 	var liveID string
@@ -248,6 +251,7 @@ func listenCmd(ctx context.Context, args []string, io stdio) int {
 	if code != 0 {
 		return code
 	}
+	c.id.HarnessSession = ownHarnessSessionID(io) // listen is never Claude Code itself
 	err := channel.Listen(ctx, channel.ListenOptions{
 		URL: c.url, Token: c.token, Machine: c.id.Machine, Folder: c.id.Folder, MainFolder: c.id.MainFolder,
 		Home: c.id.Home, Harness: c.id.Harness, Adopt: c.id.Adopt, LiveID: sessionLiveID(withLauncherEnv(io)),

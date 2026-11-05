@@ -214,7 +214,12 @@ function superviseListen(opts: {
 // launcher sets PARTYLINE_HARNESS) or OpenCode was set up with --always. Without either, a
 // plain session stays out of Partyline: no listen process, no notice, no error.
 function listening(always: boolean, env: Record<string, string | undefined> = process.env): boolean {
-	return always || (env.PARTYLINE_HARNESS ?? "").trim() !== "";
+	// PARTYLINE_HARNESS naming another harness means a session of that harness started this one from a
+	// tool (a worker a Claude Code session started): it inherited the variable and is no session of the AI,
+	// so it must not connect as one, even with --always.
+	const harness = (env.PARTYLINE_HARNESS ?? "").trim();
+	if (harness !== "") return harness === "opencode";
+	return always;
 }
 
 // bridge connects `partyline listen` to the sessions of one OpenCode project. It is the part of

@@ -87,6 +87,13 @@ describe("omp extension", () => {
 		expect(omp.sent).toEqual([{ content: framingCases[0].text }]);
 	});
 
+	test("a worker a Claude Code session started is inert, even with --always", async () => {
+		process.env.PARTYLINE_HARNESS = "claude"; // inherited from the Claude Code session that ran omp
+		expect(fakeOmp().handlers.size).toBe(0);
+		const always = (await importAlways("omp/partyline.ts")) as { default: Plugin };
+		expect(fakeOmp({ idle: true }, always.default).handlers.size).toBe(0);
+	});
+
 	test("PUSH-03: subscribes to mcp_notification and agent_end", () => {
 		expect([...fakeOmp().handlers.keys()].sort()).toEqual(["agent_end", "mcp_notification"]);
 	});

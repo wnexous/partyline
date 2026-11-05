@@ -203,7 +203,12 @@ function superviseListen(opts: {
 // PARTYLINE_HARNESS) or pi was set up with --always. Without either, a plain pi session stays
 // out of Partyline: no listen process, no notice, no error.
 function listening(always: boolean, env: Record<string, string | undefined> = process.env): boolean {
-	return always || (env.PARTYLINE_HARNESS ?? "").trim() !== "";
+	// PARTYLINE_HARNESS naming another harness means a session of that harness started this one from a
+	// tool (a worker a Claude Code session started): it inherited the variable and is no session of the AI,
+	// so it must not connect as one, even with --always.
+	const harness = (env.PARTYLINE_HARNESS ?? "").trim();
+	if (harness !== "") return harness === "pi";
+	return always;
 }
 
 // harnessSessionOf is pi's id of the conversation in ctx, or "" when pi does not give one or it is not an id

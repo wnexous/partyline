@@ -107,6 +107,14 @@ describe("OpenCode plugin", () => {
 		expect(spawned[0].options.env?.PARTYLINE_HARNESS).toBe("opencode");
 	});
 
+	test("a worker a Claude Code session started runs no listen, even with --always", async () => {
+		process.env.PARTYLINE_HARNESS = "claude"; // inherited from the Claude Code session that ran `opencode run`
+		await load();
+		const always = (await importAlways("opencode/partyline.ts")) as unknown as Api;
+		await load({}, always);
+		expect(spawned).toEqual([]);
+	});
+
 	test("SESS-45: listen and the tools get one live id, tied to this process", async () => {
 		await load();
 		const live = spawned[0].options.env?.PARTYLINE_LIVE ?? "";

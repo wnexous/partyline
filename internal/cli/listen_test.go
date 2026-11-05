@@ -326,3 +326,31 @@ func TestListenExitsWith3AfterATakeover(t *testing.T) {
 	require.Equal(t, 3, p.exit(), "stderr: %s", p.stderr.String())
 	require.NoError(t, taker.Closed(100*time.Millisecond), "the new session is left alone")
 }
+
+// A harness started from a tool of a Claude Code session (a worker: `opencode run`, `pi -p`) inherits that
+// session's environment, its PARTYLINE_HARNESS=claude and CLAUDE_CODE_SESSION_ID among them. Its listen
+// process is never Claude Code, so it must not send that id: with it, the server took it for the pinned
+// principal coming back and closed the real one as taken over, and the AI went offline when the worker ended.
+func TestAListenStartedFromAClaudeSessionDoesNotTakeItsPlace(t *testing.T) {
+	e := newChannelEnv(t)
+	const id = "15cf4c1e-3a52-4a8e-9f6b-0123456789ab"
+	claude := e.vars("PARTYLINE_HARNESS", "claude", "CLAUDE_CODE_SESSION_ID", id)
+	principal := startChannel(t, nil, claude, "/tmp/wd")
+	principal.initialize()
+	prof := e.ai(t, "/tmp/wd")
+	agent, err := e.env.App.Store.R().GetAgent(t.Context(), prof.ID)
+	require.NoError(t, err)
+	require.Equal(t, id, agent.PrincipalSession)
+
+	worker := startListen(t, claude, "/tmp/wd", nil)
+	require.Eventually(t, func() bool {
+		return len(e.ai(t, "/tmp/wd").AI.Sessions) == 2
+	}, chanWait, 20*time.Millisecond, "the worker is a parallel session next to the principal; stderr: %s", worker.stderr.String())
+	labels := []string{}
+	for _, s := range e.ai(t, "/tmp/wd").AI.Sessions {
+		labels = append(labels, s.Label)
+	}
+	require.Contains(t, labels, "", "the principal is still the Claude Code session")
+	text, isErr := principal.call(2, "list_rooms")
+	require.False(t, isErr, "the principal still works: %s", text)
+}
