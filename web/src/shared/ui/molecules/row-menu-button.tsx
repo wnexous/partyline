@@ -34,7 +34,10 @@ export function RowMenuButton({
         const box = button.getBoundingClientRect();
         onOpen({ x: box.right, y: box.bottom, align: "end" }, button);
       }}
-      className={cn("text-muted-foreground focus-visible:opacity-100", className)}
+      className={cn(
+        "text-muted-foreground pointer-coarse:size-11 focus-visible:opacity-100",
+        className,
+      )}
     >
       <EllipsisIcon aria-hidden="true" />
     </Button>

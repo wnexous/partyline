@@ -28,6 +28,7 @@ export function EditBar({
           type="button"
           variant="ghost"
           size="icon-xs"
+          className="pointer-coarse:size-11"
           aria-label={t("composer.cancelEdit")}
           onClick={onLeave}
         >
