@@ -67,7 +67,7 @@ const routeApi = getRouteApi("/_app/contacts/$id");
  * the viewer shares with it, the apps it speaks through (the connectors it operates among them)
  * and, for a person, the conversations the viewer can see with it. What the viewer may do about it
  * comes from the profile's flags (POS-04, POS-05, POS-06): whoever may edit it gets the editor,
- * whoever manages an AI may end its session or merge it, and each organization offers "Delete"
+ * whoever manages an AI may end its session or merge it, and each organization offers "Delete AI"
  * (an AI in its home organization) or "Remove from" (anyone else) where the server allows it.
  */
 
@@ -373,7 +373,7 @@ function MembershipRow({
               onClick={onDelete}
             >
               <Trash2Icon aria-hidden="true" />
-              {t("ai.deleteShort")}
+              {t("ai.deleteConfirm")}
             </Button>
           ) : (
             <Button
