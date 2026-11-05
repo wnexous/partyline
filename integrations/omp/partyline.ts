@@ -107,7 +107,12 @@ function isThenable(v: unknown): v is PromiseLike<unknown> {
 // PARTYLINE_HARNESS) or omp was set up with --always. Without either, a plain omp session stays
 // out of Partyline: the extension subscribes to nothing.
 function listening(always: boolean, env: Record<string, string | undefined> = process.env): boolean {
-	return always || (env.PARTYLINE_HARNESS ?? "").trim() !== "";
+	// PARTYLINE_HARNESS naming another harness means a session of that harness started this one from a
+	// tool (a worker a Claude Code session started): it inherited the variable and is no session of the AI,
+	// so it must not connect as one, even with --always.
+	const harness = (env.PARTYLINE_HARNESS ?? "").trim();
+	if (harness !== "") return harness === "omp";
+	return always;
 }
 
 export default function partyline(pi: OmpApi): void {

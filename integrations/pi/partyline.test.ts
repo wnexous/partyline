@@ -91,6 +91,14 @@ describe("pi extension", () => {
 		expect(spawned[0].options.env?.PARTYLINE_HARNESS).toBe("pi");
 	});
 
+	test("a worker a Claude Code session started runs no listen, even with --always", async () => {
+		process.env.PARTYLINE_HARNESS = "claude"; // inherited from the Claude Code session that ran pi
+		fakePi().start();
+		const always = (await importAlways("pi/partyline.ts")) as { default: Plugin };
+		fakePi({}, always.default).start();
+		expect(spawned).toEqual([]);
+	});
+
 	test("PUSH-04: session_start runs partyline listen in the session directory, once", () => {
 		const pi = fakePi();
 		expect(spawned).toEqual([]);
