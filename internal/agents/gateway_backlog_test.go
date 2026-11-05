@@ -200,11 +200,15 @@ func TestAPostAfterTheWelcomeIsLiveNotBacklog(t *testing.T) {
 	}
 	var plain rooms.Message
 	var once sync.Once
-	agents.SetAfterWelcome(env.App.Gateway, func() { once.Do(func() { plain = post("nothing for you") }) })
+	hooked := make(chan struct{})
+	agents.SetAfterWelcome(env.App.Gateway, func() {
+		once.Do(func() { plain = post("nothing for you"); close(hooked) })
+	})
 
 	conn, resp := alice.Token(dto.TokenKindAgent, "laptop").DialAgent("builder")
 	require.NotNil(t, conn, "upgrade refused: %d %s", resp.Status, resp.Body)
 	conn.Welcome(time.Minute)
+	<-hooked // the client can read the welcome before the hook has posted
 	asked := post("please @builder look")
 	first := conn.Message(time.Minute)
 	require.Equal(t, plain.ID, first.Message.ID, "the earlier message comes as context")
