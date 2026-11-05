@@ -918,6 +918,7 @@ func (g *Gateway) run(ctx context.Context, c *conn, row db.GetAgentWithOwnerRow,
 			return err
 		}
 	}
+	carry := map[string]int64{} // per room, the skipped count of a context frame that was not written
 	ping := time.NewTicker(g.d.PingInterval)
 	defer ping.Stop()
 	for {
@@ -941,8 +942,9 @@ func (g *Gateway) run(ctx context.Context, c *conn, row db.GetAgentWithOwnerRow,
 				switch {
 				case o.msg.Context:
 					// The catch-up batch is written once per connection: a message already written here is
-					// not context again (SN-03).
+					// not context again (SN-03). Its skipped count moves to the next frame of the batch.
 					if _, dup := c.pushed[id]; dup {
+						carry[o.msg.Room.ID] += o.msg.Skipped
 						continue
 					}
 				case c.labelOf() != "" || o.msg.ForLabel != "":
@@ -959,6 +961,10 @@ func (g *Gateway) run(ctx context.Context, c *conn, row db.GetAgentWithOwnerRow,
 					c.delivered[id] = struct{}{}
 				}
 				c.pushed[id] = struct{}{}
+				if n := carry[o.msg.Room.ID]; n > 0 {
+					o.msg.Skipped += n // the first frame of the room that is written carries it
+					delete(carry, o.msg.Room.ID)
+				}
 			}
 			if err := c.write(ctx, framed(o)); err != nil {
 				return err
@@ -1074,14 +1080,13 @@ func (g *Gateway) backlog(ctx context.Context, c *conn, a db.Agent, bounds map[s
 			}
 			views = kept
 		}
-		if len(views) == 0 {
-			pending = 0 // nothing before the welcome is left to list: the rest is the live push's
-		}
 		if pending == 0 && len(fallbacks) == 0 {
 			continue
 		}
 		slices.Reverse(views) // oldest first
-		if skipped := pending - int64(len(views)); skipped > 0 {
+		// With no view left there is no first message to move the cursor before: the next push's
+		// catch-up counts the older ones instead.
+		if skipped := pending - int64(len(views)); skipped > 0 && len(views) > 0 {
 			if err := c.write(ctx, dto.AgentNoticeFrame{Type: dto.AgentFrameTypeNotice, Room: ref, Text: SkippedNotice(skipped)}); err != nil {
 				return nil, err
 			}
@@ -1118,7 +1123,9 @@ func (g *Gateway) backlog(ctx context.Context, c *conn, a db.Agent, bounds map[s
 				}
 				c.delivered[m.ID] = struct{}{}
 				c.pushed[m.ID] = struct{}{}
-				if m.Seq > sent[st.ID] {
+				// A fallback after the bound is deduped by delivered: raising sent past the bound would
+				// drop a live push of an earlier message the backlog no longer lists.
+				if bound, ok := bounds[st.ID]; (!ok || m.Seq <= bound) && m.Seq > sent[st.ID] {
 					sent[st.ID] = m.Seq
 				}
 				continue

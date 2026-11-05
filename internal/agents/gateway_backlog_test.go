@@ -212,3 +212,27 @@ func TestAPostAfterTheWelcomeIsLiveNotBacklog(t *testing.T) {
 	require.Equal(t, asked.ID, conn.Message(time.Minute).Message.ID)
 	conn.ExpectNone(300 * time.Millisecond)
 }
+
+// SESS-24, SN-03: a fallback posted after the backlog bound does not hide an earlier live push. The
+// backlog writes the fallback, but its sequence must not cover the plain message before it, which the
+// backlog no longer lists and only the live push delivers.
+func TestAFallbackAfterTheBoundKeepsTheEarlierLivePush(t *testing.T) {
+	f := newSessionFixture(t)
+	var plain, fallback dto.Message
+	var once sync.Once
+	agents.SetAfterWelcome(f.env.App.Gateway, func() {
+		once.Do(func() {
+			plain = f.post(t, "plain")
+			fallback = f.post(t, "@atlas:wt one")
+			f.waitRow(t, "wt", fallback.ID) // the dispatcher queued plain before it wrote this row
+		})
+	})
+	principal := f.dial(t)
+	got := map[string]bool{}
+	for range 2 {
+		got[principal.Message(time.Minute).Message.ID] = true
+	}
+	require.True(t, got[plain.ID], "the plain message is delivered")
+	require.True(t, got[fallback.ID], "the fallback is delivered")
+	principal.ExpectNone(500 * time.Millisecond)
+}
