@@ -85,7 +85,7 @@ func homeFolder(io stdio) string {
 }
 
 // sessionIdentity gathers what a process tells the server about itself (AID-07): the machine
-// (PARTYLINE_MACHINE, which only the agent image sets, else the hostname), the canonical folder
+// (the hostname), the canonical folder
 // (sessionFolder), the main worktree folder of a linked worktree
 // (PARTYLINE_MAIN_FOLDER, else computed once, SESS-01), the canonical home folder, the harness
 // (PARTYLINE_HARNESS, set by the launchers), the identity to adopt (adopt, else
@@ -94,7 +94,7 @@ func homeFolder(io stdio) string {
 // (ORG-04, POS-07, POS-08). Only those are read: PARTYLINE_ORG and the others are the launcher's input.
 func sessionIdentity(adopt string, io stdio) channel.Identity {
 	id := channel.Identity{
-		Machine: channel.MachineName(io.getenv, hostnameOf(io)),
+		Machine: channel.MachineName(hostnameOf(io)),
 		Folder:  sessionFolder(io), Home: homeFolder(io),
 		Harness: strings.TrimSpace(io.getenv("PARTYLINE_HARNESS")), Adopt: strings.TrimSpace(adopt),
 		Org:      strings.TrimSpace(io.getenv(launchOrgVar)),

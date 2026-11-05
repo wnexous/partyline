@@ -239,19 +239,13 @@ func verifyAgentToken(ctx context.Context, base, token string) error {
 	return err
 }
 
-// approveInBrowser runs the device flow (DEV-01..03, DEV-06) for an agent token: it creates a
-// request named after the machine, prints the approval page (without the code) and the code to
-// type there, and polls until the request is approved, denied or expired. It returns the
-// delivered agent token and the approver's username.
+// approveInBrowser runs the device flow (DEV-01..03, DEV-06): it creates a request named after
+// the machine, prints the approval page (without the code) and the code to type there, and polls
+// until the request is approved, denied or expired. It returns the delivered agent token and the
+// approver's username.
 func approveInBrowser(ctx context.Context, base string, io stdio) (token, approver string, err error) {
-	return approveInBrowserKind(ctx, base, io, dto.TokenKindAgent)
-}
-
-// approveInBrowserKind is approveInBrowser for the token kind the approval creates: an agent
-// token for setup, a runner token for `partyline runner` (CA-01).
-func approveInBrowserKind(ctx context.Context, base string, io stdio, kind dto.TokenKind) (token, approver string, err error) {
 	machine := machineName(io)
-	resp, err := request(ctx, http.MethodPost, base+"/api/v1/devices", dto.CreateDeviceRequest{Machine: machine, Kind: kind}, nil)
+	resp, err := request(ctx, http.MethodPost, base+"/api/v1/devices", dto.CreateDeviceRequest{Machine: machine}, nil)
 	if err != nil {
 		return "", "", fmt.Errorf("cannot reach %s: %w", base, err)
 	}
@@ -361,10 +355,9 @@ func displayCode(code string) string {
 }
 
 // machineName is the machine of this process cut to what the server accepts (channel.MachineName):
-// PARTYLINE_MACHINE when the agent image set it, else the hostname, and "partyline" when neither
-// can be read.
+// the hostname, and "partyline" when it cannot be read.
 func machineName(io stdio) string {
-	name := channel.MachineName(io.getenv, hostnameOf(io))
+	name := channel.MachineName(hostnameOf(io))
 	if name == "" {
 		return "partyline"
 	}

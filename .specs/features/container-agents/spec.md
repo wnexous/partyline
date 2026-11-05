@@ -1,6 +1,6 @@
 # Container agents: AIs that live in a container on a server you choose
 
-Status: Specify + Design + Tasks written 2026-10-29; revised the same day to the runner model. Requirement ids CA-xx.
+Status: REMOVED 2026-11-04 (AD-039). Specify + Design + Tasks were written 2026-10-29; revised the same day to the runner model. Requirement ids CA-xx.
 
 ## Problem
 An AI exists only while someone keeps a terminal open with `partyline claude|pi|opencode|omp`.

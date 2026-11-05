@@ -94,7 +94,7 @@ type CreateDeviceRequestParams struct {
 	ExpiresAt      int64
 }
 
-// kind is what the approval creates: an agent token (setup) or a runner token (CA-01).
+// kind is the token the approval creates; it is always agent now (the column stays NOT NULL).
 func (q *Queries) CreateDeviceRequest(ctx context.Context, arg CreateDeviceRequestParams) error {
 	_, err := q.db.ExecContext(ctx, createDeviceRequest,
 		arg.ID,

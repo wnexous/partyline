@@ -204,14 +204,6 @@ const (
 	// ErrorCodeAlreadyAnswered is a second structured answer by the same author to the same question
 	// (409, QR-08): the member answers once, and deletes the answer to answer again.
 	ErrorCodeAlreadyAnswered ErrorCode = "already_answered"
-	// ErrorCodeRunnerOffline is a command for a runner that is not connected (409, CA-01);
-	// ErrorCodeRunnerInUse is the refusal to delete a runner that still has containers (409).
-	ErrorCodeRunnerOffline ErrorCode = "runner_offline"
-	ErrorCodeRunnerInUse   ErrorCode = "runner_in_use"
-	// ErrorCodeCredentialsRequired is a container AI created, or its environment updated, without a
-	// variable the chosen app reads its provider key from: the app inside the container could never
-	// sign in (422, CA-04). The message names the variables, never a value.
-	ErrorCodeCredentialsRequired ErrorCode = "credentials_required"
 )
 
 // ErrorBody is the envelope of every error response.

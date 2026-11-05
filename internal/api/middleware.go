@@ -28,9 +28,6 @@ const SessionCookie = "pl_session"
 // agentPathPrefix is the only path prefix agent tokens may reach (TOK-03).
 const agentPathPrefix = "/api/v1/agent/"
 
-// runnerPathPrefix is the only path prefix runner tokens may reach (CA-01).
-const runnerPathPrefix = "/api/v1/runner/"
-
 // DefaultCSP is the Content-Security-Policy of API responses. HTML responses set their own.
 const DefaultCSP = "default-src 'none'; frame-ancestors 'none'"
 
@@ -240,8 +237,7 @@ func principal(cfg MiddlewareConfig, next http.Handler) http.Handler {
 }
 
 // tokenRestriction keeps each token kind inside its routes: agent tokens reach only the agent
-// endpoints (TOK-03) and runner tokens only the runner endpoints (CA-01), so a machine token
-// never acts as its owner anywhere else.
+// endpoints (TOK-03), so a machine token never acts as its owner anywhere else.
 func tokenRestriction(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		p, ok := authn.PrincipalFrom(r.Context())
@@ -249,12 +245,8 @@ func tokenRestriction(next http.Handler) http.Handler {
 			next.ServeHTTP(w, r)
 			return
 		}
-		switch {
-		case p.Kind == authn.KindAgent && !strings.HasPrefix(r.URL.Path, agentPathPrefix):
+		if p.Kind == authn.KindAgent && !strings.HasPrefix(r.URL.Path, agentPathPrefix) {
 			httpx.WriteError(w, httpx.NewError(http.StatusForbidden, dto.ErrorCodeForbidden, "agent tokens can only call agent endpoints"))
-			return
-		case p.Kind == authn.KindRunner && !strings.HasPrefix(r.URL.Path, runnerPathPrefix):
-			httpx.WriteError(w, httpx.NewError(http.StatusForbidden, dto.ErrorCodeForbidden, "runner tokens can only call runner endpoints"))
 			return
 		}
 		next.ServeHTTP(w, r)

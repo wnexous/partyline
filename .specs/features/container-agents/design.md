@@ -1,3 +1,5 @@
+Status: REMOVED 2026-11-04 (AD-039)
+
 # Design: container agents (runner model)
 
 A server joins by running `partyline runner`, which logs in to Partyline and keeps an outbound

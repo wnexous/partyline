@@ -463,7 +463,7 @@
 - **Trade-off**: Commands are not queued: a container operation fails fast while its runner is offline, and the web shows it. One Docker host per runner, containers only, no sleep/wake or scheduling across servers in this version. Claude Code's channel acknowledgement has no supported non-interactive form, so the agent image types it into the pty as a last resort until Anthropic offers one (design, "Unattended Claude Code").
 - **Scope**: store (`0029`), `runners` + `runners/spec`, `ownersecrets`, `containeragents`, `runnerexec`, cli (`runner`), api (`/runners`, `/secrets`, `/container-agents`, `/runner/*`), web (servers, secrets, create/operate container AI), `deploy/agent`, docs.
 - **Date**: 2026-10-29
-- **Status**: active
+- **Status**: superseded by AD-039 (the whole system was removed on 2026-11-04).
 
 ### AD-037
 - **Decision**: The catch-up context of a session is a trust boundary, not only a convenience. In a room whose AI member is in `trusted` delivery mode, an untrusted message is never given as context (`mentions` keeps the whole conversation, which is the point of SN-03). Messages written by AIs while the loop guard had the room paused are never context: migration 0032 marks them with the message (`messages.during_pause`). Only an acknowledged message leaves the batch, so a batch lost with its connection is replayed; delivery rows are written only for frames that reached the queue, and a batch larger than the free queue keeps the newest frames that fit plus `skipped`. The principal's `''` copy row is written only when it routes something (a live parallel session, a sibling-addressed message, or a mentions-only principal), and its acknowledgement consumes the addressed row of that message. Delivery rows store the session key (`agent_session_deliveries.session_key`) and edits/deletes route by it, never by a reassigned label.
@@ -480,6 +480,18 @@
   - **Scope**: store (`backup.go`, `space_unix.go`, `space_windows.go`, `space_other.go`, the `Open` option and `Migrate`), config (two variables), app (wiring), cli (serve test), README, tests. No migration, no DTO, no API and no web change; the architecture layer table is unchanged.
   - **Date**: 2026-10-30
   - **Status**: active
+
+### AD-039
+- **Decision**: The container agents system is removed completely: `partyline runner`, the runner registry and hub, owner secrets, the `ghcr.io/wnexous/partyline-agent` image, container AIs, their API routes, token kind, web pages and deployment assets. Partyline will build its own harness later, with a different philosophy.
+  - **Removed**: `internal/runners` (and `runners/spec`), `runnerexec`, `containeragents`, `ownersecrets`, the container identity of `internal/agents`, their routes, DTOs and tests, the `runner` token kind (authn, users, devices), the device-flow `kind` option, `PARTYLINE_MACHINE` (a session reports its hostname again), `PARTYLINE_RUNNER_IMAGES`, `deploy/agent`, the release job that pushed the image, the web slices (servers, secrets, create/operate container AI, profile container section), the docs and the e2e spec. Migration `0034` drops `container_agents`, `owner_secrets` and `runners` and deletes the runner tokens with their device requests.
+  - **Kept** (generic improvements that came with the work): the automatic pre-migration backup (`store.Migrate`, `PARTYLINE_MIGRATION_BACKUPS_KEEP`, AD-038) and OpenCode opening a session for a room message when none is active. Sessions and notifications are untouched.
+  - **Data**: the automatic backup taken before the migration keeps every dropped row. The `api_tokens` and `device_requests` CHECKs still name the runner kind because rebuilding either table to narrow a CHECK was not worth the risk; nothing writes the value and no row keeps it.
+- **Reason**: The owner decided on 2026-11-04 that the container model is not the direction: Partyline will build its own harness with a different philosophy. Keeping it would keep a second product, its secret store and its image in the server.
+- **Trade-off**: Container AIs stop and their rows and tokens are gone after the upgrade; the backup is the way back. The removed routes answer 404, and an old runner token no longer authenticates.
+- **Scope**: store (`0034`, sqlc), `internal/runners`, `internal/runnerexec`, `internal/containeragents`, `internal/ownersecrets`, `internal/agents/container.go`, api (routes, DTO, middleware, devices, tokens, authn, app wiring, archtest), config, cli (`runner`, `runner_token`, `PARTYLINE_MACHINE`), `deploy/agent`, the release workflow, web, docs.
+- **Date**: 2026-11-04
+- **Status**: active
+- **Supersedes**: AD-036.
 
 ## Handoff
 

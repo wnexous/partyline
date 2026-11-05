@@ -101,11 +101,9 @@ func harnessSessionID(io stdio, harness string) string {
 
 // launcherVars are the variables `partyline <harness>` sets for its session (see launch).
 // PARTYLINE_TAKEOVER is the one a launcher sets when the user agreed to take the AI's live
-// session over; the PARTYLINE_LAUNCH_* ones carry what the session asked for. PARTYLINE_MACHINE
-// is not the launcher's but the agent image's (channel.MachineEnvVar): it travels with the folder,
-// so the tools of a container session keep joining the AI of the container.
+// session over; the PARTYLINE_LAUNCH_* ones carry what the session asked for.
 var launcherVars = []string{
-	folderEnvVar, mainFolderVar, channel.MachineEnvVar, "PARTYLINE_HARNESS", "PARTYLINE_TAKEOVER", principalEnvVar, "PARTYLINE_AGENT",
+	folderEnvVar, mainFolderVar, "PARTYLINE_HARNESS", "PARTYLINE_TAKEOVER", principalEnvVar, "PARTYLINE_AGENT",
 	launchOrgVar, launchPositionVar, launchParentVar, liveEnvVar,
 }
 

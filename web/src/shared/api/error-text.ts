@@ -4,11 +4,7 @@ import {
   ErrorCodeAvatarInvalid,
   ErrorCodeContactNotFound,
   ErrorCodeCounterpartDisabled,
-  ErrorCodeCredentialsRequired,
-  ErrorCodeHandleTaken,
   ErrorCodeNoRouteToPerson,
-  ErrorCodeRunnerInUse,
-  ErrorCodeRunnerOffline,
   type IntelligenceRef,
 } from "./types.gen";
 
@@ -42,42 +38,12 @@ export const errorTextRules = {
     [{ status: 429 }, "composer.rateLimited"],
     [{ status: 422 }, "server"],
   ],
-  /** A server of the owner (CA-01): removing one that still runs containers is refused. */
-  runner: [
-    [{ status: 0 }, "error.network"],
-    [{ code: ErrorCodeRunnerInUse }, "servers.removeInUse"],
-    [{ status: 409 }, "servers.nameTaken"],
-    [{ status: 404 }, "servers.notFound"],
-    [{ status: 422 }, "server"],
-  ],
-  /**
-   * A container AI (CA-04, CA-06): its server was disconnected or refused the operation, the
-   * credentials lack the variable the app reads, or another AI already holds the @handle. Every
-   * known answer has its own sentence; a validation error shows the server's field reason.
-   */
-  container: [
-    [{ status: 0 }, "error.network"],
-    [{ code: ErrorCodeRunnerOffline }, "container.runnerOffline"],
-    [{ code: ErrorCodeCredentialsRequired }, "containerAgent.credentialsRequired"],
-    [{ code: ErrorCodeHandleTaken }, "containerAgent.handleTaken"],
-    [{ status: 404 }, "container.notFound"],
-    [{ status: 409 }, "containerAgent.conflict"],
-    [{ status: 422 }, "server"],
-    [{ status: 502 }, "container.runnerFailed"],
-    [{ status: 504 }, "container.runnerTimeout"],
-  ],
   /** A session's notifications (SN-08): a setting is 422 and names the field. */
   notifications: [
     [{ status: 0 }, "error.network"],
     [{ status: 403 }, "notifications.forbidden"],
     [{ status: 404 }, "notifications.notFound"],
     [{ status: 422 }, "server"],
-  ],
-  /** An owner's secret (CA-03): the value's own rules are 422 and name the field. */
-  secret: [
-    [{ status: 0 }, "error.network"],
-    [{ status: 422 }, "server"],
-    [{ status: 404 }, "secrets.notFound"],
   ],
 } as const satisfies Record<string, ErrorRules>;
 
