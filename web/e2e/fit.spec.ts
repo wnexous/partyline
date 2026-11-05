@@ -18,6 +18,7 @@ import { apiCall, test as base, type Credentials, expect, settled } from "./fixt
 import { agentJSON, connectAI, expectFits, loginAs, MACHINE, openSession } from "./helpers";
 import { postPictures } from "./images";
 import { type Instance, startInstance } from "./server";
+import { shootWhole } from "./shots";
 
 // The phone fit check (UI-24): the pages the product owner uses on an Android phone, at the two
 // phone widths that must fit with the system font enlarged, and in both projects the suite already
@@ -151,6 +152,15 @@ async function scrollThrough(page: Page) {
   await page.evaluate(() => window.scrollTo(0, 0));
 }
 
+/** The picture's name for a check: "fit-" and the page's part of `where`, e.g. "fit-my-account". */
+function shotName(where: string) {
+  const page = where.slice(where.lastIndexOf(": ") + 2);
+  return `fit-${page
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-|-$/g, "")}`;
+}
+
 async function checkPage(
   page: Page,
   where: string,
@@ -166,6 +176,7 @@ async function checkPage(
   await scrollThrough(page);
   await settled(page);
   await expectFits(page, where);
+  await shootWhole(page, shotName(where));
 }
 
 /**
@@ -203,11 +214,24 @@ async function checkConversation(page: Page, where: string, enlarged: boolean) {
   // The message a parallel session posted carries its label beside the AI's name (SESS-30).
   await expect(log.getByText(SECOND_TEXT, { exact: true })).toBeVisible();
   await expect(log.getByText(`via :${SECOND_LABEL}`, { exact: true })).toBeVisible();
+  // The empty composer is one line: a long room name in its placeholder is cut, not wrapped, so it
+  // does not take the timeline's room on a small phone.
+  const composer = page.getByRole("textbox", { name: `Message ${ROOM_NAME}` });
+  await expect(composer).toHaveValue("");
+  const lines = await composer.evaluate((el) => {
+    const style = getComputedStyle(el);
+    return (
+      (el.getBoundingClientRect().height - Number.parseFloat(style.minHeight)) /
+      Number.parseFloat(style.lineHeight)
+    );
+  });
+  expect(lines, `${where}: the empty composer is taller than one line`).toBeLessThan(0.5);
   await checkQuestions(page);
   await settled(page);
   await scrollThrough(page);
   await settled(page);
   await expectFits(page, where);
+  await shootWhole(page, shotName(where));
 }
 
 /**
@@ -225,6 +249,7 @@ async function checkFullProfile(page: Page, where: string, enlarged: boolean) {
   await scrollThrough(page);
   await settled(page);
   await expectFits(page, where);
+  await shootWhole(page, shotName(where));
 }
 
 /** The profile panel of the seeded AI: a sidebar on a wide screen, a drawer on a phone. */
@@ -251,6 +276,7 @@ async function checkProfilePanel(page: Page, where: string, enlarged: boolean) {
   await scrollThrough(page);
   await settled(page);
   await expectFits(page, where);
+  await shootWhole(page, shotName(where));
 }
 
 /** The account's menu and the organization's, open on the list screen: they must fit too (SET-12). */
@@ -265,6 +291,7 @@ async function checkOpenMenu(page: Page, where: string, trigger: () => Locator, 
   await expect(menu.getByRole("menuitem").first()).toBeVisible();
   await settled(page);
   await expectFits(page, where);
+  await shootWhole(page, shotName(where));
   await page.keyboard.press("Escape");
   await expect(menu).toHaveCount(0);
 }
@@ -289,6 +316,7 @@ async function checkCompactOrgMenu(page: Page, where: string, enlarged: boolean)
   await expect(menu.getByRole("menuitem", { name: "Settings" })).toBeVisible();
   await settled(page);
   await expectFits(page, where);
+  await shootWhole(page, shotName(where));
   await page.keyboard.press("Escape");
   await expect(menu).toHaveCount(0);
 }
