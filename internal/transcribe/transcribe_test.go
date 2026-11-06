@@ -427,8 +427,10 @@ func TestIsVoiceAndInitialState(t *testing.T) {
 	require.Equal(t, dto.TranscriptStateSkipped, transcribe.InitialState(transcribe.MaxBytes+1))
 }
 
-// TR-03: a voice message deleted while it waits ends the wait: the AI is told nothing of it, and the
-// room's next message follows at once.
+// TR-03: a voice message deleted while it waits ends the wait: the AI never gets it as a message, and
+// the room's next message follows at once. When the delete is stored before the dispatcher reads the
+// post, the transcription row is gone with the attachment and nothing was held: the AI may then be told
+// of the delete, as for any message deleted before it was dispatched.
 func TestDeletingAHeldVoiceMessageEndsTheWait(t *testing.T) {
 	f := newVoiceRoom(t)
 	f.svc.block()
@@ -436,7 +438,16 @@ func TestDeletingAHeldVoiceMessageEndsTheWait(t *testing.T) {
 	voice := f.postVoice(t, f.room.ID, "", audio)
 	f.alice.Delete("/api/v1/rooms/" + f.room.ID + "/messages/" + voice.ID).RequireStatus(http.StatusOK)
 	after := f.postText(t, f.room.ID, "never mind")
-	got := f.ai.Message(wait)
+	frame := f.ai.Next(wait)
+	if frame.Type == dto.AgentFrameTypeMessageDeleted {
+		var deleted dto.AgentMessageDeletedFrame
+		require.NoError(t, json.Unmarshal(frame.Raw, &deleted))
+		require.Equal(t, voice.ID, deleted.Message.ID)
+		frame = f.ai.Next(wait)
+	}
+	require.Equal(t, dto.AgentFrameTypeMessage, frame.Type, "frame: %s", frame.Raw)
+	var got dto.AgentMessageFrame
+	require.NoError(t, json.Unmarshal(frame.Raw, &got))
 	require.Equal(t, after.ID, got.Message.ID)
 	f.ai.ExpectNone(300 * time.Millisecond)
 }
