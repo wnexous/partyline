@@ -113,6 +113,14 @@ type PlatformQueued struct {
 	Seq     int64
 }
 
+// PlatformTranscribed reports that the server's transcription of a voice file of a platform item
+// ended, with its text or without (TR-04): the feed of the AI that holds the item stops holding it.
+// AgentID is the AI that held the item when the transcription ended.
+type PlatformTranscribed struct {
+	AgentID string
+	ItemID  string
+}
+
 // IdentityLinked reports that a chat identity was linked to a user.
 type IdentityLinked struct{ UserID, IdentityID string }
 
@@ -159,6 +167,7 @@ func (ConnectorStatus) isEvent()     {}
 func (ConnectorsOrphaned) isEvent()  {}
 func (ChatDiscovered) isEvent()      {}
 func (PlatformQueued) isEvent()      {}
+func (PlatformTranscribed) isEvent() {}
 func (IdentityLinked) isEvent()      {}
 func (SessionsRevoked) isEvent()     {}
 func (Lagged) isEvent()              {}

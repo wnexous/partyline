@@ -8,8 +8,6 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/require"
-
-	"github.com/wnexous/partyline/internal/store/db"
 )
 
 // filePart builds the body of a request for a stored file and returns its file part's header and
@@ -17,7 +15,7 @@ import (
 func filePart(t *testing.T, name, storedMime string) (filename, contentType string, content []byte) {
 	t.Helper()
 	audio := []byte("audio bytes")
-	body, size, ct, err := form("model-x", db.NextPendingTranscriptionRow{Name: name, Mime: storedMime}, bytes.NewReader(audio), int64(len(audio)))
+	body, size, ct, err := form("model-x", name, storedMime, bytes.NewReader(audio), int64(len(audio)))
 	require.NoError(t, err)
 	raw, err := io.ReadAll(body)
 	require.NoError(t, err)

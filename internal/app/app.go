@@ -232,7 +232,7 @@ func New(cfg *config.Config, opts Options) (*App, error) {
 		Orgs:          orgs.NewService(orgs.Deps{Store: st, Authz: authz, Bus: bus, Audit: auditLog, Blobs: blobs, Now: opts.Now}),
 		Rooms:         rooms.New(rooms.Deps{Store: st, Access: az, Bus: bus, Now: opts.Now, Blobs: blobs, Transcribe: cfg.TranscribeURL != ""}),
 		Blobs:         blobs,
-		Platform:      platform.New(platform.Deps{Store: st, Bus: bus, Now: opts.Now}),
+		Platform:      platform.New(platform.Deps{Store: st, Bus: bus, Now: opts.Now, Transcribe: cfg.TranscribeURL != ""}),
 		Intelligences: intelligences.New(intelligences.Deps{Store: st, Access: az, Bus: bus, Blobs: blobs, Online: presence.Online, Now: opts.Now}),
 	}
 	a.Presence = presence
@@ -375,8 +375,13 @@ func (a *App) Start(ctx context.Context) error {
 		// Without a service nothing finishes the rows left pending by a run that had one (TR-06).
 		var n int64
 		if err := a.Store.WithTx(ctx, func(q *db.Queries) error {
-			var err error
-			n, err = q.FailPendingTranscriptions(ctx, a.now().UnixMilli())
+			at := a.now().UnixMilli()
+			roomRows, err := q.FailPendingTranscriptions(ctx, at)
+			if err != nil {
+				return err
+			}
+			itemRows, err := q.FailPendingPlatformTranscriptions(ctx, at)
+			n = roomRows + itemRows
 			return err
 		}); err != nil {
 			return fmt.Errorf("settle pending transcriptions: %w", err)
