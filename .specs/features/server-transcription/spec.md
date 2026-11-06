@@ -69,7 +69,8 @@ every browser, phone and connection gets the same text, and the audio never leav
   - **Language (TR-07):** the model detects it; no hint in phase 1.
 - **Config:** `PARTYLINE_TRANSCRIBE_URL` (base URL; empty = off), `PARTYLINE_TRANSCRIBE_MODEL`
   (default `Systran/faster-whisper-small`). The URL is the operator's: plain `http.Client`, not
-  safehttp, with a 5-minute request timeout.
+  safehttp, with a 90-second request timeout, so a hung service holds the queue for about 5 minutes
+  at most (3 attempts).
 - **Web:** the voice bubble shows the browser transcript (message text) when there is one, else the
   attachment transcript; `pending` shows "Transcribing…" (pt-BR "Transcrevendo…").
 - **Compose:** `docker-compose.yml` gets an optional `whisper` service (speaches, CPU) with hard
@@ -77,6 +78,15 @@ every browser, phone and connection gets the same text, and the audio never leav
   `PARTYLINE_TRANSCRIBE_URL: http://whisper:8000`.
 - **Phase 2, connections (TR-04):** the platform feed stops at the first item whose voice attachment is
   pending (60 s at most) so its order holds, and `PlatformRecord` content gets the same transcript line.
+- **Known limits (phase 1):**
+  - An AI session that connects while one of its rooms holds a voice message gets that message from
+    its backlog as it is then, without the transcript. Nothing is lost or sent twice: the gateway
+    drops the held copy when the hold ends, because its seq was already sent.
+  - A silent clip, or one the model hears nothing in, ends `done` with an empty text: the web shows
+    no transcript and the AI gets the attachment line alone.
+  - The 10-minute cap of TR-08 is the 25 MB size cap; the server does not read the audio's length.
+  - The part sent to the service carries the stored type only when it parses as an `audio/*` type
+    (else `application/octet-stream`), and a file name with the type's extension when it has none.
 - **Prod:** the 6 GB VM shares its physical host with the dev box. `small` takes about 1 GB of RAM
   while it runs and 10–20 s of CPU per minute of audio on 2 cores.
 
