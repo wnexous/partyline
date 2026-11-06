@@ -22,6 +22,30 @@ func (q *Queries) CountPendingTranscriptions(ctx context.Context, messageID stri
 	return count, err
 }
 
+const createPlatformTranscription = `-- name: CreatePlatformTranscription :exec
+INSERT INTO platform_transcriptions (attachment_id, item_id, state, text, attempts, created_at, updated_at)
+VALUES (?, ?, ?, '', 0, ?, ?)
+`
+
+type CreatePlatformTranscriptionParams struct {
+	AttachmentID string
+	ItemID       string
+	State        string
+	CreatedAt    int64
+	UpdatedAt    int64
+}
+
+func (q *Queries) CreatePlatformTranscription(ctx context.Context, arg CreatePlatformTranscriptionParams) error {
+	_, err := q.db.ExecContext(ctx, createPlatformTranscription,
+		arg.AttachmentID,
+		arg.ItemID,
+		arg.State,
+		arg.CreatedAt,
+		arg.UpdatedAt,
+	)
+	return err
+}
+
 const createTranscription = `-- name: CreateTranscription :exec
 INSERT INTO transcriptions (attachment_id, message_id, room_id, state, text, attempts, created_at, updated_at)
 VALUES (?, ?, ?, ?, '', 0, ?, ?)
@@ -48,6 +72,30 @@ func (q *Queries) CreateTranscription(ctx context.Context, arg CreateTranscripti
 	return err
 }
 
+const deletePlatformTranscriptionsOfItem = `-- name: DeletePlatformTranscriptionsOfItem :exec
+DELETE FROM platform_transcriptions WHERE item_id = ?
+`
+
+// CID-09: the transcript is platform text and goes with the ack; a pending job of the item is
+// dropped, since the item is never delivered again.
+func (q *Queries) DeletePlatformTranscriptionsOfItem(ctx context.Context, itemID string) error {
+	_, err := q.db.ExecContext(ctx, deletePlatformTranscriptionsOfItem, itemID)
+	return err
+}
+
+const failPendingPlatformTranscriptions = `-- name: FailPendingPlatformTranscriptions :execrows
+UPDATE platform_transcriptions SET state = 'failed', updated_at = ? WHERE state = 'pending'
+`
+
+// With no service configured any more, nothing will finish the pending rows (TR-06).
+func (q *Queries) FailPendingPlatformTranscriptions(ctx context.Context, updatedAt int64) (int64, error) {
+	result, err := q.db.ExecContext(ctx, failPendingPlatformTranscriptions, updatedAt)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected()
+}
+
 const failPendingTranscriptions = `-- name: FailPendingTranscriptions :execrows
 UPDATE transcriptions SET state = 'failed', updated_at = ? WHERE state = 'pending'
 `
@@ -59,6 +107,35 @@ func (q *Queries) FailPendingTranscriptions(ctx context.Context, updatedAt int64
 		return 0, err
 	}
 	return result.RowsAffected()
+}
+
+const finishPlatformTranscription = `-- name: FinishPlatformTranscription :one
+UPDATE platform_transcriptions SET state = ?, text = ?, attempts = ?, updated_at = ?
+WHERE attachment_id = ? AND state = 'pending'
+RETURNING (SELECT agent_id FROM platform_items WHERE id = platform_transcriptions.item_id) AS agent_id
+`
+
+type FinishPlatformTranscriptionParams struct {
+	State        string
+	Text         string
+	Attempts     int64
+	UpdatedAt    int64
+	AttachmentID string
+}
+
+// The item's AI is the one the feed to wake; no row when the file went away or the item was
+// acknowledged meanwhile.
+func (q *Queries) FinishPlatformTranscription(ctx context.Context, arg FinishPlatformTranscriptionParams) (string, error) {
+	row := q.db.QueryRowContext(ctx, finishPlatformTranscription,
+		arg.State,
+		arg.Text,
+		arg.Attempts,
+		arg.UpdatedAt,
+		arg.AttachmentID,
+	)
+	var agent_id string
+	err := row.Scan(&agent_id)
+	return agent_id, err
 }
 
 const finishTranscription = `-- name: FinishTranscription :execrows
@@ -86,6 +163,58 @@ func (q *Queries) FinishTranscription(ctx context.Context, arg FinishTranscripti
 		return 0, err
 	}
 	return result.RowsAffected()
+}
+
+const listPlatformTranscriptionsByItems = `-- name: ListPlatformTranscriptionsByItems :many
+SELECT attachment_id, item_id, state, text, created_at FROM platform_transcriptions
+WHERE item_id IN (/*SLICE:item_ids*/?)
+`
+
+type ListPlatformTranscriptionsByItemsRow struct {
+	AttachmentID string
+	ItemID       string
+	State        string
+	Text         string
+	CreatedAt    int64
+}
+
+func (q *Queries) ListPlatformTranscriptionsByItems(ctx context.Context, itemIds []string) ([]ListPlatformTranscriptionsByItemsRow, error) {
+	query := listPlatformTranscriptionsByItems
+	var queryParams []interface{}
+	if len(itemIds) > 0 {
+		for _, v := range itemIds {
+			queryParams = append(queryParams, v)
+		}
+		query = strings.Replace(query, "/*SLICE:item_ids*/?", strings.Repeat(",?", len(itemIds))[1:], 1)
+	} else {
+		query = strings.Replace(query, "/*SLICE:item_ids*/?", "NULL", 1)
+	}
+	rows, err := q.db.QueryContext(ctx, query, queryParams...)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []ListPlatformTranscriptionsByItemsRow
+	for rows.Next() {
+		var i ListPlatformTranscriptionsByItemsRow
+		if err := rows.Scan(
+			&i.AttachmentID,
+			&i.ItemID,
+			&i.State,
+			&i.Text,
+			&i.CreatedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
 }
 
 const listTranscriptionsByMessages = `-- name: ListTranscriptionsByMessages :many
@@ -138,8 +267,42 @@ func (q *Queries) ListTranscriptionsByMessages(ctx context.Context, messageIds [
 	return items, nil
 }
 
+const nextPendingPlatformTranscription = `-- name: NextPendingPlatformTranscription :one
+SELECT t.attachment_id, t.item_id, t.attempts, t.created_at, a.sha256, a.mime, a.name
+FROM platform_transcriptions t JOIN platform_attachments a ON a.id = t.attachment_id
+WHERE t.state = 'pending'
+ORDER BY t.created_at, t.attachment_id
+LIMIT 1
+`
+
+type NextPendingPlatformTranscriptionRow struct {
+	AttachmentID string
+	ItemID       string
+	Attempts     int64
+	CreatedAt    int64
+	Sha256       string
+	Mime         string
+	Name         string
+}
+
+// The oldest pending job of a platform file with the blob it reads (TR-04, TR-08).
+func (q *Queries) NextPendingPlatformTranscription(ctx context.Context) (NextPendingPlatformTranscriptionRow, error) {
+	row := q.db.QueryRowContext(ctx, nextPendingPlatformTranscription)
+	var i NextPendingPlatformTranscriptionRow
+	err := row.Scan(
+		&i.AttachmentID,
+		&i.ItemID,
+		&i.Attempts,
+		&i.CreatedAt,
+		&i.Sha256,
+		&i.Mime,
+		&i.Name,
+	)
+	return i, err
+}
+
 const nextPendingTranscription = `-- name: NextPendingTranscription :one
-SELECT t.attachment_id, t.message_id, t.room_id, t.attempts, a.sha256, a.mime, a.name
+SELECT t.attachment_id, t.message_id, t.room_id, t.attempts, t.created_at, a.sha256, a.mime, a.name
 FROM transcriptions t JOIN attachments a ON a.id = t.attachment_id
 WHERE t.state = 'pending'
 ORDER BY t.created_at, t.attachment_id
@@ -151,6 +314,7 @@ type NextPendingTranscriptionRow struct {
 	MessageID    string
 	RoomID       string
 	Attempts     int64
+	CreatedAt    int64
 	Sha256       string
 	Mime         string
 	Name         string
@@ -165,6 +329,7 @@ func (q *Queries) NextPendingTranscription(ctx context.Context) (NextPendingTran
 		&i.MessageID,
 		&i.RoomID,
 		&i.Attempts,
+		&i.CreatedAt,
 		&i.Sha256,
 		&i.Mime,
 		&i.Name,
@@ -172,7 +337,25 @@ func (q *Queries) NextPendingTranscription(ctx context.Context) (NextPendingTran
 	return i, err
 }
 
-const setTranscriptionAttempts = `-- name: SetTranscriptionAttempts :exec
+const setPlatformTranscriptionAttempts = `-- name: SetPlatformTranscriptionAttempts :execrows
+UPDATE platform_transcriptions SET attempts = ?, updated_at = ? WHERE attachment_id = ? AND state = 'pending'
+`
+
+type SetPlatformTranscriptionAttemptsParams struct {
+	Attempts     int64
+	UpdatedAt    int64
+	AttachmentID string
+}
+
+func (q *Queries) SetPlatformTranscriptionAttempts(ctx context.Context, arg SetPlatformTranscriptionAttemptsParams) (int64, error) {
+	result, err := q.db.ExecContext(ctx, setPlatformTranscriptionAttempts, arg.Attempts, arg.UpdatedAt, arg.AttachmentID)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected()
+}
+
+const setTranscriptionAttempts = `-- name: SetTranscriptionAttempts :execrows
 UPDATE transcriptions SET attempts = ?, updated_at = ? WHERE attachment_id = ? AND state = 'pending'
 `
 
@@ -182,7 +365,10 @@ type SetTranscriptionAttemptsParams struct {
 	AttachmentID string
 }
 
-func (q *Queries) SetTranscriptionAttempts(ctx context.Context, arg SetTranscriptionAttemptsParams) error {
-	_, err := q.db.ExecContext(ctx, setTranscriptionAttempts, arg.Attempts, arg.UpdatedAt, arg.AttachmentID)
-	return err
+func (q *Queries) SetTranscriptionAttempts(ctx context.Context, arg SetTranscriptionAttemptsParams) (int64, error) {
+	result, err := q.db.ExecContext(ctx, setTranscriptionAttempts, arg.Attempts, arg.UpdatedAt, arg.AttachmentID)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected()
 }

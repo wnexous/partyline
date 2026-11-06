@@ -9,12 +9,14 @@ import (
 	"context"
 	"database/sql"
 	"errors"
+	"strings"
 	"time"
 
 	"github.com/wnexous/partyline/internal/api/dto"
 	"github.com/wnexous/partyline/internal/events"
 	"github.com/wnexous/partyline/internal/store"
 	"github.com/wnexous/partyline/internal/store/db"
+	"github.com/wnexous/partyline/internal/transcribe"
 )
 
 // MaxQueued is the most unacknowledged items one AI keeps: a new item over the bound drops the
@@ -30,6 +32,9 @@ type Deps struct {
 	Bus   *events.Bus
 	// Now returns the current time; defaults to time.Now.
 	Now func() time.Time
+	// Transcribe writes a transcription row for each voice file of an item queued without text
+	// (TR-04); the app sets it when a transcription service is configured.
+	Transcribe bool
 }
 
 // Queue is the platform queue of every AI.
@@ -54,6 +59,12 @@ type Attachment struct {
 	Size   int64
 	SHA256 string
 	Status dto.AttachmentStatus
+	// TranscriptState is where the server's transcription of a voice file stands, empty when it has
+	// none (TR-04); Transcript is its text once done, and TranscriptSince when the job was queued.
+	// They are read with the item and never set by a caller of Enqueue.
+	TranscriptState dto.TranscriptState
+	Transcript      string
+	TranscriptSince time.Time
 }
 
 // Item is a platform message to queue for the AI that operates its connection.
@@ -141,11 +152,22 @@ func (q *Queue) Enqueue(ctx context.Context, it Item) (id string, queued bool, e
 			return err
 		}
 		queued = true
+		// A voice note that came without text is transcribed on the server before its AI gets it (TR-04).
+		untranscribed := q.d.Transcribe && strings.TrimSpace(it.Text) == ""
+		now := q.d.Now().UnixMilli()
 		for _, a := range it.Attachments {
+			fileID := store.NewID()
 			if err := tx.InsertPlatformAttachment(ctx, db.InsertPlatformAttachmentParams{
-				ID: store.NewID(), ItemID: id, Sha256: a.SHA256, Name: a.Name, Mime: a.Mime, Size: a.Size, Status: string(a.Status),
+				ID: fileID, ItemID: id, Sha256: a.SHA256, Name: a.Name, Mime: a.Mime, Size: a.Size, Status: string(a.Status),
 			}); err != nil {
 				return err
+			}
+			if untranscribed && a.SHA256 != "" && transcribe.IsVoice(a.Mime, a.Status) {
+				if err := tx.CreatePlatformTranscription(ctx, db.CreatePlatformTranscriptionParams{
+					AttachmentID: fileID, ItemID: id, State: string(transcribe.InitialState(a.Size)), CreatedAt: now, UpdatedAt: now,
+				}); err != nil {
+					return err
+				}
 			}
 		}
 		return trim(ctx, tx, agent)
@@ -246,7 +268,15 @@ func (q *Queue) Take(ctx context.Context, agentID string, limit int) ([]Event, e
 				return err
 			}
 		}
-		return attach(ctx, tx, out, ids)
+		if err := attach(ctx, tx, out, ids); err != nil {
+			return err
+		}
+		for _, id := range ids {
+			if err := tx.DeletePlatformTranscriptionsOfItem(ctx, id); err != nil {
+				return err
+			}
+		}
+		return nil
 	})
 	if err != nil {
 		return nil, err
@@ -268,14 +298,19 @@ func (q *Queue) Attachment(ctx context.Context, agentID, attachmentID string) (A
 	return Attachment{ID: f.ID, Name: f.Name, Mime: f.Mime, Size: f.Size, SHA256: f.Sha256, Status: dto.AttachmentStatus(f.Status)}, nil
 }
 
-// Ack records that the AI's session received the item and deletes its text at once (CID-09).
-// The row stays, and so do its files, until Purge removes them. It is idempotent: a second ack,
-// an unknown item and another AI's item change nothing and are not errors.
+// Ack records that the AI's session received the item and deletes its text at once (CID-09), and
+// with it the transcripts of its voice files (TR-04): a transcription still pending is dropped, since
+// the item is never delivered again. The row stays, and so do its files, until Purge removes them. It
+// is idempotent: a second ack, an unknown item and another AI's item change nothing and are not
+// errors.
 func (q *Queue) Ack(ctx context.Context, agentID, itemID string) error {
 	at := sql.NullInt64{Int64: q.d.Now().UnixMilli(), Valid: true}
 	return q.d.Store.WithTx(ctx, func(tx *db.Queries) error {
-		_, err := tx.AckPlatformItem(ctx, db.AckPlatformItemParams{AckedAt: at, ID: itemID, AgentID: agentID})
-		return err
+		n, err := tx.AckPlatformItem(ctx, db.AckPlatformItemParams{AckedAt: at, ID: itemID, AgentID: agentID})
+		if err != nil || n == 0 {
+			return err
+		}
+		return tx.DeletePlatformTranscriptionsOfItem(ctx, itemID)
 	})
 }
 
@@ -341,6 +376,14 @@ func attach(ctx context.Context, tx *db.Queries, events []Event, ids []string) e
 	if err != nil {
 		return err
 	}
+	jobs, err := tx.ListPlatformTranscriptionsByItems(ctx, ids)
+	if err != nil {
+		return err
+	}
+	transcripts := make(map[string]db.ListPlatformTranscriptionsByItemsRow, len(jobs))
+	for _, j := range jobs {
+		transcripts[j.AttachmentID] = j
+	}
 	at := make(map[string]int, len(ids))
 	for i, id := range ids {
 		at[id] = i
@@ -350,9 +393,28 @@ func attach(ctx context.Context, tx *db.Queries, events []Event, ids []string) e
 		if !ok {
 			continue
 		}
-		events[i].Attachments = append(events[i].Attachments, Attachment{
+		a := Attachment{
 			ID: f.ID, Name: f.Name, Mime: f.Mime, Size: f.Size, SHA256: f.Sha256, Status: dto.AttachmentStatus(f.Status),
-		})
+		}
+		if j, ok := transcripts[f.ID]; ok {
+			a.TranscriptState, a.TranscriptSince = dto.TranscriptState(j.State), time.UnixMilli(j.CreatedAt).UTC()
+			if a.TranscriptState == dto.TranscriptStateDone {
+				a.Transcript = j.Text
+			}
+		}
+		events[i].Attachments = append(events[i].Attachments, a)
 	}
 	return nil
+}
+
+// TranscriptPendingSince reports whether a voice file of the item still waits for its server
+// transcript and, if so, since when: the earliest of its pending jobs (TR-04).
+func (e Event) TranscriptPendingSince() (time.Time, bool) {
+	var since time.Time
+	for _, a := range e.Attachments {
+		if a.TranscriptState == dto.TranscriptStatePending && (since.IsZero() || a.TranscriptSince.Before(since)) {
+			since = a.TranscriptSince
+		}
+	}
+	return since, !since.IsZero()
 }

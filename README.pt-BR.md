@@ -448,7 +448,7 @@ Tudo é configurado por variáveis de ambiente.
 | `PARTYLINE_LOG_FORMAT` | `json` | `json` ou `text`. |
 | `PARTYLINE_TRUSTED_PROXIES` | vazio | CIDRs ou IPs (separados por vírgula) de proxies reversos cujo `X-Forwarded-For` é confiável. |
 | `PARTYLINE_ALLOW_PRIVATE_NETWORKS` | `false` | `true` permite que os conectores chamem endereços de loopback, privados, link-local e CGNAT (um evolution-go ou Bot API na sua rede local, um receptor de webhook em localhost). Desligado, URLs de conector que resolvem para esses endereços são recusadas. |
-| `PARTYLINE_TRANSCRIBE_URL` | vazio | URL base de um servidor de transcrição compatível com a OpenAI (`POST <url>/v1/audio/transcriptions`), como o serviço opcional `whisper` do [docker-compose.yml](docker-compose.yml): `http://whisper:8000`. Definida, o servidor transcreve as mensagens de voz das salas que chegaram sem transcrição. Vazia, desliga. Veja [Transcrição de voz](#transcrição-de-voz). |
+| `PARTYLINE_TRANSCRIBE_URL` | vazio | URL base de um servidor de transcrição compatível com a OpenAI (`POST <url>/v1/audio/transcriptions`), como o serviço opcional `whisper` do [docker-compose.yml](docker-compose.yml): `http://whisper:8000`. Definida, o servidor transcreve as mensagens de voz das salas que chegaram sem transcrição e as das conexões de plataforma que chegaram sem legenda. Vazia, desliga. Veja [Transcrição de voz](#transcrição-de-voz). |
 | `PARTYLINE_TRANSCRIBE_MODEL` | `Systran/faster-whisper-small` | O modelo pedido a esse servidor. |
 | `PARTYLINE_PRIVATE_NETWORK_ALLOWLIST` | vazio | Destinos privados, separados por vírgula, que os conectores podem chamar enquanto `PARTYLINE_ALLOW_PRIVATE_NETWORKS` continua `false`: CIDRs (`192.168.1.0/24`, qualquer porta), endereços ou nomes de host com porta opcional (`10.0.0.5`, `[fd00::5]:8088`, `localhost:8088`). Uma entrada de nome de host vale para o nome escrito na URL do conector; todo o resto privado continua bloqueado. Prefira entradas `host:porta` ou CIDR: um nome sem porta libera todas as portas dele. Liste só nomes cujo DNS você controla, porque a entrada confia em qualquer endereço para o qual o nome resolver. A lista vale para os conectores de todos os usuários, não só os seus. |
 
@@ -518,8 +518,11 @@ modelo Whisper que roda ao lado dele: o áudio nunca sai da sua instância. O ap
 segundos e o recebem sob a linha do anexo (`Transcript: …`), e passado esse tempo recebem só o
 áudio, como sem o serviço. A transcrição feita pelo navegador de quem enviou é mantida. Um arquivo é
 transcrito por vez, o mais antigo primeiro; um arquivo acima de 25 MB não é enviado. Uma falha é
-tentada até três vezes e então registrada no log, sem o áudio nem o texto; ninguém vê erro.
-Mensagens de voz que chegam por uma conexão de plataforma ainda não são transcritas.
+tentada até três vezes e então registrada no log, sem o áudio nem o texto; ninguém vê erro. Uma
+mensagem de voz sem legenda que chega por uma conexão de plataforma (WhatsApp, Telegram, Discord,
+webhook) é transcrita do mesmo jeito antes de a IA que opera a conexão recebê-la: as mensagens de
+plataforma dessa IA mantêm a ordem, então as que vêm depois da mensagem de voz esperam atrás dela,
+pelos mesmos 60 segundos no máximo.
 
 O [docker-compose.yml](docker-compose.yml) tem um serviço opcional `whisper`
 ([speaches](https://github.com/speaches-ai/speaches), CPU) com limites rígidos de 2 CPUs e 1,5 GB, e

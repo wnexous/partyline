@@ -90,6 +90,13 @@ type GatewayDeps struct {
 	// PingTimeout bounds the wait for a pong; a connection that does not answer in time is
 	// closed and the AI goes offline (SES-06). Defaults to writeTimeout.
 	PingTimeout time.Duration
+	// TranscriptHold is how long a platform voice note waits for its server transcript before it
+	// goes to its AI without one (TR-04); zero means delivery.DefaultTranscriptHold. The Bus carries
+	// PlatformTranscribed, which ends the wait sooner.
+	TranscriptHold time.Duration
+	// Now is the clock the wait is measured with, the one the queue stamps its jobs with; defaults to
+	// time.Now.
+	Now func() time.Time
 }
 
 // Gateway serves the agent WebSocket (GET /api/v1/agent/ws): it registers the agent, sends
@@ -137,6 +144,12 @@ func NewGateway(d GatewayDeps) *Gateway {
 	}
 	if d.Authz == nil {
 		d.Authz = orgs.NewAuthz(d.Store)
+	}
+	if d.TranscriptHold <= 0 {
+		d.TranscriptHold = delivery.DefaultTranscriptHold
+	}
+	if d.Now == nil {
+		d.Now = time.Now
 	}
 	ctx, stop := context.WithCancel(context.Background())
 	g := &Gateway{d: d, ctx: ctx, stop: stop}
@@ -556,7 +569,7 @@ func (g *Gateway) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	c.rooms.Store(true)
 	// Only the principal session receives the platform events of the AI it operates (SESS-18).
 	if hs.platform && g.d.Platform != nil && live.Label == "" {
-		c.feed = newPlatformFeed(g.d.Platform, row.Agent.ID)
+		c.feed = newPlatformFeed(g.d.Platform, row.Agent.ID, g.d.TranscriptHold, g.d.Now)
 	}
 	go g.readAcks(ctx, c, row.Agent.ID)
 	if revocations != nil {
@@ -591,8 +604,8 @@ func (g *Gateway) active(ctx context.Context, p authn.Principal) (bool, error) {
 // watchBus closes c (1008) when an event revokes its token or disables its owner, and re-checks
 // the token after a lagged bus, which may have dropped such an event (a failed check closes with
 // 1013 so the channel reconnects and authenticates again). A connection that receives platform
-// events reads its queue again when an item was queued for its AI, and after a lagged bus, which
-// may have dropped that event.
+// events reads its queue again when an item was queued for its AI or a voice note of its AI was
+// transcribed, and after a lagged bus, which may have dropped those events.
 func (g *Gateway) watchBus(ctx context.Context, c *conn, p authn.Principal, sub <-chan events.Event) {
 	for {
 		select {
@@ -611,6 +624,10 @@ func (g *Gateway) watchBus(ctx context.Context, c *conn, p authn.Principal, sub 
 			case events.PlatformQueued:
 				if c.feed != nil && e.AgentID == c.feed.agentID {
 					c.feed.poke()
+				}
+			case events.PlatformTranscribed:
+				if c.feed != nil && e.AgentID == c.feed.agentID {
+					c.feed.poke() // TR-04: the voice note the feed stopped at may go now
 				}
 			case events.Lagged:
 				if c.feed != nil {
@@ -924,6 +941,7 @@ func (g *Gateway) run(ctx context.Context, c *conn, row db.GetAgentWithOwnerRow,
 	var feedWake <-chan struct{} // nil, which never fires, for a client without platform events
 	if c.feed != nil {
 		feedWake = c.feed.wake
+		defer c.feed.stop() // no wake-up of the feed outlives the connection
 		if err := g.platformStart(ctx, c, a.ID); err != nil {
 			return err
 		}

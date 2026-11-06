@@ -97,7 +97,10 @@ func PlatformEvent(e platform.Event) dto.PlatformEvent {
 		Attachments: make([]dto.Attachment, len(e.Attachments)), ReceivedAt: e.ReceivedAt,
 	}
 	for i, a := range e.Attachments {
-		out.Attachments[i] = dto.Attachment{ID: a.ID, Name: a.Name, Mime: a.Mime, Size: a.Size, Status: a.Status}
+		out.Attachments[i] = dto.Attachment{ID: a.ID, Name: a.Name, Mime: a.Mime, Size: a.Size, Status: a.Status, TranscriptState: a.TranscriptState}
+		if a.TranscriptState == dto.TranscriptStateDone {
+			out.Attachments[i].Transcript = a.Transcript // TR-04
+		}
 	}
 	return out
 }

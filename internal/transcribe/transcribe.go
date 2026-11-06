@@ -1,5 +1,6 @@
-// Package transcribe turns the voice files of room messages into text on the server (TR-01). The
-// rows are written with the message (internal/rooms); one worker takes them oldest first, posts each
+// Package transcribe turns the voice files of room messages (TR-01) and of platform items (TR-04)
+// into text on the server. The rows are written with the message (internal/rooms) or the item
+// (internal/platform); one worker takes the rows of both kinds in one queue, oldest first, posts each
 // audio file to an OpenAI-compatible transcription service (POST <URL>/v1/audio/transcriptions) and
 // stores the text (TR-08). Logs never hold the audio or the text (TR-06).
 package transcribe
@@ -124,7 +125,7 @@ func sleep(ctx context.Context, d time.Duration) error {
 }
 
 // Run works until ctx ends. It starts with the rows left pending by an earlier run, so a restart
-// resumes them, and looks again after every new message.
+// resumes them, and looks again after every new message and every queued platform item.
 func (w *Worker) Run(ctx context.Context) error {
 	sub, cancel := w.d.Bus.Subscribe(16)
 	defer cancel()
@@ -133,7 +134,7 @@ func (w *Worker) Run(ctx context.Context) error {
 	go func() {
 		for e := range sub {
 			switch e.(type) {
-			case events.MessageCreated, events.Lagged:
+			case events.MessageCreated, events.PlatformQueued, events.Lagged:
 				select {
 				case wake <- struct{}{}:
 				default:
@@ -148,7 +149,7 @@ func (w *Worker) Run(ctx context.Context) error {
 		case <-wake:
 		}
 		for ctx.Err() == nil {
-			job, err := w.d.Store.R().NextPendingTranscription(ctx)
+			job, err := w.next(ctx)
 			if errors.Is(err, sql.ErrNoRows) {
 				break
 			}
@@ -166,64 +167,161 @@ func (w *Worker) Run(ctx context.Context) error {
 	}
 }
 
+// job is one pending transcription: a voice file of a room message, or of a platform item when
+// itemID is set.
+type job struct {
+	attachmentID string
+	// messageID and roomID name the message of a room file.
+	messageID, roomID string
+	// itemID names the platform item of a platform file.
+	itemID    string
+	attempts  int64
+	createdAt int64
+	sha256    string
+	mime      string
+	name      string
+}
+
+// before orders the jobs of both kinds: oldest first, then by file id (TR-08).
+func (j job) before(o job) bool {
+	if j.createdAt != o.createdAt {
+		return j.createdAt < o.createdAt
+	}
+	return j.attachmentID < o.attachmentID
+}
+
+// ids are the log attributes that name the job: never its audio or its text.
+func (j job) ids() []any {
+	if j.itemID != "" {
+		return []any{"attachment_id", j.attachmentID, "item_id", j.itemID}
+	}
+	return []any{"attachment_id", j.attachmentID, "message_id", j.messageID}
+}
+
+// next returns the oldest pending job of both kinds, or sql.ErrNoRows when there is none.
+func (w *Worker) next(ctx context.Context) (job, error) {
+	q := w.d.Store.R()
+	var out job
+	found := false
+	r, err := q.NextPendingTranscription(ctx)
+	switch {
+	case err == nil:
+		out, found = job{
+			attachmentID: r.AttachmentID, messageID: r.MessageID, roomID: r.RoomID, attempts: r.Attempts,
+			createdAt: r.CreatedAt, sha256: r.Sha256, mime: r.Mime, name: r.Name,
+		}, true
+	case !errors.Is(err, sql.ErrNoRows):
+		return job{}, err
+	}
+	p, err := q.NextPendingPlatformTranscription(ctx)
+	switch {
+	case err == nil:
+		pj := job{
+			attachmentID: p.AttachmentID, itemID: p.ItemID, attempts: p.Attempts,
+			createdAt: p.CreatedAt, sha256: p.Sha256, mime: p.Mime, name: p.Name,
+		}
+		if !found || pj.before(out) {
+			out, found = pj, true
+		}
+	case !errors.Is(err, sql.ErrNoRows):
+		return job{}, err
+	}
+	if !found {
+		return job{}, sql.ErrNoRows
+	}
+	return out, nil
+}
+
 // errPermanent marks a failure that another attempt would not fix.
 var errPermanent = errors.New("permanent")
 
 // process tries one job until it is done, failed or the worker stops; a stop leaves it pending.
-func (w *Worker) process(ctx context.Context, job db.NextPendingTranscriptionRow) {
+func (w *Worker) process(ctx context.Context, j job) {
 	start := w.d.Now()
-	attempt := job.Attempts
+	attempt := j.attempts
 	for {
 		attempt++
-		text, err := w.transcribe(ctx, job)
+		text, err := w.transcribe(ctx, j)
 		if ctx.Err() != nil {
 			return
 		}
 		if err == nil {
-			w.finish(ctx, job, dto.TranscriptStateDone, text, attempt, start)
+			w.finish(ctx, j, dto.TranscriptStateDone, text, attempt, start)
 			return
 		}
 		if errors.Is(err, errPermanent) || attempt >= Attempts {
-			w.d.Logger.Warn("transcribe: transcription failed", "attachment_id", job.AttachmentID,
-				"message_id", job.MessageID, "attempts", attempt, "err", err)
-			w.finish(ctx, job, dto.TranscriptStateFailed, "", attempt, start)
+			w.d.Logger.Warn("transcribe: transcription failed", append(j.ids(), "attempts", attempt, "err", err)...)
+			w.finish(ctx, j, dto.TranscriptStateFailed, "", attempt, start)
 			return
 		}
-		w.d.Logger.Info("transcribe: attempt failed, retrying", "attachment_id", job.AttachmentID,
-			"attempt", attempt, "err", err)
-		if !w.write(ctx, "store the attempt", job.AttachmentID, func(q *db.Queries) error {
-			return q.SetTranscriptionAttempts(ctx, db.SetTranscriptionAttemptsParams{
-				Attempts: attempt, UpdatedAt: w.d.Now().UnixMilli(), AttachmentID: job.AttachmentID,
+		var n int64
+		if !w.write(ctx, "store the attempt", j.attachmentID, func(q *db.Queries) error {
+			at := w.d.Now().UnixMilli()
+			var err error
+			if j.itemID != "" {
+				n, err = q.SetPlatformTranscriptionAttempts(ctx, db.SetPlatformTranscriptionAttemptsParams{
+					Attempts: attempt, UpdatedAt: at, AttachmentID: j.attachmentID,
+				})
+				return err
+			}
+			n, err = q.SetTranscriptionAttempts(ctx, db.SetTranscriptionAttemptsParams{
+				Attempts: attempt, UpdatedAt: at, AttachmentID: j.attachmentID,
 			})
+			return err
 		}) {
 			return
 		}
+		if n == 0 {
+			// The file went away meanwhile (its message deleted, its item acknowledged): nobody waits
+			// for the text any more, so the audio is not sent again.
+			w.d.Logger.Info("transcribe: the job went away, dropped", j.ids()...)
+			return
+		}
+		w.d.Logger.Info("transcribe: attempt failed, retrying", append(j.ids(), "attempt", attempt, "err", err)...)
 		if err := w.d.Wait(ctx, time.Duration(1<<(attempt-1))*2*time.Second); err != nil {
 			return
 		}
 	}
 }
 
-// finish stores the outcome and tells the dispatcher and the live clients (TR-02, TR-03).
-func (w *Worker) finish(ctx context.Context, job db.NextPendingTranscriptionRow, state dto.TranscriptState, text string, attempts int64, start time.Time) {
-	var n int64
-	if !w.write(ctx, "store the result", job.AttachmentID, func(q *db.Queries) error {
-		var err error
-		n, err = q.FinishTranscription(ctx, db.FinishTranscriptionParams{
-			State: string(state), Text: text, Attempts: attempts, UpdatedAt: w.d.Now().UnixMilli(), AttachmentID: job.AttachmentID,
+// finish stores the outcome and tells the dispatcher and the live clients (TR-02, TR-03), or the
+// platform feed of the item's AI (TR-04).
+func (w *Worker) finish(ctx context.Context, j job, state dto.TranscriptState, text string, attempts int64, start time.Time) {
+	var stored bool
+	var agentID string
+	if !w.write(ctx, "store the result", j.attachmentID, func(q *db.Queries) error {
+		at := w.d.Now().UnixMilli()
+		if j.itemID != "" {
+			var err error
+			agentID, err = q.FinishPlatformTranscription(ctx, db.FinishPlatformTranscriptionParams{
+				State: string(state), Text: text, Attempts: attempts, UpdatedAt: at, AttachmentID: j.attachmentID,
+			})
+			stored = err == nil
+			if errors.Is(err, sql.ErrNoRows) {
+				return nil
+			}
+			return err
+		}
+		n, err := q.FinishTranscription(ctx, db.FinishTranscriptionParams{
+			State: string(state), Text: text, Attempts: attempts, UpdatedAt: at, AttachmentID: j.attachmentID,
 		})
+		stored = n > 0
 		return err
 	}) {
 		return // the worker stops: the row stays pending for the next run
 	}
-	if n == 0 {
-		return // the file went away meanwhile
+	if !stored {
+		return // the file went away meanwhile, or its item was acknowledged
 	}
 	if state == dto.TranscriptStateDone {
-		w.d.Logger.Info("transcribe: transcribed", "attachment_id", job.AttachmentID, "message_id", job.MessageID,
-			"attempts", attempts, "duration_ms", w.d.Now().Sub(start).Milliseconds())
+		w.d.Logger.Info("transcribe: transcribed", append(j.ids(), "attempts", attempts,
+			"duration_ms", w.d.Now().Sub(start).Milliseconds())...)
 	}
-	w.d.Bus.Publish(events.MessageTranscribed{RoomID: job.RoomID, MessageID: job.MessageID})
+	if j.itemID != "" {
+		w.d.Bus.Publish(events.PlatformTranscribed{AgentID: agentID, ItemID: j.itemID})
+		return
+	}
+	w.d.Bus.Publish(events.MessageTranscribed{RoomID: j.roomID, MessageID: j.messageID})
 }
 
 // write runs fn in a write transaction until it succeeds, waiting storeRetry after each failure. It
@@ -245,8 +343,8 @@ func (w *Worker) write(ctx context.Context, what, attachmentID string, fn func(q
 }
 
 // transcribe posts the file to the service and returns the text it heard.
-func (w *Worker) transcribe(ctx context.Context, job db.NextPendingTranscriptionRow) (string, error) {
-	f, err := w.d.Blobs.Open(job.Sha256)
+func (w *Worker) transcribe(ctx context.Context, j job) (string, error) {
+	f, err := w.d.Blobs.Open(j.sha256)
 	if err != nil {
 		return "", fmt.Errorf("%w: open the audio: %w", errPermanent, err)
 	}
@@ -255,7 +353,7 @@ func (w *Worker) transcribe(ctx context.Context, job db.NextPendingTranscription
 	if err != nil {
 		return "", fmt.Errorf("%w: open the audio: %w", errPermanent, err)
 	}
-	body, size, contentType, err := form(w.d.Model, job, f, info.Size())
+	body, size, contentType, err := form(w.d.Model, j.name, j.mime, f, info.Size())
 	if err != nil {
 		return "", fmt.Errorf("%w: %w", errPermanent, err)
 	}
@@ -288,7 +386,7 @@ func (w *Worker) transcribe(ctx context.Context, job db.NextPendingTranscription
 // form is the multipart body of a request: the model, the response format and the file. The audio
 // is streamed from the blob between the parts written around it, with a known length, so services
 // that refuse a chunked body take it too.
-func form(model string, job db.NextPendingTranscriptionRow, audio io.Reader, audioSize int64) (io.Reader, int64, string, error) {
+func form(model, name, storedMime string, audio io.Reader, audioSize int64) (io.Reader, int64, string, error) {
 	var buf bytes.Buffer
 	mw := multipart.NewWriter(&buf)
 	if err := mw.WriteField("model", model); err != nil {
@@ -297,9 +395,9 @@ func form(model string, job db.NextPendingTranscriptionRow, audio io.Reader, aud
 	if err := mw.WriteField("response_format", "json"); err != nil {
 		return nil, 0, "", err
 	}
-	mediaType := partType(job.Mime)
+	mediaType := partType(storedMime)
 	h := textproto.MIMEHeader{}
-	h.Set("Content-Disposition", multipart.FileContentDisposition("file", partName(job.Name, mediaType)))
+	h.Set("Content-Disposition", multipart.FileContentDisposition("file", partName(name, mediaType)))
 	h.Set("Content-Type", mediaType)
 	if _, err := mw.CreatePart(h); err != nil {
 		return nil, 0, "", err
