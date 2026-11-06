@@ -24,3 +24,7 @@ UPDATE transcriptions SET attempts = ?, updated_at = ? WHERE attachment_id = ? A
 -- name: FinishTranscription :execrows
 UPDATE transcriptions SET state = ?, text = ?, attempts = ?, updated_at = ?
 WHERE attachment_id = ? AND state = 'pending';
+
+-- name: FailPendingTranscriptions :execrows
+-- With no service configured any more, nothing will finish the pending rows (TR-06).
+UPDATE transcriptions SET state = 'failed', updated_at = ? WHERE state = 'pending';

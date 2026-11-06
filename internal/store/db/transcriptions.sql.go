@@ -48,6 +48,19 @@ func (q *Queries) CreateTranscription(ctx context.Context, arg CreateTranscripti
 	return err
 }
 
+const failPendingTranscriptions = `-- name: FailPendingTranscriptions :execrows
+UPDATE transcriptions SET state = 'failed', updated_at = ? WHERE state = 'pending'
+`
+
+// With no service configured any more, nothing will finish the pending rows (TR-06).
+func (q *Queries) FailPendingTranscriptions(ctx context.Context, updatedAt int64) (int64, error) {
+	result, err := q.db.ExecContext(ctx, failPendingTranscriptions, updatedAt)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected()
+}
+
 const finishTranscription = `-- name: FinishTranscription :execrows
 UPDATE transcriptions SET state = ?, text = ?, attempts = ?, updated_at = ?
 WHERE attachment_id = ? AND state = 'pending'

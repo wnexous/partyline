@@ -365,6 +365,20 @@ func (a *App) Start(ctx context.Context) error {
 			return fmt.Errorf("recover platform sends: %w", err)
 		}
 	}
+	if a.transcriber == nil {
+		// Without a service nothing finishes the rows left pending by a run that had one (TR-06).
+		var n int64
+		if err := a.Store.WithTx(ctx, func(q *db.Queries) error {
+			var err error
+			n, err = q.FailPendingTranscriptions(ctx, time.Now().UnixMilli())
+			return err
+		}); err != nil {
+			return fmt.Errorf("settle pending transcriptions: %w", err)
+		}
+		if n > 0 {
+			a.Logger.Warn("transcribe: no service is configured; pending transcriptions failed", "rows", n)
+		}
+	}
 	bg, stop := context.WithCancel(context.WithoutCancel(ctx))
 	a.stop = stop
 	dispatcher := delivery.NewAgentDispatcher(delivery.DispatcherOptions{

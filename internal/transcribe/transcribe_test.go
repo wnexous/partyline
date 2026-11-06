@@ -18,6 +18,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/wnexous/partyline/internal/api/dto"
+	"github.com/wnexous/partyline/internal/store/db"
 	"github.com/wnexous/partyline/internal/testkit"
 	"github.com/wnexous/partyline/internal/transcribe"
 )
@@ -437,4 +438,22 @@ func TestDeletingAHeldVoiceMessageEndsTheWait(t *testing.T) {
 	got := f.ai.Message(wait)
 	require.Equal(t, after.ID, got.Message.ID)
 	f.ai.ExpectNone(300 * time.Millisecond)
+}
+
+// TR-06: rows a run with a service left pending fail when the server starts without one, so no
+// message shows "Transcribing…" for ever.
+func TestStartingWithoutAServiceFailsTheLeftoverRows(t *testing.T) {
+	f := newRoomOn(t, testkit.New(t), newFakeService(t))
+	voice := f.postVoice(t, f.room.ID, "", audio)
+	ctx := context.Background()
+	require.NoError(t, f.env.App.Store.WithTx(ctx, func(q *db.Queries) error {
+		return q.CreateTranscription(ctx, db.CreateTranscriptionParams{
+			AttachmentID: voice.Attachments[0].ID, MessageID: voice.ID, RoomID: f.room.ID,
+			State: string(dto.TranscriptStatePending), CreatedAt: 1, UpdatedAt: 1,
+		})
+	}))
+	require.Equal(t, dto.TranscriptStatePending, f.stored(t, f.room.ID, voice.ID).Attachments[0].TranscriptState)
+
+	f.env.Restart()
+	require.Equal(t, dto.TranscriptStateFailed, f.stored(t, f.room.ID, voice.ID).Attachments[0].TranscriptState)
 }
