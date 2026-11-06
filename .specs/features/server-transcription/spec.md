@@ -1,7 +1,7 @@
 # Voice transcription on the server
 
 Status: Specify + Design written 2026-11-05; the owner chose the proposals ("ok", 2026-11-05).
-Built in two phases: rooms first (TR-01..03, TR-05..08), platform connections next (TR-04). Requirement ids TR-xx. Owner request (voice note, 2026-11-05): "put the transcription
+Built in two phases: rooms first (TR-01..03, TR-05..08, v0.15.0), platform connections next (TR-04). Requirement ids TR-xx. Owner request (voice note, 2026-11-05): "put the transcription
 engine inside Partyline itself, a transcription server in the Docker Compose, instead of the phone or
 the browser transcribing".
 
@@ -25,8 +25,10 @@ every browser, phone and connection gets the same text, and the audio never leav
 3. WHEN the message is for AIs THEN the server SHALL hold its delivery to them until the transcript is
    ready or 60 seconds have passed, and deliver it once, with the transcript; past the
    limit it SHALL deliver the audio alone, as today. (TR-03)
-4. WHEN a voice message arrives from a platform connection (WhatsApp, Telegram) THEN it SHALL be
-   transcribed the same way before it is handed to the AI that operates the connection. (TR-04)
+4. WHEN a voice message arrives from a platform connection (WhatsApp, Telegram, Discord, webhook)
+   THEN it SHALL be transcribed the same way before it is handed to the AI that operates the
+   connection: that AI gets it once, with the transcript, or with the audio alone past 60 seconds,
+   and its platform messages keep their order. (TR-04)
 5. A transcript the sender's browser made SHALL be kept and not replaced. (TR-05)
 6. WHERE no service is configured, or it fails or times out, THEN the message SHALL behave exactly
    as today: the audio alone, no error shown to anyone; failures are logged without the audio or the
@@ -78,6 +80,35 @@ every browser, phone and connection gets the same text, and the audio never leav
   `PARTYLINE_TRANSCRIBE_URL: http://whisper:8000`.
 - **Phase 2, connections (TR-04):** the platform feed stops at the first item whose voice attachment is
   pending (60 s at most) so its order holds, and `PlatformRecord` content gets the same transcript line.
+  Built as:
+  - Migration 0036: `platform_transcriptions(attachment_id PK → platform_attachments ON DELETE
+    CASCADE, item_id, state, text, attempts, created_at, updated_at)`, the columns of 0035 for the
+    files of the platform queue. A separate table, because `transcriptions.attachment_id` references
+    room attachments; the row goes with its file, and so with its item (expiry, cap, connection
+    deleted).
+  - `platform.Queue.Enqueue` writes the row in the item's transaction when the service is configured,
+    the item's trimmed text is empty (a caption means no row) and a file is a stored voice file
+    (`transcribe.IsVoice`, with a blob); over `MaxBytes` it is `skipped`. `Unacked`, `Get` and `Take`
+    read the rows with the files (`platform.Attachment.TranscriptState`, `Transcript`, and
+    `TranscriptSince`, the row's `created_at`).
+  - The worker keeps one queue: it reads the oldest pending row of each table and takes the older
+    (created_at, then id), with the same attempts, backoff, store retry and logs (`item_id` in place
+    of `message_id`). A platform job ends with `events.PlatformTranscribed{AgentID, ItemID}`, the AI
+    that holds the item when it ends. The worker also wakes on `PlatformQueued`.
+  - **Feed hold:** `platformFeed.fill` skips the items in flight as before and stops at the first other
+    item with a pending row whose `created_at` + hold is still ahead (the app clock, so a restart or a
+    reconnection does not restart the wait); items before it go, nothing after it does. It arms a
+    timer for the rest of the wait, and the gateway's bus watcher pokes the feed on
+    `PlatformTranscribed` for its AI. The hold is `app.Options.TranscriptHold`, the same option as the
+    dispatcher's (`testkit.WithTranscriptHold`).
+  - The frame: `convert.PlatformEvent` copies `TranscriptState` and, when done, `Transcript`, so
+    `FormatPlatform` / `PlatformRecord` print `Transcript: <text>` under the attachment line for the
+    WebSocket, `partyline listen` and the pi/OpenCode adapters alike.
+  - **Ack (CID-09):** the transcript is platform text, so the ack deletes the item's rows with its
+    text; a job still pending then is dropped (the worker's finish matches no row and publishes
+    nothing). An item that is acknowledged, or in flight on the connection, is never sent again
+    because its transcript came later.
+  - Without a service the startup sweep fails the pending rows of both tables.
 - **Known limits (phase 1):**
   - An AI session that connects while one of its rooms holds a voice message gets that message from
     its backlog as it is then, without the transcript. Nothing is lost or sent twice: the gateway
@@ -87,6 +118,16 @@ every browser, phone and connection gets the same text, and the audio never leav
   - The 10-minute cap of TR-08 is the 25 MB size cap; the server does not read the audio's length.
   - The part sent to the service carries the stored type only when it parses as an `audio/*` type
     (else `application/octet-stream`), and a file name with the type's extension when it has none.
+- **Known limits (phase 2):**
+  - An item sent alone past the limit and not acknowledged before its connection ends is sent again
+    to the next connection, as every unacknowledged item is (CID-08); that copy carries the
+    transcript if it is ready by then.
+  - A voice note that waits holds every later platform item of its AI, from every chat and
+    connection, since the AI's platform items have one order. Room messages are not held by it.
+  - `Queue.Take` (the polling path) does not wait for a pending transcript: it has no caller in the
+    server today.
+  - A platform voice note is a stored `audio/*` file. The kind the platform gave the message is not
+    looked at, so an audio file sent without a caption is transcribed too.
 - **Prod:** the 6 GB VM shares its physical host with the dev box. `small` takes about 1 GB of RAM
   while it runs and 10–20 s of CPU per minute of audio on 2 cores.
 
@@ -106,3 +147,7 @@ every browser, phone and connection gets the same text, and the audio never leav
 - A failing service: no error to anyone, the message as today.
 - A browser transcript is kept; an over-long audio is skipped.
 - A restart with a queued job finishes it.
+- Phase 2: a platform voice note reaches its AI once with the transcript; a later platform item does
+  not overtake it; a slow service sends it alone at the limit; a caption, oversize audio, a failing
+  service and no service leave it as it was; a restart resumes the job; leftover platform rows fail
+  at a start without a service; room and platform jobs share one queue.

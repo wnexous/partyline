@@ -160,7 +160,7 @@ func FormatUpdateFor(t dto.AgentFrameType, m dto.AgentMessage, selfID string) No
 }
 
 // contentOf is the content of a notification: the text, then one line per attachment, each followed
-// by the server's transcript of a voice file when there is one (TR-01).
+// by the server's transcript of a voice file when there is one (TR-01, TR-04).
 func contentOf(text string, attachments []dto.Attachment) string {
 	lines := make([]string, 0, 1+2*len(attachments))
 	if text != "" {
