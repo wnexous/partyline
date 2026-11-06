@@ -13,6 +13,7 @@ import {
   platformName,
   ReplyContext,
   TrustBadge,
+  voiceTranscript,
 } from "@/entities/message";
 import { QuestionBubble } from "@/features/answer-question";
 import type { Message, RoomMember } from "@/shared/api/types.gen";
@@ -132,10 +133,11 @@ export const MessageItem = memo(function MessageItem({
   const deleted = message.deleted_at !== undefined;
   // A voice note with text: the text is its transcript, shown under the player instead of above
   // the attachments (VOI-09). Any audio with a caption reads this way, whatever made the file.
+  // Without text, the transcript the server made shows there, or "Transcribing…" (TR-02).
   const voice = deleted
     ? undefined
     : message.attachments.find((a) => a.status === "stored" && isAudio(a.mime));
-  const transcript = voice && message.text.trim() ? message.text : null;
+  const { text: transcript, transcribing } = voiceTranscript(message.text, voice);
   // Whether the row shows text above its attachments, which decides their top margin when grouped.
   const textAbove = message.text !== "" && transcript === null;
   const time = (
@@ -356,6 +358,7 @@ export const MessageItem = memo(function MessageItem({
                 <AttachmentView
                   attachment={a}
                   transcript={a.id === voice?.id ? (transcript ?? undefined) : undefined}
+                  transcribing={a.id === voice?.id && transcribing}
                   onOpenImage={onOpenImage}
                 />
               </li>
