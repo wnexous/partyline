@@ -140,6 +140,14 @@ func (f *platformFeed) wakeIn(d time.Duration) {
 	f.timer.Reset(d)
 }
 
+// stop cancels the feed's wake-up when its connection ends. It runs on the connection's loop, after
+// the last fill.
+func (f *platformFeed) stop() {
+	if f.timer != nil {
+		f.timer.Stop()
+	}
+}
+
 // platformStart is what a connection that opted in to platform events gets after the room
 // backlog: the notice of what was dropped while no session could be told (CID-10), then the AI's
 // queued items.

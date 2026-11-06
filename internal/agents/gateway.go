@@ -941,6 +941,7 @@ func (g *Gateway) run(ctx context.Context, c *conn, row db.GetAgentWithOwnerRow,
 	var feedWake <-chan struct{} // nil, which never fires, for a client without platform events
 	if c.feed != nil {
 		feedWake = c.feed.wake
+		defer c.feed.stop() // no wake-up of the feed outlives the connection
 		if err := g.platformStart(ctx, c, a.ID); err != nil {
 			return err
 		}
