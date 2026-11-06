@@ -79,7 +79,8 @@ type Options struct {
 	// does not take seconds.
 	ConnectorWait func(ctx context.Context, d time.Duration) error
 	// TranscriptHold is how long the agent dispatcher holds a voice message for its transcript
-	// (TR-03); zero means delivery.DefaultTranscriptHold. Tests shorten it.
+	// (TR-03), and the platform feed a platform voice note (TR-04); zero means
+	// delivery.DefaultTranscriptHold. Tests shorten it.
 	TranscriptHold time.Duration
 	// TranscribeWait sleeps between the attempts of a transcription (TR-08); nil sleeps for real.
 	TranscribeWait func(ctx context.Context, d time.Duration) error
@@ -247,7 +248,7 @@ func New(cfg *config.Config, opts Options) (*App, error) {
 	a.trust = trust
 	a.Gateway = agents.NewGateway(agents.GatewayDeps{
 		Store: st, Registry: a.Agents, Presence: a.Presence, Rooms: a.Rooms, Platform: a.Platform, Logger: opts.Logger,
-		Bus: bus, Sessions: usersSvc, Trust: trust, Authz: authz,
+		Bus: bus, Sessions: usersSvc, Trust: trust, Authz: authz, TranscriptHold: opts.TranscriptHold, Now: opts.Now,
 	})
 	kinds := opts.ConnectorKinds
 	if kinds == nil {

@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/wnexous/partyline/internal/api/convert"
 	"github.com/wnexous/partyline/internal/api/dto"
@@ -33,21 +34,29 @@ func hasFeature(h http.Header, feature string) bool {
 
 // platformFeed sends the platform items of an AI to one connection (CID-06): oldest first, at most
 // PlatformWindow in flight. The queue in the database is the truth, and only the ids in flight are
-// kept here. Every wake-up (an item queued, a lagged bus, an acknowledgement) reads the queue
-// again, so the items an operator change moved to the AI, which are older than what the session
-// holds, are found like new ones (CID-05), and a session that took the AI over finds every
-// unacknowledged item (CID-25).
+// kept here. Every wake-up (an item queued, a voice note transcribed, a lagged bus, an
+// acknowledgement, the end of a transcript wait) reads the queue again, so the items an operator
+// change moved to the AI, which are older than what the session holds, are found like new ones
+// (CID-05), and a session that took the AI over finds every unacknowledged item (CID-25).
+//
+// A voice note whose server transcription is pending waits for it, hold at most from when it was
+// queued, and nothing after it overtakes it: the feed stops there until the transcript is stored or
+// the wait ends, then sends it once, with the transcript when there is one (TR-04).
 type platformFeed struct {
 	queue   *platform.Queue
 	agentID string
+	hold    time.Duration
+	now     func() time.Time
 
 	mu       sync.Mutex
 	inflight map[string]struct{}
 	wake     chan struct{}
+	// timer pokes the feed when the wait of the voice note it stopped at ends; only fill touches it.
+	timer *time.Timer
 }
 
-func newPlatformFeed(q *platform.Queue, agentID string) *platformFeed {
-	return &platformFeed{queue: q, agentID: agentID, inflight: map[string]struct{}{}, wake: make(chan struct{}, 1)}
+func newPlatformFeed(q *platform.Queue, agentID string, hold time.Duration, now func() time.Time) *platformFeed {
+	return &platformFeed{queue: q, agentID: agentID, hold: hold, now: now, inflight: map[string]struct{}{}, wake: make(chan struct{}, 1)}
 }
 
 // poke asks the connection's loop to read the queue; pokes coalesce.
@@ -96,6 +105,10 @@ func (f *platformFeed) fill(ctx context.Context, c *conn) error {
 		if room == 0 {
 			break
 		}
+		if wait := f.transcriptWait(e); wait > 0 {
+			f.wakeIn(wait) // TR-04: nothing after it goes first
+			break
+		}
 		// In flight before it is written: its acknowledgement can arrive as soon as it is.
 		f.mu.Lock()
 		f.inflight[e.ID] = struct{}{}
@@ -106,6 +119,25 @@ func (f *platformFeed) fill(ctx context.Context, c *conn) error {
 		room--
 	}
 	return nil
+}
+
+// transcriptWait is how much longer the item waits for the server transcript of a voice file: zero
+// when none is pending or its wait is over (TR-04).
+func (f *platformFeed) transcriptWait(e platform.Event) time.Duration {
+	since, pending := e.TranscriptPendingSince()
+	if !pending {
+		return 0
+	}
+	return since.Add(f.hold).Sub(f.now())
+}
+
+// wakeIn pokes the feed after d, replacing an earlier wake-up of the feed's wait.
+func (f *platformFeed) wakeIn(d time.Duration) {
+	if f.timer == nil {
+		f.timer = time.AfterFunc(d, f.poke)
+		return
+	}
+	f.timer.Reset(d)
 }
 
 // platformStart is what a connection that opted in to platform events gets after the room

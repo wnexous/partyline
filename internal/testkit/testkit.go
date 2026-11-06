@@ -143,7 +143,8 @@ func WithConnectorWait(wait func(ctx context.Context, d time.Duration) error) Op
 }
 
 // WithTranscriptHold sets how long the agent dispatcher holds a voice message for its transcript
-// (TR-03), so a test of the limit does not wait a minute.
+// (TR-03), and the platform feed a platform voice note (TR-04), so a test of the limit does not wait
+// a minute.
 func WithTranscriptHold(d time.Duration) Option { return func(o *options) { o.transcriptHold = d } }
 
 // WithTranscribeWait replaces the sleep between the attempts of a transcription (TR-08).
