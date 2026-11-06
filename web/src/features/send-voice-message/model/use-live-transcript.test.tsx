@@ -11,7 +11,10 @@ import { useLiveTranscript } from "./use-live-transcript";
  */
 
 beforeEach(stubSpeech);
-afterEach(() => vi.unstubAllGlobals());
+afterEach(() => {
+  vi.unstubAllGlobals();
+  vi.restoreAllMocks();
+});
 
 const render = (active = true) =>
   renderHook(({ on }) => useLiveTranscript(on), {
@@ -134,5 +137,17 @@ describe("when recognition fails (VOI-09)", () => {
     expect(hook.result.current.text).toBe("");
     expect(hook.result.current.final).toBe("");
     expect(hook.result.current.unavailable).toBe(false);
+  });
+});
+
+describe("an Android phone (VOI-09)", () => {
+  it("does not listen: its recognizer beeps at every pause and would cut the text short", async () => {
+    vi.spyOn(navigator, "userAgent", "get").mockReturnValue(
+      "Mozilla/5.0 (Linux; Android 14; 23078PND5G) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.0.0 Mobile Safari/537.36",
+    );
+    const hook = render();
+    expect(hook.result.current.supported).toBe(false);
+    expect(FakeRecognition.instances).toHaveLength(0);
+    await expect(hook.result.current.finish()).resolves.toBe("");
   });
 });
