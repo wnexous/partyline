@@ -432,6 +432,17 @@ type SessionRoomState struct {
 	UpdatedAt  int64
 }
 
+type Transcription struct {
+	AttachmentID string
+	MessageID    string
+	RoomID       string
+	State        string
+	Text         string
+	Attempts     int64
+	CreatedAt    int64
+	UpdatedAt    int64
+}
+
 type User struct {
 	ID           string
 	Username     string
