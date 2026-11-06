@@ -461,6 +461,8 @@ Everything is configured with environment variables.
 | `PARTYLINE_PRIVATE_NETWORK_ALLOWLIST` | empty | Comma-separated private destinations connectors may reach while `PARTYLINE_ALLOW_PRIVATE_NETWORKS` stays `false`: CIDRs (`192.168.1.0/24`, any port), addresses or host names with an optional port (`10.0.0.5`, `[fd00::5]:8088`, `localhost:8088`). A host name entry matches the name in the connector URL; everything else private stays blocked. Prefer `host:port` or CIDR entries: a bare name opens every port on it. List only names whose DNS you control, since the entry trusts whatever the name resolves to. The list applies to every user's connectors, not just yours. |
 | `PARTYLINE_MIGRATION_BACKUPS_KEEP` | `5` | How many pre-migration database copies stay in `<data dir>/backups`; `0` keeps every one. Older copies are deleted only after a new one was written. See [Upgrades and backups](#upgrades-and-backups). |
 | `PARTYLINE_SKIP_MIGRATION_BACKUP` | `false` | `true` migrates without writing the pre-migration copy. Only for an operator who restored a backup or accepted the risk: a failed migration then has nothing to roll back to. |
+| `PARTYLINE_TRANSCRIBE_URL` | empty | Base URL of an OpenAI-compatible transcription server (`POST <url>/v1/audio/transcriptions`), such as the optional `whisper` service of [docker-compose.yml](docker-compose.yml): `http://whisper:8000`. Set, the server transcribes the voice messages of rooms that came without a transcript. Empty turns it off. See [Voice transcription](#voice-transcription). |
+| `PARTYLINE_TRANSCRIBE_MODEL` | `Systran/faster-whisper-small` | The model asked of that server. |
 
 Run it behind a TLS-terminating reverse proxy for internet exposure, set
 `PARTYLINE_PUBLIC_URL` to the https URL and list the proxy in `PARTYLINE_TRUSTED_PROXIES`.
@@ -590,6 +592,27 @@ first. `partyline serve` picks it:
 4. Else no limit.
 
 The server logs the limit it uses when it starts (`memory limit`, with its source).
+
+### Voice transcription
+
+With `PARTYLINE_TRANSCRIBE_URL` set, the server transcribes every voice message posted in a room
+without a transcript (recorded where the browser has no speech recognition), once, with a Whisper
+model that runs next to it: the audio never leaves your instance. The web app shows "Transcribing…"
+under the player and then the text, live; the AIs of the room wait for the text up to 60 seconds and
+get it under the attachment line (`Transcript: …`), and past that they get the audio alone, as
+without the service. A transcript the sender's browser made is kept. One file is transcribed at a
+time, oldest first; a file over 25 MB is not sent. A failure is tried up to three times and then
+logged, without the audio or the text; nobody sees an error. Voice messages that arrive on a
+platform connection are not transcribed yet.
+
+[docker-compose.yml](docker-compose.yml) has an optional `whisper` service
+([speaches](https://github.com/speaches-ai/speaches), CPU) with hard limits of 2 CPUs and 1.5 GB,
+and a volume for its model cache. Start it with `docker compose --profile transcribe up -d` and
+uncomment `PARTYLINE_TRANSCRIBE_URL` in the `partyline` service. speaches serves the models it has
+downloaded: download the model once with its model API (`POST /v1/models/<model id>`, see the
+speaches documentation); it stays in the volume. The `small` model takes about 1 GB of memory while
+it works and 10 to 20 seconds of CPU per minute of audio on 2 cores. Any server that speaks the same
+endpoint works (a whisper.cpp server, a GPU machine).
 
 ## Security model
 
