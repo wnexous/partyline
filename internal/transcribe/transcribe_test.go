@@ -517,3 +517,18 @@ func TestAFailingStoreDoesNotSendTheAudioAgain(t *testing.T) {
 	defer mu.Unlock()
 	require.Equal(t, []time.Duration{5 * time.Second, 5 * time.Second, 5 * time.Second}, waits)
 }
+
+// TR-06, TR-08: a service that never answers is given up on after RequestTimeout per attempt.
+func TestAHungServiceTimesOut(t *testing.T) {
+	require.Equal(t, 90*time.Second, transcribe.RequestTimeout)
+	f := newRoomOn(t, testkit.New(t), newFakeService(t))
+	f.svc.block()
+	voice := f.postVoice(t, f.room.ID, "", audio)
+	f.pendingRow(t, voice)
+	ownWorker(t, f, func(d *transcribe.Deps) { d.Client = &http.Client{Timeout: 100 * time.Millisecond} })
+
+	require.Eventually(t, func() bool {
+		return f.stored(t, f.room.ID, voice.ID).Attachments[0].TranscriptState == dto.TranscriptStateFailed
+	}, wait, 20*time.Millisecond)
+	require.Len(t, f.svc.calls(), transcribe.Attempts)
+}

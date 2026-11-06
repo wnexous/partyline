@@ -36,8 +36,9 @@ const MaxBytes int64 = 25 << 20
 // Attempts is how many times a transient failure (network, 5xx, 429) is tried before the row fails.
 const Attempts = 3
 
-// RequestTimeout bounds one request to the service.
-const RequestTimeout = 5 * time.Minute
+// RequestTimeout bounds one request to the service, so a service that hangs holds the queue for at
+// most Attempts times as long.
+const RequestTimeout = 90 * time.Second
 
 // storeRetry is the wait before a store operation that failed is tried again: a failing store is
 // never a reason to send the audio again.
