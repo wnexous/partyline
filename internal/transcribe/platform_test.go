@@ -382,3 +382,28 @@ func TestRoomAndPlatformVoiceShareOneQueue(t *testing.T) {
 	require.Equal(t, []byte("platform audio"), calls[1].audio)
 	require.True(t, strings.HasSuffix(calls[1].filename, ".ogg"))
 }
+
+// TR-08: a job whose file goes away while its request runs (the item acknowledged) is not tried
+// again after a transient failure: the worker moves on to the next job.
+func TestAJobThatWentAwayIsNotTriedAgain(t *testing.T) {
+	f := newVoiceConnection(t, true)
+	release := f.svc.block()
+
+	first := f.voice(t, []byte("first audio"))
+	f.started(t)
+	require.NoError(t, f.env.App.Platform.Ack(context.Background(), f.aiID, first))
+	require.Empty(t, f.rows(t, first))
+	second := f.voice(t, []byte("second audio"))
+	f.svc.fail(http.StatusInternalServerError)
+	release("")
+
+	f.state(t, second, dto.TranscriptStateFailed)
+	var firsts int
+	for _, c := range f.svc.calls() {
+		if bytes.Equal(c.audio, []byte("first audio")) {
+			firsts++
+		}
+	}
+	require.Equal(t, 1, firsts, "the audio of the acknowledged item was sent once")
+	require.Len(t, f.svc.calls(), 1+transcribe.Attempts)
+}

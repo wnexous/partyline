@@ -254,20 +254,30 @@ func (w *Worker) process(ctx context.Context, j job) {
 			w.finish(ctx, j, dto.TranscriptStateFailed, "", attempt, start)
 			return
 		}
-		w.d.Logger.Info("transcribe: attempt failed, retrying", append(j.ids(), "attempt", attempt, "err", err)...)
+		var n int64
 		if !w.write(ctx, "store the attempt", j.attachmentID, func(q *db.Queries) error {
 			at := w.d.Now().UnixMilli()
+			var err error
 			if j.itemID != "" {
-				return q.SetPlatformTranscriptionAttempts(ctx, db.SetPlatformTranscriptionAttemptsParams{
+				n, err = q.SetPlatformTranscriptionAttempts(ctx, db.SetPlatformTranscriptionAttemptsParams{
 					Attempts: attempt, UpdatedAt: at, AttachmentID: j.attachmentID,
 				})
+				return err
 			}
-			return q.SetTranscriptionAttempts(ctx, db.SetTranscriptionAttemptsParams{
+			n, err = q.SetTranscriptionAttempts(ctx, db.SetTranscriptionAttemptsParams{
 				Attempts: attempt, UpdatedAt: at, AttachmentID: j.attachmentID,
 			})
+			return err
 		}) {
 			return
 		}
+		if n == 0 {
+			// The file went away meanwhile (its message deleted, its item acknowledged): nobody waits
+			// for the text any more, so the audio is not sent again.
+			w.d.Logger.Info("transcribe: the job went away, dropped", j.ids()...)
+			return
+		}
+		w.d.Logger.Info("transcribe: attempt failed, retrying", append(j.ids(), "attempt", attempt, "err", err)...)
 		if err := w.d.Wait(ctx, time.Duration(1<<(attempt-1))*2*time.Second); err != nil {
 			return
 		}

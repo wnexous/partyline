@@ -337,7 +337,7 @@ func (q *Queries) NextPendingTranscription(ctx context.Context) (NextPendingTran
 	return i, err
 }
 
-const setPlatformTranscriptionAttempts = `-- name: SetPlatformTranscriptionAttempts :exec
+const setPlatformTranscriptionAttempts = `-- name: SetPlatformTranscriptionAttempts :execrows
 UPDATE platform_transcriptions SET attempts = ?, updated_at = ? WHERE attachment_id = ? AND state = 'pending'
 `
 
@@ -347,12 +347,15 @@ type SetPlatformTranscriptionAttemptsParams struct {
 	AttachmentID string
 }
 
-func (q *Queries) SetPlatformTranscriptionAttempts(ctx context.Context, arg SetPlatformTranscriptionAttemptsParams) error {
-	_, err := q.db.ExecContext(ctx, setPlatformTranscriptionAttempts, arg.Attempts, arg.UpdatedAt, arg.AttachmentID)
-	return err
+func (q *Queries) SetPlatformTranscriptionAttempts(ctx context.Context, arg SetPlatformTranscriptionAttemptsParams) (int64, error) {
+	result, err := q.db.ExecContext(ctx, setPlatformTranscriptionAttempts, arg.Attempts, arg.UpdatedAt, arg.AttachmentID)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected()
 }
 
-const setTranscriptionAttempts = `-- name: SetTranscriptionAttempts :exec
+const setTranscriptionAttempts = `-- name: SetTranscriptionAttempts :execrows
 UPDATE transcriptions SET attempts = ?, updated_at = ? WHERE attachment_id = ? AND state = 'pending'
 `
 
@@ -362,7 +365,10 @@ type SetTranscriptionAttemptsParams struct {
 	AttachmentID string
 }
 
-func (q *Queries) SetTranscriptionAttempts(ctx context.Context, arg SetTranscriptionAttemptsParams) error {
-	_, err := q.db.ExecContext(ctx, setTranscriptionAttempts, arg.Attempts, arg.UpdatedAt, arg.AttachmentID)
-	return err
+func (q *Queries) SetTranscriptionAttempts(ctx context.Context, arg SetTranscriptionAttemptsParams) (int64, error) {
+	result, err := q.db.ExecContext(ctx, setTranscriptionAttempts, arg.Attempts, arg.UpdatedAt, arg.AttachmentID)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected()
 }

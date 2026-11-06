@@ -18,7 +18,7 @@ WHERE t.state = 'pending'
 ORDER BY t.created_at, t.attachment_id
 LIMIT 1;
 
--- name: SetTranscriptionAttempts :exec
+-- name: SetTranscriptionAttempts :execrows
 UPDATE transcriptions SET attempts = ?, updated_at = ? WHERE attachment_id = ? AND state = 'pending';
 
 -- name: FinishTranscription :execrows
@@ -45,7 +45,7 @@ WHERE t.state = 'pending'
 ORDER BY t.created_at, t.attachment_id
 LIMIT 1;
 
--- name: SetPlatformTranscriptionAttempts :exec
+-- name: SetPlatformTranscriptionAttempts :execrows
 UPDATE platform_transcriptions SET attempts = ?, updated_at = ? WHERE attachment_id = ? AND state = 'pending';
 
 -- name: FinishPlatformTranscription :one
