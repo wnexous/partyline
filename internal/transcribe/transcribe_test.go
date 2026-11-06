@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"mime/multipart"
@@ -445,6 +446,16 @@ func TestDeletingAHeldVoiceMessageEndsTheWait(t *testing.T) {
 func TestStartingWithoutAServiceFailsTheLeftoverRows(t *testing.T) {
 	f := newRoomOn(t, testkit.New(t), newFakeService(t))
 	voice := f.postVoice(t, f.room.ID, "", audio)
+	f.pendingRow(t, voice)
+	require.Equal(t, dto.TranscriptStatePending, f.stored(t, f.room.ID, voice.ID).Attachments[0].TranscriptState)
+
+	f.env.Restart()
+	require.Equal(t, dto.TranscriptStateFailed, f.stored(t, f.room.ID, voice.ID).Attachments[0].TranscriptState)
+}
+
+// pendingRow writes the pending row the post of a voice message writes when a service is configured.
+func (f *voiceRoom) pendingRow(t *testing.T, voice dto.Message) {
+	t.Helper()
 	ctx := context.Background()
 	require.NoError(t, f.env.App.Store.WithTx(ctx, func(q *db.Queries) error {
 		return q.CreateTranscription(ctx, db.CreateTranscriptionParams{
@@ -452,8 +463,57 @@ func TestStartingWithoutAServiceFailsTheLeftoverRows(t *testing.T) {
 			State: string(dto.TranscriptStatePending), CreatedAt: 1, UpdatedAt: 1,
 		})
 	}))
-	require.Equal(t, dto.TranscriptStatePending, f.stored(t, f.room.ID, voice.ID).Attachments[0].TranscriptState)
+}
 
-	f.env.Restart()
-	require.Equal(t, dto.TranscriptStateFailed, f.stored(t, f.room.ID, voice.ID).Attachments[0].TranscriptState)
+// ownWorker runs a worker of the test's own, on an app that has none (no URL), with change applied
+// to its deps.
+func ownWorker(t *testing.T, f *voiceRoom, change func(*transcribe.Deps)) {
+	t.Helper()
+	d := transcribe.Deps{
+		Store: f.env.App.Store, Blobs: f.env.App.Blobs, Bus: f.env.App.Bus, URL: f.svc.srv.URL,
+		Wait: func(context.Context, time.Duration) error { return nil },
+	}
+	change(&d)
+	ctx, cancel := context.WithCancel(context.Background())
+	done := make(chan struct{})
+	go func() { defer close(done); _ = transcribe.New(d).Run(ctx) }()
+	t.Cleanup(func() { cancel(); <-done })
+}
+
+// TR-08: a store that fails to take the result is tried again after a wait, and the audio is not
+// sent again.
+func TestAFailingStoreDoesNotSendTheAudioAgain(t *testing.T) {
+	f := newRoomOn(t, testkit.New(t), newFakeService(t))
+	voice := f.postVoice(t, f.room.ID, "", audio)
+	f.pendingRow(t, voice)
+
+	var mu sync.Mutex
+	var waits []time.Duration
+	failures := 3
+	ownWorker(t, f, func(d *transcribe.Deps) {
+		d.Wait = func(_ context.Context, wait time.Duration) error {
+			mu.Lock()
+			defer mu.Unlock()
+			waits = append(waits, wait)
+			return nil
+		}
+		d.Tx = func(ctx context.Context, fn func(q *db.Queries) error) error {
+			mu.Lock()
+			fail := failures > 0
+			failures--
+			mu.Unlock()
+			if fail {
+				return errors.New("database is locked")
+			}
+			return f.env.App.Store.WithTx(ctx, fn)
+		}
+	})
+
+	require.Eventually(t, func() bool {
+		return f.stored(t, f.room.ID, voice.ID).Attachments[0].TranscriptState == dto.TranscriptStateDone
+	}, wait, 20*time.Millisecond)
+	require.Len(t, f.svc.calls(), 1, "the audio is sent once")
+	mu.Lock()
+	defer mu.Unlock()
+	require.Equal(t, []time.Duration{5 * time.Second, 5 * time.Second, 5 * time.Second}, waits)
 }

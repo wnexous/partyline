@@ -39,6 +39,10 @@ const Attempts = 3
 // RequestTimeout bounds one request to the service.
 const RequestTimeout = 5 * time.Minute
 
+// storeRetry is the wait before a store operation that failed is tried again: a failing store is
+// never a reason to send the audio again.
+const storeRetry = 5 * time.Second
+
 // maxResponse caps the JSON answer read from the service.
 const maxResponse = 1 << 20
 
@@ -71,6 +75,8 @@ type Deps struct {
 	Now    func() time.Time
 	// Wait sleeps between attempts; nil sleeps for real. Tests pass one that does not take seconds.
 	Wait func(ctx context.Context, d time.Duration) error
+	// Tx runs a write transaction; nil means Store.WithTx. Tests make it fail.
+	Tx func(ctx context.Context, fn func(q *db.Queries) error) error
 }
 
 // Worker transcribes the pending rows one at a time, oldest first (TR-08).
@@ -95,6 +101,9 @@ func New(d Deps) *Worker {
 	}
 	if d.Wait == nil {
 		d.Wait = sleep
+	}
+	if d.Tx == nil {
+		d.Tx = d.Store.WithTx
 	}
 	return &Worker{d: d, endpoint: strings.TrimRight(d.URL, "/") + "/v1/audio/transcriptions"}
 }
@@ -143,7 +152,10 @@ func (w *Worker) Run(ctx context.Context) error {
 				if ctx.Err() == nil {
 					w.d.Logger.Error("transcribe: read the next job failed", "err", err)
 				}
-				break
+				if w.d.Wait(ctx, storeRetry) != nil {
+					return nil
+				}
+				continue
 			}
 			w.process(ctx, job)
 		}
@@ -175,14 +187,11 @@ func (w *Worker) process(ctx context.Context, job db.NextPendingTranscriptionRow
 		}
 		w.d.Logger.Info("transcribe: attempt failed, retrying", "attachment_id", job.AttachmentID,
 			"attempt", attempt, "err", err)
-		if err := w.d.Store.WithTx(ctx, func(q *db.Queries) error {
+		if !w.write(ctx, "store the attempt", job.AttachmentID, func(q *db.Queries) error {
 			return q.SetTranscriptionAttempts(ctx, db.SetTranscriptionAttemptsParams{
 				Attempts: attempt, UpdatedAt: w.d.Now().UnixMilli(), AttachmentID: job.AttachmentID,
 			})
-		}); err != nil {
-			if ctx.Err() == nil {
-				w.d.Logger.Error("transcribe: store the attempt failed", "attachment_id", job.AttachmentID, "err", err)
-			}
+		}) {
 			return
 		}
 		if err := w.d.Wait(ctx, time.Duration(1<<(attempt-1))*2*time.Second); err != nil {
@@ -194,18 +203,14 @@ func (w *Worker) process(ctx context.Context, job db.NextPendingTranscriptionRow
 // finish stores the outcome and tells the dispatcher and the live clients (TR-02, TR-03).
 func (w *Worker) finish(ctx context.Context, job db.NextPendingTranscriptionRow, state dto.TranscriptState, text string, attempts int64, start time.Time) {
 	var n int64
-	err := w.d.Store.WithTx(ctx, func(q *db.Queries) error {
+	if !w.write(ctx, "store the result", job.AttachmentID, func(q *db.Queries) error {
 		var err error
 		n, err = q.FinishTranscription(ctx, db.FinishTranscriptionParams{
 			State: string(state), Text: text, Attempts: attempts, UpdatedAt: w.d.Now().UnixMilli(), AttachmentID: job.AttachmentID,
 		})
 		return err
-	})
-	if err != nil {
-		if ctx.Err() == nil {
-			w.d.Logger.Error("transcribe: store the result failed", "attachment_id", job.AttachmentID, "err", err)
-		}
-		return
+	}) {
+		return // the worker stops: the row stays pending for the next run
 	}
 	if n == 0 {
 		return // the file went away meanwhile
@@ -215,6 +220,24 @@ func (w *Worker) finish(ctx context.Context, job db.NextPendingTranscriptionRow,
 			"attempts", attempts, "duration_ms", w.d.Now().Sub(start).Milliseconds())
 	}
 	w.d.Bus.Publish(events.MessageTranscribed{RoomID: job.RoomID, MessageID: job.MessageID})
+}
+
+// write runs fn in a write transaction until it succeeds, waiting storeRetry after each failure. It
+// returns false when the worker stops first.
+func (w *Worker) write(ctx context.Context, what, attachmentID string, fn func(q *db.Queries) error) bool {
+	for {
+		err := w.d.Tx(ctx, fn)
+		if err == nil {
+			return true
+		}
+		if ctx.Err() != nil {
+			return false
+		}
+		w.d.Logger.Error("transcribe: "+what+" failed, retrying", "attachment_id", attachmentID, "err", err)
+		if w.d.Wait(ctx, storeRetry) != nil {
+			return false
+		}
+	}
 }
 
 // transcribe posts the file to the service and returns the text it heard.
