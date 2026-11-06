@@ -342,6 +342,16 @@ type PlatformSend struct {
 	Once              bool
 }
 
+type PlatformTranscription struct {
+	AttachmentID string
+	ItemID       string
+	State        string
+	Text         string
+	Attempts     int64
+	CreatedAt    int64
+	UpdatedAt    int64
+}
+
 type Position struct {
 	ID        string
 	OrgID     string
