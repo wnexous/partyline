@@ -13,11 +13,14 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
+	"mime"
 	"mime/multipart"
 	"net/http"
 	"net/textproto"
+	"path"
 	"strings"
 	"time"
+	"unicode"
 	"unicode/utf8"
 
 	"github.com/wnexous/partyline/internal/api/dto"
@@ -294,9 +297,10 @@ func form(model string, job db.NextPendingTranscriptionRow, audio io.Reader, aud
 	if err := mw.WriteField("response_format", "json"); err != nil {
 		return nil, 0, "", err
 	}
+	mediaType := partType(job.Mime)
 	h := textproto.MIMEHeader{}
-	h.Set("Content-Disposition", multipart.FileContentDisposition("file", job.Name))
-	h.Set("Content-Type", job.Mime)
+	h.Set("Content-Disposition", multipart.FileContentDisposition("file", partName(job.Name, mediaType)))
+	h.Set("Content-Type", mediaType)
 	if _, err := mw.CreatePart(h); err != nil {
 		return nil, 0, "", err
 	}
@@ -308,6 +312,56 @@ func form(model string, job db.NextPendingTranscriptionRow, audio io.Reader, aud
 	tail := buf.Bytes()
 	size := int64(len(head)) + audioSize + int64(len(tail))
 	return io.MultiReader(bytes.NewReader(head), io.LimitReader(audio, audioSize), bytes.NewReader(tail)), size, mw.FormDataContentType(), nil
+}
+
+// partType is the stored type of the file as the part header carries it: an audio type parsed and
+// written again, so no stray character of a type a platform sent reaches the header, else
+// application/octet-stream.
+func partType(stored string) string {
+	mediaType, params, err := mime.ParseMediaType(stored)
+	if err != nil || !strings.HasPrefix(mediaType, "audio/") {
+		return "application/octet-stream"
+	}
+	if out := mime.FormatMediaType(mediaType, params); out != "" {
+		return out
+	}
+	return "application/octet-stream"
+}
+
+// extensions names the file of an audio type for services that tell the format by the extension.
+var extensions = map[string]string{
+	"audio/webm": ".webm", "audio/ogg": ".ogg", "audio/opus": ".ogg",
+	"audio/mp4": ".m4a", "audio/m4a": ".m4a", "audio/x-m4a": ".m4a", "audio/aac": ".aac",
+	"audio/mpeg": ".mp3", "audio/mp3": ".mp3",
+	"audio/wav": ".wav", "audio/x-wav": ".wav", "audio/wave": ".wav", "audio/vnd.wave": ".wav",
+	"audio/flac": ".flac", "audio/x-flac": ".flac",
+}
+
+// audioExtensions are the extensions a service knows as audio; a name with another one, or none,
+// gets its type's.
+var audioExtensions = map[string]bool{
+	".webm": true, ".ogg": true, ".oga": true, ".opus": true, ".m4a": true, ".mp4": true, ".aac": true,
+	".mp3": true, ".mpga": true, ".mpeg": true, ".wav": true, ".flac": true,
+}
+
+// partName is the file name the part carries: the stored name without control characters or path,
+// "voice" when nothing is left, with the extension of its type when it has no audio extension.
+func partName(stored, mediaType string) string {
+	name := strings.Map(func(r rune) rune {
+		if unicode.IsControl(r) || r == '/' || r == '\\' {
+			return -1
+		}
+		return r
+	}, stored)
+	name = strings.TrimSpace(name)
+	if name == "" || name == "." || name == ".." {
+		name = "voice"
+	}
+	if !audioExtensions[strings.ToLower(path.Ext(name))] {
+		base, _, _ := strings.Cut(mediaType, ";")
+		name += extensions[base]
+	}
+	return name
 }
 
 // clip keeps a transcript within the length of a message.

@@ -231,7 +231,7 @@ func TestAVoiceMessageReachesTheAIOnceWithTheServerTranscript(t *testing.T) {
 	require.Equal(t, transcribe.DefaultModel, calls[0].model)
 	require.Equal(t, "json", calls[0].format)
 	require.Equal(t, "voice.webm", calls[0].filename)
-	require.Equal(t, "audio/webm;codecs=opus", calls[0].mime)
+	require.Equal(t, "audio/webm; codecs=opus", calls[0].mime)
 	require.Equal(t, audio, calls[0].audio)
 
 	m := f.stored(t, f.room.ID, posted.ID)
