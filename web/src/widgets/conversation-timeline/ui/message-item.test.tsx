@@ -186,6 +186,27 @@ describe("a voice note the server transcribes (TR-01, TR-02, TR-05)", () => {
     expect(screen.queryByText("what the server heard")).toBeNull();
   });
 
+  it("shows each voice file's own transcript or wait, the browser's text under the first", async () => {
+    const second = { ...recording, id: "v2", name: "voice-message-2026-10-24-140600.webm" };
+    const third = { ...recording, id: "v3", name: "voice-message-2026-10-24-140700.webm" };
+    renderItem(
+      makeMessage({
+        text: "what the browser heard",
+        attachments: [
+          { ...recording, transcript_state: "done", transcript: "ignored for the first" },
+          { ...second, transcript_state: "done", transcript: "the second one" },
+          { ...third, transcript_state: "pending" },
+        ],
+      }),
+    );
+    await screen.findAllByRole("group", { name: "Voice message" });
+
+    const transcripts = screen.getAllByTestId("voice-transcript").map((el) => el.textContent);
+    expect(transcripts).toEqual(["what the browser heard", "the second one"]);
+    expect(screen.getAllByTestId("voice-transcribing")).toHaveLength(1);
+    expect(screen.queryByText("ignored for the first")).toBeNull();
+  });
+
   it("shows no transcript when the server failed or skipped it", async () => {
     renderItem(
       makeMessage({ text: "", attachments: [{ ...recording, transcript_state: "failed" }] }),
