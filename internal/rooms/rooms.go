@@ -70,6 +70,9 @@ type Deps struct {
 	LoopGuard delivery.LoopGuard
 	// Blobs is swept by the retention job and cleaned when a room is deleted; nil skips both.
 	Blobs *attachments.Store
+	// Transcribe writes a transcription row for each voice file of a message posted without text
+	// (TR-01); the app sets it when a transcription service is configured.
+	Transcribe bool
 }
 
 // Service implements rooms, members and messages.
@@ -80,6 +83,8 @@ type Service struct {
 	now   func() time.Time
 	guard delivery.LoopGuard
 	blobs *attachments.Store
+	// transcribe is Deps.Transcribe.
+	transcribe bool
 }
 
 // New returns a Service.
@@ -87,7 +92,7 @@ func New(d Deps) *Service {
 	if d.Now == nil {
 		d.Now = time.Now
 	}
-	return &Service{store: d.Store, az: d.Access, bus: d.Bus, now: d.Now, guard: d.LoopGuard, blobs: d.Blobs}
+	return &Service{store: d.Store, az: d.Access, bus: d.Bus, now: d.Now, guard: d.LoopGuard, blobs: d.Blobs, transcribe: d.Transcribe}
 }
 
 // Room is a room as seen by one caller.

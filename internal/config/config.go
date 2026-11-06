@@ -11,6 +11,7 @@ import (
 
 	"github.com/wnexous/partyline/internal/connectors/safehttp"
 	"github.com/wnexous/partyline/internal/memlimit"
+	"github.com/wnexous/partyline/internal/transcribe"
 )
 
 // Config is the validated server configuration.
@@ -38,6 +39,11 @@ type Config struct {
 	// MigrationBackupsKeep is how many pre-migration backups stay in <data dir>/backups
 	// (PARTYLINE_MIGRATION_BACKUPS_KEEP); 0 keeps every backup (OPS-07).
 	MigrationBackupsKeep int
+	// TranscribeURL is the base URL of an OpenAI-compatible transcription service
+	// (PARTYLINE_TRANSCRIBE_URL); empty turns server transcription off (TR-01, TR-06).
+	TranscribeURL string
+	// TranscribeModel is the model asked of that service (PARTYLINE_TRANSCRIBE_MODEL).
+	TranscribeModel string
 }
 
 // SecureCookies reports whether cookies must carry the Secure attribute.
@@ -108,6 +114,15 @@ func Load(getenv func(string) string) (*Config, error) {
 		return nil, fmt.Errorf("PARTYLINE_MIGRATION_BACKUPS_KEEP: must be a non-negative integer (0 keeps every backup)")
 	}
 	cfg.MigrationBackupsKeep = keepBackups
+
+	if raw := get("PARTYLINE_TRANSCRIBE_URL", ""); raw != "" {
+		t, err := url.Parse(raw)
+		if err != nil || (t.Scheme != "http" && t.Scheme != "https") || t.Host == "" {
+			return nil, fmt.Errorf("PARTYLINE_TRANSCRIBE_URL: must be an absolute http or https URL")
+		}
+		cfg.TranscribeURL = raw
+	}
+	cfg.TranscribeModel = get("PARTYLINE_TRANSCRIBE_MODEL", transcribe.DefaultModel)
 
 	for _, item := range strings.Split(get("PARTYLINE_TRUSTED_PROXIES", ""), ",") {
 		item = strings.TrimSpace(item)

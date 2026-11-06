@@ -18,6 +18,7 @@ import (
 	"github.com/wnexous/partyline/internal/events"
 	"github.com/wnexous/partyline/internal/store"
 	"github.com/wnexous/partyline/internal/store/db"
+	"github.com/wnexous/partyline/internal/transcribe"
 	"github.com/wnexous/partyline/internal/validation"
 )
 
@@ -42,6 +43,14 @@ type Message struct {
 	// Answers is the structured answer the message carries (QR-05, QR-06), nil for every other
 	// message.
 	Answers *dto.MessageAnswers
+	// Transcripts are the server's transcriptions of its voice files, by attachment id (TR-01).
+	Transcripts map[string]Transcript
+}
+
+// Transcript is where the server's transcription of a voice file stands, and its text once done.
+type Transcript struct {
+	State dto.TranscriptState
+	Text  string
 }
 
 // Recipients decodes the explicit chat ids stored with a message posted before rooms stopped
@@ -471,16 +480,28 @@ func (s *Service) insert(ctx context.Context, q *db.Queries, roomID string, d dr
 	if err != nil {
 		return db.Room{}, events.MessageCreated{}, err
 	}
+	// A voice message the sender's browser gave no transcript is transcribed on the server (TR-01);
+	// one with text keeps it (TR-05).
+	untranscribed := s.transcribe && strings.TrimSpace(d.text) == ""
 	for _, f := range d.files {
 		status := f.Status
 		if status == "" {
 			status = dto.AttachmentStatusStored
 		}
+		attachmentID := store.NewID()
 		if err := q.CreateAttachment(ctx, db.CreateAttachmentParams{
-			ID: store.NewID(), MessageID: id, Sha256: f.SHA256, Mime: f.Mime, Name: f.Name,
+			ID: attachmentID, MessageID: id, Sha256: f.SHA256, Mime: f.Mime, Name: f.Name,
 			Size: f.Size, Status: string(status), CreatedAt: now,
 		}); err != nil {
 			return db.Room{}, events.MessageCreated{}, err
+		}
+		if untranscribed && transcribe.IsVoice(f.Mime, status) {
+			if err := q.CreateTranscription(ctx, db.CreateTranscriptionParams{
+				AttachmentID: attachmentID, MessageID: id, RoomID: roomID,
+				State: string(transcribe.InitialState(f.Size)), CreatedAt: now, UpdatedAt: now,
+			}); err != nil {
+				return db.Room{}, events.MessageCreated{}, err
+			}
 		}
 	}
 	return room, events.MessageCreated{RoomID: roomID, MessageID: id, Seq: seq}, nil
@@ -566,6 +587,17 @@ func (s *Service) withDetails(ctx context.Context, views []db.MessageView) ([]Me
 	for _, a := range atts {
 		m := &out[index[a.MessageID]]
 		m.Attachments = append(m.Attachments, a)
+	}
+	transcripts, err := s.store.R().ListTranscriptionsByMessages(ctx, ids)
+	if err != nil {
+		return nil, err
+	}
+	for _, t := range transcripts {
+		m := &out[index[t.MessageID]]
+		if m.Transcripts == nil {
+			m.Transcripts = map[string]Transcript{}
+		}
+		m.Transcripts[t.AttachmentID] = Transcript{State: dto.TranscriptState(t.State), Text: t.Text}
 	}
 	rows, err := s.store.R().ListReactionsByMessages(ctx, ids)
 	if err != nil {

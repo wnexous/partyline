@@ -65,6 +65,12 @@ func Message(m rooms.Message) dto.Message {
 	}
 	for i, a := range m.Attachments {
 		out.Attachments[i] = dto.Attachment{ID: a.ID, Name: a.Name, Mime: a.Mime, Size: a.Size, Status: dto.AttachmentStatus(a.Status)}
+		if t, ok := m.Transcripts[a.ID]; ok {
+			out.Attachments[i].TranscriptState = t.State
+			if t.State == dto.TranscriptStateDone {
+				out.Attachments[i].Transcript = t.Text
+			}
+		}
 	}
 	if m.Chat != nil {
 		out.Chat = &dto.ChatRef{ID: m.Chat.ID, Title: m.Chat.Title, Kind: dto.ChatKind(m.Chat.Kind), Platform: m.Chat.Platform}

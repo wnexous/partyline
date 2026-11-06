@@ -32,6 +32,8 @@ func TestLoadDefaults(t *testing.T) {
 	require.Nil(t, cfg.MemoryLimit, "OPS-06: without PARTYLINE_MEMORY_LIMIT the container's limit applies")
 	require.False(t, cfg.SkipMigrationBackup, "OPS-07: the pre-migration backup is on by default")
 	require.Equal(t, 5, cfg.MigrationBackupsKeep, "OPS-07: the newest five backups are kept")
+	require.Empty(t, cfg.TranscribeURL, "TR-06: server transcription is off without a service")
+	require.Equal(t, "Systran/faster-whisper-small", cfg.TranscribeModel)
 }
 
 func TestLoadOverrides(t *testing.T) {
@@ -48,6 +50,8 @@ func TestLoadOverrides(t *testing.T) {
 		"PARTYLINE_PRIVATE_NETWORK_ALLOWLIST": "192.168.1.0/24, localhost:8088",
 		"PARTYLINE_SKIP_MIGRATION_BACKUP":     "1",
 		"PARTYLINE_MIGRATION_BACKUPS_KEEP":    "12",
+		"PARTYLINE_TRANSCRIBE_URL":            "http://whisper:8000",
+		"PARTYLINE_TRANSCRIBE_MODEL":          "Systran/faster-whisper-medium",
 	}))
 	require.NoError(t, err)
 	require.Equal(t, "127.0.0.1:9000", cfg.Addr)
@@ -67,6 +71,8 @@ func TestLoadOverrides(t *testing.T) {
 	require.Equal(t, want, cfg.PrivateNetworkAllowlist)
 	require.True(t, cfg.SkipMigrationBackup)
 	require.Equal(t, 12, cfg.MigrationBackupsKeep)
+	require.Equal(t, "http://whisper:8000", cfg.TranscribeURL)
+	require.Equal(t, "Systran/faster-whisper-medium", cfg.TranscribeModel)
 }
 
 func TestLoadInvalidValuesNameTheVariable(t *testing.T) {
@@ -81,6 +87,7 @@ func TestLoadInvalidValuesNameTheVariable(t *testing.T) {
 		"PARTYLINE_MEMORY_LIMIT":              "512MB",
 		"PARTYLINE_SKIP_MIGRATION_BACKUP":     "maybe",
 		"PARTYLINE_MIGRATION_BACKUPS_KEEP":    "-1",
+		"PARTYLINE_TRANSCRIBE_URL":            "whisper:8000",
 	}
 	for name, value := range cases {
 		t.Run(name, func(t *testing.T) {

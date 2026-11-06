@@ -81,6 +81,8 @@ type options struct {
 	database         string
 	inboundWait      func(ctx context.Context, d time.Duration) error
 	connectorWait    func(ctx context.Context, d time.Duration) error
+	transcriptHold   time.Duration
+	transcribeWait   func(ctx context.Context, d time.Duration) error
 }
 
 // Option customizes New.
@@ -140,6 +142,15 @@ func WithConnectorWait(wait func(ctx context.Context, d time.Duration) error) Op
 	return func(o *options) { o.connectorWait = wait }
 }
 
+// WithTranscriptHold sets how long the agent dispatcher holds a voice message for its transcript
+// (TR-03), so a test of the limit does not wait a minute.
+func WithTranscriptHold(d time.Duration) Option { return func(o *options) { o.transcriptHold = d } }
+
+// WithTranscribeWait replaces the sleep between the attempts of a transcription (TR-08).
+func WithTranscribeWait(wait func(ctx context.Context, d time.Duration) error) Option {
+	return func(o *options) { o.transcribeWait = wait }
+}
+
 // WithVersion sets the server build version (default "dev").
 func WithVersion(v string) Option { return func(o *options) { o.version = v } }
 
@@ -164,7 +175,8 @@ func New(t testing.TB, opts ...Option) *Env {
 
 	e := &Env{
 		T: t, Server: srv, URL: base, Origin: cfg.PublicURL.Scheme + "://" + cfg.PublicURL.Host, cfg: cfg,
-		appOpts: app.Options{Logger: o.logger, Now: o.now, LiveSessionCheck: o.liveSessionCheck, ConnectorKinds: o.kinds, DisableOutbox: !o.outbox, DisablePush: o.push, PushQueueSize: o.pushQueueSize, Version: o.version, InboundWait: o.inboundWait, ConnectorWait: o.connectorWait},
+		appOpts: app.Options{Logger: o.logger, Now: o.now, LiveSessionCheck: o.liveSessionCheck, ConnectorKinds: o.kinds, DisableOutbox: !o.outbox, DisablePush: o.push, PushQueueSize: o.pushQueueSize, Version: o.version, InboundWait: o.inboundWait, ConnectorWait: o.connectorWait,
+			TranscriptHold: o.transcriptHold, TranscribeWait: o.transcribeWait},
 	}
 	e.startApp()
 	srv.Config.Handler = http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { (*e.handler.Load()).ServeHTTP(w, r) })
