@@ -51,9 +51,21 @@ const STOP_GRACE_MS = 1_500;
 /** The errors that are an ordinary end of a listening session, not a reason to give up. */
 const BENIGN_ERRORS = new Set(["no-speech", "aborted"]);
 
-/** The constructor this browser has, or null where it has none (Firefox, and some others). */
+/**
+ * Android's recognizer ignores `continuous`: it ends after every pause, and the system beeps each time
+ * it starts again, so a recording beeped on and off the whole time. It also shares the microphone with
+ * the recorder badly. A transcript that stopped at the first pause would put only the start of what was
+ * said in the message, so on Android the audio goes alone, as it does where there is no API.
+ */
+function isAndroid(): boolean {
+  if (typeof navigator === "undefined") return false;
+  const data = (navigator as { userAgentData?: { platform?: string } }).userAgentData;
+  return data?.platform === "Android" || /\bAndroid\b/i.test(navigator.userAgent);
+}
+
+/** The constructor this browser has, or null where it has none (Firefox, and some others) or on Android. */
 function speechRecognition(): SpeechRecognitionConstructor | null {
-  if (typeof window === "undefined") return null;
+  if (typeof window === "undefined" || isAndroid()) return null;
   const w = window as unknown as {
     SpeechRecognition?: SpeechRecognitionConstructor;
     webkitSpeechRecognition?: SpeechRecognitionConstructor;
