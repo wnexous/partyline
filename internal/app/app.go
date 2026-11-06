@@ -160,6 +160,8 @@ type App struct {
 	transcriber *transcribe.Worker
 	// transcriptHold is Options.TranscriptHold.
 	transcriptHold time.Duration
+	// now is Options.Now, time.Now by default.
+	now func() time.Time
 
 	stop context.CancelFunc
 	bg   sync.WaitGroup
@@ -297,6 +299,10 @@ func New(cfg *config.Config, opts Options) (*App, error) {
 	})
 	a.pushWorker = !opts.DisablePush && vapid != nil
 	a.transcriptHold = opts.TranscriptHold
+	a.now = opts.Now
+	if a.now == nil {
+		a.now = time.Now
+	}
 	if cfg.TranscribeURL != "" {
 		a.transcriber = transcribe.New(transcribe.Deps{
 			Store: st, Blobs: blobs, Bus: bus, URL: cfg.TranscribeURL, Model: cfg.TranscribeModel,
@@ -370,7 +376,7 @@ func (a *App) Start(ctx context.Context) error {
 		var n int64
 		if err := a.Store.WithTx(ctx, func(q *db.Queries) error {
 			var err error
-			n, err = q.FailPendingTranscriptions(ctx, time.Now().UnixMilli())
+			n, err = q.FailPendingTranscriptions(ctx, a.now().UnixMilli())
 			return err
 		}); err != nil {
 			return fmt.Errorf("settle pending transcriptions: %w", err)
