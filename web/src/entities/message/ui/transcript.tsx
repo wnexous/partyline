@@ -70,3 +70,22 @@ export function VoiceTranscript({ text }: { text: string }) {
     </div>
   );
 }
+
+/** What stands under the player while the server transcribes the voice note (TR-02). */
+export function VoiceTranscriptPending() {
+  const { t } = useI18n();
+  return (
+    <div className="mt-1 min-w-0 max-w-full">
+      <p className="text-[0.7rem] font-medium tracking-wide text-muted-foreground uppercase">
+        {t("message.transcript")}
+      </p>
+      <p
+        role="status"
+        data-testid="voice-transcribing"
+        className="mt-0.5 animate-pulse text-sm leading-snug text-muted-foreground italic motion-reduce:animate-none"
+      >
+        {t("message.transcribing")}
+      </p>
+    </div>
+  );
+}

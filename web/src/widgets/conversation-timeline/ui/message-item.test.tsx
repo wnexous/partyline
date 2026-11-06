@@ -130,3 +130,90 @@ describe("a voice note with text (VOI-09)", () => {
     expect(screen.getByText("the report")).toBeInTheDocument();
   });
 });
+
+describe("a voice note the server transcribes (TR-01, TR-02, TR-05)", () => {
+  const recording = {
+    id: "v1",
+    name: "voice-message-2026-10-24-140509.webm",
+    mime: "audio/webm;codecs=opus",
+    size: 41_230,
+    status: "stored" as const,
+  };
+
+  it("shows Transcribing… under the player while the server is at it", async () => {
+    renderItem(
+      makeMessage({ text: "", attachments: [{ ...recording, transcript_state: "pending" }] }),
+    );
+    await screen.findByRole("group", { name: "Voice message" });
+
+    expect(screen.getByTestId("voice-transcribing")).toHaveTextContent("Transcribing…");
+    expect(screen.queryByTestId("voice-transcript")).toBeNull();
+  });
+
+  it("says it in Portuguese too", async () => {
+    useLiveStore.setState({ locale: "pt-BR" });
+    renderItem(
+      makeMessage({ text: "", attachments: [{ ...recording, transcript_state: "pending" }] }),
+    );
+    expect(await screen.findByTestId("voice-transcribing")).toHaveTextContent("Transcrevendo…");
+  });
+
+  it("shows the server's transcript once it is done", async () => {
+    renderItem(
+      makeMessage({
+        text: "",
+        attachments: [{ ...recording, transcript_state: "done", transcript: "ship it on friday" }],
+      }),
+    );
+    await screen.findByRole("group", { name: "Voice message" });
+
+    expect(screen.getByTestId("voice-transcript")).toHaveTextContent("ship it on friday");
+    expect(screen.queryByTestId("voice-transcribing")).toBeNull();
+  });
+
+  it("keeps the browser's transcript over the server's", async () => {
+    renderItem(
+      makeMessage({
+        text: "what the browser heard",
+        attachments: [
+          { ...recording, transcript_state: "done", transcript: "what the server heard" },
+        ],
+      }),
+    );
+    await screen.findByRole("group", { name: "Voice message" });
+
+    expect(screen.getByTestId("voice-transcript")).toHaveTextContent("what the browser heard");
+    expect(screen.queryByText("what the server heard")).toBeNull();
+  });
+
+  it("shows each voice file's own transcript or wait, the browser's text under the first", async () => {
+    const second = { ...recording, id: "v2", name: "voice-message-2026-10-24-140600.webm" };
+    const third = { ...recording, id: "v3", name: "voice-message-2026-10-24-140700.webm" };
+    renderItem(
+      makeMessage({
+        text: "what the browser heard",
+        attachments: [
+          { ...recording, transcript_state: "done", transcript: "ignored for the first" },
+          { ...second, transcript_state: "done", transcript: "the second one" },
+          { ...third, transcript_state: "pending" },
+        ],
+      }),
+    );
+    await screen.findAllByRole("group", { name: "Voice message" });
+
+    const transcripts = screen.getAllByTestId("voice-transcript").map((el) => el.textContent);
+    expect(transcripts).toEqual(["what the browser heard", "the second one"]);
+    expect(screen.getAllByTestId("voice-transcribing")).toHaveLength(1);
+    expect(screen.queryByText("ignored for the first")).toBeNull();
+  });
+
+  it("shows no transcript when the server failed or skipped it", async () => {
+    renderItem(
+      makeMessage({ text: "", attachments: [{ ...recording, transcript_state: "failed" }] }),
+    );
+    await screen.findByRole("group", { name: "Voice message" });
+
+    expect(screen.queryByTestId("voice-transcript")).toBeNull();
+    expect(screen.queryByTestId("voice-transcribing")).toBeNull();
+  });
+});

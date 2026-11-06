@@ -1,7 +1,9 @@
+import type { Attachment } from "@/shared/api/types.gen";
+
 /*
  * Voice messages as the conversations read them (VOI-01..VOI-08): which file is a recording, what a
- * conversation list says for one, whether an attachment is audio, and how a length reads. The
- * recorder itself is features/send-voice-message.
+ * conversation list says for one, whether an attachment is audio, how a length reads and which
+ * transcript a voice note shows. The recorder itself is features/send-voice-message.
  */
 
 /** The type without its parameters, lower-cased: `audio/webm;codecs=opus` is `audio/webm`. */
@@ -28,4 +30,21 @@ export function formatDuration(seconds: number): string {
   if (!Number.isFinite(seconds) || seconds < 0) return "0:00";
   const whole = Math.floor(seconds);
   return `${Math.floor(whole / 60)}:${pad(whole % 60)}`;
+}
+
+/**
+ * The transcript a voice note shows under its player: the one the sender's browser made (the message
+ * text, VOI-09, TR-05), else the one the server made (TR-01). `transcribing` is true while the server
+ * is still at it (TR-02).
+ */
+export function voiceTranscript(
+  text: string,
+  voice: Attachment | undefined,
+): { text: string | null; transcribing: boolean } {
+  if (!voice) return { text: null, transcribing: false };
+  if (text.trim()) return { text, transcribing: false };
+  if (voice.transcript_state === "done" && voice.transcript) {
+    return { text: voice.transcript, transcribing: false };
+  }
+  return { text: null, transcribing: voice.transcript_state === "pending" };
 }

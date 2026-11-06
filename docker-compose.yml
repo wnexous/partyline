@@ -11,6 +11,7 @@ services:
       # PARTYLINE_TRUSTED_PROXIES: 172.16.0.0/12   # when behind a reverse proxy
       # PARTYLINE_SECRET_KEY: <base64 32 bytes>   # else generated into /data/secret.key
       # PARTYLINE_MEMORY_LIMIT: 400MiB   # soft limit of the Go heap (or GOMEMLIMIT); default: 90% of the container limit below
+      # PARTYLINE_TRANSCRIBE_URL: http://whisper:8000   # voice messages transcribed by the whisper service below
     volumes:
       - partyline-data:/data
     # One process per data directory: a second server on /data exits at once (the lock file
@@ -24,5 +25,21 @@ services:
         limits:
           memory: 512M   # hard limit: a leak or a burst stays in this container; the server idles at about 20 MiB
 
+  # Optional: transcribes the voice messages of rooms on this host (README, "Voice transcription").
+  # Start it with `docker compose --profile transcribe up -d` and uncomment PARTYLINE_TRANSCRIBE_URL
+  # above. Not published: only partyline reaches it. Models are kept in the whisper-models volume.
+  whisper:
+    image: ghcr.io/speaches-ai/speaches:latest-cpu
+    profiles: [transcribe]
+    restart: unless-stopped
+    volumes:
+      - whisper-models:/home/ubuntu/.cache/huggingface/hub
+    deploy:
+      resources:
+        limits:
+          cpus: "2"
+          memory: 1.5G   # the small model takes about 1 GB while it works
+
 volumes:
   partyline-data:
+  whisper-models:

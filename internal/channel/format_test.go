@@ -108,6 +108,26 @@ func TestFormatContentListsAttachments(t *testing.T) {
 	require.Equal(t, "[attachment att-3: voice.ogg, audio/ogg]", n.Content)
 }
 
+// TR-01: the server's transcript of a voice file follows its attachment line; a file still pending,
+// failed or skipped has none.
+func TestFormatContentCarriesTheServerTranscript(t *testing.T) {
+	n := Format(msg(dto.AuthorKindUser, func(m *dto.Message) {
+		m.Text = ""
+		m.Attachments = []dto.Attachment{
+			{ID: "att-1", Name: "voice.webm", Mime: "audio/webm", Status: dto.AttachmentStatusStored,
+				TranscriptState: dto.TranscriptStateDone, Transcript: "call me back tomorrow"},
+			{ID: "att-2", Name: "late.webm", Mime: "audio/webm", Status: dto.AttachmentStatusStored,
+				TranscriptState: dto.TranscriptStatePending},
+		}
+	}))
+	require.Equal(t, "[attachment att-1: voice.webm, audio/webm]\nTranscript: call me back tomorrow\n[attachment att-2: late.webm, audio/webm]", n.Content)
+
+	p := FormatPlatform(dto.PlatformEvent{ID: "evt-1", Platform: "whatsapp", Attachments: []dto.Attachment{
+		{ID: "att-3", Name: "voice.ogg", Mime: "audio/ogg", TranscriptState: dto.TranscriptStateDone, Transcript: "on my way"},
+	}})
+	require.Equal(t, "[attachment att-3: voice.ogg, audio/ogg]\nTranscript: on my way", p.Content)
+}
+
 // SESS-22, SESS-24: a message the principal receives because it was addressed to a session that
 // was not live carries the note in its content and the label in its meta.
 func TestFormatCarriesTheFallbackNote(t *testing.T) {

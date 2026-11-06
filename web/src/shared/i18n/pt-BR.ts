@@ -373,6 +373,7 @@ export const ptBR: Dictionary = {
   "message.attachmentTooLarge": "grande demais para guardar",
   "message.attachmentUnavailable": "indisponível",
   "message.transcript": "Transcrição",
+  "message.transcribing": "Transcrevendo…",
   "message.showMore": "Ver mais",
   "message.showLess": "Ver menos",
   "message.content.image": "Imagem",

@@ -36,6 +36,7 @@ import (
 	"github.com/wnexous/partyline/internal/secrets"
 	"github.com/wnexous/partyline/internal/store"
 	"github.com/wnexous/partyline/internal/store/db"
+	"github.com/wnexous/partyline/internal/transcribe"
 	"github.com/wnexous/partyline/internal/users"
 	"github.com/wnexous/partyline/internal/webpush"
 	"github.com/wnexous/partyline/internal/webui"
@@ -77,6 +78,11 @@ type Options struct {
 	// connector (CON-06); nil sleeps for real. Tests that make a connector crash pass a wait that
 	// does not take seconds.
 	ConnectorWait func(ctx context.Context, d time.Duration) error
+	// TranscriptHold is how long the agent dispatcher holds a voice message for its transcript
+	// (TR-03); zero means delivery.DefaultTranscriptHold. Tests shorten it.
+	TranscriptHold time.Duration
+	// TranscribeWait sleeps between the attempts of a transcription (TR-08); nil sleeps for real.
+	TranscribeWait func(ctx context.Context, d time.Duration) error
 }
 
 // BuiltinKinds returns the connector kinds shipped with Partyline. A new platform adds its
@@ -150,6 +156,12 @@ type App struct {
 	sendWorker bool
 	// pushWorker is whether Start runs the Web Push notifier (app.Options.DisablePush).
 	pushWorker bool
+	// transcriber transcribes voice messages; nil when no service is configured (TR-06).
+	transcriber *transcribe.Worker
+	// transcriptHold is Options.TranscriptHold.
+	transcriptHold time.Duration
+	// now is Options.Now, time.Now by default.
+	now func() time.Time
 
 	stop context.CancelFunc
 	bg   sync.WaitGroup
@@ -218,7 +230,7 @@ func New(cfg *config.Config, opts Options) (*App, error) {
 		Access:        az,
 		Authz:         authz,
 		Orgs:          orgs.NewService(orgs.Deps{Store: st, Authz: authz, Bus: bus, Audit: auditLog, Blobs: blobs, Now: opts.Now}),
-		Rooms:         rooms.New(rooms.Deps{Store: st, Access: az, Bus: bus, Now: opts.Now, Blobs: blobs}),
+		Rooms:         rooms.New(rooms.Deps{Store: st, Access: az, Bus: bus, Now: opts.Now, Blobs: blobs, Transcribe: cfg.TranscribeURL != ""}),
 		Blobs:         blobs,
 		Platform:      platform.New(platform.Deps{Store: st, Bus: bus, Now: opts.Now}),
 		Intelligences: intelligences.New(intelligences.Deps{Store: st, Access: az, Bus: bus, Blobs: blobs, Online: presence.Online, Now: opts.Now}),
@@ -286,6 +298,17 @@ func New(cfg *config.Config, opts Options) (*App, error) {
 		Store: st, VAPID: vapid, Queue: a.Push, Now: opts.Now,
 	})
 	a.pushWorker = !opts.DisablePush && vapid != nil
+	a.transcriptHold = opts.TranscriptHold
+	a.now = opts.Now
+	if a.now == nil {
+		a.now = time.Now
+	}
+	if cfg.TranscribeURL != "" {
+		a.transcriber = transcribe.New(transcribe.Deps{
+			Store: st, Blobs: blobs, Bus: bus, URL: cfg.TranscribeURL, Model: cfg.TranscribeModel,
+			Logger: opts.Logger, Now: opts.Now, Wait: opts.TranscribeWait,
+		})
+	}
 	a.handler = api.New(api.Deps{
 		Config:        cfg,
 		Users:         usersSvc,
@@ -348,12 +371,30 @@ func (a *App) Start(ctx context.Context) error {
 			return fmt.Errorf("recover platform sends: %w", err)
 		}
 	}
+	if a.transcriber == nil {
+		// Without a service nothing finishes the rows left pending by a run that had one (TR-06).
+		var n int64
+		if err := a.Store.WithTx(ctx, func(q *db.Queries) error {
+			var err error
+			n, err = q.FailPendingTranscriptions(ctx, a.now().UnixMilli())
+			return err
+		}); err != nil {
+			return fmt.Errorf("settle pending transcriptions: %w", err)
+		}
+		if n > 0 {
+			a.Logger.Warn("transcribe: no service is configured; pending transcriptions failed", "rows", n)
+		}
+	}
 	bg, stop := context.WithCancel(context.WithoutCancel(ctx))
 	a.stop = stop
 	dispatcher := delivery.NewAgentDispatcher(delivery.DispatcherOptions{
 		Store: a.Store, Bus: a.Bus, Agents: a.Gateway, Load: a.Gateway.Message, Trust: a.trust, Logger: a.Logger,
+		TranscriptHold: a.transcriptHold,
 	})
 	a.background(bg, "agent-dispatcher", dispatcher.Run)
+	if a.transcriber != nil {
+		a.background(bg, "transcribe", a.transcriber.Run)
+	}
 	if a.pushWorker {
 		a.background(bg, "webpush", a.Push.Run)
 		// Seed before the connections start below: a connection already stored in error must not

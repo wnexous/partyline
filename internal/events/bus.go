@@ -36,6 +36,14 @@ type MessageUpdated struct {
 	PrevText  string
 }
 
+// MessageTranscribed reports that the server's transcription of a voice file of a message ended, with
+// its text or without (TR-01): the agent dispatcher stops holding the message (TR-03) and live clients
+// read it again (TR-02). It is not an edit: the AIs are not told the message changed.
+type MessageTranscribed struct {
+	RoomID    string
+	MessageID string
+}
+
 // RoomChanged reports that a room was created, updated or deleted.
 type RoomChanged struct {
 	RoomID  string
@@ -138,6 +146,7 @@ type Lagged struct{}
 func (MessageCreated) isEvent()      {}
 func (ReactionsChanged) isEvent()    {}
 func (MessageUpdated) isEvent()      {}
+func (MessageTranscribed) isEvent()  {}
 func (RoomChanged) isEvent()         {}
 func (MembersChanged) isEvent()      {}
 func (IntelligenceChanged) isEvent() {}

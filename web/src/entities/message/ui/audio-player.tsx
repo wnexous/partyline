@@ -5,7 +5,7 @@ import { useI18n } from "@/shared/i18n";
 import { Button } from "@/shared/ui/primitives/button";
 import { attachmentUrl } from "../lib/attachments";
 import { formatDuration, isVoiceName } from "../lib/voice";
-import { VoiceTranscript } from "./transcript";
+import { VoiceTranscript, VoiceTranscriptPending } from "./transcript";
 
 /*
  * The compact player of an audio attachment (VOI-07, VOI-08): play and pause, the time and a seek
@@ -22,10 +22,13 @@ const FAR_PAST_THE_END = 1e101;
 export function AudioPlayer({
   attachment: a,
   transcript,
+  transcribing = false,
 }: {
   attachment: Attachment;
-  /** The text of the voice note, shown under the player (VOI-09). */
+  /** The text of the voice note, shown under the player (VOI-09, TR-01). */
   transcript?: string;
+  /** The server is transcribing the voice note: "Transcribing…" stands under the player (TR-02). */
+  transcribing?: boolean;
 }) {
   const { t } = useI18n();
   const audio = useRef<HTMLAudioElement>(null);
@@ -83,6 +86,12 @@ export function AudioPlayer({
     void el.play().catch(() => {});
   };
 
+  const below = transcript ? (
+    <VoiceTranscript text={transcript} />
+  ) : transcribing ? (
+    <VoiceTranscriptPending />
+  ) : null;
+
   if (failed) {
     return (
       <div className="flex min-w-0 max-w-full flex-col gap-1">
@@ -97,7 +106,7 @@ export function AudioPlayer({
           </a>
           <p className="text-xs text-muted-foreground">{t("player.unavailable")}</p>
         </div>
-        {transcript ? <VoiceTranscript text={transcript} /> : null}
+        {below}
       </div>
     );
   }
@@ -185,7 +194,7 @@ export function AudioPlayer({
           </a>
         </Button>
       </div>
-      {transcript ? <VoiceTranscript text={transcript} /> : null}
+      {below}
     </div>
   );
 }

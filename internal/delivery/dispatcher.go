@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"errors"
 	"log/slog"
+	"time"
 
 	"github.com/wnexous/partyline/internal/api/dto"
 	"github.com/wnexous/partyline/internal/events"
@@ -39,10 +40,16 @@ type DispatcherOptions struct {
 	Trust TrustSource
 	// Logger defaults to slog.Default().
 	Logger *slog.Logger
+	// TranscriptHold is how long a voice message waits for its server transcript before it goes to
+	// the AIs without one (TR-03); zero means DefaultTranscriptHold.
+	TranscriptHold time.Duration
 }
 
 // dispatcherBuffer is the event backlog of the dispatcher's bus subscription.
 const dispatcherBuffer = 1024
+
+// DefaultTranscriptHold is the owner's limit for the wait of a voice message (TR-03).
+const DefaultTranscriptHold = 60 * time.Second
 
 // AgentDispatcher pushes every new room message to the online agents the delivery plan
 // targets (DLV-02) and whose delivery mode wants it (MEM-03, MEM-04), with a trusted flag
@@ -54,10 +61,30 @@ const dispatcherBuffer = 1024
 //
 // It also tells the same agents that a message was edited or deleted (EDT-07, DLT-07): the agents whose
 // delivery mode wants the message as it was before the change or, for an edit, as it is now.
+//
+// A voice message whose server transcription is pending is held until the transcript is ready or
+// TranscriptHold has passed, then dispatched once, with the transcript when there is one (TR-03). The
+// gateway drops a principal frame whose seq is not above the last one it sent in the room, so while a
+// room has a held message every later event of that room waits behind it, in order; other rooms flow.
 type AgentDispatcher struct {
 	o      DispatcherOptions
 	events <-chan events.Event
 	cancel func()
+	// holds are the rooms whose dispatch waits for a transcript, by room id; only Run touches them.
+	holds map[string]*hold
+}
+
+// hold is a voice message waiting for its transcript and the events of its room that came after it.
+type hold struct {
+	created  events.MessageCreated
+	deadline time.Time
+	queue    []queued
+}
+
+// queued is an event that waits behind a held message, with when it arrived.
+type queued struct {
+	e  events.Event
+	at time.Time
 }
 
 // NewAgentDispatcher subscribes to the bus right away, so no message stored after it returns
@@ -66,32 +93,140 @@ func NewAgentDispatcher(o DispatcherOptions) *AgentDispatcher {
 	if o.Logger == nil {
 		o.Logger = slog.Default()
 	}
+	if o.TranscriptHold <= 0 {
+		o.TranscriptHold = DefaultTranscriptHold
+	}
 	ch, cancel := o.Bus.Subscribe(dispatcherBuffer)
-	return &AgentDispatcher{o: o, events: ch, cancel: cancel}
+	return &AgentDispatcher{o: o, events: ch, cancel: cancel, holds: map[string]*hold{}}
 }
 
-// Run dispatches MessageCreated events until ctx ends.
+// Run dispatches MessageCreated and MessageUpdated events until ctx ends, holding a room's events
+// behind a voice message that waits for its transcript (TR-03).
 func (d *AgentDispatcher) Run(ctx context.Context) error {
 	defer d.cancel()
+	timer := time.NewTimer(time.Hour)
+	timer.Stop()
+	defer timer.Stop()
 	for {
 		select {
 		case <-ctx.Done():
 			return nil
 		case e := <-d.events:
-			switch e := e.(type) {
-			case events.MessageCreated:
-				if err := d.dispatch(ctx, e); err != nil && ctx.Err() == nil {
-					d.o.Logger.Error("agent dispatch failed", "room_id", e.RoomID, "message_id", e.MessageID, "err", err)
+			d.handle(ctx, e, time.Now())
+		case <-timer.C:
+			now := time.Now()
+			for roomID, h := range d.holds {
+				if !now.Before(h.deadline) {
+					d.release(ctx, roomID) // TR-03: the audio alone, past the limit
 				}
-			case events.MessageUpdated:
-				if err := d.dispatchUpdate(ctx, e); err != nil && ctx.Err() == nil {
-					d.o.Logger.Error("agent update dispatch failed", "room_id", e.RoomID, "message_id", e.MessageID, "err", err)
-				}
-			case events.Lagged:
-				d.o.Logger.Warn("agent dispatcher lagged; agents recover missed messages on reconnect")
+			}
+		}
+		d.arm(timer)
+	}
+}
+
+// arm sets the timer to the earliest deadline of the holds, or stops it when there is none.
+func (d *AgentDispatcher) arm(timer *time.Timer) {
+	timer.Stop()
+	var next time.Time
+	for _, h := range d.holds {
+		if next.IsZero() || h.deadline.Before(next) {
+			next = h.deadline
+		}
+	}
+	if !next.IsZero() {
+		timer.Reset(max(time.Until(next), 0))
+	}
+}
+
+// handle dispatches one event, or queues it behind the held message of its room.
+func (d *AgentDispatcher) handle(ctx context.Context, e events.Event, now time.Time) {
+	switch e := e.(type) {
+	case events.MessageCreated:
+		if h := d.holds[e.RoomID]; h != nil {
+			h.queue = append(h.queue, queued{e: e, at: now})
+			return
+		}
+		d.created(ctx, e, now)
+	case events.MessageUpdated:
+		if h := d.holds[e.RoomID]; h != nil {
+			h.queue = append(h.queue, queued{e: e, at: now})
+			if e.MessageID == h.created.MessageID {
+				d.release(ctx, e.RoomID) // edited or deleted while it waited: no reason to wait more
+			}
+			return
+		}
+		d.updated(ctx, e)
+	case events.MessageTranscribed:
+		if h := d.holds[e.RoomID]; h != nil && h.created.MessageID == e.MessageID && !d.pending(ctx, e.MessageID) {
+			d.release(ctx, e.RoomID)
+		}
+	case events.Lagged:
+		d.o.Logger.Warn("agent dispatcher lagged; agents recover missed messages on reconnect")
+		// A transcript event may be among the missed ones: the rows tell.
+		for roomID, h := range d.holds {
+			if !d.pending(ctx, h.created.MessageID) {
+				d.release(ctx, roomID)
 			}
 		}
 	}
+}
+
+// created dispatches a new message, or holds it when it waits for its transcript and its limit has
+// not passed since it arrived at arrived.
+func (d *AgentDispatcher) created(ctx context.Context, e events.MessageCreated, arrived time.Time) bool {
+	if deadline := arrived.Add(d.o.TranscriptHold); time.Now().Before(deadline) && d.pending(ctx, e.MessageID) {
+		d.holds[e.RoomID] = &hold{created: e, deadline: deadline}
+		return true
+	}
+	if err := d.dispatch(ctx, e); err != nil && ctx.Err() == nil {
+		d.o.Logger.Error("agent dispatch failed", "room_id", e.RoomID, "message_id", e.MessageID, "err", err)
+	}
+	return false
+}
+
+func (d *AgentDispatcher) updated(ctx context.Context, e events.MessageUpdated) {
+	if err := d.dispatchUpdate(ctx, e); err != nil && ctx.Err() == nil {
+		d.o.Logger.Error("agent update dispatch failed", "room_id", e.RoomID, "message_id", e.MessageID, "err", err)
+	}
+}
+
+// release dispatches the held message of the room and then the events queued behind it, in order,
+// until one of them is another voice message that still waits: it holds the rest. An edit or a delete
+// of the held message itself is not told: the message goes out as it is now, or not at all.
+func (d *AgentDispatcher) release(ctx context.Context, roomID string) {
+	h := d.holds[roomID]
+	delete(d.holds, roomID)
+	if err := d.dispatch(ctx, h.created); err != nil && ctx.Err() == nil {
+		d.o.Logger.Error("agent dispatch failed", "room_id", roomID, "message_id", h.created.MessageID, "err", err)
+	}
+	for i, q := range h.queue {
+		switch e := q.e.(type) {
+		case events.MessageCreated:
+			if d.created(ctx, e, q.at) {
+				d.holds[roomID].queue = h.queue[i+1:]
+				return
+			}
+		case events.MessageUpdated:
+			if e.MessageID != h.created.MessageID {
+				d.updated(ctx, e)
+			}
+		}
+	}
+}
+
+// pending reports whether a message still waits for a server transcript (TR-03). A message without
+// a transcription row, or whose rows are done, failed or skipped, never waits; neither does one whose
+// rows cannot be read.
+func (d *AgentDispatcher) pending(ctx context.Context, messageID string) bool {
+	n, err := d.o.Store.R().CountPendingTranscriptions(ctx, messageID)
+	if err != nil {
+		if ctx.Err() == nil {
+			d.o.Logger.Error("agent dispatch: read the transcription state failed", "message_id", messageID, "err", err)
+		}
+		return false
+	}
+	return n > 0
 }
 
 // audience is who a dispatch about one message reaches: the room, the message as stored, the online AI members

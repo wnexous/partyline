@@ -371,6 +371,7 @@ export const en = {
   "message.attachmentTooLarge": "too large to store",
   "message.attachmentUnavailable": "unavailable",
   "message.transcript": "Transcript",
+  "message.transcribing": "Transcribing…",
   "message.showMore": "Show more",
   "message.showLess": "Show less",
   "message.content.image": "Image",

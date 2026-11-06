@@ -1,7 +1,7 @@
 # Voice transcription on the server
 
-Status: Specify + Design written 2026-11-05, waiting for the owner's OK on the open decisions before
-it is built. Requirement ids TR-xx. Owner request (voice note, 2026-11-05): "put the transcription
+Status: Specify + Design written 2026-11-05; the owner chose the proposals ("ok", 2026-11-05).
+Built in two phases: rooms first (TR-01..03, TR-05..08), platform connections next (TR-04). Requirement ids TR-xx. Owner request (voice note, 2026-11-05): "put the transcription
 engine inside Partyline itself, a transcription server in the Docker Compose, instead of the phone or
 the browser transcribing".
 
@@ -23,7 +23,7 @@ every browser, phone and connection gets the same text, and the audio never leav
 2. The web app SHALL show the message at once with "Transcribing…" under the player, and the text
    when it arrives, live, for every viewer. (TR-02)
 3. WHEN the message is for AIs THEN the server SHALL hold its delivery to them until the transcript is
-   ready or 60 seconds have passed, and deliver it once, with the transcript as its text; past the
+   ready or 60 seconds have passed, and deliver it once, with the transcript; past the
    limit it SHALL deliver the audio alone, as today. (TR-03)
 4. WHEN a voice message arrives from a platform connection (WhatsApp, Telegram) THEN it SHALL be
    transcribed the same way before it is handed to the AI that operates the connection. (TR-04)
@@ -42,22 +42,57 @@ every browser, phone and connection gets the same text, and the audio never leav
   changes. Config: `PARTYLINE_TRANSCRIBE_URL`, `PARTYLINE_TRANSCRIBE_MODEL`.
 - **Compose:** `docker-compose.yml` gets an optional `whisper` service with hard limits
   (`cpus: 2`, `memory: 1.5G`) and a volume for the model cache; the partyline service points at it.
-- **Server:** a `transcribe` package with a single worker goroutine and a queue in SQLite (a
-  `transcriptions` table: message id, state, attempts), so a restart resumes the queue. The
-  dispatcher waits on the job (TR-03) for messages whose audio has no transcript.
-- **Storage:** the transcript goes into the message text, the field the browser transcript already
-  uses (VOI-09), through the normal edit path, so the web app, history and AIs need no new field. An
-  edit from the server is marked as the system's, not the author's.
+- **Server (phase 1, rooms):**
+  - Migration 0035: `transcriptions(attachment_id PK → attachments ON DELETE CASCADE, message_id,
+    room_id, state 'pending'|'done'|'failed'|'skipped', text, attempts, created_at, updated_at)`.
+  - The row is written in the same transaction as the message (`rooms.post`/`insert`) when the
+    service is configured, the message's trimmed text is empty and an attachment is a voice file:
+    mime `audio/*`, status `stored`. A size over `MaxTranscribeBytes` (25 MB) is `skipped`.
+  - Package `internal/transcribe`: one worker goroutine, oldest pending first. It reads the blob
+    (`attachments.Store.Open`), posts it as multipart to `<URL>/v1/audio/transcriptions` (`file`,
+    `model`, `response_format=json`), stores `done` + text, or retries a transient failure (network,
+    5xx) up to 3 attempts with backoff, then `failed`. A restart resumes `pending` rows. Logs never
+    hold audio or text. Then it publishes `events.MessageTranscribed{RoomID, MessageID}`.
+  - Not an edit: `MessageUpdated` would send AIs an "edited" frame. The transcript is a field of the
+    attachment (`dto.Attachment.Transcript`, `TranscriptState`), filled by the same loaders that read
+    attachments, so the web, history, backlog and AI frames all carry it.
+  - **Dispatcher hold (TR-03):** the dispatcher is one goroutine and the gateway drops a principal
+    frame whose seq is not above the last one sent in its room, so a held message must keep its
+    room's order: while a room has a held message, every later event of that room (created, updated)
+    waits behind it in a per-room queue; other rooms flow. A hold ends on `MessageTranscribed` for that
+    message or at 60 s (a timer in the same goroutine), then the held message and its queue are
+    dispatched in order. A message whose transcription row is already done/failed/skipped is not held.
+  - **Live (TR-02):** the live hub turns `MessageTranscribed` into `room.message_updated` with the
+    message re-read, so every viewer gets the text.
+  - **Channel:** `contentOf` adds the transcript under the attachment line:
+    `[attachment <id>: <name>, <mime>]` then `Transcript: <text>`.
+  - **Language (TR-07):** the model detects it; no hint in phase 1.
+- **Config:** `PARTYLINE_TRANSCRIBE_URL` (base URL; empty = off), `PARTYLINE_TRANSCRIBE_MODEL`
+  (default `Systran/faster-whisper-small`). The URL is the operator's: plain `http.Client`, not
+  safehttp, with a 90-second request timeout, so a hung service holds the queue for about 5 minutes
+  at most (3 attempts).
+- **Web:** the voice bubble shows the browser transcript (message text) when there is one, else the
+  attachment transcript; `pending` shows "Transcribing…" (pt-BR "Transcrevendo…").
+- **Compose:** `docker-compose.yml` gets an optional `whisper` service (speaches, CPU) with hard
+  limits (`cpus: 2`, `memory: 1.5G`), a model-cache volume, and the partyline service's
+  `PARTYLINE_TRANSCRIBE_URL: http://whisper:8000`.
+- **Phase 2, connections (TR-04):** the platform feed stops at the first item whose voice attachment is
+  pending (60 s at most) so its order holds, and `PlatformRecord` content gets the same transcript line.
+- **Known limits (phase 1):**
+  - An AI session that connects while one of its rooms holds a voice message gets that message from
+    its backlog as it is then, without the transcript. Nothing is lost or sent twice: the gateway
+    drops the held copy when the hold ends, because its seq was already sent.
+  - A silent clip, or one the model hears nothing in, ends `done` with an empty text: the web shows
+    no transcript and the AI gets the attachment line alone.
+  - The 10-minute cap of TR-08 is the 25 MB size cap; the server does not read the audio's length.
+  - The part sent to the service carries the stored type only when it parses as an `audio/*` type
+    (else `application/octet-stream`), and a file name with the type's extension when it has none.
 - **Prod:** the 6 GB VM shares its physical host with the dev box. `small` takes about 1 GB of RAM
   while it runs and 10–20 s of CPU per minute of audio on 2 cores.
 
-## Open decisions (owner)
-1. Model: `small` (lighter, good Portuguese, the one already used on this machine) or `large-v3-turbo` (better
-   text, about 3 GB of RAM, slower on CPU). Proposal: `small`.
-2. Where it runs: on the prod VM next to Partyline (simplest; uses its CPU) or on another machine.
-   Proposal: the prod VM with the hard limits above, and watch the load for a week.
-3. Wait for AIs: hold up to 60 s for the transcript (proposal), or deliver at once and send an edit
-   when the text is ready (AIs get the message twice).
+## Decisions (owner, 2026-11-05)
+1. Model `small`. 2. On the prod VM, with hard limits; watch the load for a week. 3. AIs wait up to
+60 s for the transcript.
 
 ## Out of scope
 - Transcribing audio files that are not voice messages (music, recordings attached as files).

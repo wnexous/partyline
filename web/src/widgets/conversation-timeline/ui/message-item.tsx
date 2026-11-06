@@ -13,9 +13,10 @@ import {
   platformName,
   ReplyContext,
   TrustBadge,
+  voiceTranscript,
 } from "@/entities/message";
 import { QuestionBubble } from "@/features/answer-question";
-import type { Message, RoomMember } from "@/shared/api/types.gen";
+import type { Attachment, Message, RoomMember } from "@/shared/api/types.gen";
 import { type MessageKey, useI18n } from "@/shared/i18n";
 import { formatAbsolute } from "@/shared/lib/time";
 import { useLongPress } from "@/shared/lib/use-long-press";
@@ -130,11 +131,12 @@ export const MessageItem = memo(function MessageItem({
   const kind = AUTHOR_KIND[message.author_kind] ?? AUTHOR_KIND.system;
   // A deleted message is a placeholder (DLT-10): its author and time stay, nothing it said does.
   const deleted = message.deleted_at !== undefined;
-  // A voice note with text: the text is its transcript, shown under the player instead of above
-  // the attachments (VOI-09). Any audio with a caption reads this way, whatever made the file.
-  const voice = deleted
-    ? undefined
-    : message.attachments.find((a) => a.status === "stored" && isAudio(a.mime));
+  // A voice note with text: the text is its transcript, shown under the player of the first voice
+  // file instead of above the attachments (VOI-09). Any audio with a caption reads this way, whatever
+  // made the file. Every voice file without it shows the transcript the server made, or
+  // "Transcribing…" (TR-02).
+  const isVoiceFile = (a: Attachment) => a.status === "stored" && isAudio(a.mime);
+  const voice = deleted ? undefined : message.attachments.find(isVoiceFile);
   const transcript = voice && message.text.trim() ? message.text : null;
   // Whether the row shows text above its attachments, which decides their top margin when grouped.
   const textAbove = message.text !== "" && transcript === null;
@@ -351,15 +353,21 @@ export const MessageItem = memo(function MessageItem({
               grouped && !textAbove && !CONTENT_KIND[message.kind] && "mt-5",
             )}
           >
-            {message.attachments.map((a) => (
-              <li key={a.id} className="max-w-full">
-                <AttachmentView
-                  attachment={a}
-                  transcript={a.id === voice?.id ? (transcript ?? undefined) : undefined}
-                  onOpenImage={onOpenImage}
-                />
-              </li>
-            ))}
+            {message.attachments.map((a) => {
+              const shown = isVoiceFile(a)
+                ? voiceTranscript(a.id === voice?.id ? message.text : "", a)
+                : undefined;
+              return (
+                <li key={a.id} className="max-w-full">
+                  <AttachmentView
+                    attachment={a}
+                    transcript={shown?.text ?? undefined}
+                    transcribing={shown?.transcribing ?? false}
+                    onOpenImage={onOpenImage}
+                  />
+                </li>
+              );
+            })}
           </ul>
         ) : null}
 
