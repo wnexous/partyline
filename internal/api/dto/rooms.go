@@ -267,7 +267,26 @@ type Attachment struct {
 	Mime   string           `json:"mime"`
 	Size   int64            `json:"size"`
 	Status AttachmentStatus `json:"status"`
+	// Transcript is the text the server's transcription service heard in a voice file (TR-01), set
+	// when TranscriptState is done. A transcript the sender's browser made is the message text
+	// instead (TR-05).
+	Transcript string `json:"transcript,omitempty"`
+	// TranscriptState is where the server's transcription of the file stands; absent for a file
+	// the server does not transcribe.
+	TranscriptState TranscriptState `json:"transcript_state,omitempty"`
 }
+
+// TranscriptState is the state of the server's transcription of a voice file (TR-01, TR-08).
+type TranscriptState string
+
+// Transcript states: pending waits for the service, done has the text, failed gave up after its
+// attempts and skipped was over the size cap.
+const (
+	TranscriptStatePending TranscriptState = "pending"
+	TranscriptStateDone    TranscriptState = "done"
+	TranscriptStateFailed  TranscriptState = "failed"
+	TranscriptStateSkipped TranscriptState = "skipped"
+)
 
 // RoomRef names a room inside agent frames and events. In the frames an AI receives, a DM is
 // named by the display name of the other participant and marked Kind dm (DM-03); a group
