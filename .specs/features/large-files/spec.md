@@ -54,6 +54,18 @@ One limit (`PARTYLINE_MAX_UPLOAD_MB`, 95 MB) bounds every file, and three things
   from the local file; small files keep the multipart path.
 - **Web (LF-01):** the composer uploads through the API with a progress bar per file; the message posts
   when every upload completed. Uses `fetch` with a chunk `Blob.slice`, three retries per chunk.
+- **Web as built (phase 2):** there is no config endpoint, so the web app learns the limits from the
+  session's answer (`chunk_size`, which is the single-request size when below 50 MB, and `max_size`).
+  Files that weigh up to 8 MB together keep the one-request multipart post (pastes, photos, voice);
+  above that every file of the message goes through a session, so the attachments keep their order,
+  and a multipart post answered 413 is sent again through sessions. Chunks are at most 8 MB (or
+  `chunk_size`) so the progress moves every few seconds over fetch; a chunk is retried three times
+  (1, 2, 4 s) after asking the server where it is, a 409 `upload_offset` resumes at
+  `details.received`, and a send that failed goes on with the sessions it started. A card's button
+  cancels (aborts the send, takes that file out). Code: `web/src/shared/api/uploads.ts`,
+  `entities/message` `usePostMessage`, `features/send-message` transfer store. Open: there is no
+  `DELETE /uploads/{id}`, so a cancelled session keeps counting against the owner's 16 uploads and
+  `max_size` bytes until it expires (up to 24 h after its last chunk).
 - **Downloads (LF-08):** `http.ServeContent` on the blob file (range, If-Range) for both the web and
   the agent download route.
 - **Transcription:** unchanged; its 25 MB service cap still skips longer audio.
