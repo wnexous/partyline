@@ -168,16 +168,40 @@ func (t *tools) sendFileToRoom(ctx context.Context, f localFile, room string, ms
 	return sent(m), nil
 }
 
-// postUploads posts msg to room with the finished upload id attached.
+// postUploads posts msg to room with the finished upload id attached. When the post fails the upload
+// is deleted: another send_file uploads the file again.
 func (t *tools) postUploads(ctx context.Context, room string, msg dto.PostMessageRequest, id string) (string, error) {
-	ctx, cancel := context.WithTimeout(ctx, toolTimeout)
+	postCtx, cancel := context.WithTimeout(ctx, toolTimeout)
 	defer cancel()
 	msg.UploadIDs = []string{id}
 	var m dto.Message
-	if err := t.api.json(ctx, http.MethodPost, roomPath(room, "/messages"), nil, msg, &m); err != nil {
+	if err := t.api.json(postCtx, http.MethodPost, roomPath(room, "/messages"), nil, msg, &m); err != nil {
+		t.dropUpload(ctx, id)
 		return "", fileError(err, localFile{})
 	}
 	return sent(m), nil
+}
+
+// dropTimeout bounds the deletion of an upload that failed.
+const dropTimeout = 10 * time.Second
+
+// dropUpload deletes an upload that failed for good, best-effort, so that it does not hold one of the
+// owner's places until it expires. It runs also when the tool call was cancelled; an upload a message
+// used already, or that the server removed, is 404 and nothing to do. The server may still be writing
+// the chunk that failed (409 upload_busy): the delete waits for it, within dropTimeout.
+func (t *tools) dropUpload(ctx context.Context, id string) {
+	ctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), dropTimeout)
+	defer cancel()
+	for {
+		err := t.api.json(ctx, http.MethodDelete, "agent/uploads/"+url.PathEscape(id), nil, nil, nil)
+		var se *statusError
+		if !errors.As(err, &se) || se.code != dto.ErrorCodeUploadBusy {
+			return
+		}
+		if sleep(ctx, chunkRetryWait) != nil {
+			return
+		}
+	}
 }
 
 // sendFileToChat sends f to a chat of a connection in one multipart request. A connection takes no
@@ -290,6 +314,17 @@ func (t *tools) uploadFile(ctx context.Context, f localFile) (string, error) {
 	if err != nil {
 		return "", err
 	}
+	id, err := t.sendChunks(ctx, u, f)
+	if err != nil {
+		// Given up: the upload goes, rather than holding a place until it expires.
+		t.dropUpload(ctx, u.ID)
+		return "", err
+	}
+	return id, nil
+}
+
+// sendChunks sends the chunks of f to the upload u until it is complete, and returns its id.
+func (t *tools) sendChunks(ctx context.Context, u dto.Upload, f localFile) (string, error) {
 	best, failures := u.Received, 0
 	for !u.Complete {
 		if u.Received < 0 || u.Received >= f.size || u.ChunkSize <= 0 {

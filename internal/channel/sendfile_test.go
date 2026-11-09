@@ -1,6 +1,7 @@
 package channel
 
 import (
+	"context"
 	"crypto/sha256"
 	"encoding/hex"
 	"errors"
@@ -281,6 +282,39 @@ func TestSendFileGivesUpAfterThreeRetries(t *testing.T) {
 	require.Contains(t, text, "archive.zip was not sent: its upload stopped at 1 MB of 8 MB: a chunk failed 4 times")
 	require.Equal(t, 5, rec.puts, "the first chunk, then one chunk sent four times")
 	require.Len(t, e.messages(e.room.ID), before)
+	requireUploadsDeleted(t, e, rec, 1)
+}
+
+// requireUploadsDeleted checks that the channel deleted the upload sessions, sending at least n
+// deletes, and that the server holds none any more.
+func requireUploadsDeleted(t *testing.T, e *chanEnv, rec *recorder, n int) {
+	t.Helper()
+	deletes := 0
+	for _, q := range rec.sent("/api/v1/agent/uploads/") {
+		if q.method == http.MethodDelete {
+			deletes++
+		}
+	}
+	require.GreaterOrEqual(t, deletes, n, "a delete is sent again while the failed chunk is still being written")
+	ids, err := e.env.App.Store.R().ListUploadIDs(context.Background())
+	require.NoError(t, err)
+	require.Empty(t, ids, "the upload that failed holds no place on the server")
+}
+
+// LF-02: an upload whose post fails (a room the AI is not in) is deleted; the tool says why it failed.
+func TestSendFileDeletesTheUploadWhenThePostFails(t *testing.T) {
+	e := newChanEnv(t)
+	rec := newRecorder()
+	o := e.options()
+	o.HTTPClient = rec.client()
+	s := e.connected(o)
+	path, _ := randomFile(t, "notes.bin", int64(multipartMaxBytes)+1)
+
+	text, isErr := s.call("send_file", toolArgs("room", "Elsewhere", "path", path))
+	require.True(t, isErr)
+	require.Contains(t, text, "Elsewhere")
+	require.Len(t, rec.sent("/messages"), 1)
+	requireUploadsDeleted(t, e, rec, 1)
 }
 
 // LF-02: a small file stays one multipart post, streamed with its exact length; no upload session.
