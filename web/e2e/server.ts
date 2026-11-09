@@ -47,8 +47,11 @@ function stopProcess(proc: ChildProcess): Promise<void> {
   });
 }
 
-/** Starts `partyline serve` on a free port with a fresh data dir and waits until it listens. */
-export async function startInstance(): Promise<Instance> {
+/**
+ * Starts `partyline serve` on a free port with a fresh data dir and waits until it listens. `env`
+ * adds settings of its own (a lower PARTYLINE_MAX_UPLOAD_MB, say).
+ */
+export async function startInstance(env: Record<string, string> = {}): Promise<Instance> {
   const port = await freePort();
   const dataDir = await mkdtemp(join(tmpdir(), "partyline-e2e-"));
   const url = `http://127.0.0.1:${port}`;
@@ -60,6 +63,7 @@ export async function startInstance(): Promise<Instance> {
       PARTYLINE_PUBLIC_URL: url,
       PARTYLINE_LOG_FORMAT: "json",
       PARTYLINE_LOG_LEVEL: "info",
+      ...env,
     },
     stdio: ["ignore", "ignore", "pipe"],
   });

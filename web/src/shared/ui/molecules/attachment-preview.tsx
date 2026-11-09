@@ -10,6 +10,7 @@ import { useEffect, useState } from "react";
 import { type FileKind, FileKindImage } from "@/shared/api/types.gen";
 import { useI18n } from "@/shared/i18n";
 import { formatBytes } from "@/shared/lib/bytes";
+import { cn } from "@/shared/lib/utils";
 import { Button } from "@/shared/ui/primitives/button";
 
 /*
@@ -108,7 +109,8 @@ export function AttachmentPreview({
             <Icon className="size-5" />
           )}
         </span>
-        <span className="flex min-w-0 flex-1 flex-col">
+        {/* An uploading card is wide enough for its bar to read, whatever the name's length. */}
+        <span className={cn("flex min-w-0 flex-1 flex-col", uploading && "min-w-28")}>
           <span className="truncate text-xs font-medium" title={file.name}>
             {file.name}
           </span>
@@ -122,7 +124,7 @@ export function AttachmentPreview({
               aria-valuemin={0}
               aria-valuemax={100}
               aria-valuenow={percent}
-              className="mt-1 block h-1 w-full overflow-hidden rounded-full bg-muted"
+              className="mt-1 block h-1 w-full overflow-hidden rounded-full bg-foreground/15"
             >
               <span
                 className="block h-full rounded-full bg-primary transition-[width] duration-300 motion-reduce:transition-none"
