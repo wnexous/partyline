@@ -3,8 +3,9 @@
 -- far (the binary form of the hash), so the last chunk completes the file without reading it again:
 -- sha256 is then set, the file has moved into the blob store and the upload waits until a message uses it
 -- (upload_ids), which deletes the row. owner_kind and owner_id name the user or the AI that created it; only
--- they write to it, read it or use it. A row past expires_at (24 hours after creation) is removed with its
--- temporary file; an unfinished upload never holds the disk for long.
+-- they write to it, read it or use it. A row past expires_at (an hour after creation until the first chunk,
+-- then 24 hours after the last one) is removed with its temporary file; an unfinished upload never holds
+-- the disk for long.
 CREATE TABLE uploads (
     id         TEXT PRIMARY KEY,
     owner_kind TEXT NOT NULL CHECK (owner_kind IN ('user', 'agent')),

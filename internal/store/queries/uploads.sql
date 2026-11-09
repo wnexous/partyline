@@ -15,8 +15,9 @@ WHERE owner_kind = sqlc.arg(owner_kind) AND owner_id = sqlc.arg(owner_id) AND ex
   AND id IN (sqlc.slice(ids));
 
 -- name: AdvanceUpload :execrows
--- Records a chunk written at the offset the upload had received (LF-03).
-UPDATE uploads SET received = sqlc.arg(received), sha_state = sqlc.arg(sha_state)
+-- Records a chunk written at the offset the upload had received (LF-03); each chunk pushes the expiry
+-- back, so a slow upload does not expire midway.
+UPDATE uploads SET received = sqlc.arg(received), sha_state = sqlc.arg(sha_state), expires_at = sqlc.arg(expires_at)
 WHERE id = sqlc.arg(id) AND received = sqlc.arg(offset) AND sha256 = '';
 
 -- name: CompleteUpload :execrows
@@ -24,10 +25,13 @@ WHERE id = sqlc.arg(id) AND received = sqlc.arg(offset) AND sha256 = '';
 UPDATE uploads SET sha256 = sqlc.arg(sha256), sha_state = x''
 WHERE id = sqlc.arg(id) AND received = size AND sha256 = '';
 
--- name: CountOpenUploads :one
--- The unfinished uploads of an owner, which a new one may not outnumber.
-SELECT COUNT(*) FROM uploads
-WHERE owner_kind = sqlc.arg(owner_kind) AND owner_id = sqlc.arg(owner_id) AND sha256 = '' AND expires_at > sqlc.arg(now);
+-- name: OwnUploadsUsage :one
+-- The uploads of an owner that have not expired, finished or not: how many, their bytes and when the
+-- first of them expires; a new upload may not take them over their limits.
+SELECT COUNT(*) AS uploads, CAST(COALESCE(SUM(size), 0) AS INTEGER) AS bytes,
+       CAST(COALESCE(MIN(expires_at), 0) AS INTEGER) AS first_expiry
+FROM uploads
+WHERE owner_kind = sqlc.arg(owner_kind) AND owner_id = sqlc.arg(owner_id) AND expires_at > sqlc.arg(now);
 
 -- name: PendingUploadBytes :one
 -- The bytes the unfinished uploads may still write on the data disk (LF-07).

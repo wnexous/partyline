@@ -166,7 +166,10 @@ func uploadError(err error) error {
 		return httpx.NewError(http.StatusConflict, dto.ErrorCodeUploadIncomplete, "the upload is not complete: send its remaining chunks first")
 	case errors.Is(err, uploads.ErrTooMany):
 		return httpx.NewError(http.StatusTooManyRequests, dto.ErrorCodeRateLimited,
-			"too many unfinished uploads: finish or wait for one before starting another")
+			"too many uploads: post or wait for the ones you have before starting another")
+	case errors.Is(err, uploads.ErrOwnerBytes):
+		return httpx.NewError(http.StatusTooManyRequests, dto.ErrorCodeRateLimited,
+			"your uploads would hold more than the largest file: post or wait for the ones you have first")
 	case errors.Is(err, uploads.ErrEmptyChunk):
 		return httpx.NewError(http.StatusBadRequest, dto.ErrorCodeInvalid, "the chunk is empty")
 	}

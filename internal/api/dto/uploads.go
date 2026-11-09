@@ -14,7 +14,8 @@ type CreateUploadRequest struct {
 // Upload is the state of an upload session. The client sends chunks of at most ChunkSize bytes with
 // PUT .../uploads/{id}?offset=Received until Complete; a message then attaches it by its ID in
 // upload_ids. Sha256 is the hash of the finished file. An upload that no message used is removed at
-// ExpiresAt, finished or not (LF-06).
+// ExpiresAt, finished or not: an hour after creation until its first chunk, then 24 hours after its
+// last chunk (LF-06).
 type Upload struct {
 	ID        string    `json:"id"`
 	Name      string    `json:"name"`

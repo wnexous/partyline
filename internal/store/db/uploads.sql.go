@@ -11,22 +11,25 @@ import (
 )
 
 const advanceUpload = `-- name: AdvanceUpload :execrows
-UPDATE uploads SET received = ?1, sha_state = ?2
-WHERE id = ?3 AND received = ?4 AND sha256 = ''
+UPDATE uploads SET received = ?1, sha_state = ?2, expires_at = ?3
+WHERE id = ?4 AND received = ?5 AND sha256 = ''
 `
 
 type AdvanceUploadParams struct {
-	Received int64
-	ShaState []byte
-	ID       string
-	Offset   int64
+	Received  int64
+	ShaState  []byte
+	ExpiresAt int64
+	ID        string
+	Offset    int64
 }
 
-// Records a chunk written at the offset the upload had received (LF-03).
+// Records a chunk written at the offset the upload had received (LF-03); each chunk pushes the expiry
+// back, so a slow upload does not expire midway.
 func (q *Queries) AdvanceUpload(ctx context.Context, arg AdvanceUploadParams) (int64, error) {
 	result, err := q.db.ExecContext(ctx, advanceUpload,
 		arg.Received,
 		arg.ShaState,
+		arg.ExpiresAt,
 		arg.ID,
 		arg.Offset,
 	)
@@ -53,25 +56,6 @@ func (q *Queries) CompleteUpload(ctx context.Context, arg CompleteUploadParams) 
 		return 0, err
 	}
 	return result.RowsAffected()
-}
-
-const countOpenUploads = `-- name: CountOpenUploads :one
-SELECT COUNT(*) FROM uploads
-WHERE owner_kind = ?1 AND owner_id = ?2 AND sha256 = '' AND expires_at > ?3
-`
-
-type CountOpenUploadsParams struct {
-	OwnerKind string
-	OwnerID   string
-	Now       int64
-}
-
-// The unfinished uploads of an owner, which a new one may not outnumber.
-func (q *Queries) CountOpenUploads(ctx context.Context, arg CountOpenUploadsParams) (int64, error) {
-	row := q.db.QueryRowContext(ctx, countOpenUploads, arg.OwnerKind, arg.OwnerID, arg.Now)
-	var count int64
-	err := row.Scan(&count)
-	return count, err
 }
 
 const countUploadsBySHA = `-- name: CountUploadsBySHA :one
@@ -300,6 +284,34 @@ func (q *Queries) ListUploadIDs(ctx context.Context) ([]string, error) {
 		return nil, err
 	}
 	return items, nil
+}
+
+const ownUploadsUsage = `-- name: OwnUploadsUsage :one
+SELECT COUNT(*) AS uploads, CAST(COALESCE(SUM(size), 0) AS INTEGER) AS bytes,
+       CAST(COALESCE(MIN(expires_at), 0) AS INTEGER) AS first_expiry
+FROM uploads
+WHERE owner_kind = ?1 AND owner_id = ?2 AND expires_at > ?3
+`
+
+type OwnUploadsUsageParams struct {
+	OwnerKind string
+	OwnerID   string
+	Now       int64
+}
+
+type OwnUploadsUsageRow struct {
+	Uploads     int64
+	Bytes       int64
+	FirstExpiry int64
+}
+
+// The uploads of an owner that have not expired, finished or not: how many, their bytes and when the
+// first of them expires; a new upload may not take them over their limits.
+func (q *Queries) OwnUploadsUsage(ctx context.Context, arg OwnUploadsUsageParams) (OwnUploadsUsageRow, error) {
+	row := q.db.QueryRowContext(ctx, ownUploadsUsage, arg.OwnerKind, arg.OwnerID, arg.Now)
+	var i OwnUploadsUsageRow
+	err := row.Scan(&i.Uploads, &i.Bytes, &i.FirstExpiry)
+	return i, err
 }
 
 const pendingUploadBytes = `-- name: PendingUploadBytes :one

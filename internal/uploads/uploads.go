@@ -2,9 +2,10 @@
 // created with the file's name, type and size, its chunks are appended in order to a temporary file
 // under <data dir>/uploads, hashed as they arrive, and the last one moves the file into the blob
 // store. A message then uses the finished upload as an attachment (upload_ids). An upload belongs to
-// the user or the AI that created it, and to no one else: another caller gets ErrNotFound. Unfinished
-// and unused uploads go after 24 hours (LF-06), and a session that would leave the data disk with
-// less than the reserve free is refused (LF-07).
+// the user or the AI that created it, and to no one else: another caller gets ErrNotFound. An upload
+// that no message used goes an hour after it was created when no chunk came, else 24 hours after its
+// last chunk (LF-06), and a session that would leave the data disk with less than the reserve free is
+// refused (LF-07).
 package uploads
 
 import (
@@ -38,11 +39,16 @@ const (
 	// MaxChunkBytes is the largest chunk: under the 100 MB a proxy such as Cloudflare's free plan
 	// lets through in one request.
 	MaxChunkBytes = 50 << 20
-	// TTL is how long an upload lives, finished or not, until a message uses it (LF-06).
+	// TTL is how long an upload lives after its last chunk, finished or not, until a message uses it
+	// (LF-06): each chunk pushes its expiry back by TTL, so a slow upload does not expire midway.
 	TTL = 24 * time.Hour
+	// UntouchedTTL is how long an upload lives before its first chunk: one that never starts gives
+	// back its claim on the disk soon.
+	UntouchedTTL = time.Hour
 	// SweepInterval is how often expired uploads are removed.
 	SweepInterval = time.Hour
-	// MaxOpen is how many unfinished uploads one owner may hold at once.
+	// MaxOpen is how many uploads, unfinished or finished and not used by a message yet, one owner
+	// may hold at once.
 	MaxOpen = 16
 	// maxNameBytes bounds the file name and the type of an upload.
 	maxNameBytes = 255
@@ -55,8 +61,11 @@ var (
 	ErrBusy = errors.New("another chunk of the upload is being written")
 	// ErrIncomplete is an upload used in a message before its last chunk arrived.
 	ErrIncomplete = errors.New("upload not complete")
-	// ErrTooMany is a new upload of an owner who already holds MaxOpen unfinished ones.
-	ErrTooMany = errors.New("too many unfinished uploads")
+	// ErrTooMany is a new upload of an owner who already holds MaxOpen uploads.
+	ErrTooMany = errors.New("too many uploads")
+	// ErrOwnerBytes is a new upload that would take the bytes of an owner's uploads over the largest
+	// file: one account cannot claim the disk for everyone else.
+	ErrOwnerBytes = errors.New("too many bytes in uploads")
 	// ErrEmptyChunk is a chunk without bytes for an upload that still needs some.
 	ErrEmptyChunk = errors.New("empty chunk")
 	// ErrInvalidSize is an upload of zero bytes or fewer.
@@ -229,15 +238,18 @@ func (s *Service) Create(ctx context.Context, o Owner, in CreateInput) (Upload, 
 	now := s.d.Now()
 	row := db.Upload{
 		ID: store.NewID(), OwnerKind: string(o.Kind), OwnerID: o.ID, Name: name, Mime: mimeType, Size: in.Size,
-		ShaState: []byte{}, CreatedAt: now.UnixMilli(), ExpiresAt: now.Add(TTL).UnixMilli(),
+		ShaState: []byte{}, CreatedAt: now.UnixMilli(), ExpiresAt: now.Add(UntouchedTTL).UnixMilli(),
 	}
 	err := s.d.Store.WithTx(ctx, func(q *db.Queries) error {
-		open, err := q.CountOpenUploads(ctx, db.CountOpenUploadsParams{OwnerKind: string(o.Kind), OwnerID: o.ID, Now: now.UnixMilli()})
+		usage, err := q.OwnUploadsUsage(ctx, db.OwnUploadsUsageParams{OwnerKind: string(o.Kind), OwnerID: o.ID, Now: now.UnixMilli()})
 		if err != nil {
 			return err
 		}
-		if open >= MaxOpen {
+		if usage.Uploads >= MaxOpen {
 			return ErrTooMany
+		}
+		if usage.Bytes+in.Size > s.d.MaxFileBytes {
+			return ErrOwnerBytes
 		}
 		if free, known := s.d.FreeSpace(s.d.Dir); known {
 			pending, err := q.PendingUploadBytes(ctx, now.UnixMilli())
@@ -312,8 +324,10 @@ func (s *Service) Write(ctx context.Context, o Owner, id string, offset int64, b
 			return Upload{}, err
 		}
 		var advanced int64
+		expires := s.d.Now().Add(TTL).UnixMilli()
 		err = s.d.Store.WithTx(ctx, func(q *db.Queries) (err error) {
-			advanced, err = q.AdvanceUpload(ctx, db.AdvanceUploadParams{Received: row.Received + n, ShaState: state, ID: id, Offset: row.Received})
+			advanced, err = q.AdvanceUpload(ctx, db.AdvanceUploadParams{Received: row.Received + n, ShaState: state,
+				ExpiresAt: expires, ID: id, Offset: row.Received})
 			return err
 		})
 		if err != nil {
@@ -324,6 +338,7 @@ func (s *Service) Write(ctx context.Context, o Owner, id string, offset int64, b
 		}
 		row.Received += n
 		row.ShaState = state
+		row.ExpiresAt = expires
 	}
 	if row.Received == row.Size {
 		// Also reached again by a retry when an earlier last chunk was stored and the move failed.

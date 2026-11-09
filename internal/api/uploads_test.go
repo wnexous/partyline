@@ -81,7 +81,7 @@ func TestUploadSessionAttachesAFileSentInChunks(t *testing.T) {
 	require.Equal(t, int64(5120<<20), u.MaxSize)
 	require.Zero(t, u.Received)
 	require.False(t, u.Complete)
-	require.WithinDuration(t, time.Now().Add(24*time.Hour), u.ExpiresAt, time.Minute)
+	require.WithinDuration(t, time.Now().Add(time.Hour), u.ExpiresAt, time.Minute, "an untouched upload expires soon")
 
 	chunk := 2 << 20
 	for off := 0; off < len(data); off += chunk {
@@ -424,4 +424,56 @@ func TestConcurrentUploadCreatesKeepTheLimits(t *testing.T) {
 		statuses(alice, 24, 1))
 	require.Equal(t, map[int]int{http.StatusCreated: fits, http.StatusInsufficientStorage: 12 - fits},
 		statuses(bob, 12, 100<<20))
+}
+
+// LF-06: an upload expires an hour after it was created when no chunk came, and each chunk moves its
+// expiry 24 hours past that chunk, so a slow upload never expires midway.
+func TestUploadExpiryFollowsItsChunks(t *testing.T) {
+	clock := testkit.NewClock(time.Now())
+	env := testkit.New(t, testkit.WithClock(clock.Now))
+	alice := env.NewUser("alice")
+	untouched := createUpload(alice, userUploads, dto.CreateUploadRequest{Name: "a", Size: 10})
+	slow := createUpload(alice, userUploads, dto.CreateUploadRequest{Name: "b", Size: 10})
+	slow = testkit.Decode[dto.Upload](putChunk(alice, userUploads, slow.ID, 0, []byte("12")).RequireStatus(http.StatusOK))
+	require.WithinDuration(t, clock.Now().Add(24*time.Hour), slow.ExpiresAt, time.Second)
+
+	clock.Advance(time.Hour + time.Minute)
+	alice.Get(userUploads+"/"+untouched.ID).RequireError(http.StatusNotFound, dto.ErrorCodeNotFound)
+	n, err := env.App.Uploads.Sweep(context.Background())
+	require.NoError(t, err)
+	require.Equal(t, int64(1), n, "only the untouched upload went")
+
+	for i := int64(1); i <= 4; i++ { // a chunk every 22 hours, over almost four days
+		clock.Advance(22 * time.Hour)
+		putChunk(alice, userUploads, slow.ID, 2*i, []byte("34")).RequireStatus(http.StatusOK)
+	}
+	slow = testkit.Decode[dto.Upload](alice.Get(userUploads + "/" + slow.ID).RequireStatus(http.StatusOK))
+	require.True(t, slow.Complete)
+	require.WithinDuration(t, clock.Now().Add(24*time.Hour), slow.ExpiresAt, time.Second)
+}
+
+// LF-07: one account cannot claim the disk for everyone: the uploads it holds, finished or not, count
+// against 16 uploads and against the bytes of the largest file, until a message uses them.
+func TestUploadsOfOneOwnerAreBounded(t *testing.T) {
+	env := testkit.New(t, testkit.WithEnv(map[string]string{"PARTYLINE_MAX_FILE_MB": "2"}))
+	alice, bob := env.NewUser("alice"), env.NewUser("bob")
+	room := createRoom(alice, "Media")
+
+	big := createUpload(alice, userUploads, dto.CreateUploadRequest{Name: "big", Size: 3 << 19}) // 1.5 MB
+	alice.Post(userUploads, dto.CreateUploadRequest{Name: "more", Size: 1 << 20}).RequireError(http.StatusTooManyRequests, dto.ErrorCodeRateLimited)
+	createUpload(bob, userUploads, dto.CreateUploadRequest{Name: "bob's", Size: 1 << 20}) // others are not held back
+	data := randomBytes(3 << 19)
+	putChunk(alice, userUploads, big.ID, 0, data).RequireStatus(http.StatusOK)
+	alice.Post(userUploads, dto.CreateUploadRequest{Name: "more", Size: 1 << 20}).RequireError(http.StatusTooManyRequests, dto.ErrorCodeRateLimited)
+	alice.Post("/api/v1/rooms/"+room.ID+"/messages", dto.PostMessageRequest{UploadIDs: []string{big.ID}}).RequireStatus(http.StatusCreated)
+	createUpload(alice, userUploads, dto.CreateUploadRequest{Name: "more", Size: 1 << 20})
+
+	// Finished uploads no message used count among the 16.
+	var finished []string
+	for len(finished) < uploads.MaxOpen-1 {
+		finished = append(finished, uploadInChunks(bob, userUploads, "f", "text/plain", []byte("x"), 1).ID)
+	}
+	bob.Post(userUploads, dto.CreateUploadRequest{Name: "17th", Size: 1}).RequireError(http.StatusTooManyRequests, dto.ErrorCodeRateLimited)
+	bob.Post("/api/v1/rooms/"+createRoom(bob, "Mine").ID+"/messages", dto.PostMessageRequest{UploadIDs: finished[:1]}).RequireStatus(http.StatusCreated)
+	createUpload(bob, userUploads, dto.CreateUploadRequest{Name: "17th", Size: 1})
 }
