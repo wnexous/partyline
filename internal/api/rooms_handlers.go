@@ -391,7 +391,9 @@ func (s *server) downloadAttachment(w http.ResponseWriter, r *http.Request, p au
 }
 
 // serveBlob answers with the stored file sha: images show inline, everything else downloads under
-// its name. A file that was not stored (no hash) or whose blob is gone is a 404.
+// its name. A file that was not stored (no hash) or whose blob is gone is a 404. The file streams from
+// disk with ranges (LF-08): its hash is a strong ETag, so If-Range resumes a broken download and a
+// player seeks in a video.
 func (s *server) serveBlob(w http.ResponseWriter, r *http.Request, sha, name, mimeType string) error {
 	f, err := s.Blobs.Open(sha)
 	if errors.Is(err, attachments.ErrNotFound) {
@@ -407,6 +409,7 @@ func (s *server) serveBlob(w http.ResponseWriter, r *http.Request, sha, name, mi
 	}
 	w.Header().Set("Content-Type", ct)
 	w.Header().Set("Content-Disposition", mime.FormatMediaType(disposition, map[string]string{"filename": name}))
+	w.Header().Set("ETag", `"`+sha+`"`)
 	http.ServeContent(w, r, "", time.Time{}, f)
 	return nil
 }
