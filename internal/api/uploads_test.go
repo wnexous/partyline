@@ -11,6 +11,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"sync"
 	"testing"
 	"time"
 
@@ -391,4 +392,36 @@ func TestUploadTakesOneChunkAtATime(t *testing.T) {
 	state := testkit.Decode[dto.Upload](alice.Get(userUploads + "/" + u.ID).RequireStatus(http.StatusOK))
 	require.True(t, state.Complete)
 	require.Equal(t, sha256Hex([]byte("abcdefgh")), state.Sha256)
+}
+
+// LF-03, LF-07: the limits of a new upload hold against concurrent creates: of many at once for one
+// owner exactly MaxOpen succeed, and creates that together exceed the free space over the reserve
+// are refused past what fits.
+func TestConcurrentUploadCreatesKeepTheLimits(t *testing.T) {
+	const fits = 5
+	env := testkit.New(t, testkit.WithFreeSpace(func(string) (int64, bool) {
+		return 2048<<20 + fits*(100<<20) + 1<<20, true // the reserve, five files of 100 MB and a little
+	}))
+	alice, bob := env.NewUser("alice"), env.NewUser("bob")
+
+	statuses := func(c *testkit.Client, n int, size int64) map[int]int {
+		out := make(chan int, n)
+		var wg sync.WaitGroup
+		for range n {
+			wg.Go(func() {
+				out <- c.Post(userUploads, dto.CreateUploadRequest{Name: "x", Size: size}).Status
+			})
+		}
+		wg.Wait()
+		close(out)
+		counts := map[int]int{}
+		for status := range out {
+			counts[status]++
+		}
+		return counts
+	}
+	require.Equal(t, map[int]int{http.StatusCreated: uploads.MaxOpen, http.StatusTooManyRequests: 24 - uploads.MaxOpen},
+		statuses(alice, 24, 1))
+	require.Equal(t, map[int]int{http.StatusCreated: fits, http.StatusInsufficientStorage: 12 - fits},
+		statuses(bob, 12, 100<<20))
 }

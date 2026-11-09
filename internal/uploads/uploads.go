@@ -160,6 +160,8 @@ type Deps struct {
 type Service struct {
 	d     Deps
 	chunk int64
+	// createMu orders the creates, so each one checks the limits against the rows of the others.
+	createMu sync.Mutex
 	// busy holds the ids of the uploads a chunk is being written to.
 	busy sync.Map
 }
@@ -220,28 +222,32 @@ func (s *Service) Create(ctx context.Context, o Owner, in CreateInput) (Upload, 
 	if in.Size > s.d.MaxFileBytes {
 		return Upload{}, &FileTooLargeError{Max: s.d.MaxFileBytes}
 	}
+	// The checks and the insert are one step: the limits hold against concurrent creates, which the
+	// mutex orders and the write transaction makes see each other's rows.
+	s.createMu.Lock()
+	defer s.createMu.Unlock()
 	now := s.d.Now()
-	open, err := s.d.Store.R().CountOpenUploads(ctx, db.CountOpenUploadsParams{OwnerKind: string(o.Kind), OwnerID: o.ID, Now: now.UnixMilli()})
-	if err != nil {
-		return Upload{}, err
-	}
-	if open >= MaxOpen {
-		return Upload{}, ErrTooMany
-	}
-	if free, known := s.d.FreeSpace(s.d.Dir); known {
-		pending, err := s.d.Store.R().PendingUploadBytes(ctx, now.UnixMilli())
-		if err != nil {
-			return Upload{}, err
-		}
-		if need := in.Size + s.d.ReserveBytes + pending; free < need {
-			return Upload{}, &InsufficientStorageError{Free: free, Need: need}
-		}
-	}
 	row := db.Upload{
 		ID: store.NewID(), OwnerKind: string(o.Kind), OwnerID: o.ID, Name: name, Mime: mimeType, Size: in.Size,
 		ShaState: []byte{}, CreatedAt: now.UnixMilli(), ExpiresAt: now.Add(TTL).UnixMilli(),
 	}
-	err = s.d.Store.WithTx(ctx, func(q *db.Queries) error {
+	err := s.d.Store.WithTx(ctx, func(q *db.Queries) error {
+		open, err := q.CountOpenUploads(ctx, db.CountOpenUploadsParams{OwnerKind: string(o.Kind), OwnerID: o.ID, Now: now.UnixMilli()})
+		if err != nil {
+			return err
+		}
+		if open >= MaxOpen {
+			return ErrTooMany
+		}
+		if free, known := s.d.FreeSpace(s.d.Dir); known {
+			pending, err := q.PendingUploadBytes(ctx, now.UnixMilli())
+			if err != nil {
+				return err
+			}
+			if need := in.Size + s.d.ReserveBytes + pending; free < need {
+				return &InsufficientStorageError{Free: free, Need: need}
+			}
+		}
 		return q.CreateUpload(ctx, db.CreateUploadParams{
 			ID: row.ID, OwnerKind: row.OwnerKind, OwnerID: row.OwnerID, Name: row.Name, Mime: row.Mime, Size: row.Size,
 			ShaState: row.ShaState, CreatedAt: row.CreatedAt, ExpiresAt: row.ExpiresAt,
