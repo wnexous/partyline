@@ -141,9 +141,9 @@ func clientIP(trusted []netip.Prefix, next http.Handler) http.Handler {
 
 // bodyLimit caps request bodies at 1 MiB, or at the upload limit plus 1 MiB of envelope for
 // multipart requests (SEC-03). The chunk of an upload session is a raw body capped at the chunk
-// size, the upload limit or 50 MB, whichever is smaller (LF-03). An avatar upload is a raw image capped at the avatar limit: a
-// larger body is answered 413 avatar_invalid before it is read, so a browser is never left
-// pushing a body at a server that stopped reading it (PROF-06).
+// size: 50 MB, or the upload limit when that is lower (LF-03). An avatar upload is a raw image
+// capped at the avatar limit: a larger body is answered 413 avatar_invalid before it is read, so a
+// browser is never left pushing a body at a server that stopped reading it (PROF-06).
 func bodyLimit(maxUpload int64, next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		limit := int64(httpx.MaxJSONBody)
