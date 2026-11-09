@@ -229,11 +229,11 @@ func (t *tools) sendFileToChat(ctx context.Context, f localFile, connection, cha
 }
 
 // connectionTooLarge is the refusal of a file too large to go through a connection in one request;
-// max is the limit when it is known.
-func connectionTooLarge(f localFile, max int64) error {
+// maxBytes is the limit when it is known.
+func connectionTooLarge(f localFile, maxBytes int64) error {
 	limit := "more than this Partyline server takes in one request"
-	if max > 0 {
-		limit = "over the " + humanSize(max) + " a file sent through a connection can have for now"
+	if maxBytes > 0 {
+		limit = "over the " + humanSize(maxBytes) + " a file sent through a connection can have for now"
 	}
 	return fmt.Errorf("file too large: %s is %s, %s; sending larger files through a connection comes in a later version of Partyline. Nothing was sent: share it in a room with send_file and room instead, or send a smaller file", f.name, humanSize(f.size), limit)
 }
@@ -472,8 +472,8 @@ func fileError(err error, f localFile) error {
 	switch {
 	case se.code == dto.ErrorCodeFileTooLarge:
 		limit := "more than this Partyline server takes"
-		if max, perr := strconv.ParseInt(se.details["max_size"], 10, 64); perr == nil && max > 0 {
-			limit = "and this Partyline server takes files up to " + humanSize(max)
+		if maxBytes, perr := strconv.ParseInt(se.details["max_size"], 10, 64); perr == nil && maxBytes > 0 {
+			limit = "and this Partyline server takes files up to " + humanSize(maxBytes)
 		}
 		return fmt.Errorf("file_too_large: %s is %s, %s; nothing was sent: send a smaller file, or split it", f.name, humanSize(f.size), limit)
 	case se.status == http.StatusInsufficientStorage:
