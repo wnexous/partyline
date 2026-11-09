@@ -23,6 +23,8 @@ func TestLoadDefaults(t *testing.T) {
 	require.Equal(t, "http://localhost:8080", cfg.PublicURL.String())
 	require.Empty(t, cfg.SecretKey)
 	require.Equal(t, int64(95<<20), cfg.MaxUploadBytes)
+	require.Equal(t, int64(5120<<20), cfg.MaxFileBytes, "LF-03: a file of up to 5 GB goes through chunks")
+	require.Equal(t, int64(2048<<20), cfg.DiskReserveBytes, "LF-07: 2 GB stay free on the data disk")
 	require.Equal(t, slog.LevelInfo, cfg.LogLevel)
 	require.Equal(t, "json", cfg.LogFormat)
 	require.Empty(t, cfg.TrustedProxies)
@@ -43,6 +45,8 @@ func TestLoadOverrides(t *testing.T) {
 		"PARTYLINE_PUBLIC_URL":                "https://chat.example.com",
 		"PARTYLINE_SECRET_KEY":                "c2VjcmV0",
 		"PARTYLINE_MAX_UPLOAD_MB":             "10",
+		"PARTYLINE_MAX_FILE_MB":               "20480",
+		"PARTYLINE_DISK_RESERVE_MB":           "0",
 		"PARTYLINE_LOG_LEVEL":                 "debug",
 		"PARTYLINE_LOG_FORMAT":                "text",
 		"PARTYLINE_TRUSTED_PROXIES":           "10.0.0.0/8, 192.168.1.1",
@@ -59,6 +63,8 @@ func TestLoadOverrides(t *testing.T) {
 	require.Equal(t, "https://chat.example.com", cfg.PublicURL.String())
 	require.Equal(t, "c2VjcmV0", cfg.SecretKey)
 	require.Equal(t, int64(10<<20), cfg.MaxUploadBytes)
+	require.Equal(t, int64(20480<<20), cfg.MaxFileBytes)
+	require.Zero(t, cfg.DiskReserveBytes, "LF-07: a reserve of 0 is a value")
 	require.Equal(t, slog.LevelDebug, cfg.LogLevel)
 	require.Equal(t, "text", cfg.LogFormat)
 	require.Equal(t, []netip.Prefix{
@@ -79,6 +85,8 @@ func TestLoadInvalidValuesNameTheVariable(t *testing.T) {
 	cases := map[string]string{
 		"PARTYLINE_PUBLIC_URL":                "not a url",
 		"PARTYLINE_MAX_UPLOAD_MB":             "lots",
+		"PARTYLINE_MAX_FILE_MB":               "0",
+		"PARTYLINE_DISK_RESERVE_MB":           "-1",
 		"PARTYLINE_TRUSTED_PROXIES":           "10.0.0.0/99",
 		"PARTYLINE_LOG_LEVEL":                 "loud",
 		"PARTYLINE_LOG_FORMAT":                "xml",
@@ -134,6 +142,19 @@ func TestLoadRejectsNonPositiveUpload(t *testing.T) {
 		_, err := Load(env(map[string]string{"PARTYLINE_MAX_UPLOAD_MB": value}))
 		require.Error(t, err, value)
 		require.Contains(t, err.Error(), "PARTYLINE_MAX_UPLOAD_MB")
+	}
+}
+
+// LF-03, LF-07: the sizes of an upload session are whole MiB that fit in bytes.
+func TestLoadRejectsBadFileSizes(t *testing.T) {
+	for name, values := range map[string][]string{
+		"PARTYLINE_MAX_FILE_MB":     {"0", "-1", "5GB", "9223372036854775807"},
+		"PARTYLINE_DISK_RESERVE_MB": {"-1", "lots", "9223372036854775807"},
+	} {
+		for _, value := range values {
+			_, err := Load(env(map[string]string{name: value}))
+			require.ErrorContains(t, err, name, value)
+		}
 	}
 }
 
