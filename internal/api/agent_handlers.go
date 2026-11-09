@@ -843,6 +843,9 @@ func (s *server) agentConnectionSend(w http.ResponseWriter, r *http.Request, p a
 		if err := httpx.DecodeJSON(w, r, &req); err != nil {
 			return err
 		}
+		if len(req.UploadIDs) > 0 {
+			return errConnectionUploads
+		}
 		if len(req.QuickReplies) > 0 {
 			if err := rooms.ValidateQuickReplyLabels(req.QuickReplies); err != nil {
 				return err
@@ -867,6 +870,12 @@ func (s *server) agentConnectionSend(w http.ResponseWriter, r *http.Request, p a
 	}
 	return s.sendOnConnection(w, r, p, in)
 }
+
+// errConnectionUploads refuses upload sessions in a send through a connection.
+// TODO(LF-04, LF-05): a connection's send holds its file in memory (connectors.SendFile.Data); once
+// it sends a blob by reference as a stream, accept upload_ids here within the platform's own limit.
+var errConnectionUploads = httpx.NewError(http.StatusBadRequest, dto.ErrorCodeInvalid,
+	"upload_ids cannot be sent through a connection yet: send the file in the multipart body")
 
 // isMultipart tells whether the request is a form upload.
 func isMultipart(r *http.Request) bool {
@@ -904,6 +913,9 @@ func (s *server) readConnectionUpload(r *http.Request) (string, *connectors.Send
 			}
 			if err := json.Unmarshal(data, &req); err != nil {
 				return "", nil, httpx.NewError(http.StatusBadRequest, dto.ErrorCodeInvalid, "malformed message part")
+			}
+			if len(req.UploadIDs) > 0 {
+				return "", nil, errConnectionUploads
 			}
 		case dto.MultipartFileField:
 			if file != nil {

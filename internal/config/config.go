@@ -4,6 +4,7 @@ package config
 import (
 	"fmt"
 	"log/slog"
+	"math"
 	"net/netip"
 	"net/url"
 	"strconv"
@@ -16,14 +17,22 @@ import (
 
 // Config is the validated server configuration.
 type Config struct {
-	Addr           string
-	DataDir        string
-	PublicURL      *url.URL
-	SecretKey      string // base64 key from PARTYLINE_SECRET_KEY; empty means generate and persist one
+	Addr      string
+	DataDir   string
+	PublicURL *url.URL
+	SecretKey string // base64 key from PARTYLINE_SECRET_KEY; empty means generate and persist one
+	// MaxUploadBytes bounds one request body that carries a file (PARTYLINE_MAX_UPLOAD_MB): a
+	// multipart file, and the chunk of an upload session.
 	MaxUploadBytes int64
-	LogLevel       slog.Level
-	LogFormat      string // "json" or "text"
-	TrustedProxies []netip.Prefix
+	// MaxFileBytes bounds one file sent through an upload session in chunks (PARTYLINE_MAX_FILE_MB,
+	// LF-03).
+	MaxFileBytes int64
+	// DiskReserveBytes is the free space an upload session must leave on the data disk
+	// (PARTYLINE_DISK_RESERVE_MB, LF-07).
+	DiskReserveBytes int64
+	LogLevel         slog.Level
+	LogFormat        string // "json" or "text"
+	TrustedProxies   []netip.Prefix
 	// AllowPrivateNetworks lets connectors reach loopback, private and link-local
 	// addresses (PARTYLINE_ALLOW_PRIVATE_NETWORKS); off by default (CON-13).
 	AllowPrivateNetworks bool
@@ -79,6 +88,12 @@ func Load(getenv func(string) string) (*Config, error) {
 		return nil, fmt.Errorf("PARTYLINE_MAX_UPLOAD_MB: must be a positive integer")
 	}
 	cfg.MaxUploadBytes = mb << 20
+	if cfg.MaxFileBytes, err = megabytes(get("PARTYLINE_MAX_FILE_MB", "5120"), false); err != nil {
+		return nil, fmt.Errorf("PARTYLINE_MAX_FILE_MB: %w", err)
+	}
+	if cfg.DiskReserveBytes, err = megabytes(get("PARTYLINE_DISK_RESERVE_MB", "2048"), true); err != nil {
+		return nil, fmt.Errorf("PARTYLINE_DISK_RESERVE_MB: %w", err)
+	}
 
 	if err := cfg.LogLevel.UnmarshalText([]byte(get("PARTYLINE_LOG_LEVEL", "info"))); err != nil {
 		return nil, fmt.Errorf("PARTYLINE_LOG_LEVEL: must be debug, info, warn or error")
@@ -136,6 +151,20 @@ func Load(getenv func(string) string) (*Config, error) {
 		cfg.TrustedProxies = append(cfg.TrustedProxies, p)
 	}
 	return cfg, nil
+}
+
+// megabytes parses a size in MiB and returns it in bytes; zero is allowed only when zeroOK.
+func megabytes(raw string, zeroOK bool) (int64, error) {
+	mb, err := strconv.ParseInt(raw, 10, 64)
+	switch {
+	case err == nil && mb > math.MaxInt64>>20:
+		return 0, fmt.Errorf("too large")
+	case err == nil && (mb > 0 || (zeroOK && mb == 0)):
+		return mb << 20, nil
+	case zeroOK:
+		return 0, fmt.Errorf("must be a non-negative integer")
+	}
+	return 0, fmt.Errorf("must be a positive integer")
 }
 
 func parsePrefix(s string) (netip.Prefix, error) {

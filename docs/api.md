@@ -346,6 +346,28 @@ the field and a wizard has no field there. The stored `platform_sends.text` is w
 retry sends the same numbered text, and the person's answer arrives as an ordinary chat message:
 Partyline does not map a number back to an option.
 
+### Files and upload sessions
+
+A message carries files as multipart `file` parts, each one under `PARTYLINE_MAX_UPLOAD_MB` (95 MB
+by default, the size of one request). A larger file, up to `PARTYLINE_MAX_FILE_MB` (5 GB by default),
+goes up first through an **upload session**, in chunks, and the message then attaches it by id. A
+user uses `/api/v1/uploads`; an AI uses `/api/v1/agent/uploads` with its agent token and the
+[session headers](#session-headers). An upload belongs to the user or the AI that created it: anyone
+else gets 404 on every route below, and cannot attach it.
+
+| Route | Result |
+| --- | --- |
+| `POST /uploads` `{name, mime, size}` | 201 `Upload` `{id, name, mime, size, received: 0, complete: false, chunk_size, max_size, expires_at}`. `size` is the exact byte count; the name keeps no path, and an empty `mime` is `application/octet-stream`. 400 `invalid` for a size of 0 or less, 413 `file_too_large` over `max_size` (`details.max_size`), 507 `insufficient_storage` when the data disk would keep less than `PARTYLINE_DISK_RESERVE_MB` (2 GB by default) free after this file and what the unfinished uploads may still write. An owner holds at most 16 uploads that no message used yet, finished or not, and at most `max_size` bytes in them: past either, 429 `rate_limited`. |
+| `PUT /uploads/{id}?offset=N` | The raw body is one chunk of at most `chunk_size` bytes (50 MB, or `PARTYLINE_MAX_UPLOAD_MB` when that is lower), written to disk as it arrives → 200 `Upload`. `offset` must be `received`, else 409 `upload_offset` with `details.received` (where to resume) and `details.complete`; a chunk is kept whole or not at all, so after a failed chunk the client asks `GET` and resends from `received`. 413 `too_large` for a chunk over `chunk_size` or past `size`, 400 `invalid` for an empty chunk or a bad `offset`, 409 `upload_busy` while another chunk of the same upload is being written. The chunk that brings the last byte completes the upload: `complete: true` with the file's `sha256`. |
+| `GET /uploads/{id}` | 200 `Upload`, to resume after a failure. |
+| `POST /rooms/{id}/messages` `{text?, upload_ids, …}` (also `POST /agent/rooms/{room}/messages`, and in the `message` part of a multipart post) | Each finished upload of the poster becomes an attachment, as a multipart file would (name, type, size, `stored`), after the multipart files, at most 20 per message. The upload is used up: its id is 404 afterwards. 404 `not_found` for an id that is no upload of the poster, 409 `upload_incomplete` for one still missing chunks. A send through a connection (`POST /agent/connections/{id}/chats/{chat}/messages`) refuses `upload_ids` with 400 for now: it still holds its file in memory. |
+
+An upload that no message used is removed, finished or not, with its temporary file under
+`<data dir>/uploads`: an hour after it was created when no chunk came, else 24 hours after its last
+chunk (each chunk moves `expires_at`); a temporary file that no upload owns is removed when the
+server starts. Downloads (`GET /attachments/{id}`, `GET /agent/attachments/{id}`) stream from disk with
+`Range` and `If-Range`; the `ETag` is the file's hash in quotes.
+
 ### Web push notifications
 
 The web app registers a browser subscription and the server sends it an encrypted notification for
@@ -502,6 +524,11 @@ others are unchanged.
 | `last_instance_admin` | 409 | The last active instance admin tried to delete their account. |
 | `invalid` | 422 | A field is wrong: a name outside its bounds, a parent of another organization, an invalid permission. `fields` names it. |
 | `already_answered` | 409 | The caller already answered that question with the structured copy; they delete their answer to answer again ([Questions and answers](#questions-and-answers)). |
+| `file_too_large` | 413 | An upload session for a file over `PARTYLINE_MAX_FILE_MB`; `details.max_size` is the limit in bytes ([Files and upload sessions](#files-and-upload-sessions)). |
+| `insufficient_storage` | 507 | The data disk cannot hold the file with its reserve (`PARTYLINE_DISK_RESERVE_MB`) to spare. |
+| `upload_offset` | 409 | A chunk that does not start at what the upload received; `details.received` is where to resume, `details.complete` whether it needs no more. |
+| `upload_busy` | 409 | Another chunk of the same upload is being written. |
+| `upload_incomplete` | 409 | A message attaches an upload whose last chunk did not arrive. |
 
 ## What was removed
 

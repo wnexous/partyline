@@ -452,7 +452,9 @@ Everything is configured with environment variables.
 | `PARTYLINE_DATA_DIR` | `/data` | Directory for the database, blobs and the generated keys: `secret.key` and `vapid.key` (the push key). |
 | `PARTYLINE_PUBLIC_URL` | `http://localhost:8080` | URL people open in the browser. Used for the Origin checks, invite links, cookies (`Secure` when https) and the `sub` of every push notification: Apple's push service refuses a subject that is not `https`, so an `http` URL means no notifications on iPhones. |
 | `PARTYLINE_SECRET_KEY` | generated | Base64 32-byte key that encrypts connector secrets and the VAPID push key (`vapid.key`). When unset, one is generated into `<data>/secret.key` (mode 0600). |
-| `PARTYLINE_MAX_UPLOAD_MB` | `95` | Maximum size of one uploaded file. |
+| `PARTYLINE_MAX_UPLOAD_MB` | `95` | Maximum size of one request that carries a file: a file sent in one piece, and each chunk of a larger one (chunks are at most 50 MB). Keep it under your proxy's body limit (Cloudflare's free plan refuses bodies over 100 MB). |
+| `PARTYLINE_MAX_FILE_MB` | `5120` | Maximum size of one file sent in chunks through an upload session (see [docs/api.md](docs/api.md#files-and-upload-sessions)). |
+| `PARTYLINE_DISK_RESERVE_MB` | `2048` | Free space an upload session must leave on the data disk: a file that would leave less is refused (`507 insufficient_storage`). `0` checks only that the file fits. |
 | `PARTYLINE_MEMORY_LIMIT` | from the container | Soft memory limit of the server: a size such as `300MiB` (units `B`, `KiB`, `MiB`, `GiB`, `TiB`; at least `16MiB`), or `off`. Unset, it is `GOMEMLIMIT` when you set that, else 90% of the container's memory limit, else none. See [Memory](#memory). |
 | `PARTYLINE_LOG_LEVEL` | `info` | `debug`, `info`, `warn` or `error`. |
 | `PARTYLINE_LOG_FORMAT` | `json` | `json` or `text`. |

@@ -247,6 +247,9 @@ type PostMessageRequest struct {
 	QuickReplies []string          `json:"quick_replies,omitempty"`
 	Wizard       *WizardRequest    `json:"wizard,omitempty"`
 	Answers      *AnswerSubmission `json:"answers,omitempty"`
+	// UploadIDs attaches finished upload sessions of the poster, in order, after any multipart files;
+	// each upload is used up by the message (LF-03).
+	UploadIDs []string `json:"upload_ids,omitempty"`
 }
 
 // AttachmentStatus is the storage state of an attachment.

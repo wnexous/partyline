@@ -1,6 +1,6 @@
 //go:build windows
 
-package store
+package diskspace
 
 import (
 	"math"
@@ -8,9 +8,9 @@ import (
 	"golang.org/x/sys/windows"
 )
 
-// freeSpace returns the bytes available to the process on the volume of dir, and whether they
+// Free returns the bytes available to the process on the volume of dir, and whether they
 // are known.
-func freeSpace(dir string) (int64, bool) {
+func Free(dir string) (int64, bool) {
 	p, err := windows.UTF16PtrFromString(dir)
 	if err != nil {
 		return 0, false

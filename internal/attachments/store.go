@@ -90,6 +90,86 @@ func (s *Store) Put(r io.Reader, limit int64) (sha string, size int64, err error
 	return sha, size, nil
 }
 
+// Adopt moves the file at path into the store and returns its SHA-256 (hex) and size, reading it
+// once to hash it and never holding it in memory. The file is gone from path afterwards, also when
+// the store already had the content.
+func (s *Store) Adopt(path string) (sha string, size int64, err error) {
+	f, err := os.Open(path) // #nosec G304 -- the caller's own temporary file
+	if err != nil {
+		return "", 0, err
+	}
+	h := sha256.New()
+	_, err = io.Copy(h, f)
+	_ = f.Close()
+	if err != nil {
+		return "", 0, err
+	}
+	sha = hex.EncodeToString(h.Sum(nil))
+	size, err = s.AdoptHashed(path, sha)
+	return sha, size, err
+}
+
+// AdoptHashed moves the file at path into the store under sha, the SHA-256 its caller computed
+// while writing it (an upload session hashes each chunk as it arrives, LF-03), and returns its
+// size. Identical content already stored keeps its blob, whose time is refreshed as Put does, and
+// the file at path is removed. A path on another filesystem is copied as a stream.
+func (s *Store) AdoptHashed(path, sha string) (int64, error) {
+	if !validHash(sha) {
+		return 0, fmt.Errorf("adopt: invalid hash %q", sha)
+	}
+	info, err := os.Stat(path)
+	if err != nil {
+		return 0, err
+	}
+	final := s.path(sha)
+	if _, err := os.Stat(final); err == nil {
+		now := time.Now()
+		if err := os.Chtimes(final, now, now); err != nil {
+			return 0, err
+		}
+		return info.Size(), os.Remove(path)
+	}
+	if err := os.MkdirAll(filepath.Dir(final), 0o700); err != nil {
+		return 0, err
+	}
+	if err := os.Chmod(path, 0o600); err != nil {
+		return 0, err
+	}
+	// Fresh before it lands, so the orphan sweep's grace period covers the blob from its first instant,
+	// before the caller records the reference.
+	now := time.Now()
+	if err := os.Chtimes(path, now, now); err != nil {
+		return 0, err
+	}
+	if err := os.Rename(path, final); err == nil {
+		return info.Size(), nil
+	}
+	// Another filesystem: copy into a temporary file of the store, then rename it in place.
+	src, err := os.Open(path) // #nosec G304 -- the caller's own temporary file
+	if err != nil {
+		return 0, err
+	}
+	defer func() { _ = src.Close() }()
+	tmp, err := os.CreateTemp(s.dir, ".upload-*")
+	if err != nil {
+		return 0, err
+	}
+	defer func() {
+		_ = tmp.Close()
+		_ = os.Remove(tmp.Name()) // no-op after a successful rename
+	}()
+	if _, err := io.Copy(tmp, src); err != nil {
+		return 0, err
+	}
+	if err := tmp.Close(); err != nil {
+		return 0, err
+	}
+	if err := os.Rename(tmp.Name(), final); err != nil {
+		return 0, err
+	}
+	return info.Size(), os.Remove(path)
+}
+
 // Open returns the blob's content; ErrNotFound when it does not exist.
 func (s *Store) Open(sha string) (*os.File, error) {
 	if !validHash(sha) {

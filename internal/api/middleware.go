@@ -19,6 +19,7 @@ import (
 	"github.com/wnexous/partyline/internal/api/httpx"
 	"github.com/wnexous/partyline/internal/authn"
 	"github.com/wnexous/partyline/internal/avatars"
+	"github.com/wnexous/partyline/internal/uploads"
 	"github.com/wnexous/partyline/internal/users"
 )
 
@@ -139,9 +140,10 @@ func clientIP(trusted []netip.Prefix, next http.Handler) http.Handler {
 }
 
 // bodyLimit caps request bodies at 1 MiB, or at the upload limit plus 1 MiB of envelope for
-// multipart requests (SEC-03). An avatar upload is a raw image capped at the avatar limit: a
-// larger body is answered 413 avatar_invalid before it is read, so a browser is never left
-// pushing a body at a server that stopped reading it (PROF-06).
+// multipart requests (SEC-03). The chunk of an upload session is a raw body capped at the chunk
+// size: 50 MB, or the upload limit when that is lower (LF-03). An avatar upload is a raw image
+// capped at the avatar limit: a larger body is answered 413 avatar_invalid before it is read, so a
+// browser is never left pushing a body at a server that stopped reading it (PROF-06).
 func bodyLimit(maxUpload int64, next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		limit := int64(httpx.MaxJSONBody)
@@ -149,6 +151,10 @@ func bodyLimit(maxUpload int64, next http.Handler) http.Handler {
 		message := "request body too large"
 		if mt, _, err := mime.ParseMediaType(r.Header.Get("Content-Type")); err == nil && mt == "multipart/form-data" {
 			limit += maxUpload
+		}
+		if isUploadChunk(r) {
+			limit = min(int64(uploads.MaxChunkBytes), maxUpload)
+			message = "a chunk holds at most " + humanMB(limit)
 		}
 		if isAvatarUpload(r) {
 			limit = avatars.MaxBytes
