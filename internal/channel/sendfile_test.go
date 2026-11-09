@@ -47,10 +47,12 @@ type recorder struct {
 	faults map[int]fault
 	// noUploads answers 404 to the creation of an upload session, as a server without them does.
 	noUploads bool
-
-	mu   sync.Mutex
-	reqs []sentRequest
-	puts int
+	mu        sync.Mutex
+	// slowDownload, when set, gives the body of an attachment download 4 KB at a time, each read
+	// after this wait (setSlowDownload).
+	slowDownload time.Duration
+	reqs         []sentRequest
+	puts         int
 }
 
 func newRecorder() *recorder {
@@ -68,6 +70,7 @@ func (r *recorder) RoundTrip(req *http.Request) (*http.Response, error) {
 		f = r.faults[r.puts]
 	}
 	noUploads := r.noUploads && req.Method == http.MethodPost && req.URL.Path == "/api/v1/agent/uploads"
+	slow := r.slowDownload
 	r.mu.Unlock()
 	switch {
 	case noUploads:
@@ -95,7 +98,28 @@ func (r *recorder) RoundTrip(req *http.Request) (*http.Response, error) {
 		}
 		return nil, errors.New("answer lost")
 	}
-	return r.base.RoundTrip(req)
+	resp, err := r.base.RoundTrip(req)
+	if err == nil && slow > 0 && strings.HasPrefix(req.URL.Path, "/api/v1/agent/attachments/") {
+		resp.Body = &slowBody{ReadCloser: resp.Body, wait: slow}
+	}
+	return resp, err
+}
+
+func (r *recorder) setSlowDownload(d time.Duration) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.slowDownload = d
+}
+
+// slowBody gives its body 4 KB at a time, each read after wait.
+type slowBody struct {
+	io.ReadCloser
+	wait time.Duration
+}
+
+func (s *slowBody) Read(p []byte) (int, error) {
+	time.Sleep(s.wait)
+	return s.ReadCloser.Read(p[:min(len(p), 4<<10)])
 }
 
 // sent returns the requests of the agent API whose path holds part.
@@ -440,4 +464,33 @@ func TestSendFileThroughAConnectionOverTheLimitFailsFast(t *testing.T) {
 		require.Contains(t, text, "file too large: clip.mp4 is 3 MB, more than this Partyline server takes in one request; sending larger files through a connection comes in a later version")
 		require.Empty(t, c.inst.Sent())
 	})
+}
+
+// LF-08: a download that keeps bringing bytes goes on past the bound of an ordinary tool call, streamed
+// to disk; one that brings nothing for the stall time fails and says so. The bounds are shortened here:
+// 200 ms for a tool call, 400 ms of stall, a download of about 600 ms.
+func TestDownloadAttachmentOutlastsTheToolBoundWhileBytesArrive(t *testing.T) {
+	e := newChanEnv(t)
+	content := strings.Repeat("0123456789abcdef", 64<<10/16)
+	m := e.postFile("big.txt", content)
+
+	rec := newRecorder()
+	rec.setSlowDownload(40 * time.Millisecond)
+	o := e.options()
+	o.HTTPClient = rec.client()
+	o.toolLimit, o.readStall = 200*time.Millisecond, 400*time.Millisecond
+	s := e.connected(o)
+
+	start := time.Now()
+	path, isErr := s.call("download_attachment", toolArgs("attachment_id", m.Attachments[0].ID))
+	require.False(t, isErr, path)
+	require.Greater(t, time.Since(start), 200*time.Millisecond, "longer than the bound of a tool call")
+	got, err := os.ReadFile(path) // #nosec G304 -- the test's download
+	require.NoError(t, err)
+	require.Equal(t, content, string(got))
+
+	rec.setSlowDownload(600 * time.Millisecond)
+	text, isErr := s.call("download_attachment", toolArgs("attachment_id", m.Attachments[0].ID))
+	require.True(t, isErr)
+	require.Equal(t, "download stalled: the server sent nothing for 1 second; try again", text)
 }

@@ -16,6 +16,7 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+	"sync/atomic"
 	"time"
 
 	"github.com/wnexous/partyline/internal/api/dto"
@@ -39,9 +40,10 @@ const (
 	chunkTimeout = 5 * time.Minute
 	// maxRetryWait is the longest Retry-After a chunk waits for; a longer one fails the upload.
 	maxRetryWait = time.Minute
-	// sendFileTimeout bounds a whole send_file, a file of gigabytes included. Every request has its
-	// own bound and the retries are counted, so it is a safety net.
-	sendFileTimeout = 6 * time.Hour
+	// fileToolTimeout bounds a whole send_file or download_attachment, a file of gigabytes included.
+	// Every request has its own bound, a download its stall, and the retries are counted, so it is a
+	// safety net.
+	fileToolTimeout = 6 * time.Hour
 )
 
 // chunkRetryWait is the wait before the first retry of a chunk; each further one waits once more.
@@ -512,7 +514,11 @@ func humanWait(d time.Duration) string {
 	case d >= 2*time.Minute:
 		return strconv.FormatInt(int64(d/time.Minute), 10) + " minutes"
 	}
-	return strconv.FormatInt(int64((d+time.Second-1)/time.Second), 10) + " seconds"
+	n := int64((d + time.Second - 1) / time.Second)
+	if n == 1 {
+		return "1 second"
+	}
+	return strconv.FormatInt(n, 10) + " seconds"
 }
 
 // sleep waits d or until ctx is done.
@@ -525,4 +531,52 @@ func sleep(ctx context.Context, d time.Duration) error {
 	case <-timer.C:
 		return nil
 	}
+}
+
+// stallWatch cancels a transfer that brings no byte for its stall time: every read that brings bytes
+// starts the wait again, so a slow but steady transfer goes on for as long as it takes.
+type stallWatch struct {
+	stall   time.Duration
+	timer   *time.Timer
+	stalled atomic.Bool
+}
+
+// watchStall starts watching a transfer under ctx, waiting for its answer first.
+func (t *tools) watchStall(ctx context.Context) (context.Context, *stallWatch) {
+	w := &stallWatch{stall: t.stall}
+	if w.stall <= 0 {
+		w.stall = readStall
+	}
+	ctx, cancel := context.WithCancel(ctx)
+	w.timer = time.AfterFunc(w.stall, func() {
+		w.stalled.Store(true)
+		cancel()
+	})
+	return ctx, w
+}
+
+// reader is r, each read that brings bytes postponing the stall.
+func (w *stallWatch) reader(r io.Reader) io.Reader { return &stallReader{r: r, w: w} }
+
+func (w *stallWatch) stop() { w.timer.Stop() }
+
+// explain says that err came of a stall, when it did.
+func (w *stallWatch) explain(err error) error {
+	if err == nil || !w.stalled.Load() {
+		return err
+	}
+	return fmt.Errorf("download stalled: the server sent nothing for %s; try again", humanWait(w.stall))
+}
+
+type stallReader struct {
+	r io.Reader
+	w *stallWatch
+}
+
+func (s *stallReader) Read(p []byte) (int, error) {
+	n, err := s.r.Read(p)
+	if n > 0 && !s.w.stalled.Load() {
+		s.w.timer.Reset(s.w.stall)
+	}
+	return n, err
 }

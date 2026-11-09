@@ -73,6 +73,9 @@ type Options struct {
 	HTTPClient *http.Client
 
 	timing timing
+	// toolLimit and readStall shorten the bound of an ordinary tool call and the stall of a download;
+	// zero is the default.
+	toolLimit, readStall time.Duration
 	// zone is where the busy text shows times; tests set it, nil is the local zone.
 	zone *time.Location
 }
@@ -128,7 +131,7 @@ func Run(ctx context.Context, o Options) error {
 	if err != nil {
 		return fmt.Errorf("temp dir: %w", err)
 	}
-	t := &tools{dir: filepath.Join(tmp, "partyline", downloadDirName(o.Folder))}
+	t := &tools{dir: filepath.Join(tmp, "partyline", downloadDirName(o.Folder)), limit: o.toolLimit, stall: o.readStall}
 	t.api = &client{base: base, token: o.Token, identity: id, http: o.HTTPClient}
 	ctx, cancel := context.WithCancel(ctx)
 	defer cancel()
