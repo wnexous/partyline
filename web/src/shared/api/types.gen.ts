@@ -841,9 +841,33 @@ export const ErrorCodeIdentityOnline = "identity_online";
  */
 export const ErrorCodeAlreadyAnswered = "already_answered";
 /**
+ * ErrorCodeFileTooLarge is an upload session for a file over the largest one (413, LF-03); Details
+ * give max_size in bytes.
+ */
+export const ErrorCodeFileTooLarge = "file_too_large";
+/**
+ * ErrorCodeInsufficientStorage is an upload session the data disk cannot hold with its reserve to
+ * spare (507, LF-07).
+ */
+export const ErrorCodeInsufficientStorage = "insufficient_storage";
+/**
+ * ErrorCodeUploadOffset is a chunk that does not start where the upload is: Details give received,
+ * the offset to resume at, and complete "true" when the upload needs no more chunks (409, LF-03).
+ */
+export const ErrorCodeUploadOffset = "upload_offset";
+/**
+ * ErrorCodeUploadBusy is a chunk sent while another chunk of the same upload is being written (409).
+ */
+export const ErrorCodeUploadBusy = "upload_busy";
+/**
+ * ErrorCodeUploadIncomplete is a message that attaches an upload whose last chunk did not arrive
+ * (409, LF-03).
+ */
+export const ErrorCodeUploadIncomplete = "upload_incomplete";
+/**
  * Error codes and the HTTP status they come with.
  */
-export type ErrorCode = typeof ErrorCodeInvalid | typeof ErrorCodeUnauthorized | typeof ErrorCodeForbidden | typeof ErrorCodeNotFound | typeof ErrorCodeConflict | typeof ErrorCodeGone | typeof ErrorCodeTooLarge | typeof ErrorCodeRateLimited | typeof ErrorCodeInternal | typeof ErrorCodeUnavailable | typeof ErrorCodeHandleTaken | typeof ErrorCodeAvatarInvalid | typeof ErrorCodeLastInstanceAdmin | typeof ErrorCodeLastAdmin | typeof ErrorCodeHomeOrganization | typeof ErrorCodeAlreadyMember | typeof ErrorCodeNotOperator | typeof ErrorCodeUnknownChat | typeof ErrorCodeUnsupported | typeof ErrorCodeFolderRequired | typeof ErrorCodeFolderInvalid | typeof ErrorCodeHarnessRemoved | typeof ErrorCodePositionUnknown | typeof ErrorCodeOrganizationMismatch | typeof ErrorCodeIdentityBusy | typeof ErrorCodeDMMembersFixed | typeof ErrorCodeReactionLimit | typeof ErrorCodeDMSelf | typeof ErrorCodeContactNotFound | typeof ErrorCodeNoRouteToPerson | typeof ErrorCodeHistoryOnly | typeof ErrorCodeCounterpartDisabled | typeof ErrorCodeChatsNotMembers | typeof ErrorCodeMembersRefused | typeof ErrorCodeOrganizationRequired | typeof ErrorCodeOrganizationNotEmpty | typeof ErrorCodePositionCycle | typeof ErrorCodeIdentityOnline | typeof ErrorCodeAlreadyAnswered;
+export type ErrorCode = typeof ErrorCodeInvalid | typeof ErrorCodeUnauthorized | typeof ErrorCodeForbidden | typeof ErrorCodeNotFound | typeof ErrorCodeConflict | typeof ErrorCodeGone | typeof ErrorCodeTooLarge | typeof ErrorCodeRateLimited | typeof ErrorCodeInternal | typeof ErrorCodeUnavailable | typeof ErrorCodeHandleTaken | typeof ErrorCodeAvatarInvalid | typeof ErrorCodeLastInstanceAdmin | typeof ErrorCodeLastAdmin | typeof ErrorCodeHomeOrganization | typeof ErrorCodeAlreadyMember | typeof ErrorCodeNotOperator | typeof ErrorCodeUnknownChat | typeof ErrorCodeUnsupported | typeof ErrorCodeFolderRequired | typeof ErrorCodeFolderInvalid | typeof ErrorCodeHarnessRemoved | typeof ErrorCodePositionUnknown | typeof ErrorCodeOrganizationMismatch | typeof ErrorCodeIdentityBusy | typeof ErrorCodeDMMembersFixed | typeof ErrorCodeReactionLimit | typeof ErrorCodeDMSelf | typeof ErrorCodeContactNotFound | typeof ErrorCodeNoRouteToPerson | typeof ErrorCodeHistoryOnly | typeof ErrorCodeCounterpartDisabled | typeof ErrorCodeChatsNotMembers | typeof ErrorCodeMembersRefused | typeof ErrorCodeOrganizationRequired | typeof ErrorCodeOrganizationNotEmpty | typeof ErrorCodePositionCycle | typeof ErrorCodeIdentityOnline | typeof ErrorCodeAlreadyAnswered | typeof ErrorCodeFileTooLarge | typeof ErrorCodeInsufficientStorage | typeof ErrorCodeUploadOffset | typeof ErrorCodeUploadBusy | typeof ErrorCodeUploadIncomplete;
 /**
  * ErrorBody is the envelope of every error response.
  */
@@ -1105,6 +1129,11 @@ export type PlatformSendStatus = typeof PlatformSendStatusPending | typeof Platf
 export interface SendToChatRequest {
   text: string;
   quick_replies?: string[];
+  /**
+   * UploadIDs is refused for now (400): a send through a connection holds its file in memory until
+   * it streams from the blob store (LF-04).
+   */
+  upload_ids?: string[];
 }
 /**
  * PlatformSendResult is what an AI is told about an answer it sent through its connection (CID-15,
@@ -2848,6 +2877,11 @@ export interface PostMessageRequest {
   quick_replies?: string[];
   wizard?: WizardRequest;
   answers?: AnswerSubmission;
+  /**
+   * UploadIDs attaches finished upload sessions of the poster, in order, after any multipart files;
+   * each upload is used up by the message (LF-03).
+   */
+  upload_ids?: string[];
 }
 /**
  * AttachmentStatus is the storage state of an attachment.
@@ -2940,6 +2974,38 @@ export interface Secret {
  */
 export interface PutSecretRequest {
   value: string;
+}
+
+//////////
+// source: uploads.go
+
+/**
+ * CreateUploadRequest starts an upload session for a file larger than one request (LF-03): POST
+ * /api/v1/uploads for a user, POST /api/v1/agent/uploads for an AI. Name and Mime are those the
+ * attachment will have; Size is the exact number of bytes the chunks will bring.
+ */
+export interface CreateUploadRequest {
+  name: string;
+  mime: string;
+  size: number /* int64 */;
+}
+/**
+ * Upload is the state of an upload session. The client sends chunks of at most ChunkSize bytes with
+ * PUT .../uploads/{id}?offset=Received until Complete; a message then attaches it by its ID in
+ * upload_ids. Sha256 is the hash of the finished file. An upload that no message used is removed at
+ * ExpiresAt, finished or not (LF-06).
+ */
+export interface Upload {
+  id: string;
+  name: string;
+  mime: string;
+  size: number /* int64 */;
+  received: number /* int64 */;
+  complete: boolean;
+  sha256?: string;
+  chunk_size: number /* int64 */;
+  max_size: number /* int64 */;
+  expires_at: string /* RFC 3339 */;
 }
 
 //////////

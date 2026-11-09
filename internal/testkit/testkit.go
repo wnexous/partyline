@@ -83,6 +83,7 @@ type options struct {
 	connectorWait    func(ctx context.Context, d time.Duration) error
 	transcriptHold   time.Duration
 	transcribeWait   func(ctx context.Context, d time.Duration) error
+	freeSpace        func(dir string) (int64, bool)
 }
 
 // Option customizes New.
@@ -152,6 +153,12 @@ func WithTranscribeWait(wait func(ctx context.Context, d time.Duration) error) O
 	return func(o *options) { o.transcribeWait = wait }
 }
 
+// WithFreeSpace replaces the free-space check of the data disk of upload sessions (LF-07), so a
+// test can fake a full disk.
+func WithFreeSpace(free func(dir string) (int64, bool)) Option {
+	return func(o *options) { o.freeSpace = free }
+}
+
 // WithVersion sets the server build version (default "dev").
 func WithVersion(v string) Option { return func(o *options) { o.version = v } }
 
@@ -177,7 +184,7 @@ func New(t testing.TB, opts ...Option) *Env {
 	e := &Env{
 		T: t, Server: srv, URL: base, Origin: cfg.PublicURL.Scheme + "://" + cfg.PublicURL.Host, cfg: cfg,
 		appOpts: app.Options{Logger: o.logger, Now: o.now, LiveSessionCheck: o.liveSessionCheck, ConnectorKinds: o.kinds, DisableOutbox: !o.outbox, DisablePush: o.push, PushQueueSize: o.pushQueueSize, Version: o.version, InboundWait: o.inboundWait, ConnectorWait: o.connectorWait,
-			TranscriptHold: o.transcriptHold, TranscribeWait: o.transcribeWait},
+			TranscriptHold: o.transcriptHold, TranscribeWait: o.transcribeWait, FreeSpace: o.freeSpace},
 	}
 	e.startApp()
 	srv.Config.Handler = http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { (*e.handler.Load()).ServeHTTP(w, r) })

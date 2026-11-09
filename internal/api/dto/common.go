@@ -204,6 +204,20 @@ const (
 	// ErrorCodeAlreadyAnswered is a second structured answer by the same author to the same question
 	// (409, QR-08): the member answers once, and deletes the answer to answer again.
 	ErrorCodeAlreadyAnswered ErrorCode = "already_answered"
+	// ErrorCodeFileTooLarge is an upload session for a file over the largest one (413, LF-03); Details
+	// give max_size in bytes.
+	ErrorCodeFileTooLarge ErrorCode = "file_too_large"
+	// ErrorCodeInsufficientStorage is an upload session the data disk cannot hold with its reserve to
+	// spare (507, LF-07).
+	ErrorCodeInsufficientStorage ErrorCode = "insufficient_storage"
+	// ErrorCodeUploadOffset is a chunk that does not start where the upload is: Details give received,
+	// the offset to resume at, and complete "true" when the upload needs no more chunks (409, LF-03).
+	ErrorCodeUploadOffset ErrorCode = "upload_offset"
+	// ErrorCodeUploadBusy is a chunk sent while another chunk of the same upload is being written (409).
+	ErrorCodeUploadBusy ErrorCode = "upload_busy"
+	// ErrorCodeUploadIncomplete is a message that attaches an upload whose last chunk did not arrive
+	// (409, LF-03).
+	ErrorCodeUploadIncomplete ErrorCode = "upload_incomplete"
 )
 
 // ErrorBody is the envelope of every error response.

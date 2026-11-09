@@ -37,6 +37,7 @@ import (
 	"github.com/wnexous/partyline/internal/store"
 	"github.com/wnexous/partyline/internal/store/db"
 	"github.com/wnexous/partyline/internal/transcribe"
+	"github.com/wnexous/partyline/internal/uploads"
 	"github.com/wnexous/partyline/internal/users"
 	"github.com/wnexous/partyline/internal/webpush"
 	"github.com/wnexous/partyline/internal/webui"
@@ -47,6 +48,9 @@ const DatabaseFile = "partyline.db"
 
 // BlobsDir is the attachment blob directory inside the data directory.
 const BlobsDir = "blobs"
+
+// UploadsDir holds the temporary files of upload sessions inside the data directory (LF-03).
+const UploadsDir = "uploads"
 
 // Options tune an App; zero values use the defaults.
 type Options struct {
@@ -84,6 +88,9 @@ type Options struct {
 	TranscriptHold time.Duration
 	// TranscribeWait sleeps between the attempts of a transcription (TR-08); nil sleeps for real.
 	TranscribeWait func(ctx context.Context, d time.Duration) error
+	// FreeSpace reports the free bytes of the data disk for the upload sessions' check (LF-07); nil
+	// asks the filesystem. Tests fake a full disk with it.
+	FreeSpace func(dir string) (int64, bool)
 }
 
 // BuiltinKinds returns the connector kinds shipped with Partyline. A new platform adds its
@@ -129,6 +136,8 @@ type App struct {
 	// Conversations opens direct messages and creates groups.
 	Conversations *conversations.Service
 	Blobs         *attachments.Store
+	// Uploads receives files larger than one request in chunks (LF-03).
+	Uploads *uploads.Service
 	// Platform is the delivery queue of the messages that arrive on connections (AD-015).
 	Platform *platform.Queue
 	// Presence tracks connected agents; Agents is the agent registry.
@@ -216,6 +225,14 @@ func New(cfg *config.Config, opts Options) (*App, error) {
 		_ = st.Close()
 		return nil, err
 	}
+	uploadSvc, err := uploads.New(uploads.Deps{
+		Store: st, Blobs: blobs, Dir: filepath.Join(cfg.DataDir, UploadsDir), MaxFileBytes: cfg.MaxFileBytes,
+		MaxRequestBytes: cfg.MaxUploadBytes, ReserveBytes: cfg.DiskReserveBytes, FreeSpace: opts.FreeSpace, Now: opts.Now,
+	})
+	if err != nil {
+		_ = st.Close()
+		return nil, err
+	}
 	authz := orgs.NewAuthz(st)
 	az := access.New(st, access.Options{Authz: authz})
 	trust := delivery.TrustSource(func() delivery.Trust { return authz.Session() })
@@ -233,6 +250,7 @@ func New(cfg *config.Config, opts Options) (*App, error) {
 		Orgs:          orgs.NewService(orgs.Deps{Store: st, Authz: authz, Bus: bus, Audit: auditLog, Blobs: blobs, Now: opts.Now}),
 		Rooms:         rooms.New(rooms.Deps{Store: st, Access: az, Bus: bus, Now: opts.Now, Blobs: blobs, Transcribe: cfg.TranscribeURL != ""}),
 		Blobs:         blobs,
+		Uploads:       uploadSvc,
 		Platform:      platform.New(platform.Deps{Store: st, Bus: bus, Now: opts.Now, Transcribe: cfg.TranscribeURL != ""}),
 		Intelligences: intelligences.New(intelligences.Deps{Store: st, Access: az, Bus: bus, Blobs: blobs, Online: presence.Online, Now: opts.Now}),
 	}
@@ -325,6 +343,7 @@ func New(cfg *config.Config, opts Options) (*App, error) {
 		Crashes:       a.ConnectorManager,
 		FileLinks:     fileLinks,
 		Blobs:         blobs,
+		Uploads:       uploadSvc,
 		Audit:         auditLog,
 		Platform:      a.Platform,
 		Sends:         a.Sends,
@@ -391,6 +410,12 @@ func (a *App) Start(ctx context.Context) error {
 			a.Logger.Warn("transcribe: no service is configured; pending transcriptions failed", "rows", n)
 		}
 	}
+	// Before the server takes chunks: a temporary file no upload owns is left from a crash (LF-06).
+	if n, err := a.Uploads.RemoveOrphans(ctx); err != nil {
+		return fmt.Errorf("remove orphan uploads: %w", err)
+	} else if n > 0 {
+		a.Logger.Info("uploads: removed temporary files no upload owns", "files", n)
+	}
 	bg, stop := context.WithCancel(context.WithoutCancel(ctx))
 	a.stop = stop
 	dispatcher := delivery.NewAgentDispatcher(delivery.DispatcherOptions{
@@ -414,6 +439,9 @@ func (a *App) Start(ctx context.Context) error {
 	a.ConnectorManager.Start(bg)
 	a.background(bg, "platform-purge", func(ctx context.Context) error {
 		return a.Platform.Run(ctx, platform.PurgeInterval, a.Rooms.ReleaseBlobs, a.Logger)
+	})
+	a.background(bg, "uploads", func(ctx context.Context) error {
+		return a.Uploads.Run(ctx, uploads.SweepInterval, a.Logger)
 	})
 	a.background(bg, "retention", func(ctx context.Context) error {
 		return a.Rooms.RunRetention(ctx, rooms.RetentionInterval, a.Logger,

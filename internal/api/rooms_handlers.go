@@ -255,6 +255,11 @@ func (s *server) postTo(w http.ResponseWriter, r *http.Request, p authn.Principa
 	} else if err := httpx.DecodeJSON(w, r, &req); err != nil {
 		return err
 	}
+	uploaded, err := s.uploadFiles(r.Context(), p, req.UploadIDs)
+	if err != nil {
+		return err
+	}
+	files = append(files, uploaded...)
 	if req.ReplyTo != "" && p.Kind == authn.KindAgent {
 		// A message that arrived on the AI's connection is no message of the room to quote (CID-22).
 		if mine, err := s.isPlatformMessage(r.Context(), p.AgentID, req.ReplyTo); err != nil {
@@ -270,6 +275,13 @@ func (s *server) postTo(w http.ResponseWriter, r *http.Request, p authn.Principa
 	})
 	if err != nil {
 		return err
+	}
+	if len(req.UploadIDs) > 0 {
+		// The message holds the files now; an upload left behind expires with its row (LF-06).
+		if err := s.Uploads.Consume(r.Context(), uploadOwner(p), req.UploadIDs); err != nil {
+			s.Logger.ErrorContext(r.Context(), "uploads: release the uploads of a message", "err", err,
+				"request_id", httpx.RequestID(r.Context()))
+		}
 	}
 	httpx.WriteJSON(w, http.StatusCreated, convert.Message(m))
 	return nil

@@ -162,6 +162,9 @@ const (
 type SendToChatRequest struct {
 	Text         string   `json:"text"`
 	QuickReplies []string `json:"quick_replies,omitempty"`
+	// UploadIDs is refused for now (400): a send through a connection holds its file in memory until
+	// it streams from the blob store (LF-04).
+	UploadIDs []string `json:"upload_ids,omitempty"`
 }
 
 // PlatformSendResult is what an AI is told about an answer it sent through its connection (CID-15,

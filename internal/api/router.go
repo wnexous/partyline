@@ -25,6 +25,7 @@ import (
 	"github.com/wnexous/partyline/internal/orgs"
 	"github.com/wnexous/partyline/internal/platform"
 	"github.com/wnexous/partyline/internal/rooms"
+	"github.com/wnexous/partyline/internal/uploads"
 	"github.com/wnexous/partyline/internal/users"
 	"github.com/wnexous/partyline/internal/validation"
 	"github.com/wnexous/partyline/internal/webpush"
@@ -57,6 +58,8 @@ type Deps struct {
 	// Devices approves new machines (partyline setup --browser).
 	Devices *devices.Service
 	Blobs   *attachments.Store
+	// Uploads receives files larger than one request in chunks (LF-03); nil turns the routes off.
+	Uploads *uploads.Service
 	Audit   *audit.Log
 	// Platform is the delivery queue of the messages that arrive on connections: the agent WebSocket
 	// reads it for a session that opted in, and the agent attachments route serves its files.
@@ -131,6 +134,7 @@ func (s *server) routes(mux *http.ServeMux) {
 	s.chatRoutes(mux)
 	s.hookRoutes(mux)
 	s.pushRoutes(mux)
+	s.uploadRoutes(mux)
 	s.deviceRoutes(mux)
 	if s.Live != nil {
 		mux.Handle("GET /api/v1/live", s.Live)
@@ -198,6 +202,9 @@ func (s *server) writeError(w http.ResponseWriter, r *http.Request, err error) {
 
 // mapError translates service errors into API errors with their status code.
 func mapError(err error) error {
+	if mapped := uploadError(err); mapped != nil {
+		return mapped
+	}
 	var verr *validation.Error
 	var refused *conversations.MembersRefusedError
 	var notEmpty *orgs.NotEmptyError
