@@ -410,9 +410,10 @@ func (a *App) Start(ctx context.Context) error {
 			a.Logger.Warn("transcribe: no service is configured; pending transcriptions failed", "rows", n)
 		}
 	}
-	// Before the server takes chunks: a temporary file no upload owns is left from a crash (LF-06).
+	// Before the server takes chunks: a temporary file no upload owns is left from a crash (LF-06). A
+	// failure only leaves files behind until the next start, and never stops the server.
 	if n, err := a.Uploads.RemoveOrphans(ctx); err != nil {
-		return fmt.Errorf("remove orphan uploads: %w", err)
+		a.Logger.Warn("uploads: could not remove the temporary files no upload owns", "err", err)
 	} else if n > 0 {
 		a.Logger.Info("uploads: removed temporary files no upload owns", "files", n)
 	}

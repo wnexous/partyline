@@ -553,3 +553,20 @@ func TestAChunkOfASweptUploadLeavesNoFile(t *testing.T) {
 	putChunk(alice, userUploads, v.ID, 4, []byte("efgh")).RequireError(http.StatusInternalServerError, dto.ErrorCodeInternal)
 	require.NoFileExists(t, uploadFile(env, v.ID))
 }
+
+// LF-06: the server starts when it cannot clean the uploads directory; the cleanup waits for the next
+// start.
+func TestStartupGoesOnWhenOrphanUploadsCannotBeRemoved(t *testing.T) {
+	if os.Geteuid() == 0 {
+		t.Skip("root ignores directory permissions")
+	}
+	env := testkit.New(t)
+	dir := filepath.Join(env.App.Config.DataDir, app.UploadsDir)
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "orphan"), []byte("x"), 0o600))
+	require.NoError(t, os.Chmod(dir, 0o500)) // listable, but nothing in it can be removed
+	t.Cleanup(func() { _ = os.Chmod(dir, 0o700) })
+
+	env.Restart()
+	env.Anon().Get("/readyz").RequireStatus(http.StatusOK)
+	require.FileExists(t, filepath.Join(dir, "orphan"))
+}
