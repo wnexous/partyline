@@ -21,4 +21,4 @@ CREATE TABLE uploads (
 );
 CREATE INDEX uploads_owner ON uploads (owner_kind, owner_id);
 CREATE INDEX uploads_expires ON uploads (expires_at);
-CREATE INDEX uploads_sha256 ON uploads (sha256) WHERE sha256 <> '';
+CREATE INDEX uploads_sha256 ON uploads (sha256); -- the blob sweep asks it by hash (CountUploadsBySHA)
