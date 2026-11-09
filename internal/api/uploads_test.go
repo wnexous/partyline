@@ -329,6 +329,9 @@ func TestAttachmentDownloadsServeRanges(t *testing.T) {
 	etag := full.Header.Get("ETag")
 	require.Equal(t, `"`+u.Sha256+`"`, etag)
 	require.Equal(t, "bytes", full.Header.Get("Accept-Ranges"))
+	require.Equal(t, "private, no-cache", full.Header.Get("Cache-Control"))
+	cached := f.alice.WithHeader("If-None-Match", etag).Get("/api/v1/attachments/" + id).RequireStatus(http.StatusNotModified)
+	require.Empty(t, cached.Body, "a browser revalidates its copy")
 
 	for path, c := range map[string]*testkit.Client{"/api/v1/attachments/": f.alice, "/api/v1/agent/attachments/": f.rest()} {
 		part := c.WithHeader("Range", "bytes=1000-1999").Get(path + id).RequireStatus(http.StatusPartialContent)
