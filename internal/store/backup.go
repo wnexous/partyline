@@ -11,6 +11,8 @@ import (
 	"sort"
 	"strings"
 	"time"
+
+	"github.com/wnexous/partyline/internal/diskspace"
 )
 
 // DefaultBackupsKeep is how many pre-migration backups stay in the backup directory when
@@ -100,7 +102,7 @@ func (s *Store) checkBackupSpace() error {
 	if err != nil {
 		return err
 	}
-	free, known := freeSpace(filepath.Dir(s.path))
+	free, known := diskspace.Free(filepath.Dir(s.path))
 	if !known {
 		// The platform has no portable free-space call; the copy either fits or fails clearly.
 		return nil

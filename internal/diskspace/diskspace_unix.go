@@ -1,6 +1,6 @@
 //go:build linux || darwin || freebsd
 
-package store
+package diskspace
 
 import (
 	"math"
@@ -8,9 +8,9 @@ import (
 	"golang.org/x/sys/unix"
 )
 
-// freeSpace returns the bytes available to the process on the filesystem of dir, and whether
+// Free returns the bytes available to the process on the filesystem of dir, and whether
 // they are known.
-func freeSpace(dir string) (int64, bool) {
+func Free(dir string) (int64, bool) {
 	var st unix.Statfs_t
 	if err := unix.Statfs(dir, &st); err != nil {
 		return 0, false

@@ -153,3 +153,41 @@ func TestSweep(t *testing.T) {
 	require.Zero(t, n)
 	require.Contains(t, files(t, dir), filepath.Join(put2[:2], put2))
 }
+
+// LF-03: a finished upload moves into the store under its hash; nothing stays where it was, and the
+// same content adopted again keeps the one blob.
+func TestAdoptMovesTheFileIn(t *testing.T) {
+	s, dir := newStore(t)
+	outside := t.TempDir()
+	first := filepath.Join(outside, "first")
+	require.NoError(t, os.WriteFile(first, []byte("large file"), 0o600))
+
+	sha, size, err := s.Adopt(first)
+	require.NoError(t, err)
+	require.Equal(t, hashOf("large file"), sha)
+	require.Equal(t, int64(10), size)
+	require.NoFileExists(t, first)
+	require.Equal(t, []string{filepath.Join(sha[:2], sha)}, files(t, dir))
+
+	second := filepath.Join(outside, "second")
+	require.NoError(t, os.WriteFile(second, []byte("large file"), 0o600))
+	old := time.Now().Add(-2 * time.Hour)
+	require.NoError(t, os.Chtimes(filepath.Join(dir, sha[:2], sha), old, old))
+	size, err = s.AdoptHashed(second, sha)
+	require.NoError(t, err)
+	require.Equal(t, int64(10), size)
+	require.NoFileExists(t, second)
+	info, err := os.Stat(filepath.Join(dir, sha[:2], sha))
+	require.NoError(t, err)
+	require.True(t, info.ModTime().After(old), "the new reference refreshes the blob for the sweep")
+
+	f, err := s.Open(sha)
+	require.NoError(t, err)
+	defer func() { _ = f.Close() }()
+	data, err := io.ReadAll(f)
+	require.NoError(t, err)
+	require.Equal(t, "large file", string(data))
+
+	_, err = s.AdoptHashed(second, "not-a-hash")
+	require.Error(t, err)
+}
