@@ -17,10 +17,12 @@ import (
 
 	"github.com/stretchr/testify/require"
 
+	"github.com/wnexous/partyline/internal/api"
 	"github.com/wnexous/partyline/internal/api/dto"
 	"github.com/wnexous/partyline/internal/app"
 	"github.com/wnexous/partyline/internal/testkit"
 	"github.com/wnexous/partyline/internal/uploads"
+	"github.com/wnexous/partyline/internal/users"
 )
 
 const (
@@ -476,4 +478,46 @@ func TestUploadsOfOneOwnerAreBounded(t *testing.T) {
 	bob.Post(userUploads, dto.CreateUploadRequest{Name: "17th", Size: 1}).RequireError(http.StatusTooManyRequests, dto.ErrorCodeRateLimited)
 	bob.Post("/api/v1/rooms/"+createRoom(bob, "Mine").ID+"/messages", dto.PostMessageRequest{UploadIDs: finished[:1]}).RequireStatus(http.StatusCreated)
 	createUpload(bob, userUploads, dto.CreateUploadRequest{Name: "17th", Size: 1})
+}
+
+// LF-03: a chunk that stops arriving fails once it has gone the idle timeout without a byte, so it
+// holds neither the upload nor a file open; nothing it carried is kept, and the upload goes on.
+func TestAStalledChunkGivesTheUploadBack(t *testing.T) {
+	t.Cleanup(api.SetChunkIdleTimeout(300 * time.Millisecond))
+	env := testkit.New(t)
+	alice := env.NewUser("alice")
+	_, secret, err := env.App.Users.CreateToken(context.Background(), alice.User.ID, users.TokenInput{Kind: dto.TokenKindUser, Name: "script"})
+	require.NoError(t, err)
+	u := createUpload(alice, userUploads, dto.CreateUploadRequest{Name: "a", Size: 10})
+
+	pr, pw := io.Pipe()
+	defer func() { _ = pw.Close() }()
+	req, err := http.NewRequest(http.MethodPut, env.URL+userUploads+"/"+u.ID+"?offset=0", pr)
+	require.NoError(t, err)
+	req.Header.Set("Authorization", "Bearer "+secret)
+	answered := make(chan int, 1)
+	go func() {
+		resp, err := http.DefaultClient.Do(req)
+		if err != nil {
+			answered <- 0
+			return
+		}
+		_ = resp.Body.Close()
+		answered <- resp.StatusCode
+	}()
+	for range 3 { // slow but steady: each read moves the deadline on
+		_, err = pw.Write([]byte("ab"))
+		require.NoError(t, err)
+		time.Sleep(150 * time.Millisecond)
+	}
+	select { // then it stalls
+	case status := <-answered:
+		require.Contains(t, []int{0, http.StatusBadRequest}, status)
+	case <-time.After(10 * time.Second):
+		require.FailNow(t, "a stalled chunk kept its request open")
+	}
+
+	require.Zero(t, testkit.Decode[dto.Upload](alice.Get(userUploads+"/"+u.ID).RequireStatus(http.StatusOK)).Received)
+	u = testkit.Decode[dto.Upload](putChunk(alice, userUploads, u.ID, 0, []byte("0123456789")).RequireStatus(http.StatusOK))
+	require.True(t, u.Complete)
 }

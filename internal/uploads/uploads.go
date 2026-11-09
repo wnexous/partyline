@@ -68,6 +68,9 @@ var (
 	ErrOwnerBytes = errors.New("too many bytes in uploads")
 	// ErrEmptyChunk is a chunk without bytes for an upload that still needs some.
 	ErrEmptyChunk = errors.New("empty chunk")
+	// ErrChunkInterrupted is a chunk whose body stopped before its end: the client went away or
+	// stalled. Nothing of it is kept.
+	ErrChunkInterrupted = errors.New("the chunk did not arrive whole")
 	// ErrInvalidSize is an upload of zero bytes or fewer.
 	ErrInvalidSize = errors.New("size must be a positive number of bytes")
 )
@@ -380,11 +383,14 @@ func (s *Service) append(row db.Upload, h hash.Hash, body io.Reader) (n int64, e
 		return 0, err
 	}
 	limit := min(s.chunk, row.Size-row.Received)
-	n, err = io.Copy(io.MultiWriter(f, h), io.LimitReader(body, limit+1))
+	src := &readTracker{r: body}
+	n, err = io.Copy(io.MultiWriter(f, h), io.LimitReader(src, limit+1))
 	var mbe *http.MaxBytesError
 	switch {
 	case errors.As(err, &mbe):
 		return 0, &ChunkTooLargeError{Max: limit}
+	case err != nil && src.err != nil:
+		return 0, fmt.Errorf("%w: %w", ErrChunkInterrupted, err)
 	case err != nil:
 		return 0, err
 	case n > limit:
@@ -412,6 +418,21 @@ func (s *Service) finish(ctx context.Context, row db.Upload, sha string) error {
 		_, err := q.CompleteUpload(ctx, db.CompleteUploadParams{Sha256: sha, ID: row.ID})
 		return err
 	})
+}
+
+// readTracker remembers the error of the body, to tell a chunk that did not arrive from a disk that
+// failed.
+type readTracker struct {
+	r   io.Reader
+	err error
+}
+
+func (t *readTracker) Read(p []byte) (int, error) {
+	n, err := t.r.Read(p)
+	if err != nil && !errors.Is(err, io.EOF) {
+		t.err = err
+	}
+	return n, err
 }
 
 func resumeHash(state []byte) (hash.Hash, error) {

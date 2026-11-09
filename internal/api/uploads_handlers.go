@@ -3,8 +3,11 @@ package api
 import (
 	"context"
 	"errors"
+	"io"
 	"net/http"
 	"strconv"
+	"sync/atomic"
+	"time"
 
 	"github.com/wnexous/partyline/internal/api/dto"
 	"github.com/wnexous/partyline/internal/api/httpx"
@@ -15,6 +18,27 @@ import (
 
 // maxUploadIDs bounds the uploads one message attaches.
 const maxUploadIDs = 20
+
+// chunkIdle is how long, in nanoseconds, a chunk may go without a byte before its request fails.
+var chunkIdle atomic.Int64
+
+func init() { chunkIdle.Store(int64(time.Minute)) }
+
+func chunkIdleTimeout() time.Duration { return time.Duration(chunkIdle.Load()) }
+
+// progressReader calls progress after every read that brought bytes.
+type progressReader struct {
+	r        io.Reader
+	progress func()
+}
+
+func (p *progressReader) Read(b []byte) (int, error) {
+	n, err := p.r.Read(b)
+	if n > 0 {
+		p.progress()
+	}
+	return n, err
+}
 
 // Upload routes: a user's under /api/v1/uploads, an AI's under /api/v1/agent/uploads, since an agent
 // token reaches the agent routes only (TOK-03). An upload belongs to the identity that created it.
@@ -80,7 +104,15 @@ func (s *server) writeUpload(w http.ResponseWriter, r *http.Request, p authn.Pri
 	if err != nil || offset < 0 {
 		return httpx.NewError(http.StatusBadRequest, dto.ErrorCodeInvalid, "offset must be the number of bytes the upload received")
 	}
-	u, err := s.Uploads.Write(r.Context(), uploadOwner(p), r.PathValue("id"), offset, r.Body)
+	body := io.Reader(r.Body)
+	// A chunk that stops arriving gives its upload back: the read deadline moves on with each read, so
+	// a slow but steady chunk goes on and a stalled one fails. A server without deadlines skips it.
+	rc := http.NewResponseController(w)
+	if rc.SetReadDeadline(time.Now().Add(chunkIdleTimeout())) == nil {
+		defer func() { _ = rc.SetReadDeadline(time.Time{}) }()
+		body = &progressReader{r: r.Body, progress: func() { _ = rc.SetReadDeadline(time.Now().Add(chunkIdleTimeout())) }}
+	}
+	u, err := s.Uploads.Write(r.Context(), uploadOwner(p), r.PathValue("id"), offset, body)
 	if err != nil {
 		return err
 	}
@@ -170,6 +202,9 @@ func uploadError(err error) error {
 	case errors.Is(err, uploads.ErrOwnerBytes):
 		return httpx.NewError(http.StatusTooManyRequests, dto.ErrorCodeRateLimited,
 			"your uploads would hold more than the largest file: post or wait for the ones you have first")
+	case errors.Is(err, uploads.ErrChunkInterrupted):
+		return httpx.NewError(http.StatusBadRequest, dto.ErrorCodeInvalid,
+			"the chunk did not arrive whole: resend it from the offset the upload received")
 	case errors.Is(err, uploads.ErrEmptyChunk):
 		return httpx.NewError(http.StatusBadRequest, dto.ErrorCodeInvalid, "the chunk is empty")
 	}
