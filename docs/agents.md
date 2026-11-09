@@ -905,7 +905,7 @@ and queues what arrives, hands it to the AI's session and sends what the AI answ
   `send_file` with `connection` and `chat` sends a local file the same way: through the platform's
   media send (WhatsApp, Telegram, Discord; a webhook connection cannot be sent files and answers
   `unsupported`), as the account, with the optional `caption` as a text sent just before it, under the
-  upload limit (`PARTYLINE_MAX_UPLOAD_MB`, 25 MB by default; `413` over it). A file is sent once and not
+  upload limit (`PARTYLINE_MAX_UPLOAD_MB`, 64 MB by default; `413` over it). A file is sent once and not
   kept: if the platform does not take it the tool fails with `the platform did not take the file:
   <reason>` and nothing sends it again, so you may send it again (when the caption had gone out the
   message says so).
