@@ -135,9 +135,14 @@ func (s *Store) AdoptHashed(path, sha string) (int64, error) {
 	if err := os.Chmod(path, 0o600); err != nil {
 		return 0, err
 	}
+	// Fresh before it lands, so the orphan sweep's grace period covers the blob from its first instant,
+	// before the caller records the reference.
+	now := time.Now()
+	if err := os.Chtimes(path, now, now); err != nil {
+		return 0, err
+	}
 	if err := os.Rename(path, final); err == nil {
-		now := time.Now()
-		return info.Size(), os.Chtimes(final, now, now)
+		return info.Size(), nil
 	}
 	// Another filesystem: copy into a temporary file of the store, then rename it in place.
 	src, err := os.Open(path) // #nosec G304 -- the caller's own temporary file

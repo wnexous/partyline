@@ -161,6 +161,8 @@ func TestAdoptMovesTheFileIn(t *testing.T) {
 	outside := t.TempDir()
 	first := filepath.Join(outside, "first")
 	require.NoError(t, os.WriteFile(first, []byte("large file"), 0o600))
+	written := time.Now().Add(-3 * time.Hour) // the first chunk came long ago
+	require.NoError(t, os.Chtimes(first, written, written))
 
 	sha, size, err := s.Adopt(first)
 	require.NoError(t, err)
@@ -168,6 +170,12 @@ func TestAdoptMovesTheFileIn(t *testing.T) {
 	require.Equal(t, int64(10), size)
 	require.NoFileExists(t, first)
 	require.Equal(t, []string{filepath.Join(sha[:2], sha)}, files(t, dir))
+	info, err := os.Stat(filepath.Join(dir, sha[:2], sha))
+	require.NoError(t, err)
+	require.True(t, info.ModTime().After(written.Add(time.Hour)), "the adopted blob is fresh for the sweep")
+	removed, err := s.Sweep(time.Now().Add(-time.Hour), func(string) (bool, error) { return false, nil })
+	require.NoError(t, err)
+	require.Zero(t, removed, "an unreferenced blob within the grace period stays")
 
 	second := filepath.Join(outside, "second")
 	require.NoError(t, os.WriteFile(second, []byte("large file"), 0o600))
@@ -177,7 +185,7 @@ func TestAdoptMovesTheFileIn(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, int64(10), size)
 	require.NoFileExists(t, second)
-	info, err := os.Stat(filepath.Join(dir, sha[:2], sha))
+	info, err = os.Stat(filepath.Join(dir, sha[:2], sha))
 	require.NoError(t, err)
 	require.True(t, info.ModTime().After(old), "the new reference refreshes the blob for the sweep")
 
