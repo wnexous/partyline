@@ -34,6 +34,8 @@ export interface LiveActions {
   setPresence: (agentId: string, presence: Presence) => void;
   setConnectorState: (connectorId: string, state: ConnectorState) => void;
   setLastLinkedIdentity: (identity: Identity | null) => void;
+  /** Drops the composer draft of a conversation that is gone, with its upload sessions. */
+  discardDraft?: (roomId: string) => void;
   openRoomId: string | null;
 }
 
@@ -78,6 +80,7 @@ export function handleLiveEvent(qc: QueryClient, actions: LiveActions, event: Li
 
     case "room.deleted":
       removeRoom(qc, event.data.room_id);
+      actions.discardDraft?.(event.data.room_id);
       return;
 
     case "room.members":

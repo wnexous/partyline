@@ -1,6 +1,7 @@
 import { act, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, it } from "vitest";
+import { discardDraft, discardUploadsOnPageExit } from "@/features/send-message";
 import type { Upload } from "@/shared/api/types.gen";
 import { DIRECT_POST_BYTES } from "@/shared/api/uploads";
 import { apiError, json, mockApi } from "@/test/fetch";
@@ -27,7 +28,8 @@ type Route = (url: URL, init: RequestInit | undefined) => Response | Promise<Res
 function uploadRoutes({ files = 1, chunkSize = CHUNK, maxSize = 5 * 1024 * MB } = {}) {
   const sessions = new Map<string, Upload>();
   const gates: Array<() => void> = [];
-  const state = { gated: false };
+  /** gated holds each chunk's answer; busyDeletes answers that many DELETEs 409 upload_busy. */
+  const state = { gated: false, busyDeletes: 0 };
   let next = 0;
   const routes: Record<string, Route> = {
     "POST /uploads": (_url, init) => {
@@ -53,6 +55,15 @@ function uploadRoutes({ files = 1, chunkSize = CHUNK, maxSize = 5 * 1024 * MB } 
     routes[`GET /uploads/${id}`] = () => {
       const upload = sessions.get(id);
       return upload ? json(200, upload) : apiError(404, "not_found");
+    };
+    routes[`DELETE /uploads/${id}`] = () => {
+      if (!sessions.has(id)) return apiError(404, "not_found");
+      if (state.busyDeletes > 0) {
+        state.busyDeletes -= 1;
+        return apiError(409, "upload_busy");
+      }
+      sessions.delete(id);
+      return new Response(null, { status: 204 });
     };
     routes[`PUT /uploads/${id}`] = async (url, init) => {
       const upload = sessions.get(id);
@@ -386,5 +397,136 @@ describe("an upload outlives the composer (LF-01, WA-07)", () => {
     await server.release();
     await waitFor(() => expect(posts(calls)).toHaveLength(1));
     await waitFor(() => expect(screen.queryByText("raw.mp4")).toBeNull());
+  });
+});
+
+/** A pagehide event; jsdom's PageTransitionEvent drops `persisted`, so it is set by hand. */
+const pagehide = (persisted: boolean) =>
+  Object.defineProperty(new Event("pagehide"), "persisted", { value: persisted });
+
+describe("a session nobody will resume is deleted on the server (LF-01)", () => {
+  const deletes = (calls: { method: string; path: string }[]) =>
+    calls.filter((c) => c.method === "DELETE").map((c) => c.path);
+
+  it("cancel aborts the chunk in flight, then deletes the session, waiting out upload_busy", async () => {
+    const server = uploadRoutes();
+    server.state.gated = true;
+    // The server is still busy with the aborted chunk for the first DELETE.
+    server.state.busyDeletes = 1;
+    const { calls } = mockApi({
+      ...server.routes,
+      "POST /rooms/r1/messages": json(201, makeMessage({ seq: 9 })),
+    });
+    const user = userEvent.setup();
+    renderComposer();
+    await user.upload(screen.getByLabelText("Attach files"), fileOf("raw.mp4", BIG));
+    await user.click(screen.getByRole("button", { name: "Send" }));
+    await screen.findByRole("progressbar");
+
+    await user.click(screen.getByRole("button", { name: "Cancel the upload of raw.mp4" }));
+    await waitFor(() => expect(server.sessions.has("up1")).toBe(false));
+    const order = calls
+      .filter((c) => c.path.startsWith("/uploads"))
+      .map((c) => `${c.method} ${c.path}`);
+    expect(order).toEqual([
+      "POST /uploads",
+      "PUT /uploads/up1",
+      "DELETE /uploads/up1",
+      "DELETE /uploads/up1",
+    ]);
+    expect(posts(calls)).toHaveLength(0);
+  });
+
+  it("keeps the session of a failed send that stays in the draft, and deletes it when the file is removed", async () => {
+    const server = uploadRoutes();
+    const put = server.routes["PUT /uploads/up1"] as Route;
+    const { calls } = mockApi({
+      ...server.routes,
+      "PUT /uploads/up1": (url, init) =>
+        url.searchParams.get("offset") === String(CHUNK)
+          ? apiError(507, "insufficient_storage")
+          : put(url, init),
+      "POST /rooms/r1/messages": json(201, makeMessage({ seq: 9 })),
+    });
+    const user = userEvent.setup();
+    renderComposer();
+    await user.upload(screen.getByLabelText("Attach files"), fileOf("raw.mp4", BIG));
+    await user.click(screen.getByRole("button", { name: "Send" }));
+    await screen.findByRole("alert");
+    await act(async () => new Promise((r) => setTimeout(r, 20)));
+    // Still in the draft: the person may send it again and go on from there.
+    expect(deletes(calls)).toEqual([]);
+    expect(server.sessions.has("up1")).toBe(true);
+
+    await user.click(screen.getByRole("button", { name: "Remove raw.mp4" }));
+    await waitFor(() => expect(deletes(calls)).toEqual(["/uploads/up1"]));
+    expect(server.sessions.has("up1")).toBe(false);
+  });
+
+  it("deletes nothing after a send that went through: the message used the session", async () => {
+    const server = uploadRoutes();
+    const { calls } = mockApi({
+      ...server.routes,
+      "POST /rooms/r1/messages": json(201, makeMessage({ seq: 9 })),
+    });
+    const user = userEvent.setup();
+    renderComposer();
+    await user.upload(screen.getByLabelText("Attach files"), fileOf("raw.mp4", BIG));
+    await user.click(screen.getByRole("button", { name: "Send" }));
+    await waitFor(() => expect(posts(calls)).toHaveLength(1));
+    await act(async () => new Promise((r) => setTimeout(r, 20)));
+    expect(deletes(calls)).toEqual([]);
+  });
+
+  it("drops the draft of a deleted conversation and deletes its sessions", async () => {
+    const server = uploadRoutes();
+    server.state.gated = true;
+    const { calls } = mockApi({
+      ...server.routes,
+      "POST /rooms/r1/messages": json(201, makeMessage({ seq: 9 })),
+    });
+    const user = userEvent.setup();
+    renderComposer();
+    await user.type(box(), "about the footage");
+    await user.upload(screen.getByLabelText("Attach files"), fileOf("raw.mp4", BIG));
+    await user.click(screen.getByRole("button", { name: "Send" }));
+    await screen.findByRole("progressbar");
+
+    act(() => discardDraft("r1"));
+    await waitFor(() => expect(server.sessions.has("up1")).toBe(false));
+    expect(deletes(calls)).toContain("/uploads/up1");
+    expect(screen.queryByText("raw.mp4")).toBeNull();
+    expect(box()).toHaveValue("");
+    expect(posts(calls)).toHaveLength(0);
+  });
+
+  it("deletes the drafts' sessions with keepalive requests when the page is unloaded", async () => {
+    const server = uploadRoutes();
+    const put = server.routes["PUT /uploads/up1"] as Route;
+    const { calls, fetchMock } = mockApi({
+      ...server.routes,
+      "PUT /uploads/up1": (url, init) =>
+        url.searchParams.get("offset") === String(CHUNK)
+          ? apiError(507, "insufficient_storage")
+          : put(url, init),
+    });
+    const stop = discardUploadsOnPageExit();
+    try {
+      const user = userEvent.setup();
+      renderComposer();
+      await user.upload(screen.getByLabelText("Attach files"), fileOf("raw.mp4", BIG));
+      await user.click(screen.getByRole("button", { name: "Send" }));
+      await screen.findByRole("alert");
+
+      // Into the back-forward cache: the page may come back, its sessions stay.
+      window.dispatchEvent(pagehide(true));
+      expect(deletes(calls)).toEqual([]);
+      window.dispatchEvent(pagehide(false));
+      expect(deletes(calls)).toEqual(["/uploads/up1"]);
+      const init = fetchMock.mock.calls.at(-1)?.[1] as RequestInit;
+      expect(init).toMatchObject({ method: "DELETE", keepalive: true });
+    } finally {
+      stop();
+    }
   });
 });

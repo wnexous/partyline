@@ -5,6 +5,7 @@ import { useEffect } from "react";
 import { startLive } from "@/app/live";
 import { useMe } from "@/entities/account";
 import { ensurePushSubscription } from "@/features/push-notifications";
+import { discardUploadsOnPageExit } from "@/features/send-message";
 import type { Me } from "@/shared/api/types.gen";
 import { isLocale, useT } from "@/shared/i18n";
 import { useIsMobile } from "@/shared/lib/device";
@@ -33,6 +34,8 @@ export function AppShell({ queryClient, initialMe }: { queryClient: QueryClient;
   const isMobile = useIsMobile();
 
   useEffect(() => startLive(queryClient), [queryClient]);
+  // A reload or a closed tab loses the drafts: their upload sessions go too, not a day later (LF-01).
+  useEffect(() => discardUploadsOnPageExit(), []);
   // A browser that already holds a push subscription hands it to this session without a prompt
   // (PUSH-19, PUSH-28).
   useEffect(() => {

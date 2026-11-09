@@ -1,5 +1,5 @@
 import { QueryClient } from "@tanstack/react-query";
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { ACTIVITY_PER_ROOM, ACTIVITY_SIZE } from "@/entities/account";
 import type { FilePages, MessagePages, PeoplePages } from "@/shared/api/cache-types";
 import { queryKeys } from "@/shared/api/query-keys";
@@ -385,6 +385,16 @@ describe("live handlers", () => {
     handleLiveEvent(qc, actions(), { type: "room.deleted", data: { room_id: "r1" } });
     expect(qc.getQueryData<{ id: string }[]>(queryKeys.rooms)).toEqual([{ id: "r2" }]);
     expect(qc.getQueryData(queryKeys.roomMessages("r1"))).toBeUndefined();
+  });
+
+  it("room.deleted drops the conversation's draft with its upload sessions (LF-01)", () => {
+    const discardDraft = vi.fn();
+    handleLiveEvent(
+      qc,
+      { ...actions(), discardDraft },
+      { type: "room.deleted", data: { room_id: "r1" } },
+    );
+    expect(discardDraft).toHaveBeenCalledWith("r1");
   });
   describe("room.reactions (RCT-06)", () => {
     const thumbs = (...by: string[]): Reaction[] => [{ emoji: "👍", by }];

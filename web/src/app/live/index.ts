@@ -3,6 +3,7 @@ import { useLinkedIdentityStore } from "@/entities/account";
 import { useConnectorStateStore } from "@/entities/connector";
 import { usePresenceStore } from "@/entities/intelligence";
 import { useOpenRoomStore } from "@/entities/room";
+import { discardDraft } from "@/features/send-message";
 import { notifyUnauthorized } from "@/shared/api/client";
 import { useSocketStore } from "@/shared/api/socket-store";
 import { catchUp } from "./catch-up";
@@ -14,6 +15,7 @@ const liveActions = (): LiveActions => ({
   setPresence: usePresenceStore.getState().setPresence,
   setConnectorState: useConnectorStateStore.getState().setConnectorState,
   setLastLinkedIdentity: useLinkedIdentityStore.getState().setLastLinkedIdentity,
+  discardDraft,
   openRoomId: useOpenRoomStore.getState().openRoomId,
 });
 

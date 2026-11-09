@@ -8,7 +8,14 @@ export {
   useDraftStore,
   useEditDraft,
 } from "./model/draft-store";
-export { cancelUpload, clearSentFiles, removeDraftFile, transferFor } from "./model/send-files";
+export {
+  cancelUpload,
+  clearSentFiles,
+  discardDraft,
+  discardUploadsOnPageExit,
+  removeDraftFile,
+  transferFor,
+} from "./model/send-files";
 export type { ActiveTransfer, FileUpload } from "./model/transfer-store";
 export {
   resetTransfers,

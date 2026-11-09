@@ -1,4 +1,4 @@
-import { ApiError, api, isApiError } from "./client";
+import { API_BASE, ApiError, api, isApiError } from "./client";
 import {
   ErrorCodeNotFound,
   ErrorCodeUploadBusy,
@@ -13,7 +13,8 @@ import {
  * brings the last byte completes it. A chunk is kept whole or not at all, so a failed one (no
  * network, a 5xx, a chunk cut short) is sent again from what the server says it received, up to
  * three times with a growing pause; a 409 upload_offset says where to go on. An aborted signal
- * stops it before the next request.
+ * stops it before the next request. Creating the session is never cut short: a session the client
+ * asked for is always one it knows, so that it can delete it (`deleteUpload`) when it gives up.
  *
  * The server tells its limits only in the session's answer (there is no config endpoint):
  * `chunk_size` is 50 MB or the single-request limit when that is lower, `max_size` the largest file.
@@ -147,18 +148,21 @@ async function openSession(file: File, opts: UploadOptions): Promise<Upload> {
     try {
       const found = await api<Upload>("GET", path(opts.resume), undefined, { signal: opts.signal });
       if (found.size === file.size && found.name === file.name) return found;
+      // Some other file's session: of no use here, so it gives its place back.
+      void deleteUpload(found.id);
     } catch (err) {
       // A session that expired or was used up is gone: start again. Anything else is the network
       // or the server, which a new session would meet too.
       if (!(isApiError(err) && err.code === ErrorCodeNotFound)) throw err;
     }
   }
-  return api<Upload>(
-    "POST",
-    "/uploads",
-    { name: file.name, mime: file.type || "application/octet-stream", size: file.size },
-    { signal: opts.signal },
-  );
+  // Not aborted: the answer names the session, which onSession hands over even when the send
+  // was cancelled meanwhile, so that it can be deleted instead of left to expire.
+  return api<Upload>("POST", "/uploads", {
+    name: file.name,
+    mime: file.type || "application/octet-stream",
+    size: file.size,
+  });
 }
 
 /**
@@ -226,5 +230,55 @@ export async function uploadFile(file: File, opts: UploadOptions = {}): Promise<
   } catch (err) {
     if (isApiError(err) && !(err instanceof UploadError)) throw new UploadError(err, file.name);
     throw err;
+  }
+}
+
+export interface DeleteOptions {
+  /** Tries after the first while a chunk of the upload is still being written (409); 3 by default. */
+  retries?: number;
+  /** The pause before retry `attempt` (1, 2, 3…), in milliseconds. */
+  retryDelay?: (attempt: number) => number;
+}
+
+const defaultDeleteDelay = (attempt: number) => 250 * attempt;
+
+/**
+ * Gives an upload session up (DELETE /uploads/{id}), so it stops counting against the person's
+ * uploads and its temporary file goes at once instead of when it expires. Best effort: it never
+ * throws. A session that is gone already (404: used, expired, deleted) is what was wanted; while
+ * the server still writes a chunk the client just aborted (409 upload_busy) it tries again after
+ * a short pause. Resolves true when the session is gone.
+ */
+export async function deleteUpload(id: string, opts: DeleteOptions = {}): Promise<boolean> {
+  const retries = opts.retries ?? 3;
+  const delay = opts.retryDelay ?? defaultDeleteDelay;
+  for (let attempt = 0; ; attempt += 1) {
+    try {
+      await api<void>("DELETE", path(id));
+      return true;
+    } catch (err) {
+      if (isApiError(err) && err.code === ErrorCodeNotFound) return true;
+      const busy = isApiError(err) && err.code === ErrorCodeUploadBusy;
+      if (!busy || attempt >= retries) return false;
+      await pause(delay(attempt + 1));
+    }
+  }
+}
+
+/**
+ * Deletes upload sessions as the page goes away (a reload or a closed tab loses the drafts, and
+ * their sessions with them): a keepalive request outlives the page. Nothing is waited for.
+ */
+export function deleteUploadsOnExit(ids: readonly string[]) {
+  for (const id of ids) {
+    try {
+      void fetch(`${API_BASE}${path(id)}`, {
+        method: "DELETE",
+        credentials: "same-origin",
+        keepalive: true,
+      }).catch(() => undefined);
+    } catch {
+      // A browser without keepalive: the session expires on its own.
+    }
   }
 }
