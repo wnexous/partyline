@@ -63,9 +63,11 @@ One limit (`PARTYLINE_MAX_UPLOAD_MB`, 95 MB) bounds every file, and three things
   (1, 2, 4 s) after asking the server where it is, a 409 `upload_offset` resumes at
   `details.received`, and a send that failed goes on with the sessions it started. A card's button
   cancels (aborts the send, takes that file out). Code: `web/src/shared/api/uploads.ts`,
-  `entities/message` `usePostMessage`, `features/send-message` transfer store. Open: there is no
-  `DELETE /uploads/{id}`, so a cancelled session keeps counting against the owner's 16 uploads and
-  `max_size` bytes until it expires (up to 24 h after its last chunk).
+  `entities/message` `usePostMessage`, `features/send-message` transfer store. A session nobody will
+  resume is deleted (`DELETE /uploads/{id}`, best effort: 409 `upload_busy` retried, 404 taken as
+  done) when its upload is cancelled, its file is taken out of the draft, its conversation is
+  deleted (`room.deleted`) or the page is unloaded (keepalive request on `pagehide`); a failed send
+  that stays in the draft keeps its sessions to resume.
 - **Downloads (LF-08):** `http.ServeContent` on the blob file (range, If-Range) for both the web and
   the agent download route.
 - **Transcription:** unchanged; its 25 MB service cap still skips longer audio.

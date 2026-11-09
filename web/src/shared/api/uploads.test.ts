@@ -4,6 +4,7 @@ import type { Upload } from "./types.gen";
 import {
   CLIENT_CHUNK_BYTES,
   DIRECT_POST_BYTES,
+  deleteUpload,
   fitsOneRequest,
   isUploadError,
   knownMaxFileSize,
@@ -84,6 +85,10 @@ function fakeServer({ chunkSize = 2 * MB, maxSize = 5 * 1024 * MB } = {}) {
     const upload = sessions.get(id);
     if (!upload) return apiError(404, "not_found");
     if (method === "GET") return json(200, upload);
+    if (method === "DELETE") {
+      sessions.delete(id);
+      return new Response(null, { status: 204 });
+    }
     if (method === "PUT") {
       if (offset !== upload.received) {
         return json(409, {
@@ -379,6 +384,106 @@ describe("uploadFile (LF-01)", () => {
     expect(fitsOneRequest([fileOf(DIRECT_POST_BYTES)])).toBe(true);
     expect(fitsOneRequest([fileOf(DIRECT_POST_BYTES / 2), fileOf(DIRECT_POST_BYTES / 2 + 1)])).toBe(
       false,
+    );
+  });
+});
+
+describe("deleteUpload (LF-01)", () => {
+  it("deletes the session of an upload that was cancelled, after its chunk was aborted", async () => {
+    const server = fakeServer({ chunkSize: 2 * MB });
+    const controller = new AbortController();
+    let session = "";
+    const sent = uploadFile(fileOf(5 * MB), {
+      signal: controller.signal,
+      onSession: (u) => {
+        session = u.id;
+      },
+      onProgress: (p) => {
+        if (p.sent === 2 * MB) controller.abort();
+      },
+      retryDelay: noDelay,
+    });
+    await expect(sent).rejects.toMatchObject({ name: "AbortError" });
+    expect(await deleteUpload(session, { retryDelay: noDelay })).toBe(true);
+    expect(server.seen.map((s) => `${s.method} ${s.path}`)).toEqual([
+      "POST /uploads",
+      "PUT /uploads/up1",
+      "DELETE /uploads/up1",
+    ]);
+    expect(server.sessions.has("up1")).toBe(false);
+  });
+
+  it("knows the session even when the send is cancelled while it is being created", async () => {
+    const server = fakeServer();
+    const controller = new AbortController();
+    let session = "";
+    const sent = uploadFile(fileOf(10), {
+      signal: controller.signal,
+      onSession: (u) => {
+        session = u.id;
+      },
+      retryDelay: noDelay,
+    });
+    controller.abort();
+    await expect(sent).rejects.toMatchObject({ name: "AbortError" });
+    // The create went through and named its session; no chunk followed.
+    expect(session).toBe("up1");
+    expect(server.puts()).toHaveLength(0);
+  });
+
+  it("tries again while the server still writes the aborted chunk (409 upload_busy)", async () => {
+    const server = fakeServer();
+    await uploadFile(fileOf(10), { retryDelay: noDelay });
+    let busy = 2;
+    server.faults.push((req) =>
+      req.method === "DELETE" && busy-- > 0 ? apiError(409, "upload_busy") : undefined,
+    );
+    const pauses: number[] = [];
+    const gone = await deleteUpload("up1", {
+      retryDelay: (attempt) => {
+        pauses.push(attempt);
+        return 0;
+      },
+    });
+    expect(gone).toBe(true);
+    expect(server.seen.filter((s) => s.method === "DELETE")).toHaveLength(3);
+    expect(pauses).toEqual([1, 2]);
+  });
+
+  it("takes a 404 (used, expired or already deleted) as done, without trying again", async () => {
+    const server = fakeServer();
+    expect(await deleteUpload("missing", { retryDelay: noDelay })).toBe(true);
+    expect(server.seen.filter((s) => s.method === "DELETE")).toHaveLength(1);
+  });
+
+  it("gives up quietly after its retries, and on any other error, without throwing", async () => {
+    const server = fakeServer();
+    server.faults.push((req) =>
+      req.method === "DELETE" && req.path === "/uploads/busy"
+        ? apiError(409, "upload_busy")
+        : undefined,
+    );
+    server.faults.push((req) =>
+      req.method === "DELETE" && req.path === "/uploads/down" ? "network" : undefined,
+    );
+    expect(await deleteUpload("busy", { retries: 2, retryDelay: noDelay })).toBe(false);
+    expect(server.seen.filter((s) => s.path === "/uploads/busy")).toHaveLength(3);
+    expect(await deleteUpload("down", { retryDelay: noDelay })).toBe(false);
+    expect(server.seen.filter((s) => s.path === "/uploads/down")).toHaveLength(1);
+  });
+
+  it("deletes a session it was asked to resume that belongs to another file", async () => {
+    const server = fakeServer();
+    const other = await uploadFile(fileOf(7, "other.bin"), { retryDelay: noDelay });
+    const done = await uploadFile(fileOf(10, "video.mp4"), {
+      resume: other.id,
+      retryDelay: noDelay,
+    });
+    expect(done.id).not.toBe(other.id);
+    await vi.waitFor(() =>
+      expect(
+        server.seen.some((s) => s.method === "DELETE" && s.path === `/uploads/${other.id}`),
+      ).toBe(true),
     );
   });
 });

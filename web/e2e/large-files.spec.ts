@@ -1,7 +1,13 @@
 import { createHash, randomBytes } from "node:crypto";
-import type { Message, Page as MessagePage, Room, SetupRequest } from "../src/shared/api/types.gen";
+import type {
+  Message,
+  Page as MessagePage,
+  Room,
+  SetupRequest,
+  Upload,
+} from "../src/shared/api/types.gen";
 import { apiCall, test as base, type Credentials, expect } from "./fixtures";
-import { expectNoSidewaysScroll } from "./helpers";
+import { expectNoSidewaysScroll, loginAs } from "./helpers";
 import { type Instance, startInstance } from "./server";
 import { shoot } from "./shots";
 
@@ -32,19 +38,32 @@ const OWNER: Credentials & { display_name: string } = {
 
 const MB = 1 << 20;
 
+let room: Room;
+
+test.describe.configure({ mode: "serial" });
+
+test.beforeAll(async ({ browser, small }) => {
+  const context = await browser.newContext();
+  try {
+    await apiCall(context.request, small, "POST", "/setup", {
+      token: small.setupToken,
+      ...OWNER,
+    } satisfies SetupRequest);
+    room = await apiCall<Room>(context.request, small, "POST", "/groups", {
+      name: "e2e-large-files",
+      members: [],
+    });
+  } finally {
+    await context.close();
+  }
+});
+
 test("a file larger than one request goes up in chunks with its progress and downloads whole (LF-01)", async ({
   context,
   page,
   small,
 }, testInfo) => {
-  await apiCall(context.request, small, "POST", "/setup", {
-    token: small.setupToken,
-    ...OWNER,
-  } satisfies SetupRequest);
-  const room = await apiCall<Room>(context.request, small, "POST", "/groups", {
-    name: "e2e-large-files",
-    members: [],
-  });
+  await loginAs(context, small, OWNER);
   const content = randomBytes(3 * MB + 12_345);
   const name = "footage.bin";
 
@@ -102,4 +121,61 @@ test("a file larger than one request goes up in chunks with its progress and dow
   expect(body.length).toBe(content.length);
   const digest = (b: Buffer) => createHash("sha256").update(b).digest("hex");
   expect(digest(body)).toBe(digest(content));
+});
+
+test("a cancelled upload stops and its session is deleted on the server (LF-01)", async ({
+  context,
+  page,
+  small,
+}) => {
+  await loginAs(context, small, OWNER);
+  const name = "cancelled.bin";
+  // Slow chunks, so the cancel lands while the file is on its way.
+  await page.route(/\/api\/v1\/uploads\/[^/?]+\?offset=/, async (route) => {
+    if (route.request().method() === "PUT") await new Promise((done) => setTimeout(done, 600));
+    await route.continue();
+  });
+  const created = page.waitForResponse(
+    (res) => res.request().method() === "POST" && res.url().endsWith("/api/v1/uploads"),
+  );
+  // The DELETE that removed it: a 409 upload_busy first, while the server ends the aborted
+  // chunk, is tried again.
+  const deleted = page.waitForResponse(
+    (res) =>
+      res.request().method() === "DELETE" &&
+      res.url().includes("/api/v1/uploads/") &&
+      res.status() === 204,
+  );
+
+  await page.goto(`/rooms/${room.id}`);
+  await page.getByLabel("Attach files").setInputFiles({
+    name,
+    mimeType: "application/octet-stream",
+    buffer: randomBytes(3 * MB),
+  });
+  await page.getByRole("button", { name: "Send" }).click();
+  const session = (await (await created).json()) as Upload;
+  await expect(page.getByRole("progressbar", { name: `Uploading ${name}` })).toBeVisible();
+  await page.getByRole("button", { name: `Cancel the upload of ${name}` }).click();
+  await expect(page.getByText(name)).toHaveCount(0);
+
+  // The session is gone at once, not a day later.
+  expect((await deleted).url()).toContain(`/api/v1/uploads/${session.id}`);
+  await expect
+    .poll(async () =>
+      (
+        await context.request.get(`${small.url}/api/v1/uploads/${session.id}`, {
+          headers: { Origin: small.url },
+        })
+      ).status(),
+    )
+    .toBe(404);
+  // And nothing was posted.
+  const messages = await apiCall<MessagePage<Message>>(
+    context.request,
+    small,
+    "GET",
+    `/rooms/${room.id}/messages`,
+  );
+  expect(messages.items.some((m) => m.attachments.some((a) => a.name === name))).toBe(false);
 });
