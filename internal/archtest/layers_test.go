@@ -40,6 +40,8 @@ var packagesOf = map[layer][]string{
 		"orgs", "access", "intelligences", "users", "authn", "audit", "events", "handles", "validation",
 		"attachments", "avatars", "secrets", "api/dto", "api/httpx",
 		"transcribe", // voice files to text on the server (TR-01)
+		"uploads",    // files in chunks, for rooms now and connections later (LF-03)
+		"diskspace",  // the free space of the data disk (OPS-07, LF-07)
 	},
 	infra: {
 		"store", "store/db", "config", "app", "api", "api/convert", "cli", "cliconfig", "harness", "devices",
