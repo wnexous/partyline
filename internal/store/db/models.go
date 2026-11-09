@@ -453,6 +453,20 @@ type Transcription struct {
 	UpdatedAt    int64
 }
 
+type Upload struct {
+	ID        string
+	OwnerKind string
+	OwnerID   string
+	Name      string
+	Mime      string
+	Size      int64
+	Received  int64
+	ShaState  []byte
+	Sha256    string
+	CreatedAt int64
+	ExpiresAt int64
+}
+
 type User struct {
 	ID           string
 	Username     string
