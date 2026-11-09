@@ -54,3 +54,28 @@ describe("draft store (WA-07)", () => {
     expect(draftOf("r1").text).toBe("new message");
   });
 });
+
+describe("clearing what a post carried (LF-01)", () => {
+  it("drops the sent text, files and reply, and empties the draft when nothing else is there", () => {
+    const sent = file("a.log");
+    store().setText("r1", "  ship it ");
+    store().addFiles("r1", [sent]);
+    store().setReply("r1", "m-1");
+    store().clearSent("r1", { text: "ship it", files: [sent], replyTo: "m-1" });
+    expect(store().drafts.r1).toBeUndefined();
+  });
+
+  it("keeps what was typed, attached or chosen while the post was on its way", () => {
+    const sent = file("big.mov");
+    const later = file("later.log");
+    store().setText("r1", "first");
+    store().addFiles("r1", [sent]);
+    // A long upload: the box moved on meanwhile.
+    store().setText("r1", "the next one");
+    store().addFiles("r1", [later]);
+    store().setReply("r1", "m-2");
+    store().clearSent("r1", { text: "first", files: [sent] });
+    expect(draftOf("r1")).toMatchObject({ text: "the next one", replyTo: "m-2" });
+    expect(draftOf("r1").files.map((f) => f.file)).toEqual([later]);
+  });
+});

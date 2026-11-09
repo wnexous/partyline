@@ -28,6 +28,12 @@
  * the filtered list opens above the box, Up/Down move, Enter, Tab or a tap complete `@handle `
  * and never send, Escape or leaving the `@word` closes it, and Enter sends as usual when nothing
  * matches.
+ *
+ * Files that weigh little together go with the message in one request; larger ones go up first
+ * through upload sessions, in chunks (LF-01, entities/message usePostMessage). Their cards then show
+ * how far each one got, and the button of a card cancels the send and takes that file out; the
+ * other files keep what they uploaded, so the next Send goes on from there. While a send uploads,
+ * the box stays open for the next message: only what the post carried leaves the draft.
  */
 
 import { CheckIcon, PaperclipIcon, SendHorizontalIcon, Trash2Icon } from "lucide-react";
@@ -55,12 +61,18 @@ import {
   mentionOptionId,
 } from "@/features/mention-autocomplete";
 import {
+  cancelUpload,
   carriesFiles,
+  clearSentFiles,
   keepFocus,
   ReplyStrip,
+  removeDraftFile,
+  transferFor,
+  useActiveTransfer,
   useDraft,
   useDraftStore,
   useEditDraft,
+  useFileUploads,
 } from "@/features/send-message";
 import {
   type HoldState,
@@ -72,6 +84,7 @@ import {
 } from "@/features/send-voice-message";
 import { errorText } from "@/shared/api/error-text";
 import { MaxTextLength, type Message, type RoomMember } from "@/shared/api/types.gen";
+import { isAbortError } from "@/shared/api/uploads";
 import { type MessageKey, useI18n } from "@/shared/i18n";
 import { useEnterSends } from "@/shared/lib/device";
 import { cn } from "@/shared/lib/utils";
@@ -110,15 +123,16 @@ export function ComposerForm({
   const { t, locale } = useI18n();
   // The voice recording being sent: its post only takes the reply back, never the typed draft.
   const voiceFile = useRef<File | null>(null);
-  // A post that went through clears this conversation's draft, even when the person has already
-  // moved to another conversation (the composer is gone, the callbacks of `mutate` are not run).
+  // A post that went through takes what it carried out of this conversation's draft, even when the
+  // person has already moved to another conversation (the composer is gone, the callbacks of
+  // `mutate` are not run).
   // A voice message is one by its file, with or without the transcript as text: it takes the reply
   // back but leaves the typed draft (and its files) for the message the person was writing.
   const post = usePostMessage(roomId, (input) => {
     const store = useDraftStore.getState();
     const isVoice = input.files?.length === 1 && input.files[0] === voiceFile.current;
     if (isVoice) store.setReply(roomId, null);
-    else store.clear(roomId);
+    else clearSentFiles(roomId, input);
   });
   const save = useEditMessage(roomId);
   // The draft lives in the store (WA-07), so it survives leaving the conversation; an edit has its
@@ -132,6 +146,11 @@ export function ComposerForm({
     editing ? draftStore.setEditDraft(editing.id, value) : draftStore.setText(roomId, value);
   const attached = draft.files;
   const files = useMemo(() => attached.map((a) => a.file), [attached]);
+  // A send of this conversation whose files are going up (LF-01); it outlives the composer, so a
+  // composer that comes back still knows the send is not over.
+  const transfer = useActiveTransfer(roomId);
+  const fileUploads = useFileUploads();
+  const sending = post.isPending || transfer !== undefined;
   // A file is being dragged over the composer: it says so and takes no drop until it leaves.
   const [dragging, setDragging] = useState(false);
   const dragDepth = useRef(0);
@@ -203,7 +222,7 @@ export function ComposerForm({
   const length = textLength(text);
   const tooLong = length > MaxTextLength;
   const trimmed = text.trim();
-  const canSend = !tooLong && (trimmed.length > 0 || files.length > 0) && !post.isPending;
+  const canSend = !tooLong && (trimmed.length > 0 || files.length > 0) && !sending;
   // Saving needs a change to the trimmed text (surrounding whitespace alone is no change), and text
   // unless the message has files that stay (EDT-04).
   const canSave =
@@ -301,7 +320,7 @@ export function ComposerForm({
    * Without a transcript the audio goes alone, as before, and the draft is untouched.
    */
   const sendVoice = async () => {
-    if (post.isPending) return;
+    if (sending) return;
     sendingVoice.current = true;
     const recorded = await voice.stop();
     if (!recorded) {
@@ -334,7 +353,7 @@ export function ComposerForm({
         // The recording stays, stopped, to send again or to discard.
         onError: (err) => {
           sendingVoice.current = false;
-          setError(errorText(t, err, "post"));
+          setError(errorText(t, err, "post", locale));
         },
       },
     );
@@ -356,16 +375,23 @@ export function ComposerForm({
     post.mutate(
       {
         text: trimmed,
-        ...(files.length ? { files } : {}),
+        ...(files.length ? { files, transfer: transferFor(roomId, attached) } : {}),
         ...(replyTo ? { reply_to: replyTo.id } : {}),
       },
       {
+        // The draft already lost what the post carried (usePostMessage's onSent above).
         onSuccess: () => {
-          draftStore.clear(roomId);
           if (replyTo) onClearReply?.();
           textRef.current?.focus();
         },
-        onError: (err) => setError(errorText(t, err, "post")),
+        onError: (err) => {
+          // A cancelled upload is the person's own choice: nothing went wrong.
+          if (isAbortError(err)) {
+            setAnnouncement(t("composer.announceUploadCancelled"));
+            return;
+          }
+          setError(errorText(t, err, "post", locale));
+        },
       },
     );
   };
@@ -592,7 +618,16 @@ export function ComposerForm({
         {!editing && files.length > 0 && !voiceOn ? (
           <AttachmentPreviews
             files={attached}
-            onRemove={(id) => draftStore.removeFile(roomId, id)}
+            onRemove={(id) => removeDraftFile(roomId, id)}
+            progressOf={(id) =>
+              transfer?.fileIds.includes(id)
+                ? (fileUploads[id] ?? {
+                    sent: 0,
+                    total: attached.find((a) => a.id === id)?.file.size ?? 0,
+                  })
+                : undefined
+            }
+            onCancel={(id) => cancelUpload(roomId, id)}
           />
         ) : null}
         {/* biome-ignore lint/a11y/useAriaPropsSupportedByRole: while the mention list is open the box has role combobox */}

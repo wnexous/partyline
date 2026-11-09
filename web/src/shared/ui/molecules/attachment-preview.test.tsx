@@ -172,3 +172,41 @@ describe("the preview in Portuguese", () => {
     expect(screen.getByRole("button", { name: "Remover image.png" })).toBeInTheDocument();
   });
 });
+
+describe("an attachment that is uploading (LF-01)", () => {
+  const renderUploading = (sent: number, total: number, onCancel = vi.fn(), onRemove = vi.fn()) => {
+    const file = fileOf("clip.mov", "video/quicktime", total);
+    render(
+      <I18nProvider locale="en">
+        <ul>
+          <AttachmentPreview
+            file={file}
+            onRemove={onRemove}
+            progress={{ sent, total }}
+            onCancel={onCancel}
+          />
+        </ul>
+      </I18nProvider>,
+    );
+    return { onCancel, onRemove };
+  };
+
+  it("shows a progressbar with the whole percent, and the percent of the size", () => {
+    renderUploading(1023, 2048);
+    const bar = screen.getByRole("progressbar", { name: "Uploading clip.mov" });
+    expect(bar).toHaveAttribute("aria-valuenow", "49");
+    expect(screen.getByText("49% of 2 KB")).toBeInTheDocument();
+  });
+
+  it("says 100 only once every byte is there", () => {
+    renderUploading(2047, 2048);
+    expect(screen.getByRole("progressbar")).toHaveAttribute("aria-valuenow", "99");
+  });
+
+  it("turns its button into a cancel of the upload", async () => {
+    const { onCancel, onRemove } = renderUploading(0, 2048);
+    await userEvent.click(screen.getByRole("button", { name: "Cancel the upload of clip.mov" }));
+    expect(onCancel).toHaveBeenCalledTimes(1);
+    expect(onRemove).not.toHaveBeenCalled();
+  });
+});

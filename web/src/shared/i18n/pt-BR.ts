@@ -439,6 +439,20 @@ export const ptBR: Dictionary = {
     "Você pode ler esta sala, mas não postar. Peça acesso de postagem a quem gerencia a sala.",
   "composer.forbidden": "Você não tem permissão para postar nesta sala.",
   "composer.tooLarge": "Esses arquivos são grandes demais para este servidor.",
+  "composer.fileTooLarge": "“{name}” é maior do que este servidor aceita ({max}).",
+  "composer.filesTooLarge": "Cada arquivo pode ter no máximo {max} neste servidor.",
+  "composer.noStorage":
+    "O servidor não tem espaço livre em disco suficiente para “{name}”. Tente um arquivo menor ou peça a um administrador para liberar espaço.",
+  "composer.noStorageAny":
+    "O servidor não tem espaço livre em disco suficiente para este arquivo. Tente um arquivo menor ou peça a um administrador para liberar espaço.",
+  "composer.uploadsWaiting":
+    "Há arquivos demais esperando no servidor, deste envio ou de envios que não terminaram. Envie menos de uma vez ou tente mais tarde.",
+  "composer.uploadStopped":
+    "O envio de “{name}” parou. Envie de novo para continuar de onde parou.",
+  "composer.uploading": "Enviando {name}",
+  "composer.uploadPercent": "{percent}% de {size}",
+  "composer.cancelUpload": "Cancelar o envio de {name}",
+  "composer.announceUploadCancelled": "Envio cancelado",
   "composer.rateLimited": "Mensagens demais de uma vez. Espere um pouco e envie de novo.",
   "composer.editing": "Editando mensagem",
   "composer.cancelEdit": "Cancelar edição",

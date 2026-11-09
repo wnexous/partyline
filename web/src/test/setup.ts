@@ -1,7 +1,8 @@
 import "@testing-library/jest-dom/vitest";
 import { cleanup, configure } from "@testing-library/react";
 import { afterEach } from "vitest";
-import { resetDrafts } from "@/features/send-message";
+import { resetDrafts, resetTransfers } from "@/features/send-message";
+import { resetUploadLimits } from "@/shared/api/uploads";
 
 // findBy*/waitFor default to 1 s, which a loaded machine (the Go suite running in parallel)
 // can exceed; they still resolve as soon as the element appears.
@@ -11,4 +12,7 @@ afterEach(() => {
   cleanup();
   // Composer drafts live in a module store; each test starts without any.
   resetDrafts();
+  // So are the uploads of their files and what upload sessions said of the server's limits.
+  resetTransfers();
+  resetUploadLimits();
 });
