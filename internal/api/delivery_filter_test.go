@@ -145,9 +145,12 @@ func TestMentionsModeBacklogSkipsAndAdvancesCursor(t *testing.T) {
 	last := f.post(f.alice, "plain f")
 	again := f.dial(t)
 	again.Welcome(wsWait)
+	// The backlog reads e and f, wants neither and moves the cursor past them. A mention posted before
+	// it has done so would carry them as unread context (SN-03), so the test waits for the backlog.
+	require.Eventually(t, func() bool { return f.cursor(t) == last.Seq }, wsWait, 20*time.Millisecond,
+		"a backlog of skipped messages moves the cursor past them")
 	g := f.post(f.alice, "@vega g")
 	require.Equal(t, g.ID, again.Message(wsWait).Message.ID)
-	require.Equal(t, last.Seq, f.cursor(t), "a backlog of skipped messages moves the cursor past them")
 }
 
 // MEM-03 (reply to me, two agents): with two agents in mentions mode, a reply to agent A's
