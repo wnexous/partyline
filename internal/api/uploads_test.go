@@ -11,6 +11,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"strconv"
 	"sync"
 	"testing"
 	"time"
@@ -467,7 +468,9 @@ func TestUploadsOfOneOwnerAreBounded(t *testing.T) {
 	room := createRoom(alice, "Media")
 
 	big := createUpload(alice, userUploads, dto.CreateUploadRequest{Name: "big", Size: 3 << 19}) // 1.5 MB
-	alice.Post(userUploads, dto.CreateUploadRequest{Name: "more", Size: 1 << 20}).RequireError(http.StatusTooManyRequests, dto.ErrorCodeRateLimited)
+	refused := alice.Post(userUploads, dto.CreateUploadRequest{Name: "more", Size: 1 << 20})
+	refused.RequireError(http.StatusTooManyRequests, dto.ErrorCodeRateLimited)
+	require.Equal(t, "3600", refused.Header.Get("Retry-After"), "the untouched upload expires within the hour")
 	createUpload(bob, userUploads, dto.CreateUploadRequest{Name: "bob's", Size: 1 << 20}) // others are not held back
 	data := randomBytes(3 << 19)
 	putChunk(alice, userUploads, big.ID, 0, data).RequireStatus(http.StatusOK)
@@ -480,7 +483,11 @@ func TestUploadsOfOneOwnerAreBounded(t *testing.T) {
 	for len(finished) < uploads.MaxOpen-1 {
 		finished = append(finished, uploadInChunks(bob, userUploads, "f", "text/plain", []byte("x"), 1).ID)
 	}
-	bob.Post(userUploads, dto.CreateUploadRequest{Name: "17th", Size: 1}).RequireError(http.StatusTooManyRequests, dto.ErrorCodeRateLimited)
+	full := bob.Post(userUploads, dto.CreateUploadRequest{Name: "17th", Size: 1})
+	full.RequireError(http.StatusTooManyRequests, dto.ErrorCodeRateLimited)
+	retry, err := strconv.Atoi(full.Header.Get("Retry-After"))
+	require.NoError(t, err)
+	require.InDelta(t, time.Hour.Seconds(), retry, 60, "the first of them, bob's untouched one, expires within the hour")
 	bob.Post("/api/v1/rooms/"+createRoom(bob, "Mine").ID+"/messages", dto.PostMessageRequest{UploadIDs: finished[:1]}).RequireStatus(http.StatusCreated)
 	createUpload(bob, userUploads, dto.CreateUploadRequest{Name: "17th", Size: 1})
 }

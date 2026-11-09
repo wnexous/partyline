@@ -81,6 +81,10 @@ func (s *server) createUpload(w http.ResponseWriter, r *http.Request, p authn.Pr
 		return err
 	}
 	u, err := s.Uploads.Create(r.Context(), uploadOwner(p), uploads.CreateInput{Name: req.Name, Mime: req.Mime, Size: req.Size})
+	var limit *uploads.LimitError
+	if errors.As(err, &limit) {
+		w.Header().Set("Retry-After", strconv.FormatInt(int64((limit.RetryAfter+time.Second-1)/time.Second), 10))
+	}
 	if err != nil {
 		return err
 	}

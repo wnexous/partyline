@@ -75,6 +75,16 @@ var (
 	ErrInvalidSize = errors.New("size must be a positive number of bytes")
 )
 
+// LimitError refuses a new upload of an owner whose uploads are at a limit (ErrTooMany or
+// ErrOwnerBytes); RetryAfter is when the first of them expires, if no message uses it before.
+type LimitError struct {
+	Err        error
+	RetryAfter time.Duration
+}
+
+func (e *LimitError) Error() string { return e.Err.Error() }
+func (e *LimitError) Unwrap() error { return e.Err }
+
 // ChunkTooLargeError is a chunk longer than the chunk size or than what the file still needs.
 type ChunkTooLargeError struct{ Max int64 }
 
@@ -248,11 +258,12 @@ func (s *Service) Create(ctx context.Context, o Owner, in CreateInput) (Upload, 
 		if err != nil {
 			return err
 		}
+		retry := max(time.UnixMilli(usage.FirstExpiry).Sub(now), time.Second)
 		if usage.Uploads >= MaxOpen {
-			return ErrTooMany
+			return &LimitError{Err: ErrTooMany, RetryAfter: retry}
 		}
 		if usage.Bytes+in.Size > s.d.MaxFileBytes {
-			return ErrOwnerBytes
+			return &LimitError{Err: ErrOwnerBytes, RetryAfter: retry}
 		}
 		if free, known := s.d.FreeSpace(s.d.Dir); known {
 			pending, err := q.PendingUploadBytes(ctx, now.UnixMilli())
