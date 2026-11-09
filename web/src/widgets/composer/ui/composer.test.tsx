@@ -488,7 +488,13 @@ describe("the keyboard stays open while writing (KBD-03)", () => {
   });
 
   it("keeps the files and the focus when a send fails: nothing is lost to retry", async () => {
-    mockApi({ "POST /rooms/r1/messages": apiError(413, "too_large") });
+    // The multipart post is too large, and so is the upload session the file then tries (LF-01).
+    mockApi({
+      "POST /rooms/r1/messages": apiError(413, "too_large"),
+      "POST /uploads": json(413, {
+        error: { code: "file_too_large", message: "big", details: { max_size: String(1 << 30) } },
+      }),
+    });
     const user = userEvent.setup();
     renderComposer();
     const box = screen.getByRole("textbox", { name: "Message deploys" });
@@ -498,7 +504,9 @@ describe("the keyboard stays open while writing (KBD-03)", () => {
       new File(["x"], "big.log", { type: "text/plain" }),
     );
     await user.click(screen.getByRole("button", { name: "Send" }));
-    expect(await screen.findByRole("alert")).toHaveTextContent(/too large/i);
+    expect(await screen.findByRole("alert")).toHaveTextContent(
+      "“big.log” is larger than this server takes (1 GB).",
+    );
     expect(screen.getByText("big.log")).toBeInTheDocument();
     expect(box).toHaveValue("see attached");
   });

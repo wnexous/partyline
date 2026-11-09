@@ -435,6 +435,20 @@ export const en = {
   "composer.readOnly": "You can read this room but not post. Ask a room manager for post access.",
   "composer.forbidden": "You’re not allowed to post in this room.",
   "composer.tooLarge": "Those files are too large for this server.",
+  "composer.fileTooLarge": "“{name}” is larger than this server takes ({max}).",
+  "composer.filesTooLarge": "Each file can be at most {max} on this server.",
+  "composer.noStorage":
+    "The server doesn’t have enough free disk space for “{name}”. Try a smaller file, or ask an admin to free some space.",
+  "composer.noStorageAny":
+    "The server doesn’t have enough free disk space for this file. Try a smaller file, or ask an admin to free some space.",
+  "composer.uploadsWaiting":
+    "Too many files are waiting on the server, from this send or earlier ones that didn’t finish. Send fewer at once, or try again later.",
+  "composer.uploadStopped":
+    "The upload of “{name}” stopped. Send again to go on from where it stopped.",
+  "composer.uploading": "Uploading {name}",
+  "composer.uploadPercent": "{percent}% of {size}",
+  "composer.cancelUpload": "Cancel the upload of {name}",
+  "composer.announceUploadCancelled": "Upload cancelled",
   "composer.rateLimited": "Too many messages at once. Wait a moment and send again.",
   "composer.editing": "Editing message",
   "composer.cancelEdit": "Cancel editing",

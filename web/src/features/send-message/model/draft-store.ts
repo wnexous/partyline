@@ -16,6 +16,13 @@ export interface Draft {
   replyTo: string | null;
 }
 
+/** What one post took from the draft: the trimmed text, the files and the message it answered. */
+export interface SentDraft {
+  text: string;
+  files?: readonly File[];
+  replyTo?: string;
+}
+
 /** What a conversation without a draft reads: one stable object, so selectors do not re-render. */
 export const EMPTY_DRAFT: Draft = Object.freeze({ text: "", files: [], replyTo: null }) as Draft;
 
@@ -26,8 +33,14 @@ interface DraftState {
   addFiles: (roomId: string, files: readonly File[]) => void;
   removeFile: (roomId: string, fileId: number) => void;
   setReply: (roomId: string, messageId: string | null) => void;
-  /** Drops the whole draft of one conversation (after a successful send). */
+  /** Drops the whole draft of one conversation. */
   clear: (roomId: string) => void;
+  /**
+   * Takes out of a conversation's draft what a post that went through carried: its files, the text
+   * when the box still holds that text, and the reply when it is still the one chosen. What was
+   * typed or attached while a long upload was going stays for the next message.
+   */
+  clearSent: (roomId: string, sent: SentDraft) => void;
   setEditDraft: (messageId: string, text: string) => void;
   clearEditDraft: (messageId: string) => void;
 }
@@ -66,6 +79,19 @@ export const useDraftStore = create<DraftState>()((set) => ({
     set((s) => {
       const { [roomId]: _gone, ...rest } = s.drafts;
       return { drafts: rest };
+    }),
+  clearSent: (roomId, sent) =>
+    set((s) => {
+      const draft = s.drafts[roomId];
+      if (!draft) return s;
+      const gone = new Set(sent.files ?? []);
+      return {
+        drafts: put(s.drafts, roomId, {
+          text: draft.text.trim() === sent.text ? "" : draft.text,
+          files: draft.files.filter((f) => !gone.has(f.file)),
+          replyTo: draft.replyTo === (sent.replyTo ?? null) ? null : draft.replyTo,
+        }),
+      };
     }),
   setEditDraft: (messageId, text) =>
     set((s) => ({ editDrafts: { ...s.editDrafts, [messageId]: text } })),

@@ -255,7 +255,7 @@ describe("sending (VOI-04)", () => {
     let attempts = 0;
     const { calls } = mockApi({
       "POST /rooms/r1/messages": () =>
-        ++attempts === 1 ? apiError(413, "too_large") : json(201, makeMessage({ seq: 9 })),
+        ++attempts === 1 ? apiError(429, "rate_limited") : json(201, makeMessage({ seq: 9 })),
     });
     const user = userEvent.setup();
     renderComposer();
@@ -263,7 +263,7 @@ describe("sending (VOI-04)", () => {
     await screen.findByText("Recording");
     await user.click(sendVoice());
 
-    expect(await screen.findByRole("alert")).toHaveTextContent(/too large/i);
+    expect(await screen.findByRole("alert")).toHaveTextContent(/too many messages/i);
     // Stopped, waiting: the length it has, to send again or to throw away.
     expect(screen.getByText("Voice message")).toBeInTheDocument();
     expect(screen.queryByText("Recording")).toBeNull();

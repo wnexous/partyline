@@ -1,12 +1,16 @@
 import type { MessageKey, Translate } from "@/shared/i18n";
-import { isApiError } from "./client";
+import { formatBytes } from "@/shared/lib/bytes";
+import { type ApiError, isApiError } from "./client";
 import {
   ErrorCodeAvatarInvalid,
   ErrorCodeContactNotFound,
   ErrorCodeCounterpartDisabled,
+  ErrorCodeFileTooLarge,
+  ErrorCodeInsufficientStorage,
   ErrorCodeNoRouteToPerson,
   type IntelligenceRef,
 } from "./types.gen";
+import { isUploadError, knownMaxFileSize } from "./uploads";
 
 /*
  * What a failed request says to the person, per operation (H error text, audit 1.H). A rule is
@@ -14,15 +18,51 @@ import {
  * generic error. `"server"` shows the server's own message (validation), when it has one.
  */
 
-/** What a rule matches: an HTTP status (0 is no network) or the server's error code. */
-type ErrorMatch = { status: number } | { code: string };
+/**
+ * What a rule matches: an HTTP status (0 is no network), the server's error code, or a status of
+ * an upload session (LF-01: the file's own upload failed, not the post).
+ */
+type ErrorMatch = { status: number } | { code: string } | { uploadStatus: number | "5xx" };
 
-type ErrorRules = ReadonlyArray<readonly [ErrorMatch, MessageKey | "server"]>;
+/** Copy that needs the facts of the error (a file's name, a size in the viewer's locale). */
+type ErrorCopy = (t: Translate, err: ApiError, locale: string) => string;
+
+type ErrorRules = ReadonlyArray<readonly [ErrorMatch, MessageKey | "server" | ErrorCopy]>;
+
+/** The file an upload was for, when the error says it. */
+const fileNameOf = (err: ApiError) => (isUploadError(err) ? err.fileName : "");
+
+/** A file over the server's largest one, with the limit the server gave (5 GB by default). */
+const fileTooLarge: ErrorCopy = (t, err, locale) => {
+  const max = Number(err.details.max_size) || knownMaxFileSize();
+  const name = fileNameOf(err);
+  if (!max) return t("composer.tooLarge");
+  const size = formatBytes(max, locale);
+  return name
+    ? t("composer.fileTooLarge", { name, max: size })
+    : t("composer.filesTooLarge", { max: size });
+};
+
+const withName =
+  (named: MessageKey, unnamed: MessageKey): ErrorCopy =>
+  (t, err) => {
+    const name = fileNameOf(err);
+    return name ? t(named, { name }) : t(unnamed);
+  };
 
 /** Per operation, the rules that decide the copy of a failed request. */
 export const errorTextRules = {
   /** Sending a message (composer). */
   post: [
+    // A file's upload (LF-01): it gave up on the network or the server, or the server refused it.
+    [{ code: ErrorCodeFileTooLarge }, fileTooLarge],
+    [
+      { code: ErrorCodeInsufficientStorage },
+      withName("composer.noStorage", "composer.noStorageAny"),
+    ],
+    [{ uploadStatus: 0 }, withName("composer.uploadStopped", "error.network")],
+    [{ uploadStatus: "5xx" }, withName("composer.uploadStopped", "error.generic")],
+    [{ uploadStatus: 429 }, "composer.uploadsWaiting"],
     [{ status: 0 }, "error.network"],
     [{ status: 403 }, "composer.forbidden"],
     [{ status: 413 }, "composer.tooLarge"],
@@ -49,13 +89,26 @@ export const errorTextRules = {
 
 export type ErrorOperation = keyof typeof errorTextRules;
 
-/** The words for a failed request of one operation. */
-export function errorText(t: Translate, err: unknown, operation: ErrorOperation): string {
+function matches(match: ErrorMatch, err: ApiError): boolean {
+  if ("status" in match) return err.status === match.status;
+  if ("code" in match) return err.code === match.code;
+  if (!isUploadError(err)) return false;
+  if (match.uploadStatus === "5xx") return err.status >= 500;
+  return err.status === match.uploadStatus;
+}
+
+/** The words for a failed request of one operation; `locale` formats the numbers some of them carry. */
+export function errorText(
+  t: Translate,
+  err: unknown,
+  operation: ErrorOperation,
+  locale = "en",
+): string {
   if (!isApiError(err)) return t("error.generic");
-  for (const [match, copy] of errorTextRules[operation]) {
-    const hit = "status" in match ? err.status === match.status : err.code === match.code;
-    if (!hit) continue;
+  for (const [match, copy] of errorTextRules[operation] as ErrorRules) {
+    if (!matches(match, err)) continue;
     if (copy === "server") return err.message || t("error.generic");
+    if (typeof copy === "function") return copy(t, err, locale);
     return t(copy);
   }
   return t("error.generic");
