@@ -581,3 +581,106 @@ func TestStartupGoesOnWhenOrphanUploadsCannotBeRemoved(t *testing.T) {
 	env.Anon().Get("/readyz").RequireStatus(http.StatusOK)
 	require.FileExists(t, filepath.Join(dir, "orphan"))
 }
+
+// LF-06: the owner deletes an upload no message used, finished or not: the row and its temporary file
+// go at once, and so does its place in the owner's limits; the blob of a finished one is left to the
+// blob sweep. Someone else's upload, a used one and a deleted one are 404, and nothing of theirs moves.
+func TestTheOwnerDeletesAnUpload(t *testing.T) {
+	f := newAgentRoom(t)
+	bob := f.env.NewUser("bob")
+	agent := f.rest()
+	ctx := context.Background()
+
+	open := createUpload(f.alice, userUploads, dto.CreateUploadRequest{Name: "a.bin", Size: 10})
+	putChunk(f.alice, userUploads, open.ID, 0, []byte("half")).RequireStatus(http.StatusOK)
+	require.FileExists(t, uploadFile(f.env, open.ID))
+	done := uploadInChunks(agent, agentUploads, "b.txt", "text/plain", []byte("finished, never posted"), 100)
+	used := uploadInChunks(agent, agentUploads, "c.txt", "text/plain", []byte("posted"), 100)
+	agent.Post(agentRoomPath(f.room.ID, "/messages"), dto.PostMessageRequest{UploadIDs: []string{used.ID}}).RequireStatus(http.StatusCreated)
+
+	// Foreign: another user, the other kind of owner, and a token on the other routes.
+	bob.Delete(userUploads+"/"+open.ID).RequireError(http.StatusNotFound, dto.ErrorCodeNotFound)
+	agent.Delete(agentUploads+"/"+open.ID).RequireError(http.StatusNotFound, dto.ErrorCodeNotFound)
+	f.alice.Delete(userUploads+"/"+done.ID).RequireError(http.StatusNotFound, dto.ErrorCodeNotFound)
+	f.agent.Delete(userUploads+"/"+done.ID).RequireError(http.StatusForbidden, dto.ErrorCodeForbidden)
+	f.alice.Get(userUploads + "/" + open.ID).RequireStatus(http.StatusOK)
+	agent.Get(agentUploads + "/" + done.ID).RequireStatus(http.StatusOK)
+
+	// The owner's unfinished upload goes with its file.
+	f.alice.Delete(userUploads + "/" + open.ID).RequireStatus(http.StatusNoContent)
+	require.NoFileExists(t, uploadFile(f.env, open.ID))
+	f.alice.Get(userUploads+"/"+open.ID).RequireError(http.StatusNotFound, dto.ErrorCodeNotFound)
+	putChunk(f.alice, userUploads, open.ID, 4, []byte("rest!!")).RequireError(http.StatusNotFound, dto.ErrorCodeNotFound)
+	f.alice.Delete(userUploads+"/"+open.ID).RequireError(http.StatusNotFound, dto.ErrorCodeNotFound)
+
+	// A finished one cannot be attached any more; its blob is left to the blob sweep.
+	agent.Delete(agentUploads + "/" + done.ID).RequireStatus(http.StatusNoContent)
+	agent.Post(agentRoomPath(f.room.ID, "/messages"), dto.PostMessageRequest{UploadIDs: []string{done.ID}}).
+		RequireError(http.StatusNotFound, dto.ErrorCodeNotFound)
+	held, err := f.env.App.Store.R().CountUploadsBySHA(ctx, done.Sha256)
+	require.NoError(t, err)
+	require.Zero(t, held, "no upload holds the blob any more")
+
+	// A used upload is gone already; its attachment keeps its file.
+	agent.Delete(agentUploads+"/"+used.ID).RequireError(http.StatusNotFound, dto.ErrorCodeNotFound)
+	blob, err := f.env.App.Blobs.Open(used.Sha256)
+	require.NoError(t, err)
+	_ = blob.Close()
+
+	ids, err := f.env.App.Store.R().ListUploadIDs(ctx)
+	require.NoError(t, err)
+	require.Empty(t, ids)
+}
+
+// LF-06: the blob of a deleted finished upload goes with the blob sweep, once its grace period passed.
+func TestTheBlobOfADeletedUploadIsSwept(t *testing.T) {
+	clock := testkit.NewClock(time.Now())
+	env := testkit.New(t, testkit.WithClock(clock.Now))
+	alice := env.NewUser("alice")
+	ctx := context.Background()
+	done := uploadInChunks(alice, userUploads, "b", "text/plain", []byte("finished but never posted"), 100)
+	alice.Delete(userUploads + "/" + done.ID).RequireStatus(http.StatusNoContent)
+
+	clock.Advance(2 * time.Hour)
+	_, err := env.App.Rooms.Cleanup(ctx)
+	require.NoError(t, err)
+	_, err = env.App.Blobs.Open(done.Sha256)
+	require.Error(t, err, "the blob no message used went with the blob sweep")
+}
+
+// LF-06: a deleted upload frees its place at once: an owner at the limit of 16 uploads starts another
+// after deleting one.
+func TestADeletedUploadFreesItsPlace(t *testing.T) {
+	env := testkit.New(t)
+	alice := env.NewUser("alice")
+	var first dto.Upload
+	for i := range 16 {
+		u := createUpload(alice, userUploads, dto.CreateUploadRequest{Name: "f" + strconv.Itoa(i), Size: 10})
+		if i == 0 {
+			first = u
+		}
+	}
+	alice.Post(userUploads, dto.CreateUploadRequest{Name: "one more", Size: 10}).RequireError(http.StatusTooManyRequests, dto.ErrorCodeRateLimited)
+	alice.Delete(userUploads + "/" + first.ID).RequireStatus(http.StatusNoContent)
+	createUpload(alice, userUploads, dto.CreateUploadRequest{Name: "one more", Size: 10})
+}
+
+// LF-06: an upload a chunk is being written to is not deleted under it (409 upload_busy).
+func TestAnUploadBeingWrittenIsNotDeleted(t *testing.T) {
+	env := testkit.New(t)
+	alice := env.NewUser("alice")
+	u := createUpload(alice, userUploads, dto.CreateUploadRequest{Name: "a", Size: 10})
+	pr, pw := io.Pipe()
+	done := make(chan *testkit.Response, 1)
+	go func() {
+		done <- alice.DoRaw(http.MethodPut, fmt.Sprintf("%s/%s?offset=0", userUploads, u.ID), "application/octet-stream", unsized{pr})
+	}()
+	_, err := pw.Write([]byte("half"))
+	require.NoError(t, err)
+	require.Eventually(t, func() bool {
+		return alice.Delete(userUploads+"/"+u.ID).Status == http.StatusConflict
+	}, 5*time.Second, 10*time.Millisecond)
+	require.NoError(t, pw.Close())
+	(<-done).RequireStatus(http.StatusOK)
+	alice.Delete(userUploads + "/" + u.ID).RequireStatus(http.StatusNoContent)
+}

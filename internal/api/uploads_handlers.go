@@ -54,9 +54,11 @@ func (s *server) uploadRoutes(mux *http.ServeMux) {
 	s.handle(mux, "POST /api/v1/uploads", authed(s.createUpload))
 	s.handle(mux, "GET /api/v1/uploads/{id}", authed(s.getUpload))
 	s.handle(mux, "PUT /api/v1/uploads/{id}", authed(s.writeUpload))
+	s.handle(mux, "DELETE /api/v1/uploads/{id}", authed(s.deleteUpload))
 	s.handle(mux, "POST /api/v1/agent/uploads", s.agentOnly(s.createUpload))
 	s.handle(mux, "GET /api/v1/agent/uploads/{id}", s.agentOnly(s.getUpload))
 	s.handle(mux, "PUT /api/v1/agent/uploads/{id}", s.agentOnly(s.writeUpload))
+	s.handle(mux, "DELETE /api/v1/agent/uploads/{id}", s.agentOnly(s.deleteUpload))
 }
 
 // uploadOwner is the identity whose uploads p reaches: the AI of an agent request, else the user.
@@ -121,6 +123,15 @@ func (s *server) writeUpload(w http.ResponseWriter, r *http.Request, p authn.Pri
 		return err
 	}
 	httpx.WriteJSON(w, http.StatusOK, s.toUpload(u))
+	return nil
+}
+
+// deleteUpload removes an upload of p that no message used and answers 204.
+func (s *server) deleteUpload(w http.ResponseWriter, r *http.Request, p authn.Principal) error {
+	if err := s.Uploads.Delete(r.Context(), uploadOwner(p), r.PathValue("id")); err != nil {
+		return err
+	}
+	w.WriteHeader(http.StatusNoContent)
 	return nil
 }
 
