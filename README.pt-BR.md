@@ -442,7 +442,7 @@ Tudo é configurado por variáveis de ambiente.
 | `PARTYLINE_DATA_DIR` | `/data` | Diretório do banco, dos arquivos e da chave secreta gerada. |
 | `PARTYLINE_PUBLIC_URL` | `http://localhost:8080` | URL que as pessoas abrem no navegador. Usada na checagem de Origin, nos links de convite e nos cookies (`Secure` quando https). |
 | `PARTYLINE_SECRET_KEY` | gerada | Chave base64 de 32 bytes que criptografa os segredos dos conectores. Se ausente, uma é gerada em `<data>/secret.key` (modo 0600). |
-| `PARTYLINE_MAX_UPLOAD_MB` | `64` | Tamanho máximo de um arquivo enviado. |
+| `PARTYLINE_MAX_UPLOAD_MB` | `95` | Tamanho máximo de um arquivo enviado. |
 | `PARTYLINE_MEMORY_LIMIT` | do contêiner | Limite suave de memória do servidor: um tamanho como `300MiB` (unidades `B`, `KiB`, `MiB`, `GiB`, `TiB`; no mínimo `16MiB`) ou `off`. Sem ela, vale o `GOMEMLIMIT` se você o definir; senão 90% do limite de memória do contêiner; senão nenhum. Veja [Memória](#memória). |
 | `PARTYLINE_LOG_LEVEL` | `info` | `debug`, `info`, `warn` ou `error`. |
 | `PARTYLINE_LOG_FORMAT` | `json` | `json` ou `text`. |

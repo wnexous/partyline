@@ -74,7 +74,7 @@ func Load(getenv func(string) string) (*Config, error) {
 	}
 	cfg.PublicURL = u
 
-	mb, err := strconv.ParseInt(get("PARTYLINE_MAX_UPLOAD_MB", "64"), 10, 64)
+	mb, err := strconv.ParseInt(get("PARTYLINE_MAX_UPLOAD_MB", "95"), 10, 64)
 	if err != nil || mb <= 0 {
 		return nil, fmt.Errorf("PARTYLINE_MAX_UPLOAD_MB: must be a positive integer")
 	}
