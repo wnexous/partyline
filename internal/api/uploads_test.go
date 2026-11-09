@@ -20,6 +20,7 @@ import (
 	"github.com/wnexous/partyline/internal/api"
 	"github.com/wnexous/partyline/internal/api/dto"
 	"github.com/wnexous/partyline/internal/app"
+	"github.com/wnexous/partyline/internal/store/db"
 	"github.com/wnexous/partyline/internal/testkit"
 	"github.com/wnexous/partyline/internal/uploads"
 	"github.com/wnexous/partyline/internal/users"
@@ -520,4 +521,35 @@ func TestAStalledChunkGivesTheUploadBack(t *testing.T) {
 	require.Zero(t, testkit.Decode[dto.Upload](alice.Get(userUploads+"/"+u.ID).RequireStatus(http.StatusOK)).Received)
 	u = testkit.Decode[dto.Upload](putChunk(alice, userUploads, u.ID, 0, []byte("0123456789")).RequireStatus(http.StatusOK))
 	require.True(t, u.Complete)
+}
+
+// LF-06: an upload swept while one of its chunks arrives leaves no file behind, and a chunk of an upload
+// whose file is gone recreates none.
+func TestAChunkOfASweptUploadLeavesNoFile(t *testing.T) {
+	env := testkit.New(t)
+	alice := env.NewUser("alice")
+	owner := uploads.Owner{Kind: uploads.OwnerUser, ID: alice.User.ID}
+	u := createUpload(alice, userUploads, dto.CreateUploadRequest{Name: "a", Size: 8})
+
+	pr, pw := io.Pipe()
+	done := make(chan error, 1)
+	go func() {
+		_, err := env.App.Uploads.Write(context.Background(), owner, u.ID, 0, pr)
+		done <- err
+	}()
+	_, err := pw.Write([]byte("abcd"))
+	require.NoError(t, err)
+	require.NoError(t, env.App.Store.WithTx(context.Background(), func(q *db.Queries) error {
+		_, err := q.DeleteExpiredUploads(context.Background(), time.Now().Add(48*time.Hour).UnixMilli())
+		return err
+	}))
+	require.NoError(t, pw.Close())
+	require.ErrorIs(t, <-done, uploads.ErrNotFound)
+	require.NoFileExists(t, uploadFile(env, u.ID))
+
+	v := createUpload(alice, userUploads, dto.CreateUploadRequest{Name: "b", Size: 8})
+	putChunk(alice, userUploads, v.ID, 0, []byte("abcd")).RequireStatus(http.StatusOK)
+	require.NoError(t, os.Remove(uploadFile(env, v.ID)))
+	putChunk(alice, userUploads, v.ID, 4, []byte("efgh")).RequireError(http.StatusInternalServerError, dto.ErrorCodeInternal)
+	require.NoFileExists(t, uploadFile(env, v.ID))
 }

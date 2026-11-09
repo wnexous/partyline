@@ -337,7 +337,11 @@ func (s *Service) Write(ctx context.Context, o Owner, id string, offset int64, b
 			return Upload{}, err
 		}
 		if advanced == 0 {
-			return Upload{}, ErrNotFound // expired and swept while the chunk arrived
+			// Expired and swept while the chunk arrived: the file this chunk wrote has no row any more.
+			if err := os.Remove(s.path(id)); err != nil && !errors.Is(err, fs.ErrNotExist) {
+				return Upload{}, err
+			}
+			return Upload{}, ErrNotFound
 		}
 		row.Received += n
 		row.ShaState = state
@@ -357,7 +361,13 @@ func (s *Service) Write(ctx context.Context, o Owner, id string, offset int64, b
 // append writes the chunk at the end of the bytes the upload received and returns its length. On any
 // failure the file is cut back to where it was.
 func (s *Service) append(row db.Upload, h hash.Hash, body io.Reader) (n int64, err error) {
-	f, err := os.OpenFile(s.path(row.ID), os.O_WRONLY|os.O_CREATE, 0o600)
+	// Only the first chunk creates the file: a later one whose file is gone (a sweep) fails instead of
+	// writing past a hole.
+	flags := os.O_WRONLY
+	if row.Received == 0 {
+		flags |= os.O_CREATE
+	}
+	f, err := os.OpenFile(s.path(row.ID), flags, 0o600)
 	if err != nil {
 		return 0, err
 	}
