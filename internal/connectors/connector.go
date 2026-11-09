@@ -207,7 +207,7 @@ const (
 	MaxJSONResponse = 4 << 20
 	// DefaultMaxMedia is the media cap when Deps.MaxMediaBytes is unset (the default
 	// upload limit).
-	DefaultMaxMedia = 64 << 20
+	DefaultMaxMedia = 95 << 20
 )
 
 // MediaLimit is the largest media download: the upload limit.

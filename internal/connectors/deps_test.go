@@ -53,7 +53,7 @@ func TestDepsResponseCaps(t *testing.T) {
 	require.NoError(t, readAll(t, d.MediaClient(0), srv.URL, 1000))
 	require.ErrorIs(t, readAll(t, d.MediaClient(0), srv.URL, 1001), safehttp.ErrResponseTooLarge)
 
-	require.Equal(t, int64(64<<20), connectors.Deps{}.MediaLimit(), "the default upload limit")
+	require.Equal(t, int64(95<<20), connectors.Deps{}.MediaLimit(), "the default upload limit")
 }
 
 // S6, S8, HOOK-05: the app hands every connector the network policy, the upload limit as

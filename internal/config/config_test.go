@@ -22,7 +22,7 @@ func TestLoadDefaults(t *testing.T) {
 	require.Equal(t, "/data", cfg.DataDir)
 	require.Equal(t, "http://localhost:8080", cfg.PublicURL.String())
 	require.Empty(t, cfg.SecretKey)
-	require.Equal(t, int64(64<<20), cfg.MaxUploadBytes)
+	require.Equal(t, int64(95<<20), cfg.MaxUploadBytes)
 	require.Equal(t, slog.LevelInfo, cfg.LogLevel)
 	require.Equal(t, "json", cfg.LogFormat)
 	require.Empty(t, cfg.TrustedProxies)
