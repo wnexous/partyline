@@ -513,6 +513,33 @@ func (s *Service) Consume(ctx context.Context, o Owner, ids []string) error {
 	})
 }
 
+// Delete removes an upload of owner that no message used, finished or not, with its temporary file:
+// a client that gave up on it frees its place in the owner's limits at once. The blob of a finished
+// upload is left to the blob sweep, as when it expires. An upload a chunk is being written to is
+// ErrBusy; another owner's, a used or an expired one is ErrNotFound.
+func (s *Service) Delete(ctx context.Context, o Owner, id string) error {
+	if _, err := s.row(ctx, o, id); err != nil {
+		return err
+	}
+	if _, held := s.busy.LoadOrStore(id, struct{}{}); held {
+		return ErrBusy
+	}
+	defer s.busy.Delete(id)
+	if _, err := s.row(ctx, o, id); err != nil {
+		return err
+	}
+	err := s.d.Store.WithTx(ctx, func(q *db.Queries) error {
+		return q.DeleteOwnUploads(ctx, db.DeleteOwnUploadsParams{OwnerKind: string(o.Kind), OwnerID: o.ID, Ids: []string{id}})
+	})
+	if err != nil {
+		return err
+	}
+	if err := os.Remove(s.path(id)); err != nil && !errors.Is(err, fs.ErrNotExist) {
+		return err
+	}
+	return nil
+}
+
 // Sweep removes the uploads past their expiry and their temporary files (LF-06), and returns how many
 // it removed. The blob of a finished upload no message used is left to the blob sweep, which keeps a
 // blob only while something references it.

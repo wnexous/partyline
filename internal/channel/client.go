@@ -10,7 +10,9 @@ import (
 	"net/http"
 	"net/url"
 	"slices"
+	"strconv"
 	"strings"
+	"time"
 
 	"github.com/wnexous/partyline/internal/api/dto"
 )
@@ -31,6 +33,35 @@ type client struct {
 // response for 2xx statuses. Other statuses become errors whose text the tools show (the
 // server's own message for 4xx, e.g. "not a member of room <room>" or "rate limited: ...").
 func (c *client) do(ctx context.Context, method, path string, q url.Values, contentType string, body io.Reader) (*http.Response, error) {
+	req, err := c.request(ctx, method, path, q, contentType, body)
+	if err != nil {
+		return nil, err
+	}
+	return c.roundTrip(ctx, req)
+}
+
+// streamBody is a request body of a known length read from the start by open, which may be called again:
+// the transport replays a request whose connection closed before it was sent, and a file body is
+// streamed, never held in memory (LF-02).
+type streamBody struct {
+	open   func() io.Reader
+	length int64
+}
+
+// stream is do with a streamed body of a known length: the server can refuse a body over its limit
+// from Content-Length before a byte of it is sent.
+func (c *client) stream(ctx context.Context, method, path string, q url.Values, contentType string, b streamBody) (*http.Response, error) {
+	req, err := c.request(ctx, method, path, q, contentType, b.open())
+	if err != nil {
+		return nil, err
+	}
+	req.ContentLength = b.length
+	req.GetBody = func() (io.ReadCloser, error) { return io.NopCloser(b.open()), nil }
+	return c.roundTrip(ctx, req)
+}
+
+// request builds a request of the agent API with the token and the identity headers.
+func (c *client) request(ctx context.Context, method, path string, q url.Values, contentType string, body io.Reader) (*http.Request, error) {
 	u := c.base.JoinPath("api/v1", path)
 	u.RawQuery = q.Encode()
 	req, err := http.NewRequestWithContext(ctx, method, u.String(), body)
@@ -42,6 +73,11 @@ func (c *client) do(ctx context.Context, method, path string, q url.Values, cont
 	if contentType != "" {
 		req.Header.Set("Content-Type", contentType)
 	}
+	return req, nil
+}
+
+// roundTrip sends req and returns the response for 2xx statuses, else the error of apiError.
+func (c *client) roundTrip(ctx context.Context, req *http.Request) (*http.Response, error) {
 	resp, err := c.http.Do(req)
 	if err != nil {
 		if ctx.Err() != nil {
@@ -70,6 +106,10 @@ func apiError(resp *http.Response) error {
 		// says what, in words for the AI, and is no failure of Partyline's.
 		return &statusError{status: resp.StatusCode, msg: body.Error.Message}
 	}
+	if resp.StatusCode == http.StatusInsufficientStorage {
+		// The data disk cannot hold a file (LF-07): send_file says so in its own words.
+		return &statusError{status: resp.StatusCode, code: body.Error.Code, msg: fmt.Sprintf("partyline: server error (%d): %s", resp.StatusCode, body.Error.Message)}
+	}
 	if resp.StatusCode >= 500 {
 		return fmt.Errorf("partyline: server error (%d): %s", resp.StatusCode, body.Error.Message)
 	}
@@ -89,14 +129,27 @@ func apiError(resp *http.Response) error {
 		}
 		msg += "; nothing was created (refused: " + strings.Join(parts, ", ") + ")"
 	}
-	return &statusError{status: resp.StatusCode, msg: msg}
+	return &statusError{status: resp.StatusCode, code: body.Error.Code, details: body.Error.Details, retryAfter: retryAfter(resp.Header), msg: msg}
+}
+
+// retryAfter is the wait a Retry-After header in seconds asks for; 0 when there is none.
+func retryAfter(h http.Header) time.Duration {
+	n, err := strconv.Atoi(strings.TrimSpace(h.Get("Retry-After")))
+	if err != nil || n < 0 {
+		return 0
+	}
+	return time.Duration(n) * time.Second
 }
 
 // statusError is a refusal of the server that is the caller's to act on (a 4xx other than 401): its text is what the
 // tools show, and the status lets a tool say more about the refusals it knows the reasons of.
 type statusError struct {
 	status int
-	msg    string
+	// code and details are those of the server's error body; retryAfter its Retry-After header.
+	code       dto.ErrorCode
+	details    map[string]string
+	retryAfter time.Duration
+	msg        string
 }
 
 func (e *statusError) Error() string { return e.msg }

@@ -9,9 +9,7 @@ import (
 	"io"
 	"io/fs"
 	"mime"
-	"mime/multipart"
 	"net/http"
-	"net/textproto"
 	"net/url"
 	"os"
 	"path/filepath"
@@ -26,8 +24,12 @@ import (
 	"github.com/wnexous/partyline/internal/channel/mcp"
 )
 
-// toolTimeout bounds one tool call, file transfers included.
+// toolTimeout bounds one tool call, file transfers aside: send_file and download_attachment have
+// their own bounds.
 const toolTimeout = 2 * time.Minute
+
+// readStall is how long a download may go without a byte before it fails.
+const readStall = time.Minute
 
 // tools implements the room tools (TOOL-01..09) and the conversation and profile tools of an AI
 // (DM-04, AGRP-01, PROF-04) over the agent REST API.
@@ -37,6 +39,9 @@ type tools struct {
 	link *link
 	// dir is where downloads are saved: <TempDir>/partyline/<agent> (TOOL-06).
 	dir string
+	// limit bounds an ordinary tool call (toolTimeout) and stall a download that brings no byte
+	// (readStall); tests shorten them.
+	limit, stall time.Duration
 }
 
 func schema(s string) json.RawMessage { return json.RawMessage(s) }
@@ -102,12 +107,12 @@ func (t *tools) register(srv *mcp.Server) {
 		Name:        "download_attachment",
 		Description: "Download a message attachment to a local temporary file and return its absolute path.",
 		InputSchema: schema(`{"type":"object","properties":{"attachment_id":{"type":"string","description":"id from an [attachment <id>: ...] line"}},"required":["attachment_id"]}`),
-	}, t.guard(t.downloadAttachment))
+	}, t.guardFor(fileToolTimeout, t.downloadAttachment))
 	srv.HandleTool(mcp.ToolDef{
 		Name:        "send_file",
-		Description: "Send a local file. Give exactly one target: room (upload it to a room or DM you belong to, with an optional reply_to), or connection together with chat (send it to a chat of a connection you operate, from your own account and unsigned, as a WhatsApp, Telegram or Discord file; chat is a chat_id, or the address of someone who never wrote to you, as for send_message). A file sent through a connection is sent once and never kept: when the platform does not take it the tool fails and says why, and you may send it again. A webhook connection cannot be sent files (unsupported). A message from one of your connections cannot be quoted in a room (unsupported); to answer it with a file give its connection and chat.",
+		Description: "Send a local file. Give exactly one target: room (upload it to a room or DM you belong to, with an optional reply_to), or connection together with chat (send it to a chat of a connection you operate, from your own account and unsigned, as a WhatsApp, Telegram or Discord file; chat is a chat_id, or the address of someone who never wrote to you, as for send_message). A large file goes to a room in chunks, streamed from disk, up to the server's largest file (5 GB by default); a file sent through a connection can be at most 95 MB for now. A file sent through a connection is sent once and never kept: when the platform does not take it the tool fails and says why, and you may send it again. A webhook connection cannot be sent files (unsupported). A message from one of your connections cannot be quoted in a room (unsupported); to answer it with a file give its connection and chat.",
 		InputSchema: schema(`{"type":"object","properties":{"room":{"type":"string","description":"room id, room name, or @handle of the intelligence you have a DM with"},"connection":{"type":"string","description":"instead of room: the connection_id of a connection you operate, together with chat"},"chat":{"type":"string","description":"with connection: the chat_id of the chat to send the file to, as a message from that connection carries it, or the address of a chat you have not heard from (see send_message)"},"path":{"type":"string","description":"local file path"},"caption":{"type":"string","description":"optional text sent with the file (just before it, for a connection)"},"reply_to":{"type":"string","description":"with room: optional message_id this file answers"}},"required":["path"]}`),
-	}, t.guard(t.sendFile))
+	}, t.guardFor(fileToolTimeout, t.sendFile))
 	srv.HandleTool(mcp.ToolDef{
 		Name:        "create_group",
 		Description: "Create a group in an organization, with you and the given members. You are added automatically; everyone else is a member only when listed, and each must belong to the organization. If any member cannot be added nothing is created and the error lists the refused ones with the reason (not_found: unknown, disabled or not one you can see; person: people from chats cannot be members; not_org_member: not a member of the organization).",
@@ -124,7 +129,13 @@ type toolFunc func(ctx context.Context, args json.RawMessage) (string, error)
 
 // guard reports the link's state (invalid token, busy, taken over, deleted, unreachable) instead
 // of calling the server, bounds the call and turns errors into isError results.
-func (t *tools) guard(fn toolFunc) mcp.ToolFunc { return t.guardFor(toolTimeout, fn) }
+func (t *tools) guard(fn toolFunc) mcp.ToolFunc {
+	limit := t.limit
+	if limit <= 0 {
+		limit = toolTimeout
+	}
+	return t.guardFor(limit, fn)
+}
 
 // guardFor is guard with its own time bound.
 func (t *tools) guardFor(timeout time.Duration, fn toolFunc) mcp.ToolFunc {
@@ -876,11 +887,16 @@ func (t *tools) downloadAttachment(ctx context.Context, args json.RawMessage) (s
 	if err := required("attachment_id", a.AttachmentID); err != nil {
 		return "", err
 	}
+	// The download streams to disk for as long as it takes, and fails when it brings no byte for a
+	// while: a file of gigabytes is no stalled download (LF-08).
+	ctx, w := t.watchStall(ctx)
+	defer w.stop()
 	resp, err := t.api.do(ctx, http.MethodGet, "agent/attachments/"+url.PathEscape(a.AttachmentID), nil, "", nil)
 	if err != nil {
-		return "", err
+		return "", w.explain(err)
 	}
 	defer func() { _ = resp.Body.Close() }()
+	body := w.reader(resp.Body)
 
 	name := "file"
 	if _, params, err := mime.ParseMediaType(resp.Header.Get("Content-Disposition")); err == nil && params["filename"] != "" {
@@ -897,7 +913,12 @@ func (t *tools) downloadAttachment(ctx context.Context, args json.RawMessage) (s
 		return "", fmt.Errorf("save attachment: %w", err)
 	}
 	tmp := f.Name()
-	_, err = io.Copy(f, resp.Body)
+	_, err = io.Copy(f, body)
+	if err != nil && w.stalled.Load() {
+		_ = f.Close()
+		_ = os.Remove(tmp)
+		return "", w.explain(err)
+	}
 	if cerr := f.Close(); err == nil {
 		err = cerr
 	}
@@ -952,104 +973,6 @@ func safeName(s string) string {
 		return "file"
 	}
 	return s
-}
-
-// The refusals of send_file about where a file goes.
-const (
-	msgFileSeveralTargets = "give either room, or connection with chat, not both: room uploads the file to a room or DM you belong to, connection with chat sends it to a chat of a connection you operate"
-	msgFileNoTarget       = "room, or connection with chat, is required: name the room to upload the file to, or the connection and the chat to send it to"
-	msgFileQuote          = "reply_to applies to rooms: a file sent through a connection is not a quote; to answer a message from a connection with a file, give its connection and chat"
-)
-
-// sendFile uploads a local file to a room, or sends it to a chat of a connection the AI operates
-// (connection and chat, CID-32). It reads the file only once the target is known to be one.
-func (t *tools) sendFile(ctx context.Context, args json.RawMessage) (string, error) {
-	var a struct {
-		Room       string `json:"room"`
-		Connection string `json:"connection"`
-		Chat       string `json:"chat"`
-		Path       string `json:"path"`
-		Caption    string `json:"caption"`
-		ReplyTo    string `json:"reply_to"`
-	}
-	if err := decode(args, &a); err != nil {
-		return "", err
-	}
-	// An empty value is not given, as models that send every parameter do (DM-04).
-	hasRoom, hasConnection, hasChat := strings.TrimSpace(a.Room) != "", strings.TrimSpace(a.Connection) != "", strings.TrimSpace(a.Chat) != ""
-	switch {
-	case hasConnection != hasChat:
-		return "", errors.New(msgHalfTarget)
-	case hasRoom && hasConnection:
-		return "", errors.New(msgFileSeveralTargets)
-	case !hasRoom && !hasConnection:
-		return "", errors.New(msgFileNoTarget)
-	}
-	if err := required("path", a.Path); err != nil {
-		return "", err
-	}
-	if hasConnection && strings.TrimSpace(a.ReplyTo) != "" {
-		return "", errors.New(msgFileQuote)
-	}
-	data, err := os.ReadFile(a.Path) // #nosec G304 -- the session asks to share this local file
-	if err != nil {
-		return "", fmt.Errorf("read %s: %w", a.Path, errors.Unwrap(err))
-	}
-	var body bytes.Buffer
-	mw := multipart.NewWriter(&body)
-	part, err := mw.CreateFormField(dto.MultipartMessageField)
-	if err != nil {
-		return "", err
-	}
-	// The message part is a PostMessageRequest for a room and a SendToChatRequest for a chat; the
-	// caption is the text of both.
-	if hasConnection {
-		err = json.NewEncoder(part).Encode(dto.SendToChatRequest{Text: a.Caption})
-	} else {
-		err = json.NewEncoder(part).Encode(dto.PostMessageRequest{Text: a.Caption, ReplyTo: a.ReplyTo})
-	}
-	if err != nil {
-		return "", err
-	}
-	name := filepath.Base(a.Path)
-	ct := mime.TypeByExtension(filepath.Ext(name))
-	if ct == "" {
-		ct = "application/octet-stream"
-	}
-	h := textproto.MIMEHeader{}
-	h.Set("Content-Disposition", mime.FormatMediaType("form-data", map[string]string{"name": dto.MultipartFileField, "filename": name}))
-	h.Set("Content-Type", ct)
-	fw, err := mw.CreatePart(h)
-	if err != nil {
-		return "", err
-	}
-	if _, err := fw.Write(data); err != nil {
-		return "", err
-	}
-	if err := mw.Close(); err != nil {
-		return "", err
-	}
-	path := roomPath(a.Room, "/messages")
-	if hasConnection {
-		path = "agent/connections/" + url.PathEscape(strings.TrimSpace(a.Connection)) + "/chats/" + url.PathEscape(strings.TrimSpace(a.Chat)) + "/messages"
-	}
-	resp, err := t.api.do(ctx, http.MethodPost, path, nil, mw.FormDataContentType(), &body)
-	if err != nil {
-		return "", err
-	}
-	defer func() { _ = resp.Body.Close() }()
-	if hasConnection {
-		var res dto.PlatformSendResult
-		if err := json.NewDecoder(resp.Body).Decode(&res); err != nil {
-			return "", fmt.Errorf("partyline: unexpected answer: %w", err)
-		}
-		return platformSent(res), nil
-	}
-	var m dto.Message
-	if err := json.NewDecoder(resp.Body).Decode(&m); err != nil {
-		return "", fmt.Errorf("partyline: unexpected answer: %w", err)
-	}
-	return sent(m), nil
 }
 
 func marshal(v any) (string, error) {
