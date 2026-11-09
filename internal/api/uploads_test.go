@@ -669,18 +669,23 @@ func TestADeletedUploadFreesItsPlace(t *testing.T) {
 func TestAnUploadBeingWrittenIsNotDeleted(t *testing.T) {
 	env := testkit.New(t)
 	alice := env.NewUser("alice")
+	owner := uploads.Owner{Kind: uploads.OwnerUser, ID: alice.User.ID}
 	u := createUpload(alice, userUploads, dto.CreateUploadRequest{Name: "a", Size: 10})
+	// The chunk is written by the service itself: the first pipe write returns only once the writer has
+	// read it, so the chunk is in progress. Through HTTP the client's transport could take the bytes
+	// before the server holds the upload, and the delete would win. The pipe is closed whatever happens,
+	// so a failure never leaves the writer waiting.
 	pr, pw := io.Pipe()
-	done := make(chan *testkit.Response, 1)
+	t.Cleanup(func() { _ = pw.Close() })
+	done := make(chan error, 1)
 	go func() {
-		done <- alice.DoRaw(http.MethodPut, fmt.Sprintf("%s/%s?offset=0", userUploads, u.ID), "application/octet-stream", unsized{pr})
+		_, err := env.App.Uploads.Write(context.Background(), owner, u.ID, 0, pr)
+		done <- err
 	}()
 	_, err := pw.Write([]byte("half"))
 	require.NoError(t, err)
-	require.Eventually(t, func() bool {
-		return alice.Delete(userUploads+"/"+u.ID).Status == http.StatusConflict
-	}, 5*time.Second, 10*time.Millisecond)
+	alice.Delete(userUploads+"/"+u.ID).RequireError(http.StatusConflict, dto.ErrorCodeUploadBusy)
 	require.NoError(t, pw.Close())
-	(<-done).RequireStatus(http.StatusOK)
+	require.NoError(t, <-done)
 	alice.Delete(userUploads + "/" + u.ID).RequireStatus(http.StatusNoContent)
 }
