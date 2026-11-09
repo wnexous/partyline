@@ -297,6 +297,11 @@ func (s *Service) row(ctx context.Context, o Owner, id string) (db.Upload, error
 // fails midway leaves the upload as it was. The chunk that brings the last byte moves the file into the
 // blob store and completes the upload.
 func (s *Service) Write(ctx context.Context, o Owner, id string, offset int64, body io.Reader) (Upload, error) {
+	// Someone else's upload is not found, busy or not; the row is read again under the lock, which a
+	// chunk that just finished may have changed.
+	if _, err := s.row(ctx, o, id); err != nil {
+		return Upload{}, err
+	}
 	if _, held := s.busy.LoadOrStore(id, struct{}{}); held {
 		return Upload{}, ErrBusy
 	}

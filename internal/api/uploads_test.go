@@ -390,6 +390,7 @@ func TestUploadTakesOneChunkAtATime(t *testing.T) {
 	_, err := pw.Write([]byte("abcd")) // returns once the writer read it: the chunk is in progress
 	require.NoError(t, err)
 	putChunk(alice, userUploads, u.ID, 0, []byte("12345678")).RequireError(http.StatusConflict, dto.ErrorCodeUploadBusy)
+	putChunk(env.NewUser("bob"), userUploads, u.ID, 0, []byte("12345678")).RequireError(http.StatusNotFound, dto.ErrorCodeNotFound)
 	_, err = pw.Write([]byte("efgh"))
 	require.NoError(t, err)
 	require.NoError(t, pw.Close())
