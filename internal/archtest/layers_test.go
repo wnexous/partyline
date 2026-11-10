@@ -42,6 +42,7 @@ var packagesOf = map[layer][]string{
 		"transcribe", // voice files to text on the server (TR-01)
 		"uploads",    // files in chunks, for rooms now and connections later (LF-03)
 		"diskspace",  // the free space of the data disk (OPS-07, LF-07)
+		"settings",   // instance settings an admin changes, such as the attachment retention (RET-01)
 	},
 	infra: {
 		"store", "store/db", "config", "app", "api", "api/convert", "cli", "cliconfig", "harness", "devices",

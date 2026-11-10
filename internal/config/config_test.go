@@ -9,6 +9,7 @@ import (
 
 	"github.com/wnexous/partyline/internal/connectors/safehttp"
 	"github.com/wnexous/partyline/internal/memlimit"
+	"github.com/wnexous/partyline/internal/settings"
 )
 
 func env(kv map[string]string) func(string) string {
@@ -37,6 +38,7 @@ func TestLoadDefaults(t *testing.T) {
 	require.Equal(t, 5, cfg.MigrationBackupsKeep, "OPS-07: the newest five backups are kept")
 	require.Empty(t, cfg.TranscribeURL, "TR-06: server transcription is off without a service")
 	require.Equal(t, "Systran/faster-whisper-small", cfg.TranscribeModel)
+	require.Zero(t, cfg.AttachmentRetentionDays, "RET-01: attachments are kept forever by default")
 }
 
 func TestLoadOverrides(t *testing.T) {
@@ -58,6 +60,7 @@ func TestLoadOverrides(t *testing.T) {
 		"PARTYLINE_MIGRATION_BACKUPS_KEEP":    "12",
 		"PARTYLINE_TRANSCRIBE_URL":            "http://whisper:8000",
 		"PARTYLINE_TRANSCRIBE_MODEL":          "Systran/faster-whisper-medium",
+		"PARTYLINE_ATTACHMENT_RETENTION_DAYS": "30",
 	}))
 	require.NoError(t, err)
 	require.Equal(t, "127.0.0.1:9000", cfg.Addr)
@@ -82,6 +85,7 @@ func TestLoadOverrides(t *testing.T) {
 	require.Equal(t, 12, cfg.MigrationBackupsKeep)
 	require.Equal(t, "http://whisper:8000", cfg.TranscribeURL)
 	require.Equal(t, "Systran/faster-whisper-medium", cfg.TranscribeModel)
+	require.Equal(t, 30, cfg.AttachmentRetentionDays)
 }
 
 func TestLoadInvalidValuesNameTheVariable(t *testing.T) {
@@ -98,6 +102,7 @@ func TestLoadInvalidValuesNameTheVariable(t *testing.T) {
 		"PARTYLINE_MEMORY_LIMIT":              "512MB",
 		"PARTYLINE_SKIP_MIGRATION_BACKUP":     "maybe",
 		"PARTYLINE_MIGRATION_BACKUPS_KEEP":    "-1",
+		"PARTYLINE_ATTACHMENT_RETENTION_DAYS": "-1",
 		"PARTYLINE_TRANSCRIBE_URL":            "whisper:8000",
 	}
 	for name, value := range cases {
@@ -170,4 +175,15 @@ func TestSecureCookiesFollowsPublicURLScheme(t *testing.T) {
 	cfg, err = Load(env(map[string]string{"PARTYLINE_PUBLIC_URL": "http://chat.example.com"}))
 	require.NoError(t, err)
 	require.False(t, cfg.SecureCookies())
+}
+
+// RET-01: the attachment retention is a whole number of days from 0 (keep forever) to 36500.
+func TestLoadAttachmentRetention(t *testing.T) {
+	cfg, err := Load(env(map[string]string{"PARTYLINE_ATTACHMENT_RETENTION_DAYS": "36500"}))
+	require.NoError(t, err)
+	require.Equal(t, settings.MaxAttachmentRetentionDays, cfg.AttachmentRetentionDays)
+	for _, value := range []string{"-1", "36501", "30d", "1.5"} {
+		_, err := Load(env(map[string]string{"PARTYLINE_ATTACHMENT_RETENTION_DAYS": value}))
+		require.ErrorContains(t, err, "PARTYLINE_ATTACHMENT_RETENTION_DAYS", value)
+	}
 }

@@ -80,6 +80,9 @@ const (
 	// (OUPG-02).
 	ActionUserDelete        = "user.delete"
 	ActionOrgAdminInherited = "org.admin_inherited"
+	// ActionInstanceSettingsUpdate records an instance admin changing an instance setting, such as the
+	// attachment retention (RET-02); the target is the setting's key.
+	ActionInstanceSettingsUpdate = "instance.settings_update"
 )
 
 // Target kinds.
@@ -94,6 +97,8 @@ const (
 	TargetSecret = "secret"
 	// TargetOrganization is the organization a change of the org model is about.
 	TargetOrganization = "organization"
+	// TargetInstance is an instance setting, named by its key.
+	TargetInstance = "instance"
 )
 
 // PageSize is the number of entries per page (AUD-02).
