@@ -127,3 +127,16 @@ WHERE id = sqlc.arg(id) AND enabled = 1 AND next_run_at = sqlc.arg(prev);
 -- name: CancelPendingRuns :execrows
 -- A routine that is disabled cancels its pending runs: none of them is delivered afterwards.
 UPDATE agent_schedule_runs SET status = 'cancelled' WHERE schedule_id = ? AND status = 'pending';
+
+-- name: MarkNoticeHandled :execrows
+-- HB-09: an answer to the notice was applied; it is applied once.
+UPDATE agent_schedule_notices SET handled_at = ? WHERE message_id = ? AND handled_at IS NULL;
+
+-- name: ListUnhandledNoticeAnswers :many
+-- The structured answers to notices that no applied answer handled yet, oldest first: what a lagged bus may have
+-- dropped.
+SELECT m.id FROM agent_schedule_notices n
+JOIN messages m ON m.reply_to = n.message_id AND m.answers_json <> ''
+WHERE n.handled_at IS NULL
+ORDER BY m.created_at
+LIMIT ?;

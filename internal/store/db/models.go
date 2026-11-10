@@ -63,6 +63,7 @@ type AgentScheduleNotice struct {
 	ScheduleID string
 	ManagerIid string
 	CreatedAt  int64
+	HandledAt  sql.NullInt64
 }
 
 type AgentScheduleRun struct {

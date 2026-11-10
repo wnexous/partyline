@@ -13,6 +13,7 @@ import (
 	"net/http"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 	"unicode/utf8"
 
@@ -136,6 +137,8 @@ type Service struct {
 	d      Deps
 	writes *limiter
 	kick   chan struct{}
+	// dropAnswer, set by tests only, drops the bus event of an answer as a lagged bus would.
+	dropAnswer atomic.Pointer[func(messageID string) bool]
 }
 
 // New returns a Service.

@@ -16,6 +16,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/wnexous/partyline/internal/api/dto"
+	"github.com/wnexous/partyline/internal/events"
 	"github.com/wnexous/partyline/internal/schedules"
 	"github.com/wnexous/partyline/internal/store/db"
 	"github.com/wnexous/partyline/internal/testkit"
@@ -809,4 +810,38 @@ func TestARunInFlightIsCancelledWhenItsRoutineIsDisabled(t *testing.T) {
 	h.patch(h.roles.Manager, s.ID, dto.ScheduleRequest{Enabled: ptr(false)}).RequireStatus(http.StatusOK)
 	ackRun(t, principal, f.RunID)
 	h.eventuallyStatuses(s.ID, dto.ScheduleRunCancelled)
+}
+
+// HB-09: an answer whose bus event was lost is applied when the bus says it lagged, once: a routine its manager
+// enabled again afterwards is not paused again by a later rescan.
+func TestAnAnswerLostToALaggedBusIsAppliedOnce(t *testing.T) {
+	h := newHB(t)
+	s := h.create(h.agent, hourly("deploys"))
+	room := h.dmRoom(h.roles.Manager.User.ID)
+	n := h.notices(room)[0]
+	schedules.DropAnswers(h.env.App.Schedules, func(string) bool { return true })
+	h.roles.Manager.Post("/api/v1/rooms/"+room+"/messages", dto.PostMessageRequest{
+		ReplyTo: n.ID, Answers: &dto.AnswerSubmission{QuickReply: n.Interactive.QuickReplies[1].ID},
+	}).RequireStatus(http.StatusCreated)
+	enabled := func() bool {
+		return testkit.Decode[dto.Schedule](h.roles.Manager.Get(h.path("/" + s.ID)).RequireStatus(http.StatusOK)).Enabled
+	}
+	require.True(t, enabled(), "the event was dropped")
+
+	h.env.App.Bus.Publish(events.Lagged{}) // the rescan does not go through the dropped events
+	require.Eventually(t, func() bool { return !enabled() }, wait, 10*time.Millisecond)
+	schedules.DropAnswers(h.env.App.Schedules, func(string) bool { return false })
+
+	h.patch(h.roles.Manager, s.ID, dto.ScheduleRequest{Enabled: ptr(true)}).RequireStatus(http.StatusOK)
+	h.env.App.Bus.Publish(events.Lagged{})
+	// The rescan runs in order with the bus: a later answer handled means the rescan before it ran too.
+	other := h.create(h.agent, daily("summary"))
+	m := h.notices(room)[0]
+	h.roles.Manager.Post("/api/v1/rooms/"+room+"/messages", dto.PostMessageRequest{
+		ReplyTo: m.ID, Answers: &dto.AnswerSubmission{QuickReply: m.Interactive.QuickReplies[1].ID},
+	}).RequireStatus(http.StatusCreated)
+	require.Eventually(t, func() bool {
+		return !testkit.Decode[dto.Schedule](h.roles.Manager.Get(h.path("/" + other.ID)).RequireStatus(http.StatusOK)).Enabled
+	}, wait, 10*time.Millisecond)
+	require.True(t, enabled(), "the answer that was applied is not applied again")
 }

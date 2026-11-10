@@ -125,8 +125,11 @@ func RuleWords(every sql.NullInt64, cron sql.NullString, tz string) string {
 	return fmt.Sprintf("a cada %d minutos", n)
 }
 
-// watchAnswers reads the answers to the manager notices until ctx ends.
+// watchAnswers reads the answers to the manager notices until ctx ends. It first looks for the answers no
+// applied answer handled yet (written while the server was down), and again after a lagged bus, which may have
+// dropped some (HB-09).
 func (s *Service) watchAnswers(ctx context.Context, sub <-chan events.Event) {
+	s.rescanAnswers(ctx)
 	for {
 		select {
 		case <-ctx.Done():
@@ -135,17 +138,44 @@ func (s *Service) watchAnswers(ctx context.Context, sub <-chan events.Event) {
 			if !ok {
 				return
 			}
-			if m, isMessage := e.(events.MessageCreated); isMessage {
-				if err := s.answer(ctx, m.MessageID); err != nil && ctx.Err() == nil {
+			switch e := e.(type) {
+			case events.MessageCreated:
+				if drop := s.dropAnswer.Load(); drop != nil && (*drop)(e.MessageID) {
+					continue // a test's stand-in for an event the bus dropped
+				}
+				if err := s.answer(ctx, e.MessageID); err != nil && ctx.Err() == nil {
 					s.d.Logger.Error("schedules: answer to a manager notice failed", "err", err)
 				}
+			case events.Lagged:
+				s.rescanAnswers(ctx)
 			}
 		}
 	}
 }
 
-// answer applies an answer to a manager notice (HB-09): Pausar, from someone who manages the AI, disables the
-// schedule on their behalf, audited as theirs; Manter, any other answer and anyone else's change nothing.
+// rescanLimit is how many unhandled answers one rescan applies.
+const rescanLimit = 500
+
+// rescanAnswers applies the answers to notices that no applied answer handled yet, oldest first.
+func (s *Service) rescanAnswers(ctx context.Context) {
+	ids, err := s.d.Store.R().ListUnhandledNoticeAnswers(ctx, rescanLimit)
+	if err != nil {
+		if ctx.Err() == nil {
+			s.d.Logger.Error("schedules: rescan of the manager notices failed", "err", err)
+		}
+		return
+	}
+	for _, id := range ids {
+		if err := s.answer(ctx, id); err != nil && ctx.Err() == nil {
+			s.d.Logger.Error("schedules: answer to a manager notice failed", "err", err)
+		}
+	}
+}
+
+// answer applies an answer to a manager notice (HB-09), once: Pausar, from someone who manages the AI, disables
+// the schedule on their behalf, audited as theirs; Manter changes nothing. Either, from someone who manages the
+// AI, handles the notice, so a later rescan never applies it again (a routine its manager enabled again stays
+// enabled). Anyone else's answer changes nothing.
 func (s *Service) answer(ctx context.Context, messageID string) error {
 	q := s.d.Store.R()
 	ref, err := q.GetMessageAnswerRef(ctx, messageID)
@@ -156,21 +186,21 @@ func (s *Service) answer(ctx context.Context, messageID string) error {
 		return err
 	}
 	ans := dto.ParseMessageAnswers(ref.AnswersJson)
-	if ans == nil || ans.QuickReply != ReplyPause {
+	if ans == nil {
 		return nil
 	}
 	notice, err := q.GetScheduleNotice(ctx, ref.ReplyTo)
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil
 	}
-	if err != nil {
+	if err != nil || notice.HandledAt.Valid {
 		return err
 	}
 	row, err := q.GetSchedule(ctx, notice.ScheduleID)
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil
 	}
-	if err != nil || !row.Enabled {
+	if err != nil {
 		return err
 	}
 	managed, err := s.d.Authz.ManagesAnywhere(ctx, ref.AuthorIid, row.AgentID)
@@ -178,7 +208,16 @@ func (s *Service) answer(ctx context.Context, messageID string) error {
 		return err
 	}
 	now := s.d.Now()
+	paused := false
 	if err := s.d.Store.WithTx(ctx, func(q *db.Queries) error {
+		n, err := q.MarkNoticeHandled(ctx, db.MarkNoticeHandledParams{HandledAt: sql.NullInt64{Int64: now.UnixMilli(), Valid: true}, MessageID: notice.MessageID})
+		if err != nil || n == 0 {
+			return err // handled meanwhile
+		}
+		cur, err := q.GetSchedule(ctx, row.ID)
+		if err != nil || ans.QuickReply != ReplyPause || !cur.Enabled {
+			return err
+		}
 		if err := q.SetScheduleEnabled(ctx, db.SetScheduleEnabledParams{
 			Enabled: false, UpdatedBy: ref.AuthorIid, UpdatedAt: now.UnixMilli(), PausedBy: ref.AuthorIid, ID: row.ID,
 		}); err != nil {
@@ -187,13 +226,16 @@ func (s *Service) answer(ctx context.Context, messageID string) error {
 		if err := cancelPending(ctx, q, row.ID); err != nil {
 			return err
 		}
-		sp := specOf(row)
+		paused = true
+		sp := specOf(cur)
 		sp.enabled = false
 		return s.recordAs(ctx, q, ref.AuthorIid, ActionDisable, row.AgentID, row.ID, sp, map[string]any{"via": "manager_notice"})
 	}); err != nil {
 		return err
 	}
-	s.changed(row.AgentID)
+	if paused {
+		s.changed(row.AgentID)
+	}
 	return nil
 }
 

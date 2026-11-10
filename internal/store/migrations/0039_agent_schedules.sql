@@ -62,11 +62,14 @@ CREATE INDEX agent_schedule_runs_schedule ON agent_schedule_runs (schedule_id, d
 CREATE INDEX agent_schedule_runs_created ON agent_schedule_runs (created_at);
 
 -- The DMs the server wrote, as the AI, to tell its nearest manager about a routine the AI set (HB-09):
--- an answer "Pausar" to one of them disables the schedule. Kept as long as the runs.
+-- an answer "Pausar" to one of them disables the schedule. handled_at is when an answer of someone who
+-- manages the AI was applied: an answer is applied once, also when it is found again after a lagged bus. Kept
+-- as long as the runs.
 CREATE TABLE agent_schedule_notices (
     message_id  TEXT PRIMARY KEY,
     schedule_id TEXT NOT NULL REFERENCES agent_schedules (id) ON DELETE CASCADE,
     manager_iid TEXT NOT NULL,
-    created_at  INTEGER NOT NULL
+    created_at  INTEGER NOT NULL,
+    handled_at  INTEGER
 );
 CREATE INDEX agent_schedule_notices_created ON agent_schedule_notices (created_at);

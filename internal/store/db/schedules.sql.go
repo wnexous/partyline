@@ -262,7 +262,7 @@ func (q *Queries) GetScheduleForAgent(ctx context.Context, arg GetScheduleForAge
 }
 
 const getScheduleNotice = `-- name: GetScheduleNotice :one
-SELECT message_id, schedule_id, manager_iid, created_at FROM agent_schedule_notices WHERE message_id = ?
+SELECT message_id, schedule_id, manager_iid, created_at, handled_at FROM agent_schedule_notices WHERE message_id = ?
 `
 
 func (q *Queries) GetScheduleNotice(ctx context.Context, messageID string) (AgentScheduleNotice, error) {
@@ -273,6 +273,7 @@ func (q *Queries) GetScheduleNotice(ctx context.Context, messageID string) (Agen
 		&i.ScheduleID,
 		&i.ManagerIid,
 		&i.CreatedAt,
+		&i.HandledAt,
 	)
 	return i, err
 }
@@ -581,6 +582,57 @@ func (q *Queries) ListSchedulesByAgent(ctx context.Context, agentID string) ([]A
 		return nil, err
 	}
 	return items, nil
+}
+
+const listUnhandledNoticeAnswers = `-- name: ListUnhandledNoticeAnswers :many
+SELECT m.id FROM agent_schedule_notices n
+JOIN messages m ON m.reply_to = n.message_id AND m.answers_json <> ''
+WHERE n.handled_at IS NULL
+ORDER BY m.created_at
+LIMIT ?
+`
+
+// The structured answers to notices that no applied answer handled yet, oldest first: what a lagged bus may have
+// dropped.
+func (q *Queries) ListUnhandledNoticeAnswers(ctx context.Context, limit int64) ([]string, error) {
+	rows, err := q.db.QueryContext(ctx, listUnhandledNoticeAnswers, limit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []string
+	for rows.Next() {
+		var id string
+		if err := rows.Scan(&id); err != nil {
+			return nil, err
+		}
+		items = append(items, id)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const markNoticeHandled = `-- name: MarkNoticeHandled :execrows
+UPDATE agent_schedule_notices SET handled_at = ? WHERE message_id = ? AND handled_at IS NULL
+`
+
+type MarkNoticeHandledParams struct {
+	HandledAt sql.NullInt64
+	MessageID string
+}
+
+// HB-09: an answer to the notice was applied; it is applied once.
+func (q *Queries) MarkNoticeHandled(ctx context.Context, arg MarkNoticeHandledParams) (int64, error) {
+	result, err := q.db.ExecContext(ctx, markNoticeHandled, arg.HandledAt, arg.MessageID)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected()
 }
 
 const nextScheduleDue = `-- name: NextScheduleDue :one
