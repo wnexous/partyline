@@ -608,6 +608,18 @@ const resize = (el: HTMLElement, height: number) => {
   });
 };
 
+/**
+ * The reader scrolls up from the newest message, far from it: the box is 800 px tall and 5000 px
+ * of messages lie in it. Only a move up lets go of the newest message (KBD-02).
+ */
+function scrollUp(log: HTMLElement) {
+  Object.defineProperty(log, "scrollHeight", { configurable: true, value: 5000 });
+  log.scrollTop = 4200;
+  fireEvent.scroll(log);
+  log.scrollTop = 1000;
+  fireEvent.scroll(log);
+}
+
 describe("the timeline follows the visible area (KBD-02, KBD-06)", () => {
   const twenty = () => page(Array.from({ length: 20 }, (_, i) => makeMessage({ seq: i + 1 })));
   let spy: ReturnType<typeof spyOnScrollTopWrites>;
@@ -630,19 +642,30 @@ describe("the timeline follows the visible area (KBD-02, KBD-06)", () => {
     expect(spy.writes.filter((w) => w.target === log).length).toBeGreaterThan(0);
   });
 
-  it("keeps a reader who scrolled up where they are when the box changes height", async () => {
+  it("goes back to the newest message when the messages grow (a bigger font, a picture)", async () => {
     mockApi({ "GET /rooms/r1/messages": twenty() });
     renderTimeline();
     const log = await screen.findByRole("log");
     await screen.findByTestId("message-20");
-    // Far from the newest message: the box is 800 px tall and 5000 px of messages lie below.
-    Object.defineProperty(log, "scrollHeight", { configurable: true, value: 5000 });
-    log.scrollTop = 1000;
-    fireEvent.scroll(log);
+    const content = log.firstElementChild as HTMLElement;
+
+    spy.writes.length = 0;
+    resize(content, 2400);
+    expect(spy.writes.filter((w) => w.target === log).length).toBeGreaterThan(0);
+    expect(screen.queryByRole("button", { name: "Jump to latest" })).toBeNull();
+  });
+
+  it("keeps a reader who scrolled up where they are when the box or the messages change size", async () => {
+    mockApi({ "GET /rooms/r1/messages": twenty() });
+    renderTimeline();
+    const log = await screen.findByRole("log");
+    await screen.findByTestId("message-20");
+    scrollUp(log);
     await screen.findByRole("button", { name: "Jump to latest" });
 
     spy.writes.length = 0;
     resize(log, 318);
+    resize(log.firstElementChild as HTMLElement, 2400);
     expect(spy.writes.filter((w) => w.target === log)).toEqual([]);
   });
 
@@ -653,9 +676,7 @@ describe("the timeline follows the visible area (KBD-02, KBD-06)", () => {
     await screen.findByTestId("message-20");
     expect(screen.queryByRole("button", { name: "Jump to latest" })).toBeNull();
 
-    Object.defineProperty(log, "scrollHeight", { configurable: true, value: 5000 });
-    log.scrollTop = 1000;
-    fireEvent.scroll(log);
+    scrollUp(log);
     const jump = await screen.findByRole("button", { name: "Jump to latest" });
 
     // Outside the scrolling box, and in the flow after it: nothing is laid over a message.
@@ -669,9 +690,7 @@ describe("the timeline follows the visible area (KBD-02, KBD-06)", () => {
     renderTimeline();
     const log = await screen.findByRole("log");
     await screen.findByTestId("message-20");
-    Object.defineProperty(log, "scrollHeight", { configurable: true, value: 5000 });
-    log.scrollTop = 1000;
-    fireEvent.scroll(log);
+    scrollUp(log);
     const jump = await screen.findByRole("button", { name: "Jump to latest" });
 
     fireEvent.click(jump);
