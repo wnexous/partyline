@@ -47,6 +47,9 @@ type pushSession struct {
 	// a DM or a bare @handle that would notify it. The session's acknowledgement consumes the message for
 	// the principal, whose queue then leaves it out.
 	standIn bool
+	// ownRow says Push already wrote the session's own addressed row, together with the fallback rows of the
+	// message's missing labels (MA-05): pushToSession does not write it again.
+	ownRow bool
 	// writeRow says the principal's delivery row is needed (SN-03, SN-04, SN-09): there is a live parallel
 	// session to dedupe against, the message also addresses a sibling (so the principal's ack must consume
 	// it), or the principal reads the room on mentions only (its rows are how it follows what it got). A
@@ -270,6 +273,14 @@ func (g *Gateway) pushToSession(agentID string, t pushSession, m dto.AgentMessag
 	row, err := g.d.Store.R().GetSessionDelivery(g.ctx, db.GetSessionDeliveryParams{
 		MessageID: m.Message.ID, AgentID: agentID, Label: t.label,
 	})
+	if t.ownRow {
+		if err == nil && row.AckedAt.Valid && row.Context == 0 && !row.FellBackAt.Valid {
+			// The principal acknowledged the note meanwhile, which consumes the message for the AI (SN-04):
+			// the addressed session still receives its message, and nothing of it falls back later.
+			return t.conn.push(m)
+		}
+		return g.deliverOwned(agentID, t.label, m)
+	}
 	switch {
 	case err == nil && t.addressed && row.Context != 0 && !row.AckedAt.Valid:
 		// An addressed push out of order: an earlier catch-up batch already gave the session the message as

@@ -3,11 +3,13 @@ package agents_test
 import (
 	"context"
 	"net/http"
+	"sync"
 	"testing"
 	"time"
 
 	"github.com/stretchr/testify/require"
 
+	"github.com/wnexous/partyline/internal/agents"
 	"github.com/wnexous/partyline/internal/api/dto"
 	"github.com/wnexous/partyline/internal/store/db"
 	"github.com/wnexous/partyline/internal/testkit"
@@ -433,4 +435,42 @@ func TestTheEleventhAddressOfAnAIRoutesNothing(t *testing.T) {
 	principal.ExpectNone(400 * time.Millisecond)
 	rows := f.waitRows(t, m.ID, func(rows map[string]db.AgentSessionDelivery) bool { return len(rows) == 10 })
 	require.NotContains(t, rows, "sk", "the eleventh address is plain text")
+}
+
+// MA-05, SN-04: the principal acknowledges the note of a message before its live addressed sibling has been
+// pushed. Its acknowledgement consumes the sibling's row too, because that row was written with the fallback
+// rows: the sibling still receives its message, and when it ends without acknowledging it the principal is
+// not given the message it already acknowledged a second time.
+func TestAnAckOfTheNoteBeforeTheSiblingsPushLeavesNothingToFallBack(t *testing.T) {
+	f := newSessionFixture(t)
+	principal, second := f.dial(t), f.dial(t)
+	f.settle(t, principal)
+	f.settle(t, second)
+
+	reached, release := make(chan struct{}), make(chan struct{})
+	var once, released sync.Once
+	t.Cleanup(func() { released.Do(func() { close(release) }) })
+	agents.SetAfterNoteRoute(f.env.App.Gateway, func() {
+		once.Do(func() {
+			close(reached)
+			<-release
+		})
+	})
+
+	m := f.post(t, "@atlas:claude-2 and @atlas:gone, compare")
+	<-reached
+	require.Equal(t, "gone", principal.Message(time.Minute).ForLabel)
+	principal.Ack(m.ID)
+	f.waitRows(t, m.ID, func(rows map[string]db.AgentSessionDelivery) bool {
+		return rows["gone"].AckedAt.Valid && rows["claude-2"].AckedAt.Valid
+	})
+	released.Do(func() { close(release) })
+
+	requireAddressed(t, second, m)
+	second.Close()
+	f.waitSessionGone(t, "claude-2")
+	principal.ExpectNone(500 * time.Millisecond)
+	row := f.rowOf(t, "claude-2", m.ID)
+	require.True(t, row.AckedAt.Valid)
+	require.False(t, row.FellBackAt.Valid, "an acknowledged row never falls back")
 }

@@ -129,6 +129,9 @@ type Gateway struct {
 	// afterOwnerMiss runs when deliverOwned found no connection for a pending row, before the release
 	// re-checks under the life lock; tests use it to attach a connection in that gap. Nil in production.
 	afterOwnerMiss func()
+	// afterNoteRoute runs when Push routed a message with missing labels to the principal, before the other
+	// sessions are pushed; tests use it to acknowledge the note in that gap. Nil in production.
+	afterNoteRoute func()
 }
 
 // NewGateway returns a Gateway.
@@ -225,20 +228,46 @@ func (g *Gateway) Push(agentID string, targets []string, m dto.AgentMessage) boo
 		// consumes them all, and the principal is routed once, through the first (MA-03): its backlog lists
 		// the message once whatever number of rows it has.
 		now := time.Now().UnixMilli()
-		rows := make([]db.CreateSessionDeliveryParams, len(plan.notes))
-		for i, note := range plan.notes {
-			rows[i] = db.CreateSessionDeliveryParams{
+		rows := make([]db.CreateSessionDeliveryParams, 0, len(plan.notes)+len(plan.sessions))
+		for _, note := range plan.notes {
+			rows = append(rows, db.CreateSessionDeliveryParams{
 				MessageID: m.Message.ID, AgentID: agentID, Label: note, CreatedAt: now,
 				FellBackAt: sql.NullInt64{Int64: now, Valid: true},
+			})
+		}
+		// The live addressed sessions' own rows are written in the same transaction (MA-05): the principal
+		// cannot see the message, live or from its backlog, before they exist, so its acknowledgement
+		// consumes them as well (SN-04) and the end of such a session hands it no duplicate. A session that
+		// already has a row of the message keeps the usual route of pushToSession.
+		var own []int
+		for i, t := range plan.sessions {
+			if !t.addressed {
+				continue
 			}
+			if _, err := g.d.Store.R().GetSessionDelivery(g.ctx, db.GetSessionDeliveryParams{
+				MessageID: m.Message.ID, AgentID: agentID, Label: t.label,
+			}); !errors.Is(err, sql.ErrNoRows) {
+				continue
+			}
+			rows = append(rows, db.CreateSessionDeliveryParams{
+				MessageID: m.Message.ID, AgentID: agentID, Label: t.label, SessionKey: t.conn.sessionKey,
+				OwnerLive: t.conn.owner, CreatedAt: now,
+			})
+			own = append(own, i)
 		}
 		if err := g.createSessionDeliveries(rows); err != nil {
 			g.d.Logger.Error("agent: session delivery write failed", "agent_id", agentID, "message_id", m.Message.ID, "err", err)
 			return false
 		}
+		for _, i := range own {
+			plan.sessions[i].ownRow = true
+		}
 		// The row may name a connection that ended after it was looked up: deliverOwned checks it again.
 		if g.deliverOwned(agentID, plan.notes[0], m) {
 			delivered = true
+		}
+		if g.afterNoteRoute != nil {
+			g.afterNoteRoute()
 		}
 	}
 	for _, t := range plan.sessions {
