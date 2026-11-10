@@ -356,3 +356,95 @@ func TestAReconnectingParallelSessionGetsItsOwnUnackedMessageOnce(t *testing.T) 
 	}
 	require.Equal(t, []string{own.ID, standIn.ID}, got, "each message once, the session's own first")
 }
+
+// SN-10, SN-03: in trusted mode the stand-ins and their context are filtered as for any notification: an
+// untrusted message is neither a stand-in nor context, live or in the backlog of a session that comes back.
+func TestTrustedModeFiltersTheStandInsAndTheirContext(t *testing.T) {
+	f := newSessionFixture(t)
+	bob := f.env.NewUser("bobby")
+	f.addUserMember(t, bob)
+	f.setDelivery(t, dto.DeliveryModeTrusted)
+	principal := f.dialSession(t, "lead-session")
+	f.settle(t, principal)
+	principal.Close()
+	f.waitPrincipalGone(t)
+	postAs := func(c *testkit.Client, text string) dto.Message {
+		t.Helper()
+		return testkit.Decode[dto.Message](c.Post("/api/v1/rooms/"+f.room.ID+"/messages", dto.PostMessageRequest{Text: text}).RequireStatus(http.StatusCreated))
+	}
+
+	parallel := f.dialSession(t, "side-session")
+	f.settle(t, parallel)
+	postAs(bob, "noise from a stranger")
+	postAs(bob, "@atlas a stranger asks")
+	owner := f.post(t, "the owner's context")
+	mention := f.post(t, "@atlas please look")
+	context := parallel.Message(time.Minute)
+	require.Equal(t, owner.ID, context.Message.ID, "the untrusted messages are not context")
+	require.True(t, context.Context)
+	frame := parallel.Message(time.Minute)
+	require.Equal(t, mention.ID, frame.Message.ID)
+	require.False(t, frame.Context)
+	parallel.ExpectNone(300 * time.Millisecond)
+	parallel.Ack(mention.ID)
+	f.waitStandInAcked(t, "claude-2", mention.ID)
+	parallel.Close()
+	f.waitSessionGone(t, "claude-2")
+
+	postAs(bob, "more noise")
+	postAs(bob, "@atlas the stranger again")
+	more := f.post(t, "more from the owner")
+	again := f.post(t, "@atlas and again")
+	back := f.dialSession(t, "side-session")
+	context = back.Message(time.Minute)
+	require.Equal(t, more.ID, context.Message.ID)
+	require.True(t, context.Context)
+	frame = back.Message(time.Minute)
+	require.Equal(t, again.ID, frame.Message.ID)
+	require.False(t, frame.Context)
+	back.ExpectNone(500 * time.Millisecond)
+}
+
+// SN-10, DLV-08: while the loop guard holds a room, an attaching parallel session is given nothing of it.
+func TestAPausedRoomHasNoStandIns(t *testing.T) {
+	f := newSessionFixture(t)
+	principal := f.dialSession(t, "lead-session")
+	f.settle(t, principal)
+	principal.Close()
+	f.waitPrincipalGone(t)
+
+	f.post(t, "@atlas before the pause")
+	require.NoError(t, f.env.App.Store.WithTx(context.Background(), func(q *db.Queries) error {
+		return q.SetRoomLoopState(context.Background(), db.SetRoomLoopStateParams{AgentsPaused: true, ID: f.room.ID})
+	}))
+	parallel := f.dialSession(t, "side-session")
+	parallel.ExpectNone(700 * time.Millisecond)
+}
+
+// SN-10: a stand-in the session did not acknowledge before its connection ended comes back to its next
+// connection, and the acknowledgement there consumes it for the principal.
+func TestAStandInIsConsumedByTheAckOfTheSessionsNextConnection(t *testing.T) {
+	f := newSessionFixture(t)
+	principal := f.dialSession(t, "lead-session")
+	f.settle(t, principal)
+	principal.Close()
+	f.waitPrincipalGone(t)
+	_, post := f.openDM(t)
+
+	first := f.dialSession(t, "side-session")
+	f.settle(t, first)
+	m := post("hello?")
+	require.Equal(t, m.ID, first.Message(time.Minute).Message.ID)
+	first.Close()
+	f.waitSessionGone(t, "claude-2")
+
+	second := f.dialSession(t, "side-session")
+	frame := second.Message(time.Minute)
+	require.Equal(t, m.ID, frame.Message.ID, "the unacknowledged stand-in comes back")
+	require.False(t, frame.Context)
+	second.Ack(m.ID)
+	f.waitStandInAcked(t, "claude-2", m.ID)
+
+	back := f.dialSession(t, "lead-session")
+	require.Empty(t, messageIDs(t, back.Drain(700*time.Millisecond)), "the principal is not handed it again")
+}
