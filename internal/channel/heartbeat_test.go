@@ -69,7 +69,9 @@ func (e *chanEnv) delivered(scheduleID string) {
 // who set it and whether that one manages the AI; the channel acknowledges it once handed over (HB-04).
 func TestChannelHandsAHeartbeatToClaudeCodeAndAcknowledgesIt(t *testing.T) {
 	e, clk := heartbeatEnv(t)
-	s := e.connected(e.options())
+	o := e.options()
+	o.Version = "dev" // the heartbeat gate fails closed on a version that is no release (HB-07)
+	s := e.connected(o)
 	sched := e.schedule("Deploys", "check the <deploys>")
 	e.fire(clk)
 
@@ -100,7 +102,7 @@ func TestListenPrintsAHeartbeatLine(t *testing.T) {
 	go func() {
 		r.err <- Listen(ctx, ListenOptions{
 			URL: e.env.URL, Token: e.secret, Machine: builderFolder.Machine, Folder: builderFolder.Folder, Harness: "pi",
-			Version: "test", Stdout: r, Stderr: &syncBuffer{}, timing: fastTiming, zone: personZone,
+			Version: "dev", Stdout: r, Stderr: &syncBuffer{}, timing: fastTiming, zone: personZone,
 		})
 	}()
 	require.Eventually(t, e.online, wait, 10*time.Millisecond)

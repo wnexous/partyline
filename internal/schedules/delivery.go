@@ -108,9 +108,18 @@ func (s *Service) Claim(ctx context.Context, agentID, sessionKey string, current
 	return out, nil
 }
 
-// Ack records that the principal session handed the run to the model (HB-04): the run is delivered. A run that
-// is not in flight (acknowledged already, superseded meanwhile, or not the AI's) is ErrNotDelivered.
-func (s *Service) Ack(ctx context.Context, agentID, runID string) error {
+// Ack records that the principal session handed the run to the model (HB-04): the run is delivered. applied is
+// false for a run that is not in flight (acknowledged already, cancelled or superseded meanwhile, or not the
+// AI's); err is a failure to record it.
+func (s *Service) Ack(ctx context.Context, agentID, runID string) (bool, error) {
+	err := s.ack(ctx, agentID, runID)
+	if errors.Is(err, ErrNotDelivered) {
+		return false, nil
+	}
+	return err == nil, err
+}
+
+func (s *Service) ack(ctx context.Context, agentID, runID string) error {
 	err := s.d.Store.WithTx(ctx, func(q *db.Queries) error {
 		scheduleID, err := q.AckRun(ctx, db.AckRunParams{
 			AckedAt: sql.NullInt64{Int64: s.d.Now().UnixMilli(), Valid: true}, ID: runID, AgentID: agentID,

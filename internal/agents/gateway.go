@@ -1463,10 +1463,9 @@ func (g *Gateway) readAcks(ctx context.Context, c *conn, agentID string) {
 			if c.beats == nil {
 				continue // only the principal is sent heartbeats
 			}
-			if err := g.d.Heartbeats.Ack(ctx, agentID, head.RunID); err != nil && ctx.Err() == nil {
-				g.d.Logger.Debug("agent: heartbeat ack not applied", "agent_id", agentID, "err", err)
+			if err := c.beats.ack(ctx, head.RunID); err != nil && ctx.Err() == nil {
+				g.d.Logger.Error("agent: heartbeat ack failed; the run stays in flight", "agent_id", agentID, "err", err)
 			}
-			c.beats.release(head.RunID)
 		case head.Type == dto.AgentFrameTypeAck && head.MessageID != "":
 			if c.labelOf() != "" {
 				// A labelled session acknowledges its own delivery row and moves its read position; the AI's
