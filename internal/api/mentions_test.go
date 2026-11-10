@@ -42,7 +42,7 @@ func TestMentionsFollowTheProfile(t *testing.T) {
 	byRoomName := f.post(f.alice, "and @vega too") // the name set for the AI in this room (GRP-04)
 
 	// SN-03: the messages it was not notified of come as context of the next notification.
-	messages, context := deliveredFrames(t, conn, quiet)
+	messages, context := deliveredFrames(t, conn, byRoomName.ID, quiet)
 	require.Equal(t, []string{byHandle.ID, byName.ID, byKeyword.ID, byRoomName.ID}, frameIDs(messages))
 	require.NotEmpty(t, context)
 	conn.ExpectNone(quiet)
