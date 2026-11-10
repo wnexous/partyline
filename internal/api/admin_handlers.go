@@ -12,8 +12,10 @@ import (
 	"github.com/wnexous/partyline/internal/api/dto"
 	"github.com/wnexous/partyline/internal/api/httpx"
 	"github.com/wnexous/partyline/internal/authn"
+	"github.com/wnexous/partyline/internal/settings"
 	"github.com/wnexous/partyline/internal/store/db"
 	"github.com/wnexous/partyline/internal/users"
+	"github.com/wnexous/partyline/internal/validation"
 )
 
 func (s *server) adminRoutes(mux *http.ServeMux) {
@@ -25,6 +27,8 @@ func (s *server) adminRoutes(mux *http.ServeMux) {
 	s.handle(mux, "GET /api/v1/admin/users", adminOnly(s.listAdminUsers))
 	s.handle(mux, "PATCH /api/v1/admin/users/{id}", adminOnly(s.updateAdminUser))
 	s.handle(mux, "GET /api/v1/admin/audit", adminOnly(s.listAudit))
+	s.handle(mux, "GET /api/v1/admin/settings", adminOnly(s.getInstanceSettings))
+	s.handle(mux, "PATCH /api/v1/admin/settings", adminOnly(s.updateInstanceSettings))
 	s.handle(mux, "GET /api/v1/users", authed(s.listDirectory))
 	s.handle(mux, "GET /api/v1/tokens", authed(s.listTokens))
 	s.handle(mux, "POST /api/v1/tokens", authed(s.createToken))
@@ -297,5 +301,45 @@ func (s *server) revokeToken(w http.ResponseWriter, r *http.Request, p authn.Pri
 		return err
 	}
 	w.WriteHeader(http.StatusNoContent)
+	return nil
+}
+
+func toInstanceSettings(r settings.AttachmentRetention) dto.InstanceSettings {
+	return dto.InstanceSettings{
+		AttachmentRetentionDays: r.Days, AttachmentRetentionDefaultDays: r.DefaultDays,
+		AttachmentRetentionOverridden: r.Overridden,
+	}
+}
+
+// getInstanceSettings answers GET /admin/settings with the settings that apply (RET-01, RET-02).
+func (s *server) getInstanceSettings(w http.ResponseWriter, r *http.Request, _ authn.Principal) error {
+	ret, err := s.Settings.AttachmentRetention(r.Context())
+	if err != nil {
+		return err
+	}
+	httpx.WriteJSON(w, http.StatusOK, toInstanceSettings(ret))
+	return nil
+}
+
+// updateInstanceSettings changes the attachment retention or goes back to its default (RET-01,
+// RET-02); asking for both is 422, and an empty body answers the settings unchanged.
+func (s *server) updateInstanceSettings(w http.ResponseWriter, r *http.Request, _ authn.Principal) error {
+	var req dto.UpdateInstanceSettingsRequest
+	if err := httpx.DecodeJSON(w, r, &req); err != nil {
+		return err
+	}
+	if req.AttachmentRetentionDays != nil && req.ResetAttachmentRetention {
+		return &validation.Error{Fields: map[string]string{
+			"reset_attachment_retention": "cannot be set together with attachment_retention_days",
+		}}
+	}
+	if req.AttachmentRetentionDays == nil && !req.ResetAttachmentRetention {
+		return s.getInstanceSettings(w, r, authn.Principal{})
+	}
+	ret, err := s.Settings.SetAttachmentRetention(r.Context(), req.AttachmentRetentionDays)
+	if err != nil {
+		return err
+	}
+	httpx.WriteJSON(w, http.StatusOK, toInstanceSettings(ret))
 	return nil
 }

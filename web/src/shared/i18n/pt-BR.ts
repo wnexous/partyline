@@ -372,6 +372,7 @@ export const ptBR: Dictionary = {
   "message.openImage": "Abrir {name}",
   "message.attachmentTooLarge": "grande demais para guardar",
   "message.attachmentUnavailable": "indisponível",
+  "message.attachmentExpired": "Arquivo expirado",
   "message.transcript": "Transcrição",
   "message.transcribing": "Transcrevendo…",
   "message.showMore": "Ver mais",
@@ -956,8 +957,11 @@ export const ptBR: Dictionary = {
   "push.groupFailed": "Não foi possível mudar a opção de mensagens de grupo. Tente de novo.",
   "nav.adminInvites": "Convites",
   "nav.adminAudit": "Auditoria",
+  "nav.adminSettings": "Configurações da instância",
   "page.adminInvitesTitle": "Convites",
   "page.adminInvitesBody": "Links de uso único para um colega criar uma conta com um papel.",
+  "page.adminSettingsTitle": "Configurações da instância",
+  "page.adminSettingsBody": "Configurações que valem para todos nesta instância.",
   "page.adminAuditTitle": "Auditoria",
   "page.adminAuditBody":
     "Eventos de segurança desta instância: logins, tokens, convites e mudanças de conta.",
@@ -1010,6 +1014,19 @@ export const ptBR: Dictionary = {
   "invites.linkWarning":
     "O link aparece só agora e funciona uma vez. Quem tiver o link pode entrar, então envie em particular.",
 
+  "instance.loadError": "Não foi possível carregar as configurações da instância.",
+  "instance.retentionTitle": "Retenção de anexos",
+  "instance.retentionBody":
+    "Arquivos, fotos, áudios e vídeos das conversas mais antigos que isso são apagados todo dia; as mensagens ficam e mostram o arquivo como expirado. Arquivos das suas conexões e fotos de perfil não são afetados.",
+  "instance.retentionLabel": "Apagar anexos depois de (dias)",
+  "instance.retentionHint": "0 guarda para sempre.",
+  "instance.retentionDefault": "Padrão do servidor: {days} dias",
+  "instance.retentionDefaultForever": "Padrão do servidor: guardar para sempre",
+  "instance.retentionOverridden":
+    "Esta instância usa um valor próprio em vez do padrão do servidor.",
+  "instance.retentionUseDefault": "Usar o padrão do servidor",
+  "instance.retentionSaved": "Retenção de anexos salva",
+  "validation.attachmentRetention": "Dias inteiros, de 0 a 36500",
   "audit.loadError": "Não foi possível carregar a auditoria.",
   "audit.emptyTitle": "Nenhum evento ainda",
   "audit.emptyBody": "Logins e mudanças de tokens e convites aparecem aqui.",

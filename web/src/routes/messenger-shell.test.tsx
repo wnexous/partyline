@@ -154,10 +154,11 @@ describe("header menu (LAY-06)", () => {
     api("admin");
     renderRoute("/");
     const menu = await openMenu();
-    expect(destinations(menu).slice(-3)).toEqual([
+    expect(destinations(menu).slice(-4)).toEqual([
       ["Users", "/admin/users"],
       ["Invites", "/admin/invites"],
       ["Audit log", "/admin/audit"],
+      ["Instance settings", "/admin/settings"],
     ]);
   });
 

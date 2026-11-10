@@ -240,6 +240,29 @@ describe("unavailable files (FILES-06)", () => {
   });
 });
 
+describe("expired files (RET-07)", () => {
+  it("lists an expired file as expired, without a download link or a thumbnail", async () => {
+    mockApi({
+      "GET /rooms/r1/attachments": page([
+        makeFile({
+          id: "f7",
+          name: "old.jpg",
+          mime: "image/jpeg",
+          kind: "image",
+          status: "expired",
+        }),
+      ]),
+    });
+    renderWithRouter(<RoomFiles roomId="r1" onOpenMessage={() => {}} />);
+    const row = await screen.findByTestId("file-f7");
+    expect(row).toHaveTextContent("old.jpg");
+    expect(row).toHaveTextContent("File expired");
+    expect(row.querySelector('a[href^="/api/v1/attachments/"]')).toBeNull();
+    expect(row.querySelector("img")).toBeNull();
+    expect(within(row).getByRole("button", { name: "Open old.jpg in the timeline" })).toBeEnabled();
+  });
+});
+
 describe("live files (FILES-05)", () => {
   const liveMessage = makeMessage({
     id: "m-r1-12",

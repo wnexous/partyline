@@ -22,6 +22,7 @@ import { Route as InviteTokenRouteImport } from './routes/invite.$token'
 import { Route as AppAccountIndexRouteImport } from './routes/_app/account/index'
 import { Route as AppAdminAuditRouteImport } from './routes/_app/admin/audit'
 import { Route as AppAdminInvitesRouteImport } from './routes/_app/admin/invites'
+import { Route as AppAdminSettingsRouteImport } from './routes/_app/admin/settings'
 import { Route as AppAdminUsersRouteImport } from './routes/_app/admin/users'
 import { Route as AppConnectorsIndexRouteImport } from './routes/_app/connectors/index'
 import { Route as AppConnectorsConnectorIdRouteImport } from './routes/_app/connectors/$connectorId'
@@ -103,6 +104,11 @@ const AppAdminAuditRoute = AppAdminAuditRouteImport.update({
 const AppAdminInvitesRoute = AppAdminInvitesRouteImport.update({
   id: '/invites',
   path: '/invites',
+  getParentRoute: () => AppAdminRouteRoute,
+} as any)
+const AppAdminSettingsRoute = AppAdminSettingsRouteImport.update({
+  id: '/settings',
+  path: '/settings',
   getParentRoute: () => AppAdminRouteRoute,
 } as any)
 const AppAdminUsersRoute = AppAdminUsersRouteImport.update({
@@ -212,6 +218,7 @@ export interface FileRoutesByFullPath {
   '/orgs/$orgId': typeof AppOrgsOrgIdRouteRouteWithChildren
   '/admin/audit': typeof AppAdminAuditRoute
   '/admin/invites': typeof AppAdminInvitesRoute
+  '/admin/settings': typeof AppAdminSettingsRoute
   '/admin/users': typeof AppAdminUsersRoute
   '/connectors/$connectorId': typeof AppConnectorsConnectorIdRoute
   '/contacts/$id': typeof AppContactsIdRoute
@@ -243,6 +250,7 @@ export interface FileRoutesByTo {
   '/': typeof AppIndexRoute
   '/admin/audit': typeof AppAdminAuditRoute
   '/admin/invites': typeof AppAdminInvitesRoute
+  '/admin/settings': typeof AppAdminSettingsRoute
   '/admin/users': typeof AppAdminUsersRoute
   '/connectors/$connectorId': typeof AppConnectorsConnectorIdRoute
   '/contacts/$id': typeof AppContactsIdRoute
@@ -277,6 +285,7 @@ export interface FileRoutesById {
   '/_app/orgs/$orgId': typeof AppOrgsOrgIdRouteRouteWithChildren
   '/_app/admin/audit': typeof AppAdminAuditRoute
   '/_app/admin/invites': typeof AppAdminInvitesRoute
+  '/_app/admin/settings': typeof AppAdminSettingsRoute
   '/_app/admin/users': typeof AppAdminUsersRoute
   '/_app/connectors/$connectorId': typeof AppConnectorsConnectorIdRoute
   '/_app/contacts/$id': typeof AppContactsIdRoute
@@ -311,6 +320,7 @@ export interface FileRouteTypes {
     | '/orgs/$orgId'
     | '/admin/audit'
     | '/admin/invites'
+    | '/admin/settings'
     | '/admin/users'
     | '/connectors/$connectorId'
     | '/contacts/$id'
@@ -342,6 +352,7 @@ export interface FileRouteTypes {
     | '/'
     | '/admin/audit'
     | '/admin/invites'
+    | '/admin/settings'
     | '/admin/users'
     | '/connectors/$connectorId'
     | '/contacts/$id'
@@ -375,6 +386,7 @@ export interface FileRouteTypes {
     | '/_app/orgs/$orgId'
     | '/_app/admin/audit'
     | '/_app/admin/invites'
+    | '/_app/admin/settings'
     | '/_app/admin/users'
     | '/_app/connectors/$connectorId'
     | '/_app/contacts/$id'
@@ -493,6 +505,13 @@ declare module '@tanstack/react-router' {
       path: '/invites'
       fullPath: '/admin/invites'
       preLoaderRoute: typeof AppAdminInvitesRouteImport
+      parentRoute: typeof AppAdminRouteRoute
+    }
+    '/_app/admin/settings': {
+      id: '/_app/admin/settings'
+      path: '/settings'
+      fullPath: '/admin/settings'
+      preLoaderRoute: typeof AppAdminSettingsRouteImport
       parentRoute: typeof AppAdminRouteRoute
     }
     '/_app/admin/users': {
@@ -627,12 +646,14 @@ declare module '@tanstack/react-router' {
 interface AppAdminRouteRouteChildren {
   AppAdminAuditRoute: typeof AppAdminAuditRoute
   AppAdminInvitesRoute: typeof AppAdminInvitesRoute
+  AppAdminSettingsRoute: typeof AppAdminSettingsRoute
   AppAdminUsersRoute: typeof AppAdminUsersRoute
 }
 
 const AppAdminRouteRouteChildren: AppAdminRouteRouteChildren = {
   AppAdminAuditRoute: AppAdminAuditRoute,
   AppAdminInvitesRoute: AppAdminInvitesRoute,
+  AppAdminSettingsRoute: AppAdminSettingsRoute,
   AppAdminUsersRoute: AppAdminUsersRoute,
 }
 

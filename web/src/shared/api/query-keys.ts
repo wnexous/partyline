@@ -48,5 +48,6 @@ export const queryKeys = {
   adminUsers: ["admin", "users"] as const,
   adminInvites: ["admin", "invites"] as const,
   adminAudit: ["admin", "audit"] as const,
+  adminSettings: ["admin", "settings"] as const,
   activity: ["activity"] as const,
 };

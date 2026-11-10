@@ -10,7 +10,7 @@ import {
 } from "lucide-react";
 import { useMemo, useRef, useState } from "react";
 import { IntelligenceName } from "@/entities/intelligence";
-import { attachmentUrl, INLINE_IMAGES } from "@/entities/message";
+import { attachmentUrl, INLINE_IMAGES, unstoredLabel } from "@/entities/message";
 import { useRoomFiles } from "@/entities/room";
 import type { FileFilter } from "@/shared/api/cache-types";
 import type { FileKind, RoomFile } from "@/shared/api/types.gen";
@@ -249,9 +249,7 @@ function FileRow({
             <span className="shrink-0 font-mono tabular">{formatBytes(f.size, locale)}</span>
           ) : (
             <span className="shrink-0 rounded-[3px] border border-dashed px-1 text-[0.68rem]">
-              {f.status === "too_large"
-                ? t("message.attachmentTooLarge")
-                : t("message.attachmentUnavailable")}
+              {t(unstoredLabel(f.status))}
             </span>
           )}
           <span aria-hidden="true">·</span>

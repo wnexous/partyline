@@ -222,6 +222,9 @@ const (
 	// ErrorCodeUploadIncomplete is a message that attaches an upload whose last chunk did not arrive
 	// (409, LF-03).
 	ErrorCodeUploadIncomplete ErrorCode = "upload_incomplete"
+	// ErrorCodeAttachmentExpired is a download of an attachment the instance's attachment retention
+	// deleted (410, RET-06).
+	ErrorCodeAttachmentExpired ErrorCode = "attachment_expired"
 )
 
 // ErrorBody is the envelope of every error response.

@@ -370,6 +370,7 @@ export const en = {
   "message.openImage": "Open {name}",
   "message.attachmentTooLarge": "too large to store",
   "message.attachmentUnavailable": "unavailable",
+  "message.attachmentExpired": "File expired",
   "message.transcript": "Transcript",
   "message.transcribing": "Transcribing…",
   "message.showMore": "Show more",
@@ -952,8 +953,11 @@ export const en = {
   "push.groupFailed": "Couldn’t change the group setting. Try again.",
   "nav.adminInvites": "Invites",
   "nav.adminAudit": "Audit log",
+  "nav.adminSettings": "Instance settings",
   "page.adminInvitesTitle": "Invites",
   "page.adminInvitesBody": "Single-use links that let a colleague create an account with a role.",
+  "page.adminSettingsTitle": "Instance settings",
+  "page.adminSettingsBody": "Settings that apply to everyone on this instance.",
   "page.adminAuditTitle": "Audit log",
   "page.adminAuditBody":
     "Security events on this instance: logins, tokens, invites and account changes.",
@@ -1006,6 +1010,18 @@ export const en = {
   "invites.linkWarning":
     "The link is shown only now and works once. Anyone who has it can join, so send it privately.",
 
+  "instance.loadError": "Couldn’t load the instance settings.",
+  "instance.retentionTitle": "Attachment retention",
+  "instance.retentionBody":
+    "Files, photos, voice notes and videos of conversations older than this are deleted every day; the messages stay and show the file as expired. Files of your connections and profile photos are not affected.",
+  "instance.retentionLabel": "Delete attachments after (days)",
+  "instance.retentionHint": "0 keeps them forever.",
+  "instance.retentionDefault": "Server default: {days} days",
+  "instance.retentionDefaultForever": "Server default: keep forever",
+  "instance.retentionOverridden": "This instance uses its own value instead of the server default.",
+  "instance.retentionUseDefault": "Use the server default",
+  "instance.retentionSaved": "Attachment retention saved",
+  "validation.attachmentRetention": "Whole days from 0 to 36500",
   "audit.loadError": "Couldn’t load the audit log.",
   "audit.emptyTitle": "No events yet",
   "audit.emptyBody": "Logins, token and invite changes show up here.",

@@ -9,6 +9,7 @@ import {
   MonitorSmartphoneIcon,
   ScrollTextIcon,
   SettingsIcon,
+  SlidersHorizontalIcon,
   UsersIcon,
 } from "lucide-react";
 import type { MessageKey } from "@/shared/i18n";
@@ -31,7 +32,8 @@ export interface NavItem {
     | "/devices"
     | "/admin/users"
     | "/admin/invites"
-    | "/admin/audit";
+    | "/admin/audit"
+    | "/admin/settings";
   label: MessageKey;
   icon: LucideIcon;
   exact?: boolean;
@@ -69,6 +71,7 @@ export const NAV_GROUPS: NavGroup[] = [
       { to: "/admin/users", label: "nav.adminUsers", icon: UsersIcon },
       { to: "/admin/invites", label: "nav.adminInvites", icon: MailPlusIcon },
       { to: "/admin/audit", label: "nav.adminAudit", icon: ScrollTextIcon },
+      { to: "/admin/settings", label: "nav.adminSettings", icon: SlidersHorizontalIcon },
     ],
   },
 ];
