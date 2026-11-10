@@ -498,3 +498,85 @@ func TestALiveAddressedSessionReceivesTheMessageWhenTheFallbackWriteFails(t *tes
 	require.False(t, row.FellBackAt.Valid, "the live session owns its row")
 	require.NotContains(t, f.deliveryRows(t, m.ID), "gone")
 }
+
+// MA-03, MA-04, SN-02: with the principal set to mentions only, a message that addresses a live sibling and a
+// missing label still reaches the principal once, with the note, and the sibling as its own message.
+func TestANoteAndALiveSiblingReachAPrincipalSetToMentionsOnly(t *testing.T) {
+	f := newSessionFixture(t)
+	principal, second := f.dial(t), f.dial(t)
+	f.settle(t, principal)
+	f.settle(t, second)
+	f.setNotify(t, "", agents.NotifyMentions)
+
+	m := f.post(t, "@atlas:claude-2 and @atlas:gone, compare")
+	requireAddressed(t, second, m)
+	frame := principal.Message(time.Minute)
+	require.Equal(t, m.ID, frame.Message.ID)
+	require.Equal(t, "gone", frame.ForLabel)
+	principal.ExpectNone(400 * time.Millisecond)
+	second.ExpectNone(200 * time.Millisecond)
+}
+
+// MA-02, SN-10: while the principal is offline, a message that addresses two live sessions and also names the
+// AI by its bare @handle reaches the addressed sessions only: it is theirs, so no other live parallel session
+// stands in for the principal - in a group and in a DM.
+func TestAddressesWithABareMentionWhileThePrincipalIsOfflineReachOnlyTheAddressedSessions(t *testing.T) {
+	f := newSessionFixture(t)
+	principal := f.dial(t)
+	second, third, fourth := f.dial(t), f.dial(t), f.dial(t)
+	for _, conn := range []*testkit.AgentConn{principal, second, third, fourth} {
+		f.settle(t, conn)
+	}
+	principal.Close()
+	f.waitPrincipalGone(t)
+	_, postDM := f.openDM(t)
+
+	for _, post := range []func(string) dto.Message{
+		func(text string) dto.Message { return f.post(t, text) },
+		postDM,
+	} {
+		m := post("@atlas, @atlas:claude-2 and @atlas:claude-3, please look")
+		requireAddressed(t, second, m)
+		requireAddressed(t, third, m)
+		fourth.ExpectNone(400 * time.Millisecond)
+		second.ExpectNone(200 * time.Millisecond)
+		third.ExpectNone(200 * time.Millisecond)
+		rows := f.deliveryRows(t, m.ID)
+		require.NotContains(t, rows, "claude-4", "nobody stands in for the principal")
+		require.Zero(t, rows["claude-2"].Context)
+		require.Zero(t, rows["claude-3"].Context)
+	}
+}
+
+// MA-05, SN-04: the principal's acknowledgement of the note consumes the message for the whole AI, so the live
+// addressed sibling's pending row becomes a tombstone too. That is the rule of a principal's copy (SN-04): when
+// the sibling ends without acknowledging, nothing falls back to the principal, and when its process reconnects
+// the message is not given to it again.
+func TestThePrincipalsAckOfTheNoteConsumesALivePendingSibling(t *testing.T) {
+	f := newSessionFixture(t)
+	side := testkit.NewLiveID()
+	principal, label := f.dialLabelled(t, "lead-session", testkit.NewLiveID())
+	require.Empty(t, label)
+	sibling, siblingLabel := f.dialLabelled(t, "side-session", side)
+	require.NotEmpty(t, siblingLabel)
+	f.settle(t, principal)
+	f.settle(t, sibling)
+
+	m := f.post(t, "@atlas:"+siblingLabel+" and @atlas:gone, compare")
+	requireAddressed(t, sibling, m)
+	require.Equal(t, "gone", principal.Message(time.Minute).ForLabel)
+	require.False(t, f.rowOf(t, siblingLabel, m.ID).AckedAt.Valid, "the sibling has not acknowledged it")
+
+	principal.Ack(m.ID)
+	f.waitRows(t, m.ID, func(rows map[string]db.AgentSessionDelivery) bool {
+		return rows["gone"].AckedAt.Valid && rows[siblingLabel].AckedAt.Valid
+	})
+	sibling.Close()
+	f.waitSessionGone(t, siblingLabel)
+	principal.ExpectNone(500 * time.Millisecond)
+	require.False(t, f.rowOf(t, siblingLabel, m.ID).FellBackAt.Valid, "a tombstone never falls back")
+
+	back, again := f.dialLabelled(t, "side-session", side)
+	require.Equal(t, siblingLabel, again)
+	require.Empty(t, messageIDs(t, back.Drain(700*time.Millisecond)), "the consumed message is not given again")
+}
