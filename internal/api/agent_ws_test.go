@@ -365,19 +365,27 @@ func TestAgentWSCapsAgentsPerOwner(t *testing.T) {
 // delivered reads every message frame that arrives within d, in order. Context frames are the earlier
 // conversation a session had not read when a message notified it (SN-03); the others are the messages
 // themselves, in the order they were delivered.
-func deliveredFrames(t *testing.T, conn *testkit.AgentConn, d time.Duration) (messages, context []dto.AgentMessageFrame) {
+func deliveredFrames(t *testing.T, conn *testkit.AgentConn, lastID string, d time.Duration) (messages, context []dto.AgentMessageFrame) {
 	t.Helper()
-	for _, frame := range conn.Drain(d) {
+	add := func(frame testkit.AgentFrame) (last bool) {
 		if frame.Type != dto.AgentFrameTypeMessage {
-			continue
+			return false
 		}
 		var m dto.AgentMessageFrame
 		require.NoError(t, json.Unmarshal(frame.Raw, &m))
 		if m.Context {
 			context = append(context, m)
-			continue
+			return false
 		}
 		messages = append(messages, m)
+		return m.Message.ID == lastID
+	}
+	// The frames come until the last expected notification, however slow the runner; then d more catches
+	// anything that should not have come after it.
+	for !add(conn.Next(wsWait)) {
+	}
+	for _, frame := range conn.Drain(d) {
+		add(frame)
 	}
 	return messages, context
 }
