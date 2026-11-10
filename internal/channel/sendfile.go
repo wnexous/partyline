@@ -30,9 +30,9 @@ const (
 	// session costs only two small requests more while a failed chunk is resent alone instead of the
 	// whole file. A multipart post the server refuses as too large goes up in chunks as well.
 	multipartMaxBytes = 8 << 20
-	// connectionMaxBytes is the largest file sent through a connection: one request of the default
-	// PARTYLINE_MAX_UPLOAD_MB, since a send through a connection takes no upload sessions yet.
-	connectionMaxBytes = 95 << 20
+	// legacyRequestBytes is the largest file a server without upload sessions, or one whose
+	// connections take no uploads yet, gets in one request: the default PARTYLINE_MAX_UPLOAD_MB.
+	legacyRequestBytes = 95 << 20
 	// chunkTries is how many times one chunk is sent before the upload gives up: once and three
 	// retries. A chunk that brings the upload further starts the count again.
 	chunkTries = 4
@@ -140,9 +140,9 @@ func (t *tools) sendFile(ctx context.Context, args json.RawMessage) (string, err
 // it is small, else through an upload session whose id the post then attaches.
 func (t *tools) sendFileToRoom(ctx context.Context, f localFile, room string, msg dto.PostMessageRequest) (string, error) {
 	if f.size > multipartMaxBytes {
-		id, err := t.uploadFile(ctx, f)
+		id, err := t.uploadFile(ctx, f, "")
 		switch {
-		case errors.Is(err, errNoUploads) && f.size <= connectionMaxBytes:
+		case errors.Is(err, errNoUploads) && f.size <= legacyRequestBytes:
 			// A server before upload sessions still takes a file of one request.
 		case err != nil:
 			return "", err
@@ -153,7 +153,7 @@ func (t *tools) sendFileToRoom(ctx context.Context, f localFile, room string, ms
 	resp, err := t.postMultipart(ctx, roomPath(room, "/messages"), msg, f)
 	if isTooLarge(err) {
 		// The server's single-request cap is below this file: send it in chunks (LF-02).
-		id, err := t.uploadFile(ctx, f)
+		id, err := t.uploadFile(ctx, f, "")
 		if err != nil {
 			return "", err
 		}
@@ -206,16 +206,36 @@ func (t *tools) dropUpload(ctx context.Context, id string) {
 	}
 }
 
-// sendFileToChat sends f to a chat of a connection in one multipart request. A connection takes no
-// upload sessions yet, so a file over one request is refused before a byte of it is sent.
+// sendFileToChat sends f to a chat of a connection: in one multipart request when it is small, else
+// through an upload session created for the connection, which the server refuses before any chunk is
+// sent when the platform could not take the file (LF-05), and whose id the send then attaches (LF-04).
 func (t *tools) sendFileToChat(ctx context.Context, f localFile, connection, chat, caption string) (string, error) {
-	if f.size > connectionMaxBytes {
-		return "", connectionTooLarge(f, connectionMaxBytes)
-	}
 	path := "agent/connections/" + url.PathEscape(connection) + "/chats/" + url.PathEscape(chat) + "/messages"
-	resp, err := t.postMultipart(ctx, path, dto.SendToChatRequest{Text: caption}, f)
+	msg := dto.SendToChatRequest{Text: caption}
+	if f.size > multipartMaxBytes {
+		id, err := t.uploadFile(ctx, f, connection)
+		switch {
+		case errors.Is(err, errNoUploads) && f.size <= legacyRequestBytes:
+			// A server before upload sessions still takes a file of one request.
+		case errors.Is(err, errNoUploads):
+			return "", connectionTooLarge(f, legacyRequestBytes)
+		case err != nil:
+			return "", err
+		default:
+			return t.postChatUpload(ctx, path, msg, id, f)
+		}
+	}
+	resp, err := t.postMultipart(ctx, path, msg, f)
 	if isTooLarge(err) {
-		return "", connectionTooLarge(f, 0)
+		// The server's single-request cap is below this file: send it in chunks.
+		id, err := t.uploadFile(ctx, f, connection)
+		if errors.Is(err, errNoUploads) {
+			return "", connectionTooLarge(f, 0)
+		}
+		if err != nil {
+			return "", err
+		}
+		return t.postChatUpload(ctx, path, msg, id, f)
 	}
 	if err != nil {
 		return "", fileError(err, f)
@@ -228,14 +248,59 @@ func (t *tools) sendFileToChat(ctx context.Context, f localFile, connection, cha
 	return platformSent(res), nil
 }
 
-// connectionTooLarge is the refusal of a file too large to go through a connection in one request;
-// maxBytes is the limit when it is known.
+// postChatUpload sends msg to the chat at path with the finished upload id as its file. The server sends
+// it to the platform before it answers, which for a large file takes as long as the upload to the
+// platform: the request waits for the server's own bound of the attempt. When the post fails the upload
+// is deleted (one the send used up is gone already). A server whose connections take no uploads yet gets
+// the file in one request when it fits.
+func (t *tools) postChatUpload(ctx context.Context, path string, msg dto.SendToChatRequest, id string, f localFile) (string, error) {
+	postCtx, cancel := context.WithTimeout(ctx, connectionSendTimeout(f.size))
+	defer cancel()
+	msg.UploadIDs = []string{id}
+	var res dto.PlatformSendResult
+	err := t.api.json(postCtx, http.MethodPost, path, nil, msg, &res)
+	if err == nil {
+		return platformSent(res), nil
+	}
+	t.dropUpload(ctx, id)
+	if takesNoUploads(err) {
+		if f.size > legacyRequestBytes {
+			return "", connectionTooLarge(f, legacyRequestBytes)
+		}
+		resp, err := t.postMultipart(ctx, path, dto.SendToChatRequest{Text: msg.Text}, f)
+		if err != nil {
+			return "", fileError(err, f)
+		}
+		defer func() { _ = resp.Body.Close() }()
+		if err := json.NewDecoder(resp.Body).Decode(&res); err != nil {
+			return "", fmt.Errorf("partyline: unexpected answer: %w", err)
+		}
+		return platformSent(res), nil
+	}
+	return "", fileError(err, f)
+}
+
+// connectionSendTimeout bounds the post of a file of size bytes through a connection: the time of a tool
+// call on top of the server's bound of the attempt (a minute and a half, and a second for every MB).
+func connectionSendTimeout(size int64) time.Duration {
+	return toolTimeout + 90*time.Second + time.Duration(size>>20)*time.Second
+}
+
+// takesNoUploads reports whether a server refused upload_ids on a send through a connection, as servers
+// before they streamed a connection's files did.
+func takesNoUploads(err error) bool {
+	var se *statusError
+	return errors.As(err, &se) && se.status == http.StatusBadRequest && strings.Contains(se.msg, "upload_ids cannot be sent through a connection")
+}
+
+// connectionTooLarge is the refusal of a file too large for a server whose connections take no upload
+// sessions; maxBytes is the limit when it is known.
 func connectionTooLarge(f localFile, maxBytes int64) error {
 	limit := "more than this Partyline server takes in one request"
 	if maxBytes > 0 {
-		limit = "over the " + humanSize(maxBytes) + " a file sent through a connection can have for now"
+		limit = "over the " + humanSize(maxBytes) + " this Partyline server takes through a connection"
 	}
-	return fmt.Errorf("file too large: %s is %s, %s; sending larger files through a connection comes in a later version of Partyline. Nothing was sent: share it in a room with send_file and room instead, or send a smaller file", f.name, humanSize(f.size), limit)
+	return fmt.Errorf("file too large: %s is %s, %s; a newer Partyline server sends larger files through a connection. Nothing was sent: share it in a room with send_file and room instead, or send a smaller file", f.name, humanSize(f.size), limit)
 }
 
 // postMultipart posts message (the JSON of the message part) and f as one multipart request,
@@ -308,11 +373,12 @@ func multipartBody(message any, f localFile) (string, streamBody, error) {
 }
 
 // uploadFile sends f through an upload session, chunk by chunk as the server sizes them, and returns
-// the id of the finished upload. A chunk that fails is sent again up to three times, from where the
+// the id of the finished upload. connection, when set, names the connection the file is for: the server
+// refuses a file it could not send before any chunk goes (LF-05). A chunk that fails is sent again up to three times, from where the
 // server says the upload stands: a chunk is kept whole or not at all, and one whose answer was lost
 // may have arrived (409 upload_offset says where to resume).
-func (t *tools) uploadFile(ctx context.Context, f localFile) (string, error) {
-	u, err := t.createUpload(ctx, f)
+func (t *tools) uploadFile(ctx context.Context, f localFile, connection string) (string, error) {
+	u, err := t.createUpload(ctx, f, connection)
 	if err != nil {
 		return "", err
 	}
@@ -375,12 +441,14 @@ func (t *tools) sendChunks(ctx context.Context, u dto.Upload, f localFile) (stri
 	return u.ID, nil
 }
 
-// createUpload starts the upload session of f; errNoUploads when the server has no such route.
-func (t *tools) createUpload(ctx context.Context, f localFile) (dto.Upload, error) {
+// createUpload starts the upload session of f, for the connection when one is named; errNoUploads when
+// the server has no such route.
+func (t *tools) createUpload(ctx context.Context, f localFile, connection string) (dto.Upload, error) {
 	ctx, cancel := context.WithTimeout(ctx, toolTimeout)
 	defer cancel()
 	var u dto.Upload
-	err := t.api.json(ctx, http.MethodPost, "agent/uploads", nil, dto.CreateUploadRequest{Name: f.name, Mime: f.mime, Size: f.size}, &u)
+	req := dto.CreateUploadRequest{Name: f.name, Mime: f.mime, Size: f.size, Connection: connection}
+	err := t.api.json(ctx, http.MethodPost, "agent/uploads", nil, req, &u)
 	var se *statusError
 	if errors.As(err, &se) && se.status == http.StatusNotFound {
 		return dto.Upload{}, errNoUploads
@@ -470,6 +538,13 @@ func fileError(err error, f localFile) error {
 		return err
 	}
 	switch {
+	case se.code == dto.ErrorCodeFileTooLarge && se.details["platform"] != "":
+		// LF-05: the platform of the connection takes smaller files than this one.
+		limit := "more than " + se.details["platform"] + " takes"
+		if maxBytes, perr := strconv.ParseInt(se.details["max_size"], 10, 64); perr == nil && maxBytes > 0 {
+			limit = "over the " + humanSize(maxBytes) + " " + se.details["platform"] + " takes"
+		}
+		return fmt.Errorf("file_too_large: %s is %s, %s for a file sent through a connection; nothing was sent: send a smaller file, or share it in a room with send_file and room instead", f.name, humanSize(f.size), limit)
 	case se.code == dto.ErrorCodeFileTooLarge:
 		limit := "more than this Partyline server takes"
 		if maxBytes, perr := strconv.ParseInt(se.details["max_size"], 10, 64); perr == nil && maxBytes > 0 {

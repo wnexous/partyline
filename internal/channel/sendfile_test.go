@@ -20,6 +20,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/wnexous/partyline/internal/api/dto"
+	"github.com/wnexous/partyline/internal/connectors"
 	"github.com/wnexous/partyline/internal/testkit"
 )
 
@@ -433,37 +434,102 @@ func TestFileErrorRateLimited(t *testing.T) {
 	require.Equal(t, "5 minutes", humanWait(5*time.Minute))
 }
 
-// LF-02, CID-32: a file over one request is refused through a connection before anything is read or
-// sent, saying that larger files through a connection come later; a server whose cap is lower refuses
-// it from its length, and the tool says the same.
-func TestSendFileThroughAConnectionOverTheLimitFailsFast(t *testing.T) {
-	t.Run("over the connection limit", func(t *testing.T) {
-		c := newConnectionChan(t)
-		rec := newRecorder()
-		o := c.options()
-		o.HTTPClient = rec.client()
-		s := c.connected(o)
-		path := filepath.Join(t.TempDir(), "huge.mov")
-		f, err := os.Create(path)
-		require.NoError(t, err)
-		require.NoError(t, f.Truncate(120<<20)) // sparse: nothing written, nothing read
-		require.NoError(t, f.Close())
+// LF-02, LF-04: a file over the size of one multipart post goes to a chat of a connection through an
+// upload session created for the connection, in chunks streamed from the file; the send then attaches it
+// with a JSON post, and the platform gets the file byte for byte with the caption.
+func TestSendFileThroughAConnectionGoesUpInChunks(t *testing.T) {
+	c := newConnectionChan(t, testkit.WithEnv(map[string]string{"PARTYLINE_MAX_UPLOAD_MB": "4"}))
+	rec := newRecorder()
+	o := c.options()
+	o.HTTPClient = rec.client()
+	s := c.connected(o)
+	size := int64(multipartMaxBytes) + 1<<20 + 77
+	path, sha := randomFile(t, "recording.mp4", size)
 
-		text, isErr := s.call("send_file", toolArgs("connection", c.conn, "chat", c.group.ID, "path", path))
-		require.True(t, isErr)
-		require.Equal(t, "file too large: huge.mov is 120 MB, over the 95 MB a file sent through a connection can have for now; sending larger files through a connection comes in a later version of Partyline. Nothing was sent: share it in a room with send_file and room instead, or send a smaller file", text)
-		require.Empty(t, rec.sent("/connections/"))
-		require.Empty(t, rec.sent("/api/v1/agent/uploads"))
-	})
-	t.Run("over the server's request cap", func(t *testing.T) {
-		c := newConnectionChan(t, testkit.WithEnv(map[string]string{"PARTYLINE_MAX_UPLOAD_MB": "1"}))
-		s := c.connected(c.options())
-		path, _ := randomFile(t, "clip.mp4", 3<<20)
-		text, isErr := s.call("send_file", toolArgs("connection", c.conn, "chat", c.group.ID, "path", path))
-		require.True(t, isErr)
-		require.Contains(t, text, "file too large: clip.mp4 is 3 MB, more than this Partyline server takes in one request; sending larger files through a connection comes in a later version")
-		require.Empty(t, c.inst.Sent())
-	})
+	text, isErr := s.call("send_file", toolArgs("connection", c.conn, "chat", c.group.ID, "path", path, "caption", "the recording"))
+	require.False(t, isErr, text)
+	require.Contains(t, text, "sent")
+	sent := c.inst.WaitSend(t)
+	require.Equal(t, []any{"the recording", "recording.mp4", size}, []any{sent.Text, sent.Files[0].Name, sent.Files[0].Size})
+	r, err := sent.Files[0].Open()
+	require.NoError(t, err)
+	h := sha256.New()
+	_, err = io.Copy(h, r)
+	require.NoError(t, err)
+	require.NoError(t, r.Close())
+	require.Equal(t, sha, hex.EncodeToString(h.Sum(nil)), "the platform got the file")
+
+	require.Len(t, rec.sent("/api/v1/agent/uploads/"), 3, "three chunks of 4 MB")
+	posts := rec.sent("/connections/")
+	require.Len(t, posts, 1)
+	require.Equal(t, "application/json", posts[0].contentType, "the send attaches the upload, it carries no file")
+}
+
+// LF-05: a file over the platform's own limit is refused when its upload session is created, before a
+// chunk of it is read or sent, in words that name the limit and the platform; a small one over it is
+// refused the same from its multipart post.
+func TestSendFileThroughAConnectionOverThePlatformLimit(t *testing.T) {
+	c := newConnectionChanOfKind(t, func(k *connectors.Kind) { k.MaxFileBytes = 10 << 20 })
+	rec := newRecorder()
+	o := c.options()
+	o.HTTPClient = rec.client()
+	s := c.connected(o)
+	path := filepath.Join(t.TempDir(), "huge.mov")
+	f, err := os.Create(path)
+	require.NoError(t, err)
+	require.NoError(t, f.Truncate(12<<20)) // sparse: nothing written, nothing read
+	require.NoError(t, f.Close())
+
+	text, isErr := s.call("send_file", toolArgs("connection", c.conn, "chat", c.group.ID, "path", path))
+	require.True(t, isErr)
+	require.Equal(t, "file_too_large: huge.mov is 12 MB, over the 10 MB Fake takes for a file sent through a connection; nothing was sent: send a smaller file, or share it in a room with send_file and room instead", text)
+	require.Len(t, rec.sent("/api/v1/agent/uploads"), 1, "the session was refused")
+	require.Empty(t, rec.sent("/api/v1/agent/uploads/"), "no chunk was sent")
+	require.Empty(t, rec.sent("/connections/"))
+
+	small := newConnectionChanOfKind(t, func(k *connectors.Kind) { k.MaxFileBytes = 1000 })
+	ss := small.connected(small.options())
+	path, _ = randomFile(t, "photo.jpg", 2000)
+	text, isErr = ss.call("send_file", toolArgs("connection", small.conn, "chat", small.group.ID, "path", path))
+	require.True(t, isErr)
+	require.Equal(t, "file_too_large: photo.jpg is 1 KB, over the 1000 bytes Fake takes for a file sent through a connection; nothing was sent: send a smaller file, or share it in a room with send_file and room instead", text)
+	require.Empty(t, small.inst.Sent())
+}
+
+// LF-02: a server whose single-request cap is below a small file refuses its multipart post from its
+// length; the file then goes in chunks and arrives.
+func TestSendFileThroughAConnectionOverTheServersRequestCap(t *testing.T) {
+	c := newConnectionChan(t, testkit.WithEnv(map[string]string{"PARTYLINE_MAX_UPLOAD_MB": "1"}))
+	s := c.connected(c.options())
+	path, _ := randomFile(t, "clip.mp4", 3<<20)
+	text, isErr := s.call("send_file", toolArgs("connection", c.conn, "chat", c.group.ID, "path", path))
+	require.False(t, isErr, text)
+	require.Equal(t, int64(3<<20), c.inst.WaitSend(t).Files[0].Size)
+}
+
+// LF-02: a server without upload sessions still gets a file of one request through a connection, and a
+// larger one is refused before anything is read or sent.
+func TestSendFileThroughAConnectionToAServerWithoutUploads(t *testing.T) {
+	c := newConnectionChan(t)
+	rec := newRecorder()
+	rec.noUploads = true
+	o := c.options()
+	o.HTTPClient = rec.client()
+	s := c.connected(o)
+	path, _ := randomFile(t, "clip.mp4", int64(multipartMaxBytes)+1)
+	text, isErr := s.call("send_file", toolArgs("connection", c.conn, "chat", c.group.ID, "path", path))
+	require.False(t, isErr, text)
+	require.Equal(t, int64(multipartMaxBytes)+1, c.inst.WaitSend(t).Files[0].Size)
+
+	path = filepath.Join(t.TempDir(), "huge.mov")
+	f, err := os.Create(path)
+	require.NoError(t, err)
+	require.NoError(t, f.Truncate(120<<20))
+	require.NoError(t, f.Close())
+	text, isErr = s.call("send_file", toolArgs("connection", c.conn, "chat", c.group.ID, "path", path))
+	require.True(t, isErr)
+	require.Equal(t, "file too large: huge.mov is 120 MB, over the 95 MB this Partyline server takes through a connection; a newer Partyline server sends larger files through a connection. Nothing was sent: share it in a room with send_file and room instead, or send a smaller file", text)
+	require.Len(t, rec.sent("/connections/"), 1, "only the first file was posted")
 }
 
 // LF-08: a download that keeps bringing bytes goes on past the bound of an ordinary tool call, streamed
