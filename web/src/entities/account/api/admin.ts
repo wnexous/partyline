@@ -7,9 +7,11 @@ import type {
   AuditEntry,
   CreatedInvite,
   CreateInviteRequest,
+  InstanceSettings,
   Invite,
   List,
   Page,
+  UpdateInstanceSettingsRequest,
   UpdateUserRequest,
   User,
 } from "@/shared/api/types.gen";
@@ -71,3 +73,19 @@ export const useAudit = () =>
     initialPageParam: undefined as string | undefined,
     getNextPageParam: (page) => (page.has_more ? page.items.at(-1)?.id : undefined),
   });
+
+/** The instance settings an admin changes (RET-01): the attachment retention. */
+export const useInstanceSettings = () =>
+  useQuery({
+    queryKey: queryKeys.adminSettings,
+    queryFn: () => api<InstanceSettings>("GET", "/admin/settings"),
+  });
+
+export function useUpdateInstanceSettings() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (req: UpdateInstanceSettingsRequest) =>
+      api<InstanceSettings>("PATCH", "/admin/settings", req),
+    onSuccess: (settings) => qc.setQueryData(queryKeys.adminSettings, settings),
+  });
+}

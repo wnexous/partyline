@@ -35,6 +35,7 @@ import (
 	"github.com/wnexous/partyline/internal/platform"
 	"github.com/wnexous/partyline/internal/rooms"
 	"github.com/wnexous/partyline/internal/secrets"
+	"github.com/wnexous/partyline/internal/settings"
 	"github.com/wnexous/partyline/internal/store"
 	"github.com/wnexous/partyline/internal/store/db"
 	"github.com/wnexous/partyline/internal/transcribe"
@@ -137,6 +138,8 @@ type App struct {
 	// Orgs is the organization use cases: organizations, their org chart, members and invitations.
 	Orgs  *orgs.Service
 	Rooms *rooms.Service
+	// Settings holds the instance settings an admin changes, such as the attachment retention (RET-01).
+	Settings *settings.Service
 	// Intelligences serves the profiles of users, AIs and people.
 	Intelligences *intelligences.Service
 	// Conversations opens direct messages and creates groups.
@@ -243,6 +246,16 @@ func New(cfg *config.Config, opts Options) (*App, error) {
 	az := access.New(st, access.Options{Authz: authz})
 	trust := delivery.TrustSource(func() delivery.Trust { return authz.Session() })
 	auditLog := audit.New(st, opts.Now)
+	var roomsSvc *rooms.Service
+	settingsSvc := settings.New(settings.Deps{
+		Store: st, Audit: auditLog, AttachmentRetentionDays: cfg.AttachmentRetentionDays, Now: opts.Now,
+		// A changed attachment retention applies at once, not at the next daily pass (RET-03).
+		Changed: func() { roomsSvc.KickRetention() },
+	})
+	roomsSvc = rooms.New(rooms.Deps{
+		Store: st, Access: az, Bus: bus, Now: opts.Now, Blobs: blobs, Transcribe: cfg.TranscribeURL != "",
+		AttachmentRetentionDays: settingsSvc.AttachmentRetentionDays,
+	})
 	a := &App{
 		Config:        cfg,
 		Logger:        opts.Logger,
@@ -254,7 +267,8 @@ func New(cfg *config.Config, opts Options) (*App, error) {
 		Access:        az,
 		Authz:         authz,
 		Orgs:          orgs.NewService(orgs.Deps{Store: st, Authz: authz, Bus: bus, Audit: auditLog, Blobs: blobs, Now: opts.Now}),
-		Rooms:         rooms.New(rooms.Deps{Store: st, Access: az, Bus: bus, Now: opts.Now, Blobs: blobs, Transcribe: cfg.TranscribeURL != ""}),
+		Rooms:         roomsSvc,
+		Settings:      settingsSvc,
 		Blobs:         blobs,
 		Uploads:       uploadSvc,
 		Platform:      platform.New(platform.Deps{Store: st, Bus: bus, Now: opts.Now, Transcribe: cfg.TranscribeURL != ""}),
@@ -357,6 +371,7 @@ func New(cfg *config.Config, opts Options) (*App, error) {
 		Blobs:         blobs,
 		Uploads:       uploadSvc,
 		Audit:         auditLog,
+		Settings:      settingsSvc,
 		Platform:      a.Platform,
 		Sends:         a.Sends,
 		Live:          a.Live,

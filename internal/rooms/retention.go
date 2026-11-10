@@ -23,12 +23,15 @@ const (
 // CleanupResult counts what one retention pass removed.
 type CleanupResult struct {
 	Messages int64
-	Blobs    int
+	// Attachments counts the room attachments that expired (RET-03).
+	Attachments int64
+	Blobs       int
 }
 
 // Cleanup deletes messages older than their room's retention days (0 keeps them forever),
-// with their attachment rows, then removes blobs no attachment references
-// any more (OPS-02).
+// with their attachment rows (OPS-02), expires the room attachments older than the instance's
+// attachment retention (RET-03), then removes blobs no attachment references any more (OPS-02,
+// RET-04).
 func (s *Service) Cleanup(ctx context.Context) (CleanupResult, error) {
 	var res CleanupResult
 	now := s.now()
@@ -46,6 +49,11 @@ func (s *Service) Cleanup(ctx context.Context) (CleanupResult, error) {
 			break
 		}
 	}
+	expired, err := s.expireAttachments(ctx, now)
+	res.Attachments = expired
+	if err != nil {
+		return res, err
+	}
 	if s.blobs == nil {
 		return res, nil
 	}
@@ -54,6 +62,53 @@ func (s *Service) Cleanup(ctx context.Context) (CleanupResult, error) {
 	})
 	res.Blobs = removed
 	return res, err
+}
+
+// expireAttachments marks the stored room attachments written more than the instance's attachment
+// retention ago expired, in batches (RET-03): each row loses its hash, so no reference to its blob
+// remains and the sweep that follows removes the blobs nothing else uses (RET-04), and its server
+// transcript goes with it (RET-05). A retention of 0 keeps every attachment.
+func (s *Service) expireAttachments(ctx context.Context, now time.Time) (int64, error) {
+	if s.attachmentDays == nil {
+		return 0, nil
+	}
+	days, err := s.attachmentDays(ctx)
+	if err != nil || days <= 0 {
+		return 0, err
+	}
+	cutoff := now.Add(-time.Duration(days) * 24 * time.Hour).UnixMilli()
+	var total int64
+	for {
+		var n int
+		err := s.store.WithTx(ctx, func(q *db.Queries) error {
+			ids, err := q.ListExpirableAttachments(ctx, db.ListExpirableAttachmentsParams{Cutoff: cutoff, Limit: retentionBatch})
+			if err != nil || len(ids) == 0 {
+				return err
+			}
+			n = len(ids)
+			if err := q.DeleteTranscriptionsByAttachments(ctx, ids); err != nil {
+				return err
+			}
+			changed, err := q.ExpireAttachments(ctx, ids)
+			total += changed
+			return err
+		})
+		if err != nil {
+			return total, err
+		}
+		if n < retentionBatch {
+			return total, nil
+		}
+	}
+}
+
+// KickRetention wakes the retention job now instead of at its next interval, as when an admin changed
+// the attachment retention (RET-03). It never blocks; a pass already due absorbs the kick.
+func (s *Service) KickRetention() {
+	select {
+	case s.kick <- struct{}{}:
+	default:
+	}
 }
 
 // RetentionTask is another cleanup the retention job runs on every pass, such as purging
@@ -72,8 +127,9 @@ func (s *Service) RunRetention(ctx context.Context, interval time.Duration, log 
 		switch {
 		case err != nil && ctx.Err() == nil:
 			log.Error("retention cleanup failed", "err", err)
-		case err == nil && (res.Messages > 0 || res.Blobs > 0):
-			log.Info("retention cleanup", "messages", res.Messages, "blobs", res.Blobs)
+		case err == nil && (res.Messages > 0 || res.Attachments > 0 || res.Blobs > 0):
+			// Counts only (RET-09): never a name or a hash.
+			log.Info("retention cleanup", "messages", res.Messages, "attachments_expired", res.Attachments, "blobs", res.Blobs)
 		}
 		for _, task := range tasks {
 			n, err := task.Run(ctx)
@@ -88,6 +144,7 @@ func (s *Service) RunRetention(ctx context.Context, interval time.Duration, log 
 		case <-ctx.Done():
 			return nil
 		case <-ticker.C:
+		case <-s.kick:
 		}
 	}
 }

@@ -26,6 +26,7 @@ import (
 	"github.com/wnexous/partyline/internal/orgs"
 	"github.com/wnexous/partyline/internal/platform"
 	"github.com/wnexous/partyline/internal/rooms"
+	"github.com/wnexous/partyline/internal/settings"
 	"github.com/wnexous/partyline/internal/uploads"
 	"github.com/wnexous/partyline/internal/users"
 	"github.com/wnexous/partyline/internal/validation"
@@ -62,6 +63,8 @@ type Deps struct {
 	// Uploads receives files larger than one request in chunks (LF-03); nil turns the routes off.
 	Uploads *uploads.Service
 	Audit   *audit.Log
+	// Settings holds the instance settings of GET and PATCH /admin/settings (RET-01).
+	Settings *settings.Service
 	// Platform is the delivery queue of the messages that arrive on connections: the agent WebSocket
 	// reads it for a session that opted in, and the agent attachments route serves its files.
 	Platform *platform.Queue

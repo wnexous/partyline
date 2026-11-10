@@ -157,6 +157,12 @@ type Identity struct {
 	CreatedAt     int64
 }
 
+type InstanceSetting struct {
+	Key       string
+	Value     string
+	UpdatedAt int64
+}
+
 type Intelligence struct {
 	ID           string
 	Kind         string

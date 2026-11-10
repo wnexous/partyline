@@ -160,13 +160,18 @@ func FormatUpdateFor(t dto.AgentFrameType, m dto.AgentMessage, selfID string) No
 }
 
 // contentOf is the content of a notification: the text, then one line per attachment, each followed
-// by the server's transcript of a voice file when there is one (TR-01, TR-04).
+// by the server's transcript of a voice file when there is one (TR-01, TR-04). An attachment the
+// instance's retention deleted is listed without an id, since there is nothing to download (RET-08).
 func contentOf(text string, attachments []dto.Attachment) string {
 	lines := make([]string, 0, 1+2*len(attachments))
 	if text != "" {
 		lines = append(lines, text)
 	}
 	for _, a := range attachments {
+		if a.Status == dto.AttachmentStatusExpired {
+			lines = append(lines, "[attachment expired: "+a.Name+", "+a.Mime+"]")
+			continue
+		}
 		lines = append(lines, "[attachment "+a.ID+": "+a.Name+", "+a.Mime+"]")
 		if a.TranscriptState == dto.TranscriptStateDone && a.Transcript != "" {
 			lines = append(lines, "Transcript: "+a.Transcript)

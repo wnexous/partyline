@@ -7,6 +7,7 @@ package db
 
 import (
 	"context"
+	"strings"
 )
 
 const countAttachmentsBySHA = `-- name: CountAttachmentsBySHA :one
@@ -39,6 +40,86 @@ func (q *Queries) DeleteExpiredMessages(ctx context.Context, arg DeleteExpiredMe
 		return 0, err
 	}
 	return result.RowsAffected()
+}
+
+const deleteTranscriptionsByAttachments = `-- name: DeleteTranscriptionsByAttachments :exec
+DELETE FROM transcriptions WHERE attachment_id IN (/*SLICE:ids*/?)
+`
+
+// The server transcript of a voice file goes with its file (RET-05).
+func (q *Queries) DeleteTranscriptionsByAttachments(ctx context.Context, ids []string) error {
+	query := deleteTranscriptionsByAttachments
+	var queryParams []interface{}
+	if len(ids) > 0 {
+		for _, v := range ids {
+			queryParams = append(queryParams, v)
+		}
+		query = strings.Replace(query, "/*SLICE:ids*/?", strings.Repeat(",?", len(ids))[1:], 1)
+	} else {
+		query = strings.Replace(query, "/*SLICE:ids*/?", "NULL", 1)
+	}
+	_, err := q.db.ExecContext(ctx, query, queryParams...)
+	return err
+}
+
+const expireAttachments = `-- name: ExpireAttachments :execrows
+UPDATE attachments SET status = 'expired', sha256 = ''
+WHERE status = 'stored' AND id IN (/*SLICE:ids*/?)
+`
+
+// Marks the attachments expired and drops their hash, so no reference to the blob remains (RET-03, RET-04).
+func (q *Queries) ExpireAttachments(ctx context.Context, ids []string) (int64, error) {
+	query := expireAttachments
+	var queryParams []interface{}
+	if len(ids) > 0 {
+		for _, v := range ids {
+			queryParams = append(queryParams, v)
+		}
+		query = strings.Replace(query, "/*SLICE:ids*/?", strings.Repeat(",?", len(ids))[1:], 1)
+	} else {
+		query = strings.Replace(query, "/*SLICE:ids*/?", "NULL", 1)
+	}
+	result, err := q.db.ExecContext(ctx, query, queryParams...)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected()
+}
+
+const listExpirableAttachments = `-- name: ListExpirableAttachments :many
+SELECT id FROM attachments
+WHERE status = 'stored' AND created_at < ?1
+ORDER BY created_at, id
+LIMIT ?2
+`
+
+type ListExpirableAttachmentsParams struct {
+	Cutoff int64
+	Limit  int64
+}
+
+// Stored room attachments written before the cutoff, oldest first (RET-03).
+func (q *Queries) ListExpirableAttachments(ctx context.Context, arg ListExpirableAttachmentsParams) ([]string, error) {
+	rows, err := q.db.QueryContext(ctx, listExpirableAttachments, arg.Cutoff, arg.Limit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []string
+	for rows.Next() {
+		var id string
+		if err := rows.Scan(&id); err != nil {
+			return nil, err
+		}
+		items = append(items, id)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
 }
 
 const listRoomAttachmentSHAs = `-- name: ListRoomAttachmentSHAs :many

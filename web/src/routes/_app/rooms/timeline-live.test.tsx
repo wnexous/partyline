@@ -764,6 +764,47 @@ describe("audio attachments (VOI-07)", () => {
   });
 });
 
+describe("expired files (RET-07)", () => {
+  it("shows an expired file as a muted card with no download, image or player", async () => {
+    mockApi({
+      "GET /rooms/r1/messages": page([
+        makeMessage({
+          seq: 1,
+          attachments: [
+            { id: "f1", name: "old.png", mime: "image/png", size: 5000, status: "expired" },
+            { id: "f2", name: "old-note.webm", mime: "audio/webm", size: 900, status: "expired" },
+            { id: "f3", name: "old.pdf", mime: "application/pdf", size: 900, status: "expired" },
+          ],
+        }),
+      ]),
+    });
+    renderTimeline();
+    expect(await screen.findByText("old.png")).toBeInTheDocument();
+    expect(screen.getAllByText(/File expired/)).toHaveLength(3);
+    expect(screen.queryByRole("img", { name: "old.png" })).toBeNull();
+    expect(screen.queryByRole("button", { name: /old\.png/ })).toBeNull();
+    expect(screen.queryByRole("group", { name: "Voice message" })).toBeNull();
+    expect(screen.queryByRole("slider")).toBeNull();
+    expect(document.querySelector('a[href^="/api/v1/attachments/"]')).toBeNull();
+  });
+
+  it("says it in Portuguese", async () => {
+    useLiveStore.setState({ locale: "pt-BR" });
+    mockApi({
+      "GET /rooms/r1/messages": page([
+        makeMessage({
+          seq: 1,
+          attachments: [
+            { id: "f1", name: "old.pdf", mime: "application/pdf", size: 900, status: "expired" },
+          ],
+        }),
+      ]),
+    });
+    renderTimeline();
+    expect(await screen.findByText(/Arquivo expirado/)).toBeInTheDocument();
+  });
+});
+
 describe("edited and deleted messages (EDT-10, DLT-10)", () => {
   const bobRef = makeIntelligence({ id: "u2", display_name: "Bob Lima", handle: "bob" });
   const bob = (seq: number, over: Partial<Message> = {}) =>

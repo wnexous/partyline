@@ -2,7 +2,7 @@ import { FileIcon } from "lucide-react";
 import type { Attachment } from "@/shared/api/types.gen";
 import { useI18n } from "@/shared/i18n";
 import { formatBytes } from "@/shared/lib/bytes";
-import { attachmentUrl, INLINE_IMAGES } from "../lib/attachments";
+import { attachmentUrl, INLINE_IMAGES, unstoredLabel } from "../lib/attachments";
 import { isAudio } from "../lib/voice";
 import { AudioPlayer } from "./audio-player";
 
@@ -30,12 +30,7 @@ export function AttachmentView({
       <span className="inline-flex max-w-full items-center gap-1.5 rounded-md border border-dashed px-2 py-1 text-xs text-muted-foreground">
         <FileIcon className="size-3.5 shrink-0" aria-hidden="true" />
         <span className="truncate">{a.name}</span>
-        <span>
-          ·{" "}
-          {a.status === "too_large"
-            ? t("message.attachmentTooLarge")
-            : t("message.attachmentUnavailable")}
-        </span>
+        <span>· {t(unstoredLabel(a.status))}</span>
       </span>
     );
   }

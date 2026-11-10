@@ -73,6 +73,9 @@ type Deps struct {
 	// Transcribe writes a transcription row for each voice file of a message posted without text
 	// (TR-01); the app sets it when a transcription service is configured.
 	Transcribe bool
+	// AttachmentRetentionDays returns the instance's attachment retention in days (RET-01): the
+	// retention job expires stored room attachments older than that; 0 or nil keeps them forever.
+	AttachmentRetentionDays func(context.Context) (int, error)
 }
 
 // Service implements rooms, members and messages.
@@ -85,6 +88,10 @@ type Service struct {
 	blobs *attachments.Store
 	// transcribe is Deps.Transcribe.
 	transcribe bool
+	// attachmentDays is Deps.AttachmentRetentionDays.
+	attachmentDays func(context.Context) (int, error)
+	// kick wakes the retention job before its interval (KickRetention).
+	kick chan struct{}
 }
 
 // New returns a Service.
@@ -92,7 +99,10 @@ func New(d Deps) *Service {
 	if d.Now == nil {
 		d.Now = time.Now
 	}
-	return &Service{store: d.Store, az: d.Access, bus: d.Bus, now: d.Now, guard: d.LoopGuard, blobs: d.Blobs, transcribe: d.Transcribe}
+	return &Service{
+		store: d.Store, az: d.Access, bus: d.Bus, now: d.Now, guard: d.LoopGuard, blobs: d.Blobs, transcribe: d.Transcribe,
+		attachmentDays: d.AttachmentRetentionDays, kick: make(chan struct{}, 1),
+	}
 }
 
 // Room is a room as seen by one caller.

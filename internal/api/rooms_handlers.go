@@ -19,6 +19,7 @@ import (
 	"github.com/wnexous/partyline/internal/attachments"
 	"github.com/wnexous/partyline/internal/authn"
 	"github.com/wnexous/partyline/internal/rooms"
+	"github.com/wnexous/partyline/internal/store/db"
 )
 
 func (s *server) roomRoutes(mux *http.ServeMux) {
@@ -398,6 +399,16 @@ func (s *server) downloadAttachment(w http.ResponseWriter, r *http.Request, p au
 	a, err := s.Rooms.Attachment(r.Context(), p, r.PathValue("id"))
 	if err != nil {
 		return err
+	}
+	return s.serveAttachment(w, r, a)
+}
+
+// serveAttachment serves a room attachment the caller may view: an expired one is 410 (RET-06), any
+// other goes through serveBlob.
+func (s *server) serveAttachment(w http.ResponseWriter, r *http.Request, a db.Attachment) error {
+	if a.Status == string(dto.AttachmentStatusExpired) {
+		return httpx.NewError(http.StatusGone, dto.ErrorCodeAttachmentExpired,
+			"the file expired: this instance deletes attachments after a number of days, and its content is gone")
 	}
 	return s.serveBlob(w, r, a.Sha256, a.Name, a.Mime)
 }

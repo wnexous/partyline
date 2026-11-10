@@ -1,8 +1,14 @@
 import { screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import type { AdminUser, AuditEntry, CreatedInvite, Invite } from "@/shared/api/types.gen";
-import { json, mockApi } from "@/test/fetch";
+import type {
+  AdminUser,
+  AuditEntry,
+  CreatedInvite,
+  InstanceSettings,
+  Invite,
+} from "@/shared/api/types.gen";
+import { apiError, json, mockApi } from "@/test/fetch";
 import { makeMe } from "@/test/fixtures";
 import { useLiveStore } from "@/test/live-store";
 import { renderRoute } from "@/test/render";
@@ -59,7 +65,7 @@ afterEach(() => vi.unstubAllGlobals());
 const row = (name: string) => screen.getByRole("listitem", { name });
 
 describe("admin access (UI-21)", () => {
-  for (const path of ["/admin/users", "/admin/invites", "/admin/audit"]) {
+  for (const path of ["/admin/users", "/admin/invites", "/admin/audit", "/admin/settings"]) {
     it(`shows the 403 page to a member opening ${path}`, async () => {
       const { calls } = mockApi({ "GET /me": json(200, member) });
       renderRoute(path);
@@ -84,6 +90,10 @@ describe("admin access (UI-21)", () => {
     expect(screen.getByRole("menuitem", { name: "Audit log" })).toHaveAttribute(
       "href",
       "/admin/audit",
+    );
+    expect(screen.getByRole("menuitem", { name: "Instance settings" })).toHaveAttribute(
+      "href",
+      "/admin/settings",
     );
   });
 });
@@ -263,5 +273,86 @@ describe("admin audit log", () => {
         ?.url.searchParams.get("before"),
     ).toBe("e2");
     expect(screen.queryByRole("button", { name: "Load older entries" })).toBeNull();
+  });
+});
+
+describe("admin instance settings (RET-01, RET-02)", () => {
+  const byDefault: InstanceSettings = {
+    attachment_retention_days: 90,
+    attachment_retention_default_days: 90,
+    attachment_retention_overridden: false,
+  };
+  const field = () => screen.getByRole("spinbutton", { name: "Delete attachments after (days)" });
+
+  it("shows the retention that applies and the server default", async () => {
+    mockApi({ "GET /me": json(200, admin), "GET /admin/settings": json(200, byDefault) });
+    renderRoute("/admin/settings");
+    expect(
+      await screen.findByRole("heading", { name: "Attachment retention" }),
+    ).toBeInTheDocument();
+    expect(field()).toHaveValue(90);
+    expect(screen.getByText(/Server default: 90 days/)).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Use the server default" })).toBeNull();
+  });
+
+  it("saves a value and goes back to the server default", async () => {
+    const overridden = {
+      ...byDefault,
+      attachment_retention_days: 0,
+      attachment_retention_overridden: true,
+    };
+    const { calls } = mockApi({
+      "GET /me": json(200, admin),
+      "GET /admin/settings": json(200, byDefault),
+      "PATCH /admin/settings": (_url: URL, init?: RequestInit) =>
+        json(
+          200,
+          String(init?.body).includes("reset_attachment_retention") ? byDefault : overridden,
+        ),
+    });
+    const user = userEvent.setup();
+    renderRoute("/admin/settings");
+    await screen.findByRole("heading", { name: "Attachment retention" });
+    await user.clear(field());
+    await user.type(field(), "0");
+    await user.click(screen.getByRole("button", { name: "Save" }));
+    await waitFor(() =>
+      expect(calls.find((c) => c.method === "PATCH")?.body).toEqual({
+        attachment_retention_days: 0,
+      }),
+    );
+    const reset = await screen.findByRole("button", { name: "Use the server default" });
+    expect(field()).toHaveValue(0);
+    await user.click(reset);
+    await waitFor(() =>
+      expect(calls.filter((c) => c.method === "PATCH").at(-1)?.body).toEqual({
+        reset_attachment_retention: true,
+      }),
+    );
+    await waitFor(() => expect(field()).toHaveValue(90));
+    expect(screen.queryByRole("button", { name: "Use the server default" })).toBeNull();
+  });
+
+  it("refuses a value out of range before sending, and shows the server's reason", async () => {
+    const { calls } = mockApi({
+      "GET /me": json(200, admin),
+      "GET /admin/settings": json(200, byDefault),
+      "PATCH /admin/settings": apiError(422, "invalid", "validation failed", {
+        attachment_retention_days: "must be 0 (keep forever) to 36500 days",
+      }),
+    });
+    const user = userEvent.setup();
+    renderRoute("/admin/settings");
+    await screen.findByRole("heading", { name: "Attachment retention" });
+    await user.clear(field());
+    await user.type(field(), "40000");
+    await user.click(screen.getByRole("button", { name: "Save" }));
+    expect(await screen.findByText("Whole days from 0 to 36500")).toBeInTheDocument();
+    expect(calls.some((c) => c.method === "PATCH")).toBe(false);
+
+    await user.clear(field());
+    await user.type(field(), "30");
+    await user.click(screen.getByRole("button", { name: "Save" }));
+    expect(await screen.findByText("must be 0 (keep forever) to 36500 days")).toBeInTheDocument();
   });
 });

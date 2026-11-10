@@ -871,9 +871,14 @@ export const ErrorCodeUploadSent = "upload_sent";
  */
 export const ErrorCodeUploadIncomplete = "upload_incomplete";
 /**
+ * ErrorCodeAttachmentExpired is a download of an attachment the instance's attachment retention
+ * deleted (410, RET-06).
+ */
+export const ErrorCodeAttachmentExpired = "attachment_expired";
+/**
  * Error codes and the HTTP status they come with.
  */
-export type ErrorCode = typeof ErrorCodeInvalid | typeof ErrorCodeUnauthorized | typeof ErrorCodeForbidden | typeof ErrorCodeNotFound | typeof ErrorCodeConflict | typeof ErrorCodeGone | typeof ErrorCodeTooLarge | typeof ErrorCodeRateLimited | typeof ErrorCodeInternal | typeof ErrorCodeUnavailable | typeof ErrorCodeHandleTaken | typeof ErrorCodeAvatarInvalid | typeof ErrorCodeLastInstanceAdmin | typeof ErrorCodeLastAdmin | typeof ErrorCodeHomeOrganization | typeof ErrorCodeAlreadyMember | typeof ErrorCodeNotOperator | typeof ErrorCodeUnknownChat | typeof ErrorCodeUnsupported | typeof ErrorCodeFolderRequired | typeof ErrorCodeFolderInvalid | typeof ErrorCodeHarnessRemoved | typeof ErrorCodePositionUnknown | typeof ErrorCodeOrganizationMismatch | typeof ErrorCodeIdentityBusy | typeof ErrorCodeDMMembersFixed | typeof ErrorCodeReactionLimit | typeof ErrorCodeDMSelf | typeof ErrorCodeContactNotFound | typeof ErrorCodeNoRouteToPerson | typeof ErrorCodeHistoryOnly | typeof ErrorCodeCounterpartDisabled | typeof ErrorCodeChatsNotMembers | typeof ErrorCodeMembersRefused | typeof ErrorCodeOrganizationRequired | typeof ErrorCodeOrganizationNotEmpty | typeof ErrorCodePositionCycle | typeof ErrorCodeIdentityOnline | typeof ErrorCodeAlreadyAnswered | typeof ErrorCodeFileTooLarge | typeof ErrorCodeInsufficientStorage | typeof ErrorCodeUploadOffset | typeof ErrorCodeUploadBusy | typeof ErrorCodeUploadSent | typeof ErrorCodeUploadIncomplete;
+export type ErrorCode = typeof ErrorCodeInvalid | typeof ErrorCodeUnauthorized | typeof ErrorCodeForbidden | typeof ErrorCodeNotFound | typeof ErrorCodeConflict | typeof ErrorCodeGone | typeof ErrorCodeTooLarge | typeof ErrorCodeRateLimited | typeof ErrorCodeInternal | typeof ErrorCodeUnavailable | typeof ErrorCodeHandleTaken | typeof ErrorCodeAvatarInvalid | typeof ErrorCodeLastInstanceAdmin | typeof ErrorCodeLastAdmin | typeof ErrorCodeHomeOrganization | typeof ErrorCodeAlreadyMember | typeof ErrorCodeNotOperator | typeof ErrorCodeUnknownChat | typeof ErrorCodeUnsupported | typeof ErrorCodeFolderRequired | typeof ErrorCodeFolderInvalid | typeof ErrorCodeHarnessRemoved | typeof ErrorCodePositionUnknown | typeof ErrorCodeOrganizationMismatch | typeof ErrorCodeIdentityBusy | typeof ErrorCodeDMMembersFixed | typeof ErrorCodeReactionLimit | typeof ErrorCodeDMSelf | typeof ErrorCodeContactNotFound | typeof ErrorCodeNoRouteToPerson | typeof ErrorCodeHistoryOnly | typeof ErrorCodeCounterpartDisabled | typeof ErrorCodeChatsNotMembers | typeof ErrorCodeMembersRefused | typeof ErrorCodeOrganizationRequired | typeof ErrorCodeOrganizationNotEmpty | typeof ErrorCodePositionCycle | typeof ErrorCodeIdentityOnline | typeof ErrorCodeAlreadyAnswered | typeof ErrorCodeFileTooLarge | typeof ErrorCodeInsufficientStorage | typeof ErrorCodeUploadOffset | typeof ErrorCodeUploadBusy | typeof ErrorCodeUploadSent | typeof ErrorCodeUploadIncomplete | typeof ErrorCodeAttachmentExpired;
 /**
  * ErrorBody is the envelope of every error response.
  */
@@ -2896,10 +2901,12 @@ export interface PostMessageRequest {
 export const AttachmentStatusStored = "stored";
 export const AttachmentStatusTooLarge = "too_large";
 export const AttachmentStatusUnavailable = "unavailable";
+export const AttachmentStatusExpired = "expired";
 /**
- * Attachment states.
+ * Attachment states. Expired is a room attachment the instance's attachment retention deleted
+ * (RET-03): its name, type and size stay, its content is gone and a download answers 410.
  */
-export type AttachmentStatus = typeof AttachmentStatusStored | typeof AttachmentStatusTooLarge | typeof AttachmentStatusUnavailable;
+export type AttachmentStatus = typeof AttachmentStatusStored | typeof AttachmentStatusTooLarge | typeof AttachmentStatusUnavailable | typeof AttachmentStatusExpired;
 /**
  * Attachment is a file of a message. Download with GET /attachments/{id}
  * (agents: GET /agent/attachments/{id}).
@@ -2981,6 +2988,38 @@ export interface Secret {
  */
 export interface PutSecretRequest {
   value: string;
+}
+
+//////////
+// source: settings.go
+
+/**
+ * InstanceSettings are the instance settings an instance admin changes (GET and PATCH
+ * /admin/settings, RET-01, RET-02).
+ */
+export interface InstanceSettings {
+  /**
+   * AttachmentRetentionDays deletes room attachments older than this many days; 0 keeps them
+   * forever. It is the admin's value when AttachmentRetentionOverridden, else the default.
+   */
+  attachment_retention_days: number /* int */;
+  /**
+   * AttachmentRetentionDefaultDays is the server's default (PARTYLINE_ATTACHMENT_RETENTION_DAYS).
+   */
+  attachment_retention_default_days: number /* int */;
+  /**
+   * AttachmentRetentionOverridden tells whether an admin's value applies instead of the default.
+   */
+  attachment_retention_overridden: boolean;
+}
+/**
+ * UpdateInstanceSettingsRequest is the body of PATCH /admin/settings: AttachmentRetentionDays sets
+ * the admin's value (0 to 36500), ResetAttachmentRetention goes back to the server's default; at most
+ * one of them is set, and an empty body changes nothing.
+ */
+export interface UpdateInstanceSettingsRequest {
+  attachment_retention_days?: number /* int */;
+  reset_attachment_retention?: boolean;
 }
 
 //////////

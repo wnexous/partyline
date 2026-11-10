@@ -12,6 +12,7 @@ import (
 
 	"github.com/wnexous/partyline/internal/connectors/safehttp"
 	"github.com/wnexous/partyline/internal/memlimit"
+	"github.com/wnexous/partyline/internal/settings"
 	"github.com/wnexous/partyline/internal/transcribe"
 )
 
@@ -56,6 +57,10 @@ type Config struct {
 	TranscribeURL string
 	// TranscribeModel is the model asked of that service (PARTYLINE_TRANSCRIBE_MODEL).
 	TranscribeModel string
+	// AttachmentRetentionDays is the default of the instance setting that deletes room attachments
+	// older than this many days (PARTYLINE_ATTACHMENT_RETENTION_DAYS, RET-01); 0 keeps them forever.
+	// An instance admin's value, when set, applies instead.
+	AttachmentRetentionDays int
 }
 
 // SecureCookies reports whether cookies must carry the Secure attribute.
@@ -100,6 +105,12 @@ func Load(getenv func(string) string) (*Config, error) {
 	if cfg.DiskReserveBytes, err = megabytes(get("PARTYLINE_DISK_RESERVE_MB", "2048"), true); err != nil {
 		return nil, fmt.Errorf("PARTYLINE_DISK_RESERVE_MB: %w", err)
 	}
+
+	days, err := strconv.Atoi(get("PARTYLINE_ATTACHMENT_RETENTION_DAYS", "0"))
+	if err != nil || days < 0 || days > settings.MaxAttachmentRetentionDays {
+		return nil, fmt.Errorf("PARTYLINE_ATTACHMENT_RETENTION_DAYS: must be an integer from 0 (keep forever) to %d", settings.MaxAttachmentRetentionDays)
+	}
+	cfg.AttachmentRetentionDays = days
 
 	if err := cfg.LogLevel.UnmarshalText([]byte(get("PARTYLINE_LOG_LEVEL", "info"))); err != nil {
 		return nil, fmt.Errorf("PARTYLINE_LOG_LEVEL: must be debug, info, warn or error")
