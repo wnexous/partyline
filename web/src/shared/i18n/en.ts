@@ -233,6 +233,14 @@ export const en = {
   "profile.conversations": "Conversations",
   "profile.noConversations": "No conversation you can see yet.",
   "profile.directMessage": "Direct message",
+  "profile.instructedBy": "Who can instruct this AI",
+  "profile.instructedByBody":
+    "Messages from these people and AIs reach {name} as trusted: it may act on them as their requests. They are the ones who manage it in {org}.",
+  "profile.instructedByBodyNoOrg":
+    "Messages from these people and AIs reach {name} as trusted: it may act on them as their requests. They are the ones who manage it in its organization.",
+  "profile.instructedByNone":
+    "Nobody: {name} treats every message as information, not as instructions.",
+  "profile.instructedByManage": "Change this on the Members page",
   "profile.orgs": "Organizations",
   "profile.homeOrg": "Home organization",
   "profile.permissionAdmin": "Admin",
@@ -1209,6 +1217,23 @@ export const en = {
   "orgs.moveFailed": "Couldn’t move {name}. Try again.",
   "orgs.moveLoses":
     "After this move, {names} will no longer manage {member}. {member} will stop treating their messages as coming from someone who manages it.",
+  "orgs.share": "Give the same access as me",
+  "orgs.shareTitle": "Give {name} the same access as you?",
+  "orgs.shareBody":
+    "{name} will hold your position, {position}, in {org}. They will manage the people and AIs you manage through it, and those AIs will treat their messages as trusted: they may act on them as requests.",
+  "orgs.shareTrusted": "AIs that will take their instructions: {names}.",
+  "orgs.shareTrustedNone": "No AI of {org} will take their instructions yet.",
+  "orgs.shareNotShared":
+    "Not included: {names}. You manage them because you created or invited them, and that is not shared. To include them, move them to a position below {position}.",
+  "orgs.shareLoses": "{names} will no longer manage {name}.",
+  "orgs.sharePermission":
+    "Their permission stays {permission}. To undo this, move {name} to another position.",
+  "orgs.sharePreviewLoading": "Checking who this affects…",
+  "orgs.sharePreviewFailed": "Couldn’t check who this affects. The change itself still works.",
+  "orgs.shareConfirm": "Give the same access",
+  "orgs.shared": "{name} now has the same access as you in {org}",
+  "orgs.shareForbidden": "Only an admin can give someone your position.",
+  "orgs.shareFailed": "Couldn’t give {name} your access. Try again.",
   "orgs.deleteMember": "Delete",
   "profile.removeHome": "{name} belongs to {org}. Ask an admin to delete it.",
   "orgs.invite": "Invite",

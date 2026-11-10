@@ -58,6 +58,7 @@ import { PanelSkeleton } from "@/shared/ui/molecules/panel-skeleton";
 import { Button } from "@/shared/ui/primitives/button";
 import { Skeleton } from "@/shared/ui/primitives/skeleton";
 import { ProfileConversations } from "@/widgets/profile-panel";
+import { InstructedBySection } from "./instructed-by-section";
 
 const routeApi = getRouteApi("/_app/contacts/$id");
 
@@ -68,7 +69,8 @@ const routeApi = getRouteApi("/_app/contacts/$id");
  * and, for a person, the conversations the viewer can see with it. What the viewer may do about it
  * comes from the profile's flags (POS-04, POS-05, POS-06): whoever may edit it gets the editor,
  * whoever manages an AI may end its session or merge it, and each organization offers "Delete AI"
- * (an AI in its home organization) or "Remove from" (anyone else) where the server allows it.
+ * (an AI in its home organization) or "Remove from" (anyone else) where the server allows it. An
+ * AI's profile also says who can instruct it, for whoever shares its organization (ST-07).
  */
 
 export function ProfilePage() {
@@ -298,6 +300,16 @@ function ProfileView({ profile }: { profile: IntelligenceProfile }) {
             ))}
           </ul>
         </PageSection>
+      ) : null}
+
+      {/* Whose messages the AI treats as trusted, for whoever shares its organization (ST-07). */}
+      {profile.ai?.instructed_by ? (
+        <InstructedBySection
+          name={name}
+          instructors={profile.ai.instructed_by}
+          memberships={profile.memberships}
+          viewerId={me?.intelligence.id}
+        />
       ) : null}
 
       {profile.apps.length > 0 ? (

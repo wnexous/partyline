@@ -234,6 +234,14 @@ export const ptBR: Dictionary = {
   "profile.conversations": "Conversas",
   "profile.noConversations": "Nenhuma conversa que você possa ver ainda.",
   "profile.directMessage": "Mensagem direta",
+  "profile.instructedBy": "Quem pode dar ordens a esta IA",
+  "profile.instructedByBody":
+    "As mensagens destas pessoas e IAs chegam a {name} como confiáveis: ela pode agir sobre elas como pedidos de quem as enviou. São quem a gerencia em {org}.",
+  "profile.instructedByBodyNoOrg":
+    "As mensagens destas pessoas e IAs chegam a {name} como confiáveis: ela pode agir sobre elas como pedidos de quem as enviou. São quem a gerencia na organização dela.",
+  "profile.instructedByNone":
+    "Ninguém: {name} trata toda mensagem como informação, não como instrução.",
+  "profile.instructedByManage": "Mudar isso na página de Membros",
   "profile.orgs": "Organizações",
   "profile.homeOrg": "Organização principal",
   "profile.permissionAdmin": "Administrador",
@@ -1218,6 +1226,25 @@ export const ptBR: Dictionary = {
   "orgs.moveFailed": "Não foi possível mover {name}. Tente de novo.",
   "orgs.moveLoses":
     "Depois desta mudança, {names} deixará de gerenciar {member}. {member} vai parar de tratar as mensagens dessa pessoa como vindas de quem a gerencia.",
+  "orgs.share": "Dar o mesmo acesso que o meu",
+  "orgs.shareTitle": "Dar a {name} o mesmo acesso que o seu?",
+  "orgs.shareBody":
+    "{name} vai ocupar o seu cargo, {position}, em {org}. Vai gerenciar as pessoas e IAs que você gerencia por esse cargo, e essas IAs vão tratar as mensagens dessa pessoa como confiáveis: podem agir sobre elas como pedidos.",
+  "orgs.shareTrusted": "IAs que vão seguir as instruções dessa pessoa: {names}.",
+  "orgs.shareTrustedNone":
+    "Nenhuma IA de {org} vai seguir as instruções dessa pessoa por enquanto.",
+  "orgs.shareNotShared":
+    "Fica de fora: {names}. Você gerencia essas identidades porque as criou ou convidou, e isso não é compartilhado. Para incluí-las, mova-as para um cargo abaixo de {position}.",
+  "orgs.shareLoses": "{names} deixará de gerenciar {name}.",
+  "orgs.sharePermission":
+    "A permissão continua {permission}. Para desfazer, mova {name} para outro cargo.",
+  "orgs.sharePreviewLoading": "Verificando quem isso afeta…",
+  "orgs.sharePreviewFailed":
+    "Não foi possível verificar quem isso afeta. A mudança em si continua funcionando.",
+  "orgs.shareConfirm": "Dar o mesmo acesso",
+  "orgs.shared": "{name} agora tem o mesmo acesso que você em {org}",
+  "orgs.shareForbidden": "Só quem administra pode dar o seu cargo a alguém.",
+  "orgs.shareFailed": "Não foi possível dar o seu acesso a {name}. Tente de novo.",
   "orgs.deleteMember": "Apagar",
   "profile.removeHome": "{name} pertence a {org}. Peça a quem administra que apague essa IA.",
   "orgs.invite": "Convidar",
