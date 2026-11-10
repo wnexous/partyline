@@ -36,3 +36,7 @@ func SetAfterOwnerMiss(g *Gateway, f func()) { g.afterOwnerMiss = f }
 // SetQueueSize changes the capacity of the live push queue every connection created from now on has. Tests
 // use it to fill a queue; QueueSize is the production value.
 func SetQueueSize(n int) { queueSize = n }
+
+// SetAfterNoteRoute makes g run f after Push routed a message with missing labels to the principal and before
+// it pushes the other sessions.
+func SetAfterNoteRoute(g *Gateway, f func()) { g.afterNoteRoute = f }

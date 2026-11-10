@@ -640,7 +640,7 @@ func TestAPushToTheAuthorsOwnLabelDeliversNothing(t *testing.T) {
 
 	msg, err := f.env.App.Gateway.Message(context.Background(), m.ID)
 	require.NoError(t, err)
-	require.False(t, f.env.App.Gateway.Push(f.agentID, "wt", dto.AgentMessage{Room: dto.RoomRef{ID: f.room.ID, Name: "Support"}, Trusted: true, Message: msg}))
+	require.False(t, f.env.App.Gateway.Push(f.agentID, []string{"wt"}, dto.AgentMessage{Room: dto.RoomRef{ID: f.room.ID, Name: "Support"}, Trusted: true, Message: msg}))
 	sibling.ExpectNone(500 * time.Millisecond)
 	principal.ExpectNone(200 * time.Millisecond)
 	require.Empty(t, f.rows(t, "wt"))
@@ -723,7 +723,7 @@ func (f *sessionFixture) pushRow(t *testing.T, m dto.Message, label string) bool
 	t.Helper()
 	msg, err := f.env.App.Gateway.Message(context.Background(), m.ID)
 	require.NoError(t, err)
-	return f.env.App.Gateway.Push(f.agentID, label, dto.AgentMessage{Room: dto.RoomRef{ID: f.room.ID, Name: "Support"}, Trusted: true, Message: msg})
+	return f.env.App.Gateway.Push(f.agentID, []string{label}, dto.AgentMessage{Room: dto.RoomRef{ID: f.room.ID, Name: "Support"}, Trusted: true, Message: msg})
 }
 
 // SESS-14, SESS-24: a row belongs to the connection that holds its label. A process that was labelled and

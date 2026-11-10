@@ -1,6 +1,8 @@
 package delivery
 
 import (
+	"fmt"
+	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -11,7 +13,7 @@ import (
 // SESS-21: a message addresses one session of an AI with "@handle:label". The handle matches
 // case-insensitively on a word boundary (the rules of containsBounded/continuesHandle), the
 // label is a-z0-9- (any case, read in lowercase) ending at a boundary, with 1 to 40 characters, an invalid or over-long label is not an address
-// (the scan continues) and the first valid address wins.
+// (the scan continues) and SessionLabel returns the first valid address (MA-01: SessionLabels returns them all).
 func TestSessionLabel(t *testing.T) {
 	longLabel := ""
 	for range 41 {
@@ -50,6 +52,47 @@ func TestSessionLabel(t *testing.T) {
 		})
 	}
 	require.Empty(t, SessionLabel("@atlas:wt", ""), "a missing handle never matches")
+}
+
+// MA-01, MA-09: a text that addresses several sessions of an AI addresses each of them, every distinct valid
+// address outside code once and in the order it appears, with the parsing rules of SESS-21 and SESS-48; the
+// eleventh distinct address of one AI and the ones after it are plain text. SessionLabel is the first of them.
+func TestSessionLabels(t *testing.T) {
+	var eleven []string
+	text := ""
+	for i := range 11 {
+		label := fmt.Sprintf("s%d", i+1)
+		eleven = append(eleven, label)
+		text += "@atlas:" + label + " "
+	}
+	cases := []struct {
+		name string
+		text string
+		want []string
+	}{
+		{"two addresses", "@atlas:api and @atlas:web, compare", []string{"api", "web"}},
+		{"a repeated address counts once", "@atlas:api @atlas:web @atlas:API again", []string{"api", "web"}},
+		{"one in code", "@atlas:api, not `@atlas:web`, and @atlas:docs", []string{"api", "docs"}},
+		{"one in a fenced block", "@atlas:api\n```\n@atlas:web\n```", []string{"api"}},
+		{"an invalid one", "@atlas:_bad @atlas:api @atlas:wt.example.com @atlas:web.", []string{"api", "web"}},
+		{"another AI's address is not this AI's", "@builder:api @atlas:web", []string{"web"}},
+		{"a bare mention is no label", "@atlas and @atlas:web", []string{"web"}},
+		{"no address", "hello @atlas", nil},
+		{"eleven addresses", text, eleven[:MaxAddressedSessions]},
+		{"a repeat does not use up the cap", strings.Repeat("@atlas:api ", 20) + "@atlas:web", []string{"api", "web"}},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			got := SessionLabels(c.text, "atlas")
+			require.Equal(t, c.want, got)
+			first := ""
+			if len(got) > 0 {
+				first = got[0]
+			}
+			require.Equal(t, first, SessionLabel(c.text, "atlas"), "SessionLabel is the first address")
+		})
+	}
+	require.Nil(t, SessionLabels("@atlas:wt", ""), "a missing handle never matches")
 }
 
 // SESS-21: a plain mention names no session, so it still routes to the principal.

@@ -32,8 +32,8 @@ type pushSession struct {
 	conn *conn
 	// readSeq is where it has read up to in this room (SN-01).
 	readSeq int64
-	// addressed says the message's text addresses this session's label (SESS-21): it is that session's
-	// message, not a copy.
+	// addressed says the message's text addresses this session's label (SESS-21, MA-02): it is that
+	// session's message, not a copy.
 	addressed bool
 	// copyOfSibling says the session receives the message because it follows the room and the text
 	// addresses a sibling of it (SN-04): it is a copy, and a later fallback of the same message adds
@@ -47,6 +47,9 @@ type pushSession struct {
 	// a DM or a bare @handle that would notify it. The session's acknowledgement consumes the message for
 	// the principal, whose queue then leaves it out.
 	standIn bool
+	// ownRow says Push already wrote the session's own addressed row, together with the fallback rows of the
+	// message's missing labels (MA-05): pushToSession does not write it again.
+	ownRow bool
 	// writeRow says the principal's delivery row is needed (SN-03, SN-04, SN-09): there is a live parallel
 	// session to dedupe against, the message also addresses a sibling (so the principal's ack must consume
 	// it), or the principal reads the room on mentions only (its rows are how it follows what it got). A
@@ -58,24 +61,27 @@ type pushSession struct {
 type pushPlan struct {
 	// sessions is who receives the message, the principal first; empty when nobody is notified.
 	sessions []pushSession
-	// note is the label the text addresses that has no live session: the message is the principal's from
-	// the start, with the note, also while the principal is offline (SESS-22, SESS-24).
-	note string
+	// notes are the labels the text addresses that have no live session, in the text's order: the message is
+	// the principal's from the start, with the note of the first one, also while the principal is offline
+	// (SESS-22, SESS-24, MA-03). Every one of them gets its own fallback row.
+	notes []string
 }
 
-// planPush works out the sessions a message notifies (SN-03, SN-04). target is the label the text
-// addresses, or "" for the principal (SESS-21). The delivery mode and the loop guard already decided that
+// planPush works out the sessions a message notifies (SN-03, SN-04). targets are the labels the text
+// addresses, in order and each once, and none for the principal (SESS-21, MA-01). The delivery mode and the loop guard already decided that
 // the AI wants the message; this decides which of its sessions hears about it:
 //   - the principal, when its setting for the room is on, or a plain message names it by its bare @handle,
 //     or the message is a DM (it is addressed to the AI), and also when the text addresses a sibling of
 //     it while its setting is on (SN-04);
-//   - every live parallel session whose setting for the room is on, or whose label the text addresses;
+//   - every live parallel session whose setting for the room is on, or whose label the text addresses (each
+//     addressed one as its own message, MA-02);
 //   - with no live principal, every live parallel session for a message that would notify the principal
 //     (a DM or a bare @handle, and no label addressed): they stand in for it (SN-10).
 //
-// A message for a label with no live session is the principal's with the note (SESS-22) and notifies
-// nobody else. A message the AI wrote itself never comes here: it follows SESS-38/SESS-49 instead.
-func (g *Gateway) planPush(agentID, target string, m dto.AgentMessage) (pushPlan, error) {
+// A message for labels with no live session is the principal's with the note (SESS-22, MA-03): once, however
+// many of its labels are missing, and in place of any copy the principal would get (MA-04). A message the AI
+// wrote itself never comes here: it follows SESS-38/SESS-49 instead.
+func (g *Gateway) planPush(agentID string, targets []string, m dto.AgentMessage) (pushPlan, error) {
 	var plan pushPlan
 	a, err := g.d.Store.R().GetAgent(g.ctx, agentID)
 	if errors.Is(err, sql.ErrNoRows) {
@@ -106,8 +112,18 @@ func (g *Gateway) planPush(agentID, target string, m dto.AgentMessage) (pushPlan
 	for _, l := range lives {
 		live[l.Label] = true
 	}
-	if target != "" && !live[target] {
-		plan.note = target
+	addressed := make(map[string]bool, len(targets))
+	addressedLive := false
+	for _, target := range targets {
+		if target == "" || addressed[target] {
+			continue
+		}
+		addressed[target] = true
+		if live[target] {
+			addressedLive = true
+		} else {
+			plan.notes = append(plan.notes, target)
+		}
 	}
 	type targetState struct {
 		live    Live
@@ -171,7 +187,7 @@ func (g *Gateway) planPush(agentID, target string, m dto.AgentMessage) (pushPlan
 	switch {
 	case m.Room.Kind == dto.ConversationKindDM:
 		mentions = true // a DM is addressed to the AI
-	case principalLive && principalNotify != NotifyOn, !live[""] && target == "":
+	case principalLive && principalNotify != NotifyOn, !live[""] && len(addressed) == 0:
 		// A bare @handle names the principal even when the same text also addresses a sibling (SN-04).
 		profile, err := delivery.IntelligenceOf(g.ctx, g.d.Store.R(), agentID)
 		if err != nil {
@@ -182,8 +198,7 @@ func (g *Gateway) planPush(agentID, target string, m dto.AgentMessage) (pushPlan
 	// With no live principal, the message that would notify it reaches its live parallel sessions instead
 	// of waiting for a principal that may never connect (SN-10). A message for a label keeps its own route
 	// (SESS-22, SESS-23).
-	standIn := !live[""] && target == "" && mentions
-	addressedLive := target != "" && live[target]
+	standIn := !live[""] && len(addressed) == 0 && mentions
 	parallelLive := false
 	for _, l := range lives {
 		if l.Label != "" {
@@ -192,7 +207,7 @@ func (g *Gateway) planPush(agentID, target string, m dto.AgentMessage) (pushPlan
 	}
 	for _, it := range items {
 		if it.live.Label == "" {
-			principalGets = plan.note != "" || it.notify == NotifyOn || mentions
+			principalGets = len(plan.notes) > 0 || it.notify == NotifyOn || mentions
 		}
 	}
 	for _, it := range items {
@@ -200,7 +215,7 @@ func (g *Gateway) planPush(agentID, target string, m dto.AgentMessage) (pushPlan
 		switch {
 		case it.live.Label == "":
 			wanted = principalGets
-		case target != "" && target == it.live.Label:
+		case addressed[it.live.Label]:
 			wanted = true
 		default:
 			wanted = it.notify == NotifyOn || standIn
@@ -208,11 +223,11 @@ func (g *Gateway) planPush(agentID, target string, m dto.AgentMessage) (pushPlan
 		if !wanted || it.conn == nil {
 			continue
 		}
-		addressed := target != "" && target == it.live.Label
-		copyOfSibling := it.live.Label == "" && !addressed && addressedLive
+		isAddressed := it.live.Label != "" && addressed[it.live.Label]
+		copyOfSibling := it.live.Label == "" && addressedLive
 		plan.sessions = append(plan.sessions, pushSession{
 			label: it.live.Label, conn: it.conn, readSeq: it.readSeq,
-			addressed: addressed, copyOfSibling: copyOfSibling, trustedOnly: trustedOnly,
+			addressed: isAddressed, copyOfSibling: copyOfSibling, trustedOnly: trustedOnly,
 			standIn:  standIn && it.live.Label != "",
 			writeRow: parallelLive || copyOfSibling || (it.live.Label == "" && it.notify != NotifyOn),
 		})
@@ -258,6 +273,14 @@ func (g *Gateway) pushToSession(agentID string, t pushSession, m dto.AgentMessag
 	row, err := g.d.Store.R().GetSessionDelivery(g.ctx, db.GetSessionDeliveryParams{
 		MessageID: m.Message.ID, AgentID: agentID, Label: t.label,
 	})
+	if t.ownRow {
+		if err == nil && row.AckedAt.Valid && row.Context == 0 && !row.FellBackAt.Valid {
+			// The principal acknowledged the note meanwhile, which consumes the message for the AI (SN-04):
+			// the addressed session still receives its message, and nothing of it falls back later.
+			return t.conn.push(m)
+		}
+		return g.deliverOwned(agentID, t.label, m)
+	}
 	switch {
 	case err == nil && t.addressed && row.Context != 0 && !row.AckedAt.Valid:
 		// An addressed push out of order: an earlier catch-up batch already gave the session the message as

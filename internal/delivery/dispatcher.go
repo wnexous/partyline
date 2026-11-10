@@ -17,9 +17,9 @@ import (
 type AgentPusher interface {
 	// Online reports whether the agent has a live connection.
 	Online(agentID string) bool
-	// Push queues a message for the agent without blocking. target is the session label the text
-	// addresses (SESS-21), or "" for the principal session.
-	Push(agentID, target string, m dto.AgentMessage) bool
+	// Push queues a message for the agent without blocking. targets are the session labels the text
+	// addresses, in order and each once (SESS-21, MA-01); none for the principal session.
+	Push(agentID string, targets []string, m dto.AgentMessage) bool
 	// PushUpdate queues, without blocking, the frame that tells the agent that a message was edited
 	// (dto.AgentFrameTypeMessageEdited) or deleted (dto.AgentFrameTypeMessageDeleted). targets are the
 	// session labels the text addressed before and after the change, "" for the principal: the gateway also
@@ -239,8 +239,8 @@ type audience struct {
 	members map[string]db.RoomMember // the AI members' rows by id
 }
 
-// selfTarget is the one recipient the delivery plan leaves out: the AI that wrote a message, when the
-// message addresses one of its other sessions with @handle:label (SESS-37). The label may have no live
+// selfTarget is a recipient the delivery plan leaves out: the AI that wrote a message, when the message
+// addresses one of its other sessions with @handle:label (SESS-37, MA-06). The label may have no live
 // session; the gateway then delivers nothing (SESS-38).
 type selfTarget struct {
 	agentID string
@@ -316,12 +316,13 @@ func (d *AgentDispatcher) selfTargets(ctx context.Context, q *db.Queries, view d
 			seen[PrincipalTarget] = true
 			out = append(out, selfTarget{agentID: view.AuthorID, label: PrincipalTarget})
 		}
-		label := SessionLabel(text, profile.Handle)
-		if label == "" || label == view.AuthorLabel || seen[label] {
-			continue
+		for _, label := range SessionLabels(text, profile.Handle) {
+			if label == view.AuthorLabel || seen[label] {
+				continue
+			}
+			seen[label] = true
+			out = append(out, selfTarget{agentID: view.AuthorID, label: label})
 		}
-		seen[label] = true
-		out = append(out, selfTarget{agentID: view.AuthorID, label: label})
 	}
 	return out, nil
 }
@@ -366,13 +367,19 @@ func (d *AgentDispatcher) dispatch(ctx context.Context, e events.MessageCreated)
 		if !wanted {
 			continue // MEM-03, MEM-04: stored, not pushed
 		}
-		target := SessionLabel(a.view.Text, profile.Handle)
-		d.o.Agents.Push(agentID, target, dto.AgentMessage{Room: refs.of(agentID), Trusted: trusted, Message: msg})
+		// MA-01, MA-08: every session of this AI the text addresses, read with this AI's own handle.
+		targets := SessionLabels(a.view.Text, profile.Handle)
+		d.o.Agents.Push(agentID, targets, dto.AgentMessage{Room: refs.of(agentID), Trusted: trusted, Message: msg})
 	}
 	// D11: the author AI's own sessions are outside the plan's author exclusion and outside the
-	// membership's delivery mode, because the author is the AI itself (SESS-37).
-	for _, t := range a.self {
-		d.o.Agents.Push(t.agentID, t.label, dto.AgentMessage{Room: refs.of(t.agentID), Trusted: true, Message: msg})
+	// membership's delivery mode, because the author is the AI itself (SESS-37, MA-06).
+	if len(a.self) > 0 {
+		targets := make([]string, len(a.self))
+		for i, t := range a.self {
+			targets[i] = t.label
+		}
+		author := a.self[0].agentID
+		d.o.Agents.Push(author, targets, dto.AgentMessage{Room: refs.of(author), Trusted: true, Message: msg})
 	}
 	return nil
 }
@@ -433,9 +440,11 @@ func (d *AgentDispatcher) dispatchUpdate(ctx context.Context, e events.MessageUp
 		if !wanted {
 			continue // it never concerned this AI
 		}
-		targets := []string{SessionLabel(e.PrevText, profile.Handle)}
+		// MA-07: every session the text addressed before the change and, for an edit, after it; "" stands for
+		// the principal when a text addresses no session.
+		targets := addressedOrPrincipal(e.PrevText, profile.Handle)
 		if !e.Deleted {
-			targets = append(targets, SessionLabel(a.view.Text, profile.Handle))
+			targets = append(targets, addressedOrPrincipal(a.view.Text, profile.Handle)...)
 		}
 		// One call: the gateway follows the addressed sessions and every delivery row of the message, and
 		// writes each of them once (SN-09).
@@ -455,6 +464,15 @@ func (d *AgentDispatcher) dispatchUpdate(ctx context.Context, e events.MessageUp
 			dto.AgentMessage{Room: refs.of(a.view.AuthorID), Trusted: true, Message: msg})
 	}
 	return nil
+}
+
+// addressedOrPrincipal is the update targets one text gives: the session labels it addresses, or the principal
+// ("") when it addresses none (SESS-27, MA-07).
+func addressedOrPrincipal(text, handle string) []string {
+	if labels := SessionLabels(text, handle); len(labels) > 0 {
+		return labels
+	}
+	return []string{""}
 }
 
 // dedupeTargets keeps the first occurrence of each label, so an edit whose old and new text address

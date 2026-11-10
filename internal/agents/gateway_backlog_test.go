@@ -56,7 +56,7 @@ func TestBacklogDeliversAFallbackBelowTheCursorOnce(t *testing.T) {
 	// A late live push of the same message is dropped by the sent map the backlog returned.
 	late, err := f.env.App.Gateway.Message(ctx, fallback.ID)
 	require.NoError(t, err)
-	require.True(t, f.env.App.Gateway.Push(f.agentID, "", dto.AgentMessage{Room: got.Room, Message: late}))
+	require.True(t, f.env.App.Gateway.Push(f.agentID, nil, dto.AgentMessage{Room: got.Room, Message: late}))
 	again.ExpectNone(500 * time.Millisecond)
 }
 
@@ -269,7 +269,7 @@ func TestAPushWhileAttachingBringsNoHistory(t *testing.T) {
 			// The dispatcher may be late: the push it makes is made here, inside the gap.
 			msg, err := env.App.Gateway.Message(ctx, asked.ID)
 			require.NoError(t, err)
-			env.App.Gateway.Push(agentID, "", dto.AgentMessage{Room: dto.RoomRef{ID: room.ID, Name: room.Name}, Message: msg})
+			env.App.Gateway.Push(agentID, nil, dto.AgentMessage{Room: dto.RoomRef{ID: room.ID, Name: room.Name}, Message: msg})
 		})
 	})
 

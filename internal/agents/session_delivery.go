@@ -82,8 +82,8 @@ func mergeRoomDeliveries(views []db.MessageView, fallbacks []sessionFallback) []
 	return out
 }
 
-// loadSessionFallbacks reads the fallback rows of one AI in one room, with the label each one was
-// addressed to.
+// loadSessionFallbacks reads the fallback queue of one AI in one room: each message once, with the label it
+// was addressed to (the first, when several of its labels fell back, MA-03).
 func loadSessionFallbacks(ctx context.Context, q *db.Queries, agentID, roomID string) ([]sessionFallback, error) {
 	views, err := q.ListSessionFallbacks(ctx, db.ListSessionFallbacksParams{AgentID: agentID, RoomID: roomID})
 	if err != nil {
@@ -96,9 +96,12 @@ func loadSessionFallbacks(ctx context.Context, q *db.Queries, agentID, roomID st
 	if err != nil {
 		return nil, err
 	}
+	// A message with several fallback rows (MA-03) is one item of the queue, with the note of its first row.
 	byMessage := make(map[string]string, len(labels))
 	for _, row := range labels {
-		byMessage[row.MessageID] = row.Label
+		if _, ok := byMessage[row.MessageID]; !ok {
+			byMessage[row.MessageID] = row.Label
+		}
 	}
 	out := make([]sessionFallback, 0, len(views))
 	for _, v := range views {

@@ -422,7 +422,7 @@ WHERE d.agent_id = ?1 AND m.room_id = ?2
                         WHERE b.room_id = m.room_id AND b.created_at < rm.created_at), 0)
   AND d.context = 0 AND d.fell_back_at IS NOT NULL AND d.acked_at IS NULL
   AND NOT (m.author_kind = 'agent' AND m.author_id = ?1)
-ORDER BY m.seq ASC
+ORDER BY m.seq ASC, d.fell_back_at ASC, d.rowid ASC
 `
 
 type ListSessionFallbackLabelsParams struct {
@@ -436,7 +436,9 @@ type ListSessionFallbackLabelsRow struct {
 }
 
 // The label each fallback row of one room belongs to, so the principal's backlog and pending reads can
-// render the note without reading the message text (SESS-22).
+// render the note without reading the message text (SESS-22). A message that addressed several labels may
+// hold one row per label (MA-03): its rows come in the order they fell back, and those that fell back at
+// once in the order they were written, which is the text's, so the first one names the note.
 func (q *Queries) ListSessionFallbackLabels(ctx context.Context, arg ListSessionFallbackLabelsParams) ([]ListSessionFallbackLabelsRow, error) {
 	rows, err := q.db.QueryContext(ctx, listSessionFallbackLabels, arg.AgentID, arg.RoomID)
 	if err != nil {

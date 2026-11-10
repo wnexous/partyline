@@ -1,7 +1,7 @@
 # Several session addresses in one message
 
-Status: Specify + Design written 2026-11-05 (heartbeat, not built). Requirement ids MA-xx. Not
-asked for yet: built when someone needs to ask two parallel sessions of one AI at once.
+Status: built 2026-11-10 (Specify + Design written 2026-11-05). Requirement ids MA-xx. Needs the adversarial
+review of the delivery core before merge (see Risks).
 
 ## Problem
 A message addresses one session of an AI with `@handle:label` (SESS-21). When its text names two
@@ -62,6 +62,34 @@ the session the message is for. The writer has to send the same message twice.
 - `dispatch` and `selfTargets` call `SessionLabels`; `dispatchUpdate` appends every label of the old
   and new text before `dedupeTargets`.
 - The channel and plugins need no change: frames are per session, and `for_label` stays one label.
+
+## As built (2026-11-10)
+- `delivery.SessionLabels` / `MaxAddressedSessions`; `SessionLabel` is its first item. The dispatcher passes the
+  list to `Gateway.Push(agentID, targets []string, m)`; the author AI's own targets go in one call, which loops
+  `pushToSelfSession` over them (MA-06). `dispatchUpdate` passes every label of the old and the new text, or
+  `""` for a text that addresses none, exactly as one label did before.
+- `planPush` builds `addressed` from the list; `plan.notes` are the missing labels in text order. `Push` writes
+  one born-fallen-back row per note in one transaction (owner `""`, same `fell_back_at`) and routes the
+  principal once through `deliverOwned(notes[0])`; the principal's own push (copy or plain) is skipped when a
+  note exists (MA-04).
+- Principal dedupe: `ListSessionFallbacks` already lists a message once (`EXISTS`); `ListSessionFallbackLabels`
+  is ordered by `seq, fell_back_at, rowid` and `loadSessionFallbacks` keeps the first label per message, so the
+  backlog's note is the one the live frame had. Live, a second fallback frame of the same message is dropped by
+  the connection's `delivered` set (frames with `for_label`), as for SESS-24 today.
+- Ack: `AckFallbackDelivery` and `AckAddressedDeliveries` already match every row of the message and AI, not a
+  label, so one principal acknowledgement clears every fallback row (no query change).
+- The live addressed sessions' own rows are written in the transaction of the fallback rows, before the
+  principal can see the message live or in its backlog (review fix): an acknowledgement of the note always finds
+  them, so a sibling that ends without acknowledging hands the principal no duplicate. As for a principal's copy
+  (SN-04), the principal's acknowledgement consumes the message for the whole AI: a live sibling's pending row
+  becomes a tombstone, it does not fall back and is not replayed to a reconnecting process; a sibling pushed after
+  that acknowledgement still receives its message. A failed write of these rows is logged; the principal is then
+  not routed, and the live sessions still receive the message through their own route.
+- `PushUpdate` routes the principal at most once per update (`toPrincipal`), whether it is reached through a
+  fallback row, a pending row whose owner is gone, `""` or a missing target. Before, an edit that made a plain
+  message address a missing label gave a live principal two frames; now one.
+- An AI with no live session at all is not dispatched to (as before): such a message has no rows and waits in
+  the principal's cursor backlog without a note (SESS-23).
 
 ## Risks (review focus)
 - A double copy to the principal through two fallback rows (backlog, pending, reconnect sweep).

@@ -349,6 +349,10 @@ steal the messages the new socket is about to receive.
 func SessionLabel(text, handle string) string
 ```
 
+Since MA-01 the dispatcher routes with `SessionLabels(text, handle) []string`, every distinct valid address
+in order (at most `MaxAddressedSessions`, 10), and `SessionLabel` is the first of them
+(`.specs/features/multi-address/spec.md`).
+
 Rules (SESS-21):
 
 - an empty handle never matches; the handle is matched case-insensitively with `containsBounded`'s left
