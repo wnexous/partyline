@@ -78,6 +78,13 @@ the session the message is for. The writer has to send the same message twice.
   the connection's `delivered` set (frames with `for_label`), as for SESS-24 today.
 - Ack: `AckFallbackDelivery` and `AckAddressedDeliveries` already match every row of the message and AI, not a
   label, so one principal acknowledgement clears every fallback row (no query change).
+- The live addressed sessions' own rows are written in the transaction of the fallback rows, before the
+  principal can see the message live or in its backlog (review fix): an acknowledgement of the note always finds
+  them, so a sibling that ends without acknowledging hands the principal no duplicate. As for a principal's copy
+  (SN-04), the principal's acknowledgement consumes the message for the whole AI: a live sibling's pending row
+  becomes a tombstone, it does not fall back and is not replayed to a reconnecting process; a sibling pushed after
+  that acknowledgement still receives its message. A failed write of these rows is logged; the principal is then
+  not routed, and the live sessions still receive the message through their own route.
 - `PushUpdate` routes the principal at most once per update (`toPrincipal`), whether it is reached through a
   fallback row, a pending row whose owner is gone, `""` or a missing target. Before, an edit that made a plain
   message address a missing label gave a live principal two frames; now one.
