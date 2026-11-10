@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/wnexous/partyline/internal/api/dto"
 	"github.com/wnexous/partyline/internal/handles"
@@ -247,4 +248,29 @@ func FormatNotice(n dto.AgentNoticeFrame) Notification {
 		"trusted":     "false",
 		"kind":        string(dto.MessageKindSystem),
 	}}
+}
+
+// HeartbeatType is the type of the notification, and of the line `partyline listen` prints, of a heartbeat: a
+// due run of one of the AI's scheduled routines (HB-08).
+const HeartbeatType = "heartbeat"
+
+// FormatHeartbeat renders a heartbeat (HB-08) as a turn for the model: the content is the routine's prompt,
+// and the meta say which routine it is (schedule, schedule_id, run_id, due_at), who set it (origin "self" or
+// "manager", with set_by, the setter's @handle without the @, and set_by_name) and whether the setter manages
+// the AI now (trusted). Claude Code shows it as <channel source="partyline" type="heartbeat" schedule=…>.
+func FormatHeartbeat(f dto.AgentHeartbeatFrame) Notification {
+	meta := map[string]string{
+		"type":        HeartbeatType,
+		"schedule":    f.Name,
+		"schedule_id": f.ScheduleID,
+		"run_id":      f.RunID,
+		"origin":      string(f.Origin),
+		"trusted":     strconv.FormatBool(f.Trusted),
+		"due_at":      f.DueAt.UTC().Format(time.RFC3339),
+	}
+	if f.Origin == dto.ScheduleOriginManager {
+		meta["set_by"] = f.SetBy.Handle
+		meta["set_by_name"] = f.SetBy.DisplayName
+	}
+	return Notification{Content: f.Prompt, Meta: meta}
 }

@@ -123,6 +123,7 @@ func (t *tools) register(srv *mcp.Server) {
 		Description: "Change your own profile: display name, @handle, bio and avatar. Give at least one field; the ones you leave out stay as they are. Returns your updated profile.",
 		InputSchema: schema(`{"type":"object","properties":{"display_name":{"type":"string","description":"your display name, 1 to 64 characters"},"handle":{"type":"string","description":"your @handle without the @: 1 to 40 characters of a-z, 0-9 and -, starting with a letter, unique on this instance"},"bio":{"type":"string","description":"your bio, up to 280 characters; an empty bio clears it"},"avatar_path":{"type":"string","description":"path of a local PNG, JPEG or WebP image of at most 2 MiB; it is cropped to a square and resized to 256x256"}}}`),
 	}, t.guard(t.updateProfile))
+	t.registerSchedules(srv)
 }
 
 type toolFunc func(ctx context.Context, args json.RawMessage) (string, error)

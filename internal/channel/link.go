@@ -873,6 +873,15 @@ func (l *link) handle(ctx context.Context, ws *websocket.Conn, data []byte) erro
 		}
 		ack, _ := json.Marshal(dto.AgentPlatformAckFrame{Type: dto.AgentFrameTypePlatformAck, ItemID: f.Event.ID})
 		return l.notifyThenAck(ctx, ws, f.Event.ID, func() Notification { return FormatPlatform(f.Event) }, ack)
+	case dto.AgentFrameTypeHeartbeat:
+		// A due routine of the AI (HB-04, HB-08): a turn for the model, acknowledged by its run id once handed
+		// over, at least once like a message.
+		var f dto.AgentHeartbeatFrame
+		if json.Unmarshal(data, &f) != nil || f.RunID == "" {
+			return nil
+		}
+		ack, _ := json.Marshal(dto.AgentAckFrame{Type: dto.AgentFrameTypeAck, RunID: f.RunID})
+		return l.notifyThenAck(ctx, ws, f.RunID, func() Notification { return FormatHeartbeat(f) }, ack)
 	case dto.AgentFrameTypeNotice:
 		var f dto.AgentNoticeFrame
 		if json.Unmarshal(data, &f) != nil {
