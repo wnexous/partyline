@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"errors"
+	"sort"
 	"time"
 
 	"github.com/wnexous/partyline/internal/audit"
@@ -39,8 +40,9 @@ type MemberRow struct {
 	JoinedAt                           int64
 	// CanDelete says the viewer may delete the member in this organization (POS-05); DeletedForGood what that
 	// does: an AI whose home is the organization is deleted for good, anyone else is only removed (POS-06).
-	// CanMove says the viewer may move the member to another position (POS-04).
-	CanDelete, DeletedForGood, CanMove bool
+	// CanMove says the viewer may move the member to another position (POS-04). CanShareAccess says the viewer
+	// may put this person in the position the viewer holds, so that they manage what it manages (ST-01).
+	CanDelete, DeletedForGood, CanMove, CanShareAccess bool
 	// Under is set by ChartView on a member with no position that hangs under another member.
 	Under string
 }
@@ -259,17 +261,37 @@ func (s *Service) UpdateMember(ctx context.Context, actorIID, orgID, targetIID s
 }
 
 // MovePreview lists the identities that manage target now but would not after moving it to positionID
-// (POS-04), in the order ManagersOf has them. It applies the same authorization and validation as
-// UpdateMember would to that move and changes nothing: a move the actor may not make answers the move's
-// error (ErrForbidden, ErrNotFound or a validation error on position_id).
+// (POS-04), in the order ManagersOf has them. It is PreviewMove's Lose.
 func (s *Service) MovePreview(ctx context.Context, actorIID, orgID, targetIID, positionID string) ([]string, error) {
+	e, err := s.PreviewMove(ctx, actorIID, orgID, targetIID, positionID)
+	return e.Lose, err
+}
+
+// MoveEffect is what moving a member to a position would change about management (POS-04, ST-05).
+type MoveEffect struct {
+	// Lose are the identities that manage the member now and would not after the move, nearest first.
+	Lose []string
+	// WillManage are the identities the member would manage after the move, by id.
+	WillManage []string
+	// WillBeTrustedBy are the AIs among WillManage whose home is the organization: they would take the
+	// member's messages as trusted (POS-10), by id.
+	WillBeTrustedBy []string
+	// NotShared are the identities the actor manages now that the member would still not manage after the
+	// move, the member itself left out, by id: what a co-holder of the actor's position does not get.
+	NotShared []string
+}
+
+// PreviewMove says what moving target to positionID would change (MoveEffect). It applies the same
+// authorization and validation as UpdateMember would to that move and changes nothing: a move the actor
+// may not make answers the move's error (ErrForbidden, ErrNotFound or a validation error on position_id).
+func (s *Service) PreviewMove(ctx context.Context, actorIID, orgID, targetIID, positionID string) (MoveEffect, error) {
 	u := MemberUpdate{PositionID: &positionID}
 	if err := s.prepareUpdate(ctx, actorIID, orgID, u); err != nil {
-		return nil, err
+		return MoveEffect{}, err
 	}
-	var lose []string
+	var out MoveEffect
 	err := s.store.ReadTx(ctx, func(q *db.Queries) error {
-		lose = nil
+		out = MoveEffect{}
 		chart, err := Load(ctx, q, orgID)
 		if err != nil {
 			return err
@@ -277,24 +299,53 @@ func (s *Service) MovePreview(ctx context.Context, actorIID, orgID, targetIID, p
 		if _, err := checkUpdate(chart, actorIID, targetIID, u); err != nil {
 			return err
 		}
-		after := chart.WithPosition(targetIID, positionID).ManagersOf(targetIID)
-		still := make(map[string]bool, len(after))
-		for _, iid := range after {
-			still[iid] = true
+		homes, err := q.ListOrgHomeAgentIDs(ctx, nullable(orgID))
+		if err != nil {
+			return err
 		}
-		before := chart.ManagersOf(targetIID)
-		lose = make([]string, 0, len(before))
-		for _, iid := range before {
-			if !still[iid] {
-				lose = append(lose, iid)
-			}
-		}
+		out = moveEffect(chart, actorIID, targetIID, positionID, homes)
 		return nil
 	})
 	if err != nil {
-		return nil, err
+		return MoveEffect{}, err
 	}
-	return lose, nil
+	return out, nil
+}
+
+// moveEffect computes MoveEffect on the chart; homes are the AIs whose home is the organization. Every list
+// is non-nil.
+func moveEffect(chart *Chart, actorIID, targetIID, positionID string, homes []string) MoveEffect {
+	after := chart.WithPosition(targetIID, positionID)
+	out := MoveEffect{Lose: []string{}, WillManage: []string{}, WillBeTrustedBy: []string{}, NotShared: []string{}}
+	still := map[string]bool{}
+	for _, iid := range after.ManagersOf(targetIID) {
+		still[iid] = true
+	}
+	for _, iid := range chart.ManagersOf(targetIID) {
+		if !still[iid] {
+			out.Lose = append(out.Lose, iid)
+		}
+	}
+	home := make(map[string]bool, len(homes))
+	for _, id := range homes {
+		home[id] = true
+	}
+	manages := after.ManagedBy(targetIID)
+	for iid := range manages {
+		out.WillManage = append(out.WillManage, iid)
+		if home[iid] {
+			out.WillBeTrustedBy = append(out.WillBeTrustedBy, iid)
+		}
+	}
+	for iid := range chart.ManagedBy(actorIID) {
+		if iid != targetIID && !manages[iid] {
+			out.NotShared = append(out.NotShared, iid)
+		}
+	}
+	sort.Strings(out.WillManage)
+	sort.Strings(out.WillBeTrustedBy)
+	sort.Strings(out.NotShared)
+	return out
 }
 
 // prepareUpdate runs the checks of an update that need no chart: a permission change is for an admin

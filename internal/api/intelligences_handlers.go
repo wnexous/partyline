@@ -97,6 +97,13 @@ func (s *server) toProfile(prof intelligences.Profile) dto.IntelligenceProfile {
 			LastSeenAt: convert.OptTime(a.LastSeenAt), ConnectedAt: convert.OptTime(a.ConnectedAt),
 			Sessions: liveSessions(s.Agents.Sessions(a.ID)), PrincipalOfflineSince: s.principalOfflineSince(a.ID), MyLevel: a.Level,
 		}
+		if a.InstructedByShown {
+			refs := make([]dto.IntelligenceRef, 0, len(a.InstructedBy))
+			for _, row := range a.InstructedBy {
+				refs = append(refs, convert.ManagerRef(row))
+			}
+			out.AI.InstructedBy = &refs
+		}
 		out.Apps = append(out.Apps, dto.App{Kind: a.Harness, Label: agents.HarnessLabel(a.Harness)})
 	case intelligences.RolePerson:
 		pi := prof.Person

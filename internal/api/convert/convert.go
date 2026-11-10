@@ -220,13 +220,18 @@ func ManagerRefs(ids []string, rows map[string]db.Intelligence) []dto.Intelligen
 		if !ok {
 			continue
 		}
-		role := dto.IntelligenceRoleUser
-		if dto.IntelligenceKind(row.Kind) == dto.IntelligenceKindAI {
-			role = dto.IntelligenceRoleAI
-		}
-		out = append(out, IntelligenceRef(row, role, ""))
+		out = append(out, ManagerRef(row))
 	}
 	return out
+}
+
+// ManagerRef renders one manager, who is a user or an AI (a person never manages).
+func ManagerRef(row db.Intelligence) dto.IntelligenceRef {
+	role := dto.IntelligenceRoleUser
+	if dto.IntelligenceKind(row.Kind) == dto.IntelligenceKindAI {
+		role = dto.IntelligenceRoleAI
+	}
+	return IntelligenceRef(row, role, "")
 }
 
 // ProfileRef renders the summary of a profile.

@@ -129,6 +129,10 @@ type AIDetail struct {
 	// MyLevel is manage for whoever manages the AI in an organization they share with it (and the AI itself)
 	// and use for whoever only sees it.
 	MyLevel Level `json:"my_level,omitempty"`
+	// InstructedBy are the identities whose messages the AI treats as trusted (POS-10, ST-06): its managers in
+	// its home organization, nearest first. Present only for whoever shares that organization with the AI (and
+	// the AI itself), who can see its chart anyway (CHART-02); an empty list means nobody.
+	InstructedBy *[]IntelligenceRef `json:"instructed_by,omitempty"`
 }
 
 // App is one place an intelligence speaks from.

@@ -1841,6 +1841,12 @@ export interface AIDetail {
    * and use for whoever only sees it.
    */
   my_level?: Level;
+  /**
+   * InstructedBy are the identities whose messages the AI treats as trusted (POS-10, ST-06): its managers in
+   * its home organization, nearest first. Present only for whoever shares that organization with the AI (and
+   * the AI itself), who can see its chart anyway (CHART-02); an empty list means nobody.
+   */
+  instructed_by?: IntelligenceRef[];
 }
 /**
  * App is one place an intelligence speaks from.
@@ -2208,14 +2214,37 @@ export interface OrgMember {
   can_delete: boolean;
   delete_effect: DeleteEffect;
   can_move: boolean;
+  /**
+   * CanShareAccess says whether the viewer may give this person "the same access": put them in the
+   * position the viewer holds (ST-01). It follows the move rule (POS-04), so today only an admin who holds
+   * a position is offered it, for a user other than themselves who does not hold that position yet.
+   */
+  can_share_access: boolean;
 }
 /**
- * MovePreview is what moving a member to another position would change about who manages it (POS-04):
- * the identities that manage it now and would stop doing so. An empty list means nobody loses the
- * management.
+ * MovePreview is what moving a member to another position would change about management (POS-04, ST-05).
+ * Every list is present; an empty one means nobody.
  */
 export interface MovePreview {
+  /**
+   * LoseManagement are the identities that manage the member now and would stop doing so.
+   */
   lose_management: IntelligenceRef[];
+  /**
+   * WillManage are the identities the member would manage after the move, by name.
+   */
+  will_manage: IntelligenceRef[];
+  /**
+   * WillBeTrustedBy are the AIs among WillManage whose home is this organization: they would treat the
+   * member's messages as trusted (POS-10), by name.
+   */
+  will_be_trusted_by: IntelligenceRef[];
+  /**
+   * NotShared are the identities the viewer manages that the member would still not manage after the move
+   * (the viewer manages them because it created or invited them, or through a position the member would not
+   * hold), by name.
+   */
+  not_shared: IntelligenceRef[];
 }
 /**
  * OrgChart is an organization's org chart as one of its members, guests included, sees it (CHART-01..03).

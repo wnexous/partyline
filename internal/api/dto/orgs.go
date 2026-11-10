@@ -100,13 +100,26 @@ type OrgMember struct {
 	CanDelete    bool         `json:"can_delete"`
 	DeleteEffect DeleteEffect `json:"delete_effect"`
 	CanMove      bool         `json:"can_move"`
+	// CanShareAccess says whether the viewer may give this person "the same access": put them in the
+	// position the viewer holds (ST-01). It follows the move rule (POS-04), so today only an admin who holds
+	// a position is offered it, for a user other than themselves who does not hold that position yet.
+	CanShareAccess bool `json:"can_share_access"`
 }
 
-// MovePreview is what moving a member to another position would change about who manages it (POS-04):
-// the identities that manage it now and would stop doing so. An empty list means nobody loses the
-// management.
+// MovePreview is what moving a member to another position would change about management (POS-04, ST-05).
+// Every list is present; an empty one means nobody.
 type MovePreview struct {
+	// LoseManagement are the identities that manage the member now and would stop doing so.
 	LoseManagement []IntelligenceRef `json:"lose_management"`
+	// WillManage are the identities the member would manage after the move, by name.
+	WillManage []IntelligenceRef `json:"will_manage"`
+	// WillBeTrustedBy are the AIs among WillManage whose home is this organization: they would treat the
+	// member's messages as trusted (POS-10), by name.
+	WillBeTrustedBy []IntelligenceRef `json:"will_be_trusted_by"`
+	// NotShared are the identities the viewer manages that the member would still not manage after the move
+	// (the viewer manages them because it created or invited them, or through a position the member would not
+	// hold), by name.
+	NotShared []IntelligenceRef `json:"not_shared"`
 }
 
 // OrgChart is an organization's org chart as one of its members, guests included, sees it (CHART-01..03).

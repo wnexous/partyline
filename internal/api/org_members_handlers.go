@@ -82,15 +82,16 @@ func (s *server) updateOrgMember(w http.ResponseWriter, r *http.Request, p authn
 	return nil
 }
 
-// previewOrgMemberMove shows who would stop managing a member if it moved to position_id ("" for
-// none), before the move happens (POS-04). It applies the same authorization and validation as the
+// previewOrgMemberMove shows what moving a member to position_id ("" for none) would change, before the move
+// happens: who would stop managing it (POS-04), whom it would manage, which AIs would trust it and whom the
+// caller manages that it still would not (ST-05). It applies the same authorization and validation as the
 // PATCH route and changes nothing.
 func (s *server) previewOrgMemberMove(w http.ResponseWriter, r *http.Request, p authn.Principal) error {
 	org, err := s.resolveOrg(r)
 	if err != nil {
 		return err
 	}
-	ids, err := s.Orgs.MovePreview(r.Context(), p.IID(), org.ID, r.PathValue("iid"), r.URL.Query().Get("position_id"))
+	effect, err := s.Orgs.PreviewMove(r.Context(), p.IID(), org.ID, r.PathValue("iid"), r.URL.Query().Get("position_id"))
 	if err != nil {
 		return err
 	}
@@ -102,12 +103,27 @@ func (s *server) previewOrgMemberMove(w http.ResponseWriter, r *http.Request, p 
 	for _, m := range members {
 		refs[m.IID] = convert.OrgMember(m).Intelligence
 	}
-	out := dto.MovePreview{LoseManagement: make([]dto.IntelligenceRef, 0, len(ids))}
-	for _, id := range ids {
+	out := dto.MovePreview{LoseManagement: make([]dto.IntelligenceRef, 0, len(effect.Lose))}
+	for _, id := range effect.Lose {
 		if ref, ok := refs[id]; ok {
 			out.LoseManagement = append(out.LoseManagement, ref)
 		}
 	}
+	// The other lists follow the members list: by name.
+	byName := func(ids []string) []dto.IntelligenceRef {
+		in := make(map[string]bool, len(ids))
+		for _, id := range ids {
+			in[id] = true
+		}
+		list := make([]dto.IntelligenceRef, 0, len(ids))
+		for _, m := range members {
+			if in[m.IID] {
+				list = append(list, refs[m.IID])
+			}
+		}
+		return list
+	}
+	out.WillManage, out.WillBeTrustedBy, out.NotShared = byName(effect.WillManage), byName(effect.WillBeTrustedBy), byName(effect.NotShared)
 	httpx.WriteJSON(w, http.StatusOK, out)
 	return nil
 }
