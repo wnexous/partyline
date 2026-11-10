@@ -26,6 +26,7 @@ import (
 	"github.com/wnexous/partyline/internal/conversations"
 	"github.com/wnexous/partyline/internal/delivery"
 	"github.com/wnexous/partyline/internal/devices"
+	"github.com/wnexous/partyline/internal/diskspace"
 	"github.com/wnexous/partyline/internal/events"
 	"github.com/wnexous/partyline/internal/identities"
 	"github.com/wnexous/partyline/internal/intelligences"
@@ -279,9 +280,14 @@ func New(cfg *config.Config, opts Options) (*App, error) {
 		version = "dev"
 	}
 	sentIDs := connectors.NewSentIDs(opts.Now)
+	freeSpace := opts.FreeSpace
+	if freeSpace == nil {
+		freeSpace = diskspace.Free
+	}
 	pipeline := connectors.NewPipeline(connectors.PipelineDeps{
 		Store: st, Bus: bus, Blobs: blobs, Identities: a.Identities, Trust: authz, Queue: a.Platform,
 		Sent: sentIDs, Wait: opts.InboundWait, MaxFileBytes: cfg.MaxFileBytes, Logger: opts.Logger, Now: opts.Now,
+		FreeSpace: func() (int64, bool) { return freeSpace(filepath.Join(cfg.DataDir, BlobsDir)) }, ReserveBytes: cfg.DiskReserveBytes,
 	})
 	fileLinks := connectors.NewFileLinks(box, st, cfg.PublicURL, opts.Now)
 	a.ConnectorManager = connectors.NewManager(connectors.ManagerDeps{

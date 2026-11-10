@@ -783,3 +783,27 @@ func TestInboundGoesToTheCurrentOperator(t *testing.T) {
 }
 
 func ptr[T any](v T) *T { return &v }
+
+// LF-07: a media whose declared size would leave the data disk with less than the reserve free is not
+// downloaded and is recorded unavailable; one that leaves the reserve, and one of unknown size, are
+// stored.
+func TestInboundMediaKeepsTheDiskReserve(t *testing.T) {
+	e := newInboundEnv(t, testkit.WithEnv(map[string]string{"PARTYLINE_DISK_RESERVE_MB": "1"}),
+		testkit.WithFreeSpace(func(string) (int64, bool) { return 1536 << 10, true }))
+	e.patch(t, dto.UpdateConnectorRequest{GroupsMentionsOnly: ptr(false)})
+	m := text(groupID, "M3", "videos")
+	m.Kind = "video"
+	fits, over := bytes.Repeat([]byte{1}, 512<<10), bytes.Repeat([]byte{2}, 600<<10)
+	m.Media = []connectors.Media{
+		{Name: "fits.mp4", Size: int64(len(fits)), Open: opener(fits)},
+		{Name: "over.mp4", Size: int64(len(over)), Open: func(context.Context) (io.ReadCloser, error) {
+			t.Error("a media the disk has no room for must not be downloaded")
+			return io.NopCloser(bytes.NewReader(nil)), nil
+		}},
+		{Name: "unknown.mp4", Open: opener(over)},
+	}
+	e.emit(m)
+	atts := e.queued(t)[0].Attachments
+	require.Equal(t, []dto.AttachmentStatus{dto.AttachmentStatusStored, dto.AttachmentStatusUnavailable, dto.AttachmentStatusStored},
+		[]dto.AttachmentStatus{atts[0].Status, atts[1].Status, atts[2].Status})
+}

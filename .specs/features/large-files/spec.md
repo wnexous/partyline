@@ -96,6 +96,9 @@ One limit (`PARTYLINE_MAX_UPLOAD_MB`, 95 MB) bounds every file, and three things
     base64 encoded by a pull reader (no goroutine, no pipe), with the exact `Content-Length`.
     Telegram streams its multipart body the same way (prefix, file, closing boundary). Discord keeps
     discordgo, which builds the body in memory, bounded by its 25 MB limit.
+  - Disk (LF-07): an inbound media whose declared size would leave less than
+    `PARTYLINE_DISK_RESERVE_MB` free is not downloaded and is recorded `unavailable`; a media of
+    unknown size is downloaded up to the largest file without that check.
   - Time: downloads have no client timeout; a stall watch (`connectors.WatchStall`) fails one whose
     first byte takes longer than a minute (WhatsApp: plus a second per MB of declared size, as
     evolution-go fetches the file first) or that then brings nothing for a minute. The CLI waits for

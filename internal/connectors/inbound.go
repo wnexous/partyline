@@ -52,6 +52,11 @@ type PipelineDeps struct {
 	// MaxFileBytes bounds stored media (CON-11): the largest file (PARTYLINE_MAX_FILE_MB), since media
 	// stream to disk (LF-04).
 	MaxFileBytes int64
+	// FreeSpace reports the free bytes of the blob store's disk and whether they are known, and
+	// ReserveBytes what a media must leave free (PARTYLINE_DISK_RESERVE_MB, LF-07): a media whose
+	// declared size would leave less is not downloaded. Nil checks nothing.
+	FreeSpace    func() (int64, bool)
+	ReserveBytes int64
 	Logger       *slog.Logger
 	// Now returns the current time; defaults to time.Now.
 	Now func() time.Time
@@ -255,6 +260,12 @@ func (p *Pipeline) saveMedia(ctx context.Context, src Source, media []Media) []p
 			files = append(files, f)
 			continue
 		}
+		if !p.roomFor(md.Size) {
+			p.d.Logger.Warn("connectors: media not downloaded: not enough free disk space", "connector_id", src.ConnectorID, "size", md.Size)
+			f.Status = dto.AttachmentStatusUnavailable
+			files = append(files, f)
+			continue
+		}
 		sha, size, err := p.download(ctx, md, limit)
 		switch {
 		case errors.Is(err, attachments.ErrTooLarge), errors.Is(err, safehttp.ErrResponseTooLarge):
@@ -268,6 +279,16 @@ func (p *Pipeline) saveMedia(ctx context.Context, src Source, media []Media) []p
 		files = append(files, f)
 	}
 	return files
+}
+
+// roomFor tells whether the disk keeps the reserve free after a media of the declared size (LF-07); a
+// media of unknown size, or a disk whose free space is unknown, is let through.
+func (p *Pipeline) roomFor(size int64) bool {
+	if size <= 0 || p.d.FreeSpace == nil {
+		return true
+	}
+	free, ok := p.d.FreeSpace()
+	return !ok || free-size >= p.d.ReserveBytes
 }
 
 func (p *Pipeline) download(ctx context.Context, md Media, limit int64) (string, int64, error) {
