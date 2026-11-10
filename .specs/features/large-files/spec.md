@@ -92,8 +92,11 @@ One limit (`PARTYLINE_MAX_UPLOAD_MB`, 95 MB) bounds every file, and three things
     `PARTYLINE_MAX_FILE_MB` plus 4 MiB. Inline media of WebSocket frames stay bounded by the
     single-request limit (`Deps.MaxMediaBytes`), media downloads by `Deps.MaxFileBytes` (Telegram and
     Discord too; the pipeline's `MaxFileBytes`). Frames are handled in order by one goroutine while the
-    socket keeps being read (`whatsapp/inbox.go`, at most 32 MB of frames waiting), so pongs are read
-    during a long download; the frames read before the socket failed are handled before `Run` returns.
+    socket keeps being read (`whatsapp/inbox.go`, at most 32 MB of frames waiting and being handled,
+    or one larger frame alone, plus the frame the reader holds), so pongs are read during a long
+    download. A download lives as long as the socket its message came on: when the socket fails it is
+    aborted (the message goes on, its media unavailable), the frames already read are handled at
+    once and `Run` returns promptly, so the next connection reads what follows, in order.
   - WhatsApp outbound: `/send/media` keeps its JSON shape; the body is the fields, then the file's
     base64 encoded by a pull reader (no goroutine, no pipe), with the exact `Content-Length`.
     Telegram streams its multipart body the same way (prefix, file, closing boundary). Discord keeps
@@ -117,8 +120,10 @@ One limit (`PARTYLINE_MAX_UPLOAD_MB`, 95 MB) bounds every file, and three things
     its size, wherever it runs. Partyline's side is bounded; evolution-go's is bounded only by
     `PARTYLINE_WHATSAPP_MAX_FILE_MB` (512 MB by default), which an operator sharing the host keeps low.
   - A send through a connection answers when the platform took the file. A proxy that times out an
-    answer (Cloudflare: 100 s) answers the AI with an error while the server goes on sending; the file
-    may arrive although the tool said it failed.
+    answer (Cloudflare: 100 s) answers the AI with an error while the server goes on sending: the tool
+    then says the file may have been delivered and to check the chat, and keeps the upload; the
+    server sends an upload once (409 `upload_busy` while it is being sent, `upload_sent` for 24 hours
+    after, in memory: a restart forgets it). A new `send_file` makes a new upload, which nothing stops.
   - WhatsApp's limit is applied to every type; a platform that refuses a smaller video or image says so
     with its reason. Discord's 25 MB is the limit of a server without boosts (servers with boosts
     take more, and Discord has lowered the default before): a file Discord refuses fails with its
