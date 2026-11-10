@@ -31,6 +31,10 @@ const (
 	MaxText = 4096
 	// MaxPhoto is the largest file sent with sendPhoto (TG-03).
 	MaxPhoto = 10 << 20
+	// MaxFile is the largest file a bot sends through the public Bot API (LF-05); LocalMaxFile through
+	// a self-hosted Bot API server (api_base changed).
+	MaxFile      = 50 << 20
+	LocalMaxFile = 2000 << 20
 	// DefaultAPIBase is the public Bot API server.
 	DefaultAPIBase = "https://api.telegram.org"
 
@@ -44,7 +48,7 @@ var ErrUnauthorized = errors.New("unauthorized")
 // Kind returns the Telegram connector kind.
 func Kind() connectors.Kind {
 	return connectors.Kind{
-		Name: KindName, Label: "Telegram bot", CanReact: true, CanSendFiles: true,
+		Name: KindName, Label: "Telegram bot", CanReact: true, CanSendFiles: true, MaxFileBytes: MaxFile, FileLimit: fileLimit,
 		Fields: []connectors.Field{
 			{Name: "bot_token", Label: "Bot token", Type: dto.FieldTypeSecret, Required: true, Help: "From @BotFather"},
 			{Name: "api_base", Label: "Bot API URL", Type: dto.FieldTypeURL, Default: DefaultAPIBase, Endpoint: true,
@@ -57,6 +61,14 @@ func Kind() connectors.Kind {
 	}
 }
 
+// fileLimit is the largest file a bot sends through the Bot API server of cfg (LF-05).
+func fileLimit(cfg connectors.Config) int64 {
+	if base := strings.TrimRight(cfg.String("api_base"), "/"); base != "" && base != DefaultAPIBase {
+		return LocalMaxFile
+	}
+	return MaxFile
+}
+
 // Connector is one Telegram bot.
 type Connector struct {
 	base      string
@@ -64,7 +76,7 @@ type Connector struct {
 	userAgent string
 	log       *slog.Logger
 	client    *http.Client // Bot API calls (JSON)
-	media     *http.Client // file downloads
+	media     *http.Client // file downloads, streamed to disk; each bounded by its stall (LF-04)
 	// pollTimeout is the getUpdates timeout in seconds.
 	pollTimeout int
 
@@ -335,20 +347,24 @@ func (c *Connector) opener(fileID string) func(ctx context.Context) (io.ReadClos
 		if f.FilePath == "" {
 			return nil, errors.New("getFile: no file path")
 		}
+		ctx, stall := connectors.WatchStall(ctx, requestTimeout, connectors.StallTimeout)
 		req, err := http.NewRequestWithContext(ctx, http.MethodGet, c.base+"/file/bot"+c.token+"/"+f.FilePath, nil)
 		if err != nil {
+			stall.Stop()
 			return nil, errors.New("file: invalid request")
 		}
 		req.Header.Set("User-Agent", c.userAgent)
 		resp, err := c.media.Do(req)
 		if err != nil {
+			stall.Stop()
 			return nil, fmt.Errorf("file download: %w", plainError(err))
 		}
 		if resp.StatusCode != http.StatusOK {
 			_ = resp.Body.Close()
+			stall.Stop()
 			return nil, fmt.Errorf("file download: status %d", resp.StatusCode)
 		}
-		return resp.Body, nil
+		return stall.Body(resp.Body), nil
 	}
 }
 
@@ -420,36 +436,59 @@ func isPhoto(f connectors.OutFile) bool {
 	return false
 }
 
+// sendFile uploads a file with sendPhoto or sendDocument. The multipart body is streamed from the file,
+// with its exact length when the size is known, and never held in memory (LF-04); a request the
+// transport sends again reopens the file. The upload gets a second for every 256 KB on top of the
+// usual bound.
 func (c *Connector) sendFile(ctx context.Context, chatID string, f connectors.OutFile, reply map[string]any) (message, error) {
 	method, field := "sendDocument", "document"
 	if isPhoto(f) {
 		method, field = "sendPhoto", "photo"
 	}
-	r, err := f.Open()
-	if err != nil {
-		return message{}, fmt.Errorf("open attachment: %w", err)
-	}
-	defer func() { _ = r.Close() }()
-	var buf bytes.Buffer
-	w := multipart.NewWriter(&buf)
+	var frame bytes.Buffer
+	w := multipart.NewWriter(&frame)
 	_ = w.WriteField("chat_id", chatID)
 	if reply != nil {
 		data, _ := json.Marshal(reply)
 		_ = w.WriteField("reply_parameters", string(data))
 	}
-	part, err := w.CreateFormFile(field, f.Name)
-	if err != nil {
+	if _, err := w.CreateFormFile(field, f.Name); err != nil {
 		return message{}, err
 	}
-	if _, err := io.Copy(part, r); err != nil {
-		return message{}, fmt.Errorf("read attachment: %w", err)
-	}
+	head := frame.Len() // the file's bytes go between its part's header and the closing boundary
 	if err := w.Close(); err != nil {
 		return message{}, err
 	}
+	all := frame.Bytes()
+	prefix, suffix := all[:head], all[head:]
+	open := func() (io.ReadCloser, error) {
+		if f.Open == nil {
+			return nil, errors.New("open attachment: no content")
+		}
+		r, err := f.Open()
+		if err != nil {
+			return nil, fmt.Errorf("open attachment: %w", err)
+		}
+		return readCloser{Reader: io.MultiReader(bytes.NewReader(prefix), r, bytes.NewReader(suffix)), Closer: r}, nil
+	}
+	body, err := open()
+	if err != nil {
+		return message{}, err
+	}
+	length := int64(-1)
+	if f.Size > 0 {
+		length = int64(len(all)) + f.Size
+	}
+	timeout := requestTimeout + time.Duration(c.pollTimeout)*time.Second + time.Duration(max(f.Size, 0)>>18)*time.Second
 	var sent message
-	err = c.do(ctx, method, w.FormDataContentType(), &buf, &sent)
+	err = c.send(ctx, method, w.FormDataContentType(), body, length, open, timeout, &sent)
 	return sent, err
+}
+
+// readCloser reads from a reader and closes what it came from.
+type readCloser struct {
+	io.Reader
+	io.Closer
 }
 
 // call invokes a Bot API method with a JSON body.
@@ -466,11 +505,25 @@ func (c *Connector) call(ctx context.Context, method string, body map[string]any
 
 // do performs a Bot API request. Errors never carry the URL (which holds the token).
 func (c *Connector) do(ctx context.Context, method, contentType string, body io.Reader, out any) error {
-	ctx, cancel := context.WithTimeout(ctx, requestTimeout+time.Duration(c.pollTimeout)*time.Second)
+	return c.send(ctx, method, contentType, body, -2, nil, requestTimeout+time.Duration(c.pollTimeout)*time.Second, out)
+}
+
+// send performs a Bot API request within timeout; length is the body's length (-1 unknown, -2: let the
+// request find it) and reopen, when set, opens the body again for a request the transport resends.
+func (c *Connector) send(ctx context.Context, method, contentType string, body io.Reader, length int64,
+	reopen func() (io.ReadCloser, error), timeout time.Duration, out any) error {
+	ctx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, c.base+"/bot"+c.token+"/"+method, body)
 	if err != nil {
+		if rc, ok := body.(io.Closer); ok {
+			_ = rc.Close()
+		}
 		return errors.New(method + ": invalid request")
+	}
+	if length > -2 {
+		req.ContentLength = length
+		req.GetBody = reopen
 	}
 	req.Header.Set("Content-Type", contentType)
 	req.Header.Set("User-Agent", c.userAgent)

@@ -25,6 +25,14 @@ const KindName = "discord"
 // MaxText is the longest message content in characters (DC-02).
 const MaxText = 2000
 
+// MaxFile is the largest file a bot uploads to a server without boosts (LF-05). discordgo builds the
+// request in memory, which this bounds.
+const MaxFile = 25 << 20
+
+// downloadWait bounds the wait for the first byte of an attachment download; after it a download
+// fails when it brings nothing for connectors.StallTimeout.
+const downloadWait = 60 * time.Second
+
 // intents are the gateway events the bot subscribes to.
 const intents = discordgo.IntentsGuilds | discordgo.IntentsGuildMessages | discordgo.IntentsDirectMessages |
 	discordgo.IntentsMessageContent
@@ -32,7 +40,7 @@ const intents = discordgo.IntentsGuilds | discordgo.IntentsGuildMessages | disco
 // Kind returns the Discord connector kind.
 func Kind() connectors.Kind {
 	return connectors.Kind{
-		Name: KindName, Label: "Discord bot", CanListChats: true, CanReact: true, CanSendFiles: true,
+		Name: KindName, Label: "Discord bot", CanListChats: true, CanReact: true, CanSendFiles: true, MaxFileBytes: MaxFile,
 		Fields: []connectors.Field{
 			{Name: "bot_token", Label: "Bot token", Type: dto.FieldTypeSecret, Required: true,
 				Help: "Developer Portal → Bot; enable the Message Content intent"},
@@ -102,7 +110,7 @@ func newWithSession(s session, d connectors.Deps) *Connector {
 	if log == nil {
 		log = slog.Default()
 	}
-	c := &Connector{s: s, userAgent: d.UserAgent, log: log, client: d.MediaClient(60 * time.Second), titles: map[string]string{}}
+	c := &Connector{s: s, userAgent: d.UserAgent, log: log, client: d.MediaClient(0), titles: map[string]string{}}
 	s.AddHandler(func(sess *discordgo.Session, m *discordgo.MessageCreate) {
 		c.guard("message", func() { c.onMessage(sess, m) })
 	})
@@ -267,16 +275,20 @@ func (c *Connector) title(guildID, channelID string) string {
 	return t
 }
 
-// opener downloads an attachment from its CDN URL.
+// opener downloads an attachment from its CDN URL, as a stream bounded by its stall rather than by a
+// total time, so a large attachment that keeps arriving is not cut (LF-04).
 func (c *Connector) opener(rawURL string) func(ctx context.Context) (io.ReadCloser, error) {
 	return func(ctx context.Context) (io.ReadCloser, error) {
+		ctx, stall := connectors.WatchStall(ctx, downloadWait, connectors.StallTimeout)
 		req, err := http.NewRequestWithContext(ctx, http.MethodGet, rawURL, nil)
 		if err != nil {
+			stall.Stop()
 			return nil, errors.New("attachment: invalid url")
 		}
 		req.Header.Set("User-Agent", c.userAgent)
 		resp, err := c.client.Do(req)
 		if err != nil {
+			stall.Stop()
 			var ue *url.Error
 			if errors.As(err, &ue) {
 				err = ue.Err
@@ -285,9 +297,10 @@ func (c *Connector) opener(rawURL string) func(ctx context.Context) (io.ReadClos
 		}
 		if resp.StatusCode != http.StatusOK {
 			_ = resp.Body.Close()
+			stall.Stop()
 			return nil, fmt.Errorf("attachment download: status %d", resp.StatusCode)
 		}
-		return resp.Body, nil
+		return stall.Body(resp.Body), nil
 	}
 }
 
