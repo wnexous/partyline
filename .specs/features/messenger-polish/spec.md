@@ -277,7 +277,7 @@ On 2026-10-24 the product owner asked to edit and delete messages in conversatio
 **Acceptance Criteria**:
 
 1. WHEN the on-screen keyboard opens or closes, or the visible area changes in any other way, THEN the conversation page SHALL be as tall as the visual viewport and start at its top edge: the header on top and the composer's bottom edge on the keyboard's top edge, with nothing of the composer behind the keyboard. A pinch-zoomed page SHALL keep its layout. (KBD-01)
-2. WHILE the timeline is at its newest message, a change of the visible area SHALL keep it there; WHILE the reader is higher up it SHALL keep what is on screen. (KBD-02)
+2. WHILE the timeline is at its newest message, a change of the visible area or of the timeline's content (the keyboard, the window, the font size, the header, images loading, new messages) SHALL keep it there without showing "Jump to latest"; only the reader scrolling up, or a jump to a quoted or focused message, SHALL let go of it. WHILE the reader is higher up it SHALL keep what is on screen. (KBD-02)
 3. WHEN a message is sent THEN the text box SHALL keep focus and the keyboard SHALL stay open; pressing Send SHALL NOT move focus out of the text box. (KBD-03)
 4. The text box SHALL grow with its text up to 6 lines or 40 % of the visible area, whichever is smaller, and scroll inside itself beyond that; the attach, microphone and Send buttons SHALL stay visible whatever its length. (KBD-04)
 5. The viewport meta SHALL ask for `interactive-widget=resizes-content`, and the full-height shell SHALL be `100dvh` (not `100svh`) wherever the visual viewport is not known. (KBD-05)
