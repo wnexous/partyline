@@ -47,6 +47,18 @@ For a room message M and AI A (after delivery mode + loop guard decide A wants i
    the connection's backlog already wrote (c.delivered / c.pushed), written directly (not through the queue) with their unread context and copy rows
    created before the frames, so the ack always finds its row.
 
+8. Read by any session (SN-11): migration 0039 adds `session_room_state.read_from`, where what a row
+   has read starts (`read_from < seq <= read_seq`): the join point for a row created by
+   CreateSessionRoomState, 0 for a row created by a reading (AdvanceSessionReadSeq,
+   AdvancePrincipalReadSeq), and `read_seq` for every row that existed before. CountAgentBacklog,
+   ListAgentBacklog and ListStandInCandidates leave out a message covered by any row of the AI, or
+   with any acknowledged delivery row of the AI. On a principal attach, `catchUpPrincipal` (run before
+   the backlog, after the welcome bound is taken) moves the cursor and the principal's read position
+   to GetAgentReadThrough: the seq before the first message after the cursor that the AI did not
+   write and no session read (or the bound). A plain max of the other sessions' read positions was
+   not enough: a parallel session that joined caught up has a read position above messages it
+   never read and that still wait for the principal.
+
 ## Tools (internal/channel)
 - `list_rooms`/`room_info`: per conversation `unread` (for the calling session) and `notify`.
 - `read_unread {room}`: returns unread frames, marks read.
