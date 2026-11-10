@@ -567,6 +567,7 @@ func (g *Gateway) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	if g.afterAttach != nil {
 		g.afterAttach()
 	}
+	c.priorRead = g.priorReads(ctx, row.Agent.ID, sessionKey)
 	g.ensureSessionRooms(ctx, row.Agent.ID, sessionKey, live.Label == "")
 	c.rooms.Store(true)
 	// Only the principal session receives the platform events of the AI it operates (SESS-18).
@@ -815,6 +816,9 @@ type conn struct {
 	// (SN-01): its harness session id, else "label:<label>", else the principal's pin or "principal". The
 	// attach sets it before the connection reads a frame or receives a push.
 	sessionKey string
+	// priorRead is the read position of each room where the session had a state row before this connection
+	// (priorReads). Written before the connection's goroutines start, then only read.
+	priorRead map[string]int64
 	// rooms is set once the session's per-room state rows exist (ensureSessionRooms). Before that a push
 	// has no read position to start a catch-up from: the connection's backlog covers that moment.
 	rooms atomic.Bool
@@ -1325,6 +1329,25 @@ func (g *Gateway) advanceRoom(ctx context.Context, agentID string, st RoomState,
 // of, at its join point, so a new session starts caught up and one that comes back keeps its read position
 // and its setting (SN-01, SN-02). A failure is logged and is not fatal: the connection asked for a live
 // session, and the unread bookkeeping is not what it is here for.
+// priorReads is the read position of each room where the session already had a state row before this
+// connection, read before ensureSessionRooms creates the missing ones (SN-10: the stand-ins of an attaching
+// session start after what it read). Nil when there are none or they cannot be read.
+func (g *Gateway) priorReads(ctx context.Context, agentID, sessionKey string) map[string]int64 {
+	if sessionKey == "" {
+		return nil
+	}
+	states, err := g.d.Store.R().ListSessionRoomStates(ctx, db.ListSessionRoomStatesParams{AgentID: agentID, SessionKey: sessionKey})
+	if err != nil {
+		g.d.Logger.Error("agent: session states read failed", "agent_id", agentID, "err", err)
+		return nil
+	}
+	out := make(map[string]int64, len(states))
+	for _, st := range states {
+		out[st.RoomID] = st.ReadSeq
+	}
+	return out
+}
+
 func (g *Gateway) ensureSessionRooms(ctx context.Context, agentID, sessionKey string, isPrincipal bool) {
 	if sessionKey == "" {
 		return
