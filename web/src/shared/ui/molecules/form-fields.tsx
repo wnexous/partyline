@@ -172,7 +172,7 @@ export function TextAreaField<T extends FieldValues>({
           {description || max ? (
             <div className="flex items-start justify-between gap-3">
               {description ? (
-                <FormDescription className="text-xs">{description}</FormDescription>
+                <FormDescription className="min-w-0 text-xs">{description}</FormDescription>
               ) : null}
               {max ? (
                 <span className="ml-auto shrink-0 font-mono text-xs text-muted-foreground tabular">
@@ -274,7 +274,7 @@ export function SelectControl({
     [description ? descriptionId : null, error ? errorId : null].filter(Boolean).join(" ") ||
     undefined;
   return (
-    <div data-slot="form-item" className={cn("grid gap-2", className)}>
+    <div data-slot="form-item" className={cn("grid grid-cols-[minmax(0,1fr)] gap-2", className)}>
       <Label
         data-slot="form-label"
         data-error={!!error}
@@ -296,7 +296,7 @@ export function SelectControl({
         <p
           data-slot="form-description"
           id={descriptionId}
-          className="text-xs text-muted-foreground"
+          className="text-xs text-muted-foreground [overflow-wrap:anywhere]"
         >
           {description}
         </p>

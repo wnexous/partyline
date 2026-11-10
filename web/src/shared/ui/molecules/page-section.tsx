@@ -37,7 +37,10 @@ export function PageSection({
         <div className="flex items-center justify-between gap-3">
           <h2
             id={headingId}
-            className={headingClassName ?? "text-lg font-semibold tracking-[-0.015em]"}
+            className={
+              headingClassName ??
+              "text-lg font-semibold tracking-[-0.015em] [overflow-wrap:anywhere]"
+            }
           >
             {title}
           </h2>
@@ -52,7 +55,10 @@ export function PageSection({
     return (
       <section aria-labelledby={headingId} className="pt-7 first:pt-5">
         <div className="px-4 pb-2 md:px-8">
-          <h2 id={headingId} className="text-lg font-semibold tracking-[-0.015em]">
+          <h2
+            id={headingId}
+            className="text-lg font-semibold tracking-[-0.015em] [overflow-wrap:anywhere]"
+          >
             {title}
           </h2>
           {description ? (
@@ -72,7 +78,7 @@ export function PageSection({
       className="grid gap-4 py-7 lg:grid-cols-[12rem_1fr] lg:gap-8"
     >
       <div className="space-y-1">
-        <h2 id={headingId} className="font-semibold tracking-[-0.01em]">
+        <h2 id={headingId} className="font-semibold tracking-[-0.01em] [overflow-wrap:anywhere]">
           {title}
         </h2>
         {description ? <p className="text-sm text-muted-foreground">{description}</p> : null}
