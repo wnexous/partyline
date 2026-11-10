@@ -14,11 +14,23 @@ import (
 	"github.com/wnexous/partyline/internal/testkit"
 )
 
-// pushCall is one push the recording pusher received.
+// pushCall is one push the recording pusher received: targets are the labels it was given, nil for the
+// principal.
 type pushCall struct {
 	agentID string
-	target  string
+	targets []string
 	message dto.AgentMessage
+}
+
+// to is the targets of a push call: the labels given, or nil for none ("" is no label).
+func to(labels ...string) []string {
+	var out []string
+	for _, l := range labels {
+		if l != "" {
+			out = append(out, l)
+		}
+	}
+	return out
 }
 
 // updateCall is one update the recording pusher received.
@@ -54,14 +66,23 @@ func (r *recordingPusher) Online(agentID string) bool {
 	return r.online[agentID]
 }
 
-func (r *recordingPusher) Push(agentID, target string, m dto.AgentMessage) bool {
+func (r *recordingPusher) Push(agentID string, targets []string, m dto.AgentMessage) bool {
 	r.mu.Lock()
 	defer r.mu.Unlock()
-	if m.Message.AuthorKind == dto.AuthorKindAgent && m.Message.AuthorID == agentID &&
-		(target == "" || r.live == nil || !r.live(agentID, target)) {
-		return false // the AI's own message only reaches a live session of it (SESS-38)
+	if m.Message.AuthorKind == dto.AuthorKindAgent && m.Message.AuthorID == agentID {
+		// The AI's own message only reaches the live sessions of it its text addresses (SESS-38, MA-06).
+		var live []string
+		for _, target := range targets {
+			if target != "" && r.live != nil && r.live(agentID, target) {
+				live = append(live, target)
+			}
+		}
+		if len(live) == 0 {
+			return false
+		}
+		targets = live
 	}
-	r.pushes = append(r.pushes, pushCall{agentID: agentID, target: target, message: m})
+	r.pushes = append(r.pushes, pushCall{agentID: agentID, targets: to(targets...), message: m})
 	return true
 }
 
@@ -88,7 +109,7 @@ func (r *recordingPusher) expect(t *testing.T, want []pushCall) []pushCall {
 	require.Len(t, got, len(want))
 	for i := range want {
 		require.Equal(t, want[i].agentID, got[i].agentID)
-		require.Equal(t, want[i].target, got[i].target)
+		require.Equal(t, want[i].targets, got[i].targets)
 	}
 	return got
 }
@@ -188,25 +209,40 @@ func (f *dispatcherFixture) setDelivery(t *testing.T, agentID string, mode dto.D
 	t.Fatalf("no agent member with id %s", agentID)
 }
 
-// SESS-20, SESS-21: a plain message reaches the principal only; @handle:label reaches that session
-// only; the first address wins.
+// SESS-20, SESS-21, MA-01: a plain message reaches the principal only; @handle:label reaches that session;
+// every distinct address of the AI in the text is a target, in the text's order.
 func TestDispatchRoutesToTheAddressedSession(t *testing.T) {
 	cases := []struct {
-		name   string
-		text   string
-		target string
+		name    string
+		text    string
+		targets []string
 	}{
-		{"plain", "hello", ""},
-		{"labelled", "@atlas:claude-2 hi", "claude-2"},
-		{"first address wins", "@atlas:claude-2 and @atlas:wt", "claude-2"},
+		{"plain", "hello", nil},
+		{"labelled", "@atlas:claude-2 hi", to("claude-2")},
+		{"every address", "@atlas:claude-2 and @atlas:wt", to("claude-2", "wt")},
+		{"a repeated address counts once", "@atlas:wt, @atlas:claude-2, then @atlas:wt again", to("wt", "claude-2")},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
 			f := newDispatcherFixture(t, "atlas")
 			f.post(t, tc.text)
-			f.rec.expect(t, []pushCall{{agentID: f.ids["atlas"], target: tc.target}})
+			f.rec.expect(t, []pushCall{{agentID: f.ids["atlas"], targets: tc.targets}})
 		})
 	}
+}
+
+// MA-08: a text that addresses sessions of two AIs gives each AI only the addresses with its own handle.
+func TestDispatchGivesEachAIItsOwnAddresses(t *testing.T) {
+	f := newDispatcherFixture(t, "atlas", "builder")
+	f.post(t, "@atlas:api and @builder:web, then @atlas:web")
+	require.Eventually(t, func() bool { return len(f.rec.calls()) == 2 }, 5*time.Second, 5*time.Millisecond)
+	byAgent := map[string][]string{}
+	for _, c := range f.rec.calls() {
+		byAgent[c.agentID] = c.targets
+	}
+	require.Equal(t, to("api", "web"), byAgent[f.ids["atlas"]])
+	require.Equal(t, to("web"), byAgent[f.ids["builder"]])
+	f.rec.expectNoMore(t, 2)
 }
 
 // SESS-21: a DM follows the same address rule.
@@ -215,7 +251,7 @@ func TestDispatchRoutesADirectMessageToTheAddressedSession(t *testing.T) {
 	dm := testkit.Decode[dto.Room](f.alice.Post("/api/v1/conversations/dm", dto.OpenDMRequest{With: f.ids["atlas"]}).RequireStatus(201))
 	msg := testkit.Decode[dto.Message](f.alice.Post("/api/v1/rooms/"+dm.ID+"/messages", dto.PostMessageRequest{Text: "@atlas:claude-2 hi"}).RequireStatus(201))
 	require.Equal(t, dm.ID, msg.RoomID)
-	f.rec.expect(t, []pushCall{{agentID: f.ids["atlas"], target: "claude-2"}})
+	f.rec.expect(t, []pushCall{{agentID: f.ids["atlas"], targets: to("claude-2")}})
 }
 
 // SESS-26: the loop guard suppresses every session.
@@ -234,7 +270,7 @@ func TestDispatchSkipsAPausedRoomForEveryTarget(t *testing.T) {
 func TestDispatchDoesNotEchoAnAIMessageToItsOwnSessions(t *testing.T) {
 	f := newDispatcherFixture(t, "atlas", "builder")
 	f.postAs(t, "atlas", "hello")
-	f.rec.expect(t, []pushCall{{agentID: f.ids["builder"], target: ""}})
+	f.rec.expect(t, []pushCall{{agentID: f.ids["builder"]}})
 }
 
 // SESS-37: the AI's principal writes to a live sibling of its own AI. That session receives the
@@ -245,7 +281,7 @@ func TestDispatchRoutesAPrincipalsMessageToItsLiveSibling(t *testing.T) {
 	m := f.postAs(t, "atlas", "@atlas:wt do X")
 	require.Empty(t, m.AuthorLabel, "the principal writes without a label")
 
-	calls := f.rec.expect(t, []pushCall{{agentID: f.ids["atlas"], target: "wt"}})
+	calls := f.rec.expect(t, []pushCall{{agentID: f.ids["atlas"], targets: to("wt")}})
 	require.True(t, calls[0].message.Trusted, "the AI wrote it: the sibling trusts it")
 	require.Empty(t, calls[0].message.ForLabel, "a message the AI wrote never carries the note")
 }
@@ -285,7 +321,7 @@ func TestDispatchStillAppliesD3ToAPersonsLabelledMessage(t *testing.T) {
 			f.dialWorktree(t)
 
 			f.post(t, tc.text)
-			calls := f.rec.expect(t, []pushCall{{agentID: f.ids["atlas"], target: tc.target}})
+			calls := f.rec.expect(t, []pushCall{{agentID: f.ids["atlas"], targets: to(tc.target)}})
 			require.False(t, calls[0].message.Trusted, "a person wrote it: the trust rule of AD-018 decides")
 
 			f.post(t, "hi all") // no mention: the mentions mode drops it

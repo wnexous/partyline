@@ -186,48 +186,64 @@ func selfAuthored(m dto.Message, agentID string) bool {
 }
 
 // Push queues a live message for the sessions of the AI it notifies, without blocking (SN-03, SN-04).
-// target is the session label the text names, or "" for the principal (SESS-20, SESS-21). The delivery
+// targets are the session labels the text addresses, in order, and none for the principal (SESS-20, SESS-21,
+// MA-01); an empty label stands for no address. The delivery
 // mode and the loop guard already decided that the AI wants the message; planPush decides which sessions
 // hear about it:
 //   - the principal, when it follows the room, a plain message names it by its bare @handle, the message is
 //     a DM, or the text addresses one of its live siblings (SN-04);
-//   - every live parallel session that follows the room, or whose label the text addresses;
+//   - every live parallel session that follows the room, or whose label the text addresses (MA-02);
 //   - with no live principal, every live parallel session for a DM or a bare @handle that addresses no
 //     label, in place of the principal (SN-10).
 //
 // Each of them first receives the room's messages it had not read yet, as context, and then the message
-// (pushToSession). A message for a label with no live session is the principal's from the start, with
-// ForLabel set (SESS-22), and a message whose owner ended since the row was written falls back to the
-// principal (SESS-24). It reports false when nobody received it live, so the message stays in the
-// principal's queue. A message the AI wrote itself is the exception (D11): it reaches only the live
-// sibling its text addresses, with no context and no fallback (SESS-38, SESS-49).
-func (g *Gateway) Push(agentID, target string, m dto.AgentMessage) bool {
+// (pushToSession). A message for labels with no live session is the principal's from the start, once, with
+// ForLabel set to the first of them (SESS-22, MA-03), and a message whose owner ended since the row was
+// written falls back to the principal (SESS-24). It reports false when nobody received it live, so the
+// message stays in the principal's queue. A message the AI wrote itself is the exception (D11): it reaches
+// only the live siblings its text addresses, with no context and no fallback (SESS-38, SESS-49, MA-06).
+func (g *Gateway) Push(agentID string, targets []string, m dto.AgentMessage) bool {
 	if selfAuthored(m.Message, agentID) {
-		return g.pushToSelfSession(agentID, target, m)
+		delivered := false
+		for _, target := range targets {
+			if g.pushToSelfSession(agentID, target, m) {
+				delivered = true
+			}
+		}
+		return delivered
 	}
-	plan, err := g.planPush(agentID, target, m)
+	plan, err := g.planPush(agentID, targets, m)
 	if err != nil {
 		g.d.Logger.Error("agent: session routing failed", "agent_id", agentID, "message_id", m.Message.ID, "err", err)
 		return false
 	}
 	delivered := false
-	if plan.note != "" {
-		// The addressed label has no live session: the message is the principal's from the start, and also
-		// waits in its fallback queue while it is offline (SESS-22, SESS-23).
+	if len(plan.notes) > 0 {
+		// The addressed labels have no live session: the message is the principal's from the start, and also
+		// waits in its fallback queue while it is offline (SESS-22, SESS-23). Every missing label gets its own
+		// fallback row, in one transaction and in the text's order, so the principal's acknowledgement
+		// consumes them all, and the principal is routed once, through the first (MA-03): its backlog lists
+		// the message once whatever number of rows it has.
 		now := time.Now().UnixMilli()
-		if err := g.createSessionDelivery(g.ctx, m.Message.ID, agentID, plan.note, "", "", now,
-			sql.NullInt64{Int64: now, Valid: true}, false); err != nil {
+		rows := make([]db.CreateSessionDeliveryParams, len(plan.notes))
+		for i, note := range plan.notes {
+			rows[i] = db.CreateSessionDeliveryParams{
+				MessageID: m.Message.ID, AgentID: agentID, Label: note, CreatedAt: now,
+				FellBackAt: sql.NullInt64{Int64: now, Valid: true},
+			}
+		}
+		if err := g.createSessionDeliveries(rows); err != nil {
 			g.d.Logger.Error("agent: session delivery write failed", "agent_id", agentID, "message_id", m.Message.ID, "err", err)
 			return false
 		}
 		// The row may name a connection that ended after it was looked up: deliverOwned checks it again.
-		if g.deliverOwned(agentID, plan.note, m) {
+		if g.deliverOwned(agentID, plan.notes[0], m) {
 			delivered = true
 		}
 	}
 	for _, t := range plan.sessions {
-		if t.label == "" && plan.note != "" {
-			continue // the note route above is the principal's delivery of this message
+		if t.label == "" && len(plan.notes) > 0 {
+			continue // the note route above is the principal's delivery of this message (MA-04)
 		}
 		if g.pushToSession(agentID, t, m) {
 			delivered = true
@@ -326,6 +342,20 @@ func (g *Gateway) PushUpdate(agentID string, targets []string, t dto.AgentFrameT
 			delivered = true
 		}
 	}
+	// toPrincipal routes the frame to the principal, with the note of forLabel, once: a message with several
+	// addressed labels may reach it through more than one of them (MA-07). principalGot is set once it did.
+	principalGot := false
+	toPrincipal := func(forLabel string) {
+		if principalGot {
+			return
+		}
+		principalGot, handed[""] = true, true
+		m.ForLabel = forLabel
+		if g.pushUpdateToPrincipal(agentID, t, m) {
+			delivered = true
+		}
+		m.ForLabel = ""
+	}
 	for _, row := range rows {
 		label := row.Label
 		if handed[label] {
@@ -335,31 +365,22 @@ func (g *Gateway) PushUpdate(agentID string, targets []string, t dto.AgentFrameT
 		case row.FellBackAt.Valid:
 			// The principal holds it with the note, and no other session of the AI may receive it (SESS-24).
 			handed[label] = true
-			if handed[""] {
-				continue
-			}
-			handed[""] = true
-			m.ForLabel = label
-			if g.pushUpdateToPrincipal(agentID, t, m) {
-				delivered = true
-			}
-			m.ForLabel = ""
+			toPrincipal(label)
 		case row.Context != 0 || row.AckedAt.Valid:
 			// A copy or an acknowledged message: the session with that key reads the change while it is live
 			// (SN-09), never another session that took its label over.
 			handed[label] = true
-			route(g.rowConn(agentID, row))
+			c := g.rowConn(agentID, row)
+			if label == "" && c != nil {
+				principalGot = true // the principal's own copy row reached it
+			}
+			route(c)
 		default:
 			handed[label] = true
 			if c := g.ownerConn(agentID, row.OwnerLive, label); c != nil {
 				route(c)
 			} else {
-				handed[""] = true
-				m.ForLabel = label
-				if g.pushUpdateToPrincipal(agentID, t, m) {
-					delivered = true
-				}
-				m.ForLabel = ""
+				toPrincipal(label)
 			}
 		}
 	}
@@ -369,25 +390,18 @@ func (g *Gateway) PushUpdate(agentID string, targets []string, t dto.AgentFrameT
 		}
 		handed[target] = true
 		if target == "" {
-			handed[""] = true
 			if mentionsOnly {
 				continue // SN-09: a mentions-only principal follows only the messages it has a row for
 			}
-			if g.pushUpdateToPrincipal(agentID, t, m) {
-				delivered = true
-			}
+			toPrincipal("")
 			continue
 		}
 		if c := g.labelConn(agentID, target); c != nil {
 			route(c)
 			continue
 		}
-		handed[""] = true
-		m.ForLabel = target
-		if g.pushUpdateToPrincipal(agentID, t, m) {
-			delivered = true
-		}
-		m.ForLabel = ""
+		// A missing label: the principal may hold the message as its fallback.
+		toPrincipal(target)
 	}
 	return delivered
 }
