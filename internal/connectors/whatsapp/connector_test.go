@@ -701,8 +701,9 @@ func TestWebSocketClientRefusesPrivateBaseURL(t *testing.T) {
 }
 
 // S8: REST answers are capped at 4 MiB; /message/downloadmedia, a JSON answer carrying
-// base64 media, and WebSocket frames, which carry inline media, at the base64 size of the
-// upload limit plus 4 MiB.
+// base64 media streamed to disk, at the base64 size of the largest file plus 4 MiB (LF-04), and
+// WebSocket frames, which carry inline media held in memory, at the base64 size of the upload limit
+// plus 4 MiB.
 func TestResponseCaps(t *testing.T) {
 	const limit = 1000
 	envelope := (limit+2)/3*4 + connectors.MaxJSONResponse
@@ -715,15 +716,23 @@ func TestResponseCaps(t *testing.T) {
 		_, _ = w.Write([]byte(`{"data":[{"name":"acme","token":"` + acmeToken + `","websocketEnable":true}]}`))
 	})
 	mux.HandleFunc("GET /group/list", func(w http.ResponseWriter, _ *http.Request) { pad(w, `{"data":[]`, `}`) })
-	mux.HandleFunc("POST /message/downloadmedia", func(w http.ResponseWriter, _ *http.Request) {
-		pad(w, `{"data":"`+base64.StdEncoding.EncodeToString([]byte(strings.Repeat("m", limit)))+`"`, `}`)
-	})
+	media := ""
+	mux.HandleFunc("POST /message/downloadmedia", func(w http.ResponseWriter, _ *http.Request) { _, _ = w.Write([]byte(media)) })
 	srv := httptest.NewServer(mux)
 	t.Cleanup(srv.Close)
 	c, err := New(connectors.Config{"base_url": srv.URL, "api_key": globalKey, "instances": []string{"acme"}},
-		connectors.Deps{AllowPrivateNetworks: true, MaxMediaBytes: limit, UserAgent: userAgent})
+		connectors.Deps{AllowPrivateNetworks: true, MaxMediaBytes: limit, MaxFileBytes: limit, UserAgent: userAgent})
 	require.NoError(t, err)
 	ctx := context.Background()
+	download := func() (int, error) {
+		r, err := c.download(ctx, "acme", json.RawMessage(`{}`), 0)
+		if err != nil {
+			return 0, err
+		}
+		defer func() { _ = r.Close() }()
+		data, err := io.ReadAll(r)
+		return len(data), err
+	}
 
 	size = connectors.MaxJSONResponse
 	_, err = c.ListChats(ctx)
@@ -732,13 +741,19 @@ func TestResponseCaps(t *testing.T) {
 	_, err = c.ListChats(ctx)
 	require.Error(t, err, "a REST answer over 4 MiB")
 
-	size = envelope
-	content, err := c.download(ctx, "acme", json.RawMessage(`{}`))
-	require.NoError(t, err, "media at the upload limit")
-	require.Len(t, content, (limit+2)/3*4)
-	size = envelope + 1
-	_, err = c.download(ctx, "acme", json.RawMessage(`{}`))
-	require.Error(t, err, "an answer over the media envelope")
+	b64 := func(n int) string { return base64.StdEncoding.EncodeToString([]byte(strings.Repeat("m", n))) }
+	media = `{"data":"` + b64(limit) + `"` + strings.Repeat(" ", envelope-len(b64(limit))-len(`{"data":""}`)) + `}`
+	require.Len(t, media, envelope)
+	n, err := download()
+	require.NoError(t, err, "media at the largest file, in an answer of the whole envelope")
+	require.Equal(t, limit, n)
+	media = `{"data":"` + b64(envelope) + `"}`
+	_, err = download()
+	require.ErrorIs(t, err, safehttp.ErrResponseTooLarge, "an answer over the media envelope is cut")
+	// The JSON around the media is bounded on its own: before the media it may not take 4 MiB.
+	media = `{"pad":"` + strings.Repeat(" ", connectors.MaxJSONResponse) + `","data":"` + b64(3) + `"}`
+	_, err = download()
+	require.ErrorIs(t, err, errEnvelope)
 
 	require.Equal(t, int64(envelope), c.maxFrame, "WebSocket frames share the media envelope")
 }

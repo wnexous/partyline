@@ -3,7 +3,6 @@ package whatsapp
 import (
 	"bytes"
 	"context"
-	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -34,6 +33,9 @@ const (
 	requestTimeout   = 60 * time.Second
 )
 
+// MaxFile is the largest file WhatsApp takes from an account, for every type of media (LF-05).
+const MaxFile = 2 << 30
+
 // ErrUnauthorized means evolution-go rejected the API key or an instance token.
 var ErrUnauthorized = errors.New("unauthorized")
 
@@ -49,6 +51,7 @@ const instanceChoiceDetail = "choose the instance (number) of this connection"
 func Kind() connectors.Kind {
 	return connectors.Kind{
 		Name: KindName, Label: "WhatsApp (evolution-go)", CanListChats: true, CanReact: true, CanSendFiles: true,
+		MaxFileBytes: MaxFile,
 		Fields: []connectors.Field{
 			{Name: "base_url", Label: "evolution-go URL", Type: dto.FieldTypeURL, Required: true, Endpoint: true,
 				Help: "e.g. https://evolution.example.com"},
@@ -71,9 +74,10 @@ type Connector struct {
 	userAgent string
 	log       *slog.Logger
 	client    *http.Client // REST calls (JSON)
-	downloads *http.Client // /message/downloadmedia: JSON carrying base64 media
+	downloads *http.Client // /message/downloadmedia: JSON carrying base64 media, streamed (LF-04)
+	uploads   *http.Client // /send/media: base64 media in the request, streamed; no total timeout
 	stream    *http.Client // WebSocket handshakes
-	maxFrame  int64        // WebSocket frames carry inline base64 media
+	maxFrame  int64        // WebSocket frames carry inline base64 media, held in memory: the single-request limit
 	now       func() time.Time
 	wait      func(ctx context.Context, d time.Duration) error // the pause between two checks of the instance; tests replace it
 
@@ -157,8 +161,11 @@ func New(cfg connectors.Config, d connectors.Deps) (*Connector, error) {
 	}
 	return &Connector{
 		base: base, apiKey: cfg.String("api_key"), instance: instance, userAgent: d.UserAgent, log: log,
-		client: d.JSONClient(requestTimeout), downloads: d.HTTPClient(requestTimeout, mediaEnvelope(d.MediaLimit())),
-		stream: d.StreamClient(), maxFrame: mediaEnvelope(d.MediaLimit()), now: time.Now, wait: sleep,
+		// Media stream to disk up to the largest file; the stall watch of each transfer bounds its time,
+		// not a client timeout, which would cut a large file that is still arriving (LF-04).
+		client: d.JSONClient(requestTimeout), downloads: d.HTTPClient(0, mediaEnvelope(d.FileLimit())),
+		uploads: d.HTTPClient(0, connectors.MaxJSONResponse),
+		stream:  d.StreamClient(), maxFrame: mediaEnvelope(d.MediaLimit()), now: time.Now, wait: sleep,
 	}, nil
 }
 
@@ -199,10 +206,32 @@ func (c *Connector) Run(ctx context.Context, h connectors.Handler) error {
 	first := c.state(insts)
 	h.Status(first.status, first.detail)
 
+	parent := ctx
 	ctx, cancel := context.WithCancelCause(ctx)
 	var watching sync.WaitGroup
 	defer watching.Wait() // its last report comes before Run returns, so before the supervisor's
 	defer cancel(nil)
+	// Frames are handled in order by one goroutine while this one goes on reading the socket, so that
+	// pongs are read while a large media downloads (LF-04). A socket that fails stops the reading; what
+	// was read is still handled, under the connector's own context, before Run returns.
+	frames := newInbox(maxInboxBytes)
+	var handling sync.WaitGroup
+	defer handling.Wait()
+	defer frames.close()
+	handling.Go(func() {
+		err := connectors.Guard(c.log, "inbound", func() error {
+			for {
+				data, ok := frames.take(parent)
+				if !ok {
+					return nil
+				}
+				c.handle(parent, h, data)
+			}
+		})
+		if err != nil {
+			cancel(err)
+		}
+	})
 	// A panic in a goroutine of ours ends the process, whatever supervises Run: these two end Run instead (CON-15).
 	go func() {
 		if err := connectors.Guard(c.log, "ping", func() error { c.ping(ctx, conn, func() { cancel(nil) }); return nil }); err != nil {
@@ -222,7 +251,9 @@ func (c *Connector) Run(ctx context.Context, h connectors.Handler) error {
 			}
 			return fmt.Errorf("websocket: %w", plainError(err))
 		}
-		c.handle(ctx, h, data)
+		if err := frames.put(ctx, data); err != nil {
+			return context.Cause(ctx)
+		}
 	}
 }
 
@@ -383,46 +414,56 @@ func (c *Connector) uses(name string) bool {
 	return name == c.instance
 }
 
-// media opens inline content, or downloads it through evolution-go on demand.
+// media opens inline content, or downloads it through evolution-go on demand; both are decoded from
+// base64 as they are read (LF-04).
 func (c *Connector) media(inst string, ref MediaRef) connectors.Media {
 	return connectors.Media{
 		Name: ref.Name, Mime: ref.Mime, Size: ref.Size,
 		Open: func(ctx context.Context) (io.ReadCloser, error) {
-			content := ref.Inline
-			if content == "" {
-				var err error
-				if content, err = c.download(ctx, inst, ref.Message); err != nil {
+			if ref.Inline != "" {
+				r, err := decodeBase64(strings.NewReader(ref.Inline))
+				if err != nil {
 					return nil, err
 				}
+				return io.NopCloser(r), nil
 			}
-			data, err := base64.StdEncoding.DecodeString(stripDataURL(content))
-			if err != nil {
-				return nil, errors.New("media: invalid base64")
-			}
-			return io.NopCloser(bytes.NewReader(data)), nil
+			return c.download(ctx, inst, ref.Message, ref.Size)
 		},
 	}
 }
 
-// download calls POST /message/downloadmedia and returns the base64 content.
-func (c *Connector) download(ctx context.Context, inst string, message json.RawMessage) (string, error) {
-	var resp struct {
-		Data json.RawMessage `json:"data"`
-	}
+// download calls POST /message/downloadmedia and returns the media it answers, decoded from the base64
+// of the JSON as it is read: memory does not grow with the file (LF-04). evolution-go fetches the file
+// from WhatsApp before it answers, so the first byte may take a while: a minute and a second per MB of
+// size, when it is known; after it, the answer fails when it brings nothing for StallTimeout.
+func (c *Connector) download(ctx context.Context, inst string, message json.RawMessage, size int64) (io.ReadCloser, error) {
 	tok, err := c.token(ctx, inst)
 	if err != nil {
-		return "", err
+		return nil, err
 	}
-	if err := c.callWith(ctx, c.downloads, tok, http.MethodPost, "/message/downloadmedia", map[string]any{"message": message}, &resp); err != nil {
-		return "", err
+	body, err := json.Marshal(map[string]any{"message": message})
+	if err != nil {
+		return nil, err
 	}
-	if s := str(resp.Data); s != "" {
-		return s, nil
+	ctx, stall := connectors.WatchStall(ctx, requestTimeout+time.Duration(max(size, 0)>>20)*time.Second, connectors.StallTimeout)
+	resp, err := c.do(ctx, c.downloads, tok, http.MethodPost, "/message/downloadmedia", jsonPayload(body))
+	if err != nil {
+		stall.Stop()
+		return nil, err
 	}
-	if s := str(obj(resp.Data)["base64"]); s != "" {
-		return s, nil
+	rc := stall.Body(resp.Body)
+	media, err := mediaContent(rc, connectors.MaxJSONResponse)
+	if err != nil {
+		_ = rc.Close()
+		return nil, err
 	}
-	return "", errors.New("downloadmedia: no content")
+	return readCloser{Reader: media, Closer: rc}, nil
+}
+
+// readCloser reads from a reader and closes what it came from.
+type readCloser struct {
+	io.Reader
+	io.Closer
 }
 
 // Send sends the text with /send/text, quoting the replied message (WA-03), and every
@@ -455,14 +496,7 @@ func (c *Connector) Send(ctx context.Context, m connectors.Outbound) (string, er
 		first = id
 	}
 	for _, f := range m.Files {
-		content, err := readFile(f)
-		if err != nil {
-			return "", err
-		}
-		id, err := c.send(ctx, inst, "/send/media", map[string]any{
-			"number": jid, "type": mediaType(f.Mime), "filename": f.Name, "caption": "",
-			"url": base64.StdEncoding.EncodeToString(content),
-		})
+		id, err := c.sendMedia(ctx, inst, jid, f)
 		if err != nil {
 			return "", err
 		}
@@ -486,13 +520,44 @@ func formatText(m connectors.Outbound) string {
 	return connectors.AuthorLine(m.Signature(), "*", "*\n", m.Text)
 }
 
-func readFile(f connectors.OutFile) ([]byte, error) {
-	r, err := f.Open()
+// sendMedia sends a file with /send/media: its content goes as base64 in the "url" field of the JSON,
+// encoded as the request is written, with the exact length of the body when the file's size is known
+// (LF-04). A request the transport sends again reopens the file.
+func (c *Connector) sendMedia(ctx context.Context, inst, jid string, f connectors.OutFile) (string, error) {
+	tok, err := c.token(ctx, inst)
 	if err != nil {
-		return nil, fmt.Errorf("open attachment: %w", err)
+		return "", err
 	}
-	defer func() { _ = r.Close() }()
-	return io.ReadAll(r)
+	// The fields but the content, whose keys json sorts: "url" goes last, after them.
+	head, err := json.Marshal(map[string]any{"number": jid, "type": mediaType(f.Mime), "filename": f.Name, "caption": ""})
+	if err != nil {
+		return "", err
+	}
+	prefix := append(head[:len(head)-1:len(head)-1], `,"url":"`...)
+	suffix := []byte(`"}`)
+	open := func() (io.ReadCloser, error) {
+		if f.Open == nil {
+			return nil, errors.New("open attachment: no content")
+		}
+		r, err := f.Open()
+		if err != nil {
+			return nil, fmt.Errorf("open attachment: %w", err)
+		}
+		return readCloser{Reader: io.MultiReader(bytes.NewReader(prefix), newBase64Reader(r), bytes.NewReader(suffix)), Closer: r}, nil
+	}
+	body, err := open()
+	if err != nil {
+		return "", err
+	}
+	length := int64(-1)
+	if f.Size > 0 {
+		length = int64(len(prefix)) + base64Len(f.Size) + int64(len(suffix))
+	}
+	var resp sendAnswer
+	if err := c.callBody(ctx, c.uploads, tok, http.MethodPost, "/send/media", &payload{r: body, length: length, reopen: open}, &resp); err != nil {
+		return "", err
+	}
+	return resp.Data.Info.ID, nil
 }
 
 // mediaType maps a MIME type to the /send/media type.
@@ -508,14 +573,17 @@ func mediaType(mimeType string) string {
 	return "document"
 }
 
+// sendAnswer is what the send endpoints answer: the id of the message created.
+type sendAnswer struct {
+	Data struct {
+		Info struct {
+			ID string `json:"ID"`
+		} `json:"Info"`
+	} `json:"data"`
+}
+
 func (c *Connector) send(ctx context.Context, inst, path string, body map[string]any) (string, error) {
-	var resp struct {
-		Data struct {
-			Info struct {
-				ID string `json:"ID"`
-			} `json:"Info"`
-		} `json:"data"`
-	}
+	var resp sendAnswer
 	if err := c.instanceCall(ctx, inst, http.MethodPost, path, body, &resp); err != nil {
 		return "", err
 	}
@@ -620,38 +688,41 @@ func mediaEnvelope(limit int64) int64 {
 	return (limit+2)/3*4 + connectors.MaxJSONResponse
 }
 
+// payload is the body of a request: its reader, its length (-1 when unknown) and, for a body that is
+// streamed, how to open it again when the transport sends the request again.
+type payload struct {
+	r      io.Reader
+	length int64
+	reopen func() (io.ReadCloser, error)
+}
+
+// jsonPayload is a body held in memory: a small JSON request.
+func jsonPayload(data []byte) *payload {
+	return &payload{r: bytes.NewReader(data), length: int64(len(data)), reopen: func() (io.ReadCloser, error) {
+		return io.NopCloser(bytes.NewReader(data)), nil
+	}}
+}
+
 // callWith is call through the given client.
 func (c *Connector) callWith(ctx context.Context, client *http.Client, key, method, path string, body, out any) error {
-	var rd io.Reader
+	var p *payload
 	if body != nil {
 		data, err := json.Marshal(body)
 		if err != nil {
 			return err
 		}
-		rd = bytes.NewReader(data)
+		p = jsonPayload(data)
 	}
-	u := *c.base
-	u.Path = strings.TrimRight(u.Path, "/") + path
-	req, err := http.NewRequestWithContext(ctx, method, u.String(), rd)
+	return c.callBody(ctx, client, key, method, path, p, out)
+}
+
+// callBody performs a call with the given body and decodes its JSON answer into out.
+func (c *Connector) callBody(ctx context.Context, client *http.Client, key, method, path string, body *payload, out any) error {
+	resp, err := c.do(ctx, client, key, method, path, body)
 	if err != nil {
-		return errors.New("invalid request")
-	}
-	req.Header.Set("apikey", key)
-	req.Header.Set("User-Agent", c.userAgent)
-	if body != nil {
-		req.Header.Set("Content-Type", "application/json")
-	}
-	resp, err := client.Do(req)
-	if err != nil {
-		return fmt.Errorf("%s %s: %w", method, path, plainError(err))
+		return err
 	}
 	defer func() { _ = resp.Body.Close() }()
-	switch {
-	case resp.StatusCode == http.StatusUnauthorized || resp.StatusCode == http.StatusForbidden:
-		return ErrUnauthorized
-	case resp.StatusCode < 200 || resp.StatusCode > 299:
-		return fmt.Errorf("%s %s: status %d", method, path, resp.StatusCode)
-	}
 	if out == nil {
 		return nil
 	}
@@ -662,6 +733,48 @@ func (c *Connector) callWith(ctx context.Context, client *http.Client, key, meth
 		return fmt.Errorf("%s %s: invalid response (%s)", method, path, decodeReason(err))
 	}
 	return nil
+}
+
+// do sends a request with key as apikey and returns the response of a success status, whose body the
+// caller closes. Errors never carry the URL, the key or the response body (which may echo message
+// content).
+func (c *Connector) do(ctx context.Context, client *http.Client, key, method, path string, body *payload) (*http.Response, error) {
+	u := *c.base
+	u.Path = strings.TrimRight(u.Path, "/") + path
+	var rd io.Reader
+	if body != nil {
+		rd = body.r
+	}
+	req, err := http.NewRequestWithContext(ctx, method, u.String(), rd)
+	if err != nil {
+		if rc, ok := rd.(io.Closer); ok {
+			_ = rc.Close()
+		}
+		return nil, errors.New("invalid request")
+	}
+	if body != nil {
+		req.ContentLength = body.length
+		if body.length < 0 {
+			req.ContentLength = -1
+		}
+		req.GetBody = body.reopen
+		req.Header.Set("Content-Type", "application/json")
+	}
+	req.Header.Set("apikey", key)
+	req.Header.Set("User-Agent", c.userAgent)
+	resp, err := client.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("%s %s: %w", method, path, plainError(err))
+	}
+	switch {
+	case resp.StatusCode == http.StatusUnauthorized || resp.StatusCode == http.StatusForbidden:
+		_ = resp.Body.Close()
+		return nil, ErrUnauthorized
+	case resp.StatusCode < 200 || resp.StatusCode > 299:
+		_ = resp.Body.Close()
+		return nil, fmt.Errorf("%s %s: status %d", method, path, resp.StatusCode)
+	}
+	return resp, nil
 }
 
 // bestEffort marks the destination of an answer the caller can do without: a body that is empty or
