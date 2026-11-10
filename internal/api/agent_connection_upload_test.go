@@ -227,12 +227,15 @@ func (c *readCounter) Read(p []byte) (int, error) {
 // files is refused when it shows.
 func TestAFilePartOverThePlatformLimitIsNotReadWhole(t *testing.T) {
 	f := newReplyFixtureOfKind(t, tinyPlatform)
-	contentType, body := chatUpload{caption: dto.SendToChatRequest{Text: "x"}, files: []chatUploadFile{{name: "big.bin", content: strings.Repeat("a", 8<<20)}}}.body(t)
+	// The part is far bigger than what the kernel's socket buffers take after the server stops reading,
+	// so a request read to its end is told apart from one refused early even on a slow runner.
+	const size = 32 << 20
+	contentType, body := chatUpload{caption: dto.SendToChatRequest{Text: "x"}, files: []chatUploadFile{{name: "big.bin", content: strings.Repeat("a", size)}}}.body(t)
 	counted := &readCounter{r: body}
 	e := f.token.AsAgent("Atlas").DoRaw(http.MethodPost, connectionChatPath(f.conn.ID, f.group.ID), contentType, counted).
 		RequireError(http.StatusRequestEntityTooLarge, dto.ErrorCodeFileTooLarge)
 	require.Equal(t, map[string]string{"max_size": "1000", "platform": "Fake"}, e.Details)
-	require.Less(t, counted.n.Load(), int64(4<<20), "the request was not read to its end")
+	require.Less(t, counted.n.Load(), int64(size/2), "the request was not read to its end")
 	require.Empty(t, f.spooled(t))
 	require.Empty(t, f.inst.Sent())
 
