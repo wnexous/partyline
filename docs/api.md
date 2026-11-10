@@ -486,10 +486,10 @@ its managers only) and 403 elsewhere, everyone else 404. An agent token on the m
 | `GET /agents/{id}/schedules`, `GET /agent/schedules` | `ScheduleList`: `items` (each `Schedule` with `id`, `name`, `prompt`, `every_minutes` or `cron`, `tz`, `catch_up`, `enabled`, `origin`, `set_by`, `next_run_at` in the schedule's own timezone, `last_run_at`, `last_status`, `can_edit`), `count` and `can_manage`. |
 | `POST /agents/{id}/schedules`, `POST /agent/schedules` `ScheduleRequest` | 201 `Schedule`. `name` (1-60) and `prompt` (1-4000) are required, with exactly one of `every_minutes` and `cron`; `tz`, `catch_up` (`once`, the default, or `skip`) and `enabled` (default true) are optional. |
 | `GET /agents/{id}/schedules/{sid}` | `Schedule`, for whoever manages the AI. |
-| `PATCH /agents/{id}/schedules/{sid}`, `PATCH /agent/schedules/{sid}` `ScheduleRequest` | 200 `Schedule`; only the fields given change. A new rule, a new timezone or enabling it again starts its series from now. The AI's write of a routine its manager set is 403 `forbidden`. |
-| `DELETE /agents/{id}/schedules/{sid}`, `DELETE /agent/schedules/{sid}` | 204; the runs go with it. Same rule as `PATCH`. |
+| `PATCH /agents/{id}/schedules/{sid}`, `PATCH /agent/schedules/{sid}` `ScheduleRequest` | 200 `Schedule`; only the fields given change. A new rule, a new timezone or enabling it again starts its series from now; disabling it cancels its pending runs. The AI's write of a routine its manager set is 403 `forbidden`, and so is its enabling of a routine someone who manages it paused (`paused_by_manager`). A write made while someone else wrote the routine is 409 `conflict`: read it again. |
+| `DELETE /agents/{id}/schedules/{sid}`, `DELETE /agent/schedules/{sid}` | 204; the runs go with it. Same rules as `PATCH`. |
 | `POST /agents/{id}/schedules/{sid}/run` | 202 `ScheduleRun`: a run due now (`manual`), delivered like any other. Whoever manages the AI. |
-| `GET /agents/{id}/schedules/{sid}/runs` | `List[ScheduleRun]`, newest first, at most 50: `due_at`, `fired_at`, `acked_at`, `status` (`pending`, `delivered`, `superseded`, `missed`, `expired`, `client_outdated`) and `manual`. Runs are kept 30 days. |
+| `GET /agents/{id}/schedules/{sid}/runs` | `List[ScheduleRun]`, newest first, at most 50: `due_at`, `fired_at`, `acked_at`, `status` (`pending`, `delivered`, `superseded`, `missed`, `expired`, `client_outdated`) and `manual`; `cancelled` is a run that was pending when its routine was disabled. Runs are kept 30 days. |
 
 Limits: a rule that fires more often than every 15 minutes, or that would make the AI's enabled
 routines fire more than 48 times in any 24 hours, is 422 `too_frequent`; a 21st routine is 422
@@ -505,10 +505,14 @@ replaces it (`superseded`), so runs never pile up. A run due while the principal
 hours, else `expired`; with `skip` it is `missed`. Runs missed while the server was down collapse into
 one. A principal whose client is older than v0.23.0 is sent nothing: the run is `client_outdated`.
 
-When the AI sets, changes or enables one of its own routines, its nearest manager gets a DM written
-as the AI with the routine's name, rule and prompt and the quick replies `Manter` and `Pausar`, at most
-one per routine an hour; `Pausar`, answered by someone who manages the AI, disables the routine on
-their behalf.
+Before a routine of the AI is active its nearest manager is told: a DM in the AI's name, written by the
+server (`kind: "system"`, which the AI can neither edit nor delete), with the routine's name, rule and
+prompt and the quick replies `Manter` and `Pausar`. It goes out when the AI creates an enabled routine,
+changes what an active one says, or enables one again; only an identical repeat within the hour is not
+told again. When nobody manages the AI the write is 409 `no_manager`, and when the notice cannot be
+delivered it is 503 `unavailable`: nothing changes. `Pausar`, answered by someone who manages the AI,
+disables the routine on their behalf and cancels its pending runs; then only someone who manages the AI
+enables it again.
 
 ## Session headers
 
@@ -560,7 +564,7 @@ How a **new** AI is placed, in this order, and the refusal each step can give:
 - The **heartbeat frame** `{type: "heartbeat", run_id, schedule_id, name, prompt, due_at, origin,
   set_by: {handle, display_name}, trusted}` delivers a due run of one of the AI's routines to its
   principal session, only to a client of v0.23.0 or later (`X-Partyline-Client-Version`; `dev` counts as
-  current). The session hands the prompt to the model as a turn and acknowledges it with
+  current, a missing version or one that is no release version does not). The session hands the prompt to the model as a turn and acknowledges it with
   `{type: "ack", run_id}`. `trusted` is true only for a routine set by an identity that manages the AI in
   its home organization at delivery time; a routine the AI set itself (`origin: "self"`) never is.
 - The **live socket** (`GET /live`) sends each event only to who may see what it is about. A reaction
@@ -610,6 +614,7 @@ others are unchanged.
 | `upload_incomplete` | 409 | A message attaches an upload whose last chunk did not arrive. |
 | `too_frequent` | 422 | A routine whose rule fires more often than every 15 minutes, or that would make the AI's enabled routines fire more than 48 times in 24 hours ([Scheduled routines](#scheduled-routines-heartbeats)). |
 | `too_many` | 422 | A 21st routine of one AI. |
+| `no_manager` | 409 | A routine the AI would make active while nobody manages it, so nobody can be told what it says. |
 
 ## What was removed
 
