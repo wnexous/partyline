@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"errors"
+	"io"
 	"log/slog"
 	"regexp"
 	"strings"
@@ -54,10 +55,13 @@ type PipelineDeps struct {
 	MaxFileBytes int64
 	// FreeSpace reports the free bytes of the blob store's disk and whether they are known, and
 	// ReserveBytes what a media must leave free (PARTYLINE_DISK_RESERVE_MB, LF-07): a media whose
-	// declared size would leave less is not downloaded. Nil checks nothing.
-	FreeSpace    func() (int64, bool)
-	ReserveBytes int64
-	Logger       *slog.Logger
+	// declared size would leave less is not downloaded, and a download stops when the disk gets
+	// there, whatever the size declared, checked every SpaceCheckBytes (64 MB by default) it wrote.
+	// Nil checks nothing.
+	FreeSpace       func() (int64, bool)
+	ReserveBytes    int64
+	SpaceCheckBytes int64
+	Logger          *slog.Logger
 	// Now returns the current time; defaults to time.Now.
 	Now func() time.Time
 }
@@ -268,8 +272,11 @@ func (p *Pipeline) saveMedia(ctx context.Context, src Source, media []Media) []p
 		}
 		sha, size, err := p.download(ctx, md, limit)
 		switch {
-		case errors.Is(err, attachments.ErrTooLarge), errors.Is(err, safehttp.ErrResponseTooLarge):
+		case errors.Is(err, attachments.ErrTooLarge), errors.Is(err, safehttp.ErrResponseTooLarge), errors.Is(err, ErrMediaTooLarge):
 			f.Status = dto.AttachmentStatusTooLarge // over the limit, or cut off by the client cap
+		case errors.Is(err, errNoDiskSpace):
+			p.d.Logger.Warn("connectors: media download stopped: not enough free disk space", "connector_id", src.ConnectorID)
+			f.Status = dto.AttachmentStatusUnavailable
 		case err != nil:
 			p.d.Logger.Warn("connectors: media download failed", "connector_id", src.ConnectorID, "err", err)
 			f.Status = dto.AttachmentStatusUnavailable
@@ -281,14 +288,46 @@ func (p *Pipeline) saveMedia(ctx context.Context, src Source, media []Media) []p
 	return files
 }
 
-// roomFor tells whether the disk keeps the reserve free after a media of the declared size (LF-07); a
-// media of unknown size, or a disk whose free space is unknown, is let through.
+// roomFor tells whether the disk keeps the reserve free after a media of the declared size (LF-07),
+// 0 for one of unknown size; a disk whose free space is unknown lets it through. The size is the
+// sender's word: the download checks again as it writes.
 func (p *Pipeline) roomFor(size int64) bool {
-	if size <= 0 || p.d.FreeSpace == nil {
+	if p.d.FreeSpace == nil {
 		return true
 	}
 	free, ok := p.d.FreeSpace()
-	return !ok || free-size >= p.d.ReserveBytes
+	return !ok || free-max(size, 0) >= p.d.ReserveBytes
+}
+
+// ErrMediaTooLarge is a media a connector refuses to download: over the limit of its platform's
+// setting. The pipeline records it too_large.
+var ErrMediaTooLarge = errors.New("media over the connection's limit")
+
+// errNoDiskSpace stops a download that would leave the disk with less than the reserve free.
+var errNoDiskSpace = errors.New("not enough free disk space")
+
+// defaultSpaceCheck is how many bytes a download writes between two looks at the free space.
+const defaultSpaceCheck = 64 << 20
+
+// spaceReader fails with errNoDiskSpace once the disk keeps less than the reserve free, looked at every
+// check bytes read (that is, about to be written): concurrent downloads see each other's bytes.
+type spaceReader struct {
+	r       io.Reader
+	p       *Pipeline
+	check   int64
+	pending int64
+}
+
+func (s *spaceReader) Read(b []byte) (int, error) {
+	if s.pending >= s.check {
+		s.pending = 0
+		if !s.p.roomFor(s.check) {
+			return 0, errNoDiskSpace
+		}
+	}
+	n, err := s.r.Read(b[:min(int64(len(b)), s.check)])
+	s.pending += int64(n)
+	return n, err
 }
 
 func (p *Pipeline) download(ctx context.Context, md Media, limit int64) (string, int64, error) {
@@ -300,7 +339,15 @@ func (p *Pipeline) download(ctx context.Context, md Media, limit int64) (string,
 		return "", 0, err
 	}
 	defer func() { _ = r.Close() }()
-	return p.d.Blobs.Put(r, limit)
+	var body io.Reader = r
+	if p.d.FreeSpace != nil {
+		check := p.d.SpaceCheckBytes
+		if check <= 0 {
+			check = defaultSpaceCheck
+		}
+		body = &spaceReader{r: r, p: p, check: check}
+	}
+	return p.d.Blobs.Put(body, limit)
 }
 
 // MigrateChat changes a chat's platform id from oldID to newID, keeping the chat record
