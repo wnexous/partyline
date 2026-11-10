@@ -414,6 +414,9 @@ func TestAPausedRoomHasNoStandIns(t *testing.T) {
 	f.waitPrincipalGone(t)
 
 	f.post(t, "@atlas before the pause")
+	// The dispatcher handles the mention before the pause and before the parallel session exists, so the
+	// only way it could reach that session is as a stand-in, which a paused room must not give.
+	f.flushDispatch(t)
 	require.NoError(t, f.env.App.Store.WithTx(context.Background(), func(q *db.Queries) error {
 		return q.SetRoomLoopState(context.Background(), db.SetRoomLoopStateParams{AgentsPaused: true, ID: f.room.ID})
 	}))
