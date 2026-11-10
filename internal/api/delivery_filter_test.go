@@ -86,11 +86,12 @@ func TestMentionsModePushesOnlyMentions(t *testing.T) {
 		dto.PostMessageRequest{Text: "thanks", ReplyTo: own.ID}).RequireStatus(http.StatusCreated))
 	want = append(want, reply.ID)
 	f.post(f.alice, "after the reply")
-	want = append(want, f.post(f.alice, "@builder last").ID)
+	last := f.post(f.alice, "@builder last")
+	want = append(want, last.ID)
 
 	// SN-03: every wanted message also carries the messages it had not read as context, so only the
 	// notifications are compared here.
-	messages, context := deliveredFrames(t, conn, quiet)
+	messages, context := deliveredFrames(t, conn, last.ID, quiet)
 	require.Equal(t, want, frameIDs(messages), "only the mentions, replies, DMs and keywords notify it")
 	require.NotEmpty(t, context, "the messages it was not notified of come as context")
 	page := testkit.Decode[dto.Page[dto.Message]](f.alice.Get("/api/v1/rooms/" + f.room.ID + "/messages?limit=50").RequireStatus(http.StatusOK))
