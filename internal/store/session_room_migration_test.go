@@ -104,34 +104,9 @@ func TestMigration0031CreatesSessionRoomState(t *testing.T) {
 	e.must(`DELETE FROM rooms WHERE id = 'r1'`)
 	require.Zero(t, e.count(`SELECT COUNT(*) FROM session_room_state`), "the rows go with their room")
 
-	// A fresh database has the same table and index, and the column 0040 adds (SN-11).
+	// A fresh database has the same table and index.
 	fresh := newSchemaEnv(t)
-	require.Equal(t, []string{"agent_id", "session_key", "room_id", "read_seq", "notify", "updated_at", "read_from"},
+	require.Equal(t, []string{"agent_id", "session_key", "room_id", "read_seq", "notify", "updated_at"},
 		fresh.columnsOf("session_room_state"))
 	require.Contains(t, fresh.indexes("session_room_state"), "session_room_state_session")
-}
-
-// SN-11 (data): migration 0040 adds read_from, where what a state row has read starts. A row that existed
-// before it gets read_from = read_seq, so nothing it read before is taken as read by another session; a row
-// created afterwards by a reading starts at 0, and one created at the session's join point starts there.
-func TestMigration0040AddsSessionReadFrom(t *testing.T) {
-	ctx := context.Background()
-	e := &schemaEnv{t: t, s: openMigratedBefore(t, "0040")}
-	sessionsFixture(e)
-	sessionsRoom(e, "r1")
-	e.must(`INSERT INTO session_room_state (agent_id, session_key, room_id, read_seq, notify, updated_at)
-		VALUES ('a1', 'old-session', 'r1', 7, 'on', 1)`)
-	require.NoError(t, e.s.applyMigration(ctx, "0040_session_read_from.sql"))
-	require.Contains(t, versions(t, e.s), "0040_session_read_from")
-	readFrom := func(key string) int {
-		return e.count(`SELECT read_from FROM session_room_state WHERE agent_id = 'a1' AND session_key = ? AND room_id = 'r1'`, key)
-	}
-	require.Equal(t, 7, readFrom("old-session"), "what an existing row read is not known")
-
-	e.advanceState("reader", "r1", 5, "mentions")
-	require.Equal(t, 0, readFrom("reader"), "a row created by a reading has read the room up to it")
-	e.createState("joiner", "r1", 9, "mentions")
-	require.Equal(t, 9, readFrom("joiner"), "a row created at the join point has read nothing before it")
-	e.advanceState("joiner", "r1", 12, "mentions")
-	require.Equal(t, 9, readFrom("joiner"), "a reading keeps where the row's reading starts")
 }

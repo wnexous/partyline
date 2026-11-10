@@ -183,8 +183,7 @@ func TestAStandInNobodyAcknowledgedStaysInThePrincipalsQueue(t *testing.T) {
 
 // SN-10: in a group, a bare @handle reaches the live parallel sessions while the principal is offline, with
 // what they had not read as context; a plain message, and a mention inside code, still wait for the
-// principal. The principal's backlog then carries the mention inside code, and neither the mention a parallel
-// session answered nor the plain message it read as context of it (SN-11: read by any session is read).
+// principal. The principal's backlog then carries those, and not the mention a parallel session answered.
 func TestABareMentionReachesTheParallelSessionsWhileThePrincipalIsOffline(t *testing.T) {
 	f := newSessionFixture(t)
 	principal, parallel := f.dial(t), f.dial(t)
@@ -213,7 +212,7 @@ func TestABareMentionReachesTheParallelSessionsWhileThePrincipalIsOffline(t *tes
 
 	again := f.dial(t)
 	got := messageIDs(t, again.Drain(700*time.Millisecond))
-	require.Equal(t, []string{code.ID}, got, "the principal's backlog has what no session read, once")
+	require.Equal(t, []string{plain.ID, code.ID}, got, "the principal's backlog has what was its own, once")
 }
 
 // SN-10: with the principal live nothing changes: it is the one a bare @handle notifies, and a parallel

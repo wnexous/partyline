@@ -446,7 +446,6 @@ type SessionRoomState struct {
 	ReadSeq    int64
 	Notify     string
 	UpdatedAt  int64
-	ReadFrom   int64
 }
 
 type Transcription struct {
