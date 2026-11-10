@@ -770,3 +770,43 @@ func TestRunNowAndTheRunHistory(t *testing.T) {
 	require.NoError(t, err)
 	require.EqualValues(t, 1, n)
 }
+
+// Disabling a routine cancels its pending runs: one that waits for an offline principal never arrives, whether a
+// manager disabled it with a PATCH or with Pausar, and "run now" on a disabled routine still runs once.
+func TestDisablingARoutineCancelsItsPendingRuns(t *testing.T) {
+	h := newHB(t)
+	patched := h.create(h.roles.Manager, hourly("patched"))
+	paused := h.create(h.agent, daily("paused"))
+	h.clk.Set(local(10, 9, 5))
+	h.tick()
+	h.eventuallyStatuses(patched.ID, dto.ScheduleRunPending)
+	h.eventuallyStatuses(paused.ID, dto.ScheduleRunPending)
+
+	h.patch(h.roles.Manager, patched.ID, dto.ScheduleRequest{Enabled: ptr(false)}).RequireStatus(http.StatusOK)
+	room := h.dmRoom(h.roles.Manager.User.ID)
+	n := h.notices(room)[0]
+	h.roles.Manager.Post("/api/v1/rooms/"+room+"/messages", dto.PostMessageRequest{
+		ReplyTo: n.ID, Answers: &dto.AnswerSubmission{QuickReply: n.Interactive.QuickReplies[1].ID},
+	}).RequireStatus(http.StatusCreated)
+	h.eventuallyStatuses(patched.ID, dto.ScheduleRunCancelled)
+	h.eventuallyStatuses(paused.ID, dto.ScheduleRunCancelled)
+
+	principal := h.principal()
+	expectNoHeartbeat(t, principal, 300*time.Millisecond)
+	run := testkit.Decode[dto.ScheduleRun](h.roles.Manager.Post(h.path("/"+patched.ID+"/run"), nil).RequireStatus(http.StatusAccepted))
+	f := heartbeat(t, principal)
+	require.Equal(t, run.ID, f.RunID, "a run started by hand on a disabled routine")
+}
+
+// A run in flight when its routine is disabled is cancelled: its late acknowledgement does not deliver it.
+func TestARunInFlightIsCancelledWhenItsRoutineIsDisabled(t *testing.T) {
+	h := newHB(t)
+	principal := h.principal()
+	s := h.create(h.roles.Manager, hourly("deploys"))
+	h.clk.Advance(time.Hour)
+	h.tick()
+	f := heartbeat(t, principal)
+	h.patch(h.roles.Manager, s.ID, dto.ScheduleRequest{Enabled: ptr(false)}).RequireStatus(http.StatusOK)
+	ackRun(t, principal, f.RunID)
+	h.eventuallyStatuses(s.ID, dto.ScheduleRunCancelled)
+}

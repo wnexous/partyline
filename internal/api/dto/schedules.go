@@ -33,6 +33,8 @@ const (
 	ScheduleRunMissed         ScheduleRunStatus = "missed"
 	ScheduleRunExpired        ScheduleRunStatus = "expired"
 	ScheduleRunClientOutdated ScheduleRunStatus = "client_outdated"
+	// ScheduleRunCancelled is a run that was pending when its routine was disabled.
+	ScheduleRunCancelled ScheduleRunStatus = "cancelled"
 )
 
 // The limits of a schedule (HB-01, HB-03). The web app imports them through the generated types.

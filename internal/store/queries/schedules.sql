@@ -67,12 +67,13 @@ UPDATE agent_schedule_runs SET status = 'superseded'
 WHERE schedule_id = ? AND status = 'pending' AND fired_at IS NULL;
 
 -- name: ListPendingRunsForAgent :many
--- The pending runs of an AI with their schedule, newest first within each schedule.
+-- The pending runs of an AI with their schedule, newest first within each schedule. A disabled schedule
+-- delivers only a run started by hand ("run now").
 SELECT r.id, r.schedule_id, r.due_at, r.expires_at, r.fired_at, r.manual,
        s.name, s.prompt, s.origin, s.set_by
 FROM agent_schedule_runs r
 JOIN agent_schedules s ON s.id = r.schedule_id
-WHERE r.agent_id = ? AND r.status = 'pending'
+WHERE r.agent_id = ? AND r.status = 'pending' AND (s.enabled = 1 OR r.manual = 1)
 ORDER BY r.schedule_id, r.due_at DESC, r.created_at DESC;
 
 -- name: ListExpiredPendingRuns :many
@@ -122,3 +123,7 @@ SELECT reply_to, author_iid, answers_json FROM messages WHERE id = ?;
 -- The scheduler takes a due schedule: its next run moves on only if nobody changed it since it was read.
 UPDATE agent_schedules SET next_run_at = sqlc.arg(next_run_at)
 WHERE id = sqlc.arg(id) AND enabled = 1 AND next_run_at = sqlc.arg(prev);
+
+-- name: CancelPendingRuns :execrows
+-- A routine that is disabled cancels its pending runs: none of them is delivered afterwards.
+UPDATE agent_schedule_runs SET status = 'cancelled' WHERE schedule_id = ? AND status = 'pending';

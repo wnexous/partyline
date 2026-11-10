@@ -3086,6 +3086,10 @@ export const ScheduleRunExpired: ScheduleRunStatus = "expired";
  */
 export const ScheduleRunClientOutdated: ScheduleRunStatus = "client_outdated";
 /**
+ * ScheduleRunCancelled is a run that was pending when its routine was disabled.
+ */
+export const ScheduleRunCancelled: ScheduleRunStatus = "cancelled";
+/**
  * MaxScheduleName is the longest schedule name in characters.
  */
 export const MaxScheduleName = 60;

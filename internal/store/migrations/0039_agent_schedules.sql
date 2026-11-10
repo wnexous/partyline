@@ -42,7 +42,7 @@ CREATE INDEX agent_schedules_due ON agent_schedules (next_run_at) WHERE enabled 
 
 -- One run of a schedule (HB-04..HB-07, HB-11). pending is a run that is due and not delivered yet:
 -- waiting for the principal, or written to it and not acknowledged (fired_at set). Every other status is
--- final. expires_at is the end of the run's window (the shorter of the rule's period and 12 hours,
+-- final; cancelled is a run that was pending when its routine was disabled. expires_at is the end of the run's window (the shorter of the rule's period and 12 hours,
 -- HB-06): a pending run past it is expired. Runs are kept 30 days (HB-11).
 CREATE TABLE agent_schedule_runs (
     id          TEXT PRIMARY KEY,
@@ -52,7 +52,7 @@ CREATE TABLE agent_schedule_runs (
     expires_at  INTEGER NOT NULL,
     fired_at    INTEGER,
     acked_at    INTEGER,
-    status      TEXT NOT NULL CHECK (status IN ('pending', 'delivered', 'superseded', 'missed', 'expired', 'client_outdated')),
+    status      TEXT NOT NULL CHECK (status IN ('pending', 'delivered', 'superseded', 'missed', 'expired', 'client_outdated', 'cancelled')),
     session_key TEXT,
     manual      BOOLEAN NOT NULL DEFAULT 0,
     created_at  INTEGER NOT NULL

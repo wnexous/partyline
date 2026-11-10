@@ -50,6 +50,19 @@ func (q *Queries) AdvanceDueSchedule(ctx context.Context, arg AdvanceDueSchedule
 	return result.RowsAffected()
 }
 
+const cancelPendingRuns = `-- name: CancelPendingRuns :execrows
+UPDATE agent_schedule_runs SET status = 'cancelled' WHERE schedule_id = ? AND status = 'pending'
+`
+
+// A routine that is disabled cancels its pending runs: none of them is delivered afterwards.
+func (q *Queries) CancelPendingRuns(ctx context.Context, scheduleID string) (int64, error) {
+	result, err := q.db.ExecContext(ctx, cancelPendingRuns, scheduleID)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected()
+}
+
 const countPendingRunsForAgent = `-- name: CountPendingRunsForAgent :one
 SELECT COUNT(*) FROM agent_schedule_runs WHERE agent_id = ? AND status = 'pending'
 `
@@ -422,7 +435,7 @@ SELECT r.id, r.schedule_id, r.due_at, r.expires_at, r.fired_at, r.manual,
        s.name, s.prompt, s.origin, s.set_by
 FROM agent_schedule_runs r
 JOIN agent_schedules s ON s.id = r.schedule_id
-WHERE r.agent_id = ? AND r.status = 'pending'
+WHERE r.agent_id = ? AND r.status = 'pending' AND (s.enabled = 1 OR r.manual = 1)
 ORDER BY r.schedule_id, r.due_at DESC, r.created_at DESC
 `
 
@@ -439,7 +452,8 @@ type ListPendingRunsForAgentRow struct {
 	SetBy      string
 }
 
-// The pending runs of an AI with their schedule, newest first within each schedule.
+// The pending runs of an AI with their schedule, newest first within each schedule. A disabled schedule
+// delivers only a run started by hand ("run now").
 func (q *Queries) ListPendingRunsForAgent(ctx context.Context, agentID string) ([]ListPendingRunsForAgentRow, error) {
 	rows, err := q.db.QueryContext(ctx, listPendingRunsForAgent, agentID)
 	if err != nil {

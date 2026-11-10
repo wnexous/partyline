@@ -184,6 +184,9 @@ func (s *Service) answer(ctx context.Context, messageID string) error {
 		}); err != nil {
 			return err
 		}
+		if err := cancelPending(ctx, q, row.ID); err != nil {
+			return err
+		}
 		sp := specOf(row)
 		sp.enabled = false
 		return s.recordAs(ctx, q, ref.AuthorIid, ActionDisable, row.AgentID, row.ID, sp, map[string]any{"via": "manager_notice"})

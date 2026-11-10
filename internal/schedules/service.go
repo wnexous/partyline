@@ -352,6 +352,15 @@ func checkDaily(now time.Time, stored []db.AgentSchedule, candidateID string, ca
 	return nil
 }
 
+// cancelPending cancels the pending runs of a routine that was disabled: a run waiting for the principal, or in
+// flight, is never delivered afterwards.
+func cancelPending(ctx context.Context, q *db.Queries, id string) error {
+	if _, err := q.CancelPendingRuns(ctx, id); err != nil {
+		return err
+	}
+	return q.RefreshScheduleLastRun(ctx, id)
+}
+
 // checkLimits applies HB-03 to a write of the schedule id: a new one (create) must not be over MaxSchedules, and
 // an enabled rule (enabled) must keep the AI's routines within MaxRunsPerDay.
 func checkLimits(ctx context.Context, q *db.Queries, agentID, id string, r Rule, enabled, create bool, now time.Time) error {
@@ -618,6 +627,11 @@ func (s *Service) Update(ctx context.Context, p authn.Principal, agentID, id str
 		}
 		if err := recordNotice(ctx, q, nt, id, now); err != nil {
 			return err
+		}
+		if !sp.enabled && base.enabled {
+			if err := cancelPending(ctx, q, id); err != nil {
+				return err
+			}
 		}
 		return s.record(ctx, q, actor, action, agentID, id, sp)
 	})
