@@ -9,6 +9,7 @@ import (
 	"io"
 	"mime"
 	"mime/multipart"
+	"net"
 	"net/http"
 	"net/textproto"
 	"net/url"
@@ -238,6 +239,9 @@ func (t *tools) sendFileToChat(ctx context.Context, f localFile, connection, cha
 		return t.postChatUpload(ctx, path, msg, id, f)
 	}
 	if err != nil {
+		if !refused(err) {
+			return "", mayHaveBeenSent(f, err)
+		}
 		return "", fileError(err, f)
 	}
 	defer func() { _ = resp.Body.Close() }()
@@ -248,10 +252,30 @@ func (t *tools) sendFileToChat(ctx context.Context, f localFile, connection, cha
 	return platformSent(res), nil
 }
 
+// refused reports whether a send through a connection failed for sure, so that nothing went out to the
+// platform: the server refused it with a reason (a 4xx, or a 502 saying that the platform did not take
+// the file), or it could not be reached at all. A send whose answer is missing, cut, or a proxy's
+// error (a timeout, a 524) may have reached the platform.
+func refused(err error) bool {
+	var se *statusError
+	if errors.As(err, &se) {
+		return se.status < 500 || (se.status == http.StatusBadGateway && strings.HasPrefix(se.msg, "the platform did not take"))
+	}
+	var op *net.OpError
+	return errors.Is(err, errInvalidToken) || (errors.As(err, &op) && op.Op == "dial")
+}
+
+// mayHaveBeenSent is the error of a send through a connection whose outcome is unknown.
+func mayHaveBeenSent(f localFile, err error) error {
+	return fmt.Errorf("%s may have been delivered: the server did not say whether the platform took it (%v); check the chat before sending it again", f.name, err)
+}
+
 // postChatUpload sends msg to the chat at path with the finished upload id as its file. The server sends
 // it to the platform before it answers, which for a large file takes as long as the upload to the
-// platform: the request waits for the server's own bound of the attempt. When the post fails the upload
-// is deleted (one the send used up is gone already). A server whose connections take no uploads yet gets
+// platform: the request waits for the server's own bound of the attempt. When the server refused the
+// post the upload is deleted (one the send used up is gone already); when its answer did not come (a
+// timeout, a proxy's 524) the file may have been delivered: the upload is kept and the tool says to
+// check the chat. A server whose connections take no uploads yet gets
 // the file in one request when it fits.
 func (t *tools) postChatUpload(ctx context.Context, path string, msg dto.SendToChatRequest, id string, f localFile) (string, error) {
 	postCtx, cancel := context.WithTimeout(ctx, connectionSendTimeout(f.size))
@@ -261,6 +285,15 @@ func (t *tools) postChatUpload(ctx context.Context, path string, msg dto.SendToC
 	err := t.api.json(postCtx, http.MethodPost, path, nil, msg, &res)
 	if err == nil {
 		return platformSent(res), nil
+	}
+	var se *statusError
+	switch {
+	case !refused(err):
+		// The upload stays (it expires by itself): the server may still be sending it, and a send of
+		// it again is refused rather than sent twice.
+		return "", mayHaveBeenSent(f, err)
+	case errors.As(err, &se) && (se.code == dto.ErrorCodeUploadBusy || se.code == dto.ErrorCodeUploadSent):
+		return "", err
 	}
 	t.dropUpload(ctx, id)
 	if takesNoUploads(err) {

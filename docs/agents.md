@@ -910,7 +910,9 @@ and queues what arrives, hands it to the AI's session and sends what the AI answ
   connection, which the server refuses before a chunk is sent when the platform could not take the
   file (`file_too_large: <file> is <size>, over the <limit> <platform> takes for a file sent through
   a connection`), and the send then attaches it; nothing holds the file in memory on the way. A
-  large file takes as long as its upload to the platform before the tool answers. A file is sent once and not
+  large file takes as long as its upload to the platform before the tool answers; when its answer does
+  not come (a proxy's timeout) the tool says that the file may have been delivered: check the chat
+  before sending it again. A file is sent once and not
   kept: if the platform does not take it the tool fails with `the platform did not take the file:
   <reason>` and nothing sends it again, so you may send it again (when the caption had gone out the
   message says so).

@@ -48,7 +48,10 @@ type recorder struct {
 	faults map[int]fault
 	// noUploads answers 404 to the creation of an upload session, as a server without them does.
 	noUploads bool
-	mu        sync.Mutex
+	// proxyTimeout lets a send through a connection reach the server, then answers 524 as a proxy
+	// that gave up waiting does.
+	proxyTimeout bool
+	mu           sync.Mutex
 	// slowDownload, when set, gives the body of an attachment download 4 KB at a time, each read
 	// after this wait (setSlowDownload).
 	slowDownload time.Duration
@@ -71,9 +74,20 @@ func (r *recorder) RoundTrip(req *http.Request) (*http.Response, error) {
 		f = r.faults[r.puts]
 	}
 	noUploads := r.noUploads && req.Method == http.MethodPost && req.URL.Path == "/api/v1/agent/uploads"
+	cut := r.proxyTimeout && req.Method == http.MethodPost && strings.Contains(req.URL.Path, "/connections/")
 	slow := r.slowDownload
 	r.mu.Unlock()
 	switch {
+	case cut:
+		resp, err := r.base.RoundTrip(req)
+		if err == nil {
+			_, _ = io.Copy(io.Discard, resp.Body)
+			_ = resp.Body.Close()
+		}
+		return &http.Response{
+			StatusCode: 524, Header: http.Header{"Content-Type": {"text/html"}}, Request: req,
+			Body: io.NopCloser(strings.NewReader("<html>A timeout occurred</html>")),
+		}, nil
 	case noUploads:
 		if req.Body != nil {
 			_ = req.Body.Close()
@@ -494,6 +508,34 @@ func TestSendFileThroughAConnectionOverThePlatformLimit(t *testing.T) {
 	require.True(t, isErr)
 	require.Equal(t, "file_too_large: photo.jpg is 1 KB, over the 1000 bytes Fake takes for a file sent through a connection; nothing was sent: send a smaller file, or share it in a room with send_file and room instead", text)
 	require.Empty(t, small.inst.Sent())
+}
+
+// LF-04: a send through a connection whose answer a proxy cut off (524) may have gone out, and here
+// did: the tool says that the file may have been delivered and to check the chat, and keeps the upload,
+// which the server refuses to send twice. The same holds for a small file of one multipart post.
+func TestSendFileThroughAConnectionWhoseAnswerIsLost(t *testing.T) {
+	c := newConnectionChan(t)
+	rec := newRecorder()
+	rec.proxyTimeout = true
+	o := c.options()
+	o.HTTPClient = rec.client()
+	s := c.connected(o)
+	path, _ := randomFile(t, "recording.mp4", int64(multipartMaxBytes)+1)
+
+	text, isErr := s.call("send_file", toolArgs("connection", c.conn, "chat", c.group.ID, "path", path))
+	require.True(t, isErr)
+	require.Contains(t, text, "recording.mp4 may have been delivered")
+	require.Contains(t, text, "check the chat before sending it again")
+	require.Equal(t, int64(multipartMaxBytes)+1, c.inst.WaitSend(t).Files[0].Size, "it was")
+	for _, q := range rec.sent("/api/v1/agent/uploads/") {
+		require.NotEqual(t, http.MethodDelete, q.method, "the upload is kept")
+	}
+
+	path, _ = randomFile(t, "photo.jpg", 2000)
+	text, isErr = s.call("send_file", toolArgs("connection", c.conn, "chat", c.group.ID, "path", path))
+	require.True(t, isErr)
+	require.Contains(t, text, "photo.jpg may have been delivered")
+	c.inst.WaitSend(t)
 }
 
 // LF-02: a server whose single-request cap is below a small file refuses its multipart post from its
