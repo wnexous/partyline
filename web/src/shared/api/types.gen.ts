@@ -217,9 +217,15 @@ export const AgentFrameTypePlatformAck = "platform_ack"; // channel → server
 export const AgentFrameTypeMessageEdited = "message_edited"; // server → channel
 export const AgentFrameTypeMessageDeleted = "message_deleted"; // server → channel
 /**
+ * AgentFrameTypeHeartbeat delivers a due run of a schedule to the AI's principal session (HB-04, HB-08), only to a
+ * client of agents.MinHeartbeatClientVersion or later (HB-07); the session acknowledges it with an ack carrying
+ * its run_id.
+ */
+export const AgentFrameTypeHeartbeat = "heartbeat"; // server → channel
+/**
  * Agent WebSocket frame types.
  */
-export type AgentFrameType = typeof AgentFrameTypeWelcome | typeof AgentFrameTypeMessage | typeof AgentFrameTypeNotice | typeof AgentFrameTypeAck | typeof AgentFrameTypePlatform | typeof AgentFrameTypePlatformAck | typeof AgentFrameTypeMessageEdited | typeof AgentFrameTypeMessageDeleted;
+export type AgentFrameType = typeof AgentFrameTypeWelcome | typeof AgentFrameTypeMessage | typeof AgentFrameTypeNotice | typeof AgentFrameTypeAck | typeof AgentFrameTypePlatform | typeof AgentFrameTypePlatformAck | typeof AgentFrameTypeMessageEdited | typeof AgentFrameTypeMessageDeleted | typeof AgentFrameTypeHeartbeat;
 /**
  * AgentInfo identifies the connected agent in the welcome frame.
  */
@@ -451,11 +457,13 @@ export interface AgentNoticeFrame {
   text: string;
 }
 /**
- * AgentAckFrame confirms a message was handed to Claude Code (AGT-07).
+ * AgentAckFrame confirms a message was handed to Claude Code (AGT-07), or, with RunID instead of MessageID, a
+ * heartbeat (HB-04).
  */
 export interface AgentAckFrame {
   type: typeof AgentFrameTypeAck;
   message_id: string;
+  run_id?: string;
 }
 /**
  * PlatformEvent is a message that arrived on a connection the AI operates, as its session
@@ -876,9 +884,23 @@ export const ErrorCodeUploadIncomplete = "upload_incomplete";
  */
 export const ErrorCodeAttachmentExpired = "attachment_expired";
 /**
+ * ErrorCodeTooFrequent is a schedule whose rule fires more often than every 15 minutes, or that would
+ * make the AI's enabled schedules fire more than 48 times in 24 hours (422, HB-03).
+ */
+export const ErrorCodeTooFrequent = "too_frequent";
+/**
+ * ErrorCodeTooMany is a new schedule of an AI that already has 20 (422, HB-03).
+ */
+export const ErrorCodeTooMany = "too_many";
+/**
+ * ErrorCodeNoManager is a routine an AI would make active while nobody manages it, so nobody can be told
+ * about it (409, HB-09).
+ */
+export const ErrorCodeNoManager = "no_manager";
+/**
  * Error codes and the HTTP status they come with.
  */
-export type ErrorCode = typeof ErrorCodeInvalid | typeof ErrorCodeUnauthorized | typeof ErrorCodeForbidden | typeof ErrorCodeNotFound | typeof ErrorCodeConflict | typeof ErrorCodeGone | typeof ErrorCodeTooLarge | typeof ErrorCodeRateLimited | typeof ErrorCodeInternal | typeof ErrorCodeUnavailable | typeof ErrorCodeHandleTaken | typeof ErrorCodeAvatarInvalid | typeof ErrorCodeLastInstanceAdmin | typeof ErrorCodeLastAdmin | typeof ErrorCodeHomeOrganization | typeof ErrorCodeAlreadyMember | typeof ErrorCodeNotOperator | typeof ErrorCodeUnknownChat | typeof ErrorCodeUnsupported | typeof ErrorCodeFolderRequired | typeof ErrorCodeFolderInvalid | typeof ErrorCodeHarnessRemoved | typeof ErrorCodePositionUnknown | typeof ErrorCodeOrganizationMismatch | typeof ErrorCodeIdentityBusy | typeof ErrorCodeDMMembersFixed | typeof ErrorCodeReactionLimit | typeof ErrorCodeDMSelf | typeof ErrorCodeContactNotFound | typeof ErrorCodeNoRouteToPerson | typeof ErrorCodeHistoryOnly | typeof ErrorCodeCounterpartDisabled | typeof ErrorCodeChatsNotMembers | typeof ErrorCodeMembersRefused | typeof ErrorCodeOrganizationRequired | typeof ErrorCodeOrganizationNotEmpty | typeof ErrorCodePositionCycle | typeof ErrorCodeIdentityOnline | typeof ErrorCodeAlreadyAnswered | typeof ErrorCodeFileTooLarge | typeof ErrorCodeInsufficientStorage | typeof ErrorCodeUploadOffset | typeof ErrorCodeUploadBusy | typeof ErrorCodeUploadSent | typeof ErrorCodeUploadIncomplete | typeof ErrorCodeAttachmentExpired;
+export type ErrorCode = typeof ErrorCodeInvalid | typeof ErrorCodeUnauthorized | typeof ErrorCodeForbidden | typeof ErrorCodeNotFound | typeof ErrorCodeConflict | typeof ErrorCodeGone | typeof ErrorCodeTooLarge | typeof ErrorCodeRateLimited | typeof ErrorCodeInternal | typeof ErrorCodeUnavailable | typeof ErrorCodeHandleTaken | typeof ErrorCodeAvatarInvalid | typeof ErrorCodeLastInstanceAdmin | typeof ErrorCodeLastAdmin | typeof ErrorCodeHomeOrganization | typeof ErrorCodeAlreadyMember | typeof ErrorCodeNotOperator | typeof ErrorCodeUnknownChat | typeof ErrorCodeUnsupported | typeof ErrorCodeFolderRequired | typeof ErrorCodeFolderInvalid | typeof ErrorCodeHarnessRemoved | typeof ErrorCodePositionUnknown | typeof ErrorCodeOrganizationMismatch | typeof ErrorCodeIdentityBusy | typeof ErrorCodeDMMembersFixed | typeof ErrorCodeReactionLimit | typeof ErrorCodeDMSelf | typeof ErrorCodeContactNotFound | typeof ErrorCodeNoRouteToPerson | typeof ErrorCodeHistoryOnly | typeof ErrorCodeCounterpartDisabled | typeof ErrorCodeChatsNotMembers | typeof ErrorCodeMembersRefused | typeof ErrorCodeOrganizationRequired | typeof ErrorCodeOrganizationNotEmpty | typeof ErrorCodePositionCycle | typeof ErrorCodeIdentityOnline | typeof ErrorCodeAlreadyAnswered | typeof ErrorCodeFileTooLarge | typeof ErrorCodeInsufficientStorage | typeof ErrorCodeUploadOffset | typeof ErrorCodeUploadBusy | typeof ErrorCodeUploadSent | typeof ErrorCodeUploadIncomplete | typeof ErrorCodeAttachmentExpired | typeof ErrorCodeTooFrequent | typeof ErrorCodeTooMany | typeof ErrorCodeNoManager;
 /**
  * ErrorBody is the envelope of every error response.
  */
@@ -1920,9 +1942,14 @@ export const LiveEventTypeInvitationReceived = "invitation_received";
  */
 export const LiveEventTypeRoomMessageUpdated = "room.message_updated";
 /**
+ * LiveEventTypeAgentSchedules tells that the schedules of an AI changed (HB-12): whoever may read them
+ * asks again.
+ */
+export const LiveEventTypeAgentSchedules = "agent.schedules";
+/**
  * Live event types.
  */
-export type LiveEventType = typeof LiveEventTypeHello | typeof LiveEventTypeRoomMessage | typeof LiveEventTypeRoomReactions | typeof LiveEventTypeRoomChanged | typeof LiveEventTypeRoomDeleted | typeof LiveEventTypeRoomRead | typeof LiveEventTypeMembersChanged | typeof LiveEventTypeAccessChanged | typeof LiveEventTypeAgentPresence | typeof LiveEventTypeConnectorStatus | typeof LiveEventTypeChatDiscovered | typeof LiveEventTypeIdentityLinked | typeof LiveEventTypeIntelligenceChanged | typeof LiveEventTypeLagged | typeof LiveEventTypeInvitationReceived | typeof LiveEventTypeRoomMessageUpdated;
+export type LiveEventType = typeof LiveEventTypeHello | typeof LiveEventTypeRoomMessage | typeof LiveEventTypeRoomReactions | typeof LiveEventTypeRoomChanged | typeof LiveEventTypeRoomDeleted | typeof LiveEventTypeRoomRead | typeof LiveEventTypeMembersChanged | typeof LiveEventTypeAccessChanged | typeof LiveEventTypeAgentPresence | typeof LiveEventTypeConnectorStatus | typeof LiveEventTypeChatDiscovered | typeof LiveEventTypeIdentityLinked | typeof LiveEventTypeIntelligenceChanged | typeof LiveEventTypeLagged | typeof LiveEventTypeInvitationReceived | typeof LiveEventTypeRoomMessageUpdated | typeof LiveEventTypeAgentSchedules;
 export type LiveEvent =
   | LiveHello
   | LiveRoomMessage
@@ -1934,6 +1961,7 @@ export type LiveEvent =
   | LiveMembersChanged
   | LiveAccessChanged
   | LiveAgentPresence
+  | LiveAgentSchedules
   | LiveConnectorStatus
   | LiveChatDiscovered
   | LiveIdentityLinked
@@ -2036,6 +2064,13 @@ export interface AccessChangedData {
 export interface LiveAgentPresence {
   type: typeof LiveEventTypeAgentPresence;
   data: AgentPresence;
+}
+/**
+ * LiveAgentSchedules reports that the schedules of an AI the user sees changed (HB-12).
+ */
+export interface LiveAgentSchedules {
+  type: typeof LiveEventTypeAgentSchedules;
+  data: AgentSchedulesData;
 }
 /**
  * AgentPresence is the online state of an agent.
@@ -2998,6 +3033,173 @@ export const DefaultActivityLimit = 20;
  * Activity feed page sizes (GET /activity?limit=).
  */
 export const MaxActivityLimit = 50;
+
+//////////
+// source: schedules.go
+
+/**
+ * ScheduleOrigin tells who wrote a schedule's prompt (HB-02, HB-08): the AI itself or someone who manages it.
+ */
+export const ScheduleOriginSelf = "self";
+export const ScheduleOriginManager = "manager";
+/**
+ * Schedule origins.
+ */
+export type ScheduleOrigin = typeof ScheduleOriginSelf | typeof ScheduleOriginManager;
+/**
+ * ScheduleCatchUp is what becomes of a run that is due while the AI's principal session is not live (HB-06):
+ * once waits for it, within the run's window; skip records it missed.
+ */
+export const ScheduleCatchUpOnce = "once";
+export const ScheduleCatchUpSkip = "skip";
+/**
+ * Catch-up policies.
+ */
+export type ScheduleCatchUp = typeof ScheduleCatchUpOnce | typeof ScheduleCatchUpSkip;
+/**
+ * ScheduleRunStatus is the state of one run (HB-11). pending is a run that is due and not delivered yet; every
+ * other status is final.
+ */
+export type ScheduleRunStatus = string;
+/**
+ * Run statuses.
+ */
+export const ScheduleRunPending: ScheduleRunStatus = "pending";
+/**
+ * Run statuses.
+ */
+export const ScheduleRunDelivered: ScheduleRunStatus = "delivered";
+/**
+ * Run statuses.
+ */
+export const ScheduleRunSuperseded: ScheduleRunStatus = "superseded";
+/**
+ * Run statuses.
+ */
+export const ScheduleRunMissed: ScheduleRunStatus = "missed";
+/**
+ * Run statuses.
+ */
+export const ScheduleRunExpired: ScheduleRunStatus = "expired";
+/**
+ * Run statuses.
+ */
+export const ScheduleRunClientOutdated: ScheduleRunStatus = "client_outdated";
+/**
+ * ScheduleRunCancelled is a run that was pending when its routine was disabled.
+ */
+export const ScheduleRunCancelled: ScheduleRunStatus = "cancelled";
+/**
+ * MaxScheduleName is the longest schedule name in characters.
+ */
+export const MaxScheduleName = 60;
+/**
+ * MaxSchedulePrompt is the longest schedule prompt in characters.
+ */
+export const MaxSchedulePrompt = 4000;
+/**
+ * Schedule is one routine of an AI (HB-01): a prompt delivered to the AI's principal session on a rule, every
+ * EveryMinutes minutes or on Cron, in Timezone. Exactly one of EveryMinutes and Cron is set. NextRunAt is the
+ * next run in the schedule's timezone (its offset is the zone's then); absent while the schedule is disabled
+ * or its rule never fires again. SetBy is who wrote the prompt and Origin says whether that is the AI itself.
+ * CanEdit tells whether the caller may change it: whoever manages the AI may change any schedule of it, the AI
+ * only its own (HB-02).
+ */
+export interface Schedule {
+  id: string;
+  agent_id: string;
+  name: string;
+  prompt: string;
+  every_minutes?: number /* int */;
+  cron?: string;
+  tz: string;
+  catch_up: ScheduleCatchUp;
+  enabled: boolean;
+  origin: ScheduleOrigin;
+  set_by: IntelligenceRef;
+  next_run_at?: string /* RFC 3339 */;
+  last_run_at?: string /* RFC 3339 */;
+  last_status?: ScheduleRunStatus;
+  can_edit: boolean;
+  /**
+   * PausedByManager tells that someone who manages the AI disabled it: only they enable it again.
+   */
+  paused_by_manager: boolean;
+  created_at: string /* RFC 3339 */;
+  updated_at: string /* RFC 3339 */;
+}
+/**
+ * ScheduleList is GET /agents/{id}/schedules and GET /agent/schedules. Count is how many schedules the AI has.
+ * Only the AI and whoever manages it read them (HB-12): for anyone else who sees the AI, Items is empty and
+ * Count still tells that it has routines. CanManage tells whether the caller manages the AI.
+ */
+export interface ScheduleList {
+  items: Schedule[];
+  count: number /* int */;
+  can_manage: boolean;
+}
+/**
+ * ScheduleRequest is the body of a schedule create (POST, every field but the optional ones required) or
+ * update (PATCH, only the fields given change). Give exactly one of EveryMinutes (at least 15) and Cron (a
+ * standard 5-field expression); Timezone is an IANA zone, America/Sao_Paulo when left out; CatchUp defaults to
+ * once and Enabled to true.
+ */
+export interface ScheduleRequest {
+  name?: string;
+  prompt?: string;
+  every_minutes?: number /* int */;
+  cron?: string;
+  tz?: string;
+  catch_up?: string;
+  enabled?: boolean;
+}
+/**
+ * ScheduleRun is one run of a schedule as GET /agents/{id}/schedules/{sid}/runs lists it, newest first (HB-11).
+ * FiredAt is when it was written to the principal session, AckedAt when the session acknowledged it, Session the
+ * key of that session (its harness session id, or "principal" for one without); Manual marks a run started with
+ * "run now".
+ */
+export interface ScheduleRun {
+  id: string;
+  schedule_id: string;
+  due_at: string /* RFC 3339 */;
+  fired_at?: string /* RFC 3339 */;
+  acked_at?: string /* RFC 3339 */;
+  status: ScheduleRunStatus;
+  session?: string;
+  manual: boolean;
+}
+/**
+ * HeartbeatSetter is who wrote a heartbeat's prompt.
+ */
+export interface HeartbeatSetter {
+  handle: string;
+  display_name: string;
+}
+/**
+ * AgentHeartbeatFrame delivers one run of a schedule to the principal session (HB-04): the session hands
+ * Prompt to the model as a turn and acknowledges the frame with an AgentAckFrame carrying RunID. Origin tells
+ * whether the AI set the routine itself or someone who manages it did (SetBy), and Trusted is true only when
+ * the setter manages the AI in its home organization at delivery time (HB-08).
+ */
+export interface AgentHeartbeatFrame {
+  type: typeof AgentFrameTypeHeartbeat;
+  run_id: string;
+  schedule_id: string;
+  name: string;
+  prompt: string;
+  due_at: string /* RFC 3339 */;
+  origin: ScheduleOrigin;
+  set_by: HeartbeatSetter;
+  trusted: boolean;
+}
+/**
+ * AgentSchedulesData is the live event agent.schedules: the schedules of the AI changed. It carries no schedule:
+ * whoever may read them asks again (HB-12).
+ */
+export interface AgentSchedulesData {
+  agent_id: string;
+}
 
 //////////
 // source: secrets.go

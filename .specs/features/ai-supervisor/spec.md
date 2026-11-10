@@ -1,6 +1,7 @@
 # AI supervisor and scheduled heartbeats
 
-Status: Specify + Design written 2026-11-10, awaiting the owner's decisions (below). Requirement ids
+Status: Specify + Design written 2026-11-10. Phase 1 (heartbeats on the server, HB-01..HB-12) built
+2026-11-10 with the recommended options (see "Decisions"); the supervisor awaits the owner's decisions. Requirement ids
 SUP-xx (supervisor) and HB-xx (heartbeats). Owner requests (2026-11-10):
 1. "AI always present": a Partyline supervisor on the machine keeps the AIs' sessions alive, resumes
    the same conversation when one dies, and wakes an AI when a message arrives while it is offline.
@@ -288,6 +289,64 @@ and `always` is for the few AIs that must answer at once.
 8. **Who reads the prompts:** managers only, or everyone who sees the AI? *Recommended: managers.*
 9. **Where failures are reported:** DM from the AI to its nearest manager, or push only?
    *Recommended: DM, at most one per hour per AI.*
+
+## Decisions
+Taken 2026-11-10 for phase 1 as the recommended options of "Open decisions", pending the owner's review.
+Each is one constant in `internal/schedules` (or `internal/agents` for the version gate), easy to change.
+- **5. Routines an AI creates:** active at once once its nearest manager (the first of the welcome's managers)
+  was told: a DM written by the server for the AI (kind `system`, so the AI can neither edit nor delete it)
+  with the name, rule and prompt and Manter/Pausar. Every change of what an active routine of the AI says
+  (name, prompt, rule, timezone, catch-up) and every enabling again is told; only an identical repeat within
+  the hour (`NoticeEvery`) is not. The notice goes out before the write and fails closed: an AI nobody manages
+  (409 `no_manager`) or a notice that cannot be delivered (503) refuses the write, so a routine of the AI is
+  never active untold. Pausar, from anyone who manages the AI, disables it as them (audited
+  `agent.schedule_disable`, `via: manager_notice`), cancels its pending runs, and marks it paused by a manager
+  (`paused_by_manager`): only someone who manages the AI enables it again, and so does a manager's PATCH
+  `enabled: false`. An answer is applied once (`handled_at`); the watcher looks again for unhandled answers on
+  start and after a lagged bus.
+- **6. Minimum interval:** 15 minutes (`MinInterval`), at most 48 runs in any 24 hours of the AI's enabled
+  routines (`MaxRunsPerDay`, an analytic bound that holds for any dates: the sum over the enabled rules of
+  ceil(1440/N), or a cron's runs per day), at most 20 routines (`MaxSchedules`), at most 20 writes an hour by
+  the AI (`WriteLimit`).
+- **7. Missed runs:** `once` by default, within min(period, 12 h) (`MaxCatchUp`).
+- **8. Who reads the prompts:** the AI and whoever manages it; anyone else who sees the AI gets the count only.
+- **Default timezone:** `America/Sao_Paulo` (`DefaultTimezone`); `time/tzdata` is embedded.
+
+Implementation notes (phase 1, where the design was silent or the code differed):
+- Migration `0039_agent_schedules.sql` (0038 was taken by instance settings): `agent_schedules`,
+  `agent_schedule_runs` (with `agent_id`, `expires_at` and `manual`), `agent_schedule_notices` (the DMs of
+  HB-09, so an answer finds its routine). Intelligence columns (`set_by`, `created_by`, `updated_by`) carry no
+  foreign key: a deleted setter only makes the prompt untrusted. A run's internal state before it is final is
+  `pending`.
+- The cron parser is our own (`internal/schedules/rule.go`, Vixie syntax and descriptors), not
+  robfig/cron: no new dependency. DST: a time that does not exist when the clocks go forward is skipped that
+  day; a time repeated when they go back fires once. Every step of the search moves strictly forward (a jump
+  that a zone's missing or repeated midnight turns backwards becomes a step to the next hour) and the search is
+  capped (`ErrCronNoProgress`): a rule that cannot be computed is refused at write time and stops in the
+  scheduler. The scheduler computes rules before its write transaction. A test sweeps every zone of the Go
+  tzdata around each offset change of a year.
+- Delivery goes to the principal only (HB-04); a live parallel session does not stand in for it (unlike SN-10
+  for messages): with no principal the run waits (`once`) or is `missed` (`skip`).
+- Writes carry a version: an update or a delete made from an older read is 409 `conflict`, so a stale write
+  of the AI cannot undo a manager's rewrite.
+- A routine that is disabled cancels its pending runs (status `cancelled`); a disabled routine delivers only a
+  "run now" run.
+- `origin`/`set_by` follow the prompt: a manager who rewrites the prompt of the AI's routine makes it theirs,
+  after which the AI may no longer change it (HB-02). Changing only the rule or `enabled` keeps the origin.
+- A run written to the session and not acknowledged is never expired by the clock: it waits for its ack
+  (HB-05) or is superseded when a newer run is delivered on a later connection.
+- The heartbeat is acknowledged with `{type: "ack", run_id}`; the gate is `MinHeartbeatClientVersion` =
+  v0.23.0 (the release that ships it). It fails closed: `dev` passes, an absent version or one that is no release
+  version does not. An ack the server fails to record is retried and otherwise left in flight. A failing tick
+  backs off (1 s doubling to 30 s) and logs at most once a minute.
+- A routine the AI set itself is framed as written by it earlier, possibly from third-party content: data,
+  never on its own a reason for a destructive or outbound action (an injected message can make an AI schedule
+  one).
+- The CLI channel renders the heartbeat as a channel event (Claude Code) and `listen` as a JSON line of type
+  `heartbeat`; the pi, OpenCode and omp adapters frame it as `<partyline heartbeat=…>` with a line on who set it
+  (shared cases in `integrations/testdata/framing.json`).
+- Deferred: an AI that manages another AI writing its routines (managers act through the user API only); waking
+  an offline supervised AI (SUP-12, phase 4); the web editor (HB-13, phase 2).
 
 ## Risks
 - Claude Code's `-p` and channel behaviour change often (the dialog, `--bg`, permission flags); the

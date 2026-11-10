@@ -121,6 +121,14 @@ type PlatformTranscribed struct {
 	ItemID  string
 }
 
+// HeartbeatQueued reports that a run of a schedule of an AI is due (HB-04): the AI's live principal session
+// should read its pending runs.
+type HeartbeatQueued struct{ AgentID string }
+
+// SchedulesChanged reports that a schedule of an AI was created, changed or deleted (HB-12). It carries no
+// schedule: whoever may read them reads them again.
+type SchedulesChanged struct{ AgentID string }
+
 // IdentityLinked reports that a chat identity was linked to a user.
 type IdentityLinked struct{ UserID, IdentityID string }
 
@@ -168,6 +176,8 @@ func (ConnectorsOrphaned) isEvent()  {}
 func (ChatDiscovered) isEvent()      {}
 func (PlatformQueued) isEvent()      {}
 func (PlatformTranscribed) isEvent() {}
+func (HeartbeatQueued) isEvent()     {}
+func (SchedulesChanged) isEvent()    {}
 func (IdentityLinked) isEvent()      {}
 func (SessionsRevoked) isEvent()     {}
 func (Lagged) isEvent()              {}

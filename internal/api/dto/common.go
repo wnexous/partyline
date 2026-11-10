@@ -225,6 +225,14 @@ const (
 	// ErrorCodeAttachmentExpired is a download of an attachment the instance's attachment retention
 	// deleted (410, RET-06).
 	ErrorCodeAttachmentExpired ErrorCode = "attachment_expired"
+	// ErrorCodeTooFrequent is a schedule whose rule fires more often than every 15 minutes, or that would
+	// make the AI's enabled schedules fire more than 48 times in 24 hours (422, HB-03).
+	ErrorCodeTooFrequent ErrorCode = "too_frequent"
+	// ErrorCodeTooMany is a new schedule of an AI that already has 20 (422, HB-03).
+	ErrorCodeTooMany ErrorCode = "too_many"
+	// ErrorCodeNoManager is a routine an AI would make active while nobody manages it, so nobody can be told
+	// about it (409, HB-09).
+	ErrorCodeNoManager ErrorCode = "no_manager"
 )
 
 // ErrorBody is the envelope of every error response.

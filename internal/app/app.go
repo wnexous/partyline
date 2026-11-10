@@ -15,8 +15,10 @@ import (
 	"github.com/wnexous/partyline/internal/access"
 	"github.com/wnexous/partyline/internal/agents"
 	"github.com/wnexous/partyline/internal/api"
+	"github.com/wnexous/partyline/internal/api/dto"
 	"github.com/wnexous/partyline/internal/attachments"
 	"github.com/wnexous/partyline/internal/audit"
+	"github.com/wnexous/partyline/internal/authn"
 	"github.com/wnexous/partyline/internal/config"
 	"github.com/wnexous/partyline/internal/connectors"
 	"github.com/wnexous/partyline/internal/connectors/discord"
@@ -34,6 +36,7 @@ import (
 	"github.com/wnexous/partyline/internal/orgs"
 	"github.com/wnexous/partyline/internal/platform"
 	"github.com/wnexous/partyline/internal/rooms"
+	"github.com/wnexous/partyline/internal/schedules"
 	"github.com/wnexous/partyline/internal/secrets"
 	"github.com/wnexous/partyline/internal/settings"
 	"github.com/wnexous/partyline/internal/store"
@@ -161,6 +164,9 @@ type App struct {
 	Identities *identities.Service
 	// Devices approves new machines (partyline setup --browser).
 	Devices *devices.Service
+	// Schedules is the AIs' scheduled heartbeats: their routines, the scheduler and the runs the gateway
+	// delivers (HB-01..HB-12).
+	Schedules *schedules.Service
 	// Gateway serves the agent WebSocket and pushes messages to connected agents.
 	Gateway *agents.Gateway
 	Live    *live.Hub
@@ -284,8 +290,13 @@ func New(cfg *config.Config, opts Options) (*App, error) {
 		},
 	})
 	a.trust = trust
+	a.Schedules = schedules.New(schedules.Deps{
+		Store: st, Access: az, Authz: authz, Audit: auditLog, Bus: bus, Logger: opts.Logger, Now: opts.Now,
+		PrincipalLive: func(agentID string) bool { _, ok := a.Presence.Live(agentID); return ok },
+		Notifier:      managerNotifier{store: st, conversations: a.Conversations},
+	})
 	a.Gateway = agents.NewGateway(agents.GatewayDeps{
-		Store: st, Registry: a.Agents, Presence: a.Presence, Rooms: a.Rooms, Platform: a.Platform, Logger: opts.Logger,
+		Store: st, Registry: a.Agents, Presence: a.Presence, Rooms: a.Rooms, Platform: a.Platform, Heartbeats: a.Schedules, Logger: opts.Logger,
 		Bus: bus, Sessions: usersSvc, Trust: trust, Authz: authz, TranscriptHold: opts.TranscriptHold, Now: opts.Now,
 	})
 	kinds := opts.ConnectorKinds
@@ -362,6 +373,7 @@ func New(cfg *config.Config, opts Options) (*App, error) {
 		Orgs:          a.Orgs,
 		Intelligences: a.Intelligences,
 		Conversations: a.Conversations,
+		Schedules:     a.Schedules,
 		Connectors:    a.Connectors,
 		Identities:    a.Identities,
 		Devices:       a.Devices,
@@ -468,6 +480,7 @@ func (a *App) Start(ctx context.Context) error {
 	a.background(bg, "platform-purge", func(ctx context.Context) error {
 		return a.Platform.Run(ctx, platform.PurgeInterval, a.Rooms.ReleaseBlobs, a.Logger)
 	})
+	a.background(bg, "schedules", a.Schedules.Run)
 	a.background(bg, "uploads", func(ctx context.Context) error {
 		return a.Uploads.Run(ctx, uploads.SweepInterval, a.Logger)
 	})
@@ -475,7 +488,8 @@ func (a *App) Start(ctx context.Context) error {
 		return a.Rooms.RunRetention(ctx, rooms.RetentionInterval, a.Logger,
 			rooms.RetentionTask{Name: "revoked_tokens", Run: a.Users.PurgeRevokedTokens},
 			rooms.RetentionTask{Name: "platform_sends", Run: a.Sends.Purge},
-			rooms.RetentionTask{Name: "org_invitations", Run: a.Orgs.PurgeExpiredInvitations})
+			rooms.RetentionTask{Name: "org_invitations", Run: a.Orgs.PurgeExpiredInvitations},
+			rooms.RetentionTask{Name: "schedule_runs", Run: a.Schedules.Purge})
 	})
 	a.ready.Store(true)
 	return nil
@@ -511,4 +525,26 @@ func (a *App) Shutdown(_ context.Context) error {
 	a.Live.Close()
 	a.bg.Wait()
 	return a.Store.Close()
+}
+
+// managerNotifier writes the schedules' manager notices (HB-09) for the AI, in its DM with the manager, opening
+// the DM when there is none.
+type managerNotifier struct {
+	store         *store.Store
+	conversations *conversations.Service
+}
+
+func (n managerNotifier) NotifyManager(ctx context.Context, agentID, managerIID, text string, quickReplies []string) (string, error) {
+	a, err := n.store.R().GetAgent(ctx, agentID)
+	if err != nil {
+		return "", err
+	}
+	p := authn.Principal{Kind: authn.KindAgent, UserID: a.OwnerID, AgentID: agentID}
+	// Written by the server for the AI (kind system): the AI cannot edit or delete it, so it cannot hide from its
+	// manager a routine it set (HB-09).
+	m, err := n.conversations.SendDM(ctx, p, managerIID, rooms.PostInput{Text: text, QuickReplies: quickReplies, Kind: dto.MessageKindSystem})
+	if err != nil {
+		return "", err
+	}
+	return m.ID, nil
 }

@@ -72,6 +72,9 @@ type GatewayDeps struct {
 	Rooms    *rooms.Service
 	// Platform is the AIs' platform queue. Without it no session gets platform events (optional).
 	Platform *platform.Queue
+	// Heartbeats are the due runs of the AIs' schedules, written to their principal sessions (HB-04). Without
+	// it no session gets heartbeats (optional). The Bus carries HeartbeatQueued, which wakes the principal.
+	Heartbeats HeartbeatSource
 	// Trust opens the trust of each backlog call: a message is trusted when its author
 	// manages the AI in its home organization (POS-10). Without it no message is trusted (optional).
 	Trust delivery.TrustSource
@@ -619,6 +622,11 @@ func (g *Gateway) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	if hs.platform && g.d.Platform != nil && live.Label == "" {
 		c.feed = newPlatformFeed(g.d.Platform, row.Agent.ID, g.d.TranscriptHold, g.d.Now)
 	}
+	// Only the principal session receives heartbeats, whatever client it runs: an outdated one has its runs
+	// recorded client_outdated instead (HB-04, HB-07).
+	if g.d.Heartbeats != nil && live.Label == "" {
+		c.beats = newHeartbeatFeed(g.d.Heartbeats, row.Agent.ID, sessionKey, hs.clientVersion)
+	}
 	go g.readAcks(ctx, c, row.Agent.ID)
 	if revocations != nil {
 		go g.watchBus(ctx, c, p, revocations)
@@ -653,7 +661,8 @@ func (g *Gateway) active(ctx context.Context, p authn.Principal) (bool, error) {
 // the token after a lagged bus, which may have dropped such an event (a failed check closes with
 // 1013 so the channel reconnects and authenticates again). A connection that receives platform
 // events reads its queue again when an item was queued for its AI or a voice note of its AI was
-// transcribed, and after a lagged bus, which may have dropped those events.
+// transcribed, and after a lagged bus, which may have dropped those events. A principal session claims its
+// due heartbeats when a run of its AI came due, and after a lagged bus (HB-04).
 func (g *Gateway) watchBus(ctx context.Context, c *conn, p authn.Principal, sub <-chan events.Event) {
 	for {
 		select {
@@ -677,9 +686,16 @@ func (g *Gateway) watchBus(ctx context.Context, c *conn, p authn.Principal, sub 
 				if c.feed != nil && e.AgentID == c.feed.agentID {
 					c.feed.poke() // TR-04: the voice note the feed stopped at may go now
 				}
+			case events.HeartbeatQueued:
+				if c.beats != nil && e.AgentID == c.beats.agentID {
+					c.beats.poke()
+				}
 			case events.Lagged:
 				if c.feed != nil {
 					c.feed.poke()
+				}
+				if c.beats != nil {
+					c.beats.poke()
 				}
 				ok, err := g.active(ctx, p)
 				switch {
@@ -876,6 +892,9 @@ type conn struct {
 	// feed sends the AI's platform items; nil for a client that did not opt in to them and for every
 	// labelled session, which receives none (SESS-18).
 	feed *platformFeed
+	// beats sends the due runs of the AI's schedules; nil for every labelled session, which receives none
+	// (HB-04).
+	beats *heartbeatFeed
 
 	// standIns holds the messages this parallel session was given in place of an offline principal and
 	// has not acknowledged yet (SN-10): its acknowledgement of one of them consumes it for the principal.
@@ -1027,6 +1046,13 @@ func (g *Gateway) run(ctx context.Context, c *conn, row db.GetAgentWithOwnerRow,
 			return err
 		}
 	}
+	var beatWake <-chan struct{} // nil for a session that receives no heartbeats
+	if c.beats != nil {
+		beatWake = c.beats.wake
+		if err := c.beats.fill(ctx, c); err != nil {
+			return err
+		}
+	}
 	carry := map[string]int64{} // per room, the skipped count of a context frame that was not written
 	ping := time.NewTicker(g.d.PingInterval)
 	defer ping.Stop()
@@ -1036,6 +1062,10 @@ func (g *Gateway) run(ctx context.Context, c *conn, row db.GetAgentWithOwnerRow,
 			return nil
 		case <-feedWake:
 			if err := c.feed.fill(ctx, c); err != nil {
+				return err
+			}
+		case <-beatWake:
+			if err := c.beats.fill(ctx, c); err != nil {
 				return err
 			}
 		case <-ping.C:
@@ -1423,11 +1453,19 @@ func (g *Gateway) readAcks(ctx context.Context, c *conn, agentID string) {
 			Type      dto.AgentFrameType `json:"type"`
 			MessageID string             `json:"message_id"`
 			ItemID    string             `json:"item_id"`
+			RunID     string             `json:"run_id"`
 		}
 		if json.Unmarshal(data, &head) != nil {
 			continue
 		}
 		switch {
+		case head.Type == dto.AgentFrameTypeAck && head.MessageID == "" && head.RunID != "":
+			if c.beats == nil {
+				continue // only the principal is sent heartbeats
+			}
+			if err := c.beats.ack(ctx, head.RunID); err != nil && ctx.Err() == nil {
+				g.d.Logger.Error("agent: heartbeat ack failed; the run stays in flight", "agent_id", agentID, "err", err)
+			}
 		case head.Type == dto.AgentFrameTypeAck && head.MessageID != "":
 			if c.labelOf() != "" {
 				// A labelled session acknowledges its own delivery row and moves its read position; the AI's

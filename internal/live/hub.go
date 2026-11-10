@@ -424,6 +424,12 @@ func (c *conn) render(ctx context.Context, e events.Event) ([]frame, error) {
 			Type: dto.LiveEventTypeAgentPresence, Data: dto.AgentPresence{AgentID: e.AgentID, Online: e.Online},
 		})
 
+	case events.SchedulesChanged:
+		// HB-12: the event names the AI only; whoever may read its schedules asks for them.
+		return c.ifSeen(c.canSeeAgent(ctx, e.AgentID, ""))(frame{
+			Type: dto.LiveEventTypeAgentSchedules, Data: dto.AgentSchedulesData{AgentID: e.AgentID},
+		})
+
 	case events.ConnectorStatus:
 		return c.ifSeen(c.canSeeConnector(ctx, e.ConnectorID))(frame{
 			Type: dto.LiveEventTypeConnectorStatus,
