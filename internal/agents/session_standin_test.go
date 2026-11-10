@@ -471,6 +471,8 @@ func TestAnAttachingParallelSessionIsNotGivenWhatItAlreadyRead(t *testing.T) {
 		})
 	}))
 	fresh := post("one more thing")
+	// Every post is dispatched before the session attaches: a late live push is not what this checks.
+	f.flushDispatch(t)
 
 	parallel := f.dialSession(t, "side-session")
 	frame := parallel.Message(time.Minute)
