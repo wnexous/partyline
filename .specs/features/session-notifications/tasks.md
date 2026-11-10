@@ -32,11 +32,10 @@ session_standin_test.go. Review fixes: the attach cap counts qualifying messages
 notice), no double write after a same-process reconnect, tests for trusted mode, paused rooms and an
 ack on the next connection. Status: done
 
-## T6 — read by any session (SN-11)
-Migration 0040 `read_from`; the backlog and stand-in queries leave out what any session of the AI read
-(acknowledged row, or inside a row's read run); the principal's cursor and read position catch up over
-the gapless read run on attach (GetAgentReadThrough, catchUpPrincipal). Tests:
-session_read_by_any_test.go (the incident: the pinned principal returning, a new `--principal`
-session, a new parallel session standing in), sessionkey_test.go, migration 0040 test; the SN-10 test
-of a bare mention now expects the plain message its parallel session read as context to stay out of the
-principal's backlog. Status: done
+## T6 — answered by any session (SN-11)
+The acknowledgement of a follow copy consumes it for the AI like a stand-in's; the principal's cursor and
+read position catch up over the gapless run the AI wrote or acknowledged as its own on attach
+(GetAgentReadThrough, catchUpPrincipal). Tests: session_read_by_any_test.go (the incident: the pinned
+principal returning, a new `--principal` session, a new parallel session standing in; and a request seen
+only as context still reaching the principal). Review fix: the first version's read-run rule (migration
+0040, `read_from`) was dropped because it lost messages seen only as context. Status: done

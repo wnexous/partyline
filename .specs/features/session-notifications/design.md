@@ -47,17 +47,17 @@ For a room message M and AI A (after delivery mode + loop guard decide A wants i
    the connection's backlog already wrote (c.delivered / c.pushed), written directly (not through the queue) with their unread context and copy rows
    created before the frames, so the ack always finds its row.
 
-8. Read by any session (SN-11): migration 0040 adds `session_room_state.read_from`, where what a row
-   has read starts (`read_from < seq <= read_seq`): the join point for a row created by
-   CreateSessionRoomState, 0 for a row created by a reading (AdvanceSessionReadSeq,
-   AdvancePrincipalReadSeq), and `read_seq` for every row that existed before. CountAgentBacklog,
-   ListAgentBacklog and ListStandInCandidates leave out a message covered by any row of the AI, or
-   with any acknowledged delivery row of the AI. On a principal attach, `catchUpPrincipal` (run before
-   the backlog, after the welcome bound is taken) moves the cursor and the principal's read position
-   to GetAgentReadThrough: the seq before the first message after the cursor that the AI did not
-   write and no session read (or the bound). A plain max of the other sessions' read positions was
-   not enough: a parallel session that joined caught up has a read position above messages it
-   never read and that still wait for the principal.
+8. Answered by any session (SN-11): no schema change. A session's acknowledgement of a message it was
+   given as the message itself, not addressed to it (a stand-in, or the copy of a room it follows),
+   runs AckStandInDelivery (the connection marks those ids, `markConsuming`), which turns the copy row
+   into the session's own tombstone (`context = 0`, acked): CountAgentBacklog, ListAgentBacklog and
+   ListStandInCandidates already leave those out. On a principal attach, `catchUpPrincipal` (after the
+   welcome bound is taken, before the backlog) moves the cursor and the principal's read position to
+   GetAgentReadThrough: the seq before the first message after the cursor that the AI did not write and
+   that has no acknowledged non-context row of the AI (or principal row), else the bound. The lookup uses
+   the deliveries' primary key (message_id, agent_id). A first version counted a session's read run
+   (`read_from < seq <= read_seq`, migration 0040) and was dropped: a read position passes messages the
+   session saw only as context, or never saw, and those must reach the principal.
 
 ## Tools (internal/channel)
 - `list_rooms`/`room_info`: per conversation `unread` (for the calling session) and `notify`.
