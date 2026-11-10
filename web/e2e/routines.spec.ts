@@ -10,8 +10,8 @@ import { type AgentClient, connectAI, expectNoSidewaysScroll, loginAs, MACHINE }
 import { type Instance, startInstance } from "./server";
 
 // The owner sets a routine of an AI by hand on its profile (HB-13): creates one from a preset, sees the
-// rule in words, pauses it, runs it now and deletes it. Each step is read back through the API, so what
-// the page shows is what the server stored. No session of the AI is open, so the run waits for the
+// rule in words, pauses it, runs it now, sees that run in its history and deletes it. Each step is read
+// back through the API, so what the page shows is what the server stored. No session of the AI is open, so the run waits for the
 // principal. At 360 px the page and the dialog must not scroll sideways.
 //
 // The file has a server of its own, like session-notifications.spec.ts.
@@ -123,6 +123,21 @@ test("the owner creates, pauses, runs and deletes a routine of an AI (HB-13)", a
     `/agents/${agent.ai.id}/schedules/${id}/runs`,
   );
   expect(runs.items[0]).toMatchObject({ manual: true, status: "pending" });
+
+  // History: read when it is opened, it shows that manual run, still waiting for the principal.
+  const historyToggle = row.getByRole("button", { name: `History of ${NAME}` });
+  await expect(historyToggle).toHaveAttribute("aria-expanded", "false");
+  await historyToggle.click();
+  const runList = row.getByRole("list", { name: `History of ${NAME}` });
+  await expect(runList.getByRole("listitem")).toHaveCount(1);
+  const manual = runList.getByTestId(`routine-run-${runs.items[0]?.id}`);
+  await expect(manual.getByTestId("routine-run-status")).toHaveText(
+    "waiting for the principal session",
+  );
+  await expect(manual.getByTestId("routine-run-manual")).toHaveText("Manual (Run now)");
+  await expect(manual.getByTestId("routine-run-due")).toHaveText(/^Due (now|.* ago) · /);
+  await expect(manual.getByTestId("routine-run-ack")).toHaveText(/ hasn’t received it yet$/);
+  await expectNoSidewaysScroll(page, "the profile with a routine's history open");
 
   // Delete, after the question.
   await row.getByRole("button", { name: `Delete ${NAME}` }).click();

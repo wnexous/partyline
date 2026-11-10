@@ -1,6 +1,6 @@
 import { PlusIcon } from "lucide-react";
 import { useState } from "react";
-import { RoutineSummary, useRoutines } from "@/entities/routine";
+import { RoutineHistory, RoutineSummary, useRoutines } from "@/entities/routine";
 import { RoutineActions, RoutineDialog } from "@/features/manage-routines";
 import { isApiError } from "@/shared/api/client";
 import { MaxSchedulesPerAgent } from "@/shared/api/types.gen";
@@ -11,7 +11,8 @@ import { Skeleton } from "@/shared/ui/primitives/skeleton";
 
 /**
  * The routines of an AI on its profile (HB-13). Whoever manages the AI sees each one — name, rule in
- * words, prompt, next and last run, who set it — and creates, pauses, runs, edits and deletes them.
+ * words, prompt, next and last run, who set it — creates, pauses, runs, edits and deletes them, and
+ * opens one's recent runs ("Histórico", read on demand).
  * Whoever only sees the AI learns how many it has and not what they say (HB-12); a viewer with no
  * routine to learn about, or who may not read them at all (403, 404), gets no section.
  */
@@ -96,7 +97,12 @@ export function RoutinesSection({ agentId, aiName }: { agentId: string; aiName: 
               <RoutineSummary
                 routine={routine}
                 aiName={aiName}
-                actions={<RoutineActions agentId={agentId} aiName={aiName} routine={routine} />}
+                actions={
+                  <>
+                    <RoutineActions agentId={agentId} aiName={aiName} routine={routine} />
+                    <RoutineHistory agentId={agentId} aiName={aiName} routine={routine} />
+                  </>
+                }
               />
             </li>
           ))}

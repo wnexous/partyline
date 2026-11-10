@@ -5,8 +5,8 @@ import type { Schedule, ScheduleList, ScheduleRequest, ScheduleRun } from "@/sha
 
 /*
  * The writes of an AI's routines by whoever manages it (HB-13). Each answer is put in the cached list
- * at once, and the list is read again: the server's `agent.schedules` frame says the same, and a
- * refusal that means the list is stale (403, 404, 409) reads it again too.
+ * at once, and the list and any open history are read again: the server's `agent.schedules` frame says
+ * the same, and a refusal that means the list is stale (403, 404, 409) reads it again too.
  */
 
 const routinesPath = (agentId: string) => `/agents/${agentId}/schedules`;
@@ -15,6 +15,8 @@ const routinePath = (agentId: string, id: string) =>
 
 function refresh(qc: QueryClient, agentId: string) {
   qc.invalidateQueries({ queryKey: queryKeys.agentRoutines(agentId), exact: true });
+  // A write changes the runs too (a run now adds one, a pause cancels the pending ones).
+  qc.invalidateQueries({ queryKey: queryKeys.agentRoutineRunsAll(agentId) });
 }
 
 /** A refusal after which what the page shows is not what the server has: read the list again. */

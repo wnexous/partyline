@@ -364,7 +364,13 @@ Implementation notes (phase 2, HB-13, the web editor):
   and `too_many` are said in words above the buttons; 403, 404 and 409 read the list again and say so.
 - A manager's pause marks the routine paused by a manager and the row says the AI cannot turn it back on. The web
   app never acts as the AI, so the 403 an AI gets for re-enabling one is not a state of this screen.
-- Not built: the runs history of one routine (`GET .../runs`) in the web; the row shows the last run and status.
+- Runs history (built 2026-11-10): each row of a manager has "Histórico", closed until opened; opening it reads
+  `GET .../runs` (not with the list) and lists the newest runs: what became of each in the row's status words with an
+  icon for a glance (reached the AI, waiting, failed, set aside: `runOutcome`), "Manual (Executar agora)", when it was
+  due (relative and absolute, both visible) and whether the AI acknowledged it and when, or was sent it and did not.
+  Loading, empty ("nenhuma execução nos últimos 30 dias"), error with retry, and a 403/404 refusal said without one.
+  A write, "Executar agora" and `agent.schedules` (sent on delivery and ack too) read an open history again.
+  Viewers never get the control (their list has no items; the route answers them 403, others 404).
 
 ## Risks
 - Claude Code's `-p` and channel behaviour change often (the dialog, `--bg`, permission flags); the

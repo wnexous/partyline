@@ -4,7 +4,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { Schedule, ScheduleList } from "@/shared/api/types.gen";
 import { browserTimeZone } from "@/shared/lib/time";
 import { apiError, json, mockApi } from "@/test/fetch";
-import { makeIntelligence, makeRoutine } from "@/test/fixtures";
+import { makeIntelligence, makeRoutine, makeRoutineRun } from "@/test/fixtures";
 import { handleLiveEvent, useLiveStore } from "@/test/live-store";
 import { renderWithProviders } from "@/test/render";
 import { RoutinesSection } from "./routines-section";
@@ -23,6 +23,8 @@ const managed = (items: Schedule[] = [routine]): ScheduleList => ({
   can_manage: true,
 });
 const LIST = "GET /agents/a1/schedules";
+const RUNS = "GET /agents/a1/schedules/s1/runs";
+const minutesAgo = (n: number) => new Date(Date.now() - n * 60_000).toISOString();
 
 beforeEach(() => useLiveStore.setState({ locale: "pt-BR" }));
 afterEach(() => vi.unstubAllGlobals());
@@ -216,6 +218,7 @@ describe("the routines of an AI (HB-13)", () => {
     );
     expect(screen.queryByRole("button", { name: "Nova rotina" })).toBeNull();
     expect(screen.queryByTestId("routine-s1")).toBeNull();
+    expect(screen.queryByTestId("routine-history-toggle")).toBeNull();
   });
 
   it("shows nothing to a viewer with no routine to learn about or who may not read them", async () => {
@@ -265,5 +268,194 @@ describe("the routines of an AI (HB-13)", () => {
       }),
     );
     await waitFor(() => expect(reads).toBe(2));
+  });
+  describe("the history of a routine (HB-11)", () => {
+    it("reads the runs only when a manager opens them, and says each in words", async () => {
+      const { calls } = mockApi({
+        [LIST]: json(200, managed()),
+        [RUNS]: json(200, {
+          items: [
+            makeRoutineRun({
+              id: "r3",
+              due_at: minutesAgo(2),
+              fired_at: undefined,
+              acked_at: undefined,
+              status: "pending",
+              manual: true,
+            }),
+            makeRoutineRun({
+              id: "r2",
+              due_at: minutesAgo(30),
+              fired_at: minutesAgo(30),
+              acked_at: minutesAgo(29),
+            }),
+            makeRoutineRun({
+              id: "r1",
+              due_at: minutesAgo(50),
+              fired_at: undefined,
+              acked_at: undefined,
+              status: "missed",
+            }),
+          ],
+        }),
+      });
+      renderSection();
+      const user = userEvent.setup();
+      const toggle = await screen.findByRole("button", { name: "Histórico de Daily summary" });
+      expect(toggle).toHaveAttribute("aria-expanded", "false");
+      expect(calls.some((c) => c.path.endsWith("/runs"))).toBe(false);
+
+      await user.click(toggle);
+      expect(toggle).toHaveAttribute("aria-expanded", "true");
+      const list = await screen.findByRole("list", { name: "Histórico de Daily summary" });
+      const items = within(list).getAllByRole("listitem");
+      expect(items).toHaveLength(3);
+
+      const manual = within(list).getByTestId("routine-run-r3");
+      expect(within(manual).getByTestId("routine-run-status")).toHaveTextContent(
+        "aguardando a sessão principal",
+      );
+      expect(within(manual).getByTestId("routine-run-manual")).toHaveTextContent(
+        "Manual (Executar agora)",
+      );
+      expect(within(manual).getByTestId("routine-run-due")).toHaveTextContent(
+        /^Prevista há 2 min\. · \d+ de \S+ de \d{4}/,
+      );
+      expect(within(manual).getByTestId("routine-run-ack")).toHaveTextContent(
+        "Atlas ainda não recebeu",
+      );
+
+      const delivered = within(list).getByTestId("routine-run-r2");
+      expect(within(delivered).getByTestId("routine-run-status")).toHaveTextContent("entregue");
+      expect(within(delivered).queryByTestId("routine-run-manual")).toBeNull();
+      expect(within(delivered).getByTestId("routine-run-ack")).toHaveTextContent(
+        "Atlas confirmou há 29 min.",
+      );
+
+      const missed = within(list).getByTestId("routine-run-r1");
+      expect(within(missed).getByTestId("routine-run-status")).toHaveTextContent(
+        "perdida: a IA estava offline",
+      );
+      expect(within(missed).getByTestId("routine-run-ack")).toHaveTextContent("Não chegou a Atlas");
+
+      await user.click(toggle);
+      expect(screen.queryByTestId("routine-history")).toBeNull();
+    });
+
+    it("says a run sent and not acknowledged yet", async () => {
+      mockApi({
+        [LIST]: json(200, managed()),
+        [RUNS]: json(200, {
+          items: [
+            makeRoutineRun({
+              due_at: minutesAgo(5),
+              fired_at: minutesAgo(5),
+              acked_at: undefined,
+              status: "pending",
+            }),
+            makeRoutineRun({
+              id: "r0",
+              due_at: minutesAgo(65),
+              fired_at: minutesAgo(65),
+              acked_at: undefined,
+              status: "superseded",
+            }),
+          ],
+        }),
+      });
+      renderSection();
+      const user = userEvent.setup();
+      await user.click(await screen.findByRole("button", { name: "Histórico de Daily summary" }));
+      expect(
+        within(await screen.findByTestId("routine-run-r1")).getByTestId("routine-run-ack"),
+      ).toHaveTextContent("Enviada a Atlas há 5 min., aguardando confirmação");
+      expect(
+        within(screen.getByTestId("routine-run-r0")).getByTestId("routine-run-ack"),
+      ).toHaveTextContent("Enviada a Atlas há 1 h, sem confirmação");
+    });
+
+    it("says when the routine has not run in the kept 30 days", async () => {
+      mockApi({ [LIST]: json(200, managed()), [RUNS]: json(200, { items: [] }) });
+      renderSection();
+      const user = userEvent.setup();
+      await user.click(await screen.findByRole("button", { name: "Histórico de Daily summary" }));
+      expect(await screen.findByRole("status")).toHaveTextContent(
+        "Nenhuma execução nos últimos 30 dias.",
+      );
+    });
+
+    it("shows a placeholder while the runs load", async () => {
+      let answer: (r: Response) => void = () => {};
+      mockApi({
+        [LIST]: json(200, managed()),
+        [RUNS]: () =>
+          new Promise<Response>((resolve) => {
+            answer = resolve;
+          }),
+      });
+      renderSection();
+      const user = userEvent.setup();
+      await user.click(await screen.findByRole("button", { name: "Histórico de Daily summary" }));
+      const panel = screen.getByTestId("routine-history");
+      expect(panel.querySelector("[aria-hidden]")).not.toBeNull();
+      expect(within(panel).queryByRole("list")).toBeNull();
+      answer(json(200, { items: [makeRoutineRun()] }));
+      expect(await within(panel).findByRole("list")).toBeInTheDocument();
+    });
+
+    it("says a failed read and tries again", async () => {
+      let reads = 0;
+      mockApi({
+        [LIST]: json(200, managed()),
+        [RUNS]: () => {
+          reads += 1;
+          return reads === 1 ? apiError(500, "internal") : json(200, { items: [makeRoutineRun()] });
+        },
+      });
+      renderSection();
+      const user = userEvent.setup();
+      await user.click(await screen.findByRole("button", { name: "Histórico de Daily summary" }));
+      const alert = await screen.findByRole("alert");
+      expect(alert).toHaveTextContent("Não foi possível carregar o histórico.");
+      await user.click(within(alert).getByRole("button", { name: "Tentar de novo" }));
+      expect(await screen.findByTestId("routine-run-r1")).toBeInTheDocument();
+    });
+
+    it("says a refusal without offering to try again", async () => {
+      mockApi({ [LIST]: json(200, managed()), [RUNS]: apiError(403, "forbidden") });
+      renderSection();
+      const user = userEvent.setup();
+      await user.click(await screen.findByRole("button", { name: "Histórico de Daily summary" }));
+      const alert = await screen.findByRole("alert");
+      expect(alert).toHaveTextContent("Só quem gerencia Atlas vê o histórico das rotinas.");
+      expect(within(alert).queryByRole("button")).toBeNull();
+    });
+
+    it("reads an open history again after Run now", async () => {
+      let runs = [makeRoutineRun()];
+      mockApi({
+        [LIST]: json(200, managed()),
+        [RUNS]: () => json(200, { items: runs }),
+        "POST /agents/a1/schedules/s1/run": () => {
+          const run = makeRoutineRun({
+            id: "r2",
+            due_at: new Date().toISOString(),
+            fired_at: undefined,
+            acked_at: undefined,
+            status: "pending",
+            manual: true,
+          });
+          runs = [run, ...runs];
+          return json(202, run);
+        },
+      });
+      renderSection();
+      const user = userEvent.setup();
+      await user.click(await screen.findByRole("button", { name: "Histórico de Daily summary" }));
+      await screen.findByTestId("routine-run-r1");
+      await user.click(screen.getByRole("button", { name: "Executar Daily summary agora" }));
+      const added = await screen.findByTestId("routine-run-r2");
+      expect(within(added).getByTestId("routine-run-manual")).toBeInTheDocument();
+    });
   });
 });

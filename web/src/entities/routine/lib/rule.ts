@@ -139,3 +139,24 @@ export function runStatusText(t: Translate, status: string): string {
   const key = STATUS_KEYS[status];
   return key ? t(key) : status;
 }
+
+/**
+ * What a run means at a glance: it reached the AI (`delivered`), it may still (`waiting`), it failed to
+ * (`failed`: missed, expired, an outdated client), or it was set aside (`skipped`: replaced by a newer run,
+ * cancelled by a pause). An unknown status is `skipped`, said as the server names it.
+ */
+export type RunOutcome = "delivered" | "waiting" | "failed" | "skipped";
+
+const OUTCOMES: Record<string, RunOutcome> = {
+  pending: "waiting",
+  delivered: "delivered",
+  superseded: "skipped",
+  missed: "failed",
+  expired: "failed",
+  client_outdated: "failed",
+  cancelled: "skipped",
+};
+
+export function runOutcome(status: string): RunOutcome {
+  return OUTCOMES[status] ?? "skipped";
+}
