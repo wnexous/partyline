@@ -30,18 +30,19 @@ import (
 )
 
 // The limits and defaults of heartbeats. They are the options the owner was recommended and took pending
-// review (spec "Decisions", 2026-11-10); each is one constant so it is easy to change.
+// review (spec "Decisions", 2026-11-10); each is one constant so it is easy to change. The ones the web app
+// needs live in dto, so it imports them through the generated types (HB-13).
 const (
 	// DefaultTimezone is the timezone of a schedule that names none (HB-01).
-	DefaultTimezone = "America/Sao_Paulo"
+	DefaultTimezone = dto.DefaultScheduleTimezone
 	// MinInterval is the shortest time between two runs of one rule (HB-03).
-	MinInterval = 15 * time.Minute
+	MinInterval = dto.MinScheduleEveryMinutes * time.Minute
 	// MaxRunsPerDay is the most runs the enabled schedules of one AI may make in any 24 hours (HB-03).
-	MaxRunsPerDay = 48
+	MaxRunsPerDay = dto.MaxScheduleRunsPerDay
 	// MaxSchedules is the most schedules one AI has (HB-03).
-	MaxSchedules = 20
+	MaxSchedules = dto.MaxSchedulesPerAgent
 	// MaxEveryMinutes is the longest interval: a year.
-	MaxEveryMinutes = 365 * 24 * 60
+	MaxEveryMinutes = dto.MaxScheduleEveryMinutes
 	// MaxCatchUp bounds the window of a run that waits for the principal (HB-06): the shorter of the rule's
 	// period and this.
 	MaxCatchUp = 12 * time.Hour

@@ -59,6 +59,7 @@ import { Button } from "@/shared/ui/primitives/button";
 import { Skeleton } from "@/shared/ui/primitives/skeleton";
 import { ProfileConversations } from "@/widgets/profile-panel";
 import { InstructedBySection } from "./instructed-by-section";
+import { RoutinesSection } from "./routines-section";
 
 const routeApi = getRouteApi("/_app/contacts/$id");
 
@@ -285,6 +286,9 @@ function ProfileView({ profile }: { profile: IntelligenceProfile }) {
           </ul>
         </PageSection>
       ) : null}
+
+      {/* The AI's routines: in full for whoever manages it, how many for anyone else (HB-12, HB-13). */}
+      {profile.ai ? <RoutinesSection agentId={profile.id} aiName={name} /> : null}
 
       {profile.memberships.length > 0 ? (
         <PageSection layout="stacked" title={t("profile.orgs")}>

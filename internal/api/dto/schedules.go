@@ -45,6 +45,21 @@ const MaxScheduleName = 60
 // MaxSchedulePrompt is the longest schedule prompt in characters.
 const MaxSchedulePrompt = 4000
 
+// MinScheduleEveryMinutes is the shortest time between two runs of one rule, in minutes (HB-03).
+const MinScheduleEveryMinutes = 15
+
+// MaxScheduleEveryMinutes is the longest interval of an every_minutes rule: a year.
+const MaxScheduleEveryMinutes = 525600
+
+// MaxScheduleRunsPerDay is the most runs the enabled schedules of one AI may make in any 24 hours (HB-03).
+const MaxScheduleRunsPerDay = 48
+
+// MaxSchedulesPerAgent is the most schedules one AI has (HB-03).
+const MaxSchedulesPerAgent = 20
+
+// DefaultScheduleTimezone is the timezone of a schedule that names none (HB-01).
+const DefaultScheduleTimezone = "America/Sao_Paulo"
+
 // Schedule is one routine of an AI (HB-01): a prompt delivered to the AI's principal session on a rule, every
 // EveryMinutes minutes or on Cron, in Timezone. Exactly one of EveryMinutes and Cron is set. NextRunAt is the
 // next run in the schedule's timezone (its offset is the zone's then); absent while the schedule is disabled

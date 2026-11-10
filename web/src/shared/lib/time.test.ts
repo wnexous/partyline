@@ -1,5 +1,13 @@
 import { describe, expect, it } from "vitest";
-import { dayKey, formatListTime as format, formatDayLabel, formatFull } from "./time";
+import {
+  dayKey,
+  formatListTime as format,
+  formatDayLabel,
+  formatFull,
+  formatTimeOfDay,
+  timeZones,
+  weekdayName,
+} from "./time";
 
 // Newer ICU versions put a narrow no-break space before AM and PM.
 const formatListTime = (...args: Parameters<typeof format>) => format(...args).replace(/\s/g, " ");
@@ -69,5 +77,24 @@ describe("formatFull", () => {
     expect(formatFull(at(2026, 10, 21, 15, 0), "en").replace(/\s/g, " ")).toBe(
       "October 21, 2026 at 3:00 PM",
     );
+  });
+});
+
+describe("the words of a routine's rule (HB-13)", () => {
+  it("formats a time of day in the locale, whatever the machine's zone", () => {
+    expect(formatTimeOfDay(9, 0, "pt-BR")).toBe("09:00");
+    expect(formatTimeOfDay(21, 30, "en").replace(/\s/g, " ")).toBe("09:30 PM");
+  });
+
+  it("names the weekdays as cron numbers them, Sunday first and 7 again", () => {
+    expect(weekdayName(0, "en")).toBe("Sunday");
+    expect(weekdayName(1, "pt-BR")).toBe("segunda-feira");
+    expect(weekdayName(7, "en")).toBe("Sunday");
+  });
+
+  it("lists the zones with a stored one the browser does not know", () => {
+    const zones = timeZones(["Etc/Unknown-Zone"]);
+    expect(zones).toContain("Etc/Unknown-Zone");
+    expect([...zones].sort()).toEqual(zones);
   });
 });

@@ -1,7 +1,8 @@
 # AI supervisor and scheduled heartbeats
 
 Status: Specify + Design written 2026-11-10. Phase 1 (heartbeats on the server, HB-01..HB-12) built
-2026-11-10 with the recommended options (see "Decisions"); the supervisor awaits the owner's decisions. Requirement ids
+2026-11-10 with the recommended options (see "Decisions"); phase 2 (the web editor, HB-13) built 2026-11-10;
+the supervisor awaits the owner's decisions. Requirement ids
 SUP-xx (supervisor) and HB-xx (heartbeats). Owner requests (2026-11-10):
 1. "AI always present": a Partyline supervisor on the machine keeps the AIs' sessions alive, resumes
    the same conversation when one dies, and wakes an AI when a message arrives while it is offline.
@@ -268,7 +269,7 @@ and `always` is for the few AIs that must answer at once.
    resumes a session; RAM of each idle process. Results amend this spec.
 1. **Heartbeats on the server** (HB-01..HB-12): tables, scheduler, API, tools, frame in channel/listen
    and the adapters, catch-up, version gate, manager DM, audit. Live sessions only; no supervisor.
-2. **Heartbeats in the web profile** (HB-13): the owner edits them by hand.
+2. **Heartbeats in the web profile** (HB-13): the owner edits them by hand. *Built 2026-11-10.*
 3. **Supervisor keep-alive** (SUP-01..SUP-11, SUP-14, SUP-15): process, unit, `supervise`, Claude
    backend, restart policy, env allowlist, yield, supervisor socket, reports. `always` mode only.
 4. **Wake on message and the rest** (SUP-12, SUP-13, SUP-16): wake from the dispatcher and the
@@ -346,7 +347,24 @@ Implementation notes (phase 1, where the design was silent or the code differed)
   `heartbeat`; the pi, OpenCode and omp adapters frame it as `<partyline heartbeat=…>` with a line on who set it
   (shared cases in `integrations/testdata/framing.json`).
 - Deferred: an AI that manages another AI writing its routines (managers act through the user API only); waking
-  an offline supervised AI (SUP-12, phase 4); the web editor (HB-13, phase 2).
+  an offline supervised AI (SUP-12, phase 4).
+
+Implementation notes (phase 2, HB-13, the web editor):
+- The profile's "Rotinas" section (`pages/contacts/ui/routines-section.tsx`) reads `GET /agents/{id}/schedules`:
+  whoever manages the AI gets each routine with its controls; whoever only sees it gets "Atlas tem 2 rotinas" and no
+  text (HB-12); a viewer with none to learn about, or a 403/404, gets no section. `agent.schedules` reads it again.
+- `entities/routine` reads the presets out of the two stored shapes (`every_minutes`, a 5-field cron) and says
+  them in words; any other cron is shown as written. `features/manage-routines` holds the writes, the form dialog
+  and the row actions (switch, run now, edit, delete after a question).
+- Rule input for a phone: every N minutes or hours, every day, Monday to Friday, once a week at a time, or a raw
+  cron. The timezone is the browser's by default (under "Mais opções", with the catch-up policy). The form checks
+  the rule with the server's limits, now exported from `dto` (`MinScheduleEveryMinutes`, `MaxScheduleRunsPerDay`,
+  `MaxSchedulesPerAgent`, `MaxScheduleEveryMinutes`, `DefaultScheduleTimezone`).
+- An edit sends only the fields that changed, so leaving the rule alone does not restart its series. `too_frequent`
+  and `too_many` are said in words above the buttons; 403, 404 and 409 read the list again and say so.
+- A manager's pause marks the routine paused by a manager and the row says the AI cannot turn it back on. The web
+  app never acts as the AI, so the 403 an AI gets for re-enabling one is not a state of this screen.
+- Not built: the runs history of one routine (`GET .../runs`) in the web; the row shows the last run and status.
 
 ## Risks
 - Claude Code's `-p` and channel behaviour change often (the dialog, `--bg`, permission flags); the

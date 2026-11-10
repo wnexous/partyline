@@ -90,3 +90,41 @@ export function formatDayLabel(
     month: "long",
   }).format(new Date(iso));
 }
+
+/** The viewer's own IANA timezone, as the browser reports it; `fallback` when it reports none. */
+export function browserTimeZone(fallback = "UTC"): string {
+  try {
+    return Intl.DateTimeFormat().resolvedOptions().timeZone || fallback;
+  } catch {
+    return fallback;
+  }
+}
+
+/**
+ * The IANA timezones the browser knows, sorted, with `include` among them (a stored zone the
+ * browser does not list stays choosable). A browser without the list offers `include` alone.
+ */
+export function timeZones(include: readonly string[] = []): string[] {
+  const supported = (Intl as { supportedValuesOf?: (key: "timeZone") => string[] })
+    .supportedValuesOf;
+  const all = new Set(supported ? supported("timeZone") : []);
+  for (const zone of include) if (zone) all.add(zone);
+  return [...all].sort();
+}
+
+/** A clock time of day ("09:00", "9:00 AM") in the locale, from hours and minutes. */
+export function formatTimeOfDay(hour: number, minute: number, locale: string): string {
+  return new Intl.DateTimeFormat(locale, {
+    hour: "2-digit",
+    minute: "2-digit",
+    timeZone: "UTC",
+  }).format(Date.UTC(2026, 0, 1, hour, minute));
+}
+
+/** The name of a weekday in the locale ("segunda-feira", "Monday"); 0 is Sunday, as cron counts. */
+export function weekdayName(day: number, locale: string): string {
+  // 4 January 2026 is a Sunday.
+  return new Intl.DateTimeFormat(locale, { weekday: "long", timeZone: "UTC" }).format(
+    Date.UTC(2026, 0, 4 + (((day % 7) + 7) % 7)),
+  );
+}

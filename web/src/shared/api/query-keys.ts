@@ -24,6 +24,8 @@ export const queryKeys = {
   /** One live session's notification setting per conversation (SN-08); the principal's label is "". */
   agentSessionNotifications: (agentId: string, label: string) =>
     ["agents", agentId, "sessions", label || "principal", "notifications"] as const,
+  /** The routines (schedules) of an AI (HB-13): in full for whoever manages it, the count for anyone else. */
+  agentRoutines: (agentId: string) => ["agents", agentId, "routines"] as const,
   /** The viewer's organizations; every query of one organization is under `org(id)`. */
   orgs: ["orgs"] as const,
   org: (id: string) => ["orgs", id] as const,

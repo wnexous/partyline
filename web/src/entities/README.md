@@ -1,6 +1,7 @@
 # entities
 
-Business objects: `intelligence`, `room`, `room-member`, `message`, `organization`, `connector`.
+Business objects: `intelligence`, `room`, `room-member`, `message`, `organization`, `connector`,
+`routine` (an AI's scheduled heartbeats, HB-13).
 Each slice holds its domain molecules in `ui/` (avatar, row, session list), `model/` (hooks,
 pure rules, adapters), `api/` (queries) and `lib/` (pure helpers), behind a public `index.ts`.
 
