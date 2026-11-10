@@ -33,7 +33,7 @@ notice), no double write after a same-process reconnect, tests for trusted mode,
 ack on the next connection. Status: done
 
 ## T6 — read by any session (SN-11)
-Migration 0039 `read_from`; the backlog and stand-in queries leave out what any session of the AI read
+Migration 0040 `read_from`; the backlog and stand-in queries leave out what any session of the AI read
 (acknowledged row, or inside a row's read run); the principal's cursor and read position catch up over
 the gapless read run on attach (GetAgentReadThrough, catchUpPrincipal). Tests:
 session_read_by_any_test.go (the incident: the pinned principal returning, a new `--principal`
