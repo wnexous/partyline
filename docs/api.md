@@ -390,6 +390,13 @@ chunk (each chunk moves `expires_at`); a temporary file that no upload owns is r
 server starts. Downloads (`GET /attachments/{id}`, `GET /agent/attachments/{id}`) stream from disk with
 `Range` and `If-Range`; the `ETag` is the file's hash in quotes.
 
+Attachment retention: with `PARTYLINE_ATTACHMENT_RETENTION_DAYS` (or an instance admin's value, `GET`/`PATCH
+/admin/settings`) above 0, the daily retention job marks every stored room attachment older than that many
+days `expired`: its name, type and size stay, its content is deleted unless something else still uses the
+same bytes, and the server's transcript of a voice file goes with it. A download of an expired attachment
+answers 410 `attachment_expired`; an AI's notification lists it as `[attachment expired: <name>, <mime>]`.
+Files of platform messages, avatars and photos are not affected.
+
 ### Web push notifications
 
 The web app registers a browser subscription and the server sends it an encrypted notification for
@@ -547,6 +554,7 @@ others are unchanged.
 | `invalid` | 422 | A field is wrong: a name outside its bounds, a parent of another organization, an invalid permission. `fields` names it. |
 | `already_answered` | 409 | The caller already answered that question with the structured copy; they delete their answer to answer again ([Questions and answers](#questions-and-answers)). |
 | `file_too_large` | 413 | An upload session for a file over `PARTYLINE_MAX_FILE_MB`; `details.max_size` is the limit in bytes ([Files and upload sessions](#files-and-upload-sessions)). Also a file over the platform's own limit sent through a connection, or an upload session created for it, with `details.platform` naming the platform. |
+| `attachment_expired` | 410 | The attachment was deleted by the instance's attachment retention; the message keeps its name, type and size. |
 | `insufficient_storage` | 507 | The data disk cannot hold the file with its reserve (`PARTYLINE_DISK_RESERVE_MB`) to spare. |
 | `upload_offset` | 409 | A chunk that does not start at what the upload received; `details.received` is where to resume, `details.complete` whether it needs no more. |
 | `upload_busy` | 409 | Another chunk of the same upload is being written, or another send through a connection is sending this upload. |

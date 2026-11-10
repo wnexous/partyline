@@ -312,7 +312,7 @@ func (s *server) agentAttachment(w http.ResponseWriter, r *http.Request, p authn
 	id := r.PathValue("id")
 	a, err := s.Rooms.Attachment(r.Context(), p, id)
 	if err == nil {
-		return s.serveBlob(w, r, a.Sha256, a.Name, a.Mime)
+		return s.serveAttachment(w, r, a)
 	}
 	if !errors.Is(err, access.ErrNotFound) || s.Platform == nil {
 		return err
