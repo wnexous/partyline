@@ -66,7 +66,9 @@ export function ConversationHeader({
           decorative
         />
       )}
-      <div className="min-w-0 flex-1">
+      {/* A base of 6rem: when the actions would squeeze the title to a letter (a phone with large
+          text), they wrap to a row of their own instead. */}
+      <div className="min-w-0 flex-[1_1_6rem]">
         <div className="flex min-w-0 items-center gap-2">
           {between ? (
             <h1 className="flex min-w-0 flex-wrap items-center gap-x-1.5 text-lg tracking-[-0.015em]">
