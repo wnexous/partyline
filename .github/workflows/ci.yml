@@ -28,6 +28,9 @@ jobs:
         run: make check
         env:
           RACE: "1"
+          # The race detector on a 4-core runner makes a shard of internal/api take close to 20 minutes;
+          # local runs keep the 20-minute default, so a hung test still fails fast there.
+          TIMEOUT: "40m"
 
   e2e:
     runs-on: ubuntu-latest
