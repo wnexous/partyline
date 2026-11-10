@@ -205,6 +205,14 @@ func mapError(err error) error {
 	if mapped := uploadError(err); mapped != nil {
 		return mapped
 	}
+	var platformTooLarge *connectors.FileTooLargeError
+	if errors.As(err, &platformTooLarge) {
+		// LF-05: the platform's own limit, refused before anything goes out.
+		he := httpx.NewError(http.StatusRequestEntityTooLarge, dto.ErrorCodeFileTooLarge,
+			"the file is larger than "+platformTooLarge.Platform+" takes ("+humanMB(platformTooLarge.Max)+"): send a smaller file")
+		he.Details = map[string]string{"max_size": strconv.FormatInt(platformTooLarge.Max, 10), "platform": platformTooLarge.Platform}
+		return he
+	}
 	var verr *validation.Error
 	var refused *conversations.MembersRefusedError
 	var notEmpty *orgs.NotEmptyError

@@ -49,9 +49,10 @@ type PipelineDeps struct {
 	Sent *SentIDs
 	// Wait sleeps for d or until ctx is done; defaults to a timer. Tests pass a fake clock's.
 	Wait func(ctx context.Context, d time.Duration) error
-	// MaxUploadBytes bounds stored media (CON-11).
-	MaxUploadBytes int64
-	Logger         *slog.Logger
+	// MaxFileBytes bounds stored media (CON-11): the largest file (PARTYLINE_MAX_FILE_MB), since media
+	// stream to disk (LF-04).
+	MaxFileBytes int64
+	Logger       *slog.Logger
 	// Now returns the current time; defaults to time.Now.
 	Now func() time.Time
 }
@@ -236,11 +237,11 @@ func truncate(text string) string {
 	return string([]rune(text)[:keep]) + TruncatedMarker
 }
 
-// saveMedia stores each media once in the blob store (CON-11). Media over the upload limit
+// saveMedia stores each media once in the blob store (CON-11), streamed. Media over the largest file
 // becomes a too_large record without a file; a failed download becomes unavailable.
 func (p *Pipeline) saveMedia(ctx context.Context, src Source, media []Media) []platform.Attachment {
 	files := make([]platform.Attachment, 0, len(media))
-	limit := p.d.MaxUploadBytes
+	limit := p.d.MaxFileBytes
 	for _, md := range media {
 		f := platform.Attachment{Name: md.Name, Mime: md.Mime, Size: md.Size}
 		if f.Name == "" {

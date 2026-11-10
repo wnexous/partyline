@@ -39,29 +39,33 @@ func readAll(t *testing.T, c *http.Client, base string, n int64) error {
 	return err
 }
 
-// S8: JSON/API answers are capped at 4 MiB, media downloads at the upload limit (25 MiB
-// when unset).
+// S8: JSON/API answers are capped at 4 MiB, media downloads, which stream to disk, at the largest
+// file (5 GiB when unset, LF-04); what a connector holds in memory at the upload limit (95 MiB when
+// unset).
 func TestDepsResponseCaps(t *testing.T) {
 	srv := sizedServer(t)
-	d := connectors.Deps{AllowPrivateNetworks: true, MaxMediaBytes: 1000}
+	d := connectors.Deps{AllowPrivateNetworks: true, MaxMediaBytes: 1000, MaxFileBytes: 2000}
 
 	require.Equal(t, int64(4<<20), int64(connectors.MaxJSONResponse))
 	require.NoError(t, readAll(t, d.JSONClient(0), srv.URL, 4<<20))
 	require.ErrorIs(t, readAll(t, d.JSONClient(0), srv.URL, 4<<20+1), safehttp.ErrResponseTooLarge)
 
 	require.Equal(t, int64(1000), d.MediaLimit())
-	require.NoError(t, readAll(t, d.MediaClient(0), srv.URL, 1000))
-	require.ErrorIs(t, readAll(t, d.MediaClient(0), srv.URL, 1001), safehttp.ErrResponseTooLarge)
+	require.Equal(t, int64(2000), d.FileLimit())
+	require.NoError(t, readAll(t, d.MediaClient(0), srv.URL, 2000))
+	require.ErrorIs(t, readAll(t, d.MediaClient(0), srv.URL, 2001), safehttp.ErrResponseTooLarge)
 
 	require.Equal(t, int64(95<<20), connectors.Deps{}.MediaLimit(), "the default upload limit")
+	require.Equal(t, int64(5<<30), connectors.Deps{}.FileLimit(), "the default largest file")
 }
 
-// S6, S8, HOOK-05: the app hands every connector the network policy, the upload limit as
-// media cap and the persistent replay store.
+// S6, S8, HOOK-05, LF-04: the app hands every connector the network policy, the upload limit and the
+// largest file as media caps and the persistent replay store.
 func TestManagerPassesPolicyAndLimits(t *testing.T) {
 	e := newInboundEnv(t, testkit.WithEnv(map[string]string{"PARTYLINE_PRIVATE_NETWORK_ALLOWLIST": "10.1.0.0/16"}))
 	d := e.inst.Deps
 	require.Equal(t, int64(1<<20), d.MaxMediaBytes, "PARTYLINE_MAX_UPLOAD_MB=1")
+	require.Equal(t, int64(1<<20), d.MaxFileBytes, "PARTYLINE_MAX_FILE_MB=1")
 	want, err := safehttp.ParseAllowlist("10.1.0.0/16")
 	require.NoError(t, err)
 	require.Equal(t, want, d.PrivateAllowlist)

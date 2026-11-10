@@ -1130,8 +1130,9 @@ export interface SendToChatRequest {
   text: string;
   quick_replies?: string[];
   /**
-   * UploadIDs is refused for now (400): a send through a connection holds its file in memory until
-   * it streams from the blob store (LF-04).
+   * UploadIDs attaches one finished upload session of the AI as the file of the send, with Text as its
+   * caption (LF-04): for a file larger than one request. The upload is used up by the send, whether
+   * the platform takes the file or not, since a file sent through a connection is sent once (CID-32).
    */
   upload_ids?: string[];
 }
@@ -2982,12 +2983,16 @@ export interface PutSecretRequest {
 /**
  * CreateUploadRequest starts an upload session for a file larger than one request (LF-03): POST
  * /api/v1/uploads for a user, POST /api/v1/agent/uploads for an AI. Name and Mime are those the
- * attachment will have; Size is the exact number of bytes the chunks will bring.
+ * attachment will have; Size is the exact number of bytes the chunks will bring. Connection, for an AI,
+ * names the connection the file will be sent through (LF-05): a file that connection could not send (over
+ * its platform's own limit, a platform without files, an AI that does not operate it) is refused before
+ * any chunk is sent, as the send itself would refuse it.
  */
 export interface CreateUploadRequest {
   name: string;
   mime: string;
   size: number /* int64 */;
+  connection?: string;
 }
 /**
  * Upload is the state of an upload session. The client sends chunks of at most ChunkSize bytes with

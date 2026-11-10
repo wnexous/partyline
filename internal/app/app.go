@@ -281,13 +281,14 @@ func New(cfg *config.Config, opts Options) (*App, error) {
 	sentIDs := connectors.NewSentIDs(opts.Now)
 	pipeline := connectors.NewPipeline(connectors.PipelineDeps{
 		Store: st, Bus: bus, Blobs: blobs, Identities: a.Identities, Trust: authz, Queue: a.Platform,
-		Sent: sentIDs, Wait: opts.InboundWait, MaxUploadBytes: cfg.MaxUploadBytes, Logger: opts.Logger, Now: opts.Now,
+		Sent: sentIDs, Wait: opts.InboundWait, MaxFileBytes: cfg.MaxFileBytes, Logger: opts.Logger, Now: opts.Now,
 	})
 	fileLinks := connectors.NewFileLinks(box, st, cfg.PublicURL, opts.Now)
 	a.ConnectorManager = connectors.NewManager(connectors.ManagerDeps{
 		Store: st, Bus: bus, Box: box, Kinds: registry, Logger: opts.Logger, UserAgent: "partyline/" + version,
 		FileURL: fileLinks.URL, AllowPrivateNetworks: cfg.AllowPrivateNetworks,
-		PrivateAllowlist: cfg.PrivateNetworkAllowlist, MaxMediaBytes: cfg.MaxUploadBytes, Replays: connectors.NewReplays(st),
+		PrivateAllowlist: cfg.PrivateNetworkAllowlist, MaxMediaBytes: cfg.MaxUploadBytes, MaxFileBytes: cfg.MaxFileBytes,
+		Replays: connectors.NewReplays(st),
 		Inbound: pipeline.Handle, MigrateChat: pipeline.MigrateChat, Wait: opts.ConnectorWait,
 	})
 	a.Sends = connectors.NewSends(connectors.SendsDeps{

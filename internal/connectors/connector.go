@@ -161,7 +161,10 @@ func (o Outbound) Signature() string {
 	return o.AuthorName
 }
 
-// OutFile is an attachment of an outbound message; Open returns its content.
+// OutFile is an attachment of an outbound message. Open returns its content from the start as a
+// stream, never held in memory by Partyline: a connector may call it more than once (a request the
+// transport sends again reopens it) and closes every reader it opened. Size is its exact size in
+// bytes.
 type OutFile struct {
 	ID   string
 	Name string
@@ -193,9 +196,13 @@ type Deps struct {
 	// (CON-13).
 	AllowPrivateNetworks bool
 	PrivateAllowlist     *safehttp.Allowlist
-	// MaxMediaBytes is the upload limit (PARTYLINE_MAX_UPLOAD_MB), which bounds media
-	// downloads; 0 means DefaultMaxMedia.
+	// MaxMediaBytes is the single-request limit (PARTYLINE_MAX_UPLOAD_MB), which bounds what a
+	// connector holds in memory at once, such as the inline media of a WebSocket frame; 0 means
+	// DefaultMaxMedia.
 	MaxMediaBytes int64
+	// MaxFileBytes is the largest file (PARTYLINE_MAX_FILE_MB), which bounds the media a connector
+	// downloads as a stream into the blob store (LF-04); 0 means DefaultMaxFile.
+	MaxFileBytes int64
 	// Replays remembers accepted hook signatures across restarts (HOOK-05); nil for kinds
 	// without InboundHook or in tests.
 	Replays Replays
@@ -208,14 +215,24 @@ const (
 	// DefaultMaxMedia is the media cap when Deps.MaxMediaBytes is unset (the default
 	// upload limit).
 	DefaultMaxMedia = 95 << 20
+	// DefaultMaxFile is the file cap when Deps.MaxFileBytes is unset (the default largest file).
+	DefaultMaxFile = 5 << 30
 )
 
-// MediaLimit is the largest media download: the upload limit.
+// MediaLimit is the largest media a connector holds in memory at once: the single-request limit.
 func (d Deps) MediaLimit() int64 {
 	if d.MaxMediaBytes > 0 {
 		return d.MaxMediaBytes
 	}
 	return DefaultMaxMedia
+}
+
+// FileLimit is the largest media download, streamed to disk: the largest file (LF-04).
+func (d Deps) FileLimit() int64 {
+	if d.MaxFileBytes > 0 {
+		return d.MaxFileBytes
+	}
+	return DefaultMaxFile
 }
 
 // HTTPClient returns the client for request/response platform calls: the network policy
@@ -231,9 +248,10 @@ func (d Deps) JSONClient(timeout time.Duration) *http.Client {
 	return d.HTTPClient(timeout, MaxJSONResponse)
 }
 
-// MediaClient returns a client for media downloads, capped at the upload limit (S8).
+// MediaClient returns a client for media downloads, which stream to disk: capped at the largest
+// file (S8, LF-04).
 func (d Deps) MediaClient(timeout time.Duration) *http.Client {
-	return d.HTTPClient(timeout, d.MediaLimit())
+	return d.HTTPClient(timeout, d.FileLimit())
 }
 
 // StreamClient returns the client for WebSocket handshakes under the same network policy.

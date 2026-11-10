@@ -10,6 +10,7 @@ import (
 
 	"github.com/stretchr/testify/require"
 
+	"github.com/wnexous/partyline/internal/access"
 	"github.com/wnexous/partyline/internal/api/dto"
 	"github.com/wnexous/partyline/internal/connectors"
 	"github.com/wnexous/partyline/internal/connectors/connectortest"
@@ -20,7 +21,7 @@ import (
 
 // reportFile is a file an AI sends: synthetic content.
 func reportFile() *connectors.SendFile {
-	return &connectors.SendFile{Name: "report.pdf", Mime: "application/pdf", Data: []byte("synthetic report")}
+	return connectors.BytesFile("report.pdf", "application/pdf", []byte("synthetic report"))
 }
 
 // fileInput is a send of a file with a caption to the group as Atlas.
@@ -85,13 +86,14 @@ func TestAFileSendIsValidated(t *testing.T) {
 		in    connectors.SendInput
 		field string
 	}{
-		"an empty file":          {f.fileInput("x", &connectors.SendFile{Name: "empty.txt", Mime: "text/plain"}), "file"},
+		"an empty file":          {f.fileInput("x", connectors.BytesFile("empty.txt", "text/plain", nil)), "file"},
+		"a file without content": {f.fileInput("x", &connectors.SendFile{Name: "a.txt", Mime: "text/plain", Size: 3}), "file"},
 		"a caption over 16000":   {f.fileInput(strings.Repeat("a", dto.MaxTextLength+1), reportFile()), "text"},
 		"no text and no file":    {f.input(" "), "text"},
-		"a file without a name":  {f.fileInput("x", &connectors.SendFile{Mime: "text/plain", Data: []byte("x")}), "file"},
-		"a name that is a path":  {f.fileInput("x", &connectors.SendFile{Name: "../etc/passwd", Mime: "text/plain", Data: []byte("x")}), "file"},
-		"a name over 255 bytes":  {f.fileInput("x", &connectors.SendFile{Name: strings.Repeat("n", 256), Mime: "text/plain", Data: []byte("x")}), "file"},
-		"a name with a new line": {f.fileInput("x", &connectors.SendFile{Name: "a\nb.txt", Mime: "text/plain", Data: []byte("x")}), "file"},
+		"a file without a name":  {f.fileInput("x", connectors.BytesFile("", "text/plain", []byte("x"))), "file"},
+		"a name that is a path":  {f.fileInput("x", connectors.BytesFile("../etc/passwd", "text/plain", []byte("x"))), "file"},
+		"a name over 255 bytes":  {f.fileInput("x", connectors.BytesFile(strings.Repeat("n", 256), "text/plain", []byte("x"))), "file"},
+		"a name with a new line": {f.fileInput("x", connectors.BytesFile("a\nb.txt", "text/plain", []byte("x"))), "file"},
 	} {
 		err := f.sends.Check(context.Background(), tc.in)
 		var invalid *validation.Error
@@ -232,4 +234,70 @@ func TestAFileSendLeftInFlightIsFailedAtTheNextStart(t *testing.T) {
 
 	require.NoError(t, f.sends.Flush(ctx))
 	require.Equal(t, []string{"a text"}, outboundTexts(f.inst.Sent()), "only the ordinary send goes out")
+}
+
+// LF-05: a file over the platform's own limit is refused before anything is stored or sent, with the
+// limit and the platform's name; a file at the limit goes. CheckFile, which an upload session asks before
+// its first chunk, refuses the same file, and what Send would refuse for any file.
+func TestAFileOverThePlatformLimitIsRefusedBeforeAnything(t *testing.T) {
+	f := newSendsFixture(t, func(d *connectors.SendsDeps) {
+		kind := connectortest.New().Kind()
+		kind.MaxFileBytes = 16
+		d.Kinds = connectors.NewRegistry(kind)
+	})
+	big := connectors.BytesFile("big.bin", "application/octet-stream", []byte(strings.Repeat("a", 17)))
+	var tooLarge *connectors.FileTooLargeError
+	_, err := f.sends.Send(context.Background(), f.fileInput("the report", big))
+	require.ErrorAs(t, err, &tooLarge)
+	require.Equal(t, connectors.FileTooLargeError{Max: 16, Platform: "Fake"}, *tooLarge)
+	require.ErrorAs(t, f.sends.Check(context.Background(), f.fileInput("", big)), &tooLarge)
+	require.Empty(t, f.inst.Sent())
+	require.Zero(t, f.sendRows(t))
+
+	require.ErrorAs(t, f.sends.CheckFile(context.Background(), f.atlas, f.conn, 17), &tooLarge)
+	require.NoError(t, f.sends.CheckFile(context.Background(), f.atlas, f.conn, 16))
+	require.ErrorIs(t, f.sends.CheckFile(context.Background(), f.ai(t), f.conn, 1), connectors.ErrNotOperator)
+	require.ErrorIs(t, f.sends.CheckFile(context.Background(), f.atlas, store.NewID(), 1), access.ErrNotFound)
+
+	res, err := f.sends.Send(context.Background(), f.fileInput("the report", reportFile())) // 16 bytes
+	require.NoError(t, err)
+	require.Equal(t, dto.PlatformSendStatusSent, res.Status)
+}
+
+// CID-32: a kind without a media send is refused by CheckFile too.
+func TestCheckFileRefusesAKindWithoutFiles(t *testing.T) {
+	f := newSendsFixture(t, func(d *connectors.SendsDeps) {
+		kind := connectortest.New().Kind()
+		kind.CanSendFiles = false
+		d.Kinds = connectors.NewRegistry(kind)
+	})
+	require.ErrorIs(t, f.sends.CheckFile(context.Background(), f.atlas, f.conn, 1), connectors.ErrFilesUnsupported)
+}
+
+// LF-04: the file of a send is read by reference: the connector gets its size and opens it as often as it
+// asks, each time from its start (a request sent again reads it whole again); nothing reads it before.
+func TestAFileIsReadByReferenceAndReopened(t *testing.T) {
+	f := newSendsFixture(t)
+	opened := 0
+	file := &connectors.SendFile{Name: "clip.mp4", Mime: "video/mp4", Size: 9, Open: func() (io.ReadCloser, error) {
+		opened++
+		return io.NopCloser(strings.NewReader("clip-data")), nil
+	}}
+	require.NoError(t, f.sends.Check(context.Background(), f.fileInput("", file)))
+	require.Zero(t, opened, "checking a send reads nothing")
+	res, err := f.sends.Send(context.Background(), f.fileInput("", file))
+	require.NoError(t, err)
+	require.Equal(t, dto.PlatformSendStatusSent, res.Status)
+	require.Equal(t, 1, opened, "the connector read it once")
+	out := f.inst.Sent()[0].Files[0]
+	require.Equal(t, int64(9), out.Size)
+	require.Equal(t, "clip-data", content(t, out))
+	require.Equal(t, "clip-data", content(t, out), "each open reads it from the start")
+}
+
+// LF-04: the attempt to send a large file is given the time its upload takes at 1 MB/s on top of the
+// minute and a half of any file.
+func TestAFileAttemptGrowsWithTheFile(t *testing.T) {
+	require.Equal(t, 90*time.Second, connectors.FileAttemptTimeout(connectors.SendFileTimeout, 16))
+	require.Equal(t, 90*time.Second+2048*time.Second, connectors.FileAttemptTimeout(connectors.SendFileTimeout, 2<<30))
 }

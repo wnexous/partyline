@@ -60,7 +60,7 @@ type inboundEnv struct {
 func newInboundEnv(t *testing.T, opts ...testkit.Option) *inboundEnv {
 	t.Helper()
 	fake := connectortest.New()
-	opts = append(opts, testkit.WithConnectorKinds(fake.Kind()), testkit.WithEnv(map[string]string{"PARTYLINE_MAX_UPLOAD_MB": "1"}))
+	opts = append(opts, testkit.WithConnectorKinds(fake.Kind()), testkit.WithEnv(map[string]string{"PARTYLINE_MAX_UPLOAD_MB": "1", "PARTYLINE_MAX_FILE_MB": "1"}))
 	env := testkit.New(t, opts...)
 	alice := env.NewUser("alice")
 	on := true
@@ -165,7 +165,7 @@ func (e *inboundEnv) pipeline(sent *connectors.SentIDs) *connectors.Pipeline {
 	a := e.env.App
 	return connectors.NewPipeline(connectors.PipelineDeps{
 		Store: a.Store, Bus: a.Bus, Blobs: a.Blobs, Identities: a.Identities, Trust: a.Authz, Queue: a.Platform, Sent: sent,
-		MaxUploadBytes: a.Config.MaxUploadBytes, Logger: slog.New(slog.NewTextHandler(io.Discard, nil)),
+		MaxFileBytes: a.Config.MaxFileBytes, Logger: slog.New(slog.NewTextHandler(io.Discard, nil)),
 	})
 }
 

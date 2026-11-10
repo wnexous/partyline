@@ -349,8 +349,7 @@ func TestAttachmentDownloadsServeRanges(t *testing.T) {
 	f.env.NewUser("carol").WithHeader("Range", "bytes=0-9").Get("/api/v1/attachments/"+id).RequireError(http.StatusNotFound, dto.ErrorCodeNotFound)
 }
 
-// LF-03: an AI's token uploads in chunks on the agent routes and posts the file to a room; through a
-// connection upload_ids are refused until the sends stream files (LF-04).
+// LF-03: an AI's token uploads in chunks on the agent routes and posts the file to a room.
 func TestAgentUploadsAFileToARoom(t *testing.T) {
 	f := newAgentRoom(t)
 	agent := f.rest()
@@ -367,10 +366,11 @@ func TestAgentUploadsAFileToARoom(t *testing.T) {
 	got := f.alice.Get("/api/v1/attachments/" + msg.Attachments[0].ID).RequireStatus(http.StatusOK)
 	require.True(t, bytes.Equal(data, got.Body))
 
+	// A connection takes uploads too (LF-04); one that does not exist is refused before the upload is
+	// looked at, and the upload stays.
 	other := uploadInChunks(agent, agentUploads, "b.txt", "text/plain", []byte("b"), 10)
-	e := agent.Post("/api/v1/agent/connections/whatever/chats/someone/messages",
-		dto.SendToChatRequest{Text: "file", UploadIDs: []string{other.ID}}).RequireError(http.StatusBadRequest, dto.ErrorCodeInvalid)
-	require.Contains(t, e.Message, "upload_ids")
+	agent.Post("/api/v1/agent/connections/whatever/chats/someone/messages",
+		dto.SendToChatRequest{Text: "file", UploadIDs: []string{other.ID}}).RequireError(http.StatusNotFound, dto.ErrorCodeNotFound)
 	agent.Get(agentUploads + "/" + other.ID).RequireStatus(http.StatusOK)
 }
 

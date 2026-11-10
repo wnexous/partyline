@@ -111,8 +111,10 @@ type ManagerDeps struct {
 	// AllowPrivateNetworks and PrivateAllowlist are passed to connectors (CON-13).
 	AllowPrivateNetworks bool
 	PrivateAllowlist     *safehttp.Allowlist
-	// MaxMediaBytes is passed to connectors (the upload limit, S8).
+	// MaxMediaBytes and MaxFileBytes are passed to connectors (the single-request limit and the
+	// largest file, S8, LF-04).
 	MaxMediaBytes int64
+	MaxFileBytes  int64
 	// Replays is passed to connectors (HOOK-05); nil leaves it unset.
 	Replays Replays
 	// Inbound receives every message of a running connector (the inbound pipeline); nil
@@ -360,7 +362,7 @@ func (m *Manager) Apply(id string) {
 		conn, err = k.New(cfg, Deps{
 			ID: id, Logger: log, UserAgent: m.d.UserAgent, FileURL: m.d.FileURL,
 			AllowPrivateNetworks: m.d.AllowPrivateNetworks, PrivateAllowlist: m.d.PrivateAllowlist,
-			MaxMediaBytes: m.d.MaxMediaBytes, Replays: m.d.Replays,
+			MaxMediaBytes: m.d.MaxMediaBytes, MaxFileBytes: m.d.MaxFileBytes, Replays: m.d.Replays,
 		})
 		return err
 	})
