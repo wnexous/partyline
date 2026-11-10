@@ -35,10 +35,28 @@ func (a viewerActions) canMove(target string) bool {
 	return a.viewer.Permission == PermissionAdmin || (a.managed[target] && a.canPlace)
 }
 
+// canShare: the viewer holds a position, the row is a person other than the viewer who does not hold it yet,
+// and the move rule (POS-04, checkPosition) lets the viewer put the person in the viewer's own position (ST-01).
+// Today that is an admin; a manager may only place below its own level.
+func (a viewerActions) canShare(row *MemberRow) bool {
+	if a.viewer.PositionID == "" || row.IID == a.viewer.IID || row.Kind != kindHuman {
+		return false
+	}
+	target, ok := a.chart.Member(row.IID)
+	if !ok || target.PositionID == a.viewer.PositionID {
+		return false
+	}
+	return checkPosition(a.chart, a.viewer, row.IID, a.viewer.PositionID) == nil
+}
+
+// kindHuman is the intelligence kind of a user (intelligences.kind); every other member is an AI.
+const kindHuman = "human"
+
 // apply sets the viewer's rights over the row; homes holds the AIs whose home is the organization.
 func (a viewerActions) apply(row *MemberRow, homes map[string]bool) {
 	row.CanDelete = a.chart.CanDelete(a.viewer.IID, row.IID)
 	row.CanMove = a.canMove(row.IID)
+	row.CanShareAccess = a.canShare(row)
 	row.DeletedForGood = homes[row.IID]
 }
 

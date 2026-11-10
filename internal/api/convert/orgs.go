@@ -43,7 +43,7 @@ func OrgMember(r orgs.MemberRow) dto.OrgMember {
 		inviter := memberRef(r.InviterIID, r.InviterKind, r.InviterDisplayName, r.InviterHandle, r.InviterAvatarSha256)
 		m.InvitedBy = &inviter
 	}
-	m.CanDelete, m.DeleteEffect, m.CanMove = r.CanDelete, deleteEffect(r), r.CanMove
+	m.CanDelete, m.DeleteEffect, m.CanMove, m.CanShareAccess = r.CanDelete, deleteEffect(r), r.CanMove, r.CanShareAccess
 	return m
 }
 

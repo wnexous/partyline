@@ -336,6 +336,7 @@ export function makeOrgMember(over: Partial<OrgMember> = {}): OrgMember {
     can_delete: false,
     delete_effect: "remove",
     can_move: false,
+    can_share_access: false,
     ...over,
   };
 }

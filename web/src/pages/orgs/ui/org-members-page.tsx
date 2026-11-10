@@ -24,6 +24,8 @@ import {
   type MoveTarget,
   OrgMemberActions,
   RemoveFromOrgDialog,
+  ShareAccessDialog,
+  type ShareTarget,
 } from "@/features/manage-org-member";
 import { isApiError } from "@/shared/api/client";
 import {
@@ -47,8 +49,9 @@ const routeApi = getRouteApi("/_app/orgs/$orgId/members");
  * they hold and, for a guest, who answers for them. Anyone who belongs may invite (guests; an admin
  * gives any permission and a position, OMEM-01, OMEM-04); what the viewer may do about each member
  * is what the server's chart says (CHART-03): move between positions (POS-04), and delete an AI of
- * this organization or remove anyone else from it (POS-05, POS-06). Admins also change permissions
- * (OMEM-05) and see the invitations still waiting.
+ * this organization or remove anyone else from it (POS-05, POS-06), and give a person "the same
+ * access" - the position the viewer holds - where the server offers it (ST-02). Admins also change
+ * permissions (OMEM-05) and see the invitations still waiting.
  */
 
 const RANK: Record<string, number> = {
@@ -79,6 +82,7 @@ export function OrgMembersPage() {
   const me = useMe().data;
   const [inviting, setInviting] = useState(false);
   const [moving, setMoving] = useState<MoveTarget | null>(null);
+  const [sharing, setSharing] = useState<ShareTarget | null>(null);
   const [removing, setRemoving] = useState<OrgMember | null>(null);
   const [deleting, setDeleting] = useState<OrgMember | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
@@ -88,6 +92,7 @@ export function OrgMembersPage() {
     () => (chart.data?.positions ?? []).map(({ id, name, parent_id }) => ({ id, name, parent_id })),
     [chart.data],
   );
+  const myPosition = positions.find((p) => p.id === org?.position_id);
   if (!org) return null;
 
   return (
@@ -138,6 +143,13 @@ export function OrgMembersPage() {
               positionId: m.position_id ?? "",
             })
           }
+          onShare={(m) =>
+            setSharing({
+              id: m.intelligence.id,
+              name: m.intelligence.display_name,
+              permission: m.permission,
+            })
+          }
           onRemove={setRemoving}
           onDelete={setDeleting}
         />
@@ -159,6 +171,13 @@ export function OrgMembersPage() {
         positions={positions}
         viewer={{ admin, ...(org.position_id ? { positionId: org.position_id } : {}) }}
         onClose={() => setMoving(null)}
+      />
+      <ShareAccessDialog
+        orgId={org.id}
+        orgName={org.name}
+        target={sharing}
+        position={myPosition ? { id: myPosition.id, name: myPosition.name } : null}
+        onClose={() => setSharing(null)}
       />
       <RemoveFromOrgDialog
         identity={
@@ -186,6 +205,7 @@ function MembersTable({
   viewerId,
   onNotice,
   onMove,
+  onShare,
   onRemove,
   onDelete,
 }: {
@@ -196,6 +216,7 @@ function MembersTable({
   viewerId: string | undefined;
   onNotice: (message: string | null) => void;
   onMove: (m: OrgMember) => void;
+  onShare: (m: OrgMember) => void;
   onRemove: (m: OrgMember) => void;
   onDelete: (m: OrgMember) => void;
 }) {
@@ -239,6 +260,7 @@ function MembersTable({
             viewerId={viewerId}
             onNotice={onNotice}
             onMove={onMove}
+            onShare={onShare}
             onRemove={onRemove}
             onDelete={onDelete}
           />
@@ -257,6 +279,7 @@ function OrgMemberRow({
   viewerId,
   onNotice,
   onMove,
+  onShare,
   onRemove,
   onDelete,
 }: {
@@ -268,6 +291,7 @@ function OrgMemberRow({
   viewerId: string | undefined;
   onNotice: (message: string | null) => void;
   onMove: (m: OrgMember) => void;
+  onShare: (m: OrgMember) => void;
   onRemove: (m: OrgMember) => void;
   onDelete: (m: OrgMember) => void;
 }) {
@@ -356,6 +380,7 @@ function OrgMemberRow({
           variant="table"
           describedBy={nameId}
           onMove={onMove}
+          onShare={onShare}
           onRemove={onRemove}
           onDelete={onDelete}
         />

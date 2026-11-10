@@ -261,6 +261,11 @@ type AgentInfo struct {
 	// Level is the caller's level on the AI: manage for whoever manages it in an organization they share
 	// with it, and the AI itself; use for whoever only sees it.
 	Level access.Level
+	// InstructedBy are the identities whose messages the AI treats as trusted: its managers in its home
+	// organization, nearest first (POS-10, ST-06). Shown only to whoever shares that organization with the AI,
+	// and to the AI itself: InstructedByShown is false for anyone else, and the list is then empty.
+	InstructedBy      []db.Intelligence
+	InstructedByShown bool
 }
 
 // profile builds the profile of d as the caller reads it.
@@ -358,7 +363,32 @@ func (s *Service) memberships(ctx context.Context, viewer string, out *Profile) 
 		if out.Role == RoleAI && chart.Manages(viewer, out.ID) {
 			out.CanEndSession = true
 		}
+		if out.Agent != nil && r.Organization.ID == home {
+			if err := s.instructedBy(ctx, chart, out.Agent); err != nil {
+				return err
+			}
+		}
 		out.Memberships = append(out.Memberships, m)
+	}
+	return nil
+}
+
+// instructedBy fills the identities the AI trusts from the chart of its home organization (ST-06): the ones
+// Chart.ManagersOf lists, the same ones Authz.Trusts answers true for.
+func (s *Service) instructedBy(ctx context.Context, chart *orgs.Chart, a *AgentInfo) error {
+	ids := chart.ManagersOf(a.ID)
+	a.InstructedBy, a.InstructedByShown = make([]db.Intelligence, 0, len(ids)), true
+	if len(ids) == 0 {
+		return nil
+	}
+	rows, err := s.Rows(ctx, ids)
+	if err != nil {
+		return err
+	}
+	for _, id := range ids {
+		if row, ok := rows[id]; ok {
+			a.InstructedBy = append(a.InstructedBy, row)
+		}
 	}
 	return nil
 }
