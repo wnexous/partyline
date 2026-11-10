@@ -22,6 +22,7 @@ import type {
   Room,
   RoomMember,
   Schedule,
+  ScheduleRun,
 } from "@/shared/api/types.gen";
 
 /** Synthetic fixtures; never real names, numbers or chat ids. */
@@ -404,6 +405,19 @@ export function makeRoutine(over: Partial<Schedule> = {}): Schedule {
     paused_by_manager: false,
     created_at: "2026-11-01T12:00:00Z",
     updated_at: "2026-11-01T12:00:00Z",
+    ...over,
+  };
+}
+
+export function makeRoutineRun(over: Partial<ScheduleRun> = {}): ScheduleRun {
+  return {
+    id: "r1",
+    schedule_id: "s1",
+    due_at: "2026-11-10T12:00:00Z",
+    fired_at: "2026-11-10T12:00:01Z",
+    acked_at: "2026-11-10T12:00:02Z",
+    status: "delivered",
+    manual: false,
     ...over,
   };
 }

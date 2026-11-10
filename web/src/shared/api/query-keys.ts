@@ -26,6 +26,11 @@ export const queryKeys = {
     ["agents", agentId, "sessions", label || "principal", "notifications"] as const,
   /** The routines (schedules) of an AI (HB-13): in full for whoever manages it, the count for anyone else. */
   agentRoutines: (agentId: string) => ["agents", agentId, "routines"] as const,
+  /** The newest runs of one routine of an AI (HB-11), read when a manager opens its history. */
+  agentRoutineRuns: (agentId: string, id: string) =>
+    ["agents", agentId, "routine-runs", id] as const,
+  /** Every routine's runs of an AI: what a change of its routines invalidates. */
+  agentRoutineRunsAll: (agentId: string) => ["agents", agentId, "routine-runs"] as const,
   /** The viewer's organizations; every query of one organization is under `org(id)`. */
   orgs: ["orgs"] as const,
   org: (id: string) => ["orgs", id] as const,

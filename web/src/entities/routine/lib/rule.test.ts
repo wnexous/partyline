@@ -1,6 +1,15 @@
 import { describe, expect, it } from "vitest";
 import { type Locale, type Translate, translate } from "@/shared/i18n";
-import { describeRoutine, describeRule, ruleOf, ruleOfCron, ruleRequest, sameRule } from "./rule";
+import {
+  describeRoutine,
+  describeRule,
+  ruleOf,
+  ruleOfCron,
+  ruleRequest,
+  runOutcome,
+  runStatusText,
+  sameRule,
+} from "./rule";
 
 /*
  * The rule of a routine in words (HB-13): the presets a phone picks are read back out of the two shapes
@@ -84,5 +93,23 @@ describe("describeRule", () => {
     expect(describeRoutine(pt, "pt-BR", routine, "Europe/Lisbon")).toBe(
       "Todo dia às 09:00 (horário de America/Sao_Paulo)",
     );
+  });
+});
+
+describe("runOutcome", () => {
+  it("says at a glance whether a run reached the AI, may still, failed to or was set aside", () => {
+    expect(runOutcome("delivered")).toBe("delivered");
+    expect(runOutcome("pending")).toBe("waiting");
+    for (const status of ["missed", "expired", "client_outdated"]) {
+      expect(runOutcome(status)).toBe("failed");
+    }
+    for (const status of ["superseded", "cancelled", "something_new"]) {
+      expect(runOutcome(status)).toBe("skipped");
+    }
+  });
+
+  it("keeps the words of a status, and an unknown one as the server names it", () => {
+    expect(runStatusText(pt, "missed")).toBe("perdida: a IA estava offline");
+    expect(runStatusText(en, "something_new")).toBe("something_new");
   });
 });
