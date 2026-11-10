@@ -37,6 +37,6 @@ Migration 0039 `read_from`; the backlog and stand-in queries leave out what any 
 (acknowledged row, or inside a row's read run); the principal's cursor and read position catch up over
 the gapless read run on attach (GetAgentReadThrough, catchUpPrincipal). Tests:
 session_read_by_any_test.go (the incident: the pinned principal returning, a new `--principal`
-session, a new parallel session standing in), sessionkey_test.go, migration 0039 test; the SN-10 test
+session, a new parallel session standing in), sessionkey_test.go, migration 0040 test; the SN-10 test
 of a bare mention now expects the plain message its parallel session read as context to stay out of the
 principal's backlog. Status: done

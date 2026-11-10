@@ -47,7 +47,7 @@ For a room message M and AI A (after delivery mode + loop guard decide A wants i
    the connection's backlog already wrote (c.delivered / c.pushed), written directly (not through the queue) with their unread context and copy rows
    created before the frames, so the ack always finds its row.
 
-8. Read by any session (SN-11): migration 0039 adds `session_room_state.read_from`, where what a row
+8. Read by any session (SN-11): migration 0040 adds `session_room_state.read_from`, where what a row
    has read starts (`read_from < seq <= read_seq`): the join point for a row created by
    CreateSessionRoomState, 0 for a row created by a reading (AdvanceSessionReadSeq,
    AdvancePrincipalReadSeq), and `read_seq` for every row that existed before. CountAgentBacklog,

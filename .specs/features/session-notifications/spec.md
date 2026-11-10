@@ -117,7 +117,7 @@ replies as unread. Nothing told the AI they were old, so it could answer them ag
     - A state row created at the session's join point (SN-01) covers nothing before that point: the
       session was caught up without reading it. A row created by a reading (an acknowledgement or a
       read_unread in a conversation the session had no row in) covers the conversation up to it. A
-      row that existed before this rule covers nothing of what it read before (migration 0039 sets
+      row that existed before this rule covers nothing of what it read before (migration 0040 sets
       its start to its read position), so no message is ever left out on a guess.
     - The principal's backlog (CountAgentBacklog/ListAgentBacklog) and the stand-ins of a parallel
       session attaching with no live principal (ListStandInCandidates, SN-10) SHALL leave out every
