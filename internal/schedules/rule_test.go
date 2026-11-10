@@ -171,3 +171,23 @@ func TestLatestDueAndWindow(t *testing.T) {
 	now := anchor.Add(48*time.Hour + 5*time.Minute)
 	require.Equal(t, anchor.Add(48*time.Hour), latestDue(quarter, anchor.Add(15*time.Minute), now))
 }
+
+// A tick that keeps failing backs off from 1 s to MaxSleep and is logged on the first failure and then at most
+// once a minute; a tick that works again ends the run.
+func TestTickFailuresBackOffAndLogRarely(t *testing.T) {
+	var f tickFailures
+	logged := 0
+	log := func(int) { logged++ }
+	start := time.Date(2026, 11, 10, 12, 0, 0, 0, time.UTC)
+	var waits []time.Duration
+	for i := range 8 {
+		waits = append(waits, f.failed(start.Add(time.Duration(i)*time.Second), log))
+	}
+	require.Equal(t, []time.Duration{time.Second, 2 * time.Second, 4 * time.Second, 8 * time.Second, 16 * time.Second, MaxSleep, MaxSleep, MaxSleep}, waits)
+	require.Equal(t, 1, logged, "once within the minute")
+	f.failed(start.Add(time.Minute), log)
+	require.Equal(t, 2, logged)
+	require.Equal(t, 9, f.recovered())
+	require.Equal(t, time.Second, f.failed(start.Add(2*time.Minute), log), "a new run starts over")
+	require.Equal(t, 3, logged)
+}

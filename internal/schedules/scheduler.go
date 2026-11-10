@@ -24,15 +24,21 @@ func (s *Service) Run(ctx context.Context) error {
 		wg.Go(func() { s.watchAnswers(ctx, sub) })
 	}
 	defer wg.Wait()
+	var fails tickFailures
 	for {
 		next, err := s.Tick(ctx)
 		wait := MaxSleep
 		switch {
 		case err != nil && ctx.Err() == nil:
-			s.d.Logger.Error("schedules: tick failed", "err", err)
-			wait = time.Second
-		case !next.IsZero():
-			wait = min(wait, max(next.Sub(s.d.Now()), 10*time.Millisecond))
+			// A failing tick (a locked or full database) backs off, and says so at most once a minute.
+			wait = fails.failed(time.Now(), func(n int) { s.d.Logger.Error("schedules: tick failed", "err", err, "failures", n) })
+		case err == nil:
+			if n := fails.recovered(); n > 0 {
+				s.d.Logger.Info("schedules: tick works again", "failures", n)
+			}
+			if !next.IsZero() {
+				wait = min(wait, max(next.Sub(s.d.Now()), 10*time.Millisecond))
+			}
 		}
 		timer := time.NewTimer(wait)
 		select {
@@ -213,3 +219,27 @@ func (s *Service) Purge(ctx context.Context) (int64, error) {
 
 // ErrNotDelivered is a heartbeat acknowledgement that matched no run written to the session.
 var ErrNotDelivered = errors.New("schedules: no such run in flight")
+
+// tickFailures counts the ticks that failed in a row: each waits longer before the next (1 s doubling to
+// MaxSleep), and the failure is logged on the first and then at most once a minute.
+type tickFailures struct {
+	n        int
+	loggedAt time.Time
+}
+
+// failed records a failure at now, logs it when it is time and returns how long to wait.
+func (f *tickFailures) failed(now time.Time, log func(failures int)) time.Duration {
+	f.n++
+	if f.n == 1 || now.Sub(f.loggedAt) >= time.Minute {
+		log(f.n)
+		f.loggedAt = now
+	}
+	return min(time.Second<<min(f.n-1, 5), MaxSleep)
+}
+
+// recovered ends a run of failures and returns how long it was.
+func (f *tickFailures) recovered() int {
+	n := f.n
+	*f = tickFailures{}
+	return n
+}
