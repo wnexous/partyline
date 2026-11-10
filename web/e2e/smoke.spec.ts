@@ -20,6 +20,7 @@ import {
   agentJSON,
   connectAI,
   expectNoSidewaysScroll,
+  headerAction,
   isMobile,
   loginAs,
   MACHINE,
@@ -305,7 +306,9 @@ test("a direct message with an AI carries both ways: its post arrives live and t
   const roomId = new URL(page.url()).pathname.split("/").pop() ?? "";
   await expect(page.getByRole("heading", { name, level: 1 })).toBeVisible();
   // A DM has exactly two participants and no way to change them (DM-02).
-  await expect(page.getByRole("button", { name: "Participants (2)" })).toBeVisible();
+  const participants = await headerAction(page, "Participants (2)");
+  await expect(participants).toBeVisible();
+  if (isMobile(testInfo)) await page.keyboard.press("Escape");
   await expect(page.getByRole("heading", { name: "No messages yet" })).toBeVisible();
   await expect.poll(() => live.ready).toBe(true);
 
@@ -391,7 +394,9 @@ test("a group is created from the list with an AI as its member (LAY-01, LAY-04)
   await expect(page).toHaveURL(new RegExp(`^${instance.url}/rooms/[^/]+$`));
   await expect(page.getByRole("heading", { name: "e2e-crew", level: 1 })).toBeVisible();
   // The AI it picked is its one member; the creator reaches it as the owner.
-  await expect(page.getByRole("button", { name: "Members (1)" })).toBeVisible();
+  const membersAction = await headerAction(page, "Members (1)");
+  await expect(membersAction).toBeVisible();
+  if (isMobile(testInfo)) await page.keyboard.press("Escape");
   if (!isMobile(testInfo)) {
     const panel = page.getByRole("complementary", { name: "Members" });
     await expect(
@@ -451,7 +456,7 @@ test("people and AIs look the same: one member list, no kind badge, the same fac
   await shoot(page, "conversation", testInfo);
 
   // The member list is one list, the AI among the users, with no Agents and Users sections.
-  if (isMobile(testInfo)) await page.getByRole("button", { name: "Members (3)" }).click();
+  if (isMobile(testInfo)) await (await headerAction(page, "Members (3)")).click();
   const members = page.getByRole("list", { name: "Members" });
   await expect(members.getByRole("listitem")).toHaveCount(3);
   await expect(members.getByRole("link", { name, exact: true })).toBeVisible();
@@ -697,7 +702,7 @@ test("a group's photo is set from its settings and shows in the list, the header
   await expect(header.getByTestId("intelligence-avatar")).toHaveText("E");
   await expect(header.locator("img")).toHaveCount(0);
 
-  await page.getByRole("button", { name: "Room settings" }).click();
+  await (await headerAction(page, "Room settings")).click();
   const sheet = page.getByRole("dialog", { name: "Room settings" });
   const crew = makePng(120, 80, (x) => (x < 60 ? [200, 60, 40] : [40, 90, 200]));
   await sheet.getByLabel("Upload photo").setInputFiles({
@@ -750,7 +755,7 @@ test("a group's photo is set from its settings and shows in the list, the header
 
   // Removing the photo brings the initials back.
   if (isMobile(testInfo)) await row.click();
-  await page.getByRole("button", { name: "Room settings" }).click();
+  await (await headerAction(page, "Room settings")).click();
   await page
     .getByRole("dialog", { name: "Room settings" })
     .getByRole("button", { name: "Remove photo" })

@@ -721,6 +721,7 @@ export const en = {
   "conversation.between": "{a} and {b}",
   "conversation.and": "and",
   "conversation.directMessage": "Direct message",
+  "conversation.moreOptions": "More options",
   "room.filesToggle": "Files",
   "room.pausedTitle": "Agents are paused.",
   "room.pausedBody":

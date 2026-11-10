@@ -1,6 +1,6 @@
 import { randomBytes } from "node:crypto";
 import { request } from "node:http";
-import type { BrowserContext, Page, TestInfo } from "@playwright/test";
+import type { BrowserContext, Locator, Page, TestInfo } from "@playwright/test";
 import type { AgentInfo, CreatedToken, Me } from "../src/shared/api/types.gen";
 import { apiCall, type Credentials, expect } from "./fixtures";
 import type { Instance } from "./server";
@@ -13,6 +13,23 @@ export const MACHINE = "e2e-box";
 
 export function isMobile(testInfo: TestInfo) {
   return (testInfo.project.use.viewport?.width ?? 1280) <= MOBILE_MAX_WIDTH;
+}
+
+/**
+ * An action of the conversation header (UI-24): its button on a wide window; on a phone, the header
+ * keeps one "More options" button and this opens it, so the result is the action's item in that
+ * menu (a menu item with a mouse, a button of the sheet on a touch device).
+ */
+export async function headerAction(page: Page, name: string | RegExp): Promise<Locator> {
+  const header = page.getByTestId("conversation-header");
+  if ((page.viewportSize()?.width ?? 1280) > MOBILE_MAX_WIDTH) {
+    return header.getByRole("button", { name });
+  }
+  await header.getByRole("button", { name: "More options" }).click();
+  return page
+    .getByRole("menu", { name: "More options" })
+    .getByRole("menuitem", { name })
+    .or(page.getByRole("dialog").getByRole("button", { name }));
 }
 
 /** Logs a context in through the API; the session cookie lands in the browser context. */

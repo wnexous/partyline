@@ -7,7 +7,7 @@ import {
   Settings2Icon,
   UsersRoundIcon,
 } from "lucide-react";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useMe } from "@/entities/account";
 import { postMessageKey } from "@/entities/message";
 import {
@@ -32,6 +32,7 @@ import {
 } from "@/shared/api/types.gen";
 import { useI18n, useT } from "@/shared/i18n";
 import { useIsMobile } from "@/shared/lib/device";
+import type { MenuAction } from "@/shared/ui/molecules/action-menu";
 import { BackToConversations } from "@/shared/ui/molecules/back-link";
 import { NotFound } from "@/shared/ui/molecules/not-found";
 import {
@@ -84,6 +85,10 @@ export function RoomPage() {
     setSheetOpen(false);
   }
   const [panelTab, setPanelTab] = useState<PanelTab>("members");
+  // A phone's header has one "More options" button (UI-24): the room settings it opens have no
+  // button of their own, and the sheets give focus back to it.
+  const [settingsOpen, setSettingsOpen] = useState(false);
+  const moreRef = useRef<HTMLButtonElement>(null);
   const [focus, setFocus] = useState<MessageFocus | null>(null);
   // The messages as the timeline has them now: a reply and an edit follow their message by id, so
   // an edit shows its new text and a deletion takes the action back (EDT-06, DLT-06).
@@ -152,6 +157,48 @@ export function RoomPage() {
     setFocus({ ...target });
     if (isMobile) setSheetOpen(false);
   };
+  const membersToggle = t(isDM ? "room.participantsToggle" : "room.membersToggle", {
+    count: participantCount,
+  });
+  // The header's actions on a phone: the same three, in its "More options" menu.
+  const menu: MenuAction[] | undefined = isMobile
+    ? [
+        {
+          id: "members",
+          label: membersToggle,
+          icon: UsersRoundIcon,
+          onSelect: () => togglePanel("members"),
+        },
+        {
+          id: "files",
+          label: t("room.filesToggle"),
+          icon: FilesIcon,
+          onSelect: () => togglePanel("files"),
+        },
+        ...(canManage
+          ? [
+              {
+                id: "settings",
+                label: t("settings.title"),
+                icon: Settings2Icon,
+                onSelect: () => setSettingsOpen(true),
+              },
+            ]
+          : []),
+      ]
+    : undefined;
+  /**
+   * A sheet the phone's menu opened is closing: focus goes back to "More options", unless it has
+   * already moved on (a file opened in the timeline takes it there).
+   */
+  const backToMenu = (event: Event) => {
+    event.preventDefault();
+    const active = document.activeElement;
+    const left = event.target instanceof Node ? event.target : null;
+    if (!active || active === document.body || left?.contains(active)) {
+      moreRef.current?.focus({ preventScroll: true });
+    }
+  };
   const membersLabel = t(isDM ? "participants.title" : "members.title");
   const panelLabel = panelTab === "files" ? t("files.title") : membersLabel;
   const panel = (
@@ -176,6 +223,8 @@ export function RoomPage() {
           room={r}
           viewerId={me.id}
           back={isMobile}
+          menu={menu}
+          menuRef={moreRef}
           actions={
             <>
               <Button
@@ -183,9 +232,7 @@ export function RoomPage() {
                 size="sm"
                 onClick={() => togglePanel("members")}
                 aria-expanded={shown("members")}
-                aria-label={t(isDM ? "room.participantsToggle" : "room.membersToggle", {
-                  count: participantCount,
-                })}
+                aria-label={membersToggle}
               >
                 <UsersRoundIcon aria-hidden="true" />
                 <span className="font-mono text-xs tabular">{participantCount}</span>
@@ -212,6 +259,14 @@ export function RoomPage() {
             </>
           }
         />
+        {isMobile && canManage ? (
+          <RoomSettingsSheet
+            room={r}
+            open={settingsOpen}
+            onOpenChange={setSettingsOpen}
+            onCloseFocus={backToMenu}
+          />
+        ) : null}
         {r.agents_paused ? <PausedBanner room={r} /> : null}
         <MessageTimeline
           key={roomId}
@@ -252,7 +307,7 @@ export function RoomPage() {
       ) : null}
       {isMobile ? (
         <Sheet open={sheetOpen} onOpenChange={setSheetOpen}>
-          <SheetContent className="w-[min(22rem,100vw)] gap-0 p-0">
+          <SheetContent className="w-[min(22rem,100vw)] gap-0 p-0" onCloseAutoFocus={backToMenu}>
             <SheetHeader className="sr-only">
               <SheetTitle>{panelLabel}</SheetTitle>
               <SheetDescription>{title}</SheetDescription>

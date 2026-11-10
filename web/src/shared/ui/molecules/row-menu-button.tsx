@@ -1,4 +1,5 @@
 import { EllipsisIcon } from "lucide-react";
+import type { Ref } from "react";
 import { cn } from "@/shared/lib/utils";
 import { Button } from "@/shared/ui/primitives/button";
 
@@ -9,11 +10,14 @@ import { Button } from "@/shared/ui/primitives/button";
  */
 
 export function RowMenuButton({
+  ref,
   label,
   expanded,
   onOpen,
   className,
 }: {
+  /** The button itself, for a panel the menu opens to give focus back to. */
+  ref?: Ref<HTMLButtonElement>;
   /** What it opens, as a name: "Actions for deploys". */
   label: string;
   expanded: boolean;
@@ -23,6 +27,7 @@ export function RowMenuButton({
 }) {
   return (
     <Button
+      ref={ref}
       type="button"
       variant="ghost"
       size="icon-xs"

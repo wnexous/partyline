@@ -17,7 +17,15 @@ import type {
 } from "../src/shared/api/types.gen";
 import { postVoice } from "./audio";
 import { apiCall, test as base, type Credentials, expect, settled } from "./fixtures";
-import { agentJSON, connectAI, expectFits, loginAs, MACHINE, openSession } from "./helpers";
+import {
+  agentJSON,
+  connectAI,
+  expectFits,
+  headerAction,
+  loginAs,
+  MACHINE,
+  openSession,
+} from "./helpers";
 import { postPictures } from "./images";
 import { type Instance, startInstance } from "./server";
 import { shootWhole } from "./shots";
@@ -370,15 +378,120 @@ async function expectInView(page: Page, control: Locator, where: string, what: s
   );
 }
 
+/** The tallest the conversation header may be on a phone: one row (UI-24). */
+const HEADER_MAX = 80;
+/** The least of the window's height the messages keep beside the header and the composer. */
+const LOG_MIN_SHARE = 0.35;
+
+/**
+ * The conversation header of a phone (UI-24), at the window's full height and with the on-screen
+ * keyboard taking its lower part (the window shrinks to `keyboard` px tall, the composer focused):
+ * one row of the way back, the face, the name and "More options", no taller than `HEADER_MAX`; the
+ * messages keep `LOG_MIN_SHARE` of the window; and every action of the header is in the menu, each
+ * on screen and big enough for a finger.
+ */
+async function checkCompactHeader(
+  page: Page,
+  where: string,
+  conversation: Room,
+  title: string,
+  actions: (string | RegExp)[],
+  keyboard: number,
+  font: Font,
+) {
+  const size = page.viewportSize() ?? { width: 360, height: 740 };
+  await page.goto(`/rooms/${conversation.id}`);
+  await enlarge(page, font);
+  const header = page.getByTestId("conversation-header");
+  await expect(header.getByRole("heading", { level: 1, name: title })).toBeVisible();
+  const parts = [
+    header.getByRole("link", { name: "Back to conversations" }),
+    header.getByTestId("intelligence-avatar"),
+    header.getByRole("heading", { level: 1 }),
+    header.getByRole("button", { name: "More options" }),
+  ];
+  const composer = page.getByRole("textbox", { name: `Message ${title}` });
+  for (const height of [size.height, keyboard]) {
+    await page.setViewportSize({ width: size.width, height });
+    await settled(page);
+    // The keyboard is up because the composer has focus.
+    if (height !== size.height) await composer.focus();
+    await settled(page);
+    const at = `${where}: the header of ${title} in a ${size.width}x${height} window`;
+    const bar = await header.boundingBox();
+    expect(bar, `${at}: no header`).not.toBeNull();
+    if (!bar) return;
+    expect(bar.height, `${at}: the header is taller than one row`).toBeLessThanOrEqual(HEADER_MAX);
+    // One row: every part of it shares a horizontal band, none sits under another.
+    const boxes = await Promise.all(parts.map((part) => part.boundingBox()));
+    for (const [index, box] of boxes.entries()) {
+      expect(box, `${at}: part ${index} of the header is missing`).not.toBeNull();
+    }
+    const top = Math.max(...boxes.map((box) => box?.y ?? 0));
+    const bottom = Math.min(...boxes.map((box) => (box?.y ?? 0) + (box?.height ?? 0)));
+    expect(bottom, `${at}: the header's parts are on more than one row`).toBeGreaterThan(top);
+    const more = boxes[3];
+    expect(more?.width ?? 0, `${at}: More options is narrower than 44 px`).toBeGreaterThanOrEqual(
+      44,
+    );
+    expect(more?.height ?? 0, `${at}: More options is shorter than 44 px`).toBeGreaterThanOrEqual(
+      44,
+    );
+    // The messages have what lies between the header and the composer (with the Jump to latest
+    // strip under them when the reader is not at the newest message).
+    const form = await composer.locator("xpath=ancestor::form").boundingBox();
+    const messages = (form?.y ?? 0) - (bar.y + bar.height);
+    const log = await page.getByRole("log").boundingBox();
+    expect(log?.y ?? 0, `${at}: the messages do not start under the header`).toBeGreaterThanOrEqual(
+      bar.y + bar.height - 1,
+    );
+    expect(
+      messages / height,
+      `${at}: the messages keep less than ${LOG_MIN_SHARE * 100}% of the window`,
+    ).toBeGreaterThanOrEqual(LOG_MIN_SHARE);
+    await expectFits(page, at);
+    await shootWhole(page, shotName(`${where}: the header of ${conversation.kind} at ${height}`));
+
+    // Every action of the header, by its name, in the menu.
+    await header.getByRole("button", { name: "More options" }).click();
+    const menu = page.getByRole("dialog", { name: title });
+    await expect(menu).toBeVisible();
+    await settled(page);
+    for (const name of actions) {
+      const item = menu.getByRole("button", { name, exact: true });
+      await expectInView(page, item, at, String(name));
+      const box = await item.boundingBox();
+      expect(box?.height ?? 0, `${at}: ${name} is shorter than 44 px`).toBeGreaterThanOrEqual(44);
+    }
+    await expectFits(page, `${at}: its menu`);
+    await page.keyboard.press("Escape");
+    await expect(menu).toHaveCount(0);
+  }
+  await page.setViewportSize(size);
+}
+
 /**
  * What the owner meets every day on the phone, with the largest system font (a 360x740 phone at
- * 150%): the DM with a file and a voice message, the composer with a long draft, also with the
- * on-screen keyboard open (the window shrinks, as `interactive-widget=resizes-content` makes
- * Chrome do), the members of a group, and the routines of the AI with a history and the new
- * routine dialog. Each fits the window and keeps its controls on screen.
+ * 150%): the one-row header of a conversation, the DM with a file and a voice message, the
+ * composer with a long draft, both also with the on-screen keyboard open (the window shrinks, as
+ * `interactive-widget=resizes-content` makes Chrome do), the members of a group, and the routines
+ * of the AI with a history and the new routine dialog. Each fits the window and keeps its controls on screen.
  */
 async function checkDailyScreens(page: Page, where: string, font: Font) {
   const size = page.viewportSize() ?? { width: 360, height: 740 };
+
+  // The header of the DM and of the group stays one row, with the keyboard open too (UI-24).
+  const keyboard = 420;
+  await checkCompactHeader(page, where, dm, AI_NAME, ["Participants (2)", "Files"], keyboard, font);
+  await checkCompactHeader(
+    page,
+    where,
+    room,
+    ROOM_NAME,
+    [/^Members \(\d+\)$/, "Files", "Room settings"],
+    keyboard,
+    font,
+  );
 
   // The DM: the header keeps the way back and the name; the voice player keeps its buttons.
   await page.goto(`/rooms/${dm.id}`);
@@ -417,10 +530,7 @@ async function checkDailyScreens(page: Page, where: string, font: Font) {
   // actions stay inside it, and the member's name is not cut to a letter.
   await page.goto(`/rooms/${room.id}`);
   await enlarge(page, font);
-  await page
-    .getByTestId("conversation-header")
-    .getByRole("button", { name: /^Members/ })
-    .click();
+  await (await headerAction(page, /^Members/)).click();
   const panel = page.getByRole("complementary", { name: /Members/ });
   await expect(panel).toBeVisible();
   await settled(page);

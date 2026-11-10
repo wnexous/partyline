@@ -724,6 +724,7 @@ export const ptBR: Dictionary = {
   "conversation.between": "{a} e {b}",
   "conversation.and": "e",
   "conversation.directMessage": "Mensagem direta",
+  "conversation.moreOptions": "Mais opções",
   "room.filesToggle": "Arquivos",
   "room.pausedTitle": "Os agentes estão pausados.",
   "room.pausedBody":
