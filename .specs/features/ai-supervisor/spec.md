@@ -278,7 +278,7 @@ and `always` is for the few AIs that must answer at once.
 2. **Which AIs:** opt-in per folder on the machine, or every AI the machine hosts? *Recommended:
    opt-in (`partyline supervise add`); the web only pauses/resumes.*
 3. **Default mode:** `on-demand` or `always`? *Recommended: on-demand (idle stop at 20 min); always
-   for Nexous-like AIs.*
+   for always-on assistant AIs.*
 4. **Unattended permissions (Claude):** ask a manager in Partyline, `acceptEdits` + the folder's
    allowlist, or bypass? *Recommended: ask by default, `--autonomous` per AI when you want it.*
 5. **Routines an AI creates:** free with a DM to the manager (Manter/Pausar), or only after approval?
