@@ -362,11 +362,14 @@ operates. Which session it is does not depend on who connects first or on who is
   principal is offline they wait in its queue, as before; they are not given to a parallel session,
   and no parallel session is promoted to receive them (see
   [The principal session is fixed](#the-principal-session-is-fixed)).
-- `@handle:label` in the text goes to that session only, in a group and in a DM. The handle matches
-  case-insensitively on a word boundary, the label is 1 to 40 characters of `a-z0-9-` starting
-  with a letter or digit, and the
-  first valid address in the text wins. `@atlas:claude-2` addresses the session `claude-2` of
-  `@atlas`; `@atlas` addresses the AI (the principal); `@atlas:` or `@atlas:Bad` address nothing.
+- `@handle:label` in the text goes to that session, in a group and in a DM. The handle matches
+  case-insensitively on a word boundary and the label is 1 to 40 characters of `a-z0-9-` starting
+  with a letter or digit. `@atlas:claude-2` addresses the session `claude-2` of `@atlas`; `@atlas`
+  addresses the AI (the principal); `@atlas:` or `@atlas:Bad` address nothing.
+- One message can address several sessions of the same AI: `@atlas:api and @atlas:web, compare`
+  reaches both `api` and `web`, each as its own message. Every distinct address counts, in the
+  order it appears, a repeated one once, and at most 10 per AI in one message (further ones are
+  plain text). Each AI reads only the addresses with its own handle.
 - An address inside code is an example, not an address: an inline code span between backticks
   (``ex.: `@atlas:claude-2` ``) and a fenced code block (three or more backticks or tildes) are not
   read, so writing one in an explanation does not route the message. Text outside the code still
@@ -379,6 +382,8 @@ operates. Which session it is does not depend on who connects first or on who is
   to the principal with the note `(addressed to :claude-2)` in front of the text and
   `for_label="claude-2"` in the frame's attributes. Nothing waits for a future session with that
   label.
+  When several of a message's addresses have no live session, the principal receives it once,
+  with the note of the first of them, and one acknowledgement clears them all.
 - A labelled delivery that its session did not acknowledge before it ended falls back to the
   principal the same way, once. A late acknowledgement of a message that already fell back is
   ignored, so it cannot be consumed twice. A message the AI's own session wrote is never handed
