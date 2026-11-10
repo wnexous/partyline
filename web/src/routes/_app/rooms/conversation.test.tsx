@@ -316,6 +316,105 @@ describe("conversation header", () => {
   });
 });
 
+describe("the header's actions on a phone (UI-24)", () => {
+  it("keeps one row: the way back, the face and the name, and one More options button", async () => {
+    stubViewport(360);
+    api();
+    renderRoute("/rooms/g1");
+    const bar = within(await header());
+    await bar.findByRole("heading", { name: "release-crew", level: 1 });
+    expect(bar.getByRole("link", { name: "Back to conversations" })).toBeInTheDocument();
+    const more = bar.getByRole("button", { name: "More options" });
+    expect(more).toHaveAttribute("aria-haspopup", "menu");
+    expect(more).toHaveAttribute("aria-expanded", "false");
+    // The buttons are in the menu, not beside the name.
+    expect(bar.getAllByRole("button")).toEqual([more]);
+    expect(bar.queryByRole("button", { name: "Members (3)" })).toBeNull();
+    expect(bar.queryByRole("button", { name: "Files" })).toBeNull();
+    expect(bar.queryByRole("button", { name: "Room settings" })).toBeNull();
+  });
+
+  it("lists every action of the header, by name, in the menu", async () => {
+    stubViewport(360);
+    api();
+    const user = userEvent.setup();
+    renderRoute("/rooms/g1");
+    await user.click(await within(await header()).findByRole("button", { name: "More options" }));
+    const menu = await screen.findByRole("menu", { name: "More options" });
+    expect(
+      within(menu)
+        .getAllByRole("menuitem")
+        .map((item) => item.textContent),
+    ).toEqual(["Members (3)", "Files", "Room settings"]);
+  });
+
+  it("offers no room settings to a viewer who does not manage the room", async () => {
+    stubViewport(360);
+    api();
+    const user = userEvent.setup();
+    renderRoute("/rooms/d1");
+    await user.click(await within(await header()).findByRole("button", { name: "More options" }));
+    const menu = await screen.findByRole("menu", { name: "More options" });
+    expect(
+      within(menu)
+        .getAllByRole("menuitem")
+        .map((item) => item.textContent),
+    ).toEqual(["Participants (2)", "Files"]);
+  });
+
+  it("opens the members from the menu with the keyboard, and gives focus back to the button", async () => {
+    stubViewport(360);
+    api();
+    const user = userEvent.setup();
+    renderRoute("/rooms/g1");
+    const more = await within(await header()).findByRole("button", { name: "More options" });
+    more.focus();
+    await user.keyboard("{Enter}");
+    const menu = await screen.findByRole("menu", { name: "More options" });
+    await waitFor(() =>
+      expect(within(menu).getByRole("menuitem", { name: "Members (3)" })).toHaveFocus(),
+    );
+    await user.keyboard("{Enter}");
+    const sheet = await screen.findByRole("dialog", { name: "Members" });
+    expect(within(sheet).getByRole("complementary", { name: "Members" })).toBeInTheDocument();
+    await user.keyboard("{Escape}");
+    await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+    await waitFor(() => expect(more).toHaveFocus());
+  });
+
+  it("opens the files and the room settings from the menu", async () => {
+    stubViewport(360);
+    api({ "GET /rooms/g1/files": json(200, { items: [], has_more: false }) });
+    const user = userEvent.setup();
+    renderRoute("/rooms/g1");
+    const more = await within(await header()).findByRole("button", { name: "More options" });
+    await user.click(more);
+    await user.click(await screen.findByRole("menuitem", { name: "Files" }));
+    expect(await screen.findByRole("dialog", { name: "Files" })).toBeInTheDocument();
+    await user.keyboard("{Escape}");
+    await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+
+    await user.click(more);
+    await user.click(await screen.findByRole("menuitem", { name: "Room settings" }));
+    const settings = await screen.findByRole("dialog", { name: "Room settings" });
+    expect(within(settings).getByLabelText("Name")).toHaveValue("release-crew");
+    await user.keyboard("{Escape}");
+    await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+    await waitFor(() => expect(more).toHaveFocus());
+  });
+
+  it("keeps the buttons beside the name on a wide screen", async () => {
+    stubViewport(1280);
+    api();
+    renderRoute("/rooms/g1");
+    const bar = within(await header());
+    expect(await bar.findByRole("button", { name: "Members (3)" })).toBeInTheDocument();
+    expect(bar.getByRole("button", { name: "Files" })).toBeInTheDocument();
+    expect(bar.getByRole("button", { name: "Room settings" })).toBeInTheDocument();
+    expect(bar.queryByRole("button", { name: "More options" })).toBeNull();
+  });
+});
+
 describe("participants (DM-02, GRP-02)", () => {
   it("shows the two participants of a DM, with handles and no kind badges, and no way to change them", async () => {
     api();

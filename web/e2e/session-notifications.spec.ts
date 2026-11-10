@@ -4,6 +4,7 @@ import {
   type AgentClient,
   connectAI,
   expectNoSidewaysScroll,
+  headerAction,
   isMobile,
   loginAs,
   MACHINE,
@@ -97,7 +98,7 @@ test("the owner mutes a parallel session in a room and the member card marks it 
   await page.goto(`/rooms/${room.id}`);
   await expect(page.getByRole("heading", { name: ROOM_NAME, level: 1 })).toBeVisible();
 
-  if (isMobile(testInfo)) await page.getByRole("button", { name: "Members (1)" }).click();
+  if (isMobile(testInfo)) await (await headerAction(page, "Members (1)")).click();
   const sessionsLine = page.getByTestId(/^member-sessions-/);
   await expect(sessionsLine.getByTestId("session-label")).toHaveText([
     "principal",

@@ -948,7 +948,9 @@ describe("the actions the viewer may use (PRF-04)", () => {
     roomApi({ "POST /conversations/dm": json(200, dm) });
     const user = userEvent.setup();
     const { router } = renderRoute("/rooms/r1");
-    await user.click(await screen.findByRole("button", { name: "Members (3)" }));
+    // A phone's header keeps its buttons in "More options" (UI-24).
+    await user.click(await screen.findByRole("button", { name: "More options" }));
+    await user.click(await screen.findByRole("menuitem", { name: "Members (3)" }));
     const sheet = await screen.findByRole("dialog", { name: "Members" });
     await user.click(within(await within(sheet).findByTestId("member-mb-a1")).getByRole("link"));
     const panel = await panelOf("Atlas");

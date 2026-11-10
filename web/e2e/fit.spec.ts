@@ -17,7 +17,15 @@ import type {
 } from "../src/shared/api/types.gen";
 import { postVoice } from "./audio";
 import { apiCall, test as base, type Credentials, expect, settled } from "./fixtures";
-import { agentJSON, connectAI, expectFits, loginAs, MACHINE, openSession } from "./helpers";
+import {
+  agentJSON,
+  connectAI,
+  expectFits,
+  headerAction,
+  loginAs,
+  MACHINE,
+  openSession,
+} from "./helpers";
 import { postPictures } from "./images";
 import { type Instance, startInstance } from "./server";
 import { shootWhole } from "./shots";
@@ -417,10 +425,7 @@ async function checkDailyScreens(page: Page, where: string, font: Font) {
   // actions stay inside it, and the member's name is not cut to a letter.
   await page.goto(`/rooms/${room.id}`);
   await enlarge(page, font);
-  await page
-    .getByTestId("conversation-header")
-    .getByRole("button", { name: /^Members/ })
-    .click();
+  await (await headerAction(page, /^Members/)).click();
   const panel = page.getByRole("complementary", { name: /Members/ });
   await expect(panel).toBeVisible();
   await settled(page);
