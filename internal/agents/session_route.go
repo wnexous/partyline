@@ -5,6 +5,7 @@ import (
 	"context"
 	"database/sql"
 	"errors"
+	"fmt"
 	"slices"
 	"time"
 
@@ -363,11 +364,13 @@ func (g *Gateway) pushCatchUp(agentID string, t pushSession, m dto.AgentMessage)
 // standInBacklog writes, to a parallel session that attaches while the AI has no live principal, the
 // messages of the principal's queue that would notify the principal (SN-10): per room, the DMs, or the
 // messages that name the AI by its bare @handle, that address no label and that the delivery mode wants,
-// oldest first and at most BacklogLimit of them. They come with the room's messages the session had not
-// read before them as context (SN-03), as a live push would bring them. Each gets a copy row for the session
-// and is marked as its stand-in, so its acknowledgement consumes it for the principal. What was posted after
-// the welcome is the live push's (bounds), and a message the session already acknowledged is not given
-// again. It runs after the backlog and before the live pushes are written.
+// oldest first and at most BacklogLimit of them (counted among those messages, not among the whole queue);
+// when more of them wait, a notice after them says how many, and those stay in the principal's queue. They
+// come with the room's messages the session had not read before them as context (SN-03), as a live push
+// would bring them. Each gets a copy row for the session and is marked as its stand-in, so its
+// acknowledgement consumes it for the principal. What was posted after the welcome is the live push's
+// (bounds), and a message the session already acknowledged is not given again. It runs after the backlog
+// and before the live pushes are written.
 func (g *Gateway) standInBacklog(ctx context.Context, c *conn, a db.Agent, bounds map[string]int64) error {
 	if c.labelOf() == "" {
 		return nil
@@ -397,6 +400,15 @@ func (g *Gateway) standInBacklog(ctx context.Context, c *conn, a db.Agent, bound
 	return nil
 }
 
+// standInPage is the page size of the principal's queue that standInRoom reads at a time.
+const standInPage = 200
+
+// StandInMoreNotice is the notice after the stand-ins of a room when more messages for the principal wait
+// there than one backlog gives (SN-10): they stay in the principal's queue.
+func StandInMoreNotice(n int64) string {
+	return fmt.Sprintf("%d more messages for this AI wait in this conversation; use the history tool", n)
+}
+
 // standInRoom is standInBacklog for one room.
 func (g *Gateway) standInRoom(ctx context.Context, c *conn, a db.Agent, st RoomState, bound int64, profile db.Intelligence, trust delivery.Trust, principalKey string) error {
 	q := g.d.Store.R()
@@ -405,40 +417,63 @@ func (g *Gateway) standInRoom(ctx context.Context, c *conn, a db.Agent, st RoomS
 	if err != nil {
 		return err
 	}
-	views, err := listBacklog(ctx, q, a.ID, st, includeAddressed)
-	if err != nil {
-		return err
-	}
 	prefs := delivery.Prefs(profile, st.DisplayName, st.Delivery, st.KeywordsJson)
-	trustedOf := map[string]bool{} // the stand-ins, with their trust for the AI
-	last := int64(0)
-	for _, v := range views {
-		if v.Seq > bound || delivery.SessionLabel(v.Text, profile.Handle) != "" {
-			continue // the live push's, or a message for a label, which keeps its own route (SESS-22)
+	isDM := st.Kind == string(dto.ConversationKindDM)
+	// qualifies reports whether a message of the principal's queue is one the session stands in for, and
+	// its trust for the AI.
+	qualifies := func(v db.MessageView) (ok, trusted bool, err error) {
+		if delivery.SessionLabel(v.Text, profile.Handle) != "" {
+			return false, false, nil // a message for a label keeps its own route (SESS-22)
 		}
-		if st.Kind != string(dto.ConversationKindDM) && !delivery.MentionsPrincipal(v.Text, profile.Handle) {
-			continue // a plain group message waits for the principal (SESS-23)
+		if !isDM && !delivery.MentionsPrincipal(v.Text, profile.Handle) {
+			return false, false, nil // a plain group message waits for the principal (SESS-23)
 		}
 		row, err := q.GetSessionDelivery(ctx, db.GetSessionDeliveryParams{MessageID: v.ID, AgentID: a.ID, Label: label})
 		switch {
 		case err == nil && row.AckedAt.Valid:
-			continue // the session read it already
+			return false, false, nil // the session read it already
 		case err != nil && !errors.Is(err, sql.ErrNoRows):
-			return err
+			return false, false, err
 		}
 		facts, err := delivery.LoadFacts(ctx, q, v, st.Kind)
 		if err != nil {
-			return err
+			return false, false, err
 		}
-		wanted, trusted, err := facts.WantedBy(ctx, trust, a.ID, prefs)
+		return facts.WantedBy(ctx, trust, a.ID, prefs) // MEM-03, MEM-04
+	}
+	// The cap applies to the messages that qualify, not to the queue: a mention followed by many plain
+	// messages is still found. The oldest BacklogLimit are given; the ones after them are only counted.
+	var views []db.MessageView
+	trustedOf := map[string]bool{} // the stand-ins, with their trust for the AI
+	last, more := int64(0), int64(0)
+	for after := st.Cursor; ; {
+		page, err := q.ListStandInCandidates(ctx, db.ListStandInCandidatesParams{
+			AgentID: a.ID, RoomID: st.ID, AfterSeq: after, BoundSeq: bound,
+			AnyText: isDM, Pattern: "%@" + profile.Handle + "%", IncludeAddressed: includeAddressed,
+			Limit: standInPage,
+		})
 		if err != nil {
 			return err
 		}
-		if !wanted {
-			continue // MEM-03, MEM-04
+		for _, v := range page {
+			after = v.Seq
+			ok, trusted, err := qualifies(v)
+			if err != nil {
+				return err
+			}
+			switch {
+			case !ok:
+			case len(trustedOf) < BacklogLimit:
+				views = append(views, v)
+				trustedOf[v.ID] = trusted
+				last = v.Seq
+			default:
+				more++
+			}
 		}
-		trustedOf[v.ID] = trusted
-		last = max(last, v.Seq)
+		if len(page) < standInPage {
+			break
+		}
 	}
 	if len(trustedOf) == 0 {
 		return nil
@@ -544,6 +579,10 @@ func (g *Gateway) standInRoom(ctx context.Context, c *conn, a db.Agent, st RoomS
 			return err
 		}
 		c.pushed[id] = struct{}{}
+	}
+	if more > 0 {
+		// The rest stay in the principal's queue: the session can read them with the history tool.
+		return c.write(ctx, dto.AgentNoticeFrame{Type: dto.AgentFrameTypeNotice, Room: ref, Text: StandInMoreNotice(more)})
 	}
 	return nil
 }

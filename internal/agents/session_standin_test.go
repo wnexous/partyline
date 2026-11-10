@@ -3,12 +3,14 @@ package agents_test
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"testing"
 	"time"
 
 	"github.com/stretchr/testify/require"
 
+	"github.com/wnexous/partyline/internal/agents"
 	"github.com/wnexous/partyline/internal/api/dto"
 	"github.com/wnexous/partyline/internal/store/db"
 	"github.com/wnexous/partyline/internal/testkit"
@@ -63,6 +65,25 @@ func (f *sessionFixture) waitStandInAcked(t *testing.T, label, messageID string)
 
 // anyRow accepts every delivery row.
 func anyRow(db.AgentSessionDelivery) bool { return true }
+
+// flushDispatch waits until the dispatcher, which handles the events of every room in order, has handled
+// everything posted so far: another AI in the fixture's room is told of a message posted now. The message
+// is a plain group message, so it is only the principal's (and the watcher's).
+func (f *sessionFixture) flushDispatch(t *testing.T) {
+	t.Helper()
+	watcherID := f.env.NewAI(f.alice, "watcher")
+	f.alice.Post("/api/v1/rooms/"+f.room.ID+"/members", dto.AddMemberRequest{Kind: dto.MemberKindAgent, MemberID: watcherID}).RequireStatus(http.StatusCreated)
+	watcher, resp := f.token.DialFolder(testkit.FolderOf("watcher"))
+	require.NotNil(t, watcher, "upgrade refused: %d %s", resp.Status, resp.Body)
+	defer watcher.Close()
+	watcher.Welcome(time.Minute)
+	sync := f.post(t, "sync")
+	for {
+		if watcher.Message(time.Minute).Message.ID == sync.ID {
+			return
+		}
+	}
+}
 
 // messageIDs reads the message frames of a drained connection.
 func messageIDs(t *testing.T, frames []testkit.AgentFrame) []string {
@@ -249,4 +270,54 @@ func TestAParallelSessionThatConnectsWhileThePrincipalIsOfflineGetsTheWaitingDMs
 	require.True(t, ok, "the pinned session is the principal again")
 	require.Equal(t, []string{plain.ID}, messageIDs(t, back.Drain(700*time.Millisecond)),
 		"the principal's backlog has the group message only")
+}
+
+// SN-10: the cap of an attaching session's stand-ins counts the messages it stands in for, not the
+// principal's whole queue: a mention followed by many plain group messages still reaches it.
+func TestAMentionBehindManyPlainMessagesReachesAnAttachingParallelSession(t *testing.T) {
+	f := newSessionFixture(t)
+	principal := f.dialSession(t, "lead-session")
+	f.settle(t, principal)
+	principal.Close()
+	f.waitPrincipalGone(t)
+
+	mention := f.post(t, "@atlas please check the report")
+	for i := range agents.BacklogLimit + 10 {
+		f.post(t, fmt.Sprintf("plain %d", i))
+	}
+
+	parallel := f.dialSession(t, "side-session")
+	frame := parallel.Message(time.Minute)
+	require.Equal(t, mention.ID, frame.Message.ID)
+	require.False(t, frame.Context)
+	parallel.ExpectNone(500 * time.Millisecond)
+}
+
+// SN-10: an attaching session is given the oldest BacklogLimit messages it stands in for; a notice after
+// them says how many more wait in the conversation, and those stay in the principal's queue.
+func TestAnAttachingParallelSessionIsToldOfTheStandInsBeyondTheCap(t *testing.T) {
+	f := newSessionFixture(t)
+	principal := f.dialSession(t, "lead-session")
+	f.settle(t, principal)
+	principal.Close()
+	f.waitPrincipalGone(t)
+
+	dm, post := f.openDM(t)
+	const extra = 5
+	var sent []dto.Message
+	for i := range agents.BacklogLimit + extra {
+		sent = append(sent, post(fmt.Sprintf("dm %d", i)))
+	}
+	f.flushDispatch(t) // nothing is left for a live push once the session is there
+
+	parallel := f.dialSession(t, "side-session")
+	for _, want := range sent[:agents.BacklogLimit] {
+		frame := parallel.Message(time.Minute)
+		require.Equal(t, want.ID, frame.Message.ID, "the oldest first")
+		require.False(t, frame.Context)
+	}
+	notice := parallel.Notice(time.Minute)
+	require.Equal(t, dm.ID, notice.Room.ID)
+	require.Equal(t, agents.StandInMoreNotice(extra), notice.Text)
+	parallel.ExpectNone(500 * time.Millisecond)
 }
