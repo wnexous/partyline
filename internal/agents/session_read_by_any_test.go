@@ -158,11 +158,7 @@ func (f *sessionFixture) readByAnotherSession(t *testing.T) readByAnother {
 	// on, so what the next session gets of them is its backlog's.
 	du := postDM("ping")
 	u := f.post(t, "is anyone there?")
-	for {
-		if watcher.Message(time.Minute).Message.ID == u.ID {
-			break
-		}
-	}
+	framesUntil(t, watcher, u.ID)
 	return readByAnother{dm: dm, postDM: postDM, unread: []string{u.ID, du.ID}}
 }
 

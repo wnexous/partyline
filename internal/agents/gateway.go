@@ -1323,22 +1323,18 @@ func (g *Gateway) catchUpPrincipal(ctx context.Context, agentID string, bounds m
 		if !ok || bound <= st.Cursor {
 			continue
 		}
-		err := g.d.Store.WithTx(ctx, func(q *db.Queries) error {
-			seq, err := q.GetAgentReadThrough(ctx, db.GetAgentReadThroughParams{
-				AgentID: agentID, RoomID: st.ID, AfterSeq: st.Cursor, BoundSeq: bound,
-			})
-			if err != nil || seq <= st.Cursor {
-				return err
-			}
-			if err := q.AdvanceAgentCursor(ctx, db.AdvanceAgentCursorParams{AgentID: agentID, RoomID: st.ID, Seq: seq}); err != nil {
-				return err
-			}
-			return q.AdvancePrincipalReadSeq(ctx, db.AdvancePrincipalReadSeqParams{
-				AgentID: agentID, RoomID: st.ID, ReadSeq: seq, UpdatedAt: time.Now().UnixMilli(),
-			})
+		// What the AI has read only grows (read positions and acknowledgements never go back), so the run read
+		// here is still read when the cursor moves, and the cursor never moves back (SN-01).
+		seq, err := g.d.Store.R().GetAgentReadThrough(ctx, db.GetAgentReadThroughParams{
+			AgentID: agentID, RoomID: st.ID, AfterSeq: st.Cursor, BoundSeq: bound,
 		})
 		if err != nil {
 			return err
+		}
+		if seq > st.Cursor {
+			if err := g.advance(ctx, agentID, st.ID, seq); err != nil {
+				return err
+			}
 		}
 	}
 	return nil
