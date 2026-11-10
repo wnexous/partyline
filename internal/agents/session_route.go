@@ -369,8 +369,8 @@ func (g *Gateway) pushCatchUp(agentID string, t pushSession, m dto.AgentMessage)
 // come with the room's messages the session had not read before them as context (SN-03), as a live push
 // would bring them. Each gets a copy row for the session and is marked as its stand-in, so its
 // acknowledgement consumes it for the principal. What was posted after the welcome is the live push's
-// (bounds), and a message the session already acknowledged is not given again. It runs after the backlog
-// and before the live pushes are written.
+// (bounds), and a message the session already acknowledged is not given again, nor one this connection's
+// backlog already wrote. It runs after the backlog and before the live pushes are written.
 func (g *Gateway) standInBacklog(ctx context.Context, c *conn, a db.Agent, bounds map[string]int64) error {
 	if c.labelOf() == "" {
 		return nil
@@ -536,6 +536,17 @@ func (g *Gateway) standInRoom(ctx context.Context, c *conn, a db.Agent, st RoomS
 	}
 	items := make([]item, 0, len(msgs))
 	for _, msg := range msgs {
+		// The backlog of this connection may have written the message already (its own unacknowledged row,
+		// SESS-14): it is not written again, neither as context nor as a stand-in, as the queue would drop it
+		// (SN-03). The skipped count goes on the first frame that is written.
+		if _, dup := c.delivered[msg.ID]; dup {
+			continue
+		}
+		if _, dup := c.pushed[msg.ID]; dup {
+			if _, standIn := trustedOf[msg.ID]; !standIn {
+				continue
+			}
+		}
 		frame := dto.AgentMessage{Room: ref, Message: convert.Message(msg)}
 		if trusted, ok := trustedOf[msg.ID]; ok {
 			frame.Trusted = trusted

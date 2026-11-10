@@ -321,3 +321,38 @@ func TestAnAttachingParallelSessionIsToldOfTheStandInsBeyondTheCap(t *testing.T)
 	require.Equal(t, agents.StandInMoreNotice(extra), notice.Text)
 	parallel.ExpectNone(500 * time.Millisecond)
 }
+
+// SN-10, SESS-14: a parallel session whose process reconnects while the principal is offline gets its own
+// unacknowledged message again from its backlog, and the stand-in after it; the stand-in's context does not
+// write the first one a second time.
+func TestAReconnectingParallelSessionGetsItsOwnUnackedMessageOnce(t *testing.T) {
+	f := newSessionFixture(t)
+	principal := f.dial(t)
+	f.settle(t, principal)
+	principal.Close()
+	f.waitPrincipalGone(t)
+	live := testkit.NewLiveID()
+	first := f.dialWorktreeAs(t, live)
+	f.settle(t, first)
+
+	own := f.post(t, "@atlas:wt this one is yours")
+	require.Equal(t, own.ID, first.Message(time.Minute).Message.ID)
+	standIn := f.post(t, "@atlas is anyone there?")
+	frame := first.Message(time.Minute)
+	require.Equal(t, standIn.ID, frame.Message.ID)
+	require.False(t, frame.Context)
+	first.ExpectNone(300 * time.Millisecond)
+
+	second := f.dialWorktreeAs(t, live)
+	var got []string
+	for _, fr := range second.Drain(700 * time.Millisecond) {
+		if fr.Type != dto.AgentFrameTypeMessage {
+			continue
+		}
+		var v dto.AgentMessageFrame
+		require.NoError(t, json.Unmarshal(fr.Raw, &v))
+		require.False(t, v.Context, "neither is context: %s", v.Message.Text)
+		got = append(got, v.Message.ID)
+	}
+	require.Equal(t, []string{own.ID, standIn.ID}, got, "each message once, the session's own first")
+}
