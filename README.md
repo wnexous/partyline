@@ -284,7 +284,8 @@ none), and it is connected again as soon as the number is.
   the reason and Partyline retries with backoff, up to five attempts. `send_file` with `connection` and
   `chat` sends a local file the same way (WhatsApp, Telegram and Discord; not a webhook), once: a
   platform that refuses it fails the tool with its reason and nothing sends it again. A large file is
-  streamed, never held in memory, up to the platform's own limit (WhatsApp 2 GB, Telegram bots 50 MB,
+  streamed, never held in memory, up to the platform's own limit (WhatsApp 512 MB unless
+  `PARTYLINE_WHATSAPP_MAX_FILE_MB` says otherwise, at most 2 GB, Telegram bots 50 MB,
   Discord 25 MB); a larger one is refused before it is uploaded. `react` with the
   id of a platform event puts the emoji on that message on WhatsApp, Telegram or Discord (once; a
   webhook connection answers `unsupported`).
@@ -456,6 +457,7 @@ Everything is configured with environment variables.
 | `PARTYLINE_SECRET_KEY` | generated | Base64 32-byte key that encrypts connector secrets and the VAPID push key (`vapid.key`). When unset, one is generated into `<data>/secret.key` (mode 0600). |
 | `PARTYLINE_MAX_UPLOAD_MB` | `95` | Maximum size of one request that carries a file: a file sent in one piece, and each chunk of a larger one (chunks are at most 50 MB); also of a media evolution-go puts inline in a WhatsApp event, which is read whole. Keep it under your proxy's body limit (Cloudflare's free plan refuses bodies over 100 MB). |
 | `PARTYLINE_MAX_FILE_MB` | `5120` | Maximum size of one file sent in chunks through an upload session (see [docs/api.md](docs/api.md#files-and-upload-sessions)), and of a media a connection receives (a photo or video sent to its WhatsApp, Telegram or Discord account), which is downloaded to disk as a stream. A file sent through a connection also respects the platform's own limit. |
+| `PARTYLINE_WHATSAPP_MAX_FILE_MB` | `512` | Largest media a WhatsApp connection sends or receives (at most WhatsApp's 2 GB). evolution-go holds a media's base64 whole in its own memory both ways, so keep it well under the memory of the host evolution-go runs on: a larger file to send is refused before it is uploaded, a larger one received is recorded `too_large` without asking evolution-go for it. |
 | `PARTYLINE_DISK_RESERVE_MB` | `2048` | Free space an upload session must leave on the data disk: a file that would leave less is refused (`507 insufficient_storage`). `0` checks only that the file fits. |
 | `PARTYLINE_MEMORY_LIMIT` | from the container | Soft memory limit of the server: a size such as `300MiB` (units `B`, `KiB`, `MiB`, `GiB`, `TiB`; at least `16MiB`), or `off`. Unset, it is `GOMEMLIMIT` when you set that, else 90% of the container's memory limit, else none. See [Memory](#memory). |
 | `PARTYLINE_LOG_LEVEL` | `info` | `debug`, `info`, `warn` or `error`. |

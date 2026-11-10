@@ -78,7 +78,9 @@ One limit (`PARTYLINE_MAX_UPLOAD_MB`, 95 MB) bounds every file, and three things
     failed, since a connection's file is sent once; a send refused before it went keeps it. The
     attempt of a file send gets a second per MB on top of its 90 s (`connectors.FileAttemptTimeout`).
   - Platform limits: `Kind.MaxFileBytes` (or `Kind.FileLimit(cfg)` when the limit depends on the
-    config): WhatsApp 2 GB for every type of media, Telegram 50 MB through the public Bot API and
+    config): WhatsApp `PARTYLINE_WHATSAPP_MAX_FILE_MB` (512 MB by default, at most 2 GB) for every
+    type of media, also received (a larger media is recorded `too_large` without asking evolution-go,
+    and a download is cut at it whatever it declared), Telegram 50 MB through the public Bot API and
     2000 MB through a self-hosted one, Discord 25 MB, webhook none (it takes no files). `Sends.plan`
     refuses a larger file with `*connectors.FileTooLargeError` → 413 `file_too_large` with
     `details.max_size` and `details.platform`. `POST /agent/uploads` takes `connection`, checked with
@@ -112,11 +114,12 @@ One limit (`PARTYLINE_MAX_UPLOAD_MB`, 95 MB) bounds every file, and three things
 - **Known limits (phase 4):**
   - evolution-go itself decodes the base64 of `/send/media` and encodes the one of
     `/message/downloadmedia` in its own memory: a file of gigabytes costs evolution-go several times
-    its size, wherever it runs. Partyline's side is bounded; evolution-go's is not.
+    its size, wherever it runs. Partyline's side is bounded; evolution-go's is bounded only by
+    `PARTYLINE_WHATSAPP_MAX_FILE_MB` (512 MB by default), which an operator sharing the host keeps low.
   - A send through a connection answers when the platform took the file. A proxy that times out an
     answer (Cloudflare: 100 s) answers the AI with an error while the server goes on sending; the file
     may arrive although the tool said it failed.
-  - WhatsApp's 2 GB is applied to every type; a platform that refuses a smaller video or image says so
+  - WhatsApp's limit is applied to every type; a platform that refuses a smaller video or image says so
     with its reason. Discord's 25 MB is the limit of a server without boosts (servers with boosts
     take more, and Discord has lowered the default before): a file Discord refuses fails with its
     reason.

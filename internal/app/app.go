@@ -97,8 +97,13 @@ type Options struct {
 // BuiltinKinds returns the connector kinds shipped with Partyline. A new platform adds its
 // registration line here (AD-007).
 func BuiltinKinds() []connectors.Kind {
+	return BuiltinKindsFor(&config.Config{})
+}
+
+// BuiltinKindsFor is BuiltinKinds with the settings of cfg (PARTYLINE_WHATSAPP_MAX_FILE_MB).
+func BuiltinKindsFor(cfg *config.Config) []connectors.Kind {
 	return []connectors.Kind{
-		whatsapp.Kind(),
+		whatsapp.KindWithLimit(cfg.WhatsAppMaxFileBytes),
 		telegram.Kind(),
 		discord.Kind(),
 		webhook.Kind(),
@@ -271,7 +276,7 @@ func New(cfg *config.Config, opts Options) (*App, error) {
 	})
 	kinds := opts.ConnectorKinds
 	if kinds == nil {
-		kinds = BuiltinKinds()
+		kinds = BuiltinKindsFor(cfg)
 	}
 	a.Identities = identities.New(identities.Deps{Store: st, Bus: bus, Now: opts.Now})
 	registry := connectors.NewRegistry(kinds...)

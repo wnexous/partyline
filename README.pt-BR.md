@@ -267,7 +267,8 @@ entre eles quando ele não informa), e volta a conectado assim que o número vol
   backoff, até cinco tentativas. `send_file` com `connection` e `chat` envia um arquivo local da mesma
   forma (WhatsApp, Telegram e Discord; webhook não), uma única vez: se a plataforma recusa, a
   ferramenta falha com o motivo e nada envia de novo. Um arquivo grande vai em fluxo, nunca inteiro na
-  memória, até o limite da própria plataforma (WhatsApp 2 GB, bots do Telegram 50 MB, Discord 25 MB);
+  memória, até o limite da própria plataforma (WhatsApp 512 MB, ou o que
+  `PARTYLINE_WHATSAPP_MAX_FILE_MB` disser, no máximo 2 GB; bots do Telegram 50 MB, Discord 25 MB);
   um maior é recusado antes de ser enviado. `react` com o id de um evento de plataforma põe
   o emoji naquela mensagem no WhatsApp, no Telegram ou no Discord (uma única vez; uma conexão de
   webhook responde `unsupported`).
@@ -446,6 +447,7 @@ Tudo é configurado por variáveis de ambiente.
 | `PARTYLINE_SECRET_KEY` | gerada | Chave base64 de 32 bytes que criptografa os segredos dos conectores. Se ausente, uma é gerada em `<data>/secret.key` (modo 0600). |
 | `PARTYLINE_MAX_UPLOAD_MB` | `95` | Tamanho máximo de uma requisição que leva um arquivo: um arquivo enviado de uma vez e cada pedaço de um maior (os pedaços têm no máximo 50 MB); também de uma mídia que o evolution-go põe dentro de um evento do WhatsApp, lido inteiro. Mantenha abaixo do limite de corpo do seu proxy (o plano gratuito da Cloudflare recusa corpos acima de 100 MB). |
 | `PARTYLINE_MAX_FILE_MB` | `5120` | Tamanho máximo de um arquivo enviado em pedaços por uma sessão de upload (veja [docs/api.md](docs/api.md#files-and-upload-sessions)) e de uma mídia que uma conexão recebe (uma foto ou um vídeo enviado à conta de WhatsApp, Telegram ou Discord), baixada para o disco em fluxo. Um arquivo enviado por uma conexão também respeita o limite da própria plataforma. |
+| `PARTYLINE_WHATSAPP_MAX_FILE_MB` | `512` | Maior mídia que uma conexão de WhatsApp envia ou recebe (no máximo os 2 GB do WhatsApp). O evolution-go guarda o base64 inteiro de uma mídia na própria memória, nos dois sentidos: mantenha bem abaixo da memória da máquina onde ele roda. Um arquivo maior a enviar é recusado antes de subir; um maior recebido fica `too_large` sem pedir ao evolution-go. |
 | `PARTYLINE_DISK_RESERVE_MB` | `2048` | Espaço livre que uma sessão de upload precisa deixar no disco de dados: um arquivo que deixaria menos é recusado (`507 insufficient_storage`). `0` só confere se o arquivo cabe. |
 | `PARTYLINE_MEMORY_LIMIT` | do contêiner | Limite suave de memória do servidor: um tamanho como `300MiB` (unidades `B`, `KiB`, `MiB`, `GiB`, `TiB`; no mínimo `16MiB`) ou `off`. Sem ela, vale o `GOMEMLIMIT` se você o definir; senão 90% do limite de memória do contêiner; senão nenhum. Veja [Memória](#memória). |
 | `PARTYLINE_LOG_LEVEL` | `info` | `debug`, `info`, `warn` ou `error`. |

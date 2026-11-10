@@ -34,7 +34,13 @@ const (
 )
 
 // MaxFile is the largest file WhatsApp takes from an account, for every type of media (LF-05).
-const MaxFile = 2 << 30
+// DefaultMaxFile is the largest media the connector sends or receives unless the operator sets
+// another (PARTYLINE_WHATSAPP_MAX_FILE_MB): evolution-go holds a media's base64 whole in its own
+// memory, both ways, on a host it may share.
+const (
+	MaxFile        = 2 << 30
+	DefaultMaxFile = 512 << 20
+)
 
 // ErrUnauthorized means evolution-go rejected the API key or an instance token.
 var ErrUnauthorized = errors.New("unauthorized")
@@ -47,11 +53,27 @@ var ErrOtherInstance = errors.New("chat of another instance")
 // instance (CID-04): until the owner chooses the number, the connection cannot run.
 const instanceChoiceDetail = "choose the instance (number) of this connection"
 
-// Kind returns the WhatsApp (evolution-go) connector kind.
-func Kind() connectors.Kind {
+// Kind returns the WhatsApp (evolution-go) connector kind, with the default media limit.
+func Kind() connectors.Kind { return KindWithLimit(DefaultMaxFile) }
+
+// fileLimit is the media limit the connector applies for the operator's setting: at most WhatsApp's
+// own, DefaultMaxFile when unset.
+func fileLimit(limit int64) int64 {
+	if limit <= 0 {
+		limit = DefaultMaxFile
+	}
+	return min(limit, MaxFile)
+}
+
+// KindWithLimit returns the kind whose connectors send and receive media of at most limit bytes
+// (PARTYLINE_WHATSAPP_MAX_FILE_MB), and at most WhatsApp's 2 GB: a larger one to send is refused
+// before it is uploaded (LF-05), a larger one received is recorded too_large without asking
+// evolution-go for it.
+func KindWithLimit(limit int64) connectors.Kind {
+	limit = fileLimit(limit)
 	return connectors.Kind{
 		Name: KindName, Label: "WhatsApp (evolution-go)", CanListChats: true, CanReact: true, CanSendFiles: true,
-		MaxFileBytes: MaxFile,
+		MaxFileBytes: limit,
 		Fields: []connectors.Field{
 			{Name: "base_url", Label: "evolution-go URL", Type: dto.FieldTypeURL, Required: true, Endpoint: true,
 				Help: "e.g. https://evolution.example.com"},
@@ -61,7 +83,7 @@ func Kind() connectors.Kind {
 		},
 		Address: address,
 		New: func(cfg connectors.Config, d connectors.Deps) (connectors.Connector, error) {
-			return New(cfg, d)
+			return build(cfg, d, limit)
 		},
 	}
 }
@@ -78,6 +100,7 @@ type Connector struct {
 	uploads   *http.Client // /send/media: base64 media in the request, streamed; no total timeout
 	stream    *http.Client // WebSocket handshakes
 	maxFrame  int64        // WebSocket frames carry inline base64 media, held in memory: the single-request limit
+	maxFile   int64        // the largest media sent or received (PARTYLINE_WHATSAPP_MAX_FILE_MB)
 	now       func() time.Time
 	wait      func(ctx context.Context, d time.Duration) error // the pause between two checks of the instance; tests replace it
 
@@ -141,8 +164,13 @@ var (
 	_ connectors.ChatLister = (*Connector)(nil)
 )
 
-// New returns a connector for a validated config.
+// New returns a connector for a validated config, with the default media limit.
 func New(cfg connectors.Config, d connectors.Deps) (*Connector, error) {
+	return build(cfg, d, DefaultMaxFile)
+}
+
+func build(cfg connectors.Config, d connectors.Deps, maxFile int64) (*Connector, error) {
+	maxFile = fileLimit(maxFile)
 	base, err := url.Parse(strings.TrimRight(cfg.String("base_url"), "/"))
 	if err != nil || base.Host == "" {
 		return nil, errors.New("invalid base_url")
@@ -163,9 +191,9 @@ func New(cfg connectors.Config, d connectors.Deps) (*Connector, error) {
 		base: base, apiKey: cfg.String("api_key"), instance: instance, userAgent: d.UserAgent, log: log,
 		// Media stream to disk up to the largest file; the stall watch of each transfer bounds its time,
 		// not a client timeout, which would cut a large file that is still arriving (LF-04).
-		client: d.JSONClient(requestTimeout), downloads: d.HTTPClient(0, mediaEnvelope(d.FileLimit())),
+		client: d.JSONClient(requestTimeout), downloads: d.HTTPClient(0, mediaEnvelope(min(d.FileLimit(), maxFile))),
 		uploads: d.HTTPClient(0, connectors.MaxJSONResponse),
-		stream:  d.StreamClient(), maxFrame: mediaEnvelope(d.MediaLimit()), now: time.Now, wait: sleep,
+		stream:  d.StreamClient(), maxFrame: mediaEnvelope(d.MediaLimit()), maxFile: maxFile, now: time.Now, wait: sleep,
 	}, nil
 }
 
@@ -442,6 +470,10 @@ func (c *Connector) media(life context.Context, inst string, ref MediaRef) conne
 				}
 				return io.NopCloser(r), nil
 			}
+			if ref.Size > c.maxFile {
+				// Not even asked for: evolution-go would hold it whole in memory.
+				return nil, fmt.Errorf("media of %d bytes over the %d of this connection: %w", ref.Size, c.maxFile, connectors.ErrMediaTooLarge)
+			}
 			ctx, cancel := context.WithCancelCause(ctx)
 			stop := context.AfterFunc(life, func() { cancel(errSocketClosed) })
 			r, err := c.download(ctx, inst, ref.Message, ref.Size)
@@ -485,7 +517,32 @@ func (c *Connector) download(ctx context.Context, inst string, message json.RawM
 		_ = rc.Close()
 		return nil, err
 	}
-	return readCloser{Reader: media, Closer: rc}, nil
+	// Whatever size the message declared, no more than the connection's limit is taken.
+	return readCloser{Reader: &capReader{r: media, left: c.maxFile}, Closer: rc}, nil
+}
+
+// capReader fails with connectors.ErrMediaTooLarge once more than left bytes would be read.
+type capReader struct {
+	r    io.Reader
+	left int64
+}
+
+func (c *capReader) Read(p []byte) (int, error) {
+	if c.left <= 0 {
+		var one [1]byte
+		if n, err := c.r.Read(one[:]); n > 0 {
+			return 0, connectors.ErrMediaTooLarge
+		} else if err != nil {
+			return 0, err
+		}
+		return 0, nil
+	}
+	if int64(len(p)) > c.left {
+		p = p[:c.left]
+	}
+	n, err := c.r.Read(p)
+	c.left -= int64(n)
+	return n, err
 }
 
 // errSocketClosed is why a media download stopped: the socket its message came on closed.

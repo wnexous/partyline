@@ -372,7 +372,7 @@ written). Each platform's own limit applies, checked before anything goes out:
 
 | Platform | Largest file |
 | --- | --- |
-| WhatsApp (evolution-go) | 2 GB |
+| WhatsApp (evolution-go) | `PARTYLINE_WHATSAPP_MAX_FILE_MB` (512 MB by default), at most WhatsApp's 2 GB: evolution-go holds a media's base64 whole in its memory. A media received over it is recorded `too_large` without asking evolution-go for it |
 | Telegram bot | 50 MB through the public Bot API, 2000 MB through a self-hosted Bot API server (`api_base` changed) |
 | Discord bot | 25 MB (a server without boosts) |
 | Webhook | takes no files (422 `unsupported`) |

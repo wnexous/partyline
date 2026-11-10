@@ -499,7 +499,7 @@ func TestASocketThatFailsAbortsTheDownloadAndRunReturnsPromptly(t *testing.T) {
 	}
 
 	done, sock := run()
-	push(t, sock, frame(t, testInstance, groupInfo("VIDEO"), `{"videoMessage":{"mimetype":"video/mp4","fileLength":"900000000"}}`))
+	push(t, sock, frame(t, testInstance, groupInfo("VIDEO"), `{"videoMessage":{"mimetype":"video/mp4","fileLength":"300000000"}}`))
 	select {
 	case <-started:
 	case <-time.After(wait):
@@ -523,4 +523,38 @@ func TestASocketThatFailsAbortsTheDownloadAndRunReturnsPromptly(t *testing.T) {
 	_, sock = run()
 	push(t, sock, frame(t, testInstance, groupInfo("NEXT"), `{"conversation":"on the new socket"}`))
 	require.Equal(t, "NEXT", rec.NextInbound(t).MessageID)
+}
+
+// The operator's setting (PARTYLINE_WHATSAPP_MAX_FILE_MB) bounds what the kind sends, within
+// WhatsApp's own 2 GB, and is 512 MB unless set (LF-05).
+func TestTheMediaLimitFollowsTheSetting(t *testing.T) {
+	require.Equal(t, int64(512<<20), Kind().MaxFileBytes)
+	require.Equal(t, int64(512<<20), KindWithLimit(0).MaxFileBytes)
+	require.Equal(t, int64(100<<20), KindWithLimit(100<<20).MaxFileBytes)
+	require.Equal(t, int64(2<<30), KindWithLimit(8<<30).MaxFileBytes, "never over WhatsApp's own")
+}
+
+// A media over the connection's limit is never asked of evolution-go, which would hold it whole in its
+// memory: one that declares its size is refused at once, one that says nothing is cut at the limit; both
+// are ErrMediaTooLarge, which the pipeline records too_large.
+func TestAMediaOverTheLimitIsNotDownloaded(t *testing.T) {
+	f := newFakeEvolution(t)
+	kind := KindWithLimit(1000)
+	norm, errs := kind.Validate(connectors.Config{"base_url": f.srv.URL, "api_key": globalKey, "instances": []string{testInstance}})
+	require.Empty(t, errs)
+	conn, err := kind.New(norm, connectors.Deps{AllowPrivateNetworks: true, UserAgent: userAgent})
+	require.NoError(t, err)
+	c := conn.(*Connector)
+
+	_, err = c.media(context.Background(), testInstance, MediaRef{Size: 1001, Message: json.RawMessage(`{"videoMessage":{}}`)}).Open(context.Background())
+	require.ErrorIs(t, err, connectors.ErrMediaTooLarge)
+	require.Zero(t, f.count("/message/downloadmedia"), "evolution-go was not asked for it")
+
+	c.maxFile = 10 // the fake answers "downloaded-bytes", 16 bytes, for a media of unknown size
+	r, err := c.media(context.Background(), testInstance, MediaRef{Message: json.RawMessage(`{"documentMessage":{}}`)}).Open(context.Background())
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = r.Close() })
+	data, err := io.ReadAll(r)
+	require.ErrorIs(t, err, connectors.ErrMediaTooLarge)
+	require.Len(t, data, 10)
 }

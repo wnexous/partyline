@@ -865,3 +865,16 @@ func (c *countingReader) Close() error {
 	c.n.Add(-c.read)
 	return nil
 }
+
+// A media a connector refuses as over its own limit is recorded too_large.
+func TestInboundMediaOverTheConnectorsLimitIsTooLarge(t *testing.T) {
+	e := newInboundEnv(t)
+	e.patch(t, dto.UpdateConnectorRequest{GroupsMentionsOnly: ptr(false)})
+	m := text(groupID, "M5", "a long video")
+	m.Kind = "video"
+	m.Media = []connectors.Media{{Name: "long.mp4", Open: func(context.Context) (io.ReadCloser, error) {
+		return nil, fmt.Errorf("media over 512 MB: %w", connectors.ErrMediaTooLarge)
+	}}}
+	e.emit(m)
+	require.Equal(t, dto.AttachmentStatusTooLarge, e.queued(t)[0].Attachments[0].Status)
+}
