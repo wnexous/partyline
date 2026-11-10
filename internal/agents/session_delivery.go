@@ -179,6 +179,18 @@ func (g *Gateway) ackSessionDelivery(ctx context.Context, messageID, agentID, ow
 	})
 }
 
+// ackStandInDelivery is the acknowledgement of a message the connection was given in place of the principal,
+// which was not live (SN-10): its copy row becomes the session's own tombstone, so the principal's queue
+// leaves the message out and a principal that connects later is not handed it a second time.
+func (g *Gateway) ackStandInDelivery(ctx context.Context, messageID, agentID, label string) error {
+	return g.d.Store.WithTx(ctx, func(q *db.Queries) error {
+		_, err := q.AckStandInDelivery(ctx, db.AckStandInDeliveryParams{
+			AckedAt: nullNow(), MessageID: messageID, AgentID: agentID, Label: label,
+		})
+		return err
+	})
+}
+
 // ackFallbackDelivery is the principal's consumption of a fallen-back row, which stays as a tombstone.
 // It reports whether a row was consumed: the message was a fallback.
 func ackFallbackDelivery(ctx context.Context, q *db.Queries, messageID, agentID string) (bool, error) {

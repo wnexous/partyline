@@ -191,7 +191,9 @@ func selfAuthored(m dto.Message, agentID string) bool {
 // hear about it:
 //   - the principal, when it follows the room, a plain message names it by its bare @handle, the message is
 //     a DM, or the text addresses one of its live siblings (SN-04);
-//   - every live parallel session that follows the room, or whose label the text addresses.
+//   - every live parallel session that follows the room, or whose label the text addresses;
+//   - with no live principal, every live parallel session for a DM or a bare @handle that addresses no
+//     label, in place of the principal (SN-10).
 //
 // Each of them first receives the room's messages it had not read yet, as context, and then the message
 // (pushToSession). A message for a label with no live session is the principal's from the start, with
@@ -826,8 +828,34 @@ type conn struct {
 	// labelled session, which receives none (SESS-18).
 	feed *platformFeed
 
+	// standIns holds the messages this parallel session was given in place of an offline principal and
+	// has not acknowledged yet (SN-10): its acknowledgement of one of them consumes it for the principal.
+	// The push goroutines write it and the ack reader reads it, under standInMu.
+	standInMu sync.Mutex
+	standIns  map[string]struct{}
+
 	mu     sync.Mutex
 	closed bool
+}
+
+// markStandIn records that the message reaches this session in place of the principal (SN-10).
+func (c *conn) markStandIn(messageID string) {
+	c.standInMu.Lock()
+	defer c.standInMu.Unlock()
+	if c.standIns == nil {
+		c.standIns = map[string]struct{}{}
+	}
+	c.standIns[messageID] = struct{}{}
+}
+
+// takeStandIn reports whether the message reached this session in place of the principal, and forgets it:
+// a message is acknowledged once.
+func (c *conn) takeStandIn(messageID string) bool {
+	c.standInMu.Lock()
+	defer c.standInMu.Unlock()
+	_, ok := c.standIns[messageID]
+	delete(c.standIns, messageID)
+	return ok
 }
 
 // labelOf returns the label of the live session the connection became ("" before it attached).
@@ -936,6 +964,10 @@ func (g *Gateway) run(ctx context.Context, c *conn, row db.GetAgentWithOwnerRow,
 	}
 	sent, err := g.backlog(ctx, c, a, bounds)
 	if err != nil {
+		return err
+	}
+	// A parallel session that attaches while the principal is away stands in for it (SN-10).
+	if err := g.standInBacklog(ctx, c, a, bounds); err != nil {
 		return err
 	}
 	var feedWake <-chan struct{} // nil, which never fires, for a client without platform events
@@ -1421,7 +1453,12 @@ func (g *Gateway) ackSession(ctx context.Context, c *conn, agentID, messageID st
 	if err != nil {
 		return err
 	}
-	if err := g.ackSessionDelivery(ctx, messageID, agentID, c.owner); err != nil {
+	if c.takeStandIn(messageID) {
+		// The session answered in place of the principal: the message is consumed for the AI (SN-10).
+		if err := g.ackStandInDelivery(ctx, messageID, agentID, c.labelOf()); err != nil {
+			return err
+		}
+	} else if err := g.ackSessionDelivery(ctx, messageID, agentID, c.owner); err != nil {
 		return err
 	}
 	if c.sessionKey == "" {

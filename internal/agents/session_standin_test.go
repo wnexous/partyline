@@ -1,0 +1,252 @@
+package agents_test
+
+import (
+	"context"
+	"encoding/json"
+	"net/http"
+	"testing"
+	"time"
+
+	"github.com/stretchr/testify/require"
+
+	"github.com/wnexous/partyline/internal/api/dto"
+	"github.com/wnexous/partyline/internal/store/db"
+	"github.com/wnexous/partyline/internal/testkit"
+)
+
+// openDM opens the owner's DM with the fixture's AI and returns it with a function that posts to it.
+func (f *sessionFixture) openDM(t *testing.T) (dto.Room, func(text string) dto.Message) {
+	t.Helper()
+	dm := testkit.Decode[dto.Room](f.alice.Post("/api/v1/conversations/dm", dto.OpenDMRequest{With: f.agentID}).RequireStatus(http.StatusCreated))
+	return dm, func(text string) dto.Message {
+		t.Helper()
+		return testkit.Decode[dto.Message](f.alice.Post("/api/v1/rooms/"+dm.ID+"/messages", dto.PostMessageRequest{Text: text}).RequireStatus(http.StatusCreated))
+	}
+}
+
+// dialSession opens a session of atlas that sends a harness session id: the first one the AI sees is pinned
+// as its principal, and any other is a parallel session, also while the principal is away (SESS-52).
+func (f *sessionFixture) dialSession(t *testing.T, harnessSession string) *testkit.AgentConn {
+	t.Helper()
+	folder := testkit.FolderOf("atlas")
+	folder.HarnessSession = harnessSession
+	folder.Live = testkit.NewLiveID()
+	conn, resp := f.token.DialFolder(folder)
+	require.NotNil(t, conn, "upgrade refused: %d %s", resp.Status, resp.Body)
+	conn.Welcome(time.Minute)
+	t.Cleanup(conn.Close)
+	return conn
+}
+
+// waitDeliveryRow waits until the delivery row of label for messageID satisfies ok, and returns it.
+func (f *sessionFixture) waitDeliveryRow(t *testing.T, label, messageID string, ok func(db.AgentSessionDelivery) bool) db.AgentSessionDelivery {
+	t.Helper()
+	var row db.AgentSessionDelivery
+	require.Eventually(t, func() bool {
+		var err error
+		row, err = f.env.App.Store.R().GetSessionDelivery(context.Background(), db.GetSessionDeliveryParams{
+			MessageID: messageID, AgentID: f.agentID, Label: label,
+		})
+		return err == nil && ok(row)
+	}, 5*time.Second, 10*time.Millisecond)
+	return row
+}
+
+// waitStandInAcked waits until the stand-in row of label for messageID is the session's own tombstone: the
+// acknowledgement consumed the message for the principal (SN-10).
+func (f *sessionFixture) waitStandInAcked(t *testing.T, label, messageID string) {
+	t.Helper()
+	f.waitDeliveryRow(t, label, messageID, func(row db.AgentSessionDelivery) bool {
+		return row.AckedAt.Valid && row.Context == 0
+	})
+}
+
+// anyRow accepts every delivery row.
+func anyRow(db.AgentSessionDelivery) bool { return true }
+
+// messageIDs reads the message frames of a drained connection.
+func messageIDs(t *testing.T, frames []testkit.AgentFrame) []string {
+	t.Helper()
+	var ids []string
+	for _, fr := range frames {
+		if fr.Type != dto.AgentFrameTypeMessage {
+			continue
+		}
+		var v dto.AgentMessageFrame
+		require.NoError(t, json.Unmarshal(fr.Raw, &v))
+		ids = append(ids, v.Message.ID)
+	}
+	return ids
+}
+
+// SN-10: the incident. The AI's only live sessions are parallel ones (the principal is offline) and someone
+// writes three messages in a new DM: each of them reaches every live parallel session once, live, as the
+// message itself and with its trust, instead of waiting for a principal that never connects. The
+// acknowledgement of one of them consumes the message for the principal, which gets no duplicate when it
+// comes back.
+func TestADirectMessageReachesEveryParallelSessionWhileThePrincipalIsOffline(t *testing.T) {
+	f := newSessionFixture(t)
+	principal := f.dial(t)
+	second, third := f.dial(t), f.dial(t)
+	f.settle(t, principal)
+	f.settle(t, second)
+	f.settle(t, third)
+	principal.Close()
+	f.waitPrincipalGone(t)
+
+	dm, post := f.openDM(t)
+	var sent []dto.Message
+	for _, text := range []string{"hi", "are you there?", "I need help"} {
+		m := post(text)
+		sent = append(sent, m)
+		for _, conn := range []*testkit.AgentConn{second, third} {
+			frame := conn.Message(time.Minute)
+			require.Equal(t, m.ID, frame.Message.ID, "every live parallel session stands in for the principal")
+			require.False(t, frame.Context, "it is the message itself, not context")
+			require.True(t, frame.Trusted, "the owner wrote it")
+			require.Equal(t, dm.ID, frame.Room.ID)
+			require.Equal(t, dto.ConversationKindDM, frame.Room.Kind)
+		}
+	}
+	second.ExpectNone(300 * time.Millisecond)
+	third.ExpectNone(300 * time.Millisecond)
+	for _, m := range sent {
+		require.EqualValues(t, 1, f.waitDeliveryRow(t, "claude-2", m.ID, anyRow).Context, "a stand-in is a copy until it is acknowledged")
+		require.False(t, f.waitDeliveryRow(t, "claude-3", m.ID, anyRow).AckedAt.Valid)
+	}
+
+	for _, m := range sent {
+		second.Ack(m.ID)
+	}
+	for _, m := range sent {
+		f.waitStandInAcked(t, "claude-2", m.ID)
+	}
+
+	// The principal comes back: the messages a parallel session answered are not in its queue.
+	again := f.dial(t)
+	_, ok := f.env.App.Presence.Main(f.agentID)
+	require.True(t, ok, "the new session is the principal")
+	again.ExpectNone(700 * time.Millisecond)
+
+	// From now on the DM is the principal's again, and a parallel session on mentions only is not told.
+	next := post("thanks")
+	require.Equal(t, next.ID, again.Message(time.Minute).Message.ID)
+	again.ExpectNone(300 * time.Millisecond)
+	second.ExpectNone(300 * time.Millisecond)
+	third.ExpectNone(300 * time.Millisecond)
+}
+
+// SN-10: a stand-in that no parallel session acknowledged is still the principal's: it comes back with its
+// backlog, so nothing is lost when the session that was given it ends.
+func TestAStandInNobodyAcknowledgedStaysInThePrincipalsQueue(t *testing.T) {
+	f := newSessionFixture(t)
+	principal, parallel := f.dial(t), f.dial(t)
+	f.settle(t, principal)
+	f.settle(t, parallel)
+	principal.Close()
+	f.waitPrincipalGone(t)
+
+	_, post := f.openDM(t)
+	m := post("hello")
+	require.Equal(t, m.ID, parallel.Message(time.Minute).Message.ID)
+	f.waitDeliveryRow(t, "claude-2", m.ID, anyRow)
+	parallel.Close()
+	f.waitSessionGone(t, "claude-2")
+
+	again := f.dial(t)
+	frame := again.Message(time.Minute)
+	require.Equal(t, m.ID, frame.Message.ID, "the principal's backlog kept it")
+	require.Empty(t, frame.ForLabel, "a stand-in is not a fallback")
+	again.ExpectNone(300 * time.Millisecond)
+}
+
+// SN-10: in a group, a bare @handle reaches the live parallel sessions while the principal is offline, with
+// what they had not read as context; a plain message, and a mention inside code, still wait for the
+// principal. The principal's backlog then carries those, and not the mention a parallel session answered.
+func TestABareMentionReachesTheParallelSessionsWhileThePrincipalIsOffline(t *testing.T) {
+	f := newSessionFixture(t)
+	principal, parallel := f.dial(t), f.dial(t)
+	f.settle(t, principal)
+	f.settle(t, parallel)
+	principal.Close()
+	f.waitPrincipalGone(t)
+
+	plain := f.post(t, "hello everyone")
+	parallel.ExpectNone(400 * time.Millisecond)
+
+	mention := f.post(t, "@atlas can you look at this?")
+	context := parallel.Message(time.Minute)
+	require.Equal(t, plain.ID, context.Message.ID)
+	require.True(t, context.Context, "what it had not read comes as context (SN-03)")
+	frame := parallel.Message(time.Minute)
+	require.Equal(t, mention.ID, frame.Message.ID)
+	require.False(t, frame.Context)
+	require.True(t, frame.Trusted)
+
+	code := f.post(t, "the config says `@atlas` there")
+	parallel.ExpectNone(400 * time.Millisecond)
+
+	parallel.Ack(mention.ID)
+	f.waitStandInAcked(t, "claude-2", mention.ID)
+
+	again := f.dial(t)
+	got := messageIDs(t, again.Drain(700*time.Millisecond))
+	require.Equal(t, []string{plain.ID, code.ID}, got, "the principal's backlog has what was its own, once")
+}
+
+// SN-10: with the principal live nothing changes: it is the one a bare @handle notifies, and a parallel
+// session on mentions only is not told.
+func TestABareMentionWithALivePrincipalDoesNotReachTheParallelSessions(t *testing.T) {
+	f := newSessionFixture(t)
+	principal, parallel := f.dial(t), f.dialHarness(t, "pi")
+	f.settle(t, principal)
+	f.settle(t, parallel)
+
+	mention := f.post(t, "@atlas ping")
+	require.Equal(t, mention.ID, principal.Message(time.Minute).Message.ID)
+	parallel.ExpectNone(400 * time.Millisecond)
+	require.Empty(t, f.rows(t, "pi-2"))
+}
+
+// SN-10: a parallel session that connects while the principal is offline receives, in its backlog, the DMs
+// waiting for the principal, as the messages themselves. Its acknowledgement consumes them for the
+// principal: a later parallel session and the principal coming back are not handed them again, while a
+// plain group message still waits for the principal.
+func TestAParallelSessionThatConnectsWhileThePrincipalIsOfflineGetsTheWaitingDMs(t *testing.T) {
+	f := newSessionFixture(t)
+	principal := f.dialSession(t, "lead-session")
+	f.settle(t, principal)
+	principal.Close()
+	f.waitPrincipalGone(t)
+
+	dm, post := f.openDM(t)
+	one, two := post("hi"), post("still there?")
+	plain := f.post(t, "hello everyone")
+
+	parallel := f.dialSession(t, "side-session")
+	sessions := f.env.App.Presence.Sessions(f.agentID)
+	require.Len(t, sessions, 1)
+	require.Equal(t, "claude-2", sessions[0].Label, "the pinned principal is away: the session is a parallel one")
+	for _, want := range []dto.Message{one, two} {
+		frame := parallel.Message(time.Minute)
+		require.Equal(t, want.ID, frame.Message.ID, "oldest first")
+		require.False(t, frame.Context)
+		require.True(t, frame.Trusted)
+		require.Equal(t, dm.ID, frame.Room.ID)
+	}
+	parallel.ExpectNone(500 * time.Millisecond)
+
+	parallel.Ack(one.ID)
+	parallel.Ack(two.ID)
+	f.waitStandInAcked(t, "claude-2", one.ID)
+	f.waitStandInAcked(t, "claude-2", two.ID)
+
+	later := f.dialSession(t, "third-session")
+	later.ExpectNone(500 * time.Millisecond)
+
+	back := f.dialSession(t, "lead-session")
+	_, ok := f.env.App.Presence.Main(f.agentID)
+	require.True(t, ok, "the pinned session is the principal again")
+	require.Equal(t, []string{plain.ID}, messageIDs(t, back.Drain(700*time.Millisecond)),
+		"the principal's backlog has the group message only")
+}
