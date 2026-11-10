@@ -88,7 +88,10 @@ ORDER BY name, r.id;
 -- the room, so a message that addresses a sibling is part of its queue too (SN-04), and only its own copy
 -- tombstone or the fallback list takes one out. A copy of a catch-up batch never keeps a message out
 -- (SN-03). Nothing from before the AI's current membership of the room is part of the queue (ROOM-01): a
--- member that was taken out forgot what it missed while it was away.
+-- member that was taken out forgot what it missed while it was away. A message any session of the AI has
+-- read is not part of it either (SN-11): one a session acknowledged (any of its delivery rows), or one in
+-- the run a session's state row has read (read_from < seq <= read_seq), so a session that attaches is not
+-- handed again what its sibling read and answered.
 SELECT COUNT(*) FROM messages
 JOIN room_members rm ON rm.room_id = messages.room_id AND rm.kind = 'agent' AND rm.member_id = sqlc.arg(agent_id)
 WHERE messages.room_id = sqlc.arg(room_id) AND messages.seq > sqlc.arg(after_seq)
@@ -105,8 +108,11 @@ WHERE messages.room_id = sqlc.arg(room_id) AND messages.seq > sqlc.arg(after_seq
         AND (d.acked_at IS NOT NULL OR d.fell_back_at IS NOT NULL))
   AND NOT EXISTS (
       SELECT 1 FROM agent_session_deliveries d
-      WHERE d.message_id = messages.id AND d.agent_id = sqlc.arg(agent_id) AND d.label = ''
-        AND d.acked_at IS NOT NULL);
+      WHERE d.message_id = messages.id AND d.agent_id = sqlc.arg(agent_id) AND d.acked_at IS NOT NULL)
+  AND NOT EXISTS (
+      SELECT 1 FROM session_room_state s
+      WHERE s.agent_id = sqlc.arg(agent_id) AND s.room_id = messages.room_id
+        AND messages.seq > s.read_from AND messages.seq <= s.read_seq);
 
 -- name: ListAgentBacklog :many
 SELECT mv.* FROM message_views mv
@@ -125,8 +131,11 @@ WHERE mv.room_id = sqlc.arg(room_id) AND mv.seq > sqlc.arg(after_seq)
         AND (d.acked_at IS NOT NULL OR d.fell_back_at IS NOT NULL))
   AND NOT EXISTS (
       SELECT 1 FROM agent_session_deliveries d
-      WHERE d.message_id = mv.id AND d.agent_id = sqlc.arg(agent_id) AND d.label = ''
-        AND d.acked_at IS NOT NULL)
+      WHERE d.message_id = mv.id AND d.agent_id = sqlc.arg(agent_id) AND d.acked_at IS NOT NULL)
+  AND NOT EXISTS (
+      SELECT 1 FROM session_room_state s
+      WHERE s.agent_id = sqlc.arg(agent_id) AND s.room_id = mv.room_id
+        AND mv.seq > s.read_from AND mv.seq <= s.read_seq)
 ORDER BY seq DESC
 LIMIT sqlc.arg(limit);
 
@@ -152,10 +161,35 @@ WHERE mv.room_id = sqlc.arg(room_id) AND mv.seq > sqlc.arg(after_seq) AND mv.seq
         AND (d.acked_at IS NOT NULL OR d.fell_back_at IS NOT NULL))
   AND NOT EXISTS (
       SELECT 1 FROM agent_session_deliveries d
-      WHERE d.message_id = mv.id AND d.agent_id = sqlc.arg(agent_id) AND d.label = ''
-        AND d.acked_at IS NOT NULL)
+      WHERE d.message_id = mv.id AND d.agent_id = sqlc.arg(agent_id) AND d.acked_at IS NOT NULL)
+  AND NOT EXISTS (
+      SELECT 1 FROM session_room_state s
+      WHERE s.agent_id = sqlc.arg(agent_id) AND s.room_id = mv.room_id
+        AND mv.seq > s.read_from AND mv.seq <= s.read_seq)
 ORDER BY mv.seq ASC
 LIMIT sqlc.arg(limit);
+
+-- name: GetAgentReadThrough :one
+-- How far, from after_seq and up to bound_seq, the AI has read one room without a gap (SN-11): the sequence
+-- just before the first message there that no session of the AI read, or bound_seq when there is none. A
+-- message counts as read when the AI wrote it (from any of its sessions), when a session acknowledged it
+-- (any delivery row of the AI), or when it lies in the run a session's state row has read (read_from < seq
+-- <= read_seq); a deleted message and one from before the AI's current membership (ROOM-01) are no one's to
+-- read. The principal's cursor moves there when it attaches, so it reflects what the AI has read.
+SELECT CAST(COALESCE(MIN(m.seq) - 1, sqlc.arg(bound_seq)) AS INTEGER) AS seq FROM messages m
+JOIN room_members rm ON rm.room_id = m.room_id AND rm.kind = 'agent' AND rm.member_id = sqlc.arg(agent_id)
+WHERE m.room_id = sqlc.arg(room_id) AND m.seq > sqlc.arg(after_seq) AND m.seq <= sqlc.arg(bound_seq)
+  AND m.seq > COALESCE((SELECT MAX(b.seq) FROM messages b
+                        WHERE b.room_id = m.room_id AND b.created_at < rm.created_at), 0)
+  AND m.deleted_at IS NULL
+  AND NOT (m.author_kind = 'agent' AND m.author_id = sqlc.arg(agent_id))
+  AND NOT EXISTS (
+      SELECT 1 FROM agent_session_deliveries d
+      WHERE d.message_id = m.id AND d.agent_id = sqlc.arg(agent_id) AND d.acked_at IS NOT NULL)
+  AND NOT EXISTS (
+      SELECT 1 FROM session_room_state s
+      WHERE s.agent_id = sqlc.arg(agent_id) AND s.room_id = m.room_id
+        AND m.seq > s.read_from AND m.seq <= s.read_seq);
 
 -- name: GetMessageRoomSeq :one
 SELECT room_id, seq FROM messages WHERE id = ?;

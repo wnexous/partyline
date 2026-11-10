@@ -114,10 +114,10 @@ func TestEnsureRoomStateJoinsAtTheHighSequence(t *testing.T) {
 	require.NoError(t, f.reg.EnsureRoomState(ctx, agentID, "harness-principal", room, true))
 	require.NoError(t, f.reg.EnsureRoomState(ctx, agentID, "label:wt", room, false))
 	require.Equal(t, db.SessionRoomState{
-		AgentID: agentID, SessionKey: "harness-principal", RoomID: room, ReadSeq: 10, Notify: NotifyOn, UpdatedAt: t0.UnixMilli(),
+		AgentID: agentID, SessionKey: "harness-principal", RoomID: room, ReadSeq: 10, ReadFrom: 10, Notify: NotifyOn, UpdatedAt: t0.UnixMilli(),
 	}, f.state(t, agentID, "harness-principal", room))
 	require.Equal(t, db.SessionRoomState{
-		AgentID: agentID, SessionKey: "label:wt", RoomID: room, ReadSeq: 10, Notify: NotifyMentions, UpdatedAt: t0.UnixMilli(),
+		AgentID: agentID, SessionKey: "label:wt", RoomID: room, ReadSeq: 10, ReadFrom: 10, Notify: NotifyMentions, UpdatedAt: t0.UnixMilli(),
 	}, f.state(t, agentID, "label:wt", room))
 
 	// The session reads up to 12 while the room grows to 15 and comes back (a new process): its position stays.
@@ -125,6 +125,7 @@ func TestEnsureRoomStateJoinsAtTheHighSequence(t *testing.T) {
 	f.exec(t, `UPDATE rooms SET next_seq = 16 WHERE id = ?`, room)
 	require.NoError(t, f.reg.EnsureRoomState(ctx, agentID, "harness-principal", room, true))
 	require.Equal(t, int64(12), f.state(t, agentID, "harness-principal", room).ReadSeq, "the join point is only the first position")
+	require.Equal(t, int64(10), f.state(t, agentID, "harness-principal", room).ReadFrom, "what it read starts at its join point (SN-11)")
 
 	// An AI or a room with no row: nothing to create.
 	require.NoError(t, f.reg.EnsureRoomState(ctx, agentID, "", room, true), "a session with no key is not a session")
@@ -144,7 +145,7 @@ func TestAdvanceSessionReadSeqOnlyMovesForward(t *testing.T) {
 	require.NoError(t, f.reg.AdvanceSessionReadSeq(ctx, agentID, "label:wt", room, 4, false))
 	require.Equal(t, db.SessionRoomState{
 		AgentID: agentID, SessionKey: "label:wt", RoomID: room, ReadSeq: 4, Notify: NotifyMentions,
-	}, withoutUpdatedAt(f.state(t, agentID, "label:wt", room)), "a session with no row gets one")
+	}, withoutUpdatedAt(f.state(t, agentID, "label:wt", room)), "a session with no row gets one, read up to there (SN-11)")
 	require.NoError(t, f.reg.AdvanceSessionReadSeq(ctx, agentID, "label:wt", room, 2, false))
 	require.Equal(t, int64(4), f.state(t, agentID, "label:wt", room).ReadSeq, "a late read cannot unread")
 	require.NoError(t, f.reg.AdvanceSessionReadSeq(ctx, agentID, "label:wt", room, 9, false))
@@ -165,7 +166,7 @@ func TestSetSessionNotify(t *testing.T) {
 
 	require.NoError(t, f.reg.SetSessionNotify(ctx, agentID, "label:wt", room, false, NotifyOn))
 	require.Equal(t, db.SessionRoomState{
-		AgentID: agentID, SessionKey: "label:wt", RoomID: room, ReadSeq: 30, Notify: NotifyOn,
+		AgentID: agentID, SessionKey: "label:wt", RoomID: room, ReadSeq: 30, ReadFrom: 30, Notify: NotifyOn,
 	}, withoutUpdatedAt(f.state(t, agentID, "label:wt", room)))
 
 	require.NoError(t, f.reg.SetSessionNotify(ctx, agentID, "label:wt", room, false, NotifyMentions))

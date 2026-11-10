@@ -1011,6 +1011,12 @@ func (g *Gateway) run(ctx context.Context, c *conn, row db.GetAgentWithOwnerRow,
 	if g.afterWelcome != nil {
 		g.afterWelcome()
 	}
+	if c.labelOf() == "" {
+		// What another session of the AI read or wrote while this one was away is read (SN-11).
+		if err := g.catchUpPrincipal(ctx, a.ID, bounds); err != nil {
+			return err
+		}
+	}
 	sent, err := g.backlog(ctx, c, a, bounds)
 	if err != nil {
 		return err
@@ -1297,6 +1303,45 @@ func (g *Gateway) backlogBounds(ctx context.Context, agentID string) (map[string
 		bounds[st.ID] = high
 	}
 	return bounds, nil
+}
+
+// catchUpPrincipal moves the AI's cursor of each room, and the principal's read position with it (SN-01), over
+// what the AI has already read there without a gap, up to the room's bound (SN-11): the messages after the
+// cursor that the AI wrote, that a session of it acknowledged, or that lie in what a session's read position
+// covers. A message read by any session of the AI is read by the AI, so the principal that attaches after a
+// sibling worked in its place starts after what the sibling read and answered, and its unread count does not
+// list the sibling's replies. The first message no session read stops it: that one, and everything after it,
+// is still the principal's queue. A session state row created by this attach covers nothing (it starts at
+// its join point), so the principal's own fresh row does not count as a reading.
+func (g *Gateway) catchUpPrincipal(ctx context.Context, agentID string, bounds map[string]int64) error {
+	states, err := g.d.Registry.SessionRooms(ctx, agentID)
+	if err != nil {
+		return err
+	}
+	for _, st := range states {
+		bound, ok := bounds[st.ID]
+		if !ok || bound <= st.Cursor {
+			continue
+		}
+		err := g.d.Store.WithTx(ctx, func(q *db.Queries) error {
+			seq, err := q.GetAgentReadThrough(ctx, db.GetAgentReadThroughParams{
+				AgentID: agentID, RoomID: st.ID, AfterSeq: st.Cursor, BoundSeq: bound,
+			})
+			if err != nil || seq <= st.Cursor {
+				return err
+			}
+			if err := q.AdvanceAgentCursor(ctx, db.AdvanceAgentCursorParams{AgentID: agentID, RoomID: st.ID, Seq: seq}); err != nil {
+				return err
+			}
+			return q.AdvancePrincipalReadSeq(ctx, db.AdvancePrincipalReadSeqParams{
+				AgentID: agentID, RoomID: st.ID, ReadSeq: seq, UpdatedAt: time.Now().UnixMilli(),
+			})
+		})
+		if err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 // writeOwned writes, in sequence order, the rows a labelled session's connection owns and has not

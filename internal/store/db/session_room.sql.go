@@ -31,7 +31,8 @@ type AdvancePrincipalReadSeqParams struct {
 // that moves the cursor (SN-01): agent_cursors stays the source of truth of the principal's backlog, so every
 // place that moves it writes both. The principal's key is its pinned harness session id, or "principal" when
 // nothing is pinned (internal/agents.SessionKey), which is what the SELECT computes; the row is created when
-// the principal has none yet, notified of everything (SN-02).
+// the principal has none yet, notified of everything (SN-02), and covers the room up to the cursor
+// (read_from 0, SN-11).
 func (q *Queries) AdvancePrincipalReadSeq(ctx context.Context, arg AdvancePrincipalReadSeqParams) error {
 	_, err := q.db.ExecContext(ctx, advancePrincipalReadSeq,
 		arg.RoomID,
@@ -61,7 +62,8 @@ type AdvanceSessionReadSeqParams struct {
 
 // Moves a read position forward, never back: an acknowledgement that arrives late, or a catch-up older
 // than a live push that already moved it, cannot make a session unread what it has read. notify is the
-// session's default and only applies to a row created here; an existing setting is kept.
+// session's default and only applies to a row created here; an existing setting is kept. A row created
+// here is created by a reading, which read the room up to it (read_from 0, SN-11).
 func (q *Queries) AdvanceSessionReadSeq(ctx context.Context, arg AdvanceSessionReadSeqParams) error {
 	_, err := q.db.ExecContext(ctx, advanceSessionReadSeq,
 		arg.AgentID,
@@ -172,8 +174,9 @@ func (q *Queries) CountSessionUnreadInRoom(ctx context.Context, arg CountSession
 }
 
 const createSessionRoomState = `-- name: CreateSessionRoomState :exec
-INSERT INTO session_room_state (agent_id, session_key, room_id, read_seq, notify, updated_at)
-VALUES (?, ?, ?, ?, ?, ?)
+INSERT INTO session_room_state (agent_id, session_key, room_id, read_seq, read_from, notify, updated_at)
+VALUES (?1, ?2, ?3, ?4, ?4,
+        ?5, ?6)
 ON CONFLICT (agent_id, session_key, room_id) DO NOTHING
 `
 
@@ -188,7 +191,8 @@ type CreateSessionRoomStateParams struct {
 
 // The state of a session in a room on first sight (SN-01, SN-02): read up to the join point and set to
 // the session's default. An existing row is left alone, so a session that connects again keeps what it
-// had read and its setting.
+// had read and its setting. The join point is also where its reading starts (read_from, SN-11): it was
+// caught up without reading what came before.
 func (q *Queries) CreateSessionRoomState(ctx context.Context, arg CreateSessionRoomStateParams) error {
 	_, err := q.db.ExecContext(ctx, createSessionRoomState,
 		arg.AgentID,
@@ -273,7 +277,7 @@ func (q *Queries) GetSessionJoinSeq(ctx context.Context, arg GetSessionJoinSeqPa
 }
 
 const getSessionRoomState = `-- name: GetSessionRoomState :one
-SELECT agent_id, session_key, room_id, read_seq, notify, updated_at FROM session_room_state WHERE agent_id = ? AND session_key = ? AND room_id = ?
+SELECT agent_id, session_key, room_id, read_seq, notify, updated_at, read_from FROM session_room_state WHERE agent_id = ? AND session_key = ? AND room_id = ?
 `
 
 type GetSessionRoomStateParams struct {
@@ -293,12 +297,13 @@ func (q *Queries) GetSessionRoomState(ctx context.Context, arg GetSessionRoomSta
 		&i.ReadSeq,
 		&i.Notify,
 		&i.UpdatedAt,
+		&i.ReadFrom,
 	)
 	return i, err
 }
 
 const listSessionRoomStates = `-- name: ListSessionRoomStates :many
-SELECT agent_id, session_key, room_id, read_seq, notify, updated_at FROM session_room_state WHERE agent_id = ? AND session_key = ? ORDER BY room_id
+SELECT agent_id, session_key, room_id, read_seq, notify, updated_at, read_from FROM session_room_state WHERE agent_id = ? AND session_key = ? ORDER BY room_id
 `
 
 type ListSessionRoomStatesParams struct {
@@ -323,6 +328,7 @@ func (q *Queries) ListSessionRoomStates(ctx context.Context, arg ListSessionRoom
 			&i.ReadSeq,
 			&i.Notify,
 			&i.UpdatedAt,
+			&i.ReadFrom,
 		); err != nil {
 			return nil, err
 		}
@@ -338,7 +344,7 @@ func (q *Queries) ListSessionRoomStates(ctx context.Context, arg ListSessionRoom
 }
 
 const listSessionRoomStatesInRoom = `-- name: ListSessionRoomStatesInRoom :many
-SELECT agent_id, session_key, room_id, read_seq, notify, updated_at FROM session_room_state WHERE agent_id = ?1 AND room_id = ?2
+SELECT agent_id, session_key, room_id, read_seq, notify, updated_at, read_from FROM session_room_state WHERE agent_id = ?1 AND room_id = ?2
 `
 
 type ListSessionRoomStatesInRoomParams struct {
@@ -364,6 +370,7 @@ func (q *Queries) ListSessionRoomStatesInRoom(ctx context.Context, arg ListSessi
 			&i.ReadSeq,
 			&i.Notify,
 			&i.UpdatedAt,
+			&i.ReadFrom,
 		); err != nil {
 			return nil, err
 		}

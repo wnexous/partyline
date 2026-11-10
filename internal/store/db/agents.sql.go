@@ -69,8 +69,11 @@ WHERE messages.room_id = ?2 AND messages.seq > ?3
         AND (d.acked_at IS NOT NULL OR d.fell_back_at IS NOT NULL))
   AND NOT EXISTS (
       SELECT 1 FROM agent_session_deliveries d
-      WHERE d.message_id = messages.id AND d.agent_id = ?1 AND d.label = ''
-        AND d.acked_at IS NOT NULL)
+      WHERE d.message_id = messages.id AND d.agent_id = ?1 AND d.acked_at IS NOT NULL)
+  AND NOT EXISTS (
+      SELECT 1 FROM session_room_state s
+      WHERE s.agent_id = ?1 AND s.room_id = messages.room_id
+        AND messages.seq > s.read_from AND messages.seq <= s.read_seq)
 `
 
 type CountAgentBacklogParams struct {
@@ -85,7 +88,10 @@ type CountAgentBacklogParams struct {
 // the room, so a message that addresses a sibling is part of its queue too (SN-04), and only its own copy
 // tombstone or the fallback list takes one out. A copy of a catch-up batch never keeps a message out
 // (SN-03). Nothing from before the AI's current membership of the room is part of the queue (ROOM-01): a
-// member that was taken out forgot what it missed while it was away.
+// member that was taken out forgot what it missed while it was away. A message any session of the AI has
+// read is not part of it either (SN-11): one a session acknowledged (any of its delivery rows), or one in
+// the run a session's state row has read (read_from < seq <= read_seq), so a session that attaches is not
+// handed again what its sibling read and answered.
 func (q *Queries) CountAgentBacklog(ctx context.Context, arg CountAgentBacklogParams) (int64, error) {
 	row := q.db.QueryRowContext(ctx, countAgentBacklog,
 		arg.AgentID,
@@ -254,6 +260,48 @@ type GetAgentCursorParams struct {
 
 func (q *Queries) GetAgentCursor(ctx context.Context, arg GetAgentCursorParams) (int64, error) {
 	row := q.db.QueryRowContext(ctx, getAgentCursor, arg.AgentID, arg.RoomID)
+	var seq int64
+	err := row.Scan(&seq)
+	return seq, err
+}
+
+const getAgentReadThrough = `-- name: GetAgentReadThrough :one
+SELECT CAST(COALESCE(MIN(m.seq) - 1, ?1) AS INTEGER) AS seq FROM messages m
+JOIN room_members rm ON rm.room_id = m.room_id AND rm.kind = 'agent' AND rm.member_id = ?2
+WHERE m.room_id = ?3 AND m.seq > ?4 AND m.seq <= ?1
+  AND m.seq > COALESCE((SELECT MAX(b.seq) FROM messages b
+                        WHERE b.room_id = m.room_id AND b.created_at < rm.created_at), 0)
+  AND m.deleted_at IS NULL
+  AND NOT (m.author_kind = 'agent' AND m.author_id = ?2)
+  AND NOT EXISTS (
+      SELECT 1 FROM agent_session_deliveries d
+      WHERE d.message_id = m.id AND d.agent_id = ?2 AND d.acked_at IS NOT NULL)
+  AND NOT EXISTS (
+      SELECT 1 FROM session_room_state s
+      WHERE s.agent_id = ?2 AND s.room_id = m.room_id
+        AND m.seq > s.read_from AND m.seq <= s.read_seq)
+`
+
+type GetAgentReadThroughParams struct {
+	BoundSeq int64
+	AgentID  string
+	RoomID   string
+	AfterSeq int64
+}
+
+// How far, from after_seq and up to bound_seq, the AI has read one room without a gap (SN-11): the sequence
+// just before the first message there that no session of the AI read, or bound_seq when there is none. A
+// message counts as read when the AI wrote it (from any of its sessions), when a session acknowledged it
+// (any delivery row of the AI), or when it lies in the run a session's state row has read (read_from < seq
+// <= read_seq); a deleted message and one from before the AI's current membership (ROOM-01) are no one's to
+// read. The principal's cursor moves there when it attaches, so it reflects what the AI has read.
+func (q *Queries) GetAgentReadThrough(ctx context.Context, arg GetAgentReadThroughParams) (int64, error) {
+	row := q.db.QueryRowContext(ctx, getAgentReadThrough,
+		arg.BoundSeq,
+		arg.AgentID,
+		arg.RoomID,
+		arg.AfterSeq,
+	)
 	var seq int64
 	err := row.Scan(&seq)
 	return seq, err
@@ -488,8 +536,11 @@ WHERE mv.room_id = ?2 AND mv.seq > ?3
         AND (d.acked_at IS NOT NULL OR d.fell_back_at IS NOT NULL))
   AND NOT EXISTS (
       SELECT 1 FROM agent_session_deliveries d
-      WHERE d.message_id = mv.id AND d.agent_id = ?1 AND d.label = ''
-        AND d.acked_at IS NOT NULL)
+      WHERE d.message_id = mv.id AND d.agent_id = ?1 AND d.acked_at IS NOT NULL)
+  AND NOT EXISTS (
+      SELECT 1 FROM session_room_state s
+      WHERE s.agent_id = ?1 AND s.room_id = mv.room_id
+        AND mv.seq > s.read_from AND mv.seq <= s.read_seq)
 ORDER BY seq DESC
 LIMIT ?5
 `
@@ -768,8 +819,11 @@ WHERE mv.room_id = ?2 AND mv.seq > ?3 AND mv.seq <= ?4
         AND (d.acked_at IS NOT NULL OR d.fell_back_at IS NOT NULL))
   AND NOT EXISTS (
       SELECT 1 FROM agent_session_deliveries d
-      WHERE d.message_id = mv.id AND d.agent_id = ?1 AND d.label = ''
-        AND d.acked_at IS NOT NULL)
+      WHERE d.message_id = mv.id AND d.agent_id = ?1 AND d.acked_at IS NOT NULL)
+  AND NOT EXISTS (
+      SELECT 1 FROM session_room_state s
+      WHERE s.agent_id = ?1 AND s.room_id = mv.room_id
+        AND mv.seq > s.read_from AND mv.seq <= s.read_seq)
 ORDER BY mv.seq ASC
 LIMIT ?8
 `
