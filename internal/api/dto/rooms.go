@@ -255,11 +255,13 @@ type PostMessageRequest struct {
 // AttachmentStatus is the storage state of an attachment.
 type AttachmentStatus string
 
-// Attachment states.
+// Attachment states. Expired is a room attachment the instance's attachment retention deleted
+// (RET-03): its name, type and size stay, its content is gone and a download answers 410.
 const (
 	AttachmentStatusStored      AttachmentStatus = "stored"
 	AttachmentStatusTooLarge    AttachmentStatus = "too_large"
 	AttachmentStatusUnavailable AttachmentStatus = "unavailable"
+	AttachmentStatusExpired     AttachmentStatus = "expired"
 )
 
 // Attachment is a file of a message. Download with GET /attachments/{id}
