@@ -4,7 +4,6 @@ import (
 	"errors"
 	"fmt"
 	"math/bits"
-	"slices"
 	"strconv"
 	"strings"
 	"time"
@@ -312,24 +311,14 @@ func (r Rule) window(due time.Time) time.Duration {
 	return max(w, time.Minute)
 }
 
-// runsIn returns the runs of the rule after from and up to to, at most limit of them.
-func (r Rule) runsIn(from, to time.Time, limit int) []time.Time {
-	var out []time.Time
-	for t := r.Next(from); !t.IsZero() && !t.After(to) && len(out) < limit; t = r.Next(t) {
-		out = append(out, t)
+// maxPer24h is the most runs the rule makes in any 24 hours: ceil(1440/N) for every N minutes, and for a cron the
+// runs of one day it fires on (each time of the day once: a time a daylight saving change repeats fires once).
+func (r Rule) maxPer24h() int {
+	if r.Cron != nil {
+		return r.Cron.perDay()
 	}
-	return out
-}
-
-// maxIn24h is the most runs of the given times that fall in any 24 hours: the times are sorted first.
-func maxIn24h(times []time.Time) int {
-	slices.SortFunc(times, func(a, b time.Time) int { return a.Compare(b) })
-	best, lo := 0, 0
-	for hi := range times {
-		for times[hi].Sub(times[lo]) >= 24*time.Hour {
-			lo++
-		}
-		best = max(best, hi-lo+1)
+	if r.EveryMinutes <= 0 {
+		return 0
 	}
-	return best
+	return (24*60 + r.EveryMinutes - 1) / r.EveryMinutes
 }

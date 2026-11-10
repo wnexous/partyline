@@ -15,15 +15,18 @@ SELECT * FROM agent_schedules WHERE agent_id = ? ORDER BY created_at, id;
 -- name: CountSchedulesByAgent :one
 SELECT COUNT(*) FROM agent_schedules WHERE agent_id = ?;
 
--- name: UpdateSchedule :exec
--- HB-01: every field a write may change; the run history and the notice time stay.
+-- name: UpdateSchedule :execrows
+-- HB-01: every field a write may change; the run history and the notice time stay. Only the version that was
+-- read is written over.
 UPDATE agent_schedules
 SET name = ?, prompt = ?, rule_kind = ?, every_minutes = ?, cron = ?, tz = ?, catch_up = ?, enabled = ?,
-    origin = ?, set_by = ?, updated_by = ?, anchor_at = ?, updated_at = ?, next_run_at = ?, paused_by = ?
-WHERE id = ?;
+    origin = ?, set_by = ?, updated_by = ?, anchor_at = ?, updated_at = ?, next_run_at = ?, paused_by = ?,
+    version = version + 1
+WHERE id = sqlc.arg(id) AND version = sqlc.arg(version);
 
 -- name: DeleteSchedule :execrows
-DELETE FROM agent_schedules WHERE id = ? AND agent_id = ?;
+-- Only the version that was read is deleted.
+DELETE FROM agent_schedules WHERE id = ? AND agent_id = ? AND version = ?;
 
 -- name: ListDueSchedules :many
 -- The enabled schedules whose next run is due, oldest due first.
@@ -45,7 +48,8 @@ UPDATE agent_schedules SET next_run_at = ? WHERE id = ?;
 UPDATE agent_schedules SET notified_at = ?, notice_hash = ? WHERE id = ?;
 
 -- name: SetScheduleEnabled :exec
-UPDATE agent_schedules SET enabled = ?, next_run_at = ?, updated_by = ?, updated_at = ?, paused_by = ? WHERE id = ?;
+UPDATE agent_schedules SET enabled = ?, next_run_at = ?, updated_by = ?, updated_at = ?, paused_by = ?, version = version + 1
+WHERE id = ?;
 
 -- name: RefreshScheduleLastRun :exec
 -- The schedule's last run and status are those of its newest run.

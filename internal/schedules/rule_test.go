@@ -1,10 +1,13 @@
 package schedules
 
 import (
+	"database/sql"
 	"testing"
 	"time"
 
 	"github.com/stretchr/testify/require"
+
+	"github.com/wnexous/partyline/internal/store/db"
 )
 
 func mustLoc(t *testing.T, name string) *time.Location {
@@ -127,15 +130,25 @@ func TestMinGap(t *testing.T) {
 	require.Equal(t, 15*time.Minute, Rule{EveryMinutes: 15}.MinGap())
 }
 
-// HB-03: the most runs in any 24 hours of a set of runs.
-func TestMaxIn24h(t *testing.T) {
-	base := time.Date(2026, 11, 10, 0, 0, 0, 0, time.UTC)
-	hourly := Rule{EveryMinutes: 60, Anchor: base}
-	require.Equal(t, 24, maxIn24h(hourly.runsIn(base, base.Add(limitHorizon), 1000)))
-	half := Rule{EveryMinutes: 30, Anchor: base}
-	require.Equal(t, 48, maxIn24h(half.runsIn(base, base.Add(limitHorizon), 1000)))
-	both := append(hourly.runsIn(base, base.Add(limitHorizon), 1000), Rule{EveryMinutes: 60, Anchor: base.Add(time.Minute)}.runsIn(base, base.Add(limitHorizon), 1000)...)
-	require.Equal(t, 48, maxIn24h(both))
+// HB-03: the most runs a rule makes in any 24 hours, whatever the dates: a monthly cron counts the runs of the day
+// it fires on, so routines that fire on the same rare day cannot add up past the cap unseen.
+func TestMaxPer24h(t *testing.T) {
+	require.Equal(t, 24, Rule{EveryMinutes: 60}.maxPer24h())
+	require.Equal(t, 48, Rule{EveryMinutes: 30}.maxPer24h())
+	require.Equal(t, 32, Rule{EveryMinutes: 45}.maxPer24h(), "ceil(1440/45)")
+	require.Equal(t, 1, Rule{EveryMinutes: 7 * 24 * 60}.maxPer24h())
+	for expr, want := range map[string]int{
+		"0 9 * * *": 1, "0,30 0-11 1 * *": 24, "*/15 9-10 * * 1": 8, "0 9 31 2 *": 1,
+	} {
+		require.Equal(t, want, Rule{Cron: mustCron(t, expr), Loc: time.UTC}.maxPer24h(), expr)
+	}
+	monthly := func(id string) db.AgentSchedule {
+		return db.AgentSchedule{ID: id, Enabled: true, RuleKind: "cron", Cron: sql.NullString{String: "0,30 0-11 1 * *", Valid: true}, Tz: "UTC"}
+	}
+	candidate := Rule{Cron: mustCron(t, "0,30 0-11 1 * *"), Loc: time.UTC}
+	require.NoError(t, checkDaily([]db.AgentSchedule{monthly("a")}, "new", candidate))
+	require.Error(t, checkDaily([]db.AgentSchedule{monthly("a"), monthly("b")}, "new", candidate), "72 on the 1st of the month")
+	require.NoError(t, checkDaily([]db.AgentSchedule{monthly("a"), monthly("b")}, "b", candidate), "b is the one being changed")
 }
 
 // HB-06: the window of a run is the shorter of the rule's period and 12 hours, and a server down from 08:50 to

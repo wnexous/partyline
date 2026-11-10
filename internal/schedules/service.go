@@ -58,8 +58,6 @@ const (
 	MaxSleep = 30 * time.Second
 	// runLimit is how many due schedules one tick takes.
 	runLimit = 500
-	// limitHorizon is how far ahead the 24-hour cap expands the rules: a week, so weekly rules count.
-	limitHorizon = 8 * 24 * time.Hour
 )
 
 // The quick replies of the manager notice (HB-09): Pausar disables the schedule.
@@ -87,6 +85,9 @@ var (
 	// ErrTooMany is a new schedule of an AI that has MaxSchedules (HB-03).
 	ErrTooMany = httpx.NewError(http.StatusUnprocessableEntity, dto.ErrorCodeTooMany,
 		fmt.Sprintf("an AI has at most %d schedules", MaxSchedules))
+	// ErrChanged is a write of a routine that was written since the caller read it.
+	ErrChanged = httpx.NewError(http.StatusConflict, dto.ErrorCodeConflict,
+		"the routine changed meanwhile: read it again")
 	// ErrNoManager is a routine an AI would make active while nobody manages it: nobody can be told (HB-09).
 	ErrNoManager = httpx.NewError(http.StatusConflict, dto.ErrorCodeNoManager,
 		"nobody manages you in your organization, so a routine you set cannot be shown to a manager: ask someone who manages you to set it")
@@ -137,6 +138,9 @@ type Service struct {
 	d      Deps
 	writes *limiter
 	kick   chan struct{}
+	// afterRead, set by tests only, runs after an update or a delete read the routine and before its write
+	// transaction: a write of the routine in that gap is one the update did not read.
+	afterRead atomic.Pointer[func()]
 	// dropAnswer, set by tests only, drops the bus event of an answer as a lagged bus would.
 	dropAnswer atomic.Pointer[func(messageID string) bool]
 }
@@ -330,29 +334,32 @@ func merge(base spec, in Input) (spec, error) {
 	return out, nil
 }
 
-// checkDaily refuses a set of enabled schedules that fire more than MaxRunsPerDay times in any 24 hours of the
-// next limitHorizon (HB-03). candidate replaces the stored schedule with its id (a create has a new id).
-func checkDaily(now time.Time, stored []db.AgentSchedule, candidateID string, candidate Rule, candidateEnabled bool) error {
-	end := now.Add(limitHorizon)
-	perRule := int(limitHorizon/MinInterval) + 1
-	var times []time.Time
+// checkDaily refuses a set of enabled routines that could fire more than MaxRunsPerDay times in some 24 hours
+// (HB-03). The bound is analytic and conservative, whatever the dates: each rule counts the most runs it can
+// make in any 24 hours (maxPer24h) and the counts of the AI's enabled routines are added up, as if they all fell
+// in the same day. candidate replaces the stored routine with its id (a create has a new id).
+func checkDaily(stored []db.AgentSchedule, candidateID string, candidate Rule) error {
+	total := candidate.maxPer24h()
 	for _, row := range stored {
 		if row.ID == candidateID || !row.Enabled {
 			continue
 		}
 		r, err := ruleOf(row)
 		if err != nil {
-			continue // a rule this build cannot read again never fires (Tick skips it too)
+			continue // a rule this build cannot read again never fires (Tick stops it)
 		}
-		times = append(times, r.runsIn(now, end, perRule)...)
+		total += r.maxPer24h()
 	}
-	if candidateEnabled {
-		times = append(times, candidate.runsIn(now, end, perRule)...)
-	}
-	if maxIn24h(times) > MaxRunsPerDay {
+	if total > MaxRunsPerDay {
 		return tooFrequentDaily()
 	}
 	return nil
+}
+
+func (s *Service) afterReadHook() {
+	if hook := s.afterRead.Load(); hook != nil {
+		(*hook)()
+	}
 }
 
 // cancelPending cancels the pending runs of a routine that was disabled: a run waiting for the principal, or in
@@ -366,7 +373,7 @@ func cancelPending(ctx context.Context, q *db.Queries, id string) error {
 
 // checkLimits applies HB-03 to a write of the schedule id: a new one (create) must not be over MaxSchedules, and
 // an enabled rule (enabled) must keep the AI's routines within MaxRunsPerDay.
-func checkLimits(ctx context.Context, q *db.Queries, agentID, id string, r Rule, enabled, create bool, now time.Time) error {
+func checkLimits(ctx context.Context, q *db.Queries, agentID, id string, r Rule, enabled, create bool) error {
 	if create {
 		n, err := q.CountSchedulesByAgent(ctx, agentID)
 		if err != nil {
@@ -383,7 +390,7 @@ func checkLimits(ctx context.Context, q *db.Queries, agentID, id string, r Rule,
 	if err != nil {
 		return err
 	}
-	return checkDaily(now, stored, id, r, true)
+	return checkDaily(stored, id, r)
 }
 
 // nullInt and nullStr build nullable columns.
@@ -502,7 +509,7 @@ func (s *Service) Create(ctx context.Context, p authn.Principal, agentID string,
 	id := store.NewID()
 	next := nextRun(r, sp.enabled, now) // outside the write transaction, like every rule computation
 	// The limits on a read first: a notice goes out only for a write that can be made.
-	if err := checkLimits(ctx, s.d.Store.R(), agentID, id, r, sp.enabled, true, now); err != nil {
+	if err := checkLimits(ctx, s.d.Store.R(), agentID, id, r, sp.enabled, true); err != nil {
 		return dto.Schedule{}, err
 	}
 	var nt *notice
@@ -512,7 +519,7 @@ func (s *Service) Create(ctx context.Context, p authn.Principal, agentID string,
 		}
 	}
 	err = s.d.Store.WithTx(ctx, func(q *db.Queries) error {
-		if err := checkLimits(ctx, q, agentID, id, r, sp.enabled, true, now); err != nil {
+		if err := checkLimits(ctx, q, agentID, id, r, sp.enabled, true); err != nil {
 			return err
 		}
 		if err := q.CreateSchedule(ctx, db.CreateScheduleParams{
@@ -603,7 +610,7 @@ func (s *Service) Update(ctx context.Context, p authn.Principal, agentID, id str
 		}
 	}
 	checked := sp.enabled && (ruleChanged || reEnabled)
-	if err := checkLimits(ctx, s.d.Store.R(), agentID, id, r, checked, false, now); err != nil {
+	if err := checkLimits(ctx, s.d.Store.R(), agentID, id, r, checked, false); err != nil {
 		return dto.Schedule{}, err
 	}
 	var nt *notice
@@ -616,17 +623,23 @@ func (s *Service) Update(ctx context.Context, p authn.Principal, agentID, id str
 			return dto.Schedule{}, err
 		}
 	}
+	s.afterReadHook()
 	err = s.d.Store.WithTx(ctx, func(q *db.Queries) error {
-		if err := checkLimits(ctx, q, agentID, id, r, checked, false, now); err != nil {
+		if err := checkLimits(ctx, q, agentID, id, r, checked, false); err != nil {
 			return err
 		}
-		if err := q.UpdateSchedule(ctx, db.UpdateScheduleParams{
+		n, err := q.UpdateSchedule(ctx, db.UpdateScheduleParams{
 			Name: sp.name, Prompt: sp.prompt, RuleKind: ruleKind(sp),
 			EveryMinutes: nullInt(int64(sp.every), sp.cron == ""), Cron: nullStr(sp.cron, sp.cron != ""), Tz: sp.tz,
 			CatchUp: sp.catchUp, Enabled: sp.enabled, Origin: origin, SetBy: setBy, UpdatedBy: actor,
 			AnchorAt: anchor.UnixMilli(), UpdatedAt: now.UnixMilli(), NextRunAt: next, PausedBy: pausedBy, ID: id,
-		}); err != nil {
+			Version: row.Version,
+		})
+		if err != nil {
 			return err
+		}
+		if n == 0 {
+			return ErrChanged // written since it was read: the write was decided on what it no longer is
 		}
 		if err := recordNotice(ctx, q, nt, id, now); err != nil {
 			return err
@@ -656,9 +669,14 @@ func (s *Service) Delete(ctx context.Context, p authn.Principal, agentID, id str
 		return err
 	}
 	actor := actorOf(p)
+	s.afterReadHook()
 	err = s.d.Store.WithTx(ctx, func(q *db.Queries) error {
-		if _, err := q.DeleteSchedule(ctx, db.DeleteScheduleParams{ID: id, AgentID: agentID}); err != nil {
+		n, err := q.DeleteSchedule(ctx, db.DeleteScheduleParams{ID: id, AgentID: agentID, Version: row.Version})
+		if err != nil {
 			return err
+		}
+		if n == 0 {
+			return ErrChanged
 		}
 		return s.record(ctx, q, actor, ActionDelete, agentID, id, specOf(row))
 	})

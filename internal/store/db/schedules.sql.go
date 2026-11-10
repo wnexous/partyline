@@ -137,16 +137,18 @@ func (q *Queries) CreateSchedule(ctx context.Context, arg CreateScheduleParams) 
 }
 
 const deleteSchedule = `-- name: DeleteSchedule :execrows
-DELETE FROM agent_schedules WHERE id = ? AND agent_id = ?
+DELETE FROM agent_schedules WHERE id = ? AND agent_id = ? AND version = ?
 `
 
 type DeleteScheduleParams struct {
 	ID      string
 	AgentID string
+	Version int64
 }
 
+// Only the version that was read is deleted.
 func (q *Queries) DeleteSchedule(ctx context.Context, arg DeleteScheduleParams) (int64, error) {
-	result, err := q.db.ExecContext(ctx, deleteSchedule, arg.ID, arg.AgentID)
+	result, err := q.db.ExecContext(ctx, deleteSchedule, arg.ID, arg.AgentID, arg.Version)
 	if err != nil {
 		return 0, err
 	}
@@ -187,7 +189,7 @@ func (q *Queries) GetMessageAnswerRef(ctx context.Context, id string) (GetMessag
 }
 
 const getSchedule = `-- name: GetSchedule :one
-SELECT id, agent_id, name, prompt, rule_kind, every_minutes, cron, tz, catch_up, enabled, origin, set_by, created_by, updated_by, anchor_at, created_at, updated_at, next_run_at, last_run_at, last_status, notified_at, notice_hash, paused_by FROM agent_schedules WHERE id = ?
+SELECT id, agent_id, name, prompt, rule_kind, every_minutes, cron, tz, catch_up, enabled, origin, set_by, created_by, updated_by, anchor_at, created_at, updated_at, next_run_at, last_run_at, last_status, notified_at, notice_hash, paused_by, version FROM agent_schedules WHERE id = ?
 `
 
 func (q *Queries) GetSchedule(ctx context.Context, id string) (AgentSchedule, error) {
@@ -217,12 +219,13 @@ func (q *Queries) GetSchedule(ctx context.Context, id string) (AgentSchedule, er
 		&i.NotifiedAt,
 		&i.NoticeHash,
 		&i.PausedBy,
+		&i.Version,
 	)
 	return i, err
 }
 
 const getScheduleForAgent = `-- name: GetScheduleForAgent :one
-SELECT id, agent_id, name, prompt, rule_kind, every_minutes, cron, tz, catch_up, enabled, origin, set_by, created_by, updated_by, anchor_at, created_at, updated_at, next_run_at, last_run_at, last_status, notified_at, notice_hash, paused_by FROM agent_schedules WHERE id = ? AND agent_id = ?
+SELECT id, agent_id, name, prompt, rule_kind, every_minutes, cron, tz, catch_up, enabled, origin, set_by, created_by, updated_by, anchor_at, created_at, updated_at, next_run_at, last_run_at, last_status, notified_at, notice_hash, paused_by, version FROM agent_schedules WHERE id = ? AND agent_id = ?
 `
 
 type GetScheduleForAgentParams struct {
@@ -257,6 +260,7 @@ func (q *Queries) GetScheduleForAgent(ctx context.Context, arg GetScheduleForAge
 		&i.NotifiedAt,
 		&i.NoticeHash,
 		&i.PausedBy,
+		&i.Version,
 	)
 	return i, err
 }
@@ -330,7 +334,7 @@ func (q *Queries) InsertScheduleRun(ctx context.Context, arg InsertScheduleRunPa
 }
 
 const listDueSchedules = `-- name: ListDueSchedules :many
-SELECT id, agent_id, name, prompt, rule_kind, every_minutes, cron, tz, catch_up, enabled, origin, set_by, created_by, updated_by, anchor_at, created_at, updated_at, next_run_at, last_run_at, last_status, notified_at, notice_hash, paused_by FROM agent_schedules
+SELECT id, agent_id, name, prompt, rule_kind, every_minutes, cron, tz, catch_up, enabled, origin, set_by, created_by, updated_by, anchor_at, created_at, updated_at, next_run_at, last_run_at, last_status, notified_at, notice_hash, paused_by, version FROM agent_schedules
 WHERE enabled = 1 AND next_run_at IS NOT NULL AND next_run_at <= ?1
 ORDER BY next_run_at
 LIMIT ?2
@@ -375,6 +379,7 @@ func (q *Queries) ListDueSchedules(ctx context.Context, arg ListDueSchedulesPara
 			&i.NotifiedAt,
 			&i.NoticeHash,
 			&i.PausedBy,
+			&i.Version,
 		); err != nil {
 			return nil, err
 		}
@@ -534,7 +539,7 @@ func (q *Queries) ListRunsBySchedule(ctx context.Context, arg ListRunsBySchedule
 }
 
 const listSchedulesByAgent = `-- name: ListSchedulesByAgent :many
-SELECT id, agent_id, name, prompt, rule_kind, every_minutes, cron, tz, catch_up, enabled, origin, set_by, created_by, updated_by, anchor_at, created_at, updated_at, next_run_at, last_run_at, last_status, notified_at, notice_hash, paused_by FROM agent_schedules WHERE agent_id = ? ORDER BY created_at, id
+SELECT id, agent_id, name, prompt, rule_kind, every_minutes, cron, tz, catch_up, enabled, origin, set_by, created_by, updated_by, anchor_at, created_at, updated_at, next_run_at, last_run_at, last_status, notified_at, notice_hash, paused_by, version FROM agent_schedules WHERE agent_id = ? ORDER BY created_at, id
 `
 
 func (q *Queries) ListSchedulesByAgent(ctx context.Context, agentID string) ([]AgentSchedule, error) {
@@ -570,6 +575,7 @@ func (q *Queries) ListSchedulesByAgent(ctx context.Context, agentID string) ([]A
 			&i.NotifiedAt,
 			&i.NoticeHash,
 			&i.PausedBy,
+			&i.Version,
 		); err != nil {
 			return nil, err
 		}
@@ -707,7 +713,8 @@ func (q *Queries) SetRunStatus(ctx context.Context, arg SetRunStatusParams) (int
 }
 
 const setScheduleEnabled = `-- name: SetScheduleEnabled :exec
-UPDATE agent_schedules SET enabled = ?, next_run_at = ?, updated_by = ?, updated_at = ?, paused_by = ? WHERE id = ?
+UPDATE agent_schedules SET enabled = ?, next_run_at = ?, updated_by = ?, updated_at = ?, paused_by = ?, version = version + 1
+WHERE id = ?
 `
 
 type SetScheduleEnabledParams struct {
@@ -776,11 +783,12 @@ func (q *Queries) SupersedeUnfiredRuns(ctx context.Context, scheduleID string) (
 	return result.RowsAffected()
 }
 
-const updateSchedule = `-- name: UpdateSchedule :exec
+const updateSchedule = `-- name: UpdateSchedule :execrows
 UPDATE agent_schedules
 SET name = ?, prompt = ?, rule_kind = ?, every_minutes = ?, cron = ?, tz = ?, catch_up = ?, enabled = ?,
-    origin = ?, set_by = ?, updated_by = ?, anchor_at = ?, updated_at = ?, next_run_at = ?, paused_by = ?
-WHERE id = ?
+    origin = ?, set_by = ?, updated_by = ?, anchor_at = ?, updated_at = ?, next_run_at = ?, paused_by = ?,
+    version = version + 1
+WHERE id = ?16 AND version = ?17
 `
 
 type UpdateScheduleParams struct {
@@ -800,11 +808,13 @@ type UpdateScheduleParams struct {
 	NextRunAt    sql.NullInt64
 	PausedBy     string
 	ID           string
+	Version      int64
 }
 
-// HB-01: every field a write may change; the run history and the notice time stay.
-func (q *Queries) UpdateSchedule(ctx context.Context, arg UpdateScheduleParams) error {
-	_, err := q.db.ExecContext(ctx, updateSchedule,
+// HB-01: every field a write may change; the run history and the notice time stay. Only the version that was
+// read is written over.
+func (q *Queries) UpdateSchedule(ctx context.Context, arg UpdateScheduleParams) (int64, error) {
+	result, err := q.db.ExecContext(ctx, updateSchedule,
 		arg.Name,
 		arg.Prompt,
 		arg.RuleKind,
@@ -821,6 +831,10 @@ func (q *Queries) UpdateSchedule(ctx context.Context, arg UpdateScheduleParams) 
 		arg.NextRunAt,
 		arg.PausedBy,
 		arg.ID,
+		arg.Version,
 	)
-	return err
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected()
 }

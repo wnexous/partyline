@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -844,4 +845,31 @@ func TestAnAnswerLostToALaggedBusIsAppliedOnce(t *testing.T) {
 		return !testkit.Decode[dto.Schedule](h.roles.Manager.Get(h.path("/" + other.ID)).RequireStatus(http.StatusOK)).Enabled
 	}, wait, 10*time.Millisecond)
 	require.True(t, enabled(), "the answer that was applied is not applied again")
+}
+
+// A write of the AI decided on a routine as it read it is refused when a manager wrote the routine in between: a
+// stale PATCH cannot give the routine back to the AI over a manager's rewrite, nor a stale DELETE remove it.
+func TestAStaleWriteOfTheAIDoesNotUndoAManagersRewrite(t *testing.T) {
+	h := newHB(t)
+	s := h.create(h.agent, hourly("deploys"))
+	var fired atomic.Bool
+	rewrite := func(prompt string) {
+		schedules.AfterRead(h.env.App.Schedules, func() {
+			if fired.CompareAndSwap(false, true) { // the manager's own write runs the hook too
+				h.patch(h.roles.Manager, s.ID, dto.ScheduleRequest{Prompt: ptr(prompt)}).RequireStatus(http.StatusOK)
+			}
+		})
+	}
+	rewrite("check the deploys, says the manager")
+	h.patch(h.agent, s.ID, dto.ScheduleRequest{Prompt: ptr("check the deploys, says the AI")}).RequireError(http.StatusConflict, dto.ErrorCodeConflict)
+	got := testkit.Decode[dto.Schedule](h.roles.Manager.Get(h.path("/" + s.ID)).RequireStatus(http.StatusOK))
+	require.Equal(t, dto.ScheduleOriginManager, got.Origin)
+	require.Equal(t, "check the deploys, says the manager", got.Prompt)
+
+	own := h.create(h.agent, daily("summary"))
+	s = own
+	fired.Store(false)
+	rewrite("send the summary, says the manager")
+	h.remove(h.agent, own.ID).RequireError(http.StatusConflict, dto.ErrorCodeConflict)
+	h.roles.Manager.Get(h.path("/" + own.ID)).RequireStatus(http.StatusOK)
 }

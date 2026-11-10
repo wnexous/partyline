@@ -9,7 +9,9 @@
 -- notice_hash are when the AI's nearest manager was last told about the routine the AI set, and the content
 -- it was told (HB-09): a routine of the AI is active only once its manager was told what it says, and only an
 -- identical repeat within the hour goes untold. paused_by is whoever manages the AI and disabled the routine:
--- only someone who manages the AI enables it again.
+-- only someone who manages the AI enables it again. version grows with every write of the content or of
+-- enabled: a write made from an older read changes nothing (it is refused), so a stale write of the AI cannot
+-- undo a manager's.
 CREATE TABLE agent_schedules (
     id            TEXT PRIMARY KEY,
     agent_id      TEXT NOT NULL REFERENCES agents (id) ON DELETE CASCADE,
@@ -34,6 +36,7 @@ CREATE TABLE agent_schedules (
     notified_at   INTEGER,
     notice_hash   TEXT NOT NULL DEFAULT '',
     paused_by     TEXT NOT NULL DEFAULT '',
+    version       INTEGER NOT NULL DEFAULT 0,
     CHECK ((rule_kind = 'every' AND every_minutes IS NOT NULL AND cron IS NULL)
         OR (rule_kind = 'cron' AND cron IS NOT NULL AND every_minutes IS NULL))
 );

@@ -56,6 +56,7 @@ type AgentSchedule struct {
 	NotifiedAt   sql.NullInt64
 	NoticeHash   string
 	PausedBy     string
+	Version      int64
 }
 
 type AgentScheduleNotice struct {
