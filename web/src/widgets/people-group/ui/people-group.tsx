@@ -25,14 +25,18 @@ export function PeopleGroup({ group, query }: { group: PeopleGroupData; query: s
   const items = people.data?.pages.flatMap((page) => page.items) ?? [];
   const settled = !people.isPending && !people.isFetching && !people.isPlaceholderData;
 
+  // The name and its two notes wrap: with large text on a phone the notes go under the name
+  // rather than cutting it to a letter or two.
   const title = (
-    <>
-      <span className="min-w-0 truncate font-semibold">{connector.name}</span>
-      <span className="shrink-0 text-xs text-muted-foreground">{platformName(connector.kind)}</span>
-      <span className="ml-auto shrink-0 font-mono text-xs text-muted-foreground tabular">
-        {count === 1 ? t("contacts.peopleOne") : t("contacts.peopleMany", { count })}
+    <span className="flex min-w-0 flex-1 flex-wrap items-center gap-x-3 gap-y-0.5">
+      <span className="min-w-0 max-w-full truncate font-semibold">{connector.name}</span>
+      <span className="flex shrink-0 grow items-center gap-3">
+        <span className="text-xs text-muted-foreground">{platformName(connector.kind)}</span>
+        <span className="ml-auto font-mono text-xs text-muted-foreground tabular">
+          {count === 1 ? t("contacts.peopleOne") : t("contacts.peopleMany", { count })}
+        </span>
       </span>
-    </>
+    </span>
   );
 
   return (

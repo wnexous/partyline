@@ -130,7 +130,8 @@ function OrgRow({
           </p>
         </div>
       </div>
-      <div className="flex shrink-0 flex-wrap items-center gap-1">
+      {/* Its buttons wrap inside the row: with large text they are wider than a phone together. */}
+      <div className="flex max-w-full flex-wrap items-center gap-1">
         <Button asChild variant="ghost" size="sm">
           <Link
             to="/orgs/$orgId/chart"

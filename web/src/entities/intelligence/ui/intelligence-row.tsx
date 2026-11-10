@@ -45,12 +45,14 @@ export function IntelligenceRow({
     <Row
       data-testid={testId}
       className={cn(
-        "group/row relative flex items-start gap-2.5 px-4 py-2 hover:bg-accent/40",
+        "group/row relative flex flex-wrap items-start gap-2.5 px-4 py-2 hover:bg-accent/40",
         className,
       )}
     >
       <IntelligenceAvatar intelligence={intelligence} decorative className="mt-0.5 shrink-0" />
-      <div className="min-w-0 flex-1 space-y-0.5">
+      {/* A base of 7rem: when the actions would squeeze the name to a letter (a narrow panel, a
+          large font), they wrap to a line of their own under it instead. */}
+      <div className="min-w-0 flex-[1_1_7rem] space-y-0.5">
         <IntelligenceName
           intelligence={intelligence}
           viewerId={viewerId}
@@ -67,7 +69,7 @@ export function IntelligenceRow({
         {sessions}
       </div>
       {actions ? (
-        <div className="relative flex shrink-0 flex-wrap items-start justify-end gap-2.5">
+        <div className="relative ml-auto flex shrink-0 flex-wrap items-start justify-end gap-2.5">
           {actions}
         </div>
       ) : null}

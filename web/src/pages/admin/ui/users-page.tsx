@@ -108,7 +108,8 @@ function UserRow({ user: u, onDisable }: { user: AdminUser; onDisable: () => voi
           <span>{t("admin.joined", { date: formatAbsolute(u.created_at, locale) })}</span>
         </p>
       </div>
-      <div className="flex items-center gap-4">
+      {/* The role and the switch wrap: with large text they are wider than a phone together. */}
+      <div className="flex flex-wrap items-center gap-x-4 gap-y-2">
         <ToggleGroup
           type="single"
           variant="outline"

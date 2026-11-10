@@ -118,8 +118,11 @@ function ConnectorRow({ orgId, connector: c }: { orgId: string; connector: Conne
         params={{ orgId, connectorId: c.id }}
         className="group grid grid-cols-[minmax(0,1fr)_auto] items-center gap-x-4 gap-y-1 px-4 py-3.5 outline-none transition-colors hover:bg-accent/60 focus-visible:bg-accent focus-visible:ring-2 focus-visible:ring-ring/70 focus-visible:ring-inset md:px-8"
       >
-        <span className="flex min-w-0 items-center gap-2">
-          <span className="truncate font-semibold tracking-[-0.01em]">{c.name}</span>
+        {/* The kind wraps under a long name (a phone with large text) instead of cutting it short. */}
+        <span className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1">
+          <span className="min-w-0 max-w-full truncate font-semibold tracking-[-0.01em]">
+            {c.name}
+          </span>
           <span className="shrink-0 rounded-[3px] border px-1.5 py-px text-[0.7rem] text-muted-foreground">
             {platformName(c.kind)}
           </span>
@@ -131,7 +134,9 @@ function ConnectorRow({ orgId, connector: c }: { orgId: string; connector: Conne
         <span className="flex min-w-0 flex-wrap items-center gap-x-3 gap-y-1">
           <ConnectorStatusBadge status={status} enabled={c.enabled} />
           {lastError ? (
-            <span className="min-w-0 truncate font-mono text-xs text-destructive">{lastError}</span>
+            <span className="line-clamp-2 min-w-0 font-mono text-xs text-destructive [overflow-wrap:anywhere]">
+              {lastError}
+            </span>
           ) : null}
         </span>
       </Link>
