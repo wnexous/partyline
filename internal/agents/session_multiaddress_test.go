@@ -2,7 +2,9 @@ package agents_test
 
 import (
 	"context"
+	"database/sql"
 	"net/http"
+	"path/filepath"
 	"sync"
 	"testing"
 	"time"
@@ -11,6 +13,7 @@ import (
 
 	"github.com/wnexous/partyline/internal/agents"
 	"github.com/wnexous/partyline/internal/api/dto"
+	"github.com/wnexous/partyline/internal/app"
 	"github.com/wnexous/partyline/internal/store/db"
 	"github.com/wnexous/partyline/internal/testkit"
 )
@@ -473,4 +476,25 @@ func TestAnAckOfTheNoteBeforeTheSiblingsPushLeavesNothingToFallBack(t *testing.T
 	row := f.rowOf(t, "claude-2", m.ID)
 	require.True(t, row.AckedAt.Valid)
 	require.False(t, row.FellBackAt.Valid, "an acknowledged row never falls back")
+}
+
+// MA-02: when the fallback rows of a message's missing labels cannot be written, its live addressed session
+// still receives it, through its own route.
+func TestALiveAddressedSessionReceivesTheMessageWhenTheFallbackWriteFails(t *testing.T) {
+	f := newSessionFixture(t)
+	principal, second := f.dial(t), f.dial(t)
+	f.settle(t, principal)
+	f.settle(t, second)
+	raw, err := sql.Open("sqlite", "file:"+filepath.Join(f.env.App.Config.DataDir, app.DatabaseFile)+"?_pragma=busy_timeout(5000)")
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = raw.Close() })
+	_, err = raw.ExecContext(context.Background(),
+		"CREATE TRIGGER forced_failure BEFORE INSERT ON agent_session_deliveries WHEN NEW.label = 'gone' BEGIN SELECT RAISE(ABORT, 'forced failure'); END")
+	require.NoError(t, err)
+
+	m := f.post(t, "@atlas:claude-2 and @atlas:gone, compare")
+	requireAddressed(t, second, m)
+	row := f.waitRow(t, "claude-2", m.ID)
+	require.False(t, row.FellBackAt.Valid, "the live session owns its row")
+	require.NotContains(t, f.deliveryRows(t, m.ID), "gone")
 }

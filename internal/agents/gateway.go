@@ -256,15 +256,17 @@ func (g *Gateway) Push(agentID string, targets []string, m dto.AgentMessage) boo
 			own = append(own, i)
 		}
 		if err := g.createSessionDeliveries(rows); err != nil {
+			// The principal is not routed without its rows; the live sessions still receive the message
+			// through their own route below (MA-02).
 			g.d.Logger.Error("agent: session delivery write failed", "agent_id", agentID, "message_id", m.Message.ID, "err", err)
-			return false
-		}
-		for _, i := range own {
-			plan.sessions[i].ownRow = true
-		}
-		// The row may name a connection that ended after it was looked up: deliverOwned checks it again.
-		if g.deliverOwned(agentID, plan.notes[0], m) {
-			delivered = true
+		} else {
+			for _, i := range own {
+				plan.sessions[i].ownRow = true
+			}
+			// The row may name a connection that ended after it was looked up: deliverOwned checks it again.
+			if g.deliverOwned(agentID, plan.notes[0], m) {
+				delivered = true
+			}
 		}
 		if g.afterNoteRoute != nil {
 			g.afterNoteRoute()
