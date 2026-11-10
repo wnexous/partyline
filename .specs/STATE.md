@@ -493,6 +493,14 @@
 - **Status**: active
 - **Supersedes**: AD-036.
 
+### AD-040
+- **Decision**: Instance-wide settings an instance admin changes live in `instance_settings(key, value, updated_at)` (migration `0038`), read and written by the kernel package `internal/settings`. Each setting has its default in the server's configuration (an environment variable); a row exists only for a value an admin set, and it applies instead of the default until the admin resets it (the row is deleted). The first setting is the attachment retention (RET-01, `PARTYLINE_ATTACHMENT_RETENTION_DAYS`, default 0 = keep forever): the daily retention job sets stored room attachments older than N days `expired` and clears their `sha256`, so every existing reference count ignores them and the blob sweep removes content nothing else uses.
+- **Reason**: The owner wanted old files deleted to protect the disk and privacy, settable in the web app; there was no place for an instance setting. Keeping the variable as the default keeps today's behaviour and lets an operator set a policy before any admin logs in.
+- **Trade-off**: Two sources for one value: the admin page shows both (the default and whether the instance overrides it). An expired attachment keeps its name, type and size (the card says what was there); views already open are not pushed the change and see it on their next load.
+- **Scope**: store (`0038`, `settings.sql`, `retention.sql`), settings, config, rooms (retention), api (`/admin/settings`, 410 `attachment_expired`), channel, app (wiring), web (admin settings page, expired card), docs.
+- **Date**: 2026-11-10
+- **Status**: active
+
 ## Handoff
 
 - **Feature**: organizations
