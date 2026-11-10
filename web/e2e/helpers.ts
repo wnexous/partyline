@@ -67,6 +67,8 @@ export async function fitReport(page: Page) {
       const style = getComputedStyle(el);
       if (style.display === "none" || style.visibility === "hidden") continue;
       if (el.getClientRects().length === 0) continue;
+      // Text kept for screen readers only (a sheet's hidden title) sits in a 1 px box on purpose.
+      if (el.closest(".sr-only")) continue;
       const hasText = Array.from(el.childNodes).some(
         (node) => node.nodeType === Node.TEXT_NODE && (node.textContent ?? "").trim() !== "",
       );
@@ -91,10 +93,13 @@ export async function fitReport(page: Page) {
 /** The whole page fits the window and no visible text spills out of its own box (UI-24). */
 export async function expectFits(page: Page, where: string) {
   const report = await fitReport(page);
+  // A phone (`isMobile`) does not scroll a page wider than its screen: it zooms out, and the
+  // window then reports the page's width. The screen's own width is the one to fit.
+  const screen = Math.min(report.innerWidth, page.viewportSize()?.width ?? report.innerWidth);
   expect(
     report.scrollWidth,
-    `${where} scrolls sideways (${report.scrollWidth} > ${report.innerWidth})`,
-  ).toBeLessThanOrEqual(report.innerWidth);
+    `${where} scrolls sideways (${report.scrollWidth} > ${screen})`,
+  ).toBeLessThanOrEqual(screen);
   expect(
     report.overflowing,
     `${where} has text spilling out of its box: ${report.overflowing.join(" | ")}`,

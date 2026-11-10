@@ -584,7 +584,7 @@ export function ComposerForm({
       </p>
       <div
         className={cn(
-          "relative rounded-lg border border-input bg-card shadow-xs transition-[border-color,box-shadow] focus-within:border-ring focus-within:ring-[3px] focus-within:ring-ring/25",
+          "@container relative rounded-lg border border-input bg-card shadow-xs transition-[border-color,box-shadow] focus-within:border-ring focus-within:ring-[3px] focus-within:ring-ring/25",
           tooLong &&
             "border-destructive focus-within:border-destructive focus-within:ring-destructive/20",
         )}
@@ -664,7 +664,7 @@ export function ComposerForm({
             voiceOn && "hidden",
           )}
         />
-        <div className="flex items-center gap-1 px-1.5 pb-1.5">
+        <div className="flex flex-wrap items-center gap-1 px-1.5 pb-1.5">
           {voiceOn ? (
             <Button
               type="button"
@@ -705,8 +705,11 @@ export function ComposerForm({
             <span
               className={cn(
                 "min-w-0 flex-1 text-balance text-right text-[0.7rem] leading-tight text-muted-foreground",
-                // Two lines keep the whole hint beside the three buttons of a 360 px phone.
-                sendsOnEnter ? "hidden truncate lg:block" : "line-clamp-2",
+                // Two lines keep the whole hint beside the three buttons of a 360 px phone. With
+                // large text there is no room beside them: the hint takes a row of its own above.
+                sendsOnEnter
+                  ? "hidden truncate lg:block"
+                  : "line-clamp-2 @max-[17rem]:order-first @max-[17rem]:basis-full @max-[17rem]:px-1.5 @max-[17rem]:text-left",
               )}
             >
               {t(

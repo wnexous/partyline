@@ -68,7 +68,12 @@ export async function settled(page: Page) {
       await frames();
       const pending = running();
       if (pending.length === 0) return;
-      await Promise.all(pending.map((animation) => animation.finished.catch(() => undefined)));
+      // A wave is waited for 2 s at most: after a full-page picture Chrome can leave a theme's
+      // colour transitions finished without settling their promise, and the wait would never end.
+      await Promise.race([
+        Promise.all(pending.map((animation) => animation.finished.catch(() => undefined))),
+        new Promise((done) => setTimeout(done, 2000)),
+      ]);
     }
   });
 }

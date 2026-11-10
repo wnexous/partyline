@@ -15,13 +15,26 @@ export function LogoMark({ className }: { className?: string }) {
   );
 }
 
-export function Wordmark({ className }: { className?: string }) {
+/**
+ * The mark and the name. `textClassName` styles the name alone: a narrow bar hides it with a
+ * container query and keeps the mark, rather than pushing its buttons off a phone with large text.
+ */
+export function Wordmark({
+  className,
+  textClassName,
+}: {
+  className?: string;
+  textClassName?: string;
+}) {
   return (
-    <span className={cn("flex items-center gap-2.5", className)}>
+    <span className={cn("flex min-w-0 items-center gap-2.5", className)}>
       <LogoMark />
       <span
         translate="no"
-        className="text-[1.05rem] font-bold tracking-[-0.02em] [font-stretch:112%]"
+        className={cn(
+          "text-[1.05rem] font-bold tracking-[-0.02em] [font-stretch:112%]",
+          textClassName,
+        )}
       >
         partyline
       </span>

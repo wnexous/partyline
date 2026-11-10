@@ -315,7 +315,9 @@ function SidePanel({
       className="min-h-0 flex-1 gap-0"
     >
       <h2 className="sr-only">{tab === "files" ? t("files.title") : membersLabel}</h2>
-      <div className="flex h-12 shrink-0 items-center justify-between gap-2 border-b px-2">
+      {/* With large text the tabs and "Add members" do not fit one line of a phone: the button
+          wraps under the tabs. */}
+      <div className="flex min-h-12 shrink-0 flex-wrap items-center justify-between gap-x-2 border-b px-2">
         <TabsList variant="line" className="h-full">
           <TabsTrigger value="members" className="px-2">
             {membersLabel}
@@ -330,7 +332,11 @@ function SidePanel({
             roomId={roomId}
             members={members}
             trigger={
-              <Button variant="outline" size="xs" className="mr-8 md:mr-2">
+              <Button
+                variant="outline"
+                size="xs"
+                className="mr-8 ml-auto pointer-coarse:h-11 md:mr-2"
+              >
                 <PlusIcon aria-hidden="true" />
                 {t("picker.title")}
               </Button>

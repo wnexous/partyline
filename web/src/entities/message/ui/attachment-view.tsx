@@ -72,7 +72,9 @@ export function AttachmentView({
     >
       <FileIcon className="size-3.5 shrink-0 text-muted-foreground" aria-hidden="true" />
       <span className="truncate font-medium">{a.name}</span>
-      <span className="font-mono text-muted-foreground tabular">{formatBytes(a.size, locale)}</span>
+      <span className="shrink-0 whitespace-nowrap font-mono text-muted-foreground tabular">
+        {formatBytes(a.size, locale)}
+      </span>
     </a>
   );
 }

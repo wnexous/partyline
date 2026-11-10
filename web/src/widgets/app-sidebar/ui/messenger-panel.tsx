@@ -108,7 +108,8 @@ const START_BUTTON =
 function StartButtons() {
   const t = useT();
   return (
-    <div className="flex gap-2">
+    // With large text the two labels no longer fit side by side: each button takes a row.
+    <div className="flex flex-wrap gap-2">
       <NewConversationDialog
         trigger={
           <Button variant="outline" className={START_BUTTON}>

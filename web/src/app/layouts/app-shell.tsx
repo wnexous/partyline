@@ -103,9 +103,11 @@ function MobileBar() {
   const pathname = useRouterState({ select: (s) => s.location.pathname });
   if (!isMobile || pathname === "/" || pathname.startsWith("/rooms/")) return null;
   return (
-    <div className="sticky top-0 z-20 flex h-14 shrink-0 items-center gap-1 border-b bg-background/95 px-1 backdrop-blur">
+    // A container: with the system font enlarged the bar is narrower than its parts in rem, and
+    // the name of the brand gives way (only the mark stays) before the buttons leave the screen.
+    <div className="@container sticky top-0 z-20 flex h-14 shrink-0 items-center gap-1 border-b bg-background/95 px-1 backdrop-blur">
       <BackToConversations />
-      <Wordmark />
+      <Wordmark textClassName="@max-[17rem]:sr-only" />
       <div className="ml-auto flex items-center">
         <OrgSwitcher compact />
         <Button
