@@ -26,7 +26,7 @@ export function InstructedBySection({
   const home = homeMembershipOf(memberships);
   return (
     <PageSection layout="stacked" title={t("profile.instructedBy")}>
-      <p className="max-w-[65ch] text-sm text-pretty text-muted-foreground">
+      <p className="max-w-[65ch] text-sm text-pretty text-muted-foreground [overflow-wrap:anywhere]">
         {instructors.length === 0
           ? t("profile.instructedByNone", { name })
           : home

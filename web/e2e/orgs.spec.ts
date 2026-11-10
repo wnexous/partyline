@@ -17,6 +17,7 @@ import {
   trackLive,
 } from "./helpers";
 import { type Instance, startInstance } from "./server";
+import { shoot } from "./shots";
 
 // The organization flow against the built binary (organizations T54: ORG-01, POS-01, POS-07, OMEM-01,
 // OMEM-02, CHART-01 to CHART-04). Alice creates acme, builds Director › Lead developer › Worktrees under her
@@ -58,8 +59,9 @@ const POSITIONS = ["Director", "Lead developer", "Worktrees"];
 /** The accounts as the server made them (their handles), set up before the first test. */
 let alice: Me;
 let bob: Me;
-/** The display name of the AI the chart test starts in Worktrees. */
+/** The display name and id of the AI the chart test starts in Worktrees. */
 let atlas = "";
+let atlasId = "";
 
 test.beforeAll(async ({ browser, orgs }) => {
   // Alice is the first account (the instance admin); Bob joins by an invite of hers, as a plain user.
@@ -246,6 +248,7 @@ test("an AI started with --position Worktrees holds it, and the chart draws who 
     position: "Worktrees",
   });
   atlas = worker.ai.display_name;
+  atlasId = worker.ai.id;
 
   await page.goto("/orgs");
   await page.getByRole("link", { name: "Org chart of Acme" }).click();
@@ -443,4 +446,51 @@ test("no page of an organization scrolls sideways, even with names that cannot b
     await expect(loaded).toBeVisible();
     await expectNoSidewaysScroll(page, path);
   }
+});
+
+test("Alice gives Bob the same access as hers, and Atlas's profile says who can instruct it (ST-02, ST-03, ST-04, ST-07)", async ({
+  context,
+  page,
+  orgs,
+}, testInfo) => {
+  await loginAs(context, orgs, ALICE);
+
+  // Before: Atlas takes instructions from Alice (its creator, and Admin) and Bob (Lead developer, above it).
+  await page.goto(`/contacts/${atlasId}`);
+  const instructs = page.getByRole("region", { name: "Who can instruct this AI" });
+  await expect(instructs).toBeVisible();
+  const who = instructs.getByRole("list", { name: "Who can instruct this AI" });
+  await expect(who.getByRole("listitem")).toHaveCount(2);
+  await expect(who.getByText("Bob", { exact: true })).toBeVisible();
+  await expectNoSidewaysScroll(page, "the full profile with who can instruct the AI");
+  await shoot(page, "share-trust-profile", testInfo);
+
+  // Alice, an admin holding Admin, is offered it on Bob's row only (the only other person).
+  await page.goto("/orgs/acme/members");
+  const share = page.getByRole("button", { name: "Give the same access as me" });
+  await expect(share).toHaveCount(1);
+  await share.click();
+  const dialog = page.getByRole("alertdialog", { name: "Give Bob the same access as you?" });
+  await expect(dialog).toBeVisible();
+  await expect(
+    dialog.getByText(
+      "Bob will hold your position, Admin, in Acme. They will manage the people and AIs you manage through it, and those AIs will treat their messages as trusted: they may act on them as requests.",
+    ),
+  ).toBeVisible();
+  await expect(dialog.getByText(/^AIs that will take their instructions: /)).toContainText(atlas);
+  await expect(dialog.getByText("Alice will no longer manage Bob.")).toBeVisible();
+  await expectNoSidewaysScroll(page, "the share access dialog");
+  await shoot(page, "share-trust-dialog", testInfo);
+  await dialog.getByRole("button", { name: "Give the same access" }).click();
+  await expect(dialog).toHaveCount(0);
+  await expect(page.getByRole("button", { name: "Give the same access as me" })).toHaveCount(0);
+
+  // The chart and the profile follow: Bob holds Admin beside Alice, and still instructs Atlas.
+  const chart = await apiCall<OrgChart>(context.request, orgs, "GET", "/orgs/acme/chart");
+  const admin = chart.positions.find((p) => p.name === "Admin");
+  expect(admin?.holders.map((h) => h.intelligence.handle).sort()).toEqual(
+    [alice.intelligence.handle, bob.intelligence.handle].sort(),
+  );
+  await page.goto(`/contacts/${atlasId}`);
+  await expect(who.getByText("Bob", { exact: true })).toBeVisible();
 });
