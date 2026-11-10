@@ -169,6 +169,8 @@ var namedCodes = map[dto.ErrorCode]bool{
 	dto.ErrorCodeNotOperator:         true,
 	dto.ErrorCodeUnknownChat:         true,
 	dto.ErrorCodeUnsupported:         true,
+	// download_attachment of a file the instance's retention deleted (RET-08).
+	dto.ErrorCodeAttachmentExpired: true,
 }
 
 // withCode is the message prefixed with its code when the code is one of namedCodes ("code:
