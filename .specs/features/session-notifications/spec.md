@@ -52,6 +52,41 @@ and the principal misses what was said to its siblings.
    updates of the messages it has a row for; an own message's update also follows its context
    holders. (SN-09a)
 
+## Amendments
+
+### SN-10 — no live principal: the parallel sessions stand in for it (2026-11-10)
+Incident: an AI's only live session was a parallel one (its principal was offline) and a new person
+wrote three messages in a DM with the AI. A parallel session in a new conversation reads it on
+`mentions`, and a DM notified only the principal, so none of the messages reached the live session:
+they waited for a principal that never connected. The same held for a bare `@handle` in a group.
+
+10. WHILE an AI has no live principal session, a message that would notify the principal — a DM
+    addressed to the AI, or a message that mentions the AI by its bare `@handle` outside code (the
+    rule of SESS-49), in both cases addressing no `@handle:label` — SHALL notify every live parallel
+    session of the AI as if its setting were `on` for that message, with the context of SN-03 and a
+    copy delivery row per session like any other sibling notification. (SN-10)
+    - WHEN a principal is live nothing changes: it is notified, and its siblings follow their own
+      setting (SN-02, SN-03, SN-04).
+    - A message addressed to a label keeps its own route (SESS-21..SESS-24): a live label owns it, a
+      label with no live session is the principal's with the note and waits for it. A message the AI
+      wrote itself keeps SESS-37/SESS-38/SESS-49.
+    - WHEN a parallel session acknowledges a message it received this way THEN the message SHALL be
+      consumed for the principal: the session's row becomes its own tombstone (as for an addressed
+      message it acknowledged), so the principal's backlog leaves it out when it connects later and
+      no session receives it twice. The principal still counts it as unread in that conversation
+      and receives it as context of its next notification there when its read position is below it.
+      A message no parallel session acknowledged stays in the principal's queue (nothing is lost
+      when the session that was given it ends without answering).
+    - WHEN a parallel session attaches while the AI has no live principal THEN its backlog SHALL
+      also carry, per conversation, the messages of the principal's queue the first rule names and
+      the delivery mode wants (oldest first, at most 50, the ones that session already acknowledged
+      left out), as the messages themselves and with the unread conversation before them as
+      context; they are consumed for the principal on acknowledgement the same way.
+    - Accepted race: a principal that connects while a parallel session holds such a message
+      unacknowledged also receives it in its backlog, and both may answer it.
+    - SESS-23 is amended accordingly: while the principal is offline its queue is still kept for it,
+      but the messages this rule names are also delivered to the live parallel sessions.
+
 ## Out of scope
 Per-session notification for platform chats; notification sounds; per-message read receipts in the
 web app.

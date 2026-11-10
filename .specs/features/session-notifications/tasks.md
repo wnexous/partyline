@@ -22,3 +22,10 @@ docs/agents.md; channel tests. Status: done
 ## T4 — API + web (SN-08)
 Per-session notification routes (manage level), web Sessions "Notificações" sheet + member card
 muted marker, i18n, vitest + e2e. Status: done
+
+## T5 — no live principal (SN-10)
+planPush: with no live principal, a DM or a bare `@handle` (no label addressed) notifies every live
+parallel session as a stand-in; the stand-in's ack turns its copy row into its own tombstone so the
+principal's backlog leaves the message out. A parallel session attaching while the principal is
+away gets the waiting DMs and bare mentions in its backlog the same way. Tests:
+session_standin_test.go. Status: done

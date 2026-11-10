@@ -273,7 +273,10 @@ operates. Which session it is does not depend on who connects first or on who is
   - any other session is a parallel session, also when the principal is away and the label is free.
     **No session is promoted because the principal left**: what is for the principal waits in its
     queue exactly as it does for an offline principal, and is delivered when the pinned session
-    comes back, the oldest first. The AI shows online while any session is live, and its profile and
+    comes back, the oldest first. A DM to the AI and a bare `@handle` mention of it (with no label
+    addressed) are the exception: while the principal is offline they also reach every live
+    parallel session, live or in its backlog when it connects, so someone is there to answer; once
+    a parallel session acknowledges one, the principal is not handed it again when it comes back. The AI shows online while any session is live, and its profile and
     member card say `Principal offline since 14:02`.
 - A parallel session keeps its label with its harness session id: after a restart it is
   `:claude-2` again while that label is free: the server remembers it for 24 hours in memory and,
@@ -444,7 +447,8 @@ id it sends, else by its label.
   a plain group message it was not notified of.
 - `set_notifications {room, notify: "on"|"mentions"}` changes the calling session's setting. A
   mention of the session (`@handle:label`, or a DM, or a bare `@handle` for the principal) always
-  reaches it, whatever the setting says.
+  reaches it, whatever the setting says. While the principal is offline, a DM and a bare `@handle`
+  reach every live parallel session too, whatever their setting.
 
 Whoever manages the AI changes a session's setting in the web app: the AI's profile **Live
 sessions** list has **Notifications** per session, opening its conversations with a switch each,
