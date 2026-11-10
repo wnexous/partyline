@@ -5,8 +5,11 @@
 -- and set_by name who wrote the current prompt: the AI itself (self) or someone who manages it (manager);
 -- the AI changes only its own (HB-02). The intelligence columns are plain ids without a foreign key: a
 -- setter that was deleted still names the schedule's history, and only makes its prompt untrusted (HB-08).
--- next_run_at is the next due time while the schedule is enabled, NULL while it is not. notified_at is
--- when the AI's nearest manager was last told about a change the AI made (HB-09: one DM an hour).
+-- next_run_at is the next due time while the schedule is enabled, NULL while it is not. notified_at and
+-- notice_hash are when the AI's nearest manager was last told about the routine the AI set, and the content
+-- it was told (HB-09): a routine of the AI is active only once its manager was told what it says, and only an
+-- identical repeat within the hour goes untold. paused_by is whoever manages the AI and disabled the routine:
+-- only someone who manages the AI enables it again.
 CREATE TABLE agent_schedules (
     id            TEXT PRIMARY KEY,
     agent_id      TEXT NOT NULL REFERENCES agents (id) ON DELETE CASCADE,
@@ -29,6 +32,8 @@ CREATE TABLE agent_schedules (
     last_run_at   INTEGER,
     last_status   TEXT,
     notified_at   INTEGER,
+    notice_hash   TEXT NOT NULL DEFAULT '',
+    paused_by     TEXT NOT NULL DEFAULT '',
     CHECK ((rule_kind = 'every' AND every_minutes IS NOT NULL AND cron IS NULL)
         OR (rule_kind = 'cron' AND cron IS NOT NULL AND every_minutes IS NULL))
 );

@@ -19,7 +19,7 @@ SELECT COUNT(*) FROM agent_schedules WHERE agent_id = ?;
 -- HB-01: every field a write may change; the run history and the notice time stay.
 UPDATE agent_schedules
 SET name = ?, prompt = ?, rule_kind = ?, every_minutes = ?, cron = ?, tz = ?, catch_up = ?, enabled = ?,
-    origin = ?, set_by = ?, updated_by = ?, anchor_at = ?, updated_at = ?, next_run_at = ?
+    origin = ?, set_by = ?, updated_by = ?, anchor_at = ?, updated_at = ?, next_run_at = ?, paused_by = ?
 WHERE id = ?;
 
 -- name: DeleteSchedule :execrows
@@ -40,13 +40,12 @@ WHERE enabled = 1 AND next_run_at IS NOT NULL;
 -- name: SetScheduleNextRun :exec
 UPDATE agent_schedules SET next_run_at = ? WHERE id = ?;
 
--- name: ClaimScheduleNotice :execrows
--- HB-09: one manager notice per schedule an hour; the claim and the check are one write.
-UPDATE agent_schedules SET notified_at = sqlc.arg(now)
-WHERE id = sqlc.arg(id) AND (notified_at IS NULL OR notified_at <= sqlc.arg(before));
+-- name: SetScheduleNotice :exec
+-- HB-09: the manager was told this content of the routine.
+UPDATE agent_schedules SET notified_at = ?, notice_hash = ? WHERE id = ?;
 
 -- name: SetScheduleEnabled :exec
-UPDATE agent_schedules SET enabled = ?, next_run_at = ?, updated_by = ?, updated_at = ? WHERE id = ?;
+UPDATE agent_schedules SET enabled = ?, next_run_at = ?, updated_by = ?, updated_at = ?, paused_by = ? WHERE id = ?;
 
 -- name: RefreshScheduleLastRun :exec
 -- The schedule's last run and status are those of its newest run.

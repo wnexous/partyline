@@ -893,9 +893,14 @@ export const ErrorCodeTooFrequent = "too_frequent";
  */
 export const ErrorCodeTooMany = "too_many";
 /**
+ * ErrorCodeNoManager is a routine an AI would make active while nobody manages it, so nobody can be told
+ * about it (409, HB-09).
+ */
+export const ErrorCodeNoManager = "no_manager";
+/**
  * Error codes and the HTTP status they come with.
  */
-export type ErrorCode = typeof ErrorCodeInvalid | typeof ErrorCodeUnauthorized | typeof ErrorCodeForbidden | typeof ErrorCodeNotFound | typeof ErrorCodeConflict | typeof ErrorCodeGone | typeof ErrorCodeTooLarge | typeof ErrorCodeRateLimited | typeof ErrorCodeInternal | typeof ErrorCodeUnavailable | typeof ErrorCodeHandleTaken | typeof ErrorCodeAvatarInvalid | typeof ErrorCodeLastInstanceAdmin | typeof ErrorCodeLastAdmin | typeof ErrorCodeHomeOrganization | typeof ErrorCodeAlreadyMember | typeof ErrorCodeNotOperator | typeof ErrorCodeUnknownChat | typeof ErrorCodeUnsupported | typeof ErrorCodeFolderRequired | typeof ErrorCodeFolderInvalid | typeof ErrorCodeHarnessRemoved | typeof ErrorCodePositionUnknown | typeof ErrorCodeOrganizationMismatch | typeof ErrorCodeIdentityBusy | typeof ErrorCodeDMMembersFixed | typeof ErrorCodeReactionLimit | typeof ErrorCodeDMSelf | typeof ErrorCodeContactNotFound | typeof ErrorCodeNoRouteToPerson | typeof ErrorCodeHistoryOnly | typeof ErrorCodeCounterpartDisabled | typeof ErrorCodeChatsNotMembers | typeof ErrorCodeMembersRefused | typeof ErrorCodeOrganizationRequired | typeof ErrorCodeOrganizationNotEmpty | typeof ErrorCodePositionCycle | typeof ErrorCodeIdentityOnline | typeof ErrorCodeAlreadyAnswered | typeof ErrorCodeFileTooLarge | typeof ErrorCodeInsufficientStorage | typeof ErrorCodeUploadOffset | typeof ErrorCodeUploadBusy | typeof ErrorCodeUploadSent | typeof ErrorCodeUploadIncomplete | typeof ErrorCodeAttachmentExpired | typeof ErrorCodeTooFrequent | typeof ErrorCodeTooMany;
+export type ErrorCode = typeof ErrorCodeInvalid | typeof ErrorCodeUnauthorized | typeof ErrorCodeForbidden | typeof ErrorCodeNotFound | typeof ErrorCodeConflict | typeof ErrorCodeGone | typeof ErrorCodeTooLarge | typeof ErrorCodeRateLimited | typeof ErrorCodeInternal | typeof ErrorCodeUnavailable | typeof ErrorCodeHandleTaken | typeof ErrorCodeAvatarInvalid | typeof ErrorCodeLastInstanceAdmin | typeof ErrorCodeLastAdmin | typeof ErrorCodeHomeOrganization | typeof ErrorCodeAlreadyMember | typeof ErrorCodeNotOperator | typeof ErrorCodeUnknownChat | typeof ErrorCodeUnsupported | typeof ErrorCodeFolderRequired | typeof ErrorCodeFolderInvalid | typeof ErrorCodeHarnessRemoved | typeof ErrorCodePositionUnknown | typeof ErrorCodeOrganizationMismatch | typeof ErrorCodeIdentityBusy | typeof ErrorCodeDMMembersFixed | typeof ErrorCodeReactionLimit | typeof ErrorCodeDMSelf | typeof ErrorCodeContactNotFound | typeof ErrorCodeNoRouteToPerson | typeof ErrorCodeHistoryOnly | typeof ErrorCodeCounterpartDisabled | typeof ErrorCodeChatsNotMembers | typeof ErrorCodeMembersRefused | typeof ErrorCodeOrganizationRequired | typeof ErrorCodeOrganizationNotEmpty | typeof ErrorCodePositionCycle | typeof ErrorCodeIdentityOnline | typeof ErrorCodeAlreadyAnswered | typeof ErrorCodeFileTooLarge | typeof ErrorCodeInsufficientStorage | typeof ErrorCodeUploadOffset | typeof ErrorCodeUploadBusy | typeof ErrorCodeUploadSent | typeof ErrorCodeUploadIncomplete | typeof ErrorCodeAttachmentExpired | typeof ErrorCodeTooFrequent | typeof ErrorCodeTooMany | typeof ErrorCodeNoManager;
 /**
  * ErrorBody is the envelope of every error response.
  */
@@ -3112,6 +3117,10 @@ export interface Schedule {
   last_run_at?: string /* RFC 3339 */;
   last_status?: ScheduleRunStatus;
   can_edit: boolean;
+  /**
+   * PausedByManager tells that someone who manages the AI disabled it: only they enable it again.
+   */
+  paused_by_manager: boolean;
   created_at: string /* RFC 3339 */;
   updated_at: string /* RFC 3339 */;
 }

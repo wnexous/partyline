@@ -65,8 +65,10 @@ type Schedule struct {
 	LastRunAt    *time.Time        `json:"last_run_at,omitempty"`
 	LastStatus   ScheduleRunStatus `json:"last_status,omitempty"`
 	CanEdit      bool              `json:"can_edit"`
-	CreatedAt    time.Time         `json:"created_at"`
-	UpdatedAt    time.Time         `json:"updated_at"`
+	// PausedByManager tells that someone who manages the AI disabled it: only they enable it again.
+	PausedByManager bool      `json:"paused_by_manager"`
+	CreatedAt       time.Time `json:"created_at"`
+	UpdatedAt       time.Time `json:"updated_at"`
 }
 
 // ScheduleList is GET /agents/{id}/schedules and GET /agent/schedules. Count is how many schedules the AI has.

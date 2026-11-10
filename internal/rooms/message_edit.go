@@ -136,7 +136,9 @@ func (s *Service) DeleteMessage(ctx context.Context, p authn.Principal, roomID, 
 	if !author && !manager {
 		return Message{}, access.ErrForbidden
 	}
-	if m.AuthorKind == string(dto.AuthorKindSystem) {
+	// A message the server wrote (a system notice, or one it wrote for an AI, such as the notice of a routine the
+	// AI set to its manager, HB-09) cannot be deleted, by its author either.
+	if m.AuthorKind == string(dto.AuthorKindSystem) || m.Kind == string(dto.MessageKindSystem) {
 		check := validation.Check{}
 		check.Add("message", "a system message cannot be deleted")
 		return Message{}, check.Err()

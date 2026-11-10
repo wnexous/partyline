@@ -15,6 +15,7 @@ import (
 	"github.com/wnexous/partyline/internal/access"
 	"github.com/wnexous/partyline/internal/agents"
 	"github.com/wnexous/partyline/internal/api"
+	"github.com/wnexous/partyline/internal/api/dto"
 	"github.com/wnexous/partyline/internal/attachments"
 	"github.com/wnexous/partyline/internal/audit"
 	"github.com/wnexous/partyline/internal/authn"
@@ -526,7 +527,7 @@ func (a *App) Shutdown(_ context.Context) error {
 	return a.Store.Close()
 }
 
-// managerNotifier writes the schedules' manager notices (HB-09) as the AI, in its DM with the manager, opening
+// managerNotifier writes the schedules' manager notices (HB-09) for the AI, in its DM with the manager, opening
 // the DM when there is none.
 type managerNotifier struct {
 	store         *store.Store
@@ -539,7 +540,9 @@ func (n managerNotifier) NotifyManager(ctx context.Context, agentID, managerIID,
 		return "", err
 	}
 	p := authn.Principal{Kind: authn.KindAgent, UserID: a.OwnerID, AgentID: agentID}
-	m, err := n.conversations.SendDM(ctx, p, managerIID, rooms.PostInput{Text: text, QuickReplies: quickReplies})
+	// Written by the server for the AI (kind system): the AI cannot edit or delete it, so it cannot hide from its
+	// manager a routine it set (HB-09).
+	m, err := n.conversations.SendDM(ctx, p, managerIID, rooms.PostInput{Text: text, QuickReplies: quickReplies, Kind: dto.MessageKindSystem})
 	if err != nil {
 		return "", err
 	}

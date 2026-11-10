@@ -174,6 +174,7 @@ var namedCodes = map[dto.ErrorCode]bool{
 	// set_schedule over the limits of the AI's routines (HB-03).
 	dto.ErrorCodeTooFrequent: true,
 	dto.ErrorCodeTooMany:     true,
+	dto.ErrorCodeNoManager:   true,
 }
 
 // withCode is the message prefixed with its code when the code is one of namedCodes ("code:

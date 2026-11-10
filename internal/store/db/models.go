@@ -54,6 +54,8 @@ type AgentSchedule struct {
 	LastRunAt    sql.NullInt64
 	LastStatus   sql.NullString
 	NotifiedAt   sql.NullInt64
+	NoticeHash   string
+	PausedBy     string
 }
 
 type AgentScheduleNotice struct {

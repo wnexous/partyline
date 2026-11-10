@@ -86,6 +86,15 @@ var (
 	// ErrTooMany is a new schedule of an AI that has MaxSchedules (HB-03).
 	ErrTooMany = httpx.NewError(http.StatusUnprocessableEntity, dto.ErrorCodeTooMany,
 		fmt.Sprintf("an AI has at most %d schedules", MaxSchedules))
+	// ErrNoManager is a routine an AI would make active while nobody manages it: nobody can be told (HB-09).
+	ErrNoManager = httpx.NewError(http.StatusConflict, dto.ErrorCodeNoManager,
+		"nobody manages you in your organization, so a routine you set cannot be shown to a manager: ask someone who manages you to set it")
+	// ErrNoticeFailed is a routine an AI would make active whose manager notice could not be delivered (HB-09).
+	ErrNoticeFailed = httpx.NewError(http.StatusServiceUnavailable, dto.ErrorCodeUnavailable,
+		"your nearest manager could not be told about the routine, so nothing changed: try again later")
+	// errPausedByManager is an AI enabling again a routine someone who manages it paused.
+	errPausedByManager = httpx.NewError(http.StatusForbidden, dto.ErrorCodeForbidden,
+		"someone who manages you paused this routine: only they can enable it again")
 	// errSelfOnly is an AI's write of a schedule someone who manages it set (HB-02).
 	errSelfOnly = httpx.NewError(http.StatusForbidden, dto.ErrorCodeForbidden,
 		"this schedule was set by someone who manages you: you may read it, not change it")
@@ -343,6 +352,28 @@ func checkDaily(now time.Time, stored []db.AgentSchedule, candidateID string, ca
 	return nil
 }
 
+// checkLimits applies HB-03 to a write of the schedule id: a new one (create) must not be over MaxSchedules, and
+// an enabled rule (enabled) must keep the AI's routines within MaxRunsPerDay.
+func checkLimits(ctx context.Context, q *db.Queries, agentID, id string, r Rule, enabled, create bool, now time.Time) error {
+	if create {
+		n, err := q.CountSchedulesByAgent(ctx, agentID)
+		if err != nil {
+			return err
+		}
+		if n >= MaxSchedules {
+			return ErrTooMany
+		}
+	}
+	if !enabled {
+		return nil
+	}
+	stored, err := q.ListSchedulesByAgent(ctx, agentID)
+	if err != nil {
+		return err
+	}
+	return checkDaily(now, stored, id, r, true)
+}
+
 // nullInt and nullStr build nullable columns.
 func nullInt(v int64, ok bool) sql.NullInt64   { return sql.NullInt64{Int64: v, Valid: ok} }
 func nullStr(v string, ok bool) sql.NullString { return sql.NullString{String: v, Valid: ok} }
@@ -428,7 +459,8 @@ func (s *Service) writable(ctx context.Context, p authn.Principal, agentID, id s
 func actorOf(p authn.Principal) string { return p.IID() }
 
 // Create adds a schedule to the AI (HB-01): the AI's own (origin self) or one set by whoever manages it
-// (origin manager). A schedule the AI sets is told to its nearest manager (HB-09).
+// (origin manager). An enabled routine the AI sets is told to its nearest manager first, and is refused when
+// that cannot be done (HB-09, notifyFirst).
 func (s *Service) Create(ctx context.Context, p authn.Principal, agentID string, in Input) (dto.Schedule, error) {
 	rl, err := s.roleOf(ctx, p, agentID)
 	if err != nil {
@@ -457,19 +489,18 @@ func (s *Service) Create(ctx context.Context, p authn.Principal, agentID string,
 	}
 	id := store.NewID()
 	next := nextRun(r, sp.enabled, now) // outside the write transaction, like every rule computation
+	// The limits on a read first: a notice goes out only for a write that can be made.
+	if err := checkLimits(ctx, s.d.Store.R(), agentID, id, r, sp.enabled, true, now); err != nil {
+		return dto.Schedule{}, err
+	}
+	var nt *notice
+	if rl == roleSelf && sp.enabled {
+		if nt, err = s.notifyFirst(ctx, agentID, id, nil, sp, noticeCreated, now); err != nil {
+			return dto.Schedule{}, err
+		}
+	}
 	err = s.d.Store.WithTx(ctx, func(q *db.Queries) error {
-		n, err := q.CountSchedulesByAgent(ctx, agentID)
-		if err != nil {
-			return err
-		}
-		if n >= MaxSchedules {
-			return ErrTooMany
-		}
-		stored, err := q.ListSchedulesByAgent(ctx, agentID)
-		if err != nil {
-			return err
-		}
-		if err := checkDaily(now, stored, id, r, sp.enabled); err != nil {
+		if err := checkLimits(ctx, q, agentID, id, r, sp.enabled, true, now); err != nil {
 			return err
 		}
 		if err := q.CreateSchedule(ctx, db.CreateScheduleParams{
@@ -478,6 +509,9 @@ func (s *Service) Create(ctx context.Context, p authn.Principal, agentID string,
 			CatchUp: sp.catchUp, Enabled: sp.enabled, Origin: string(origin), SetBy: actor, CreatedBy: actor, UpdatedBy: actor,
 			AnchorAt: now.UnixMilli(), CreatedAt: now.UnixMilli(), UpdatedAt: now.UnixMilli(), NextRunAt: next,
 		}); err != nil {
+			return err
+		}
+		if err := recordNotice(ctx, q, nt, id, now); err != nil {
 			return err
 		}
 		return s.record(ctx, q, actor, ActionCreate, agentID, id, sp)
@@ -490,9 +524,6 @@ func (s *Service) Create(ctx context.Context, p authn.Principal, agentID string,
 		return dto.Schedule{}, err
 	}
 	s.changed(agentID)
-	if rl == roleSelf && sp.enabled {
-		s.noticeManager(ctx, row)
-	}
 	return s.render(ctx, row, rl)
 }
 
@@ -505,7 +536,9 @@ func ruleKind(sp spec) string {
 
 // Update changes a schedule (HB-01, HB-02). A new interval, a new timezone or rule, or a schedule enabled again
 // starts its series from now. When whoever manages the AI rewrites the prompt of one the AI set, it becomes
-// theirs (origin manager). A change the AI makes, other than disabling, is told to its nearest manager (HB-09).
+// theirs (origin manager). A change of content the AI makes to an enabled routine, and its enabling again, is
+// told to its nearest manager first (HB-09, notifyFirst). A routine someone who manages the AI disabled is enabled
+// again only by someone who manages it.
 func (s *Service) Update(ctx context.Context, p authn.Principal, agentID, id string, in Input) (dto.Schedule, error) {
 	rl, row, err := s.writable(ctx, p, agentID, id)
 	if err != nil {
@@ -532,6 +565,15 @@ func (s *Service) Update(ctx context.Context, p authn.Principal, agentID, id str
 	if ruleChanged || reEnabled || !sp.enabled || !next.Valid {
 		next = nextRun(r, sp.enabled, now)
 	}
+	pausedBy := row.PausedBy
+	switch {
+	case rl == roleSelf && reEnabled && row.PausedBy != "":
+		return dto.Schedule{}, errPausedByManager
+	case rl == roleManager && !sp.enabled && base.enabled:
+		pausedBy = actor // only someone who manages the AI enables it again
+	case rl == roleManager && sp.enabled:
+		pausedBy = ""
+	}
 	origin, setBy := row.Origin, row.SetBy
 	if sp.prompt != base.prompt {
 		setBy = actor
@@ -548,22 +590,33 @@ func (s *Service) Update(ctx context.Context, p authn.Principal, agentID, id str
 			action = ActionEnable
 		}
 	}
+	checked := sp.enabled && (ruleChanged || reEnabled)
+	if err := checkLimits(ctx, s.d.Store.R(), agentID, id, r, checked, false, now); err != nil {
+		return dto.Schedule{}, err
+	}
+	var nt *notice
+	if rl == roleSelf && sp.enabled && (contentChanged || reEnabled) {
+		verb := noticeChanged
+		if !contentChanged {
+			verb = noticeReenabled
+		}
+		if nt, err = s.notifyFirst(ctx, agentID, id, &row, sp, verb, now); err != nil {
+			return dto.Schedule{}, err
+		}
+	}
 	err = s.d.Store.WithTx(ctx, func(q *db.Queries) error {
-		if sp.enabled && (ruleChanged || reEnabled) {
-			stored, err := q.ListSchedulesByAgent(ctx, agentID)
-			if err != nil {
-				return err
-			}
-			if err := checkDaily(now, stored, id, r, true); err != nil {
-				return err
-			}
+		if err := checkLimits(ctx, q, agentID, id, r, checked, false, now); err != nil {
+			return err
 		}
 		if err := q.UpdateSchedule(ctx, db.UpdateScheduleParams{
 			Name: sp.name, Prompt: sp.prompt, RuleKind: ruleKind(sp),
 			EveryMinutes: nullInt(int64(sp.every), sp.cron == ""), Cron: nullStr(sp.cron, sp.cron != ""), Tz: sp.tz,
 			CatchUp: sp.catchUp, Enabled: sp.enabled, Origin: origin, SetBy: setBy, UpdatedBy: actor,
-			AnchorAt: anchor.UnixMilli(), UpdatedAt: now.UnixMilli(), NextRunAt: next, ID: id,
+			AnchorAt: anchor.UnixMilli(), UpdatedAt: now.UnixMilli(), NextRunAt: next, PausedBy: pausedBy, ID: id,
 		}); err != nil {
+			return err
+		}
+		if err := recordNotice(ctx, q, nt, id, now); err != nil {
 			return err
 		}
 		return s.record(ctx, q, actor, action, agentID, id, sp)
@@ -576,9 +629,6 @@ func (s *Service) Update(ctx context.Context, p authn.Principal, agentID, id str
 		return dto.Schedule{}, err
 	}
 	s.changed(agentID)
-	if rl == roleSelf && sp.enabled && (contentChanged || reEnabled) {
-		s.noticeManager(ctx, updated)
-	}
 	return s.render(ctx, updated, rl)
 }
 
@@ -720,7 +770,7 @@ func toDTO(row db.AgentSchedule, refs map[string]db.Intelligence, rl role) dto.S
 		SetBy: dto.IntelligenceRef{ID: row.SetBy}, LastStatus: dto.ScheduleRunStatus(row.LastStatus.String),
 		CanEdit:   rl == roleManager || (rl == roleSelf && row.Origin == string(dto.ScheduleOriginSelf)),
 		CreatedAt: time.UnixMilli(row.CreatedAt).UTC(), UpdatedAt: time.UnixMilli(row.UpdatedAt).UTC(),
-		LastRunAt: optTime(row.LastRunAt),
+		LastRunAt: optTime(row.LastRunAt), PausedByManager: row.PausedBy != "",
 	}
 	if row.EveryMinutes.Valid {
 		n := int(row.EveryMinutes.Int64)

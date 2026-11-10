@@ -50,26 +50,6 @@ func (q *Queries) AdvanceDueSchedule(ctx context.Context, arg AdvanceDueSchedule
 	return result.RowsAffected()
 }
 
-const claimScheduleNotice = `-- name: ClaimScheduleNotice :execrows
-UPDATE agent_schedules SET notified_at = ?1
-WHERE id = ?2 AND (notified_at IS NULL OR notified_at <= ?3)
-`
-
-type ClaimScheduleNoticeParams struct {
-	Now    sql.NullInt64
-	ID     string
-	Before sql.NullInt64
-}
-
-// HB-09: one manager notice per schedule an hour; the claim and the check are one write.
-func (q *Queries) ClaimScheduleNotice(ctx context.Context, arg ClaimScheduleNoticeParams) (int64, error) {
-	result, err := q.db.ExecContext(ctx, claimScheduleNotice, arg.Now, arg.ID, arg.Before)
-	if err != nil {
-		return 0, err
-	}
-	return result.RowsAffected()
-}
-
 const countPendingRunsForAgent = `-- name: CountPendingRunsForAgent :one
 SELECT COUNT(*) FROM agent_schedule_runs WHERE agent_id = ? AND status = 'pending'
 `
@@ -194,7 +174,7 @@ func (q *Queries) GetMessageAnswerRef(ctx context.Context, id string) (GetMessag
 }
 
 const getSchedule = `-- name: GetSchedule :one
-SELECT id, agent_id, name, prompt, rule_kind, every_minutes, cron, tz, catch_up, enabled, origin, set_by, created_by, updated_by, anchor_at, created_at, updated_at, next_run_at, last_run_at, last_status, notified_at FROM agent_schedules WHERE id = ?
+SELECT id, agent_id, name, prompt, rule_kind, every_minutes, cron, tz, catch_up, enabled, origin, set_by, created_by, updated_by, anchor_at, created_at, updated_at, next_run_at, last_run_at, last_status, notified_at, notice_hash, paused_by FROM agent_schedules WHERE id = ?
 `
 
 func (q *Queries) GetSchedule(ctx context.Context, id string) (AgentSchedule, error) {
@@ -222,12 +202,14 @@ func (q *Queries) GetSchedule(ctx context.Context, id string) (AgentSchedule, er
 		&i.LastRunAt,
 		&i.LastStatus,
 		&i.NotifiedAt,
+		&i.NoticeHash,
+		&i.PausedBy,
 	)
 	return i, err
 }
 
 const getScheduleForAgent = `-- name: GetScheduleForAgent :one
-SELECT id, agent_id, name, prompt, rule_kind, every_minutes, cron, tz, catch_up, enabled, origin, set_by, created_by, updated_by, anchor_at, created_at, updated_at, next_run_at, last_run_at, last_status, notified_at FROM agent_schedules WHERE id = ? AND agent_id = ?
+SELECT id, agent_id, name, prompt, rule_kind, every_minutes, cron, tz, catch_up, enabled, origin, set_by, created_by, updated_by, anchor_at, created_at, updated_at, next_run_at, last_run_at, last_status, notified_at, notice_hash, paused_by FROM agent_schedules WHERE id = ? AND agent_id = ?
 `
 
 type GetScheduleForAgentParams struct {
@@ -260,6 +242,8 @@ func (q *Queries) GetScheduleForAgent(ctx context.Context, arg GetScheduleForAge
 		&i.LastRunAt,
 		&i.LastStatus,
 		&i.NotifiedAt,
+		&i.NoticeHash,
+		&i.PausedBy,
 	)
 	return i, err
 }
@@ -332,7 +316,7 @@ func (q *Queries) InsertScheduleRun(ctx context.Context, arg InsertScheduleRunPa
 }
 
 const listDueSchedules = `-- name: ListDueSchedules :many
-SELECT id, agent_id, name, prompt, rule_kind, every_minutes, cron, tz, catch_up, enabled, origin, set_by, created_by, updated_by, anchor_at, created_at, updated_at, next_run_at, last_run_at, last_status, notified_at FROM agent_schedules
+SELECT id, agent_id, name, prompt, rule_kind, every_minutes, cron, tz, catch_up, enabled, origin, set_by, created_by, updated_by, anchor_at, created_at, updated_at, next_run_at, last_run_at, last_status, notified_at, notice_hash, paused_by FROM agent_schedules
 WHERE enabled = 1 AND next_run_at IS NOT NULL AND next_run_at <= ?1
 ORDER BY next_run_at
 LIMIT ?2
@@ -375,6 +359,8 @@ func (q *Queries) ListDueSchedules(ctx context.Context, arg ListDueSchedulesPara
 			&i.LastRunAt,
 			&i.LastStatus,
 			&i.NotifiedAt,
+			&i.NoticeHash,
+			&i.PausedBy,
 		); err != nil {
 			return nil, err
 		}
@@ -533,7 +519,7 @@ func (q *Queries) ListRunsBySchedule(ctx context.Context, arg ListRunsBySchedule
 }
 
 const listSchedulesByAgent = `-- name: ListSchedulesByAgent :many
-SELECT id, agent_id, name, prompt, rule_kind, every_minutes, cron, tz, catch_up, enabled, origin, set_by, created_by, updated_by, anchor_at, created_at, updated_at, next_run_at, last_run_at, last_status, notified_at FROM agent_schedules WHERE agent_id = ? ORDER BY created_at, id
+SELECT id, agent_id, name, prompt, rule_kind, every_minutes, cron, tz, catch_up, enabled, origin, set_by, created_by, updated_by, anchor_at, created_at, updated_at, next_run_at, last_run_at, last_status, notified_at, notice_hash, paused_by FROM agent_schedules WHERE agent_id = ? ORDER BY created_at, id
 `
 
 func (q *Queries) ListSchedulesByAgent(ctx context.Context, agentID string) ([]AgentSchedule, error) {
@@ -567,6 +553,8 @@ func (q *Queries) ListSchedulesByAgent(ctx context.Context, agentID string) ([]A
 			&i.LastRunAt,
 			&i.LastStatus,
 			&i.NotifiedAt,
+			&i.NoticeHash,
+			&i.PausedBy,
 		); err != nil {
 			return nil, err
 		}
@@ -653,7 +641,7 @@ func (q *Queries) SetRunStatus(ctx context.Context, arg SetRunStatusParams) (int
 }
 
 const setScheduleEnabled = `-- name: SetScheduleEnabled :exec
-UPDATE agent_schedules SET enabled = ?, next_run_at = ?, updated_by = ?, updated_at = ? WHERE id = ?
+UPDATE agent_schedules SET enabled = ?, next_run_at = ?, updated_by = ?, updated_at = ?, paused_by = ? WHERE id = ?
 `
 
 type SetScheduleEnabledParams struct {
@@ -661,6 +649,7 @@ type SetScheduleEnabledParams struct {
 	NextRunAt sql.NullInt64
 	UpdatedBy string
 	UpdatedAt int64
+	PausedBy  string
 	ID        string
 }
 
@@ -670,6 +659,7 @@ func (q *Queries) SetScheduleEnabled(ctx context.Context, arg SetScheduleEnabled
 		arg.NextRunAt,
 		arg.UpdatedBy,
 		arg.UpdatedAt,
+		arg.PausedBy,
 		arg.ID,
 	)
 	return err
@@ -686,6 +676,22 @@ type SetScheduleNextRunParams struct {
 
 func (q *Queries) SetScheduleNextRun(ctx context.Context, arg SetScheduleNextRunParams) error {
 	_, err := q.db.ExecContext(ctx, setScheduleNextRun, arg.NextRunAt, arg.ID)
+	return err
+}
+
+const setScheduleNotice = `-- name: SetScheduleNotice :exec
+UPDATE agent_schedules SET notified_at = ?, notice_hash = ? WHERE id = ?
+`
+
+type SetScheduleNoticeParams struct {
+	NotifiedAt sql.NullInt64
+	NoticeHash string
+	ID         string
+}
+
+// HB-09: the manager was told this content of the routine.
+func (q *Queries) SetScheduleNotice(ctx context.Context, arg SetScheduleNoticeParams) error {
+	_, err := q.db.ExecContext(ctx, setScheduleNotice, arg.NotifiedAt, arg.NoticeHash, arg.ID)
 	return err
 }
 
@@ -707,7 +713,7 @@ func (q *Queries) SupersedeUnfiredRuns(ctx context.Context, scheduleID string) (
 const updateSchedule = `-- name: UpdateSchedule :exec
 UPDATE agent_schedules
 SET name = ?, prompt = ?, rule_kind = ?, every_minutes = ?, cron = ?, tz = ?, catch_up = ?, enabled = ?,
-    origin = ?, set_by = ?, updated_by = ?, anchor_at = ?, updated_at = ?, next_run_at = ?
+    origin = ?, set_by = ?, updated_by = ?, anchor_at = ?, updated_at = ?, next_run_at = ?, paused_by = ?
 WHERE id = ?
 `
 
@@ -726,6 +732,7 @@ type UpdateScheduleParams struct {
 	AnchorAt     int64
 	UpdatedAt    int64
 	NextRunAt    sql.NullInt64
+	PausedBy     string
 	ID           string
 }
 
@@ -746,6 +753,7 @@ func (q *Queries) UpdateSchedule(ctx context.Context, arg UpdateScheduleParams) 
 		arg.AnchorAt,
 		arg.UpdatedAt,
 		arg.NextRunAt,
+		arg.PausedBy,
 		arg.ID,
 	)
 	return err

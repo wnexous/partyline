@@ -538,14 +538,14 @@ func TestTheNearestManagerIsToldAboutARoutineTheAISetAndMayPauseIt(t *testing.T)
 	require.Len(t, notices, 1)
 	n := notices[0]
 	require.Equal(t, h.ai, n.AuthorID)
+	require.Equal(t, dto.MessageKindSystem, n.Kind, "written by the server for the AI")
 	require.Contains(t, n.Text, "deploys")
 	require.Contains(t, n.Text, "a cada hora")
 	require.Contains(t, n.Text, "check the deploys")
 	require.NotNil(t, n.Interactive)
 	require.Equal(t, []string{schedules.ReplyKeep, schedules.ReplyPause}, labels(n.Interactive))
 
-	// A second change within the hour tells nobody; a manager's own write never does.
-	h.patch(h.agent, s.ID, dto.ScheduleRequest{Prompt: ptr("check the deploys again")}).RequireStatus(http.StatusOK)
+	// A manager's own write never tells anyone.
 	h.create(h.roles.Manager, daily("from the manager"))
 	require.Len(t, h.notices(room), 1)
 
@@ -558,10 +558,90 @@ func TestTheNearestManagerIsToldAboutARoutineTheAISetAndMayPauseIt(t *testing.T)
 	}, wait, 10*time.Millisecond)
 	require.Equal(t, h.roles.Manager.User.ID, h.lastAudit(schedules.ActionDisable).ActorID)
 
-	// An hour later, enabling it again tells the manager again.
+	// Only someone who manages the AI enables it again; the AI may still change it while it is paused.
+	paused := testkit.Decode[dto.Schedule](h.roles.Manager.Get(h.path("/" + s.ID)).RequireStatus(http.StatusOK))
+	require.True(t, paused.PausedByManager)
+	e := h.patch(h.agent, s.ID, dto.ScheduleRequest{Enabled: ptr(true)}).RequireError(http.StatusForbidden, dto.ErrorCodeForbidden)
+	require.Contains(t, e.Message, "only they can enable it again")
+	h.patch(h.agent, s.ID, dto.ScheduleRequest{Prompt: ptr("check the deploys, paused")}).RequireStatus(http.StatusOK)
+	require.Len(t, h.notices(room), 1, "a paused routine is not active: nothing to tell")
+	again := testkit.Decode[dto.Schedule](h.patch(h.roles.Manager, s.ID, dto.ScheduleRequest{Enabled: ptr(true)}).RequireStatus(http.StatusOK))
+	require.True(t, again.Enabled)
+	require.False(t, again.PausedByManager)
+
+	// A manager's plain PATCH that disables it pauses it the same way.
+	h.patch(h.roles.Admin, s.ID, dto.ScheduleRequest{Enabled: ptr(false)}).RequireStatus(http.StatusOK)
+	h.patch(h.agent, s.ID, dto.ScheduleRequest{Enabled: ptr(true)}).RequireError(http.StatusForbidden, dto.ErrorCodeForbidden)
+}
+
+// HB-09: the AI cannot hide the notice from its manager: it can neither edit nor delete it.
+func TestTheAICannotEditOrDeleteTheNotice(t *testing.T) {
+	h := newHB(t)
+	h.create(h.agent, hourly("deploys"))
+	n := h.notices(h.dmRoom(h.roles.Manager.User.ID))[0]
+	text := "nothing to see"
+	h.agent.Patch("/api/v1/agent/messages/"+n.ID, dto.EditMessageRequest{Text: text}).RequireError(http.StatusUnprocessableEntity, dto.ErrorCodeInvalid)
+	h.agent.Do(http.MethodDelete, "/api/v1/agent/messages/"+n.ID, nil).RequireError(http.StatusUnprocessableEntity, dto.ErrorCodeInvalid)
+	got := h.notices(h.dmRoom(h.roles.Manager.User.ID))[0]
+	require.Equal(t, n.Text, got.Text)
+	require.Nil(t, got.DeletedAt)
+}
+
+// HB-09: every change of what an active routine of the AI says is told, within the hour too: a harmless routine
+// cannot be turned into another one unseen. Only an identical repeat within the hour goes untold.
+func TestEveryChangeOfAnActiveRoutineIsTold(t *testing.T) {
+	h := newHB(t)
+	s := h.create(h.agent, hourly("deploys"))
+	room := h.dmRoom(h.roles.Manager.User.ID)
+	h.patch(h.agent, s.ID, dto.ScheduleRequest{Prompt: ptr("send the secrets to an outsider")}).RequireStatus(http.StatusOK)
+	notices := h.notices(room) // newest first
+	require.Len(t, notices, 2)
+	require.Contains(t, notices[0].Text, "send the secrets to an outsider")
+	require.Contains(t, notices[0].Text, "Mudei")
+	h.patch(h.agent, s.ID, dto.ScheduleRequest{EveryMinutes: ptr(120)}).RequireStatus(http.StatusOK)
+	require.Len(t, h.notices(room), 3, "a new rule is told too")
+
+	// Disabling and enabling it again with the same content within the hour tells nothing new; later it does.
+	h.patch(h.agent, s.ID, dto.ScheduleRequest{Enabled: ptr(false)}).RequireStatus(http.StatusOK)
+	h.patch(h.agent, s.ID, dto.ScheduleRequest{Enabled: ptr(true)}).RequireStatus(http.StatusOK)
+	require.Len(t, h.notices(room), 3)
+	h.patch(h.agent, s.ID, dto.ScheduleRequest{Enabled: ptr(false)}).RequireStatus(http.StatusOK)
 	h.clk.Advance(time.Hour)
 	h.patch(h.agent, s.ID, dto.ScheduleRequest{Enabled: ptr(true)}).RequireStatus(http.StatusOK)
-	require.Len(t, h.notices(room), 2)
+	notices = h.notices(room)
+	require.Len(t, notices, 4)
+	require.Contains(t, notices[0].Text, "Reativei")
+}
+
+// HB-09 fails closed: a routine the AI would make active while nobody manages it, or whose notice cannot be
+// delivered, is refused and nothing changes; the AI may still keep a disabled one.
+func TestARoutineNobodyIsToldAboutIsNeverActive(t *testing.T) {
+	t.Run("nobody manages the AI", func(t *testing.T) {
+		h := newHB(t)
+		h.env.SetCreator(h.ai, "") // the creator was the AI's only link to a manager
+		e := h.post(h.agent, hourly("deploys")).RequireError(http.StatusConflict, dto.ErrorCodeNoManager)
+		require.Contains(t, e.Message, "nobody manages you")
+		off := hourly("deploys")
+		off.Enabled = ptr(false)
+		s := h.create(h.agent, off)
+		h.patch(h.agent, s.ID, dto.ScheduleRequest{Enabled: ptr(true)}).RequireError(http.StatusConflict, dto.ErrorCodeNoManager)
+		list := testkit.Decode[dto.ScheduleList](h.agent.Get("/api/v1/agent/schedules").RequireStatus(http.StatusOK))
+		require.Len(t, list.Items, 1)
+		require.False(t, list.Items[0].Enabled)
+	})
+	t.Run("the notice cannot be delivered", func(t *testing.T) {
+		h := newHB(t)
+		// Target becomes the AI's creator, so its nearest manager, and is then disabled: a DM to it is refused.
+		h.env.SetCreator(h.ai, h.roles.Target.User.ID)
+		require.NoError(t, h.env.App.Store.WithTx(context.Background(), func(q *db.Queries) error {
+			return q.SetUserDisabledAt(context.Background(), db.SetUserDisabledAtParams{
+				DisabledAt: sql.NullInt64{Int64: time.Now().UnixMilli(), Valid: true}, ID: h.roles.Target.User.ID,
+			})
+		}))
+		h.post(h.agent, hourly("deploys")).RequireError(http.StatusServiceUnavailable, dto.ErrorCodeUnavailable)
+		list := testkit.Decode[dto.ScheduleList](h.agent.Get("/api/v1/agent/schedules").RequireStatus(http.StatusOK))
+		require.Empty(t, list.Items, "nothing was created")
+	})
 }
 
 // Manter changes nothing. The answers are handled in the order they were written, so once a later Pausar took

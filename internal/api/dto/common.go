@@ -230,6 +230,9 @@ const (
 	ErrorCodeTooFrequent ErrorCode = "too_frequent"
 	// ErrorCodeTooMany is a new schedule of an AI that already has 20 (422, HB-03).
 	ErrorCodeTooMany ErrorCode = "too_many"
+	// ErrorCodeNoManager is a routine an AI would make active while nobody manages it, so nobody can be told
+	// about it (409, HB-09).
+	ErrorCodeNoManager ErrorCode = "no_manager"
 )
 
 // ErrorBody is the envelope of every error response.

@@ -21,7 +21,7 @@ func (t *tools) registerSchedules(srv *mcp.Server) {
 	}, t.guard(t.listSchedules))
 	srv.HandleTool(mcp.ToolDef{
 		Name:        "set_schedule",
-		Description: "Create a scheduled routine of your own, or change one you set (give its id): its prompt reaches you as a turn on the rule. Give exactly one rule: every_minutes (at least 15) or cron (a standard 5-field cron such as \"0 9 * * 1-5\", evaluated in tz, America/Sao_Paulo by default). Your routines together run at most 48 times in 24 hours and you have at most 20; at most 20 changes an hour. catch_up once (default) runs a routine missed while you were offline once when you are back, within the shorter of its period and 12 hours; skip drops it. Your nearest manager is told about each routine you set and may pause it. Routines set by someone who manages you are not yours to change.",
+		Description: "Create a scheduled routine of your own, or change one you set (give its id): its prompt reaches you as a turn on the rule. Give exactly one rule: every_minutes (at least 15) or cron (a standard 5-field cron such as \"0 9 * * 1-5\", evaluated in tz, America/Sao_Paulo by default). Your routines together run at most 48 times in 24 hours and you have at most 20; at most 20 changes an hour. catch_up once (default) runs a routine missed while you were offline once when you are back, within the shorter of its period and 12 hours; skip drops it. Before a routine of yours is active your nearest manager is told what it says, and may pause it: if nobody manages you, or they cannot be told, nothing changes (no_manager, or try again later). A routine a manager paused is enabled again only by them. Routines set by someone who manages you are not yours to change.",
 		InputSchema: schema(`{"type":"object","properties":{"id":{"type":"string","description":"the id of a routine you set, to change it; leave out to create one"},"name":{"type":"string","description":"1 to 60 characters"},"prompt":{"type":"string","description":"what you are asked to do when it runs, 1 to 4000 characters"},"every_minutes":{"type":"integer","minimum":15,"description":"run every this many minutes (instead of cron)"},"cron":{"type":"string","description":"a 5-field cron: minute hour day-of-month month day-of-week (instead of every_minutes)"},"tz":{"type":"string","description":"IANA timezone of the cron, default America/Sao_Paulo"},"enabled":{"type":"boolean","description":"default true"},"catch_up":{"type":"string","enum":["once","skip"],"description":"default once"}}}`),
 	}, t.guard(t.setSchedule))
 	srv.HandleTool(mcp.ToolDef{
@@ -44,16 +44,18 @@ type scheduleListing struct {
 	Origin       string `json:"origin"`
 	SetBy        string `json:"set_by,omitempty"`
 	CanEdit      bool   `json:"can_edit"`
-	NextRunAt    string `json:"next_run_at,omitempty"`
-	LastRunAt    string `json:"last_run_at,omitempty"`
-	LastStatus   string `json:"last_status,omitempty"`
+	// PausedByManager: someone who manages you paused it; only they enable it again.
+	PausedByManager bool   `json:"paused_by_manager,omitempty"`
+	NextRunAt       string `json:"next_run_at,omitempty"`
+	LastRunAt       string `json:"last_run_at,omitempty"`
+	LastStatus      string `json:"last_status,omitempty"`
 }
 
 func listingOf(s dto.Schedule) scheduleListing {
 	out := scheduleListing{
 		ID: s.ID, Name: s.Name, Prompt: s.Prompt, EveryMinutes: s.EveryMinutes, Cron: s.Cron, Timezone: s.Timezone,
 		CatchUp: string(s.CatchUp), Enabled: s.Enabled, Origin: string(s.Origin), CanEdit: s.CanEdit,
-		LastStatus: string(s.LastStatus),
+		LastStatus: string(s.LastStatus), PausedByManager: s.PausedByManager,
 	}
 	if s.Origin == dto.ScheduleOriginManager && s.SetBy.Handle != "" {
 		out.SetBy = "@" + s.SetBy.Handle
