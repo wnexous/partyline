@@ -44,7 +44,7 @@ const (
 	// Send makes and each retry of the worker (CID-18).
 	SendAttemptTimeout = 15 * time.Second
 	// SendFileTimeout bounds the one attempt to send a file: an upload takes longer than a text
-	// (CID-32).
+	// (CID-32). A large file gets a second more for every MB on top (FileAttemptTimeout).
 	SendFileTimeout = 90 * time.Second
 	// SendRetention is how long a finished send keeps its row, which holds no text: long enough
 	// for a reply to a message the account sent to be recognized under mentions-only (CID-12),
@@ -158,17 +158,46 @@ type SendInput struct {
 	// ReplyTo is the platform's id of the message to quote, empty for a plain message; a platform
 	// that cannot quote sends the text alone (CID-15).
 	ReplyTo string
-	// File, when set, is a file sent with the text as its caption (CID-32). It is held in memory for
-	// the one attempt and never stored, so the send is attempted once and a platform that refuses it
-	// fails it.
+	// File, when set, is a file sent with the text as its caption (CID-32). It is read for the one
+	// attempt and never kept, so the send is attempted once and a platform that refuses it fails it.
 	File *SendFile
 }
 
-// SendFile is the file of a send (CID-32).
+// SendFile is the file of a send (CID-32): its content is read by reference, as a stream, never held
+// in memory (LF-04).
 type SendFile struct {
 	Name string
 	Mime string
-	Data []byte
+	// Size is the exact size of the content in bytes.
+	Size int64
+	// Open returns the content from its start. It may be called more than once, as when a platform
+	// request is sent again, and the caller closes every reader it gets. What it reads from (a blob,
+	// a temporary file) stays until Send returns.
+	Open func() (io.ReadCloser, error)
+}
+
+// BytesFile is a SendFile whose content is data, for small files built in memory.
+func BytesFile(name, mime string, data []byte) *SendFile {
+	return &SendFile{Name: name, Mime: mime, Size: int64(len(data)), Open: func() (io.ReadCloser, error) {
+		return io.NopCloser(bytes.NewReader(data)), nil
+	}}
+}
+
+// FileTooLargeError refuses a file larger than the platform of the connection takes (LF-05).
+type FileTooLargeError struct {
+	// Max is the platform's limit in bytes and Platform the label of the connection's kind.
+	Max      int64
+	Platform string
+}
+
+func (e *FileTooLargeError) Error() string {
+	return fmt.Sprintf("the file is larger than %s takes (%d bytes)", e.Platform, e.Max)
+}
+
+// FileAttemptTimeout bounds the attempt to send a file of size bytes: base, and a second more for
+// every MB, so that a large file has the time its upload takes at 1 MB/s.
+func FileAttemptTimeout(base time.Duration, size int64) time.Duration {
+	return base + time.Duration(max(size, 0)>>20)*time.Second
 }
 
 // Check refuses what Send would refuse before it stores or sends anything, and changes nothing: a
@@ -200,8 +229,10 @@ func (s *Sends) plan(ctx context.Context, in SendInput) (sendPlan, error) {
 	if !conn.OperatorIid.Valid || conn.OperatorIid.String != in.AgentID {
 		return sendPlan{}, ErrNotOperator
 	}
-	if in.File != nil && !s.canSendFiles(conn) {
-		return sendPlan{}, ErrFilesUnsupported
+	if in.File != nil {
+		if err := s.fileFits(conn, in.File.Size); err != nil {
+			return sendPlan{}, err
+		}
 	}
 	p, err := s.destination(ctx, conn, in.ChatID)
 	if err != nil {
@@ -210,13 +241,70 @@ func (s *Sends) plan(ctx context.Context, in SendInput) (sendPlan, error) {
 	return p, validateContent(in.Text, in.File)
 }
 
-// canSendFiles tells whether the connection's kind has a media send (CID-32).
-func (s *Sends) canSendFiles(conn db.Connector) bool {
+// fileFits refuses a file the connection's kind cannot send: ErrFilesUnsupported without a media send
+// (CID-32), a *FileTooLargeError over the platform's own limit (LF-05).
+func (s *Sends) fileFits(conn db.Connector, size int64) error {
+	limit, platform, err := s.fileLimit(conn)
+	if err != nil {
+		return err
+	}
+	if limit > 0 && size > limit {
+		return &FileTooLargeError{Max: limit, Platform: platform}
+	}
+	return nil
+}
+
+// fileLimit is the largest file the connection's platform takes (0: no limit of its own) and the label
+// of its kind; ErrFilesUnsupported when it takes none.
+func (s *Sends) fileLimit(conn db.Connector) (int64, string, error) {
 	if s.d.Kinds == nil {
-		return false
+		return 0, "", ErrFilesUnsupported
 	}
 	kind, ok := s.d.Kinds.Lookup(conn.Kind)
-	return ok && kind.CanSendFiles
+	if !ok || !kind.CanSendFiles {
+		return 0, "", ErrFilesUnsupported
+	}
+	if kind.FileLimit == nil {
+		return kind.MaxFileBytes, kind.Label, nil
+	}
+	cfg, err := Decode(nil, conn.ConfigJson, nil) // the public fields only, as for an address
+	if err != nil {
+		return 0, "", err
+	}
+	return kind.MaxFile(cfg), kind.Label, nil
+}
+
+// FileLimit is the largest file the platform of a connection takes (0: no limit of its own) with the
+// label of its kind, for a caller that reads a file as it arrives and would stop at it (LF-05):
+// access.ErrNotFound for a connection that does not exist, ErrFilesUnsupported for a platform without
+// files. It says nothing of who may send.
+func (s *Sends) FileLimit(ctx context.Context, connectorID string) (int64, string, error) {
+	conn, err := s.d.Store.R().GetConnector(ctx, connectorID)
+	if errors.Is(err, sql.ErrNoRows) {
+		return 0, "", access.ErrNotFound
+	}
+	if err != nil {
+		return 0, "", err
+	}
+	return s.fileLimit(conn)
+}
+
+// CheckFile refuses a file of size bytes that the AI could not send through the connection, before
+// any byte of it is uploaded (LF-05): a connection that does not exist is access.ErrNotFound, an AI
+// that does not operate it ErrNotOperator, a platform without a media send ErrFilesUnsupported and a
+// file over the platform's limit a *FileTooLargeError. It changes nothing; Send checks again.
+func (s *Sends) CheckFile(ctx context.Context, agentID, connectorID string, size int64) error {
+	conn, err := s.d.Store.R().GetConnector(ctx, connectorID)
+	if errors.Is(err, sql.ErrNoRows) {
+		return access.ErrNotFound
+	}
+	if err != nil {
+		return err
+	}
+	if !conn.OperatorIid.Valid || conn.OperatorIid.String != agentID {
+		return ErrNotOperator
+	}
+	return s.fileFits(conn, size)
 }
 
 // destination finds the chat a send to ref goes to: a chat of the connection by its id, else an
@@ -405,7 +493,7 @@ func validateContent(text string, file *SendFile) error {
 		check.Add("text", "must have at most 16000 characters")
 	}
 	switch {
-	case len(file.Data) == 0:
+	case file.Size <= 0 || file.Open == nil:
 		check.Add("file", "must not be empty")
 	case !plainFileName(file.Name):
 		check.Add("file", "must have a name of at most 255 bytes without a path or control characters")
@@ -436,7 +524,7 @@ func validateAnswer(text string) error {
 }
 
 // delivery is what one attempt of a send does besides the text: it sends a file (CID-32) or reacts
-// (CID-33). Both are attempted once, with the data the request brought and nothing keeps.
+// (CID-33). Both are attempted once, with what the request brought and nothing keeps.
 type delivery struct {
 	file  *SendFile
 	react *ReactInput
@@ -474,7 +562,7 @@ func (s *Sends) attempt(ctx context.Context, id string, d delivery) (dto.Platfor
 	timeout := s.d.AttemptTimeout
 	if d.file != nil {
 		out.Files = []OutFile{outFile(d.file)}
-		timeout = s.d.FileAttemptTimeout
+		timeout = FileAttemptTimeout(s.d.FileAttemptTimeout, d.file.Size)
 	}
 	sendCtx, cancel := context.WithTimeout(ctx, timeout)
 	var platformID string
@@ -540,15 +628,14 @@ func (c *createdIDs) first() string {
 	return c.ids[0]
 }
 
-// outFile is the file of a send as a connector reads it: from memory, as often as it asks.
+// outFile is the file of a send as a connector reads it: a stream from where the request left it, as
+// often as the connector asks.
 func outFile(f *SendFile) OutFile {
 	mime := f.Mime
 	if mime == "" {
 		mime = "application/octet-stream"
 	}
-	return OutFile{Name: f.Name, Mime: mime, Size: int64(len(f.Data)), Open: func() (io.ReadCloser, error) {
-		return io.NopCloser(bytes.NewReader(f.Data)), nil
-	}}
+	return OutFile{Name: f.Name, Mime: mime, Size: f.Size, Open: f.Open}
 }
 
 // fail records that attempt number n did not send the message: the send waits for the next attempt

@@ -11,8 +11,11 @@
 package connectortest
 
 import (
+	"bytes"
 	"context"
 	"errors"
+	"fmt"
+	"io"
 	"strconv"
 	"strings"
 	"sync"
@@ -220,6 +223,20 @@ func (i *Instance) Send(ctx context.Context, m connectors.Outbound) (string, err
 			return "", ctx.Err()
 		}
 	}
+	// The files are read now, as a platform takes them during the send: what the send read them from
+	// may be gone once it returns. The record keeps what was read.
+	files := make([]connectors.OutFile, len(m.Files))
+	for n, f := range m.Files {
+		data, err := readOutFile(f)
+		if err != nil {
+			return "", err
+		}
+		f.Open = func() (io.ReadCloser, error) { return io.NopCloser(bytes.NewReader(data)), nil }
+		files[n] = f
+	}
+	if len(files) > 0 {
+		m.Files = files
+	}
 	i.mu.Lock()
 	i.sent = append(i.sent, m)
 	i.mu.Unlock()
@@ -231,6 +248,19 @@ func (i *Instance) Send(ctx context.Context, m connectors.Outbound) (string, err
 	}
 	i.sends <- m
 	return id, nil
+}
+
+// readOutFile reads what an outbound file holds, as a connector does.
+func readOutFile(f connectors.OutFile) ([]byte, error) {
+	if f.Open == nil {
+		return nil, errors.New("open attachment: no content")
+	}
+	r, err := f.Open()
+	if err != nil {
+		return nil, fmt.Errorf("open attachment: %w", err)
+	}
+	defer func() { _ = r.Close() }()
+	return io.ReadAll(r)
 }
 
 // HoldSends makes every later send wait, before it creates anything, until ReleaseSends (see

@@ -214,6 +214,11 @@ func (s *Service) MaxFileBytes() int64 { return s.d.MaxFileBytes }
 
 func (s *Service) path(id string) string { return filepath.Join(s.d.Dir, id) }
 
+// TempFile creates a temporary file in the uploads directory, on the data disk, for a file a request
+// brings that is sent on and not kept (a send through a connection, CID-32). The caller removes it;
+// one a crash left behind is an orphan the next start removes (RemoveOrphans).
+func (s *Service) TempFile() (*os.File, error) { return os.CreateTemp(s.d.Dir, ".send-*") }
+
 // Create starts an upload of in for owner, after checking that the file is allowed and fits on the
 // disk with the reserve to spare, counting what the other unfinished uploads may still write (LF-07).
 func (s *Service) Create(ctx context.Context, o Owner, in CreateInput) (Upload, error) {

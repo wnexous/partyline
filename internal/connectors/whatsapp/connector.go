@@ -3,7 +3,6 @@ package whatsapp
 import (
 	"bytes"
 	"context"
-	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -34,6 +33,15 @@ const (
 	requestTimeout   = 60 * time.Second
 )
 
+// MaxFile is the largest file WhatsApp takes from an account, for every type of media (LF-05).
+// DefaultMaxFile is the largest media the connector sends or receives unless the operator sets
+// another (PARTYLINE_WHATSAPP_MAX_FILE_MB): evolution-go holds a media's base64 whole in its own
+// memory, both ways, on a host it may share.
+const (
+	MaxFile        = 2 << 30
+	DefaultMaxFile = 512 << 20
+)
+
 // ErrUnauthorized means evolution-go rejected the API key or an instance token.
 var ErrUnauthorized = errors.New("unauthorized")
 
@@ -45,10 +53,27 @@ var ErrOtherInstance = errors.New("chat of another instance")
 // instance (CID-04): until the owner chooses the number, the connection cannot run.
 const instanceChoiceDetail = "choose the instance (number) of this connection"
 
-// Kind returns the WhatsApp (evolution-go) connector kind.
-func Kind() connectors.Kind {
+// Kind returns the WhatsApp (evolution-go) connector kind, with the default media limit.
+func Kind() connectors.Kind { return KindWithLimit(DefaultMaxFile) }
+
+// fileLimit is the media limit the connector applies for the operator's setting: at most WhatsApp's
+// own, DefaultMaxFile when unset.
+func fileLimit(limit int64) int64 {
+	if limit <= 0 {
+		limit = DefaultMaxFile
+	}
+	return min(limit, MaxFile)
+}
+
+// KindWithLimit returns the kind whose connectors send and receive media of at most limit bytes
+// (PARTYLINE_WHATSAPP_MAX_FILE_MB), and at most WhatsApp's 2 GB: a larger one to send is refused
+// before it is uploaded (LF-05), a larger one received is recorded too_large without asking
+// evolution-go for it.
+func KindWithLimit(limit int64) connectors.Kind {
+	limit = fileLimit(limit)
 	return connectors.Kind{
 		Name: KindName, Label: "WhatsApp (evolution-go)", CanListChats: true, CanReact: true, CanSendFiles: true,
+		MaxFileBytes: limit,
 		Fields: []connectors.Field{
 			{Name: "base_url", Label: "evolution-go URL", Type: dto.FieldTypeURL, Required: true, Endpoint: true,
 				Help: "e.g. https://evolution.example.com"},
@@ -58,7 +83,7 @@ func Kind() connectors.Kind {
 		},
 		Address: address,
 		New: func(cfg connectors.Config, d connectors.Deps) (connectors.Connector, error) {
-			return New(cfg, d)
+			return build(cfg, d, limit)
 		},
 	}
 }
@@ -71,9 +96,11 @@ type Connector struct {
 	userAgent string
 	log       *slog.Logger
 	client    *http.Client // REST calls (JSON)
-	downloads *http.Client // /message/downloadmedia: JSON carrying base64 media
+	downloads *http.Client // /message/downloadmedia: JSON carrying base64 media, streamed (LF-04)
+	uploads   *http.Client // /send/media: base64 media in the request, streamed; no total timeout
 	stream    *http.Client // WebSocket handshakes
-	maxFrame  int64        // WebSocket frames carry inline base64 media
+	maxFrame  int64        // WebSocket frames carry inline base64 media, held in memory: the single-request limit
+	maxFile   int64        // the largest media sent or received (PARTYLINE_WHATSAPP_MAX_FILE_MB)
 	now       func() time.Time
 	wait      func(ctx context.Context, d time.Duration) error // the pause between two checks of the instance; tests replace it
 
@@ -137,8 +164,13 @@ var (
 	_ connectors.ChatLister = (*Connector)(nil)
 )
 
-// New returns a connector for a validated config.
+// New returns a connector for a validated config, with the default media limit.
 func New(cfg connectors.Config, d connectors.Deps) (*Connector, error) {
+	return build(cfg, d, DefaultMaxFile)
+}
+
+func build(cfg connectors.Config, d connectors.Deps, maxFile int64) (*Connector, error) {
+	maxFile = fileLimit(maxFile)
 	base, err := url.Parse(strings.TrimRight(cfg.String("base_url"), "/"))
 	if err != nil || base.Host == "" {
 		return nil, errors.New("invalid base_url")
@@ -157,8 +189,11 @@ func New(cfg connectors.Config, d connectors.Deps) (*Connector, error) {
 	}
 	return &Connector{
 		base: base, apiKey: cfg.String("api_key"), instance: instance, userAgent: d.UserAgent, log: log,
-		client: d.JSONClient(requestTimeout), downloads: d.HTTPClient(requestTimeout, mediaEnvelope(d.MediaLimit())),
-		stream: d.StreamClient(), maxFrame: mediaEnvelope(d.MediaLimit()), now: time.Now, wait: sleep,
+		// Media stream to disk up to the largest file; the stall watch of each transfer bounds its time,
+		// not a client timeout, which would cut a large file that is still arriving (LF-04).
+		client: d.JSONClient(requestTimeout), downloads: d.HTTPClient(0, mediaEnvelope(min(d.FileLimit(), maxFile))),
+		uploads: d.HTTPClient(0, connectors.MaxJSONResponse),
+		stream:  d.StreamClient(), maxFrame: mediaEnvelope(d.MediaLimit()), maxFile: maxFile, now: time.Now, wait: sleep,
 	}, nil
 }
 
@@ -199,10 +234,33 @@ func (c *Connector) Run(ctx context.Context, h connectors.Handler) error {
 	first := c.state(insts)
 	h.Status(first.status, first.detail)
 
+	parent := ctx
 	ctx, cancel := context.WithCancelCause(ctx)
 	var watching sync.WaitGroup
 	defer watching.Wait() // its last report comes before Run returns, so before the supervisor's
 	defer cancel(nil)
+	// Frames are handled in order by one goroutine while this one goes on reading the socket, so that
+	// pongs are read while a large media downloads (LF-04). The media downloads live as long as the
+	// socket: when it fails, the download in progress is aborted (its attachment is unavailable) and
+	// the frames already read are handled at once, under the connector's own context, so that Run
+	// returns promptly and the next connection reads what comes next, after them.
+	frames := newInbox(maxInboxBytes)
+	var handling sync.WaitGroup
+	handling.Go(func() {
+		err := connectors.Guard(c.log, "inbound", func() error {
+			for {
+				data, ok := frames.take(parent)
+				if !ok {
+					return nil
+				}
+				c.handle(parent, ctx, h, data)
+				frames.done(data)
+			}
+		})
+		if err != nil {
+			cancel(err)
+		}
+	})
 	// A panic in a goroutine of ours ends the process, whatever supervises Run: these two end Run instead (CON-15).
 	go func() {
 		if err := connectors.Guard(c.log, "ping", func() error { c.ping(ctx, conn, func() { cancel(nil) }); return nil }); err != nil {
@@ -214,6 +272,15 @@ func (c *Connector) Run(ctx context.Context, h connectors.Handler) error {
 			cancel(err)
 		}
 	})
+	err = c.read(ctx, conn, frames)
+	cancel(err) // the socket is over: so are its downloads
+	frames.close()
+	handling.Wait()
+	return err
+}
+
+// read hands the socket's frames to the inbox until the socket or ctx ends.
+func (c *Connector) read(ctx context.Context, conn *websocket.Conn, frames *inbox) error {
 	for {
 		_, data, err := conn.Read(ctx)
 		if err != nil {
@@ -222,7 +289,9 @@ func (c *Connector) Run(ctx context.Context, h connectors.Handler) error {
 			}
 			return fmt.Errorf("websocket: %w", plainError(err))
 		}
-		c.handle(ctx, h, data)
+		if err := frames.put(ctx, data); err != nil {
+			return context.Cause(ctx)
+		}
 	}
 }
 
@@ -291,7 +360,9 @@ func (c *Connector) ping(ctx context.Context, conn *websocket.Conn, cancel conte
 
 // handle parses one frame; events that are not chat messages or come from another instance
 // of the evolution-go server are ignored.
-func (c *Connector) handle(ctx context.Context, h connectors.Handler, data []byte) {
+//
+// life is the socket's context: the media of the message download while it lasts.
+func (c *Connector) handle(ctx, life context.Context, h connectors.Handler, data []byte) {
 	ev, err := DecodeFrame(data)
 	if err != nil {
 		c.log.Warn("whatsapp: undecodable frame")
@@ -316,7 +387,7 @@ func (c *Connector) handle(ctx context.Context, h connectors.Handler, data []byt
 		p.Inbound.MentionsAccount = c.mentions(p.MentionedJIDs)
 	}
 	if p.Media != nil {
-		p.Inbound.Media = []connectors.Media{c.media(p.Instance, *p.Media)}
+		p.Inbound.Media = []connectors.Media{c.media(life, p.Instance, *p.Media)}
 	}
 	if p.Inbound.ChatKind == "group" && p.Inbound.ChatTitle == "" && !p.Inbound.FromSelf {
 		p.Inbound.ChatTitle = c.groupSubject(ctx, p.Instance, p.Inbound.ChatID)
@@ -383,46 +454,124 @@ func (c *Connector) uses(name string) bool {
 	return name == c.instance
 }
 
-// media opens inline content, or downloads it through evolution-go on demand.
-func (c *Connector) media(inst string, ref MediaRef) connectors.Media {
+// media opens inline content, or downloads it through evolution-go on demand; both are decoded from
+// base64 as they are read (LF-04).
+//
+// A download ends when life does, the socket the message came on: a connection that drops does not
+// wait for a download of minutes before it reconnects.
+func (c *Connector) media(life context.Context, inst string, ref MediaRef) connectors.Media {
 	return connectors.Media{
 		Name: ref.Name, Mime: ref.Mime, Size: ref.Size,
 		Open: func(ctx context.Context) (io.ReadCloser, error) {
-			content := ref.Inline
-			if content == "" {
-				var err error
-				if content, err = c.download(ctx, inst, ref.Message); err != nil {
+			if ref.Inline != "" {
+				r, err := decodeBase64(strings.NewReader(ref.Inline))
+				if err != nil {
 					return nil, err
 				}
+				return io.NopCloser(r), nil
 			}
-			data, err := base64.StdEncoding.DecodeString(stripDataURL(content))
+			if ref.Size > c.maxFile {
+				// Not even asked for: evolution-go would hold it whole in memory.
+				return nil, fmt.Errorf("media of %d bytes over the %d of this connection: %w", ref.Size, c.maxFile, connectors.ErrMediaTooLarge)
+			}
+			ctx, cancel := context.WithCancelCause(ctx)
+			stop := context.AfterFunc(life, func() { cancel(errSocketClosed) })
+			r, err := c.download(ctx, inst, ref.Message, ref.Size)
 			if err != nil {
-				return nil, errors.New("media: invalid base64")
+				stop()
+				cancel(nil)
+				return nil, err
 			}
-			return io.NopCloser(bytes.NewReader(data)), nil
+			return readCloser{Reader: causeReader{r: r, ctx: ctx}, Closer: closeFunc(func() error {
+				err := r.Close()
+				stop()
+				cancel(nil)
+				return err
+			})}, nil
 		},
 	}
 }
 
-// download calls POST /message/downloadmedia and returns the base64 content.
-func (c *Connector) download(ctx context.Context, inst string, message json.RawMessage) (string, error) {
-	var resp struct {
-		Data json.RawMessage `json:"data"`
-	}
+// download calls POST /message/downloadmedia and returns the media it answers, decoded from the base64
+// of the JSON as it is read: memory does not grow with the file (LF-04). evolution-go fetches the file
+// from WhatsApp before it answers, so the first byte may take a while: a minute and a second per MB of
+// size, when it is known; after it, the answer fails when it brings nothing for StallTimeout.
+func (c *Connector) download(ctx context.Context, inst string, message json.RawMessage, size int64) (io.ReadCloser, error) {
 	tok, err := c.token(ctx, inst)
 	if err != nil {
-		return "", err
+		return nil, err
 	}
-	if err := c.callWith(ctx, c.downloads, tok, http.MethodPost, "/message/downloadmedia", map[string]any{"message": message}, &resp); err != nil {
-		return "", err
+	body, err := json.Marshal(map[string]any{"message": message})
+	if err != nil {
+		return nil, err
 	}
-	if s := str(resp.Data); s != "" {
-		return s, nil
+	ctx, stall := connectors.WatchStall(ctx, requestTimeout+time.Duration(max(size, 0)>>20)*time.Second, connectors.StallTimeout)
+	resp, err := c.do(ctx, c.downloads, tok, http.MethodPost, "/message/downloadmedia", jsonPayload(body))
+	if err != nil {
+		stall.Stop()
+		return nil, err
 	}
-	if s := str(obj(resp.Data)["base64"]); s != "" {
-		return s, nil
+	rc := stall.Body(resp.Body)
+	media, err := mediaContent(rc, connectors.MaxJSONResponse)
+	if err != nil {
+		_ = rc.Close()
+		return nil, err
 	}
-	return "", errors.New("downloadmedia: no content")
+	// Whatever size the message declared, no more than the connection's limit is taken.
+	return readCloser{Reader: &capReader{r: media, left: c.maxFile}, Closer: rc}, nil
+}
+
+// capReader fails with connectors.ErrMediaTooLarge once more than left bytes would be read.
+type capReader struct {
+	r    io.Reader
+	left int64
+}
+
+func (c *capReader) Read(p []byte) (int, error) {
+	if c.left <= 0 {
+		var one [1]byte
+		if n, err := c.r.Read(one[:]); n > 0 {
+			return 0, connectors.ErrMediaTooLarge
+		} else if err != nil {
+			return 0, err
+		}
+		return 0, nil
+	}
+	if int64(len(p)) > c.left {
+		p = p[:c.left]
+	}
+	n, err := c.r.Read(p)
+	c.left -= int64(n)
+	return n, err
+}
+
+// errSocketClosed is why a media download stopped: the socket its message came on closed.
+var errSocketClosed = errors.New("media download: the connection to evolution-go closed")
+
+// causeReader reads from r and, once ctx was cancelled, fails with its cause: the transport reports a
+// closed connection, the cause says why it closed.
+type causeReader struct {
+	r   io.Reader
+	ctx context.Context
+}
+
+func (c causeReader) Read(p []byte) (int, error) {
+	n, err := c.r.Read(p)
+	if err != nil && !errors.Is(err, io.EOF) && c.ctx.Err() != nil {
+		err = context.Cause(c.ctx)
+	}
+	return n, err
+}
+
+// closeFunc is a function as an io.Closer.
+type closeFunc func() error
+
+func (f closeFunc) Close() error { return f() }
+
+// readCloser reads from a reader and closes what it came from.
+type readCloser struct {
+	io.Reader
+	io.Closer
 }
 
 // Send sends the text with /send/text, quoting the replied message (WA-03), and every
@@ -455,14 +604,7 @@ func (c *Connector) Send(ctx context.Context, m connectors.Outbound) (string, er
 		first = id
 	}
 	for _, f := range m.Files {
-		content, err := readFile(f)
-		if err != nil {
-			return "", err
-		}
-		id, err := c.send(ctx, inst, "/send/media", map[string]any{
-			"number": jid, "type": mediaType(f.Mime), "filename": f.Name, "caption": "",
-			"url": base64.StdEncoding.EncodeToString(content),
-		})
+		id, err := c.sendMedia(ctx, inst, jid, f)
 		if err != nil {
 			return "", err
 		}
@@ -486,13 +628,44 @@ func formatText(m connectors.Outbound) string {
 	return connectors.AuthorLine(m.Signature(), "*", "*\n", m.Text)
 }
 
-func readFile(f connectors.OutFile) ([]byte, error) {
-	r, err := f.Open()
+// sendMedia sends a file with /send/media: its content goes as base64 in the "url" field of the JSON,
+// encoded as the request is written, with the exact length of the body when the file's size is known
+// (LF-04). A request the transport sends again reopens the file.
+func (c *Connector) sendMedia(ctx context.Context, inst, jid string, f connectors.OutFile) (string, error) {
+	tok, err := c.token(ctx, inst)
 	if err != nil {
-		return nil, fmt.Errorf("open attachment: %w", err)
+		return "", err
 	}
-	defer func() { _ = r.Close() }()
-	return io.ReadAll(r)
+	// The fields but the content, whose keys json sorts: "url" goes last, after them.
+	head, err := json.Marshal(map[string]any{"number": jid, "type": mediaType(f.Mime), "filename": f.Name, "caption": ""})
+	if err != nil {
+		return "", err
+	}
+	prefix := append(head[:len(head)-1:len(head)-1], `,"url":"`...)
+	suffix := []byte(`"}`)
+	open := func() (io.ReadCloser, error) {
+		if f.Open == nil {
+			return nil, errors.New("open attachment: no content")
+		}
+		r, err := f.Open()
+		if err != nil {
+			return nil, fmt.Errorf("open attachment: %w", err)
+		}
+		return readCloser{Reader: io.MultiReader(bytes.NewReader(prefix), newBase64Reader(r), bytes.NewReader(suffix)), Closer: r}, nil
+	}
+	body, err := open()
+	if err != nil {
+		return "", err
+	}
+	length := int64(-1)
+	if f.Size > 0 {
+		length = int64(len(prefix)) + base64Len(f.Size) + int64(len(suffix))
+	}
+	var resp sendAnswer
+	if err := c.callBody(ctx, c.uploads, tok, http.MethodPost, "/send/media", &payload{r: body, length: length, reopen: open}, &resp); err != nil {
+		return "", err
+	}
+	return resp.Data.Info.ID, nil
 }
 
 // mediaType maps a MIME type to the /send/media type.
@@ -508,14 +681,17 @@ func mediaType(mimeType string) string {
 	return "document"
 }
 
+// sendAnswer is what the send endpoints answer: the id of the message created.
+type sendAnswer struct {
+	Data struct {
+		Info struct {
+			ID string `json:"ID"`
+		} `json:"Info"`
+	} `json:"data"`
+}
+
 func (c *Connector) send(ctx context.Context, inst, path string, body map[string]any) (string, error) {
-	var resp struct {
-		Data struct {
-			Info struct {
-				ID string `json:"ID"`
-			} `json:"Info"`
-		} `json:"data"`
-	}
+	var resp sendAnswer
 	if err := c.instanceCall(ctx, inst, http.MethodPost, path, body, &resp); err != nil {
 		return "", err
 	}
@@ -620,38 +796,41 @@ func mediaEnvelope(limit int64) int64 {
 	return (limit+2)/3*4 + connectors.MaxJSONResponse
 }
 
+// payload is the body of a request: its reader, its length (-1 when unknown) and, for a body that is
+// streamed, how to open it again when the transport sends the request again.
+type payload struct {
+	r      io.Reader
+	length int64
+	reopen func() (io.ReadCloser, error)
+}
+
+// jsonPayload is a body held in memory: a small JSON request.
+func jsonPayload(data []byte) *payload {
+	return &payload{r: bytes.NewReader(data), length: int64(len(data)), reopen: func() (io.ReadCloser, error) {
+		return io.NopCloser(bytes.NewReader(data)), nil
+	}}
+}
+
 // callWith is call through the given client.
 func (c *Connector) callWith(ctx context.Context, client *http.Client, key, method, path string, body, out any) error {
-	var rd io.Reader
+	var p *payload
 	if body != nil {
 		data, err := json.Marshal(body)
 		if err != nil {
 			return err
 		}
-		rd = bytes.NewReader(data)
+		p = jsonPayload(data)
 	}
-	u := *c.base
-	u.Path = strings.TrimRight(u.Path, "/") + path
-	req, err := http.NewRequestWithContext(ctx, method, u.String(), rd)
+	return c.callBody(ctx, client, key, method, path, p, out)
+}
+
+// callBody performs a call with the given body and decodes its JSON answer into out.
+func (c *Connector) callBody(ctx context.Context, client *http.Client, key, method, path string, body *payload, out any) error {
+	resp, err := c.do(ctx, client, key, method, path, body)
 	if err != nil {
-		return errors.New("invalid request")
-	}
-	req.Header.Set("apikey", key)
-	req.Header.Set("User-Agent", c.userAgent)
-	if body != nil {
-		req.Header.Set("Content-Type", "application/json")
-	}
-	resp, err := client.Do(req)
-	if err != nil {
-		return fmt.Errorf("%s %s: %w", method, path, plainError(err))
+		return err
 	}
 	defer func() { _ = resp.Body.Close() }()
-	switch {
-	case resp.StatusCode == http.StatusUnauthorized || resp.StatusCode == http.StatusForbidden:
-		return ErrUnauthorized
-	case resp.StatusCode < 200 || resp.StatusCode > 299:
-		return fmt.Errorf("%s %s: status %d", method, path, resp.StatusCode)
-	}
 	if out == nil {
 		return nil
 	}
@@ -662,6 +841,48 @@ func (c *Connector) callWith(ctx context.Context, client *http.Client, key, meth
 		return fmt.Errorf("%s %s: invalid response (%s)", method, path, decodeReason(err))
 	}
 	return nil
+}
+
+// do sends a request with key as apikey and returns the response of a success status, whose body the
+// caller closes. Errors never carry the URL, the key or the response body (which may echo message
+// content).
+func (c *Connector) do(ctx context.Context, client *http.Client, key, method, path string, body *payload) (*http.Response, error) {
+	u := *c.base
+	u.Path = strings.TrimRight(u.Path, "/") + path
+	var rd io.Reader
+	if body != nil {
+		rd = body.r
+	}
+	req, err := http.NewRequestWithContext(ctx, method, u.String(), rd)
+	if err != nil {
+		if rc, ok := rd.(io.Closer); ok {
+			_ = rc.Close()
+		}
+		return nil, errors.New("invalid request")
+	}
+	if body != nil {
+		req.ContentLength = body.length
+		if body.length < 0 {
+			req.ContentLength = -1
+		}
+		req.GetBody = body.reopen
+		req.Header.Set("Content-Type", "application/json")
+	}
+	req.Header.Set("apikey", key)
+	req.Header.Set("User-Agent", c.userAgent)
+	resp, err := client.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("%s %s: %w", method, path, plainError(err))
+	}
+	switch {
+	case resp.StatusCode == http.StatusUnauthorized || resp.StatusCode == http.StatusForbidden:
+		_ = resp.Body.Close()
+		return nil, ErrUnauthorized
+	case resp.StatusCode < 200 || resp.StatusCode > 299:
+		_ = resp.Body.Close()
+		return nil, fmt.Errorf("%s %s: status %d", method, path, resp.StatusCode)
+	}
+	return resp, nil
 }
 
 // bestEffort marks the destination of an answer the caller can do without: a body that is empty or

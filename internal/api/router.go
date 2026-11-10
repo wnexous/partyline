@@ -6,6 +6,7 @@ import (
 	"log/slog"
 	"net/http"
 	"strconv"
+	"time"
 
 	"github.com/wnexous/partyline/internal/access"
 	"github.com/wnexous/partyline/internal/agents"
@@ -89,6 +90,8 @@ type Deps struct {
 // server holds the handler dependencies.
 type server struct {
 	Deps
+	// connectionUploads are the uploads sent through a connection lately, and those being sent.
+	connectionUploads *uploadSends
 }
 
 // New returns the full HTTP handler: routes wrapped in the middleware chain.
@@ -96,7 +99,7 @@ func New(d Deps) http.Handler {
 	if d.Logger == nil {
 		d.Logger = slog.Default()
 	}
-	s := &server{Deps: d}
+	s := &server{Deps: d, connectionUploads: newUploadSends(time.Now)}
 	mux := http.NewServeMux()
 	s.routes(mux)
 	return Middleware(MiddlewareConfig{
@@ -204,6 +207,14 @@ func (s *server) writeError(w http.ResponseWriter, r *http.Request, err error) {
 func mapError(err error) error {
 	if mapped := uploadError(err); mapped != nil {
 		return mapped
+	}
+	var platformTooLarge *connectors.FileTooLargeError
+	if errors.As(err, &platformTooLarge) {
+		// LF-05: the platform's own limit, refused before anything goes out.
+		he := httpx.NewError(http.StatusRequestEntityTooLarge, dto.ErrorCodeFileTooLarge,
+			"the file is larger than "+platformTooLarge.Platform+" takes ("+humanMB(platformTooLarge.Max)+"): send a smaller file")
+		he.Details = map[string]string{"max_size": strconv.FormatInt(platformTooLarge.Max, 10), "platform": platformTooLarge.Platform}
+		return he
 	}
 	var verr *validation.Error
 	var refused *conversations.MembersRefusedError

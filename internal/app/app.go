@@ -26,6 +26,7 @@ import (
 	"github.com/wnexous/partyline/internal/conversations"
 	"github.com/wnexous/partyline/internal/delivery"
 	"github.com/wnexous/partyline/internal/devices"
+	"github.com/wnexous/partyline/internal/diskspace"
 	"github.com/wnexous/partyline/internal/events"
 	"github.com/wnexous/partyline/internal/identities"
 	"github.com/wnexous/partyline/internal/intelligences"
@@ -96,8 +97,13 @@ type Options struct {
 // BuiltinKinds returns the connector kinds shipped with Partyline. A new platform adds its
 // registration line here (AD-007).
 func BuiltinKinds() []connectors.Kind {
+	return BuiltinKindsFor(&config.Config{})
+}
+
+// BuiltinKindsFor is BuiltinKinds with the settings of cfg (PARTYLINE_WHATSAPP_MAX_FILE_MB).
+func BuiltinKindsFor(cfg *config.Config) []connectors.Kind {
 	return []connectors.Kind{
-		whatsapp.Kind(),
+		whatsapp.KindWithLimit(cfg.WhatsAppMaxFileBytes),
 		telegram.Kind(),
 		discord.Kind(),
 		webhook.Kind(),
@@ -270,7 +276,7 @@ func New(cfg *config.Config, opts Options) (*App, error) {
 	})
 	kinds := opts.ConnectorKinds
 	if kinds == nil {
-		kinds = BuiltinKinds()
+		kinds = BuiltinKindsFor(cfg)
 	}
 	a.Identities = identities.New(identities.Deps{Store: st, Bus: bus, Now: opts.Now})
 	registry := connectors.NewRegistry(kinds...)
@@ -279,15 +285,21 @@ func New(cfg *config.Config, opts Options) (*App, error) {
 		version = "dev"
 	}
 	sentIDs := connectors.NewSentIDs(opts.Now)
+	freeSpace := opts.FreeSpace
+	if freeSpace == nil {
+		freeSpace = diskspace.Free
+	}
 	pipeline := connectors.NewPipeline(connectors.PipelineDeps{
 		Store: st, Bus: bus, Blobs: blobs, Identities: a.Identities, Trust: authz, Queue: a.Platform,
-		Sent: sentIDs, Wait: opts.InboundWait, MaxUploadBytes: cfg.MaxUploadBytes, Logger: opts.Logger, Now: opts.Now,
+		Sent: sentIDs, Wait: opts.InboundWait, MaxFileBytes: cfg.MaxFileBytes, Logger: opts.Logger, Now: opts.Now,
+		FreeSpace: func() (int64, bool) { return freeSpace(filepath.Join(cfg.DataDir, BlobsDir)) }, ReserveBytes: cfg.DiskReserveBytes,
 	})
 	fileLinks := connectors.NewFileLinks(box, st, cfg.PublicURL, opts.Now)
 	a.ConnectorManager = connectors.NewManager(connectors.ManagerDeps{
 		Store: st, Bus: bus, Box: box, Kinds: registry, Logger: opts.Logger, UserAgent: "partyline/" + version,
 		FileURL: fileLinks.URL, AllowPrivateNetworks: cfg.AllowPrivateNetworks,
-		PrivateAllowlist: cfg.PrivateNetworkAllowlist, MaxMediaBytes: cfg.MaxUploadBytes, Replays: connectors.NewReplays(st),
+		PrivateAllowlist: cfg.PrivateNetworkAllowlist, MaxMediaBytes: cfg.MaxUploadBytes, MaxFileBytes: cfg.MaxFileBytes,
+		Replays: connectors.NewReplays(st),
 		Inbound: pipeline.Handle, MigrateChat: pipeline.MigrateChat, Wait: opts.ConnectorWait,
 	})
 	a.Sends = connectors.NewSends(connectors.SendsDeps{

@@ -24,6 +24,7 @@ func TestLoadDefaults(t *testing.T) {
 	require.Empty(t, cfg.SecretKey)
 	require.Equal(t, int64(95<<20), cfg.MaxUploadBytes)
 	require.Equal(t, int64(5120<<20), cfg.MaxFileBytes, "LF-03: a file of up to 5 GB goes through chunks")
+	require.Equal(t, int64(512<<20), cfg.WhatsAppMaxFileBytes, "a WhatsApp media of up to 512 MB")
 	require.Equal(t, int64(2048<<20), cfg.DiskReserveBytes, "LF-07: 2 GB stay free on the data disk")
 	require.Equal(t, slog.LevelInfo, cfg.LogLevel)
 	require.Equal(t, "json", cfg.LogFormat)
@@ -46,6 +47,7 @@ func TestLoadOverrides(t *testing.T) {
 		"PARTYLINE_SECRET_KEY":                "c2VjcmV0",
 		"PARTYLINE_MAX_UPLOAD_MB":             "10",
 		"PARTYLINE_MAX_FILE_MB":               "20480",
+		"PARTYLINE_WHATSAPP_MAX_FILE_MB":      "100",
 		"PARTYLINE_DISK_RESERVE_MB":           "0",
 		"PARTYLINE_LOG_LEVEL":                 "debug",
 		"PARTYLINE_LOG_FORMAT":                "text",
@@ -64,6 +66,7 @@ func TestLoadOverrides(t *testing.T) {
 	require.Equal(t, "c2VjcmV0", cfg.SecretKey)
 	require.Equal(t, int64(10<<20), cfg.MaxUploadBytes)
 	require.Equal(t, int64(20480<<20), cfg.MaxFileBytes)
+	require.Equal(t, int64(100<<20), cfg.WhatsAppMaxFileBytes)
 	require.Zero(t, cfg.DiskReserveBytes, "LF-07: a reserve of 0 is a value")
 	require.Equal(t, slog.LevelDebug, cfg.LogLevel)
 	require.Equal(t, "text", cfg.LogFormat)
@@ -148,8 +151,9 @@ func TestLoadRejectsNonPositiveUpload(t *testing.T) {
 // LF-03, LF-07: the sizes of an upload session are whole MiB that fit in bytes.
 func TestLoadRejectsBadFileSizes(t *testing.T) {
 	for name, values := range map[string][]string{
-		"PARTYLINE_MAX_FILE_MB":     {"0", "-1", "5GB", "9223372036854775807"},
-		"PARTYLINE_DISK_RESERVE_MB": {"-1", "lots", "9223372036854775807"},
+		"PARTYLINE_MAX_FILE_MB":          {"0", "-1", "5GB", "9223372036854775807"},
+		"PARTYLINE_WHATSAPP_MAX_FILE_MB": {"0", "-1", "512MB"},
+		"PARTYLINE_DISK_RESERVE_MB":      {"-1", "lots", "9223372036854775807"},
 	} {
 		for _, value := range values {
 			_, err := Load(env(map[string]string{name: value}))

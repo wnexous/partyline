@@ -40,6 +40,15 @@ func (k Kind) EndpointChanged(before, after Config) bool {
 	return false
 }
 
+// MaxFile is the largest file a connection of the kind with the given public config may send (LF-05);
+// 0 for no limit of the platform's own.
+func (k Kind) MaxFile(cfg Config) int64 {
+	if k.FileLimit != nil {
+		return k.FileLimit(cfg)
+	}
+	return k.MaxFileBytes
+}
+
 // Secret reports whether the field holds a secret (CON-03).
 func (f Field) Secret() bool { return f.Type == dto.FieldTypeSecret }
 
@@ -58,6 +67,14 @@ type Kind struct {
 	// platform has a media send (CID-32). The webhook has none: its attachments are links to files
 	// that Partyline keeps, and a file sent through a connection is not kept.
 	CanSendFiles bool
+	// MaxFileBytes is the largest file the platform takes from the connection's account (LF-05): a
+	// larger one is refused before anything is uploaded, with this limit in the answer. 0 means the
+	// platform sets no limit of its own (the server's largest file applies).
+	MaxFileBytes int64
+	// FileLimit, when set, is MaxFileBytes for a connection's config, for a platform whose limit
+	// depends on the server it talks to (a self-hosted Telegram Bot API server takes larger files).
+	// cfg holds the public fields of the config only.
+	FileLimit func(cfg Config) int64
 	// InboundHook tells whether its connectors receive messages at POST /api/v1/hooks/{id};
 	// the API then reports that URL as the connector's inbound_url.
 	InboundHook bool

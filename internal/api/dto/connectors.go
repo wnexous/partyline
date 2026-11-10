@@ -162,8 +162,9 @@ const (
 type SendToChatRequest struct {
 	Text         string   `json:"text"`
 	QuickReplies []string `json:"quick_replies,omitempty"`
-	// UploadIDs is refused for now (400): a send through a connection holds its file in memory until
-	// it streams from the blob store (LF-04).
+	// UploadIDs attaches one finished upload session of the AI as the file of the send, with Text as its
+	// caption (LF-04): for a file larger than one request. The upload is used up by the send, whether
+	// the platform takes the file or not, since a file sent through a connection is sent once (CID-32).
 	UploadIDs []string `json:"upload_ids,omitempty"`
 }
 

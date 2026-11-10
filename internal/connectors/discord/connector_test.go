@@ -509,14 +509,14 @@ func TestPrivateAttachmentURLIsRefusedByDefault(t *testing.T) {
 	require.Zero(t, hits.Load())
 }
 
-// S8: attachment downloads are capped at the upload limit.
-func TestAttachmentDownloadIsCappedAtTheUploadLimit(t *testing.T) {
+// S8: attachment downloads, which stream to disk, are capped at the largest file (LF-04).
+func TestAttachmentDownloadIsCappedAtTheLargestFile(t *testing.T) {
 	cdn := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		n, _ := strconv.Atoi(r.URL.Query().Get("n"))
 		_, _ = w.Write(bytes.Repeat([]byte("x"), n))
 	}))
 	t.Cleanup(cdn.Close)
-	c := newWithSession(newFakeSession(), connectors.Deps{AllowPrivateNetworks: true, MaxMediaBytes: 1000})
+	c := newWithSession(newFakeSession(), connectors.Deps{AllowPrivateNetworks: true, MaxMediaBytes: 10, MaxFileBytes: 1000})
 	read := func(n int) ([]byte, error) {
 		r, err := c.opener(cdn.URL + "/a.png?n=" + strconv.Itoa(n))(context.Background())
 		require.NoError(t, err)

@@ -27,6 +27,9 @@ type Config struct {
 	// MaxFileBytes bounds one file sent through an upload session in chunks (PARTYLINE_MAX_FILE_MB,
 	// LF-03).
 	MaxFileBytes int64
+	// WhatsAppMaxFileBytes bounds a WhatsApp media, sent or received (PARTYLINE_WHATSAPP_MAX_FILE_MB,
+	// 512 by default): evolution-go holds a media's base64 whole in its own memory, both ways.
+	WhatsAppMaxFileBytes int64
 	// DiskReserveBytes is the free space an upload session must leave on the data disk
 	// (PARTYLINE_DISK_RESERVE_MB, LF-07).
 	DiskReserveBytes int64
@@ -90,6 +93,9 @@ func Load(getenv func(string) string) (*Config, error) {
 	cfg.MaxUploadBytes = mb << 20
 	if cfg.MaxFileBytes, err = megabytes(get("PARTYLINE_MAX_FILE_MB", "5120"), false); err != nil {
 		return nil, fmt.Errorf("PARTYLINE_MAX_FILE_MB: %w", err)
+	}
+	if cfg.WhatsAppMaxFileBytes, err = megabytes(get("PARTYLINE_WHATSAPP_MAX_FILE_MB", "512"), false); err != nil {
+		return nil, fmt.Errorf("PARTYLINE_WHATSAPP_MAX_FILE_MB: %w", err)
 	}
 	if cfg.DiskReserveBytes, err = megabytes(get("PARTYLINE_DISK_RESERVE_MB", "2048"), true); err != nil {
 		return nil, fmt.Errorf("PARTYLINE_DISK_RESERVE_MB: %w", err)

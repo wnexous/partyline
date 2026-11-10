@@ -9,6 +9,7 @@ import (
 	"mime"
 	"net/http"
 	"net/url"
+	"os"
 	"path/filepath"
 	"slices"
 	"strings"
@@ -771,30 +772,45 @@ func (s *server) replyOnConnection(w http.ResponseWriter, r *http.Request, p aut
 }
 
 // sendOnConnection sends what the AI wrote through its connection and answers with the state of the send
-// (CID-15, CID-16). A request that is refused (not the operator, not a chat of the connection, unusable
+// (CID-15, CID-16); the uploads it names are used up once the send was attempted. A request that is refused (not the operator, not a chat of the connection, unusable
 // text) is refused before the AI's posting limit is looked at, so that it does not use it up and the AI
 // keeps seeing why it was refused; a valid one counts like every other post (TOOL-08). A file is sent
 // once: a platform that refuses it is 502 with the reason, since nothing will send it again (CID-32).
 func (s *server) sendOnConnection(w http.ResponseWriter, r *http.Request, p authn.Principal, in connectors.SendInput) error {
+	_, err := s.sendUpload(w, r, p, in, "")
+	return err
+}
+
+// sendUpload is sendOnConnection for a send whose file is the upload uploadID (none when empty), and
+// tells whether the send was attempted: then the upload is used up, whatever the platform did.
+func (s *server) sendUpload(w http.ResponseWriter, r *http.Request, p authn.Principal, in connectors.SendInput, uploadID string) (bool, error) {
 	if err := s.Sends.Check(r.Context(), in); err != nil {
-		return err
+		return false, err
 	}
 	if !s.Agents.AllowPost(p.AgentID) {
-		return errAgentRateLimited
+		return false, errAgentRateLimited
 	}
 	res, err := s.Sends.Send(r.Context(), in)
 	if err != nil {
-		return err
+		return false, err
+	}
+	if uploadID != "" {
+		// The file was sent once, or failed: either way nothing sends it again, and the upload goes
+		// (CID-32). Its blob, which nothing references, goes with the blob sweep.
+		if err := s.Uploads.Consume(context.WithoutCancel(r.Context()), uploadOwner(p), []string{uploadID}); err != nil {
+			s.Logger.ErrorContext(r.Context(), "uploads: release the upload of a send", "err", err,
+				"request_id", httpx.RequestID(r.Context()))
+		}
 	}
 	if res.Status == dto.PlatformSendStatusFailed {
 		what := "message" // only a file fails at the first attempt; say it right of anything that does
 		if in.File != nil {
 			what = "file"
 		}
-		return httpx.NewError(http.StatusBadGateway, dto.ErrorCodeUnavailable, "the platform did not take the "+what+": "+res.Error)
+		return true, httpx.NewError(http.StatusBadGateway, dto.ErrorCodeUnavailable, "the platform did not take the "+what+": "+res.Error)
 	}
 	writePlatformSend(w, res)
-	return nil
+	return true, nil
 }
 
 // reactOnConnection reacts to a message of the AI's platform queue through its connection (CID-33). A
@@ -829,9 +845,10 @@ func (s *server) reactOnConnection(w http.ResponseWriter, r *http.Request, p aut
 // agentConnectionSend writes to a chat of a connection the AI operates: the connection and the chat
 // are Partyline's ids, as a platform event carries them (CID-16), or the address of a chat the connection
 // has not heard from (CID-31). The body is JSON with the text, or multipart with a caption and one file
-// (CID-32). A JSON body may ask a question: its quick replies are validated like a room's, and the
-// text that goes out is the text with the options numbered after it (QR-20), because a chat renders no
-// buttons. An AI that is a member of the
+// (CID-32); either may attach one finished upload session of the AI instead (upload_ids, LF-04), for a
+// file larger than one request. A JSON body may ask a question: its quick replies are validated like a
+// room's, and the text that goes out is the text with the options numbered after it (QR-20), because a
+// chat renders no buttons. An AI that is a member of the
 // connection's organization and is not its operator is refused with 403 not_operator (CID-03); an AI that
 // is no member of it gets 404, as for a connection that does not exist, so the answer reveals nothing about
 // it (AD-016: the AI acts as itself, not through its host). A chat of another connection is 404
@@ -842,9 +859,6 @@ func (s *server) agentConnectionSend(w http.ResponseWriter, r *http.Request, p a
 	if !upload {
 		if err := httpx.DecodeJSON(w, r, &req); err != nil {
 			return err
-		}
-		if len(req.UploadIDs) > 0 {
-			return errConnectionUploads
 		}
 		if len(req.QuickReplies) > 0 {
 			if err := rooms.ValidateQuickReplyLabels(req.QuickReplies); err != nil {
@@ -861,21 +875,57 @@ func (s *server) agentConnectionSend(w http.ResponseWriter, r *http.Request, p a
 	}
 	in := connectors.SendInput{AgentID: p.AgentID, ConnectorID: connectionID, ChatID: r.PathValue("chat"),
 		Text: rooms.NumberedOptions(req.Text, req.QuickReplies)}
+	uploadIDs := req.UploadIDs
 	if upload {
 		// A caption and a file, read after the AI is known to belong to the connection's organization (CID-32).
-		var err error
-		if in.Text, in.File, err = s.readConnectionUpload(r); err != nil {
+		form, err := s.readConnectionUpload(r, connectionID)
+		defer form.cleanup()
+		if err != nil {
 			return err
 		}
+		in.Text, in.File, uploadIDs = form.text, form.file, form.uploadIDs
 	}
-	return s.sendOnConnection(w, r, p, in)
+	if len(uploadIDs) == 0 {
+		return s.sendOnConnection(w, r, p, in)
+	}
+	if in.File != nil || len(uploadIDs) > 1 {
+		return errOneFile
+	}
+	// One send of an upload at a time, and none after one used it: a client whose answer was lost (a
+	// proxy's timeout) does not send the file twice.
+	key := string(uploadOwner(p).Kind) + "|" + p.AgentID + p.UserID + "|" + uploadIDs[0]
+	if err := s.connectionUploads.begin(key); err != nil {
+		return err
+	}
+	attempted := false
+	defer func() { s.connectionUploads.end(key, attempted) }()
+	file, err := s.uploadedFile(r.Context(), p, uploadIDs[0])
+	if err != nil {
+		return err
+	}
+	in.File = file
+	attempted, err = s.sendUpload(w, r, p, in, uploadIDs[0])
+	return err
 }
 
-// errConnectionUploads refuses upload sessions in a send through a connection.
-// TODO(LF-04, LF-05): a connection's send holds its file in memory (connectors.SendFile.Data); once
-// it sends a blob by reference as a stream, accept upload_ids here within the platform's own limit.
-var errConnectionUploads = httpx.NewError(http.StatusBadRequest, dto.ErrorCodeInvalid,
-	"upload_ids cannot be sent through a connection yet: send the file in the multipart body")
+// errOneFile refuses a send through a connection that carries more than one file.
+var errOneFile = httpx.Invalid(map[string]string{"file": "send one file at a time"})
+
+// uploadedFile is the file of a finished upload session of p, read from the blob store as a stream by
+// the connector (LF-04).
+func (s *server) uploadedFile(ctx context.Context, p authn.Principal, id string) (*connectors.SendFile, error) {
+	if s.Uploads == nil {
+		return nil, httpx.NewError(http.StatusBadRequest, dto.ErrorCodeInvalid, "this server takes no upload sessions")
+	}
+	list, err := s.Uploads.Finished(ctx, uploadOwner(p), []string{id})
+	if err != nil {
+		return nil, err
+	}
+	u := list[0]
+	return &connectors.SendFile{Name: u.Name, Mime: u.Mime, Size: u.Size, Open: func() (io.ReadCloser, error) {
+		return s.Blobs.Open(u.SHA256)
+	}}, nil
+}
 
 // isMultipart tells whether the request is a form upload.
 func isMultipart(r *http.Request) bool {
@@ -883,61 +933,124 @@ func isMultipart(r *http.Request) bool {
 	return mt == "multipart/form-data"
 }
 
-// readConnectionUpload reads the multipart body of a send through a connection: the caption in the
-// message part (a dto.SendToChatRequest) and at most one file in a file part, held in memory because
-// the send keeps no file (CID-32). The file is bounded by the upload limit (413 over it) and gets the
-// type its sender gave, else a binary one, and its name without any path.
-func (s *server) readConnectionUpload(r *http.Request) (string, *connectors.SendFile, error) {
-	var req dto.SendToChatRequest
-	var file *connectors.SendFile
+// connectionForm is the multipart body of a send through a connection. cleanup removes the temporary
+// file that holds the file part; it is safe to call whatever happened.
+type connectionForm struct {
+	text      string
+	file      *connectors.SendFile
+	uploadIDs []string
+	temp      string
+}
+
+func (f connectionForm) cleanup() {
+	if f.temp != "" {
+		_ = os.Remove(f.temp)
+	}
+}
+
+// readConnectionUpload reads the multipart body of a send through a connection: the caption (and any
+// upload_ids) in the message part (a dto.SendToChatRequest) and at most one file in a file part. The
+// file is written to a temporary file on the data disk as it arrives, never held in memory, and is
+// removed by cleanup once the send is over, because the send keeps no file (CID-32, LF-04). The file is
+// bounded by the upload limit (413 over it) and gets the type its sender gave, else a binary one, and
+// its name without any path.
+//
+// The platform's limit is known before the file arrives: a file part over it, or one for a platform
+// without files, is refused as soon as it shows, without writing it whole to the disk (LF-05).
+func (s *server) readConnectionUpload(r *http.Request, connectionID string) (form connectionForm, err error) {
+	platformMax, platform, limitErr := s.Sends.FileLimit(r.Context(), connectionID)
+	if limitErr != nil && !errors.Is(limitErr, connectors.ErrFilesUnsupported) {
+		return form, limitErr
+	}
 	mr, err := r.MultipartReader()
 	if err != nil {
-		return "", nil, httpx.NewError(http.StatusBadRequest, dto.ErrorCodeInvalid, "malformed multipart body")
+		return form, httpx.NewError(http.StatusBadRequest, dto.ErrorCodeInvalid, "malformed multipart body")
 	}
 	for {
 		part, err := mr.NextPart()
 		if errors.Is(err, io.EOF) {
-			return req.Text, file, nil
+			return form, nil
 		}
 		if err != nil {
-			return "", nil, multipartError(err)
+			return form, multipartError(err)
 		}
 		switch part.FormName() {
 		case dto.MultipartMessageField:
 			data, err := io.ReadAll(io.LimitReader(part, httpx.MaxJSONBody+1))
 			if err != nil {
-				return "", nil, multipartError(err)
+				return form, multipartError(err)
 			}
 			if len(data) > httpx.MaxJSONBody {
-				return "", nil, httpx.NewError(http.StatusRequestEntityTooLarge, dto.ErrorCodeTooLarge, "message part too large")
+				return form, httpx.NewError(http.StatusRequestEntityTooLarge, dto.ErrorCodeTooLarge, "message part too large")
 			}
+			var req dto.SendToChatRequest
 			if err := json.Unmarshal(data, &req); err != nil {
-				return "", nil, httpx.NewError(http.StatusBadRequest, dto.ErrorCodeInvalid, "malformed message part")
+				return form, httpx.NewError(http.StatusBadRequest, dto.ErrorCodeInvalid, "malformed message part")
 			}
-			if len(req.UploadIDs) > 0 {
-				return "", nil, errConnectionUploads
-			}
+			form.text, form.uploadIDs = req.Text, req.UploadIDs
 		case dto.MultipartFileField:
-			if file != nil {
-				return "", nil, httpx.Invalid(map[string]string{"file": "send one file at a time"})
+			if form.file != nil {
+				return form, errOneFile
 			}
-			data, err := io.ReadAll(io.LimitReader(part, s.Config.MaxUploadBytes+1))
-			if err != nil {
-				return "", nil, multipartError(err)
+			if limitErr != nil {
+				return form, limitErr // a platform without files
 			}
-			if int64(len(data)) > s.Config.MaxUploadBytes {
-				return "", nil, errUploadTooLarge
-			}
-			file = &connectors.SendFile{Name: filepath.Base(part.FileName()), Mime: part.Header.Get("Content-Type"), Data: data}
+			file := &connectors.SendFile{Name: filepath.Base(part.FileName()), Mime: part.Header.Get("Content-Type")}
 			if file.Name == "." || file.Name == "/" {
 				file.Name = "file"
 			}
 			if file.Mime == "" {
 				file.Mime = "application/octet-stream"
 			}
+			if form.temp, file.Size, err = s.spool(part, platformMax); err != nil {
+				var over *connectors.FileTooLargeError
+				if errors.As(err, &over) {
+					over.Platform = platform
+				}
+				return form, err
+			}
+			path := form.temp
+			file.Open = func() (io.ReadCloser, error) { return os.Open(path) } // #nosec G304 G703 -- our own temporary file
+			form.file = file
 		}
 		_ = part.Close()
 	}
+}
+
+// spool writes a file part to a temporary file, at most the upload limit (413 over it) and the
+// platform's limit platformMax when it is set (a *connectors.FileTooLargeError over it, read no
+// further), and returns its path and size. Nothing is left behind when it fails.
+func (s *server) spool(part io.Reader, platformMax int64) (string, int64, error) {
+	var tmp *os.File
+	var err error
+	if s.Uploads != nil {
+		tmp, err = s.Uploads.TempFile()
+	} else {
+		tmp, err = os.CreateTemp("", "partyline-send-*")
+	}
+	if err != nil {
+		return "", 0, err
+	}
+	limit := s.Config.MaxUploadBytes
+	if platformMax > 0 {
+		limit = min(limit, platformMax)
+	}
+	n, err := io.Copy(tmp, io.LimitReader(part, limit+1))
+	if cerr := tmp.Close(); err == nil {
+		err = cerr
+	}
+	switch {
+	case err != nil:
+		_ = os.Remove(tmp.Name())
+		return "", 0, multipartError(err)
+	case platformMax > 0 && n > platformMax:
+		_ = os.Remove(tmp.Name())
+		return "", 0, &connectors.FileTooLargeError{Max: platformMax}
+	case n > s.Config.MaxUploadBytes:
+		_ = os.Remove(tmp.Name())
+		return "", 0, errUploadTooLarge
+	}
+	return tmp.Name(), n, nil
 }
 
 // writePlatformSend answers an AI's send through a connection: 201 when the platform took it, 202

@@ -856,9 +856,15 @@ export const ErrorCodeInsufficientStorage = "insufficient_storage";
  */
 export const ErrorCodeUploadOffset = "upload_offset";
 /**
- * ErrorCodeUploadBusy is a chunk sent while another chunk of the same upload is being written (409).
+ * ErrorCodeUploadBusy is a chunk sent while another chunk of the same upload is being written, or
+ * a send through a connection of an upload another send of it is sending (409).
  */
 export const ErrorCodeUploadBusy = "upload_busy";
+/**
+ * ErrorCodeUploadSent is a send through a connection of an upload a send already used, sent or
+ * failed, in the last 24 hours (409): check the chat before sending the file again.
+ */
+export const ErrorCodeUploadSent = "upload_sent";
 /**
  * ErrorCodeUploadIncomplete is a message that attaches an upload whose last chunk did not arrive
  * (409, LF-03).
@@ -867,7 +873,7 @@ export const ErrorCodeUploadIncomplete = "upload_incomplete";
 /**
  * Error codes and the HTTP status they come with.
  */
-export type ErrorCode = typeof ErrorCodeInvalid | typeof ErrorCodeUnauthorized | typeof ErrorCodeForbidden | typeof ErrorCodeNotFound | typeof ErrorCodeConflict | typeof ErrorCodeGone | typeof ErrorCodeTooLarge | typeof ErrorCodeRateLimited | typeof ErrorCodeInternal | typeof ErrorCodeUnavailable | typeof ErrorCodeHandleTaken | typeof ErrorCodeAvatarInvalid | typeof ErrorCodeLastInstanceAdmin | typeof ErrorCodeLastAdmin | typeof ErrorCodeHomeOrganization | typeof ErrorCodeAlreadyMember | typeof ErrorCodeNotOperator | typeof ErrorCodeUnknownChat | typeof ErrorCodeUnsupported | typeof ErrorCodeFolderRequired | typeof ErrorCodeFolderInvalid | typeof ErrorCodeHarnessRemoved | typeof ErrorCodePositionUnknown | typeof ErrorCodeOrganizationMismatch | typeof ErrorCodeIdentityBusy | typeof ErrorCodeDMMembersFixed | typeof ErrorCodeReactionLimit | typeof ErrorCodeDMSelf | typeof ErrorCodeContactNotFound | typeof ErrorCodeNoRouteToPerson | typeof ErrorCodeHistoryOnly | typeof ErrorCodeCounterpartDisabled | typeof ErrorCodeChatsNotMembers | typeof ErrorCodeMembersRefused | typeof ErrorCodeOrganizationRequired | typeof ErrorCodeOrganizationNotEmpty | typeof ErrorCodePositionCycle | typeof ErrorCodeIdentityOnline | typeof ErrorCodeAlreadyAnswered | typeof ErrorCodeFileTooLarge | typeof ErrorCodeInsufficientStorage | typeof ErrorCodeUploadOffset | typeof ErrorCodeUploadBusy | typeof ErrorCodeUploadIncomplete;
+export type ErrorCode = typeof ErrorCodeInvalid | typeof ErrorCodeUnauthorized | typeof ErrorCodeForbidden | typeof ErrorCodeNotFound | typeof ErrorCodeConflict | typeof ErrorCodeGone | typeof ErrorCodeTooLarge | typeof ErrorCodeRateLimited | typeof ErrorCodeInternal | typeof ErrorCodeUnavailable | typeof ErrorCodeHandleTaken | typeof ErrorCodeAvatarInvalid | typeof ErrorCodeLastInstanceAdmin | typeof ErrorCodeLastAdmin | typeof ErrorCodeHomeOrganization | typeof ErrorCodeAlreadyMember | typeof ErrorCodeNotOperator | typeof ErrorCodeUnknownChat | typeof ErrorCodeUnsupported | typeof ErrorCodeFolderRequired | typeof ErrorCodeFolderInvalid | typeof ErrorCodeHarnessRemoved | typeof ErrorCodePositionUnknown | typeof ErrorCodeOrganizationMismatch | typeof ErrorCodeIdentityBusy | typeof ErrorCodeDMMembersFixed | typeof ErrorCodeReactionLimit | typeof ErrorCodeDMSelf | typeof ErrorCodeContactNotFound | typeof ErrorCodeNoRouteToPerson | typeof ErrorCodeHistoryOnly | typeof ErrorCodeCounterpartDisabled | typeof ErrorCodeChatsNotMembers | typeof ErrorCodeMembersRefused | typeof ErrorCodeOrganizationRequired | typeof ErrorCodeOrganizationNotEmpty | typeof ErrorCodePositionCycle | typeof ErrorCodeIdentityOnline | typeof ErrorCodeAlreadyAnswered | typeof ErrorCodeFileTooLarge | typeof ErrorCodeInsufficientStorage | typeof ErrorCodeUploadOffset | typeof ErrorCodeUploadBusy | typeof ErrorCodeUploadSent | typeof ErrorCodeUploadIncomplete;
 /**
  * ErrorBody is the envelope of every error response.
  */
@@ -1130,8 +1136,9 @@ export interface SendToChatRequest {
   text: string;
   quick_replies?: string[];
   /**
-   * UploadIDs is refused for now (400): a send through a connection holds its file in memory until
-   * it streams from the blob store (LF-04).
+   * UploadIDs attaches one finished upload session of the AI as the file of the send, with Text as its
+   * caption (LF-04): for a file larger than one request. The upload is used up by the send, whether
+   * the platform takes the file or not, since a file sent through a connection is sent once (CID-32).
    */
   upload_ids?: string[];
 }
@@ -2982,12 +2989,16 @@ export interface PutSecretRequest {
 /**
  * CreateUploadRequest starts an upload session for a file larger than one request (LF-03): POST
  * /api/v1/uploads for a user, POST /api/v1/agent/uploads for an AI. Name and Mime are those the
- * attachment will have; Size is the exact number of bytes the chunks will bring.
+ * attachment will have; Size is the exact number of bytes the chunks will bring. Connection, for an AI,
+ * names the connection the file will be sent through (LF-05): a file that connection could not send (over
+ * its platform's own limit, a platform without files, an AI that does not operate it) is refused before
+ * any chunk is sent, as the send itself would refuse it.
  */
 export interface CreateUploadRequest {
   name: string;
   mime: string;
   size: number /* int64 */;
+  connection?: string;
 }
 /**
  * Upload is the state of an upload session. The client sends chunks of at most ChunkSize bytes with

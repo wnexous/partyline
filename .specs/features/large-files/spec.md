@@ -1,6 +1,6 @@
 # Large files (up to gigabytes)
 
-Status: Specify + Design written 2026-11-09. Requirement ids LF-xx. Owner request (2026-11-09):
+Status: Specify + Design written 2026-11-09; phases 1-4 built (phase 4 notes below). Requirement ids LF-xx. Owner request (2026-11-09):
 "tira o limite ou põe uns 5 GB" after a 29 MB raw photo and a 66 MB video were refused; v0.16.2
 raised the single-request limit to 95 MB meanwhile, and the owner asked to "work on the update to
 support gigabytes".
@@ -68,6 +68,68 @@ One limit (`PARTYLINE_MAX_UPLOAD_MB`, 95 MB) bounds every file, and three things
   done) when its upload is cancelled, its file is taken out of the draft, its conversation is
   deleted (`room.deleted`) or the page is unloaded (keepalive request on `pagehide`); a failed send
   that stays in the draft keeps its sessions to resume.
+- **Phase 4 as built (LF-04, LF-05):**
+  - `connectors.SendFile` is `{Name, Mime, Size, Open}`: the file is read by reference, as a stream,
+    and `Open` may be called again (a request the transport resends reopens it through `GetBody`).
+    The agent connection send writes its multipart file part to a temporary file under
+    `<data>/uploads` (`.send-*`, removed when the send is over; one a crash leaves is an orphan the
+    next start removes), or takes one finished upload (`upload_ids`, also in the multipart message
+    part), read from the blob store. The upload is used up once the send was attempted, sent or
+    failed, since a connection's file is sent once; a send refused before it went keeps it. The
+    attempt of a file send gets a second per MB on top of its 90 s (`connectors.FileAttemptTimeout`).
+  - Platform limits: `Kind.MaxFileBytes` (or `Kind.FileLimit(cfg)` when the limit depends on the
+    config): WhatsApp `PARTYLINE_WHATSAPP_MAX_FILE_MB` (512 MB by default, at most 2 GB) for every
+    type of media, also received (a larger media is recorded `too_large` without asking evolution-go,
+    and a download is cut at it whatever it declared), Telegram 50 MB through the public Bot API and
+    2000 MB through a self-hosted one, Discord 25 MB, webhook none (it takes no files). `Sends.plan`
+    refuses a larger file with `*connectors.FileTooLargeError` → 413 `file_too_large` with
+    `details.max_size` and `details.platform`. `POST /agent/uploads` takes `connection`, checked with
+    `Sends.CheckFile` (operator, files, limit) before any chunk.
+  - WhatsApp inbound: `/message/downloadmedia` goes through a JSON scanner (`whatsapp/media.go`) that
+    finds the string at `data` or `data.base64`, unescapes it as it reads (`\/`, `\uXXXX` of ASCII),
+    strips a `data:` URL prefix and decodes it into `attachments.Store.Put`; the JSON before it is
+    bounded by `MaxJSONResponse`, what follows it is not read, and the client's cap is the base64 of
+    `PARTYLINE_MAX_FILE_MB` plus 4 MiB. Inline media of WebSocket frames stay bounded by the
+    single-request limit (`Deps.MaxMediaBytes`), media downloads by `Deps.MaxFileBytes` (Telegram and
+    Discord too; the pipeline's `MaxFileBytes`). Frames are handled in order by one goroutine while the
+    socket keeps being read (`whatsapp/inbox.go`, at most 32 MB of frames waiting and being handled,
+    or one larger frame alone, plus the frame the reader holds), so pongs are read during a long
+    download. A download lives as long as the socket its message came on: when the socket fails it is
+    aborted (the message goes on, its media unavailable), the frames already read are handled at
+    once and `Run` returns promptly, so the next connection reads what follows, in order.
+  - WhatsApp outbound: `/send/media` keeps its JSON shape; the body is the fields, then the file's
+    base64 encoded by a pull reader (no goroutine, no pipe), with the exact `Content-Length`.
+    Telegram streams its multipart body the same way (prefix, file, closing boundary). Discord keeps
+    discordgo, which builds the body in memory, bounded by its 25 MB limit.
+  - Disk (LF-07): an inbound media whose declared size would leave less than
+    `PARTYLINE_DISK_RESERVE_MB` free is not downloaded and is recorded `unavailable`. The declared
+    size is the sender's word, so a download also looks at the free space every 64 MB it writes and
+    stops (`unavailable`, no blob) when the disk would keep less than the reserve; concurrent
+    downloads see each other's bytes there. Every download is capped at the largest file whatever it
+    declared.
+  - Time: downloads have no client timeout; a stall watch (`connectors.WatchStall`) fails one whose
+    first byte takes longer than a minute (WhatsApp: plus a second per MB of declared size, as
+    evolution-go fetches the file first) or that then brings nothing for a minute. The CLI waits for
+    a connection's send for the server's bound plus a tool call.
+  - Memory, measured by the tests (`runtime.MemStats.TotalAlloc`, the fake servers included): a 6 MB
+    WhatsApp download allocates about 0.3 MB, an 8 MB WhatsApp send about 0.3 MB, an 8 MB Telegram
+    send about 0.25 MB.
+- **Known limits (phase 4):**
+  - evolution-go itself decodes the base64 of `/send/media` and encodes the one of
+    `/message/downloadmedia` in its own memory: a file of gigabytes costs evolution-go several times
+    its size, wherever it runs. Partyline's side is bounded; evolution-go's is bounded only by
+    `PARTYLINE_WHATSAPP_MAX_FILE_MB` (512 MB by default), which an operator sharing the host keeps low.
+  - A send through a connection answers when the platform took the file. A proxy that times out an
+    answer (Cloudflare: 100 s) answers the AI with an error while the server goes on sending: the tool
+    then says the file may have been delivered and to check the chat, and keeps the upload; the
+    server sends an upload once (409 `upload_busy` while it is being sent, `upload_sent` for 24 hours
+    after, in memory: a restart forgets it). A new `send_file` makes a new upload, which nothing stops.
+  - WhatsApp's limit is applied to every type; a platform that refuses a smaller video or image says so
+    with its reason. Discord's 25 MB is the limit of a server without boosts (servers with boosts
+    take more, and Discord has lowered the default before): a file Discord refuses fails with its
+    reason.
+  - A message whose media takes minutes to download holds the messages after it of the same
+    connection until it is done (they are handled in order).
 - **Downloads (LF-08):** `http.ServeContent` on the blob file (range, If-Range) for both the web and
   the agent download route.
 - **Transcription:** unchanged; its 25 MB service cap still skips longer audio.

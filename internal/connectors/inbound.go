@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"errors"
+	"io"
 	"log/slog"
 	"regexp"
 	"strings"
@@ -49,9 +50,18 @@ type PipelineDeps struct {
 	Sent *SentIDs
 	// Wait sleeps for d or until ctx is done; defaults to a timer. Tests pass a fake clock's.
 	Wait func(ctx context.Context, d time.Duration) error
-	// MaxUploadBytes bounds stored media (CON-11).
-	MaxUploadBytes int64
-	Logger         *slog.Logger
+	// MaxFileBytes bounds stored media (CON-11): the largest file (PARTYLINE_MAX_FILE_MB), since media
+	// stream to disk (LF-04).
+	MaxFileBytes int64
+	// FreeSpace reports the free bytes of the blob store's disk and whether they are known, and
+	// ReserveBytes what a media must leave free (PARTYLINE_DISK_RESERVE_MB, LF-07): a media whose
+	// declared size would leave less is not downloaded, and a download stops when the disk gets
+	// there, whatever the size declared, checked every SpaceCheckBytes (64 MB by default) it wrote.
+	// Nil checks nothing.
+	FreeSpace       func() (int64, bool)
+	ReserveBytes    int64
+	SpaceCheckBytes int64
+	Logger          *slog.Logger
 	// Now returns the current time; defaults to time.Now.
 	Now func() time.Time
 }
@@ -236,11 +246,11 @@ func truncate(text string) string {
 	return string([]rune(text)[:keep]) + TruncatedMarker
 }
 
-// saveMedia stores each media once in the blob store (CON-11). Media over the upload limit
+// saveMedia stores each media once in the blob store (CON-11), streamed. Media over the largest file
 // becomes a too_large record without a file; a failed download becomes unavailable.
 func (p *Pipeline) saveMedia(ctx context.Context, src Source, media []Media) []platform.Attachment {
 	files := make([]platform.Attachment, 0, len(media))
-	limit := p.d.MaxUploadBytes
+	limit := p.d.MaxFileBytes
 	for _, md := range media {
 		f := platform.Attachment{Name: md.Name, Mime: md.Mime, Size: md.Size}
 		if f.Name == "" {
@@ -254,10 +264,19 @@ func (p *Pipeline) saveMedia(ctx context.Context, src Source, media []Media) []p
 			files = append(files, f)
 			continue
 		}
+		if !p.roomFor(md.Size) {
+			p.d.Logger.Warn("connectors: media not downloaded: not enough free disk space", "connector_id", src.ConnectorID, "size", md.Size)
+			f.Status = dto.AttachmentStatusUnavailable
+			files = append(files, f)
+			continue
+		}
 		sha, size, err := p.download(ctx, md, limit)
 		switch {
-		case errors.Is(err, attachments.ErrTooLarge), errors.Is(err, safehttp.ErrResponseTooLarge):
+		case errors.Is(err, attachments.ErrTooLarge), errors.Is(err, safehttp.ErrResponseTooLarge), errors.Is(err, ErrMediaTooLarge):
 			f.Status = dto.AttachmentStatusTooLarge // over the limit, or cut off by the client cap
+		case errors.Is(err, errNoDiskSpace):
+			p.d.Logger.Warn("connectors: media download stopped: not enough free disk space", "connector_id", src.ConnectorID)
+			f.Status = dto.AttachmentStatusUnavailable
 		case err != nil:
 			p.d.Logger.Warn("connectors: media download failed", "connector_id", src.ConnectorID, "err", err)
 			f.Status = dto.AttachmentStatusUnavailable
@@ -269,6 +288,48 @@ func (p *Pipeline) saveMedia(ctx context.Context, src Source, media []Media) []p
 	return files
 }
 
+// roomFor tells whether the disk keeps the reserve free after a media of the declared size (LF-07),
+// 0 for one of unknown size; a disk whose free space is unknown lets it through. The size is the
+// sender's word: the download checks again as it writes.
+func (p *Pipeline) roomFor(size int64) bool {
+	if p.d.FreeSpace == nil {
+		return true
+	}
+	free, ok := p.d.FreeSpace()
+	return !ok || free-max(size, 0) >= p.d.ReserveBytes
+}
+
+// ErrMediaTooLarge is a media a connector refuses to download: over the limit of its platform's
+// setting. The pipeline records it too_large.
+var ErrMediaTooLarge = errors.New("media over the connection's limit")
+
+// errNoDiskSpace stops a download that would leave the disk with less than the reserve free.
+var errNoDiskSpace = errors.New("not enough free disk space")
+
+// defaultSpaceCheck is how many bytes a download writes between two looks at the free space.
+const defaultSpaceCheck = 64 << 20
+
+// spaceReader fails with errNoDiskSpace once the disk keeps less than the reserve free, looked at every
+// check bytes read (that is, about to be written): concurrent downloads see each other's bytes.
+type spaceReader struct {
+	r       io.Reader
+	p       *Pipeline
+	check   int64
+	pending int64
+}
+
+func (s *spaceReader) Read(b []byte) (int, error) {
+	if s.pending >= s.check {
+		s.pending = 0
+		if !s.p.roomFor(s.check) {
+			return 0, errNoDiskSpace
+		}
+	}
+	n, err := s.r.Read(b[:min(int64(len(b)), s.check)])
+	s.pending += int64(n)
+	return n, err
+}
+
 func (p *Pipeline) download(ctx context.Context, md Media, limit int64) (string, int64, error) {
 	if md.Open == nil {
 		return "", 0, errors.New("media without content")
@@ -278,7 +339,15 @@ func (p *Pipeline) download(ctx context.Context, md Media, limit int64) (string,
 		return "", 0, err
 	}
 	defer func() { _ = r.Close() }()
-	return p.d.Blobs.Put(r, limit)
+	var body io.Reader = r
+	if p.d.FreeSpace != nil {
+		check := p.d.SpaceCheckBytes
+		if check <= 0 {
+			check = defaultSpaceCheck
+		}
+		body = &spaceReader{r: r, p: p, check: check}
+	}
+	return p.d.Blobs.Put(body, limit)
 }
 
 // MigrateChat changes a chat's platform id from oldID to newID, keeping the chat record

@@ -421,7 +421,7 @@ func TestSendFiles(t *testing.T) {
 	}
 	_, err := c.Send(context.Background(), connectors.Outbound{ChatID: strconv.Itoa(groupChat), Files: []connectors.OutFile{
 		file("a.png", "image/png", 9, "png-bytes"), file("b.pdf", "application/pdf", 9, "pdf-bytes"),
-		file("huge.png", "image/png", MaxPhoto+1, "big"),
+		file("huge.png", "image/png", MaxPhoto+1, strings.Repeat("b", MaxPhoto+1)),
 	}})
 	require.NoError(t, err)
 
@@ -512,13 +512,14 @@ func capServer(t *testing.T, size *int) *httptest.Server {
 	return srv
 }
 
-// S8: Bot API answers are capped at 4 MiB and file downloads at the upload limit.
+// S8: Bot API answers are capped at 4 MiB and file downloads, which stream to disk, at the largest
+// file (LF-04).
 func TestResponseCaps(t *testing.T) {
 	size := 0
 	srv := capServer(t, &size)
 	cfg, errs := Kind().Validate(connectors.Config{"bot_token": botToken, "api_base": srv.URL})
 	require.Empty(t, errs)
-	c, err := New(cfg, connectors.Deps{AllowPrivateNetworks: true, MaxMediaBytes: 1000, UserAgent: userAgent})
+	c, err := New(cfg, connectors.Deps{AllowPrivateNetworks: true, MaxMediaBytes: 10, MaxFileBytes: 1000, UserAgent: userAgent})
 	require.NoError(t, err)
 	ctx := context.Background()
 
@@ -538,7 +539,7 @@ func TestResponseCaps(t *testing.T) {
 			require.NoError(t, err)
 			require.Len(t, data, n)
 		} else {
-			require.ErrorIs(t, err, want, "a download over the upload limit")
+			require.ErrorIs(t, err, want, "a download over the largest file")
 		}
 	}
 }

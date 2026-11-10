@@ -82,6 +82,11 @@ func (s *server) createUpload(w http.ResponseWriter, r *http.Request, p authn.Pr
 	if err := httpx.DecodeJSON(w, r, &req); err != nil {
 		return err
 	}
+	if req.Connection != "" {
+		if err := s.checkConnectionFile(r.Context(), p, req.Connection, req.Size); err != nil {
+			return err
+		}
+	}
 	u, err := s.Uploads.Create(r.Context(), uploadOwner(p), uploads.CreateInput{Name: req.Name, Mime: req.Mime, Size: req.Size})
 	var limit *uploads.LimitError
 	if errors.As(err, &limit) {
@@ -92,6 +97,18 @@ func (s *server) createUpload(w http.ResponseWriter, r *http.Request, p authn.Pr
 	}
 	httpx.WriteJSON(w, http.StatusCreated, s.toUpload(u))
 	return nil
+}
+
+// checkConnectionFile refuses, before any chunk is sent, an upload for a file the AI could not send
+// through the connection (LF-05): the refusals of a send of that file, a platform's limit included.
+func (s *server) checkConnectionFile(ctx context.Context, p authn.Principal, connectionID string, size int64) error {
+	if p.Kind != authn.KindAgent || s.Sends == nil {
+		return httpx.Invalid(map[string]string{"connection": "only an AI sends files through a connection"})
+	}
+	if err := s.Connectors.Require(ctx, p, connectionID, dto.LevelUse); err != nil {
+		return err
+	}
+	return s.Sends.CheckFile(ctx, p.AgentID, connectionID, size)
 }
 
 // getUpload answers the state of an upload, for a client that resumes it.

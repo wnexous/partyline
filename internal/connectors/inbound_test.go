@@ -60,7 +60,7 @@ type inboundEnv struct {
 func newInboundEnv(t *testing.T, opts ...testkit.Option) *inboundEnv {
 	t.Helper()
 	fake := connectortest.New()
-	opts = append(opts, testkit.WithConnectorKinds(fake.Kind()), testkit.WithEnv(map[string]string{"PARTYLINE_MAX_UPLOAD_MB": "1"}))
+	opts = append(opts, testkit.WithConnectorKinds(fake.Kind()), testkit.WithEnv(map[string]string{"PARTYLINE_MAX_UPLOAD_MB": "1", "PARTYLINE_MAX_FILE_MB": "1"}))
 	env := testkit.New(t, opts...)
 	alice := env.NewUser("alice")
 	on := true
@@ -165,7 +165,7 @@ func (e *inboundEnv) pipeline(sent *connectors.SentIDs) *connectors.Pipeline {
 	a := e.env.App
 	return connectors.NewPipeline(connectors.PipelineDeps{
 		Store: a.Store, Bus: a.Bus, Blobs: a.Blobs, Identities: a.Identities, Trust: a.Authz, Queue: a.Platform, Sent: sent,
-		MaxUploadBytes: a.Config.MaxUploadBytes, Logger: slog.New(slog.NewTextHandler(io.Discard, nil)),
+		MaxFileBytes: a.Config.MaxFileBytes, Logger: slog.New(slog.NewTextHandler(io.Discard, nil)),
 	})
 }
 
@@ -783,3 +783,98 @@ func TestInboundGoesToTheCurrentOperator(t *testing.T) {
 }
 
 func ptr[T any](v T) *T { return &v }
+
+// LF-07: a media whose declared size would leave the data disk with less than the reserve free is not
+// downloaded and is recorded unavailable; one that leaves the reserve, and one of unknown size while the
+// disk has the reserve free, are stored.
+func TestInboundMediaKeepsTheDiskReserve(t *testing.T) {
+	e := newInboundEnv(t, testkit.WithEnv(map[string]string{"PARTYLINE_DISK_RESERVE_MB": "1"}),
+		testkit.WithFreeSpace(func(string) (int64, bool) { return 1536 << 10, true }))
+	e.patch(t, dto.UpdateConnectorRequest{GroupsMentionsOnly: ptr(false)})
+	m := text(groupID, "M3", "videos")
+	m.Kind = "video"
+	fits, over := bytes.Repeat([]byte{1}, 512<<10), bytes.Repeat([]byte{2}, 600<<10)
+	m.Media = []connectors.Media{
+		{Name: "fits.mp4", Size: int64(len(fits)), Open: opener(fits)},
+		{Name: "over.mp4", Size: int64(len(over)), Open: func(context.Context) (io.ReadCloser, error) {
+			t.Error("a media the disk has no room for must not be downloaded")
+			return io.NopCloser(bytes.NewReader(nil)), nil
+		}},
+		{Name: "unknown.mp4", Open: opener(over)},
+	}
+	e.emit(m)
+	atts := e.queued(t)[0].Attachments
+	require.Equal(t, []dto.AttachmentStatus{dto.AttachmentStatusStored, dto.AttachmentStatusUnavailable, dto.AttachmentStatusStored},
+		[]dto.AttachmentStatus{atts[0].Status, atts[1].Status, atts[2].Status})
+}
+
+// LF-07: the declared size is the sender's word: a download checks the free space as it writes and
+// stops when the disk would keep less than the reserve, whatever it declared (here nothing, then less
+// than it is), recorded unavailable with no blob left; the other media of the message still go.
+func TestInboundMediaStopsWhenTheDiskFillsUp(t *testing.T) {
+	e := newInboundEnv(t)
+	e.patch(t, dto.UpdateConnectorRequest{GroupsMentionsOnly: ptr(false)})
+	var written, peak atomic.Int64
+	const free, reserve = 400 << 10, 100 << 10
+	pipeline := connectors.NewPipeline(connectors.PipelineDeps{
+		Store: e.env.App.Store, Bus: e.env.App.Bus, Blobs: e.env.App.Blobs, Identities: e.env.App.Identities, Queue: e.env.App.Platform,
+		MaxFileBytes: 1 << 20, ReserveBytes: reserve, SpaceCheckBytes: 32 << 10, Logger: slog.New(slog.NewTextHandler(io.Discard, nil)),
+		FreeSpace: func() (int64, bool) {
+			peak.Store(max(peak.Load(), written.Load()))
+			return free - written.Load(), true
+		},
+	})
+	counting := func(data []byte) func(context.Context) (io.ReadCloser, error) {
+		return func(context.Context) (io.ReadCloser, error) {
+			return &countingReader{r: bytes.NewReader(data), n: &written}, nil
+		}
+	}
+	huge, small := bytes.Repeat([]byte{3}, 900<<10), []byte("a small photo")
+	m := text(groupID, "M4", "media")
+	m.Kind = "video"
+	m.Media = []connectors.Media{
+		{Name: "undeclared.mp4", Open: counting(huge)},
+		{Name: "understated.mp4", Size: 10, Open: counting(huge)},
+		{Name: "small.jpg", Size: int64(len(small)), Open: opener(small)},
+	}
+	before := blobCount(t, e.env)
+	pipeline.Handle(context.Background(), e.source(), m)
+	atts := e.queued(t)[0].Attachments
+	require.Equal(t, []dto.AttachmentStatus{dto.AttachmentStatusUnavailable, dto.AttachmentStatusUnavailable, dto.AttachmentStatusStored},
+		[]dto.AttachmentStatus{atts[0].Status, atts[1].Status, atts[2].Status})
+	require.Less(t, peak.Load(), int64(free), "the downloads stopped before the disk was full")
+	require.Equal(t, before+1, blobCount(t, e.env), "only the small photo was stored")
+}
+
+// countingReader counts what it reads into n, the bytes on the disk, and takes them back when closed:
+// a download that failed leaves no file.
+type countingReader struct {
+	r    io.Reader
+	n    *atomic.Int64
+	read int64
+}
+
+func (c *countingReader) Read(p []byte) (int, error) {
+	k, err := c.r.Read(p)
+	c.n.Add(int64(k))
+	c.read += int64(k)
+	return k, err
+}
+
+func (c *countingReader) Close() error {
+	c.n.Add(-c.read)
+	return nil
+}
+
+// A media a connector refuses as over its own limit is recorded too_large.
+func TestInboundMediaOverTheConnectorsLimitIsTooLarge(t *testing.T) {
+	e := newInboundEnv(t)
+	e.patch(t, dto.UpdateConnectorRequest{GroupsMentionsOnly: ptr(false)})
+	m := text(groupID, "M5", "a long video")
+	m.Kind = "video"
+	m.Media = []connectors.Media{{Name: "long.mp4", Open: func(context.Context) (io.ReadCloser, error) {
+		return nil, fmt.Errorf("media over 512 MB: %w", connectors.ErrMediaTooLarge)
+	}}}
+	e.emit(m)
+	require.Equal(t, dto.AttachmentStatusTooLarge, e.queued(t)[0].Attachments[0].Status)
+}
