@@ -212,12 +212,12 @@ func (c *Connector) Run(ctx context.Context, h connectors.Handler) error {
 	defer watching.Wait() // its last report comes before Run returns, so before the supervisor's
 	defer cancel(nil)
 	// Frames are handled in order by one goroutine while this one goes on reading the socket, so that
-	// pongs are read while a large media downloads (LF-04). A socket that fails stops the reading; what
-	// was read is still handled, under the connector's own context, before Run returns.
+	// pongs are read while a large media downloads (LF-04). The media downloads live as long as the
+	// socket: when it fails, the download in progress is aborted (its attachment is unavailable) and
+	// the frames already read are handled at once, under the connector's own context, so that Run
+	// returns promptly and the next connection reads what comes next, after them.
 	frames := newInbox(maxInboxBytes)
 	var handling sync.WaitGroup
-	defer handling.Wait()
-	defer frames.close()
 	handling.Go(func() {
 		err := connectors.Guard(c.log, "inbound", func() error {
 			for {
@@ -225,7 +225,7 @@ func (c *Connector) Run(ctx context.Context, h connectors.Handler) error {
 				if !ok {
 					return nil
 				}
-				c.handle(parent, h, data)
+				c.handle(parent, ctx, h, data)
 			}
 		})
 		if err != nil {
@@ -243,6 +243,15 @@ func (c *Connector) Run(ctx context.Context, h connectors.Handler) error {
 			cancel(err)
 		}
 	})
+	err = c.read(ctx, conn, frames)
+	cancel(err) // the socket is over: so are its downloads
+	frames.close()
+	handling.Wait()
+	return err
+}
+
+// read hands the socket's frames to the inbox until the socket or ctx ends.
+func (c *Connector) read(ctx context.Context, conn *websocket.Conn, frames *inbox) error {
 	for {
 		_, data, err := conn.Read(ctx)
 		if err != nil {
@@ -322,7 +331,9 @@ func (c *Connector) ping(ctx context.Context, conn *websocket.Conn, cancel conte
 
 // handle parses one frame; events that are not chat messages or come from another instance
 // of the evolution-go server are ignored.
-func (c *Connector) handle(ctx context.Context, h connectors.Handler, data []byte) {
+//
+// life is the socket's context: the media of the message download while it lasts.
+func (c *Connector) handle(ctx, life context.Context, h connectors.Handler, data []byte) {
 	ev, err := DecodeFrame(data)
 	if err != nil {
 		c.log.Warn("whatsapp: undecodable frame")
@@ -347,7 +358,7 @@ func (c *Connector) handle(ctx context.Context, h connectors.Handler, data []byt
 		p.Inbound.MentionsAccount = c.mentions(p.MentionedJIDs)
 	}
 	if p.Media != nil {
-		p.Inbound.Media = []connectors.Media{c.media(p.Instance, *p.Media)}
+		p.Inbound.Media = []connectors.Media{c.media(life, p.Instance, *p.Media)}
 	}
 	if p.Inbound.ChatKind == "group" && p.Inbound.ChatTitle == "" && !p.Inbound.FromSelf {
 		p.Inbound.ChatTitle = c.groupSubject(ctx, p.Instance, p.Inbound.ChatID)
@@ -416,7 +427,10 @@ func (c *Connector) uses(name string) bool {
 
 // media opens inline content, or downloads it through evolution-go on demand; both are decoded from
 // base64 as they are read (LF-04).
-func (c *Connector) media(inst string, ref MediaRef) connectors.Media {
+//
+// A download ends when life does, the socket the message came on: a connection that drops does not
+// wait for a download of minutes before it reconnects.
+func (c *Connector) media(life context.Context, inst string, ref MediaRef) connectors.Media {
 	return connectors.Media{
 		Name: ref.Name, Mime: ref.Mime, Size: ref.Size,
 		Open: func(ctx context.Context) (io.ReadCloser, error) {
@@ -427,7 +441,20 @@ func (c *Connector) media(inst string, ref MediaRef) connectors.Media {
 				}
 				return io.NopCloser(r), nil
 			}
-			return c.download(ctx, inst, ref.Message, ref.Size)
+			ctx, cancel := context.WithCancelCause(ctx)
+			stop := context.AfterFunc(life, func() { cancel(errSocketClosed) })
+			r, err := c.download(ctx, inst, ref.Message, ref.Size)
+			if err != nil {
+				stop()
+				cancel(nil)
+				return nil, err
+			}
+			return readCloser{Reader: causeReader{r: r, ctx: ctx}, Closer: closeFunc(func() error {
+				err := r.Close()
+				stop()
+				cancel(nil)
+				return err
+			})}, nil
 		},
 	}
 }
@@ -459,6 +486,29 @@ func (c *Connector) download(ctx context.Context, inst string, message json.RawM
 	}
 	return readCloser{Reader: media, Closer: rc}, nil
 }
+
+// errSocketClosed is why a media download stopped: the socket its message came on closed.
+var errSocketClosed = errors.New("media download: the connection to evolution-go closed")
+
+// causeReader reads from r and, once ctx was cancelled, fails with its cause: the transport reports a
+// closed connection, the cause says why it closed.
+type causeReader struct {
+	r   io.Reader
+	ctx context.Context
+}
+
+func (c causeReader) Read(p []byte) (int, error) {
+	n, err := c.r.Read(p)
+	if err != nil && !errors.Is(err, io.EOF) && c.ctx.Err() != nil {
+		err = context.Cause(c.ctx)
+	}
+	return n, err
+}
+
+// closeFunc is a function as an io.Closer.
+type closeFunc func() error
+
+func (f closeFunc) Close() error { return f() }
 
 // readCloser reads from a reader and closes what it came from.
 type readCloser struct {

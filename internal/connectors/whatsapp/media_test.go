@@ -21,6 +21,7 @@ import (
 	"testing/iotest"
 	"time"
 
+	"github.com/coder/websocket"
 	"github.com/stretchr/testify/require"
 
 	"github.com/wnexous/partyline/internal/attachments"
@@ -178,7 +179,7 @@ func TestALargeMediaIsDownloadedAsAStream(t *testing.T) {
 	require.NoError(t, err)
 	blobs, err := attachments.Open(t.TempDir())
 	require.NoError(t, err)
-	media := c.media(testInstance, MediaRef{Name: "clip.mp4", Mime: "video/mp4", Size: size, Message: json.RawMessage(`{"videoMessage":{}}`)})
+	media := c.media(context.Background(), testInstance, MediaRef{Name: "clip.mp4", Mime: "video/mp4", Size: size, Message: json.RawMessage(`{"videoMessage":{}}`)})
 
 	var stored string
 	var n int64
@@ -435,4 +436,88 @@ func TestRunHandlesWhatItReadBeforeTheSocketFailed(t *testing.T) {
 	case <-time.After(wait):
 		t.Fatal("Run did not return")
 	}
+}
+
+// downloadingHandler downloads the media of every message it is given, as the inbound pipeline does,
+// and records what the download returned before it passes the message on.
+type downloadingHandler struct {
+	*connectortest.Recorder
+	results chan error
+}
+
+func (h *downloadingHandler) Inbound(ctx context.Context, m connectors.Inbound) {
+	for _, md := range m.Media {
+		r, err := md.Open(ctx)
+		if err == nil {
+			_, err = io.Copy(io.Discard, r)
+			_ = r.Close()
+		}
+		h.results <- err
+	}
+	h.Recorder.Inbound(ctx, m)
+}
+
+// LF-04: when the socket fails while a media of minutes is downloading, the download is aborted (the
+// message still goes on, its media failed) and Run returns at once, so the connection is not left
+// without a socket for the rest of the download; the next Run reads what comes next.
+func TestASocketThatFailsAbortsTheDownloadAndRunReturnsPromptly(t *testing.T) {
+	f := newFakeEvolution(t)
+	started := make(chan struct{}, 1)
+	release := make(chan struct{})
+	t.Cleanup(func() { close(release) })
+	mux := http.NewServeMux()
+	mux.Handle("/", f.srv.Config.Handler)
+	mux.HandleFunc("POST /message/downloadmedia", func(w http.ResponseWriter, r *http.Request) {
+		// evolution-go sends the start of a large media, then takes its time.
+		_, _ = w.Write([]byte(`{"data":"` + b64("the start of a long video")))
+		w.(http.Flusher).Flush()
+		started <- struct{}{}
+		select {
+		case <-r.Context().Done():
+		case <-release:
+		}
+	})
+	srv := httptest.NewServer(mux)
+	t.Cleanup(srv.Close)
+	c, err := New(connectors.Config{"base_url": srv.URL, "api_key": globalKey, "instances": []string{testInstance}},
+		connectors.Deps{AllowPrivateNetworks: true, UserAgent: userAgent})
+	require.NoError(t, err)
+	rec := connectortest.NewRecorder()
+	h := &downloadingHandler{Recorder: rec, results: make(chan error, 4)}
+	ctx, cancel := context.WithCancel(context.Background())
+	t.Cleanup(cancel)
+	run := func() (<-chan error, *websocket.Conn) {
+		done := make(chan error, 1)
+		go func() { done <- c.Run(ctx, h) }()
+		sock := f.socket()
+		t.Cleanup(func() { _ = sock.CloseNow() })
+		require.Equal(t, connectors.StatusConnected, rec.NextStatus(t))
+		return done, sock
+	}
+
+	done, sock := run()
+	push(t, sock, frame(t, testInstance, groupInfo("VIDEO"), `{"videoMessage":{"mimetype":"video/mp4","fileLength":"900000000"}}`))
+	select {
+	case <-started:
+	case <-time.After(wait):
+		t.Fatal("the download never started")
+	}
+	push(t, sock, frame(t, testInstance, groupInfo("AFTER"), `{"conversation":"read before the socket failed"}`))
+	pctx, pcancel := context.WithTimeout(context.Background(), wait)
+	defer pcancel()
+	require.NoError(t, sock.Ping(pctx), "the second frame was read")
+	require.NoError(t, sock.CloseNow())
+	select {
+	case err := <-done:
+		require.Error(t, err)
+	case <-time.After(5 * time.Second):
+		t.Fatal("Run waited for the download after its socket failed")
+	}
+	require.ErrorIs(t, <-h.results, errSocketClosed, "the download was aborted")
+	require.Equal(t, "VIDEO", rec.NextInbound(t).MessageID, "the message still went on")
+	require.Equal(t, "AFTER", rec.NextInbound(t).MessageID, "and what was read after it, in order")
+
+	_, sock = run()
+	push(t, sock, frame(t, testInstance, groupInfo("NEXT"), `{"conversation":"on the new socket"}`))
+	require.Equal(t, "NEXT", rec.NextInbound(t).MessageID)
 }

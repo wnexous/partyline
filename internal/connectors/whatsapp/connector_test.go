@@ -365,7 +365,7 @@ func TestRunRequiresExactlyOneInstance(t *testing.T) {
 			require.Zero(t, f.socketDials(), "no WebSocket dial")
 
 			// A frame that reaches the connector is not delivered while it is idle.
-			c.handle(context.Background(), rec, frame(t, testInstance, groupInfo("IGNORED"), `{"conversation":"x"}`))
+			c.handle(context.Background(), context.Background(), rec, frame(t, testInstance, groupInfo("IGNORED"), `{"conversation":"x"}`))
 			require.True(t, rec.NoInbound())
 
 			cancel()
@@ -978,7 +978,7 @@ func TestHandleLogsUnsupportedMessageKeysWithoutContent(t *testing.T) {
 	log := slog.New(slog.NewTextHandler(&logs, nil)).With("connector_id", "c1")
 	c := &Connector{instance: testInstance, log: log}
 	rec := connectortest.NewRecorder()
-	c.handle(context.Background(), rec, frame(t, testInstance, dmInfo("UNK1"), `{"someNewMessage":{"caption":"PRIVATE-TEXT"}}`))
+	c.handle(context.Background(), context.Background(), rec, frame(t, testInstance, dmInfo("UNK1"), `{"someNewMessage":{"caption":"PRIVATE-TEXT"}}`))
 	require.Equal(t, "UNK1", rec.NextInbound(t).MessageID)
 	require.Contains(t, logs.String(), "whatsapp: unsupported message")
 	require.Contains(t, logs.String(), "connector_id=c1")
