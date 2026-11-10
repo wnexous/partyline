@@ -33,6 +33,11 @@ import {
 const GROUP_WINDOW_MS = 5 * 60_000;
 const LOAD_OLDER_PX = 400;
 const AT_END_PX = 64;
+/**
+ * The virtualizer's own end-following, off: its distance from the end is never negative, so it never
+ * reads the list as at its end. `useStickToEnd` alone holds the timeline at its newest message.
+ */
+const VIRTUALIZER_NEVER_AT_END = -1;
 /** Height of the "loading older / start of room" strip above the first row. */
 const TOP_STRIP_PX = 40;
 const FRESH_MS = 1_500;
@@ -181,57 +186,38 @@ export function MessageTimeline({
     getItemKey: (index) => items[index]?.id ?? index,
     overscan: 8,
     scrollMargin: TOP_STRIP_PX,
+    // Rows added at either edge keep what the reader sees in place (older pages above, new
+    // messages below); holding the newest message in view is `useStickToEnd`'s alone.
     anchorTo: "end",
-    followOnAppend: true,
-    scrollEndThreshold: AT_END_PX,
+    scrollEndThreshold: VIRTUALIZER_NEVER_AT_END,
   });
 
-  // Where the reader is: at the newest message or not. The ref is what a resize of the box reads
-  // (the keyboard opening is no scroll, so the state it would read has not moved).
-  const [atEnd, setAtEndState] = useState(true);
-  const atEndRef = useRef(true);
-  const setAtEnd = useCallback((value: boolean) => {
-    atEndRef.current = value;
-    setAtEndState(value);
-  }, []);
-  const initialized = useRef(false);
-  useLayoutEffect(() => {
-    if (initialized.current || items.length === 0) return;
-    initialized.current = true;
-    virtualizer.scrollToIndex(items.length - 1, { align: "end" });
-  }, [items.length, virtualizer]);
-
-  const onScroll = useCallback(() => {
-    const el = scrollRef.current;
-    if (!el || !initialized.current) return;
-    setAtEnd(el.scrollHeight - el.scrollTop - el.clientHeight <= AT_END_PX);
-    if (el.scrollTop < LOAD_OLDER_PX && hasNextPage && !isFetchingNextPage) {
-      void fetchNextPage();
-    }
-  }, [hasNextPage, isFetchingNextPage, fetchNextPage, setAtEnd]);
-
-  // The box changes height when the on-screen keyboard opens or closes (KBD-02): a reader at the
-  // newest message stays at it, one higher up keeps their place.
+  // Whether the reader is at the newest message, and keeping them there through any change of size
+  // (KBD-02): the keyboard, the window, the font, the header, a picture, a new message.
   const [scroller, setScroller] = useState<HTMLDivElement | null>(null);
+  const [content, setContent] = useState<HTMLDivElement | null>(null);
   const scrollerRef = useCallback((el: HTMLDivElement | null) => {
     scrollRef.current = el;
     setScroller(el);
   }, []);
-  useStickToEnd(
-    scroller,
-    () => atEndRef.current,
-    () => {
-      const el = scrollRef.current;
-      if (el) el.scrollTop = el.scrollHeight;
-    },
-  );
+  const { atEnd, stick, release } = useStickToEnd(scroller, content, AT_END_PX);
+  // Scrolling near the top loads the older page; where the reader is, is the hook's to read.
+  const onScroll = useCallback(() => {
+    const el = scrollRef.current;
+    if (!el) return;
+    if (el.scrollTop < LOAD_OLDER_PX && hasNextPage && !isFetchingNextPage) {
+      void fetchNextPage();
+    }
+  }, [hasNextPage, isFetchingNextPage, fetchNextPage]);
 
   const jumpTo = useCallback(
     (id: string) => {
       const index = items.findIndex((m) => m.id === id);
-      if (index >= 0) virtualizer.scrollToIndex(index, { align: "center" });
+      if (index < 0) return;
+      release();
+      virtualizer.scrollToIndex(index, { align: "center" });
     },
-    [items, virtualizer],
+    [items, virtualizer, release],
   );
 
   // The image viewer (IMG-01..IMG-06) walks the conversation's images as far as they are loaded.
@@ -277,6 +263,7 @@ export function MessageTimeline({
     if (!pending || !query.data) return;
     const index = items.findIndex((m) => m.id === pending.id);
     if (index >= 0) {
+      release();
       virtualizer.scrollToIndex(index, { align: "center" });
       setFlash({ id: pending.id, at: Date.now() });
       setPending(null);
@@ -289,12 +276,17 @@ export function MessageTimeline({
     }
     setPending(null);
     toast(t("timeline.messageGone"));
-  }, [pending, query.data, items, hasNextPage, isFetchingNextPage, fetchNextPage, virtualizer, t]);
-
-  const jumpToLatest = () => {
-    virtualizer.scrollToIndex(items.length - 1, { align: "end" });
-    setAtEnd(true);
-  };
+  }, [
+    pending,
+    query.data,
+    items,
+    hasNextPage,
+    isFetchingNextPage,
+    fetchNextPage,
+    virtualizer,
+    release,
+    t,
+  ]);
 
   if (query.isPending) return <TimelineSkeleton className={className} />;
 
@@ -336,7 +328,7 @@ export function MessageTimeline({
         onScroll={onScroll}
         className="min-h-0 flex-1 overflow-y-auto overscroll-contain outline-none [overflow-anchor:none] focus-visible:ring-2 focus-visible:ring-ring/70 focus-visible:ring-inset"
       >
-        <div className="flex min-h-full flex-col">
+        <div ref={setContent} className="flex min-h-full flex-col">
           <div className="flex-1" />
           <div
             className="flex items-center justify-center text-xs text-muted-foreground"
@@ -424,7 +416,7 @@ export function MessageTimeline({
       {/* A strip of its own, between the messages and the composer: nothing is laid over a message (KBD-06). */}
       {!atEnd ? (
         <div className="flex shrink-0 justify-center px-4 py-2 md:px-6">
-          <Button size="sm" variant="secondary" onClick={jumpToLatest} className="shadow-md">
+          <Button size="sm" variant="secondary" onClick={stick} className="shadow-md">
             <ArrowDownIcon aria-hidden="true" />
             {t("timeline.jumpLatest")}
           </Button>
