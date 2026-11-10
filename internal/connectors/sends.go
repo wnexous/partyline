@@ -244,25 +244,49 @@ func (s *Sends) plan(ctx context.Context, in SendInput) (sendPlan, error) {
 // fileFits refuses a file the connection's kind cannot send: ErrFilesUnsupported without a media send
 // (CID-32), a *FileTooLargeError over the platform's own limit (LF-05).
 func (s *Sends) fileFits(conn db.Connector, size int64) error {
+	limit, platform, err := s.fileLimit(conn)
+	if err != nil {
+		return err
+	}
+	if limit > 0 && size > limit {
+		return &FileTooLargeError{Max: limit, Platform: platform}
+	}
+	return nil
+}
+
+// fileLimit is the largest file the connection's platform takes (0: no limit of its own) and the label
+// of its kind; ErrFilesUnsupported when it takes none.
+func (s *Sends) fileLimit(conn db.Connector) (int64, string, error) {
 	if s.d.Kinds == nil {
-		return ErrFilesUnsupported
+		return 0, "", ErrFilesUnsupported
 	}
 	kind, ok := s.d.Kinds.Lookup(conn.Kind)
 	if !ok || !kind.CanSendFiles {
-		return ErrFilesUnsupported
+		return 0, "", ErrFilesUnsupported
 	}
-	limit := kind.MaxFileBytes
-	if kind.FileLimit != nil {
-		cfg, err := Decode(nil, conn.ConfigJson, nil) // the public fields only, as for an address
-		if err != nil {
-			return err
-		}
-		limit = kind.MaxFile(cfg)
+	if kind.FileLimit == nil {
+		return kind.MaxFileBytes, kind.Label, nil
 	}
-	if limit > 0 && size > limit {
-		return &FileTooLargeError{Max: limit, Platform: kind.Label}
+	cfg, err := Decode(nil, conn.ConfigJson, nil) // the public fields only, as for an address
+	if err != nil {
+		return 0, "", err
 	}
-	return nil
+	return kind.MaxFile(cfg), kind.Label, nil
+}
+
+// FileLimit is the largest file the platform of a connection takes (0: no limit of its own) with the
+// label of its kind, for a caller that reads a file as it arrives and would stop at it (LF-05):
+// access.ErrNotFound for a connection that does not exist, ErrFilesUnsupported for a platform without
+// files. It says nothing of who may send.
+func (s *Sends) FileLimit(ctx context.Context, connectorID string) (int64, string, error) {
+	conn, err := s.d.Store.R().GetConnector(ctx, connectorID)
+	if errors.Is(err, sql.ErrNoRows) {
+		return 0, "", access.ErrNotFound
+	}
+	if err != nil {
+		return 0, "", err
+	}
+	return s.fileLimit(conn)
 }
 
 // CheckFile refuses a file of size bytes that the AI could not send through the connection, before

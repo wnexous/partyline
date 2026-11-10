@@ -8,6 +8,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync/atomic"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -207,4 +208,35 @@ func TestAnUploadIsSentOnce(t *testing.T) {
 	for range 2 {
 		agent.Post(path, dto.SendToChatRequest{UploadIDs: []string{big.ID}}).RequireError(http.StatusRequestEntityTooLarge, dto.ErrorCodeFileTooLarge)
 	}
+}
+
+// readCounter counts the bytes read from r.
+type readCounter struct {
+	r io.Reader
+	n atomic.Int64
+}
+
+func (c *readCounter) Read(p []byte) (int, error) {
+	n, err := c.r.Read(p)
+	c.n.Add(int64(n))
+	return n, err
+}
+
+// LF-05: the platform's limit is known before the file part arrives: a part over it is refused as soon
+// as it goes past the limit, not written whole to the disk first, and a part for a platform without
+// files is refused when it shows.
+func TestAFilePartOverThePlatformLimitIsNotReadWhole(t *testing.T) {
+	f := newReplyFixtureOfKind(t, tinyPlatform)
+	contentType, body := chatUpload{caption: dto.SendToChatRequest{Text: "x"}, files: []chatUploadFile{{name: "big.bin", content: strings.Repeat("a", 8<<20)}}}.body(t)
+	counted := &readCounter{r: body}
+	e := f.token.AsAgent("Atlas").DoRaw(http.MethodPost, connectionChatPath(f.conn.ID, f.group.ID), contentType, counted).
+		RequireError(http.StatusRequestEntityTooLarge, dto.ErrorCodeFileTooLarge)
+	require.Equal(t, map[string]string{"max_size": "1000", "platform": "Fake"}, e.Details)
+	require.Less(t, counted.n.Load(), int64(4<<20), "the request was not read to its end")
+	require.Empty(t, f.spooled(t))
+	require.Empty(t, f.inst.Sent())
+
+	g := newReplyFixtureOfKind(t, func(k *connectors.Kind) { k.CanSendFiles = false })
+	g.sendFileToChat(t, "Atlas", g.conn.ID, g.group.ID, "x", reportPDF).RequireError(http.StatusUnprocessableEntity, dto.ErrorCodeUnsupported)
+	require.Empty(t, g.spooled(t))
 }

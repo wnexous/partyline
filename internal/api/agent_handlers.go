@@ -878,7 +878,7 @@ func (s *server) agentConnectionSend(w http.ResponseWriter, r *http.Request, p a
 	uploadIDs := req.UploadIDs
 	if upload {
 		// A caption and a file, read after the AI is known to belong to the connection's organization (CID-32).
-		form, err := s.readConnectionUpload(r)
+		form, err := s.readConnectionUpload(r, connectionID)
 		defer form.cleanup()
 		if err != nil {
 			return err
@@ -954,7 +954,14 @@ func (f connectionForm) cleanup() {
 // removed by cleanup once the send is over, because the send keeps no file (CID-32, LF-04). The file is
 // bounded by the upload limit (413 over it) and gets the type its sender gave, else a binary one, and
 // its name without any path.
-func (s *server) readConnectionUpload(r *http.Request) (form connectionForm, err error) {
+//
+// The platform's limit is known before the file arrives: a file part over it, or one for a platform
+// without files, is refused as soon as it shows, without writing it whole to the disk (LF-05).
+func (s *server) readConnectionUpload(r *http.Request, connectionID string) (form connectionForm, err error) {
+	platformMax, platform, limitErr := s.Sends.FileLimit(r.Context(), connectionID)
+	if limitErr != nil && !errors.Is(limitErr, connectors.ErrFilesUnsupported) {
+		return form, limitErr
+	}
 	mr, err := r.MultipartReader()
 	if err != nil {
 		return form, httpx.NewError(http.StatusBadRequest, dto.ErrorCodeInvalid, "malformed multipart body")
@@ -985,6 +992,9 @@ func (s *server) readConnectionUpload(r *http.Request) (form connectionForm, err
 			if form.file != nil {
 				return form, errOneFile
 			}
+			if limitErr != nil {
+				return form, limitErr // a platform without files
+			}
 			file := &connectors.SendFile{Name: filepath.Base(part.FileName()), Mime: part.Header.Get("Content-Type")}
 			if file.Name == "." || file.Name == "/" {
 				file.Name = "file"
@@ -992,7 +1002,11 @@ func (s *server) readConnectionUpload(r *http.Request) (form connectionForm, err
 			if file.Mime == "" {
 				file.Mime = "application/octet-stream"
 			}
-			if form.temp, file.Size, err = s.spool(part); err != nil {
+			if form.temp, file.Size, err = s.spool(part, platformMax); err != nil {
+				var over *connectors.FileTooLargeError
+				if errors.As(err, &over) {
+					over.Platform = platform
+				}
 				return form, err
 			}
 			path := form.temp
@@ -1003,9 +1017,10 @@ func (s *server) readConnectionUpload(r *http.Request) (form connectionForm, err
 	}
 }
 
-// spool writes a file part to a temporary file, at most the upload limit (413 over it), and returns its
-// path and size. Nothing is left behind when it fails.
-func (s *server) spool(part io.Reader) (string, int64, error) {
+// spool writes a file part to a temporary file, at most the upload limit (413 over it) and the
+// platform's limit platformMax when it is set (a *connectors.FileTooLargeError over it, read no
+// further), and returns its path and size. Nothing is left behind when it fails.
+func (s *server) spool(part io.Reader, platformMax int64) (string, int64, error) {
 	var tmp *os.File
 	var err error
 	if s.Uploads != nil {
@@ -1016,7 +1031,11 @@ func (s *server) spool(part io.Reader) (string, int64, error) {
 	if err != nil {
 		return "", 0, err
 	}
-	n, err := io.Copy(tmp, io.LimitReader(part, s.Config.MaxUploadBytes+1))
+	limit := s.Config.MaxUploadBytes
+	if platformMax > 0 {
+		limit = min(limit, platformMax)
+	}
+	n, err := io.Copy(tmp, io.LimitReader(part, limit+1))
 	if cerr := tmp.Close(); err == nil {
 		err = cerr
 	}
@@ -1024,6 +1043,9 @@ func (s *server) spool(part io.Reader) (string, int64, error) {
 	case err != nil:
 		_ = os.Remove(tmp.Name())
 		return "", 0, multipartError(err)
+	case platformMax > 0 && n > platformMax:
+		_ = os.Remove(tmp.Name())
+		return "", 0, &connectors.FileTooLargeError{Max: platformMax}
 	case n > s.Config.MaxUploadBytes:
 		_ = os.Remove(tmp.Name())
 		return "", 0, errUploadTooLarge
