@@ -1,6 +1,7 @@
 package channel
 
 import (
+	"context"
 	"encoding/json"
 	"testing"
 	"time"
@@ -8,6 +9,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/wnexous/partyline/internal/agents"
+	"github.com/wnexous/partyline/internal/store/db"
 )
 
 // worktreeSession opens the AI's session in a linked worktree: a parallel session with its own label,
@@ -25,6 +27,15 @@ func (e *chanEnv) worktreeSession() *session {
 		}
 		return false
 	}, wait, 10*time.Millisecond, "the worktree session attached")
+	// The presence shows the session before its room state rows exist, and a session joins a room caught
+	// up when that row is written (SN-01): a message posted in between would already count as read.
+	key := agents.SessionKey("", "wt", "")
+	require.Eventually(e.t, func() bool {
+		_, err := e.env.App.Store.R().GetSessionRoomState(context.Background(), db.GetSessionRoomStateParams{
+			AgentID: e.agentID, SessionKey: key, RoomID: e.room.ID,
+		})
+		return err == nil
+	}, wait, 10*time.Millisecond, "the worktree session joined the room")
 	return s
 }
 
