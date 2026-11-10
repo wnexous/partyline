@@ -2,6 +2,7 @@ package delivery
 
 import (
 	"regexp"
+	"slices"
 	"strings"
 	"unicode"
 	"unicode/utf8"
@@ -12,22 +13,28 @@ import (
 // sessionLabelPattern is the shape of a session label (SESS-11).
 var sessionLabelPattern = regexp.MustCompile(dto.SessionLabelPattern)
 
-// SessionLabel returns the session label a message's text addresses to the AI with handle,
-// or "" when it addresses the AI without a label (SESS-21). An address is "@handle:" followed
-// by a label; the handle matches case-insensitively with no letter, digit or underscore right
-// before the "@" and no handle character right after it (the rules of containsBounded and
-// continuesHandle), and the label is lowercase a-z, 0-9 and "-", 1 to dto.MaxSessionLabel
-// characters; it is read case-insensitively (handles are) and returned lowercase, and it must end at a
-// boundary: the end of the text or a character that is none of a-z, A-Z, 0-9, "-", ".", "/" and ":", so
-// "@atlas:wt.example.com" and "@atlas:wt/x" are not addresses, and neither is "/@atlas:wt". An invalid or over-long label is not an address, so the scan continues, and the
-// first valid address wins. An address inside code - an inline code span between backticks or a fenced
-// code block - is an example of an address, not one: that part of the text is not read (blankCode, SESS-48).
-func SessionLabel(text, handle string) string {
+// MaxAddressedSessions is the most session labels of one AI that one message addresses (MA-09): further
+// addresses of that AI in the same text are read as plain text and route nothing.
+const MaxAddressedSessions = 10
+
+// SessionLabels returns the session labels a message's text addresses to the AI with handle, every distinct
+// one in the order they appear and at most MaxAddressedSessions of them, or nil when it addresses the AI
+// without a label (SESS-21, MA-01). An address is "@handle:" followed by a label; the handle matches
+// case-insensitively with no letter, digit or underscore right before the "@" and no handle character right
+// after it (the rules of containsBounded and continuesHandle), and the label is lowercase a-z, 0-9 and "-", 1
+// to dto.MaxSessionLabel characters; it is read case-insensitively (handles are) and returned lowercase, and
+// it must end at a boundary: the end of the text or a character that is none of a-z, A-Z, 0-9, "-", ".", "/"
+// and ":", so "@atlas:wt.example.com" and "@atlas:wt/x" are not addresses, and neither is "/@atlas:wt". An
+// invalid or over-long label is not an address, so the scan continues; an address repeated in the text counts
+// once. An address inside code - an inline code span between backticks or a fenced code block - is an example
+// of an address, not one: that part of the text is not read (blankCode, SESS-48).
+func SessionLabels(text, handle string) []string {
 	if handle == "" {
-		return ""
+		return nil
 	}
 	text = blankCode(text)
-	for i := 0; i < len(text); i++ {
+	var out []string
+	for i := 0; i < len(text) && len(out) < MaxAddressedSessions; i++ {
 		rest, ok := handleAt(text, i, handle)
 		if !ok {
 			continue
@@ -35,9 +42,18 @@ func SessionLabel(text, handle string) string {
 		if !strings.HasPrefix(rest, ":") {
 			continue
 		}
-		if label := leadingLabel(rest[1:]); label != "" {
-			return label
+		if label := leadingLabel(rest[1:]); label != "" && !slices.Contains(out, label) {
+			out = append(out, label)
 		}
+	}
+	return out
+}
+
+// SessionLabel returns the first session label a message's text addresses to the AI with handle, or "" when
+// it addresses the AI without a label: the first of SessionLabels.
+func SessionLabel(text, handle string) string {
+	if labels := SessionLabels(text, handle); len(labels) > 0 {
+		return labels[0]
 	}
 	return ""
 }
@@ -227,7 +243,7 @@ func closingFenceEnd(b []byte, from int, fence byte, n int) int {
 const PrincipalTarget = "@principal"
 
 // MentionsPrincipal reports whether the text mentions the AI with handle by its bare "@handle", the way
-// SessionLabel reads addresses: at a word boundary, case-insensitively, not inside a path or a URL, and
+// SessionLabels reads addresses: at a word boundary, case-insensitively, not inside a path or a URL, and
 // not inside code. "@atlas:wt" is an address of the session wt and "@atlas:" or "@atlas: ping" are not
 // (no label follows): only the latter mention the AI itself (SESS-49).
 func MentionsPrincipal(text, handle string) bool {
