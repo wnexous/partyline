@@ -305,6 +305,10 @@ func merge(base spec, in Input) (spec, error) {
 	if err != nil {
 		return out, err
 	}
+	if _, err := r.NextChecked(time.Now()); err != nil {
+		check.Add("cron", err.Error())
+		return out, check.Err()
+	}
 	if r.MinGap() < MinInterval {
 		return out, tooFrequentInterval()
 	}
@@ -452,6 +456,7 @@ func (s *Service) Create(ctx context.Context, p authn.Principal, agentID string,
 		origin = dto.ScheduleOriginSelf
 	}
 	id := store.NewID()
+	next := nextRun(r, sp.enabled, now) // outside the write transaction, like every rule computation
 	err = s.d.Store.WithTx(ctx, func(q *db.Queries) error {
 		n, err := q.CountSchedulesByAgent(ctx, agentID)
 		if err != nil {
@@ -471,7 +476,7 @@ func (s *Service) Create(ctx context.Context, p authn.Principal, agentID string,
 			ID: id, AgentID: agentID, Name: sp.name, Prompt: sp.prompt, RuleKind: ruleKind(sp),
 			EveryMinutes: nullInt(int64(sp.every), sp.cron == ""), Cron: nullStr(sp.cron, sp.cron != ""), Tz: sp.tz,
 			CatchUp: sp.catchUp, Enabled: sp.enabled, Origin: string(origin), SetBy: actor, CreatedBy: actor, UpdatedBy: actor,
-			AnchorAt: now.UnixMilli(), CreatedAt: now.UnixMilli(), UpdatedAt: now.UnixMilli(), NextRunAt: nextRun(r, sp.enabled, now),
+			AnchorAt: now.UnixMilli(), CreatedAt: now.UnixMilli(), UpdatedAt: now.UnixMilli(), NextRunAt: next,
 		}); err != nil {
 			return err
 		}

@@ -56,42 +56,32 @@ func (s *Service) Run(ctx context.Context) error {
 func (s *Service) Tick(ctx context.Context) (time.Time, error) {
 	now := s.d.Now()
 	queued, touched := map[string]bool{}, map[string]bool{}
-	err := s.d.Store.WithTx(ctx, func(q *db.Queries) error {
+	// The rules are computed before the write transaction, which holds the only writer connection: no search
+	// of a run time ever runs while it blocks the server's other writes.
+	due, err := s.d.Store.R().ListDueSchedules(ctx, db.ListDueSchedulesParams{Now: sql.NullInt64{Int64: now.UnixMilli(), Valid: true}, Limit: runLimit})
+	if err != nil {
+		return time.Time{}, err
+	}
+	plans := make([]tickPlan, 0, len(due))
+	for _, row := range due {
+		plans = append(plans, s.plan(row, now))
+	}
+	err = s.d.Store.WithTx(ctx, func(q *db.Queries) error {
 		// The due schedules first: a new run supersedes the unwritten one before it, whose window ends now.
-		due, err := q.ListDueSchedules(ctx, db.ListDueSchedulesParams{Now: sql.NullInt64{Int64: now.UnixMilli(), Valid: true}, Limit: runLimit})
-		if err != nil {
-			return err
-		}
-		for _, row := range due {
-			touched[row.AgentID] = true
-			r, err := ruleOf(row)
+		for _, p := range plans {
+			n, err := q.AdvanceDueSchedule(ctx, db.AdvanceDueScheduleParams{NextRunAt: p.next, ID: p.row.ID, Prev: p.row.NextRunAt})
 			if err != nil {
-				// A rule this build cannot read (a timezone gone from the database) never fires.
-				s.d.Logger.Warn("schedules: unreadable rule; the schedule stops", "schedule_id", row.ID, "err", err)
-				if err := q.SetScheduleNextRun(ctx, db.SetScheduleNextRunParams{ID: row.ID}); err != nil {
-					return err
-				}
-				continue
-			}
-			dueAt := latestDue(r, time.UnixMilli(row.NextRunAt.Int64), now)
-			expires := dueAt.Add(r.window(dueAt))
-			status := dto.ScheduleRunPending
-			switch {
-			case !now.Before(expires) && row.CatchUp == string(dto.ScheduleCatchUpSkip):
-				status = dto.ScheduleRunMissed
-			case !now.Before(expires):
-				status = dto.ScheduleRunExpired
-			case row.CatchUp == string(dto.ScheduleCatchUpSkip) && !s.d.PrincipalLive(row.AgentID):
-				status = dto.ScheduleRunMissed
-			}
-			if err := s.insertRun(ctx, q, row, newID(), dueAt, expires, status, false, now); err != nil {
 				return err
 			}
-			if err := q.SetScheduleNextRun(ctx, db.SetScheduleNextRunParams{NextRunAt: nextRun(r, true, now), ID: row.ID}); err != nil {
+			if n == 0 || p.stop {
+				continue // changed since it was read (the next tick sees it as it is now), or a rule that stops
+			}
+			touched[p.row.AgentID] = true
+			if err := s.insertRun(ctx, q, p.row, newID(), p.dueAt, p.expires, p.status, false, now); err != nil {
 				return err
 			}
-			if status == dto.ScheduleRunPending {
-				queued[row.AgentID] = true
+			if p.status == dto.ScheduleRunPending {
+				queued[p.row.AgentID] = true
 			}
 		}
 		expired, err := q.ListExpiredPendingRuns(ctx, db.ListExpiredPendingRunsParams{Now: now.UnixMilli(), Limit: runLimit})
@@ -122,6 +112,43 @@ func (s *Service) Tick(ctx context.Context) (time.Time, error) {
 		return time.Time{}, err
 	}
 	return time.UnixMilli(next), nil
+}
+
+// tickPlan is what a tick does with one due schedule, decided before the write transaction.
+type tickPlan struct {
+	row            db.AgentSchedule
+	dueAt, expires time.Time
+	status         dto.ScheduleRunStatus
+	next           sql.NullInt64
+	// stop is a schedule whose rule cannot be read or computed any more: it never fires again.
+	stop bool
+}
+
+// plan decides the run of a due schedule: its due time is the latest of the times it was due since its last
+// run, its next run the first one after now.
+func (s *Service) plan(row db.AgentSchedule, now time.Time) tickPlan {
+	r, err := ruleOf(row)
+	var next time.Time
+	if err == nil {
+		next, err = r.NextChecked(now)
+	}
+	if err != nil {
+		// A timezone gone from the database, or a rule whose next run cannot be computed, never fires again.
+		s.d.Logger.Warn("schedules: the rule cannot be computed; the schedule stops", "schedule_id", row.ID, "err", err)
+		return tickPlan{row: row, stop: true}
+	}
+	dueAt := latestDue(r, time.UnixMilli(row.NextRunAt.Int64), now)
+	p := tickPlan{row: row, dueAt: dueAt, expires: dueAt.Add(r.window(dueAt)), status: dto.ScheduleRunPending,
+		next: nullInt(next.UnixMilli(), !next.IsZero())}
+	switch {
+	case !now.Before(p.expires) && row.CatchUp == string(dto.ScheduleCatchUpSkip):
+		p.status = dto.ScheduleRunMissed
+	case !now.Before(p.expires):
+		p.status = dto.ScheduleRunExpired
+	case row.CatchUp == string(dto.ScheduleCatchUpSkip) && !s.d.PrincipalLive(row.AgentID):
+		p.status = dto.ScheduleRunMissed
+	}
+	return p
 }
 
 // latestDue is the latest run of r at or before now, starting from first, the run that came due. Runs older

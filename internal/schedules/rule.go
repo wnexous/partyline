@@ -157,31 +157,59 @@ func (c *Cron) dayMatches(t time.Time) bool {
 // fires.
 const cronHorizon = 5 * 366 * 24 * time.Hour
 
+// maxCronSteps bounds the steps of one search. A search crosses at most the horizon's months and days, and
+// within a matching day its hours and minutes, far fewer steps than this; reaching it means the clock of the
+// zone did something the search does not know, and the search stops with ErrCronNoProgress rather than spin.
+const maxCronSteps = 200_000
+
+// ErrCronNoProgress is a search for the next run that did not end within maxCronSteps.
+var ErrCronNoProgress = errors.New("the next run of the cron expression cannot be computed in this timezone")
+
 // Next returns the first time strictly after after at which the expression fires on the wall clock of loc,
-// or the zero time when it never does. The wall clock is followed through daylight saving changes: a time
-// that does not exist on the day the clocks go forward is skipped that day, and a time that happens twice
-// on the day they go back fires once, the first time.
+// or the zero time when it never does (or cannot be computed, see NextChecked).
 func (c *Cron) Next(after time.Time, loc *time.Location) time.Time {
+	t, _ := c.NextChecked(after, loc)
+	return t
+}
+
+// NextChecked is Next with the reason it found no time: nil when the expression never fires within the
+// horizon, ErrCronNoProgress when the search was cut. The wall clock is followed through daylight saving
+// changes: a time that does not exist on the day the clocks go forward is skipped that day, and a time that
+// happens twice on the day they go back fires once, the first time. Every step moves strictly forward: a jump
+// to the next day or month that the zone's clock turns into a time not after the current one (a local
+// midnight that is missing or repeated on a daylight saving day) becomes a step to the next hour instead.
+func (c *Cron) NextChecked(after time.Time, loc *time.Location) (time.Time, error) {
 	t := after.In(loc)
 	t = t.Add(time.Minute - time.Duration(t.Second())*time.Second - time.Duration(t.Nanosecond()))
 	limit := t.Add(cronHorizon)
-	for t.Before(limit) {
+	for range maxCronSteps {
+		if !t.Before(limit) {
+			return time.Time{}, nil
+		}
+		var next time.Time
 		switch {
 		case !has(c.month, int(t.Month())):
-			t = time.Date(t.Year(), t.Month()+1, 1, 0, 0, 0, 0, loc)
+			next = time.Date(t.Year(), t.Month()+1, 1, 0, 0, 0, 0, loc)
 		case !c.dayMatches(t):
-			t = time.Date(t.Year(), t.Month(), t.Day()+1, 0, 0, 0, 0, loc)
+			next = time.Date(t.Year(), t.Month(), t.Day()+1, 0, 0, 0, 0, loc)
 		case !has(c.hour, t.Hour()):
-			t = t.Add(time.Hour - time.Duration(t.Minute())*time.Minute)
-		case !has(c.minute, t.Minute()):
-			t = t.Add(time.Minute)
-		case repeatedWallClock(t):
-			t = t.Add(time.Minute)
+			next = nextHour(t)
+		case !has(c.minute, t.Minute()), repeatedWallClock(t):
+			next = t.Add(time.Minute)
 		default:
-			return t
+			return t, nil
 		}
+		if !next.After(t) {
+			next = nextHour(t)
+		}
+		t = next.In(loc)
 	}
-	return time.Time{}
+	return time.Time{}, ErrCronNoProgress
+}
+
+// nextHour is the start of the next hour after t on t's clock: always strictly after t.
+func nextHour(t time.Time) time.Time {
+	return t.Add(time.Hour - time.Duration(t.Minute())*time.Minute)
 }
 
 // repeatedWallClock reports whether the wall clock of t was already shown earlier, as the clocks went back
@@ -242,9 +270,19 @@ type Rule struct {
 // Next returns the first run strictly after t, or the zero time when the rule never fires. An interval is
 // anchored: its runs are Anchor + k·interval, however late each was fired, so they never drift.
 func (r Rule) Next(t time.Time) time.Time {
+	n, _ := r.NextChecked(t)
+	return n
+}
+
+// NextChecked is Next with ErrCronNoProgress when a cron's search was cut (Cron.NextChecked).
+func (r Rule) NextChecked(t time.Time) (time.Time, error) {
 	if r.Cron != nil {
-		return r.Cron.Next(t, r.Loc)
+		return r.Cron.NextChecked(t, r.Loc)
 	}
+	return r.every(t), nil
+}
+
+func (r Rule) every(t time.Time) time.Time {
 	step := time.Duration(r.EveryMinutes) * time.Minute
 	if step <= 0 {
 		return time.Time{}

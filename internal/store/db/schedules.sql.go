@@ -30,6 +30,26 @@ func (q *Queries) AckRun(ctx context.Context, arg AckRunParams) (string, error) 
 	return schedule_id, err
 }
 
+const advanceDueSchedule = `-- name: AdvanceDueSchedule :execrows
+UPDATE agent_schedules SET next_run_at = ?1
+WHERE id = ?2 AND enabled = 1 AND next_run_at = ?3
+`
+
+type AdvanceDueScheduleParams struct {
+	NextRunAt sql.NullInt64
+	ID        string
+	Prev      sql.NullInt64
+}
+
+// The scheduler takes a due schedule: its next run moves on only if nobody changed it since it was read.
+func (q *Queries) AdvanceDueSchedule(ctx context.Context, arg AdvanceDueScheduleParams) (int64, error) {
+	result, err := q.db.ExecContext(ctx, advanceDueSchedule, arg.NextRunAt, arg.ID, arg.Prev)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected()
+}
+
 const claimScheduleNotice = `-- name: ClaimScheduleNotice :execrows
 UPDATE agent_schedules SET notified_at = ?1
 WHERE id = ?2 AND (notified_at IS NULL OR notified_at <= ?3)

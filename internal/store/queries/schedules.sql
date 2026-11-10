@@ -118,3 +118,8 @@ SELECT * FROM agent_schedule_notices WHERE message_id = ?;
 -- name: GetMessageAnswerRef :one
 -- HB-09: what an answer to a manager notice needs: the question it answers, its author and the answer.
 SELECT reply_to, author_iid, answers_json FROM messages WHERE id = ?;
+
+-- name: AdvanceDueSchedule :execrows
+-- The scheduler takes a due schedule: its next run moves on only if nobody changed it since it was read.
+UPDATE agent_schedules SET next_run_at = sqlc.arg(next_run_at)
+WHERE id = sqlc.arg(id) AND enabled = 1 AND next_run_at = sqlc.arg(prev);
