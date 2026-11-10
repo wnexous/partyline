@@ -157,6 +157,26 @@ WHERE mv.room_id = sqlc.arg(room_id) AND mv.seq > sqlc.arg(after_seq) AND mv.seq
 ORDER BY mv.seq ASC
 LIMIT sqlc.arg(limit);
 
+-- name: GetAgentReadThrough :one
+-- How far, from after_seq and up to bound_seq, the AI has read one room without a gap (SN-11): the sequence
+-- just before the first message there that the AI has not read, or bound_seq when there is none. A message is
+-- read by the AI when the AI wrote it (from any of its sessions) or when a session of it acknowledged it as a
+-- message of its own: a delivery row that is not a context copy (context = 0: an addressed message, a stand-in
+-- or a copy of a room it follows, once acknowledged), or the principal's own row. A message a session saw only
+-- as context of another, or through read_unread, is not read: the channel tells the AI to answer the newest
+-- message only. Nothing from before the AI's current membership (ROOM-01) is anyone's to read. The principal's
+-- cursor moves there when it attaches.
+SELECT CAST(COALESCE(MIN(m.seq) - 1, sqlc.arg(bound_seq)) AS INTEGER) AS seq FROM messages m
+JOIN room_members rm ON rm.room_id = m.room_id AND rm.kind = 'agent' AND rm.member_id = sqlc.arg(agent_id)
+WHERE m.room_id = sqlc.arg(room_id) AND m.seq > sqlc.arg(after_seq) AND m.seq <= sqlc.arg(bound_seq)
+  AND m.seq > COALESCE((SELECT MAX(b.seq) FROM messages b
+                        WHERE b.room_id = m.room_id AND b.created_at < rm.created_at), 0)
+  AND NOT (m.author_kind = 'agent' AND m.author_id = sqlc.arg(agent_id))
+  AND NOT EXISTS (
+      SELECT 1 FROM agent_session_deliveries d
+      WHERE d.message_id = m.id AND d.agent_id = sqlc.arg(agent_id) AND d.acked_at IS NOT NULL
+        AND (d.context = 0 OR d.label = ''));
+
 -- name: GetMessageRoomSeq :one
 SELECT room_id, seq FROM messages WHERE id = ?;
 

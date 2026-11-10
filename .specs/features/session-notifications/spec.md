@@ -74,7 +74,10 @@ they waited for a principal that never connected. The same held for a bare `@han
       consumed for the principal: the session's row becomes its own tombstone (as for an addressed
       message it acknowledged), so the principal's backlog leaves it out when it connects later and
       no session receives it twice. The principal still counts it as unread in that conversation
-      and receives it as context of its next notification there when its read position is below it.
+      and receives it as context of its next notification there when its read position is below it
+      (amended by SN-11: when the principal attaches, its read position first moves over what the AI
+      answered or wrote without a gap, so a stand-in its sibling answered before anything else is not
+      unread for it then).
       A message no parallel session acknowledged stays in the principal's queue (nothing is lost
       when the session that was given it ends without answering).
     - WHEN a parallel session attaches while the AI has no live principal THEN its backlog SHALL
@@ -96,6 +99,43 @@ they waited for a principal that never connected. The same held for a bare `@han
       than the stand-ins, and both may answer it.
     - SESS-23 is amended accordingly: while the principal is offline its queue is still kept for it,
       but the messages this rule names are also delivered to the live parallel sessions.
+
+### SN-11 — what a session of the AI answered is the AI's (2026-11-10, revised the same day)
+Incident: an AI worked for days through a parallel session while its principal was offline; that
+session answered the conversations and saw more of them as context and through read_unread. Then the
+harness restarted and the new session became the principal: its backlog, which starts at the AI's
+cursor and only moves with the principal's acknowledgements (SESS-17), delivered about 50 old
+messages per conversation as if new, and read_unread listed the sibling's replies as unread.
+
+A first version counted everything up to a session's read position as read by the AI. Review showed
+that loses messages: a request posted as a plain group message and followed by an `@handle` ping
+reaches the parallel session only as context of the ping, the channel tells the AI to answer the
+newest message, so nobody acts on the request; and a read position also passes messages a capped or
+overflowing catch-up skipped, messages written while the loop guard paused the room, and messages a
+replay of owned rows never showed. The rule is therefore narrow: a little re-delivery is accepted,
+a lost message is not.
+
+11. A message SHALL count as read by the AI, for every session it is not yet delivered to, WHEN the
+    AI wrote it (from any session), or WHEN a session of the AI acknowledged it as a message of its
+    own: a delivery row of the AI that is acknowledged and is not a context copy (`context = 0`:
+    an addressed message, a stand-in of SN-10, or the copy a session gets of a room it follows),
+    or the principal's own row. A message a session saw only as context of another, or through
+    read_unread, SHALL NOT count: it stays in the principal's queue. (SN-11)
+    - A session that follows a room (setting `on`) is given each message as the message itself; its
+      acknowledgement turns its copy row into its own tombstone, as a stand-in's does (SN-10), so
+      the principal's backlog and the stand-ins of a later parallel session leave the message out.
+    - WHEN the principal attaches THEN, per conversation, the AI's cursor and the principal's read
+      position (SN-01 mirror) SHALL move over the run after the cursor, up to the welcome bound,
+      in which every message is read by the AI as above (messages from before the AI's membership,
+      ROOM-01, are skipped). The first message that is not stops it: that message and everything
+      after it stay the principal's queue and unread for it. This keeps a principal that comes back
+      with an old read position from seeing what its sibling answered and wrote before that point as
+      unread; a brand-new principal session already joins caught up (SN-01).
+    - The AI's own messages are never part of any backlog (they never were: SESS-38). SN-06 holds
+      for the catch-up and the unread count of a live session: a sibling's message after the first
+      unread one is still context and unread for the principal.
+    - A message no session acknowledged as its own SHALL still be delivered as before (backlog or
+      stand-in). Fallbacks (SESS-22/SESS-24) and addressed rows are unaffected.
 
 ## Out of scope
 Per-session notification for platform chats; notification sounds; per-message read receipts in the

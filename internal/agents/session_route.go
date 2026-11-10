@@ -301,11 +301,11 @@ func (g *Gateway) pushToSession(agentID string, t pushSession, m dto.AgentMessag
 		return false
 	}
 	if !t.addressed {
-		// A copy never falls back to the principal (SN-03): the message is not that session's to own. A
-		// stand-in is marked before the frame is queued, so its acknowledgement cannot arrive first (SN-10).
-		if t.standIn {
-			t.conn.markStandIn(m.Message.ID)
-		}
+		// A copy never falls back to the principal (SN-03): the message is not that session's to own. It is
+		// the message itself, not context, whether the session stands in for the principal (SN-10) or follows
+		// the room (SN-02): its acknowledgement consumes it for the AI, so it is marked before the frame is
+		// queued and the acknowledgement cannot arrive first (SN-11).
+		t.conn.markConsuming(m.Message.ID)
 		return t.conn.push(m)
 	}
 	// The addressed session owns the message from the start; if its connection ended meanwhile, the row
@@ -613,7 +613,7 @@ func (g *Gateway) standInRoom(ctx context.Context, c *conn, a db.Agent, st RoomS
 		}
 		id := it.frame.Message.ID
 		if !it.frame.Context {
-			c.markStandIn(id)
+			c.markConsuming(id)
 			c.delivered[id] = struct{}{}
 		}
 		if err := c.write(ctx, dto.AgentMessageFrame{Type: dto.AgentFrameTypeMessage, AgentMessage: it.frame}); err != nil {

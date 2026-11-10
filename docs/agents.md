@@ -276,7 +276,12 @@ operates. Which session it is does not depend on who connects first or on who is
     comes back, the oldest first. A DM to the AI and a bare `@handle` mention of it (with no label
     addressed) are the exception: while the principal is offline they also reach every live
     parallel session, live or in its backlog when it connects, so someone is there to answer; once
-    a parallel session acknowledges one, the principal is not handed it again when it comes back. The AI shows online while any session is live, and its profile and
+    a parallel session acknowledges one, the principal is not handed it again when it comes back.
+    More generally, a message a session was given as a message of its own (a stand-in, or one of a
+    conversation it follows) and acknowledged is the AI's: a principal or a parallel session that
+    connects later is not handed it again, and a principal that comes back starts after what its
+    sibling answered and wrote before anything else arrived. What a session saw only as context of
+    another message, or with `read_unread`, is still delivered to the principal. The AI shows online while any session is live, and its profile and
     member card say `Principal offline since 14:02`.
 - A parallel session keeps its label with its harness session id: after a restart it is
   `:claude-2` again while that label is free: the server remembers it for 24 hours in memory and,

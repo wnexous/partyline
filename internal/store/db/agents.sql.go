@@ -259,6 +259,46 @@ func (q *Queries) GetAgentCursor(ctx context.Context, arg GetAgentCursorParams) 
 	return seq, err
 }
 
+const getAgentReadThrough = `-- name: GetAgentReadThrough :one
+SELECT CAST(COALESCE(MIN(m.seq) - 1, ?1) AS INTEGER) AS seq FROM messages m
+JOIN room_members rm ON rm.room_id = m.room_id AND rm.kind = 'agent' AND rm.member_id = ?2
+WHERE m.room_id = ?3 AND m.seq > ?4 AND m.seq <= ?1
+  AND m.seq > COALESCE((SELECT MAX(b.seq) FROM messages b
+                        WHERE b.room_id = m.room_id AND b.created_at < rm.created_at), 0)
+  AND NOT (m.author_kind = 'agent' AND m.author_id = ?2)
+  AND NOT EXISTS (
+      SELECT 1 FROM agent_session_deliveries d
+      WHERE d.message_id = m.id AND d.agent_id = ?2 AND d.acked_at IS NOT NULL
+        AND (d.context = 0 OR d.label = ''))
+`
+
+type GetAgentReadThroughParams struct {
+	BoundSeq int64
+	AgentID  string
+	RoomID   string
+	AfterSeq int64
+}
+
+// How far, from after_seq and up to bound_seq, the AI has read one room without a gap (SN-11): the sequence
+// just before the first message there that the AI has not read, or bound_seq when there is none. A message is
+// read by the AI when the AI wrote it (from any of its sessions) or when a session of it acknowledged it as a
+// message of its own: a delivery row that is not a context copy (context = 0: an addressed message, a stand-in
+// or a copy of a room it follows, once acknowledged), or the principal's own row. A message a session saw only
+// as context of another, or through read_unread, is not read: the channel tells the AI to answer the newest
+// message only. Nothing from before the AI's current membership (ROOM-01) is anyone's to read. The principal's
+// cursor moves there when it attaches.
+func (q *Queries) GetAgentReadThrough(ctx context.Context, arg GetAgentReadThroughParams) (int64, error) {
+	row := q.db.QueryRowContext(ctx, getAgentReadThrough,
+		arg.BoundSeq,
+		arg.AgentID,
+		arg.RoomID,
+		arg.AfterSeq,
+	)
+	var seq int64
+	err := row.Scan(&seq)
+	return seq, err
+}
+
 const getAgentWithOwner = `-- name: GetAgentWithOwner :one
 SELECT a.id, a.owner_id, a.name, a.description, a.created_at, a.last_seen_at, a.project_id, a.harness, a.machine, a.connected_at, a.folder, a.platform_dropped, a.org_id, a.creator_iid, a.principal_session, u.username AS owner_username,
        CAST(COALESCE(ui.display_name, '') AS TEXT) AS owner_display_name,

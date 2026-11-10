@@ -896,33 +896,36 @@ type conn struct {
 	// (HB-04).
 	beats *heartbeatFeed
 
-	// standIns holds the messages this parallel session was given in place of an offline principal and
-	// has not acknowledged yet (SN-10): its acknowledgement of one of them consumes it for the principal.
-	// The push goroutines write it and the ack reader reads it, under standInMu.
-	standInMu sync.Mutex
-	standIns  map[string]struct{}
+	// consuming holds the messages this parallel session was given as messages of its own that are not
+	// addressed to it, and has not acknowledged yet: the ones it stands in for while the principal is offline
+	// (SN-10) and the copies of a room it follows (SN-02, SN-11). Its acknowledgement of one of them consumes
+	// it for the AI: the principal's queue leaves it out. A message given only as context is never in it.
+	// The push goroutines write it and the ack reader reads it, under consumingMu.
+	consumingMu sync.Mutex
+	consuming   map[string]struct{}
 
 	mu     sync.Mutex
 	closed bool
 }
 
-// markStandIn records that the message reaches this session in place of the principal (SN-10).
-func (c *conn) markStandIn(messageID string) {
-	c.standInMu.Lock()
-	defer c.standInMu.Unlock()
-	if c.standIns == nil {
-		c.standIns = map[string]struct{}{}
+// markConsuming records that the message reaches this session as a message of its own that its
+// acknowledgement consumes for the AI (SN-10, SN-11).
+func (c *conn) markConsuming(messageID string) {
+	c.consumingMu.Lock()
+	defer c.consumingMu.Unlock()
+	if c.consuming == nil {
+		c.consuming = map[string]struct{}{}
 	}
-	c.standIns[messageID] = struct{}{}
+	c.consuming[messageID] = struct{}{}
 }
 
-// takeStandIn reports whether the message reached this session in place of the principal, and forgets it:
-// a message is acknowledged once.
-func (c *conn) takeStandIn(messageID string) bool {
-	c.standInMu.Lock()
-	defer c.standInMu.Unlock()
-	_, ok := c.standIns[messageID]
-	delete(c.standIns, messageID)
+// takeConsuming reports whether the message reached this session as one its acknowledgement consumes for the
+// AI, and forgets it: a message is acknowledged once.
+func (c *conn) takeConsuming(messageID string) bool {
+	c.consumingMu.Lock()
+	defer c.consumingMu.Unlock()
+	_, ok := c.consuming[messageID]
+	delete(c.consuming, messageID)
 	return ok
 }
 
@@ -1029,6 +1032,12 @@ func (g *Gateway) run(ctx context.Context, c *conn, row db.GetAgentWithOwnerRow,
 	}
 	if g.afterWelcome != nil {
 		g.afterWelcome()
+	}
+	if c.labelOf() == "" {
+		// What another session of the AI answered or wrote while this one was away is read (SN-11).
+		if err := g.catchUpPrincipal(ctx, a.ID, bounds); err != nil {
+			return err
+		}
 	}
 	sent, err := g.backlog(ctx, c, a, bounds)
 	if err != nil {
@@ -1329,6 +1338,39 @@ func (g *Gateway) backlogBounds(ctx context.Context, agentID string) (map[string
 	return bounds, nil
 }
 
+// catchUpPrincipal moves the AI's cursor of each room, and the principal's read position with it (SN-01), over
+// what the AI has already read there without a gap, up to the room's bound (SN-11): the messages after the
+// cursor that the AI wrote from any session, or that a session of it acknowledged as a message of its own (not
+// as context of another). The first message that is neither stops it: that one, and everything after it,
+// is still the principal's queue. So a principal that attaches after a sibling worked in its place starts
+// after what the sibling answered, and its unread count does not list what came before.
+func (g *Gateway) catchUpPrincipal(ctx context.Context, agentID string, bounds map[string]int64) error {
+	states, err := g.d.Registry.SessionRooms(ctx, agentID)
+	if err != nil {
+		return err
+	}
+	for _, st := range states {
+		bound, ok := bounds[st.ID]
+		if !ok || bound <= st.Cursor {
+			continue
+		}
+		// What the AI has read only grows (an acknowledgement is never taken back), so the run read here is
+		// still read when the cursor moves, and the cursor never moves back (SN-01).
+		seq, err := g.d.Store.R().GetAgentReadThrough(ctx, db.GetAgentReadThroughParams{
+			AgentID: agentID, RoomID: st.ID, AfterSeq: st.Cursor, BoundSeq: bound,
+		})
+		if err != nil {
+			return err
+		}
+		if seq > st.Cursor {
+			if err := g.advance(ctx, agentID, st.ID, seq); err != nil {
+				return err
+			}
+		}
+	}
+	return nil
+}
+
 // writeOwned writes, in sequence order, the rows a labelled session's connection owns and has not
 // acknowledged in one room. They are not filtered by the delivery mode again (the dispatcher wanted them
 // when it pushed them) and carry no note: they are the session's own.
@@ -1559,8 +1601,9 @@ func (g *Gateway) ackSession(ctx context.Context, c *conn, agentID, messageID st
 	if err != nil {
 		return err
 	}
-	if c.takeStandIn(messageID) {
-		// The session answered in place of the principal: the message is consumed for the AI (SN-10).
+	if c.takeConsuming(messageID) {
+		// The session was given the message itself, in place of the principal or as a room it follows: the
+		// message is consumed for the AI (SN-10, SN-11).
 		if err := g.ackStandInDelivery(ctx, messageID, agentID, c.labelOf()); err != nil {
 			return err
 		}

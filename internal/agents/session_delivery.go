@@ -182,9 +182,10 @@ func (g *Gateway) ackSessionDelivery(ctx context.Context, messageID, agentID, ow
 	})
 }
 
-// ackStandInDelivery is the acknowledgement of a message the connection was given in place of the principal,
-// which was not live (SN-10): its copy row becomes the session's own tombstone, so the principal's queue
-// leaves the message out and a principal that connects later is not handed it a second time.
+// ackStandInDelivery is the acknowledgement of a message the connection was given as the message itself without
+// being addressed: in place of the principal, which was not live (SN-10), or as a copy of a room the session
+// follows (SN-11). Its copy row becomes the session's own tombstone, so the principal's queue leaves the
+// message out and a principal that connects later is not handed it a second time.
 func (g *Gateway) ackStandInDelivery(ctx context.Context, messageID, agentID, label string) error {
 	return g.d.Store.WithTx(ctx, func(q *db.Queries) error {
 		_, err := q.AckStandInDelivery(ctx, db.AckStandInDeliveryParams{
