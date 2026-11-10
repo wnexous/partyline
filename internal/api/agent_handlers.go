@@ -776,21 +776,28 @@ func (s *server) replyOnConnection(w http.ResponseWriter, r *http.Request, p aut
 // text) is refused before the AI's posting limit is looked at, so that it does not use it up and the AI
 // keeps seeing why it was refused; a valid one counts like every other post (TOOL-08). A file is sent
 // once: a platform that refuses it is 502 with the reason, since nothing will send it again (CID-32).
-func (s *server) sendOnConnection(w http.ResponseWriter, r *http.Request, p authn.Principal, in connectors.SendInput, uploadIDs ...string) error {
+func (s *server) sendOnConnection(w http.ResponseWriter, r *http.Request, p authn.Principal, in connectors.SendInput) error {
+	_, err := s.sendUpload(w, r, p, in, "")
+	return err
+}
+
+// sendUpload is sendOnConnection for a send whose file is the upload uploadID (none when empty), and
+// tells whether the send was attempted: then the upload is used up, whatever the platform did.
+func (s *server) sendUpload(w http.ResponseWriter, r *http.Request, p authn.Principal, in connectors.SendInput, uploadID string) (bool, error) {
 	if err := s.Sends.Check(r.Context(), in); err != nil {
-		return err
+		return false, err
 	}
 	if !s.Agents.AllowPost(p.AgentID) {
-		return errAgentRateLimited
+		return false, errAgentRateLimited
 	}
 	res, err := s.Sends.Send(r.Context(), in)
 	if err != nil {
-		return err
+		return false, err
 	}
-	if len(uploadIDs) > 0 {
+	if uploadID != "" {
 		// The file was sent once, or failed: either way nothing sends it again, and the upload goes
 		// (CID-32). Its blob, which nothing references, goes with the blob sweep.
-		if err := s.Uploads.Consume(context.WithoutCancel(r.Context()), uploadOwner(p), uploadIDs); err != nil {
+		if err := s.Uploads.Consume(context.WithoutCancel(r.Context()), uploadOwner(p), []string{uploadID}); err != nil {
 			s.Logger.ErrorContext(r.Context(), "uploads: release the upload of a send", "err", err,
 				"request_id", httpx.RequestID(r.Context()))
 		}
@@ -800,10 +807,10 @@ func (s *server) sendOnConnection(w http.ResponseWriter, r *http.Request, p auth
 		if in.File != nil {
 			what = "file"
 		}
-		return httpx.NewError(http.StatusBadGateway, dto.ErrorCodeUnavailable, "the platform did not take the "+what+": "+res.Error)
+		return true, httpx.NewError(http.StatusBadGateway, dto.ErrorCodeUnavailable, "the platform did not take the "+what+": "+res.Error)
 	}
 	writePlatformSend(w, res)
-	return nil
+	return true, nil
 }
 
 // reactOnConnection reacts to a message of the AI's platform queue through its connection (CID-33). A
@@ -878,17 +885,27 @@ func (s *server) agentConnectionSend(w http.ResponseWriter, r *http.Request, p a
 		}
 		in.Text, in.File, uploadIDs = form.text, form.file, form.uploadIDs
 	}
-	if len(uploadIDs) > 0 {
-		if in.File != nil || len(uploadIDs) > 1 {
-			return errOneFile
-		}
-		file, err := s.uploadedFile(r.Context(), p, uploadIDs[0])
-		if err != nil {
-			return err
-		}
-		in.File = file
+	if len(uploadIDs) == 0 {
+		return s.sendOnConnection(w, r, p, in)
 	}
-	return s.sendOnConnection(w, r, p, in, uploadIDs...)
+	if in.File != nil || len(uploadIDs) > 1 {
+		return errOneFile
+	}
+	// One send of an upload at a time, and none after one used it: a client whose answer was lost (a
+	// proxy's timeout) does not send the file twice.
+	key := string(uploadOwner(p).Kind) + "|" + p.AgentID + p.UserID + "|" + uploadIDs[0]
+	if err := s.connectionUploads.begin(key); err != nil {
+		return err
+	}
+	attempted := false
+	defer func() { s.connectionUploads.end(key, attempted) }()
+	file, err := s.uploadedFile(r.Context(), p, uploadIDs[0])
+	if err != nil {
+		return err
+	}
+	in.File = file
+	attempted, err = s.sendUpload(w, r, p, in, uploadIDs[0])
+	return err
 }
 
 // errOneFile refuses a send through a connection that carries more than one file.

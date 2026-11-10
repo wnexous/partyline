@@ -6,6 +6,7 @@ import (
 	"log/slog"
 	"net/http"
 	"strconv"
+	"time"
 
 	"github.com/wnexous/partyline/internal/access"
 	"github.com/wnexous/partyline/internal/agents"
@@ -89,6 +90,8 @@ type Deps struct {
 // server holds the handler dependencies.
 type server struct {
 	Deps
+	// connectionUploads are the uploads sent through a connection lately, and those being sent.
+	connectionUploads *uploadSends
 }
 
 // New returns the full HTTP handler: routes wrapped in the middleware chain.
@@ -96,7 +99,7 @@ func New(d Deps) http.Handler {
 	if d.Logger == nil {
 		d.Logger = slog.Default()
 	}
-	s := &server{Deps: d}
+	s := &server{Deps: d, connectionUploads: newUploadSends(time.Now)}
 	mux := http.NewServeMux()
 	s.routes(mux)
 	return Middleware(MiddlewareConfig{

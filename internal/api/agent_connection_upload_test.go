@@ -179,3 +179,32 @@ func TestTheFilePartOfASendLeavesNothingBehind(t *testing.T) {
 		RequireError(http.StatusRequestEntityTooLarge, dto.ErrorCodeTooLarge)
 	require.Empty(t, f.spooled(t), "over the upload limit")
 }
+
+// LF-04: an upload goes out once. A second send of it while the first is still sending (a client whose
+// answer a proxy cut off, trying again) is 409 upload_busy, and one after the first is 409 upload_sent,
+// saying to check the chat: never a second copy, nor a 404 that reads as if nothing happened. A send
+// refused before it went (over the platform's limit) is no use of the upload.
+func TestAnUploadIsSentOnce(t *testing.T) {
+	f := newReplyFixtureOfKind(t, tinyPlatform)
+	agent := f.token.AsAgent("Atlas")
+	path := connectionChatPath(f.conn.ID, f.group.ID)
+	u := uploadInChunks(agent, agentUploads, "a.pdf", "application/pdf", []byte("synthetic pdf"), 1<<20)
+
+	f.inst.HoldSends()
+	t.Cleanup(f.inst.ReleaseSends)
+	first := make(chan *testkit.Response, 1)
+	go func() { first <- agent.Post(path, dto.SendToChatRequest{UploadIDs: []string{u.ID}}) }()
+	f.inst.WaitSending(t)
+	e := agent.Post(path, dto.SendToChatRequest{UploadIDs: []string{u.ID}}).RequireError(http.StatusConflict, dto.ErrorCodeUploadBusy)
+	require.Contains(t, e.Message, "check the chat")
+	f.inst.ReleaseSends()
+	(<-first).RequireStatus(http.StatusCreated)
+	e = agent.Post(path, dto.SendToChatRequest{UploadIDs: []string{u.ID}}).RequireError(http.StatusConflict, dto.ErrorCodeUploadSent)
+	require.Contains(t, e.Message, "check the chat")
+	require.Len(t, f.inst.Sent(), 1, "one copy went out")
+
+	big := uploadInChunks(agent, agentUploads, "big.bin", "", bytes.Repeat([]byte("a"), 1001), 1<<20)
+	for range 2 {
+		agent.Post(path, dto.SendToChatRequest{UploadIDs: []string{big.ID}}).RequireError(http.StatusRequestEntityTooLarge, dto.ErrorCodeFileTooLarge)
+	}
+}

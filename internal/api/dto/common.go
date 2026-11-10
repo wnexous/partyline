@@ -213,8 +213,12 @@ const (
 	// ErrorCodeUploadOffset is a chunk that does not start where the upload is: Details give received,
 	// the offset to resume at, and complete "true" when the upload needs no more chunks (409, LF-03).
 	ErrorCodeUploadOffset ErrorCode = "upload_offset"
-	// ErrorCodeUploadBusy is a chunk sent while another chunk of the same upload is being written (409).
+	// ErrorCodeUploadBusy is a chunk sent while another chunk of the same upload is being written, or
+	// a send through a connection of an upload another send of it is sending (409).
 	ErrorCodeUploadBusy ErrorCode = "upload_busy"
+	// ErrorCodeUploadSent is a send through a connection of an upload a send already used, sent or
+	// failed, in the last 24 hours (409): check the chat before sending the file again.
+	ErrorCodeUploadSent ErrorCode = "upload_sent"
 	// ErrorCodeUploadIncomplete is a message that attaches an upload whose last chunk did not arrive
 	// (409, LF-03).
 	ErrorCodeUploadIncomplete ErrorCode = "upload_incomplete"
