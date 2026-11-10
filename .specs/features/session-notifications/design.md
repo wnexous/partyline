@@ -41,8 +41,10 @@ For a room message M and AI A (after delivery mode + loop guard decide A wants i
    tombstone (`context = 0`, acked), the row CountAgentBacklog/ListAgentBacklog already leave out.
    No schema change: the principal's catch-up (ListSessionUnread, by its own label '') still lists
    the message as context. A parallel session attaching while the principal is away runs
-   standInBacklog after the backlog: the same messages, read from the principal's queue up to the
-   welcome bound, written directly (not through the queue) with their unread context and copy rows
+   standInBacklog after the backlog: the same messages, read oldest first from the principal's queue
+   up to the welcome bound in pages (ListStandInCandidates, an `@handle` LIKE prefilter in groups,
+   refined by MentionsPrincipal), capped at 50 qualifying ones plus a "N more" notice, skipping what
+   the connection's backlog already wrote (c.delivered / c.pushed), written directly (not through the queue) with their unread context and copy rows
    created before the frames, so the ack always finds its row.
 
 ## Tools (internal/channel)

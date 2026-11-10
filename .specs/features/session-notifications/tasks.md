@@ -28,4 +28,6 @@ planPush: with no live principal, a DM or a bare `@handle` (no label addressed) 
 parallel session as a stand-in; the stand-in's ack turns its copy row into its own tombstone so the
 principal's backlog leaves the message out. A parallel session attaching while the principal is
 away gets the waiting DMs and bare mentions in its backlog the same way. Tests:
-session_standin_test.go. Status: done
+session_standin_test.go. Review fixes: the attach cap counts qualifying messages (with a "N more"
+notice), no double write after a same-process reconnect, tests for trusted mode, paused rooms and an
+ack on the next connection. Status: done

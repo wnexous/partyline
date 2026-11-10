@@ -79,11 +79,21 @@ they waited for a principal that never connected. The same held for a bare `@han
       when the session that was given it ends without answering).
     - WHEN a parallel session attaches while the AI has no live principal THEN its backlog SHALL
       also carry, per conversation, the messages of the principal's queue the first rule names and
-      the delivery mode wants (oldest first, at most 50, the ones that session already acknowledged
-      left out), as the messages themselves and with the unread conversation before them as
-      context; they are consumed for the principal on acknowledgement the same way.
+      the delivery mode wants (the ones that session already acknowledged, or that its own backlog
+      just wrote, left out), as the messages themselves and with the unread conversation before
+      them as context, filtered as SN-03a says; they are consumed for the principal on
+      acknowledgement the same way. Nothing is given from a room the loop guard holds (DLV-08).
+      The cap counts those messages, not the principal's whole queue: the oldest 50 of them are
+      given, and WHEN more wait THEN a notice after them SHALL say how many, and those stay in the
+      principal's queue (the session reads them with the history tool).
+    - A session that is already live when the principal drops SHALL NOT pick up the principal's
+      unacknowledged queue: it receives the qualifying messages that arrive from then on, and the
+      waiting ones only through the attach-time backlog of a later connection.
+    - A stand-in a session did not acknowledge before its connection ended comes back to its next
+      connection (same label) through that backlog, and an acknowledgement there consumes it.
     - Accepted race: a principal that connects while a parallel session holds such a message
-      unacknowledged also receives it in its backlog, and both may answer it.
+      unacknowledged also receives it in its backlog, so the message is delivered at most once more
+      than the stand-ins, and both may answer it.
     - SESS-23 is amended accordingly: while the principal is offline its queue is still kept for it,
       but the messages this rule names are also delivered to the live parallel sessions.
 
