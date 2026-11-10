@@ -21,6 +21,7 @@ import type {
   ProfileMembership,
   Room,
   RoomMember,
+  Schedule,
 } from "@/shared/api/types.gen";
 
 /** Synthetic fixtures; never real names, numbers or chat ids. */
@@ -378,4 +379,31 @@ export function makeChartPosition(over: Partial<ChartPosition> = {}): ChartPosit
 /** `GET /orgs/{org}/chart` for a viewer who is not an admin, with an empty chart, unless overridden. */
 export function makeOrgChart(over: Partial<OrgChart> = {}): OrgChart {
   return { viewer: { admin: false }, positions: [], members: [], unassigned: [], ...over };
+}
+
+/**
+ * A routine of the AI a1 (HB-13): "Daily summary", every day at 09:00 in São Paulo, set by Ana
+ * Souza, enabled, delivered yesterday, unless overridden.
+ */
+export function makeRoutine(over: Partial<Schedule> = {}): Schedule {
+  return {
+    id: "s1",
+    agent_id: "a1",
+    name: "Daily summary",
+    prompt: "Summarize yesterday's messages",
+    cron: "0 9 * * *",
+    tz: "America/Sao_Paulo",
+    catch_up: "once",
+    enabled: true,
+    origin: "manager",
+    set_by: makeIntelligence(),
+    next_run_at: "2026-11-11T09:00:00-03:00",
+    last_run_at: "2026-11-10T12:00:00Z",
+    last_status: "delivered",
+    can_edit: true,
+    paused_by_manager: false,
+    created_at: "2026-11-01T12:00:00Z",
+    updated_at: "2026-11-01T12:00:00Z",
+    ...over,
+  };
 }

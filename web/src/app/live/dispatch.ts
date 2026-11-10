@@ -18,6 +18,7 @@ import {
   removeRoom,
 } from "@/entities/room";
 import { membersChanged, setAgentOnline } from "@/entities/room-member";
+import { routinesChanged } from "@/entities/routine";
 import { queryKeys } from "@/shared/api/query-keys";
 import type { Identity, LiveEvent, Message } from "@/shared/api/types.gen";
 
@@ -111,6 +112,11 @@ export function handleLiveEvent(qc: QueryClient, actions: LiveActions, event: Li
     case "agent.presence":
       agentPresenceChanged(qc, actions.setPresence, event.data);
       setAgentOnline(qc, event.data.agent_id, event.data.online);
+      return;
+
+    case "agent.schedules":
+      // The routines of an AI changed (HB-12): whoever has them cached reads them again.
+      routinesChanged(qc, event.data.agent_id);
       return;
 
     case "connector.status":

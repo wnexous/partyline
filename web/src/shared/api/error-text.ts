@@ -8,7 +8,12 @@ import {
   ErrorCodeFileTooLarge,
   ErrorCodeInsufficientStorage,
   ErrorCodeNoRouteToPerson,
+  ErrorCodeTooFrequent,
+  ErrorCodeTooMany,
   type IntelligenceRef,
+  MaxScheduleRunsPerDay,
+  MaxSchedulesPerAgent,
+  MinScheduleEveryMinutes,
 } from "./types.gen";
 import { isUploadError, knownMaxFileSize } from "./uploads";
 
@@ -76,6 +81,24 @@ export const errorTextRules = {
     [{ code: ErrorCodeCounterpartDisabled }, "composer.editCounterpartDisabled"],
     [{ status: 403 }, "composer.editForbidden"],
     [{ status: 429 }, "composer.rateLimited"],
+    [{ status: 422 }, "server"],
+  ],
+  /**
+   * A write of an AI's routine (HB-13): a rule over the limits (HB-03) and a 21st routine say the
+   * limit in words; a routine written meanwhile (409) or gone (404) is read again by the caller.
+   */
+  routine: [
+    [{ status: 0 }, "error.network"],
+    [
+      { code: ErrorCodeTooFrequent },
+      (t) =>
+        t("routines.tooFrequent", { min: MinScheduleEveryMinutes, max: MaxScheduleRunsPerDay }),
+    ],
+    [{ code: ErrorCodeTooMany }, (t) => t("routines.tooMany", { max: MaxSchedulesPerAgent })],
+    [{ status: 409 }, "routines.changed"],
+    [{ status: 404 }, "routines.gone"],
+    [{ status: 403 }, "routines.forbidden"],
+    [{ status: 429 }, "routines.rateLimited"],
     [{ status: 422 }, "server"],
   ],
   /** A session's notifications (SN-08): a setting is 422 and names the field. */

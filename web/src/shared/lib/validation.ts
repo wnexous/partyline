@@ -4,7 +4,11 @@ import {
   MaxMemberKeywords,
   MaxProfileBio,
   MaxRoomInstructions,
+  MaxScheduleEveryMinutes,
+  MaxScheduleName,
+  MaxSchedulePrompt,
   MaxTextLength,
+  MinScheduleEveryMinutes,
   PasswordMinLength,
   UsernamePattern,
 } from "@/shared/api/types.gen";
@@ -47,4 +51,8 @@ export const validationVars = {
   "validation.instructions": { max: MaxRoomInstructions },
   "validation.bio": { max: MaxProfileBio },
   "validation.orgName": { max: MaxOrgNameLength },
+  "validation.routineName": { max: MaxScheduleName },
+  "validation.routinePrompt": { max: MaxSchedulePrompt },
+  "validation.routineMinutes": { min: MinScheduleEveryMinutes },
+  "validation.routineHours": { max: MaxScheduleEveryMinutes / 60 },
 } as const;

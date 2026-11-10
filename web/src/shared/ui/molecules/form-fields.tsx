@@ -64,6 +64,7 @@ export function TextField<T extends FieldValues>({
   description,
   optional,
   type = "text",
+  inputMode,
   autoComplete,
   autoFocus,
   disabled = false,
@@ -75,7 +76,10 @@ export function TextField<T extends FieldValues>({
   label: ReactNode;
   description?: ReactNode;
   optional?: boolean;
-  type?: "text" | "password" | "url";
+  /** `time` opens the platform's own clock picker on a phone. */
+  type?: "text" | "password" | "url" | "time";
+  /** The keyboard a phone opens (`numeric` for a count). */
+  inputMode?: "numeric" | "text";
   autoComplete?: string;
   autoFocus?: boolean;
   /** The value is fixed (a name a replace keeps): shown, not editable. */
@@ -113,6 +117,7 @@ export function TextField<T extends FieldValues>({
                 {...field}
                 value={field.value ?? ""}
                 type={type}
+                inputMode={inputMode}
                 autoComplete={autoComplete}
                 autoFocus={focusOnMount}
                 disabled={disabled}
