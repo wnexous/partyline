@@ -904,11 +904,13 @@ and queues what arrives, hands it to the AI's session and sends what the AI answ
   all): do not send the text again. A retry can repeat a message the platform already took.
   `send_file` with `connection` and `chat` sends a local file the same way: through the platform's
   media send (WhatsApp, Telegram, Discord; a webhook connection cannot be sent files and answers
-  `unsupported`), as the account, with the optional `caption` as a text sent just before it, under the
-  upload limit (`PARTYLINE_MAX_UPLOAD_MB`, 95 MB by default; `413` over it; the chunked upload sessions
-  that take larger files in rooms, up to `PARTYLINE_MAX_FILE_MB`, do not reach connections yet: the
-  tool refuses a file over 95 MB before sending a byte, saying that larger files through a connection
-  come in a later version). A file is sent once and not
+  `unsupported`), as the account, with the optional `caption` as a text sent just before it, up to
+  the platform's own limit: WhatsApp 2 GB, Telegram bots 50 MB (2000 MB through a self-hosted Bot API
+  server), Discord 25 MB. A file over 8 MB goes up first through an upload session created for the
+  connection, which the server refuses before a chunk is sent when the platform could not take the
+  file (`file_too_large: <file> is <size>, over the <limit> <platform> takes for a file sent through
+  a connection`), and the send then attaches it; nothing holds the file in memory on the way. A
+  large file takes as long as its upload to the platform before the tool answers. A file is sent once and not
   kept: if the platform does not take it the tool fails with `the platform did not take the file:
   <reason>` and nothing sends it again, so you may send it again (when the caption had gone out the
   message says so).
@@ -952,7 +954,7 @@ and queues what arrives, hands it to the AI's session and sends what the AI answ
 | `set_notifications` | Change this session's notification setting in a room: `on` (every message the delivery mode wants) or `mentions` (only the messages that address it). |
 | `history` | Earlier messages of a conversation, oldest first, 20 by default and at most 100, before an optional `message_id`. |
 | `download_attachment` | Save an attachment under `$TMPDIR/partyline/<folder name>/` (mode 0600) and return its path. The directory must be yours and private (0700, not a symlink); on a shared `/tmp`, set `TMPDIR` to a private directory. The file streams to disk for as long as it takes (up to 6 hours); a download that brings no byte for a minute fails with `download stalled`. |
-| `send_file` | Send a local file to exactly one target: `room` (upload it to a room or DM, with an optional caption and `reply_to`), or `connection` with `chat` (send it to a chat of a connection you operate, or to a new address as in `send_message`; unsigned, once and not kept: the tool fails with the platform's reason when it refuses, a webhook connection answers `unsupported`, and `reply_to` does not apply). The file is streamed from disk, never read whole into memory. To a room, a file up to 8 MB is one multipart post; a larger one, or one the server refuses as one request, goes up through an [upload session](api.md#files-and-upload-sessions) in chunks of the server's `chunk_size`, each chunk retried up to three times and resumed from where the server says the upload stands, and the post then attaches it with `upload_ids`; an upload that fails for good, or whose post fails, is deleted. Through a connection a file is one request of at most 95 MB for now. A file over `PARTYLINE_MAX_FILE_MB` (`file_too_large`, with the limit), a full disk (`insufficient_storage`) and a rate limit (with when to try again) are tool errors that say so. |
+| `send_file` | Send a local file to exactly one target: `room` (upload it to a room or DM, with an optional caption and `reply_to`), or `connection` with `chat` (send it to a chat of a connection you operate, or to a new address as in `send_message`; unsigned, once and not kept: the tool fails with the platform's reason when it refuses, a webhook connection answers `unsupported`, and `reply_to` does not apply). The file is streamed from disk, never read whole into memory. To a room, a file up to 8 MB is one multipart post; a larger one, or one the server refuses as one request, goes up through an [upload session](api.md#files-and-upload-sessions) in chunks of the server's `chunk_size`, each chunk retried up to three times and resumed from where the server says the upload stands, and the post then attaches it with `upload_ids`; an upload that fails for good, or whose post fails, is deleted. Through a connection a file up to 8 MB is one multipart send; a larger one goes up the same way through an upload session created for the connection (refused before any chunk when the platform takes smaller files: WhatsApp 2 GB, Telegram bots 50 MB, Discord 25 MB) and the send attaches it with `upload_ids`. A file over `PARTYLINE_MAX_FILE_MB` or the platform's limit (`file_too_large`, with the limit), a full disk (`insufficient_storage`) and a rate limit (with when to try again) are tool errors that say so. |
 
 An AI can post at most 30 messages per minute, editing and deleting included; beyond that the tools answer `rate_limited`. It
 can also create at most 10 new conversations per hour (DMs it opens and groups it creates

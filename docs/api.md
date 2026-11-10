@@ -357,11 +357,32 @@ else gets 404 on every route below, and cannot attach it.
 
 | Route | Result |
 | --- | --- |
-| `POST /uploads` `{name, mime, size}` | 201 `Upload` `{id, name, mime, size, received: 0, complete: false, chunk_size, max_size, expires_at}`. `size` is the exact byte count; the name keeps no path, and an empty `mime` is `application/octet-stream`. 400 `invalid` for a size of 0 or less, 413 `file_too_large` over `max_size` (`details.max_size`), 507 `insufficient_storage` when the data disk would keep less than `PARTYLINE_DISK_RESERVE_MB` (2 GB by default) free after this file and what the unfinished uploads may still write. An owner holds at most 16 uploads that no message used yet, finished or not, and at most `max_size` bytes in them: past either, 429 `rate_limited`. |
+| `POST /uploads` `{name, mime, size, connection?}` | 201 `Upload` `{id, name, mime, size, received: 0, complete: false, chunk_size, max_size, expires_at}`. `size` is the exact byte count; the name keeps no path, and an empty `mime` is `application/octet-stream`. `connection`, for an AI (`POST /agent/uploads`), names the connection the file will be sent through: the session is refused as that send would refuse the file, before any chunk is sent (413 `file_too_large` over the platform's limit with `details.max_size` and `details.platform`, 422 `unsupported` for a platform without files, 403 `not_operator`, 404 for a connection the AI does not see); a user giving it is 422 `invalid`. 400 `invalid` for a size of 0 or less, 413 `file_too_large` over `max_size` (`details.max_size`), 507 `insufficient_storage` when the data disk would keep less than `PARTYLINE_DISK_RESERVE_MB` (2 GB by default) free after this file and what the unfinished uploads may still write. An owner holds at most 16 uploads that no message used yet, finished or not, and at most `max_size` bytes in them: past either, 429 `rate_limited`. |
 | `PUT /uploads/{id}?offset=N` | The raw body is one chunk of at most `chunk_size` bytes (50 MB, or `PARTYLINE_MAX_UPLOAD_MB` when that is lower), written to disk as it arrives → 200 `Upload`. `offset` must be `received`, else 409 `upload_offset` with `details.received` (where to resume) and `details.complete`; a chunk is kept whole or not at all, so after a failed chunk the client asks `GET` and resends from `received`. 413 `too_large` for a chunk over `chunk_size` or past `size`, 400 `invalid` for an empty chunk or a bad `offset`, 409 `upload_busy` while another chunk of the same upload is being written. The chunk that brings the last byte completes the upload: `complete: true` with the file's `sha256`. |
 | `GET /uploads/{id}` | 200 `Upload`, to resume after a failure. |
 | `DELETE /uploads/{id}` | 204: the owner gives up an upload no message used, finished or not. Its row and temporary file go at once, and with them its place in the owner's limits; a finished upload's file is left to the blob sweep, as when it expires. 404 `not_found` for an upload of someone else, one a message used, an expired one or one already deleted; 409 `upload_busy` while a chunk of it is being written. |
-| `POST /rooms/{id}/messages` `{text?, upload_ids, …}` (also `POST /agent/rooms/{room}/messages`, and in the `message` part of a multipart post) | Each finished upload of the poster becomes an attachment, as a multipart file would (name, type, size, `stored`), after the multipart files, at most 20 per message. The upload is used up: its id is 404 afterwards. 404 `not_found` for an id that is no upload of the poster, 409 `upload_incomplete` for one still missing chunks. A send through a connection (`POST /agent/connections/{id}/chats/{chat}/messages`) refuses `upload_ids` with 400 for now: it still holds its file in memory. |
+| `POST /rooms/{id}/messages` `{text?, upload_ids, …}` (also `POST /agent/rooms/{room}/messages`, and in the `message` part of a multipart post) | Each finished upload of the poster becomes an attachment, as a multipart file would (name, type, size, `stored`), after the multipart files, at most 20 per message. The upload is used up: its id is 404 afterwards. 404 `not_found` for an id that is no upload of the poster, 409 `upload_incomplete` for one still missing chunks. |
+| `POST /agent/connections/{id}/chats/{chat}/messages` `{text?, upload_ids: [id]}` (or in the `message` part of a multipart send) | The AI sends one finished upload as the file of a send through a connection it operates, `text` as its caption: the connector reads it from disk as a stream. One file a send: two uploads, or an upload and a file part, are 422 `invalid` on `file`. The upload is used up once the send was attempted, whether the platform took the file or not (a file sent through a connection is sent once); a send refused before it went (not the operator, over the platform's limit, …) leaves it. |
+
+**Through a connection.** A file sent to a chat of a connection, as a multipart `file` part or as an
+upload, is never held in memory: the multipart part is written to a temporary file under
+`<data dir>/uploads` and removed once the send is over, an upload is read from the blob store, and the
+connector streams it to the platform (WhatsApp's base64 inside JSON is encoded as the request is
+written). Each platform's own limit applies, checked before anything goes out:
+
+| Platform | Largest file |
+| --- | --- |
+| WhatsApp (evolution-go) | 2 GB |
+| Telegram bot | 50 MB through the public Bot API, 2000 MB through a self-hosted Bot API server (`api_base` changed) |
+| Discord bot | 25 MB (a server without boosts) |
+| Webhook | takes no files (422 `unsupported`) |
+
+A larger file is 413 `file_too_large` with `details.max_size` (bytes) and `details.platform` (the
+kind's label). The send is answered when the platform took the file, so a large file keeps the
+request open for its upload to the platform; the attempt is bounded by 90 seconds and a second for
+every MB. Inbound media (a photo or video someone sends to the account) are downloaded into the blob
+store as streams too, up to `PARTYLINE_MAX_FILE_MB`; WhatsApp media that evolution-go puts inline in
+its WebSocket events stay bounded by `PARTYLINE_MAX_UPLOAD_MB`, since a frame is read whole.
 
 An upload that no message used is removed, finished or not, with its temporary file under
 `<data dir>/uploads`: an hour after it was created when no chunk came, else 24 hours after its last
@@ -525,7 +546,7 @@ others are unchanged.
 | `last_instance_admin` | 409 | The last active instance admin tried to delete their account. |
 | `invalid` | 422 | A field is wrong: a name outside its bounds, a parent of another organization, an invalid permission. `fields` names it. |
 | `already_answered` | 409 | The caller already answered that question with the structured copy; they delete their answer to answer again ([Questions and answers](#questions-and-answers)). |
-| `file_too_large` | 413 | An upload session for a file over `PARTYLINE_MAX_FILE_MB`; `details.max_size` is the limit in bytes ([Files and upload sessions](#files-and-upload-sessions)). |
+| `file_too_large` | 413 | An upload session for a file over `PARTYLINE_MAX_FILE_MB`; `details.max_size` is the limit in bytes ([Files and upload sessions](#files-and-upload-sessions)). Also a file over the platform's own limit sent through a connection, or an upload session created for it, with `details.platform` naming the platform. |
 | `insufficient_storage` | 507 | The data disk cannot hold the file with its reserve (`PARTYLINE_DISK_RESERVE_MB`) to spare. |
 | `upload_offset` | 409 | A chunk that does not start at what the upload received; `details.received` is where to resume, `details.complete` whether it needs no more. |
 | `upload_busy` | 409 | Another chunk of the same upload is being written. |
