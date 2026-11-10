@@ -191,7 +191,9 @@ func selfAuthored(m dto.Message, agentID string) bool {
 // hear about it:
 //   - the principal, when it follows the room, a plain message names it by its bare @handle, the message is
 //     a DM, or the text addresses one of its live siblings (SN-04);
-//   - every live parallel session that follows the room, or whose label the text addresses.
+//   - every live parallel session that follows the room, or whose label the text addresses;
+//   - with no live principal, every live parallel session for a DM or a bare @handle that addresses no
+//     label, in place of the principal (SN-10).
 //
 // Each of them first receives the room's messages it had not read yet, as context, and then the message
 // (pushToSession). A message for a label with no live session is the principal's from the start, with
@@ -565,6 +567,7 @@ func (g *Gateway) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	if g.afterAttach != nil {
 		g.afterAttach()
 	}
+	c.priorRead = g.priorReads(ctx, row.Agent.ID, sessionKey)
 	g.ensureSessionRooms(ctx, row.Agent.ID, sessionKey, live.Label == "")
 	c.rooms.Store(true)
 	// Only the principal session receives the platform events of the AI it operates (SESS-18).
@@ -813,6 +816,9 @@ type conn struct {
 	// (SN-01): its harness session id, else "label:<label>", else the principal's pin or "principal". The
 	// attach sets it before the connection reads a frame or receives a push.
 	sessionKey string
+	// priorRead is the read position of each room where the session had a state row before this connection
+	// (priorReads). Written before the connection's goroutines start, then only read.
+	priorRead map[string]int64
 	// rooms is set once the session's per-room state rows exist (ensureSessionRooms). Before that a push
 	// has no read position to start a catch-up from: the connection's backlog covers that moment.
 	rooms atomic.Bool
@@ -826,8 +832,34 @@ type conn struct {
 	// labelled session, which receives none (SESS-18).
 	feed *platformFeed
 
+	// standIns holds the messages this parallel session was given in place of an offline principal and
+	// has not acknowledged yet (SN-10): its acknowledgement of one of them consumes it for the principal.
+	// The push goroutines write it and the ack reader reads it, under standInMu.
+	standInMu sync.Mutex
+	standIns  map[string]struct{}
+
 	mu     sync.Mutex
 	closed bool
+}
+
+// markStandIn records that the message reaches this session in place of the principal (SN-10).
+func (c *conn) markStandIn(messageID string) {
+	c.standInMu.Lock()
+	defer c.standInMu.Unlock()
+	if c.standIns == nil {
+		c.standIns = map[string]struct{}{}
+	}
+	c.standIns[messageID] = struct{}{}
+}
+
+// takeStandIn reports whether the message reached this session in place of the principal, and forgets it:
+// a message is acknowledged once.
+func (c *conn) takeStandIn(messageID string) bool {
+	c.standInMu.Lock()
+	defer c.standInMu.Unlock()
+	_, ok := c.standIns[messageID]
+	delete(c.standIns, messageID)
+	return ok
 }
 
 // labelOf returns the label of the live session the connection became ("" before it attached).
@@ -936,6 +968,10 @@ func (g *Gateway) run(ctx context.Context, c *conn, row db.GetAgentWithOwnerRow,
 	}
 	sent, err := g.backlog(ctx, c, a, bounds)
 	if err != nil {
+		return err
+	}
+	// A parallel session that attaches while the principal is away stands in for it (SN-10).
+	if err := g.standInBacklog(ctx, c, a, bounds); err != nil {
 		return err
 	}
 	var feedWake <-chan struct{} // nil, which never fires, for a client without platform events
@@ -1293,6 +1329,25 @@ func (g *Gateway) advanceRoom(ctx context.Context, agentID string, st RoomState,
 // of, at its join point, so a new session starts caught up and one that comes back keeps its read position
 // and its setting (SN-01, SN-02). A failure is logged and is not fatal: the connection asked for a live
 // session, and the unread bookkeeping is not what it is here for.
+// priorReads is the read position of each room where the session already had a state row before this
+// connection, read before ensureSessionRooms creates the missing ones (SN-10: the stand-ins of an attaching
+// session start after what it read). Nil when there are none or they cannot be read.
+func (g *Gateway) priorReads(ctx context.Context, agentID, sessionKey string) map[string]int64 {
+	if sessionKey == "" {
+		return nil
+	}
+	states, err := g.d.Store.R().ListSessionRoomStates(ctx, db.ListSessionRoomStatesParams{AgentID: agentID, SessionKey: sessionKey})
+	if err != nil {
+		g.d.Logger.Error("agent: session states read failed", "agent_id", agentID, "err", err)
+		return nil
+	}
+	out := make(map[string]int64, len(states))
+	for _, st := range states {
+		out[st.RoomID] = st.ReadSeq
+	}
+	return out
+}
+
 func (g *Gateway) ensureSessionRooms(ctx context.Context, agentID, sessionKey string, isPrincipal bool) {
 	if sessionKey == "" {
 		return
@@ -1421,7 +1476,12 @@ func (g *Gateway) ackSession(ctx context.Context, c *conn, agentID, messageID st
 	if err != nil {
 		return err
 	}
-	if err := g.ackSessionDelivery(ctx, messageID, agentID, c.owner); err != nil {
+	if c.takeStandIn(messageID) {
+		// The session answered in place of the principal: the message is consumed for the AI (SN-10).
+		if err := g.ackStandInDelivery(ctx, messageID, agentID, c.labelOf()); err != nil {
+			return err
+		}
+	} else if err := g.ackSessionDelivery(ctx, messageID, agentID, c.owner); err != nil {
 		return err
 	}
 	if c.sessionKey == "" {

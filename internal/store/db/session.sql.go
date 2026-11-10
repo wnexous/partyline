@@ -84,6 +84,38 @@ func (q *Queries) AckSessionDelivery(ctx context.Context, arg AckSessionDelivery
 	return result.RowsAffected()
 }
 
+const ackStandInDelivery = `-- name: AckStandInDelivery :execrows
+UPDATE agent_session_deliveries SET acked_at = ?1, context = 0
+WHERE message_id = ?2 AND agent_id = ?3 AND label = ?4
+  AND label <> '' AND context = 1 AND fell_back_at IS NULL AND acked_at IS NULL
+`
+
+type AckStandInDeliveryParams struct {
+	AckedAt   sql.NullInt64
+	MessageID string
+	AgentID   string
+	Label     string
+}
+
+// The acknowledgement of a message a parallel session was given in place of the principal, which was not
+// live (SN-10): the session's copy becomes its own tombstone (context = 0), so the principal's queue leaves
+// the message out, as it does for a message an addressed session acknowledged, while the principal's
+// catch-up still lists it as context it had not read. The row is the session's by its label: a copy never
+// falls back, so it is not judged by the connection that owns it (a new process of the session may have
+// been given it again).
+func (q *Queries) AckStandInDelivery(ctx context.Context, arg AckStandInDeliveryParams) (int64, error) {
+	result, err := q.db.ExecContext(ctx, ackStandInDelivery,
+		arg.AckedAt,
+		arg.MessageID,
+		arg.AgentID,
+		arg.Label,
+	)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected()
+}
+
 const createSessionDelivery = `-- name: CreateSessionDelivery :exec
 INSERT INTO agent_session_deliveries (message_id, agent_id, label, session_key, owner_live, created_at,
                                     fell_back_at, context)

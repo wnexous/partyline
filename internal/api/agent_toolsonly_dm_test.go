@@ -30,11 +30,11 @@ func TestToolsOnlyAIsDMReachesTheLivePrincipal(t *testing.T) {
 	atlas.Ack(first.ID)
 }
 
-// SESS-23: when the AI's principal has left and only a parallel session is live, a DM from a tools-only AI is
-// not pushed to that parallel session (it is the principal's message); it waits in the principal's queue and
-// the next principal receives it. This is how a reply can be "only in history" for a person whose open session
-// is not the principal.
-func TestToolsOnlyAIsDMWaitsForThePrincipalWhenOnlyAParallelSessionIsLive(t *testing.T) {
+// SN-10 (amends SESS-23): when the AI's principal has left and only a parallel session is live, a DM from a
+// tools-only AI reaches that parallel session, which stands in for the principal, instead of waiting only in
+// history for a principal that may never come back. Until a parallel session acknowledges it, it also stays in
+// the principal's queue, so the next principal receives it too.
+func TestToolsOnlyAIsDMReachesTheParallelSessionWhenOnlyItIsLive(t *testing.T) {
 	f := newAIEnv(t)
 	toolsTok := f.aliceTok.AsFolder(testkit.Folder{Machine: testkit.Machine, Path: "/work/tools", Harness: "omp"})
 	principal, resp := f.aliceTok.DialAgent("atlas")
@@ -50,10 +50,13 @@ func TestToolsOnlyAIsDMWaitsForThePrincipalWhenOnlyAParallelSessionIsLive(t *tes
 	}, wsWait, 20*time.Millisecond, "only the parallel session is left")
 
 	dm := testkit.Decode[dto.Message](sendDM(toolsTok, atlasID, "are you there?").RequireStatus(http.StatusCreated))
+	got := parallel.Message(wsWait)
+	require.Equal(t, dm.ID, got.Message.ID, "the live parallel session stands in for the principal")
+	require.False(t, got.Context)
 	parallel.ExpectNone(300 * time.Millisecond)
 
 	again, resp := f.aliceTok.DialAgent("atlas")
 	require.NotNil(t, again, "upgrade refused: %d %s", resp.Status, resp.Body)
 	require.Empty(t, again.Welcome(wsWait).Session.Label, "the principal label is free again")
-	require.Equal(t, dm.ID, again.Message(wsWait).Message.ID, "the waiting DM is the new principal's")
+	require.Equal(t, dm.ID, again.Message(wsWait).Message.ID, "an unacknowledged stand-in is still the principal's")
 }

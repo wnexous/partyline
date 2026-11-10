@@ -750,6 +750,104 @@ func (q *Queries) ListOrgAIs(ctx context.Context, iid string) ([]ListOrgAIsRow, 
 	return items, nil
 }
 
+const listStandInCandidates = `-- name: ListStandInCandidates :many
+SELECT mv.id, mv.room_id, mv.seq, mv.author_kind, mv.author_id, mv.author_user_id, mv.author_iid, mv.sender_id, mv.sender_alt_id, mv.sender_name, mv.kind, mv.text, mv.reply_to, mv.recipients_json, mv.external_id, mv.created_at, mv.edited_at, mv.deleted_at, mv.interactive_json, mv.answers_json, mv.author_label, mv.author_name, mv.author_handle, mv.author_ikind, mv.author_avatar, mv.during_pause FROM message_views mv
+JOIN room_members rm ON rm.room_id = mv.room_id AND rm.kind = 'agent' AND rm.member_id = ?1
+WHERE mv.room_id = ?2 AND mv.seq > ?3 AND mv.seq <= ?4
+  AND mv.seq > COALESCE((SELECT MAX(b.seq) FROM messages b
+                         WHERE b.room_id = mv.room_id AND b.created_at < rm.created_at), 0)
+  AND NOT (mv.author_kind = 'agent' AND mv.author_id = ?1)
+  AND (?5 = 1 OR mv.text LIKE ?6)
+  AND (?7 = 1
+       OR NOT EXISTS (
+           SELECT 1 FROM agent_session_deliveries d
+           WHERE d.message_id = mv.id AND d.agent_id = ?1 AND d.context = 0))
+  AND NOT EXISTS (
+      SELECT 1 FROM agent_session_deliveries d
+      WHERE d.message_id = mv.id AND d.agent_id = ?1 AND d.context = 0
+        AND (d.acked_at IS NOT NULL OR d.fell_back_at IS NOT NULL))
+  AND NOT EXISTS (
+      SELECT 1 FROM agent_session_deliveries d
+      WHERE d.message_id = mv.id AND d.agent_id = ?1 AND d.label = ''
+        AND d.acked_at IS NOT NULL)
+ORDER BY mv.seq ASC
+LIMIT ?8
+`
+
+type ListStandInCandidatesParams struct {
+	AgentID          string
+	RoomID           string
+	AfterSeq         int64
+	BoundSeq         int64
+	AnyText          interface{}
+	Pattern          string
+	IncludeAddressed interface{}
+	Limit            int64
+}
+
+// A page of the principal's queue in one room, oldest first, from after_seq up to bound_seq: the messages a
+// parallel session may stand in for while the principal is not live (SN-10). The conditions are the ones of
+// ListAgentBacklog; any_text = 0 keeps only the texts that contain pattern (the AI's "@handle", a cheap first
+// cut that the caller refines with the mention rule), any_text = 1 keeps every message (a DM).
+func (q *Queries) ListStandInCandidates(ctx context.Context, arg ListStandInCandidatesParams) ([]MessageView, error) {
+	rows, err := q.db.QueryContext(ctx, listStandInCandidates,
+		arg.AgentID,
+		arg.RoomID,
+		arg.AfterSeq,
+		arg.BoundSeq,
+		arg.AnyText,
+		arg.Pattern,
+		arg.IncludeAddressed,
+		arg.Limit,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []MessageView
+	for rows.Next() {
+		var i MessageView
+		if err := rows.Scan(
+			&i.ID,
+			&i.RoomID,
+			&i.Seq,
+			&i.AuthorKind,
+			&i.AuthorID,
+			&i.AuthorUserID,
+			&i.AuthorIid,
+			&i.SenderID,
+			&i.SenderAltID,
+			&i.SenderName,
+			&i.Kind,
+			&i.Text,
+			&i.ReplyTo,
+			&i.RecipientsJson,
+			&i.ExternalID,
+			&i.CreatedAt,
+			&i.EditedAt,
+			&i.DeletedAt,
+			&i.InteractiveJson,
+			&i.AnswersJson,
+			&i.AuthorLabel,
+			&i.AuthorName,
+			&i.AuthorHandle,
+			&i.AuthorIkind,
+			&i.AuthorAvatar,
+			&i.DuringPause,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const listVisibleAgents = `-- name: ListVisibleAgents :many
 SELECT a.id, a.owner_id, a.name, a.description, a.created_at, a.last_seen_at, a.project_id, a.harness, a.machine, a.connected_at, a.folder, a.platform_dropped, a.org_id, a.creator_iid, a.principal_session, u.username AS owner_username,
        CAST(COALESCE(ui.display_name, '') AS TEXT) AS owner_display_name,

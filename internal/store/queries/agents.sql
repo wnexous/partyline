@@ -130,6 +130,33 @@ WHERE mv.room_id = sqlc.arg(room_id) AND mv.seq > sqlc.arg(after_seq)
 ORDER BY seq DESC
 LIMIT sqlc.arg(limit);
 
+-- name: ListStandInCandidates :many
+-- A page of the principal's queue in one room, oldest first, from after_seq up to bound_seq: the messages a
+-- parallel session may stand in for while the principal is not live (SN-10). The conditions are the ones of
+-- ListAgentBacklog; any_text = 0 keeps only the texts that contain pattern (the AI's "@handle", a cheap first
+-- cut that the caller refines with the mention rule), any_text = 1 keeps every message (a DM).
+SELECT mv.* FROM message_views mv
+JOIN room_members rm ON rm.room_id = mv.room_id AND rm.kind = 'agent' AND rm.member_id = sqlc.arg(agent_id)
+WHERE mv.room_id = sqlc.arg(room_id) AND mv.seq > sqlc.arg(after_seq) AND mv.seq <= sqlc.arg(bound_seq)
+  AND mv.seq > COALESCE((SELECT MAX(b.seq) FROM messages b
+                         WHERE b.room_id = mv.room_id AND b.created_at < rm.created_at), 0)
+  AND NOT (mv.author_kind = 'agent' AND mv.author_id = sqlc.arg(agent_id))
+  AND (sqlc.arg(any_text) = 1 OR mv.text LIKE sqlc.arg(pattern))
+  AND (sqlc.arg(include_addressed) = 1
+       OR NOT EXISTS (
+           SELECT 1 FROM agent_session_deliveries d
+           WHERE d.message_id = mv.id AND d.agent_id = sqlc.arg(agent_id) AND d.context = 0))
+  AND NOT EXISTS (
+      SELECT 1 FROM agent_session_deliveries d
+      WHERE d.message_id = mv.id AND d.agent_id = sqlc.arg(agent_id) AND d.context = 0
+        AND (d.acked_at IS NOT NULL OR d.fell_back_at IS NOT NULL))
+  AND NOT EXISTS (
+      SELECT 1 FROM agent_session_deliveries d
+      WHERE d.message_id = mv.id AND d.agent_id = sqlc.arg(agent_id) AND d.label = ''
+        AND d.acked_at IS NOT NULL)
+ORDER BY mv.seq ASC
+LIMIT sqlc.arg(limit);
+
 -- name: GetMessageRoomSeq :one
 SELECT room_id, seq FROM messages WHERE id = ?;
 

@@ -1,8 +1,12 @@
 package agents
 
 import (
+	"cmp"
+	"context"
 	"database/sql"
 	"errors"
+	"fmt"
+	"slices"
 	"time"
 
 	"github.com/wnexous/partyline/internal/api/convert"
@@ -14,7 +18,9 @@ import (
 // session_route.go decides which sessions of one AI a room message is pushed to and what context goes with
 // it (SN-03, SN-04, SN-06, SN-07): the principal when it follows the room or the text names it, every live
 // parallel session that follows the room or whose label the text addresses, and the principal again when
-// the text addresses a sibling (SN-04). Every target is given the messages of the room it had not read yet
+// the text addresses a sibling (SN-04). With no live principal, what would notify it (a DM, a bare @handle)
+// notifies every live parallel session instead, and the first acknowledgement consumes it for the
+// principal (SN-10). Every target is given the messages of the room it had not read yet
 // as context, and then the message itself. Non-targets receive nothing live and only count the message as
 // unread.
 
@@ -37,6 +43,10 @@ type pushSession struct {
 	// the session no untrusted message as context either, because untrusted text is not a boundary the
 	// model may follow (SN-03, POS-10).
 	trustedOnly bool
+	// standIn says the session receives the message in place of the principal, which is not live (SN-10):
+	// a DM or a bare @handle that would notify it. The session's acknowledgement consumes the message for
+	// the principal, whose queue then leaves it out.
+	standIn bool
 	// writeRow says the principal's delivery row is needed (SN-03, SN-04, SN-09): there is a live parallel
 	// session to dedupe against, the message also addresses a sibling (so the principal's ack must consume
 	// it), or the principal reads the room on mentions only (its rows are how it follows what it got). A
@@ -59,7 +69,9 @@ type pushPlan struct {
 //   - the principal, when its setting for the room is on, or a plain message names it by its bare @handle,
 //     or the message is a DM (it is addressed to the AI), and also when the text addresses a sibling of
 //     it while its setting is on (SN-04);
-//   - every live parallel session whose setting for the room is on, or whose label the text addresses.
+//   - every live parallel session whose setting for the room is on, or whose label the text addresses;
+//   - with no live principal, every live parallel session for a message that would notify the principal
+//     (a DM or a bare @handle, and no label addressed): they stand in for it (SN-10).
 //
 // A message for a label with no live session is the principal's with the note (SESS-22) and notifies
 // nobody else. A message the AI wrote itself never comes here: it follows SESS-38/SESS-49 instead.
@@ -159,7 +171,7 @@ func (g *Gateway) planPush(agentID, target string, m dto.AgentMessage) (pushPlan
 	switch {
 	case m.Room.Kind == dto.ConversationKindDM:
 		mentions = true // a DM is addressed to the AI
-	case principalLive && principalNotify != NotifyOn:
+	case principalLive && principalNotify != NotifyOn, !live[""] && target == "":
 		// A bare @handle names the principal even when the same text also addresses a sibling (SN-04).
 		profile, err := delivery.IntelligenceOf(g.ctx, g.d.Store.R(), agentID)
 		if err != nil {
@@ -167,6 +179,10 @@ func (g *Gateway) planPush(agentID, target string, m dto.AgentMessage) (pushPlan
 		}
 		mentions = delivery.MentionsPrincipal(m.Message.Text, profile.Handle)
 	}
+	// With no live principal, the message that would notify it reaches its live parallel sessions instead
+	// of waiting for a principal that may never connect (SN-10). A message for a label keeps its own route
+	// (SESS-22, SESS-23).
+	standIn := !live[""] && target == "" && mentions
 	addressedLive := target != "" && live[target]
 	parallelLive := false
 	for _, l := range lives {
@@ -187,7 +203,7 @@ func (g *Gateway) planPush(agentID, target string, m dto.AgentMessage) (pushPlan
 		case target != "" && target == it.live.Label:
 			wanted = true
 		default:
-			wanted = it.notify == NotifyOn
+			wanted = it.notify == NotifyOn || standIn
 		}
 		if !wanted || it.conn == nil {
 			continue
@@ -197,6 +213,7 @@ func (g *Gateway) planPush(agentID, target string, m dto.AgentMessage) (pushPlan
 		plan.sessions = append(plan.sessions, pushSession{
 			label: it.live.Label, conn: it.conn, readSeq: it.readSeq,
 			addressed: addressed, copyOfSibling: copyOfSibling, trustedOnly: trustedOnly,
+			standIn:  standIn && it.live.Label != "",
 			writeRow: parallelLive || copyOfSibling || (it.live.Label == "" && it.notify != NotifyOn),
 		})
 	}
@@ -261,7 +278,11 @@ func (g *Gateway) pushToSession(agentID string, t pushSession, m dto.AgentMessag
 		return false
 	}
 	if !t.addressed {
-		// A copy never falls back to the principal (SN-03): the message is not that session's to own.
+		// A copy never falls back to the principal (SN-03): the message is not that session's to own. A
+		// stand-in is marked before the frame is queued, so its acknowledgement cannot arrive first (SN-10).
+		if t.standIn {
+			t.conn.markStandIn(m.Message.ID)
+		}
 		return t.conn.push(m)
 	}
 	// The addressed session owns the message from the start; if its connection ended meanwhile, the row
@@ -338,4 +359,248 @@ func (g *Gateway) pushCatchUp(agentID string, t pushSession, m dto.AgentMessage)
 		})
 	}
 	return g.createSessionDeliveries(rows)
+}
+
+// standInBacklog writes, to a parallel session that attaches while the AI has no live principal, the
+// messages of the principal's queue that would notify the principal (SN-10): per room, the DMs, or the
+// messages that name the AI by its bare @handle, that address no label and that the delivery mode wants,
+// oldest first and at most BacklogLimit of them (counted among those messages, not among the whole queue);
+// when more of them wait, a notice after them says how many, and those stay in the principal's queue. They
+// come with the room's messages the session had not read before them as context (SN-03), as a live push
+// would bring them. Each gets a copy row for the session and is marked as its stand-in, so its
+// acknowledgement consumes it for the principal. What was posted after the welcome is the live push's
+// (bounds), and a message the session already acknowledged is not given again, nor one this connection's
+// backlog already wrote. It runs after the backlog and before the live pushes are written.
+func (g *Gateway) standInBacklog(ctx context.Context, c *conn, a db.Agent, bounds map[string]int64) error {
+	if c.labelOf() == "" {
+		return nil
+	}
+	if _, ok := g.d.Presence.Session(a.ID); ok {
+		return nil // a live principal reads its own queue
+	}
+	states, err := g.d.Registry.SessionRooms(ctx, a.ID)
+	if err != nil {
+		return err
+	}
+	profile, err := delivery.IntelligenceOf(ctx, g.d.Store.R(), a.ID)
+	if err != nil {
+		return err
+	}
+	trust := g.d.Trust.Open()
+	principalKey := SessionKey("", "", a.PrincipalSession)
+	for _, st := range states {
+		bound, ok := bounds[st.ID]
+		if !ok || st.AgentsPaused {
+			continue // DLV-08: no agent delivery while the loop guard holds the room
+		}
+		if err := g.standInRoom(ctx, c, a, st, bound, profile, trust, principalKey); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// standInPage is the page size of the principal's queue that standInRoom reads at a time.
+const standInPage = 200
+
+// StandInMoreNotice is the notice after the stand-ins of a room when more messages for the principal wait
+// there than one backlog gives (SN-10): they stay in the principal's queue.
+func StandInMoreNotice(n int64) string {
+	return fmt.Sprintf("%d more messages for this AI wait in this conversation; use the history tool", n)
+}
+
+// standInRoom is standInBacklog for one room.
+func (g *Gateway) standInRoom(ctx context.Context, c *conn, a db.Agent, st RoomState, bound int64, profile db.Intelligence, trust delivery.Trust, principalKey string) error {
+	q := g.d.Store.R()
+	label := c.labelOf()
+	includeAddressed, err := principalIncludesAddressed(ctx, q, a.ID, principalKey, st.ID)
+	if err != nil {
+		return err
+	}
+	prefs := delivery.Prefs(profile, st.DisplayName, st.Delivery, st.KeywordsJson)
+	isDM := st.Kind == string(dto.ConversationKindDM)
+	// qualifies reports whether a message of the principal's queue is one the session stands in for, and
+	// its trust for the AI.
+	qualifies := func(v db.MessageView) (ok, trusted bool, err error) {
+		if delivery.SessionLabel(v.Text, profile.Handle) != "" {
+			return false, false, nil // a message for a label keeps its own route (SESS-22)
+		}
+		if !isDM && !delivery.MentionsPrincipal(v.Text, profile.Handle) {
+			return false, false, nil // a plain group message waits for the principal (SESS-23)
+		}
+		row, err := q.GetSessionDelivery(ctx, db.GetSessionDeliveryParams{MessageID: v.ID, AgentID: a.ID, Label: label})
+		switch {
+		case err == nil && row.AckedAt.Valid:
+			return false, false, nil // the session read it already
+		case err != nil && !errors.Is(err, sql.ErrNoRows):
+			return false, false, err
+		}
+		facts, err := delivery.LoadFacts(ctx, q, v, st.Kind)
+		if err != nil {
+			return false, false, err
+		}
+		return facts.WantedBy(ctx, trust, a.ID, prefs) // MEM-03, MEM-04
+	}
+	// The cap applies to the messages that qualify, not to the queue: a mention followed by many plain
+	// messages is still found. The oldest BacklogLimit are given; the ones after them are only counted.
+	var views []db.MessageView
+	trustedOf := map[string]bool{} // the stand-ins, with their trust for the AI
+	last, more := int64(0), int64(0)
+	// What the session read before this connection is not given again, though the principal's queue still
+	// holds it: a reconnect (a server restart) must not bring old DMs back as new ones. A read position
+	// created by this attach is not a reading (SN-01 joins a session caught up), so it does not count.
+	start := st.Cursor
+	if prior, ok := c.priorRead[st.ID]; ok && prior > start {
+		start = prior
+	}
+	for after := start; ; {
+		page, err := q.ListStandInCandidates(ctx, db.ListStandInCandidatesParams{
+			AgentID: a.ID, RoomID: st.ID, AfterSeq: after, BoundSeq: bound,
+			AnyText: isDM, Pattern: "%@" + profile.Handle + "%", IncludeAddressed: includeAddressed,
+			Limit: standInPage,
+		})
+		if err != nil {
+			return err
+		}
+		for _, v := range page {
+			after = v.Seq
+			ok, trusted, err := qualifies(v)
+			if err != nil {
+				return err
+			}
+			switch {
+			case !ok:
+			case len(trustedOf) < BacklogLimit:
+				views = append(views, v)
+				trustedOf[v.ID] = trusted
+				last = v.Seq
+			default:
+				more++
+			}
+		}
+		if len(page) < standInPage {
+			break
+		}
+	}
+	if len(trustedOf) == 0 {
+		return nil
+	}
+	// The context is what the session had not read before the last stand-in, as for a live push (SN-03).
+	readSeq := bound
+	if state, err := q.GetSessionRoomState(ctx, db.GetSessionRoomStateParams{
+		AgentID: a.ID, SessionKey: c.sessionKey, RoomID: st.ID,
+	}); err == nil {
+		readSeq = state.ReadSeq
+	} else if !errors.Is(err, sql.ErrNoRows) {
+		return err
+	}
+	var unread []db.MessageView
+	var count int64
+	if readSeq < last {
+		params := db.CountSessionUnreadInRoomParams{
+			RoomID: st.ID, AfterSeq: readSeq, BeforeSeq: last + 1, AgentID: a.ID, AuthorLabel: label, Label: label,
+		}
+		if count, err = q.CountSessionUnreadInRoom(ctx, params); err != nil {
+			return err
+		}
+		if unread, err = q.ListSessionUnread(ctx, db.ListSessionUnreadParams{
+			RoomID: st.ID, AfterSeq: readSeq, BeforeSeq: last + 1, AgentID: a.ID, AuthorLabel: label, Label: label,
+			Limit: BacklogLimit,
+		}); err != nil {
+			return err
+		}
+	}
+	// The frames: the stand-ins, and the unread messages around them as context, in sequence order.
+	byID := make(map[string]db.MessageView, len(views)+len(unread))
+	for _, v := range views {
+		if _, ok := trustedOf[v.ID]; ok {
+			byID[v.ID] = v
+		}
+	}
+	skipped := count
+	for _, v := range unread {
+		if _, ok := trustedOf[v.ID]; ok {
+			skipped-- // a stand-in is not context, but it is one of the unread messages listed
+			continue
+		}
+		byID[v.ID] = v
+		skipped--
+	}
+	all := make([]db.MessageView, 0, len(byID))
+	for _, v := range byID {
+		all = append(all, v)
+	}
+	slices.SortFunc(all, func(x, y db.MessageView) int { return cmp.Compare(x.Seq, y.Seq) })
+	msgs, err := g.d.Rooms.Details(ctx, all)
+	if err != nil {
+		return err
+	}
+	ref := delivery.RoomRef(st.ID, st.Name, st.Kind)
+	trustedOnly := dto.DeliveryMode(st.Delivery) == dto.DeliveryModeTrusted
+	type item struct {
+		frame dto.AgentMessage
+		row   db.CreateSessionDeliveryParams
+	}
+	items := make([]item, 0, len(msgs))
+	for _, msg := range msgs {
+		// The backlog of this connection may have written the message already (its own unacknowledged row,
+		// SESS-14): it is not written again, neither as context nor as a stand-in, as the queue would drop it
+		// (SN-03). The skipped count goes on the first frame that is written.
+		if _, dup := c.delivered[msg.ID]; dup {
+			continue
+		}
+		if _, dup := c.pushed[msg.ID]; dup {
+			if _, standIn := trustedOf[msg.ID]; !standIn {
+				continue
+			}
+		}
+		frame := dto.AgentMessage{Room: ref, Message: convert.Message(msg)}
+		if trusted, ok := trustedOf[msg.ID]; ok {
+			frame.Trusted = trusted
+		} else {
+			frame.Context = true
+			trusted := true // the AI wrote it: its sessions trust it (SESS-37)
+			if !selfAuthored(frame.Message, a.ID) {
+				if trusted, err = trustedFor(ctx, trust, msg.MessageView, a.ID); err != nil {
+					return err
+				}
+			}
+			if trustedOnly && !trusted {
+				continue // SN-03, POS-10: in trusted mode an untrusted message is not context either
+			}
+			frame.Trusted = trusted
+		}
+		items = append(items, item{frame: frame, row: db.CreateSessionDeliveryParams{
+			MessageID: msg.ID, AgentID: a.ID, Label: label, SessionKey: c.sessionKey,
+			OwnerLive: c.owner, CreatedAt: time.Now().UnixMilli(), Context: 1,
+		}})
+	}
+	// The rows exist before the frames are written: the acknowledgement of a stand-in finds its row (a copy
+	// row hides nothing from a later catch-up while it is not acknowledged, SN-03).
+	rows := make([]db.CreateSessionDeliveryParams, len(items))
+	for i, it := range items {
+		rows[i] = it.row
+	}
+	if err := g.createSessionDeliveries(rows); err != nil {
+		return err
+	}
+	for i, it := range items {
+		if i == 0 && skipped > 0 {
+			it.frame.Skipped = skipped
+		}
+		id := it.frame.Message.ID
+		if !it.frame.Context {
+			c.markStandIn(id)
+			c.delivered[id] = struct{}{}
+		}
+		if err := c.write(ctx, dto.AgentMessageFrame{Type: dto.AgentFrameTypeMessage, AgentMessage: it.frame}); err != nil {
+			return err
+		}
+		c.pushed[id] = struct{}{}
+	}
+	if more > 0 {
+		// The rest stay in the principal's queue: the session can read them with the history tool.
+		return c.write(ctx, dto.AgentNoticeFrame{Type: dto.AgentFrameTypeNotice, Room: ref, Text: StandInMoreNotice(more)})
+	}
+	return nil
 }

@@ -18,6 +18,17 @@ UPDATE agent_session_deliveries SET acked_at = sqlc.arg(acked_at)
 WHERE message_id = sqlc.arg(message_id) AND agent_id = sqlc.arg(agent_id) AND owner_live = sqlc.arg(owner_live)
   AND fell_back_at IS NULL AND acked_at IS NULL;
 
+-- name: AckStandInDelivery :execrows
+-- The acknowledgement of a message a parallel session was given in place of the principal, which was not
+-- live (SN-10): the session's copy becomes its own tombstone (context = 0), so the principal's queue leaves
+-- the message out, as it does for a message an addressed session acknowledged, while the principal's
+-- catch-up still lists it as context it had not read. The row is the session's by its label: a copy never
+-- falls back, so it is not judged by the connection that owns it (a new process of the session may have
+-- been given it again).
+UPDATE agent_session_deliveries SET acked_at = sqlc.arg(acked_at), context = 0
+WHERE message_id = sqlc.arg(message_id) AND agent_id = sqlc.arg(agent_id) AND label = sqlc.arg(label)
+  AND label <> '' AND context = 1 AND fell_back_at IS NULL AND acked_at IS NULL;
+
 -- name: AckFallbackDelivery :execrows
 -- The principal's acknowledgement of a fallen-back row: it becomes a tombstone.
 UPDATE agent_session_deliveries SET acked_at = sqlc.arg(acked_at)
