@@ -32,6 +32,51 @@ type AgentCursor struct {
 	Seq     int64
 }
 
+type AgentSchedule struct {
+	ID           string
+	AgentID      string
+	Name         string
+	Prompt       string
+	RuleKind     string
+	EveryMinutes sql.NullInt64
+	Cron         sql.NullString
+	Tz           string
+	CatchUp      string
+	Enabled      bool
+	Origin       string
+	SetBy        string
+	CreatedBy    string
+	UpdatedBy    string
+	AnchorAt     int64
+	CreatedAt    int64
+	UpdatedAt    int64
+	NextRunAt    sql.NullInt64
+	LastRunAt    sql.NullInt64
+	LastStatus   sql.NullString
+	NotifiedAt   sql.NullInt64
+}
+
+type AgentScheduleNotice struct {
+	MessageID  string
+	ScheduleID string
+	ManagerIid string
+	CreatedAt  int64
+}
+
+type AgentScheduleRun struct {
+	ID         string
+	ScheduleID string
+	AgentID    string
+	DueAt      int64
+	ExpiresAt  int64
+	FiredAt    sql.NullInt64
+	AckedAt    sql.NullInt64
+	Status     string
+	SessionKey sql.NullString
+	Manual     bool
+	CreatedAt  int64
+}
+
 type AgentSessionDelivery struct {
 	MessageID  string
 	AgentID    string

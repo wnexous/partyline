@@ -172,6 +172,10 @@ const (
 	// given changed (EDT-07, DLT-07). Clients that do not know a frame type ignore it; neither is acknowledged.
 	AgentFrameTypeMessageEdited  AgentFrameType = "message_edited"  // server → channel
 	AgentFrameTypeMessageDeleted AgentFrameType = "message_deleted" // server → channel
+	// AgentFrameTypeHeartbeat delivers a due run of a schedule to the AI's principal session (HB-04, HB-08), only to a
+	// client of agents.MinHeartbeatClientVersion or later (HB-07); the session acknowledges it with an ack carrying
+	// its run_id.
+	AgentFrameTypeHeartbeat AgentFrameType = "heartbeat" // server → channel
 )
 
 // AgentInfo identifies the connected agent in the welcome frame.
@@ -346,10 +350,12 @@ func DroppedNotice(n int64) string {
 	return fmt.Sprintf("%d platform messages were dropped (older than 7 days or over 5,000 queued)", n)
 }
 
-// AgentAckFrame confirms a message was handed to Claude Code (AGT-07).
+// AgentAckFrame confirms a message was handed to Claude Code (AGT-07), or, with RunID instead of MessageID, a
+// heartbeat (HB-04).
 type AgentAckFrame struct {
 	Type      AgentFrameType `json:"type" tstype:"typeof AgentFrameTypeAck"`
 	MessageID string         `json:"message_id"`
+	RunID     string         `json:"run_id,omitempty"`
 }
 
 // PlatformEvent is a message that arrived on a connection the AI operates, as its session

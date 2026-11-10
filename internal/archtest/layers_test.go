@@ -27,6 +27,7 @@ var packagesOf = map[layer][]string{
 		"connectors", "connectors/connectortest", "connectors/discord", "connectors/safehttp",
 		"connectors/telegram", "connectors/webhook", "connectors/whatsapp",
 		"platform",               // the per-AI queue
+		"schedules",              // the AIs' scheduled heartbeats, delivered by the gateway (HB-01)
 		"agents",                 // the registry, presence and the session gateway
 		"identities",             // chat accounts linked to users
 		"channel", "channel/mcp", // the session's end of the funnel

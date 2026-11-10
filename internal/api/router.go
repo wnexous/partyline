@@ -26,6 +26,7 @@ import (
 	"github.com/wnexous/partyline/internal/orgs"
 	"github.com/wnexous/partyline/internal/platform"
 	"github.com/wnexous/partyline/internal/rooms"
+	"github.com/wnexous/partyline/internal/schedules"
 	"github.com/wnexous/partyline/internal/settings"
 	"github.com/wnexous/partyline/internal/uploads"
 	"github.com/wnexous/partyline/internal/users"
@@ -43,6 +44,8 @@ type Deps struct {
 	Intelligences *intelligences.Service
 	// Conversations opens direct messages and creates groups.
 	Conversations *conversations.Service
+	// Schedules serves the AIs' scheduled heartbeats (HB-01..HB-12).
+	Schedules *schedules.Service
 	// Orgs is the organization use cases: organizations, their chart, members, positions and
 	// invitations.
 	Orgs *orgs.Service
@@ -135,6 +138,7 @@ func (s *server) routes(mux *http.ServeMux) {
 	s.identityDeleteRoutes(mux)
 	s.agentAPIRoutes(mux)
 	s.agentConversationRoutes(mux)
+	s.scheduleRoutes(mux)
 	s.connectorRoutes(mux)
 	s.identityRoutes(mux)
 	s.chatRoutes(mux)

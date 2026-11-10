@@ -31,6 +31,9 @@ const (
 	// LiveEventTypeRoomMessageUpdated carries a message that was edited or deleted, as it is now (EDT-06,
 	// DLT-06): the client replaces the message it has with the same id.
 	LiveEventTypeRoomMessageUpdated LiveEventType = "room.message_updated"
+	// LiveEventTypeAgentSchedules tells that the schedules of an AI changed (HB-12): whoever may read them
+	// asks again.
+	LiveEventTypeAgentSchedules LiveEventType = "agent.schedules"
 )
 
 //tygo:emit
@@ -45,6 +48,7 @@ var _ = `export type LiveEvent =
   | LiveMembersChanged
   | LiveAccessChanged
   | LiveAgentPresence
+  | LiveAgentSchedules
   | LiveConnectorStatus
   | LiveChatDiscovered
   | LiveIdentityLinked
@@ -134,6 +138,12 @@ type AccessChangedData struct {
 type LiveAgentPresence struct {
 	Type LiveEventType `json:"type" tstype:"typeof LiveEventTypeAgentPresence"`
 	Data AgentPresence `json:"data"`
+}
+
+// LiveAgentSchedules reports that the schedules of an AI the user sees changed (HB-12).
+type LiveAgentSchedules struct {
+	Type LiveEventType      `json:"type" tstype:"typeof LiveEventTypeAgentSchedules"`
+	Data AgentSchedulesData `json:"data"`
 }
 
 // AgentPresence is the online state of an agent.
