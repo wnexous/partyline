@@ -5,19 +5,20 @@ import (
 	"sync"
 )
 
-// maxInboxBytes bounds the frames read from the WebSocket and not handled yet. A frame larger than it
-// (inline media) is still taken when the inbox is empty.
+// maxInboxBytes bounds the frames read from the WebSocket and not handled yet, the one being handled
+// included. A frame larger than it (inline media) is still taken alone.
 const maxInboxBytes = 32 << 20
 
 // inbox holds, in order, the frames the WebSocket brought while the one before them is being handled:
 // a message whose media takes minutes to download (LF-04) must not stop the socket from being read,
-// or its pongs would go unread and the connection would drop. It holds at most maxBytes of frames
-// (one larger frame alone); a reader that would go over waits, which slows the socket down instead
-// of growing the memory.
+// or its pongs would go unread and the connection would drop. The frames waiting and the one being
+// handled hold at most maxBytes together (one larger frame alone); a reader that would go over waits
+// with the frame it read, which slows the socket down instead of growing the memory. The memory of
+// frames is so at most maxBytes, or one larger frame, plus the frame the reader holds.
 type inbox struct {
 	mu       sync.Mutex
 	frames   [][]byte
-	bytes    int
+	bytes    int // of the frames waiting and the one being handled
 	maxBytes int
 	closed   bool
 	ready    chan struct{} // signalled when a frame is added or the inbox is closed
@@ -39,7 +40,7 @@ func signal(c chan struct{}) {
 func (b *inbox) put(ctx context.Context, frame []byte) error {
 	for {
 		b.mu.Lock()
-		if len(b.frames) == 0 || b.bytes+len(frame) <= b.maxBytes {
+		if b.bytes == 0 || b.bytes+len(frame) <= b.maxBytes {
 			b.frames = append(b.frames, frame)
 			b.bytes += len(frame)
 			b.mu.Unlock()
@@ -64,7 +65,7 @@ func (b *inbox) close() {
 }
 
 // take returns the oldest frame, waiting for one; false once the inbox is closed and empty, or when
-// ctx is done.
+// ctx is done. The frame counts against the bound until done is called with it.
 func (b *inbox) take(ctx context.Context) ([]byte, bool) {
 	for {
 		b.mu.Lock()
@@ -72,9 +73,7 @@ func (b *inbox) take(ctx context.Context) ([]byte, bool) {
 			frame := b.frames[0]
 			b.frames[0] = nil
 			b.frames = b.frames[1:]
-			b.bytes -= len(frame)
 			b.mu.Unlock()
-			signal(b.room)
 			return frame, true
 		}
 		closed := b.closed
@@ -88,4 +87,12 @@ func (b *inbox) take(ctx context.Context) ([]byte, bool) {
 		case <-b.ready:
 		}
 	}
+}
+
+// done tells that a frame take returned was handled: its bytes no longer count.
+func (b *inbox) done(frame []byte) {
+	b.mu.Lock()
+	b.bytes -= len(frame)
+	b.mu.Unlock()
+	signal(b.room)
 }

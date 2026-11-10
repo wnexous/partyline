@@ -388,7 +388,10 @@ func TestRunReadsTheSocketWhileAMessageIsHandled(t *testing.T) {
 	push(t, sock, frame(t, testInstance, groupInfo("SECOND"), `{"conversation":"did it arrive?"}`))
 	pctx, pcancel := context.WithTimeout(context.Background(), wait)
 	defer pcancel()
-	require.NoError(t, sock.Ping(pctx), "the socket is read while the first message is handled")
+	for range 3 { // pongs keep coming for as long as the message is handled
+		require.NoError(t, sock.Ping(pctx), "the socket is read while the first message is handled")
+		time.Sleep(50 * time.Millisecond)
+	}
 	require.True(t, rec.NoInbound(), "nothing overtakes the message being handled")
 
 	close(h.release)

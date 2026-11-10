@@ -226,6 +226,7 @@ func (c *Connector) Run(ctx context.Context, h connectors.Handler) error {
 					return nil
 				}
 				c.handle(parent, ctx, h, data)
+				frames.done(data)
 			}
 		})
 		if err != nil {
