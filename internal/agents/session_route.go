@@ -446,7 +446,14 @@ func (g *Gateway) standInRoom(ctx context.Context, c *conn, a db.Agent, st RoomS
 	var views []db.MessageView
 	trustedOf := map[string]bool{} // the stand-ins, with their trust for the AI
 	last, more := int64(0), int64(0)
-	for after := st.Cursor; ; {
+	// What the session read before this connection is not given again, though the principal's queue still
+	// holds it: a reconnect (a server restart) must not bring old DMs back as new ones. A read position
+	// created by this attach is not a reading (SN-01 joins a session caught up), so it does not count.
+	start := st.Cursor
+	if prior, ok := c.priorRead[st.ID]; ok && prior > start {
+		start = prior
+	}
+	for after := start; ; {
 		page, err := q.ListStandInCandidates(ctx, db.ListStandInCandidatesParams{
 			AgentID: a.ID, RoomID: st.ID, AfterSeq: after, BoundSeq: bound,
 			AnyText: isDM, Pattern: "%@" + profile.Handle + "%", IncludeAddressed: includeAddressed,

@@ -448,3 +448,33 @@ func TestAStandInIsConsumedByTheAckOfTheSessionsNextConnection(t *testing.T) {
 	back := f.dialSession(t, "lead-session")
 	require.Empty(t, messageIDs(t, back.Drain(700*time.Millisecond)), "the principal is not handed it again")
 }
+
+// SN-10: an attaching parallel session is given only what it has not read. Messages it already read (its read
+// position passed them: a live delivery it acknowledged, a read_unread) are not stand-ins again, though the
+// principal's queue still holds them: a reconnect, as after a server restart, must not bring old DMs back as
+// new ones.
+func TestAnAttachingParallelSessionIsNotGivenWhatItAlreadyRead(t *testing.T) {
+	f := newSessionFixture(t)
+	principal := f.dialSession(t, "lead-session")
+	f.settle(t, principal)
+	principal.Close()
+	f.waitPrincipalGone(t)
+
+	dm, post := f.openDM(t)
+	post("hi")
+	read := post("still there?")
+	// The session read the conversation up to here earlier, without standing in for the principal.
+	require.NoError(t, f.env.App.Store.WithTx(context.Background(), func(q *db.Queries) error {
+		return q.AdvanceSessionReadSeq(context.Background(), db.AdvanceSessionReadSeqParams{
+			AgentID: f.agentID, SessionKey: "side-session", RoomID: dm.ID, ReadSeq: read.Seq,
+			Notify: agents.NotifyOn, UpdatedAt: time.Now().UnixMilli(),
+		})
+	}))
+	fresh := post("one more thing")
+
+	parallel := f.dialSession(t, "side-session")
+	frame := parallel.Message(time.Minute)
+	require.Equal(t, fresh.ID, frame.Message.ID, "only the message it had not read")
+	require.False(t, frame.Context)
+	parallel.ExpectNone(500 * time.Millisecond)
+}
