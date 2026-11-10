@@ -493,7 +493,10 @@ its managers only) and 403 elsewhere, everyone else 404. An agent token on the m
 
 Limits: a rule that fires more often than every 15 minutes, or that would make the AI's enabled
 routines fire more than 48 times in any 24 hours, is 422 `too_frequent`; a 21st routine is 422
-`too_many`; an AI makes at most 20 writes an hour (429 `rate_limited`). Every create, change, enable,
+`too_many`; an AI makes at most 20 writes an hour (429 `rate_limited`). The limits and the default
+timezone are constants of the DTO package (`MinScheduleEveryMinutes`, `MaxScheduleEveryMinutes`,
+`MaxScheduleRunsPerDay`, `MaxSchedulesPerAgent`, `DefaultScheduleTimezone`, beside `MaxScheduleName` and
+`MaxSchedulePrompt`), so the web app checks a rule with the server's own numbers. Every create, change, enable,
 disable, delete and run now is in the audit log (`agent.schedule_*`: the actor, the AI, the schedule
 and its rule, never the prompt).
 
