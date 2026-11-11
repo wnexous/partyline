@@ -357,13 +357,17 @@ func TestABrowserTranscriptIsKept(t *testing.T) {
 // as if it came without text, and the caption stays the message text.
 func TestACaptionedAudioFileIsTranscribed(t *testing.T) {
 	f := newVoiceRoom(t)
+	release := f.svc.block()
 
 	voice := f.postAudio(t, f.room.ID, "listen to this one", "interview.webm", audio)
 	require.Equal(t, dto.TranscriptStatePending, voice.Attachments[0].TranscriptState)
+	release("what the interview says")
+
 	got := f.ai.Message(wait)
 	require.Equal(t, voice.ID, got.Message.ID)
 	require.Equal(t, "listen to this one", got.Message.Text)
 	require.Equal(t, dto.TranscriptStateDone, got.Message.Attachments[0].TranscriptState)
+	require.Equal(t, "what the interview says", got.Message.Attachments[0].Transcript)
 	require.Len(t, f.svc.calls(), 1)
 }
 
