@@ -3,6 +3,7 @@ package channel
 import (
 	"context"
 	"crypto/sha256"
+	"encoding/binary"
 	"encoding/hex"
 	"errors"
 	"io"
@@ -53,7 +54,7 @@ type recorder struct {
 	proxyTimeout bool
 	mu           sync.Mutex
 	// slowDownload, when set, gives the body of an attachment download 4 KB at a time, each read
-	// after this wait (setSlowDownload).
+	// after this wait, or never a byte when it is noBytes (setSlowDownload).
 	slowDownload time.Duration
 	reqs         []sentRequest
 	puts         int
@@ -114,8 +115,8 @@ func (r *recorder) RoundTrip(req *http.Request) (*http.Response, error) {
 		return nil, errors.New("answer lost")
 	}
 	resp, err := r.base.RoundTrip(req)
-	if err == nil && slow > 0 && strings.HasPrefix(req.URL.Path, "/api/v1/agent/attachments/") {
-		resp.Body = &slowBody{ReadCloser: resp.Body, wait: slow}
+	if err == nil && slow != 0 && strings.HasPrefix(req.URL.Path, "/api/v1/agent/attachments/") {
+		resp.Body = &slowBody{ReadCloser: resp.Body, wait: slow, ctx: req.Context()}
 	}
 	return resp, err
 }
@@ -126,14 +127,29 @@ func (r *recorder) setSlowDownload(d time.Duration) {
 	r.slowDownload = d
 }
 
-// slowBody gives its body 4 KB at a time, each read after wait.
+// noBytes is a slowDownload whose body never brings a byte: a read waits until the request is canceled.
+const noBytes time.Duration = -1
+
+// slowBody gives its body 4 KB at a time, each read after wait (never, for noBytes), and stops when the
+// context of its request is done.
 type slowBody struct {
 	io.ReadCloser
 	wait time.Duration
+	ctx  context.Context
 }
 
 func (s *slowBody) Read(p []byte) (int, error) {
-	time.Sleep(s.wait)
+	var due <-chan time.Time // nil for noBytes: never
+	if s.wait != noBytes {
+		timer := time.NewTimer(s.wait)
+		defer timer.Stop()
+		due = timer.C
+	}
+	select {
+	case <-due:
+	case <-s.ctx.Done():
+		return 0, s.ctx.Err()
+	}
 	return s.ReadCloser.Read(p[:min(len(p), 4<<10)])
 }
 
@@ -182,8 +198,8 @@ func randomFile(t *testing.T, name string, size int64) (string, string) {
 	block := make([]byte, 64<<10)
 	for left := size; left > 0; {
 		n := min(int64(len(block)), left)
-		for i := range block[:n] {
-			block[i] = byte(rng.Uint32())
+		for i := 0; i < len(block); i += 8 {
+			binary.LittleEndian.PutUint64(block[i:], rng.Uint64())
 		}
 		_, err := f.Write(block[:n])
 		require.NoError(t, err)
@@ -221,6 +237,24 @@ func requireDelivered(t *testing.T, e *chanEnv, s *session, text, name string, s
 	return stored
 }
 
+// settleAllocs waits until the process allocates less than 64 KB in 50 ms, at most 10 s, so the work
+// a step started in the background (the dispatcher's handling of a post, the channel's notification of
+// it) is done before a measure of allocations begins.
+func settleAllocs(t *testing.T) {
+	t.Helper()
+	var m runtime.MemStats
+	runtime.GC()
+	runtime.ReadMemStats(&m)
+	for deadline := time.Now().Add(10 * time.Second); time.Now().Before(deadline); {
+		last := m.TotalAlloc
+		time.Sleep(50 * time.Millisecond)
+		runtime.ReadMemStats(&m)
+		if m.TotalAlloc-last < 64<<10 {
+			return
+		}
+	}
+}
+
 // LF-02: a file over the size of one multipart post goes to the room through an upload session, in
 // chunks of the size the server gives (a lowered PARTYLINE_MAX_UPLOAD_MB), streamed from the file:
 // the room gets one attachment, byte-identical, with the caption and reply_to; no multipart post is
@@ -242,11 +276,17 @@ func TestSendFileGoesUpInChunks(t *testing.T) {
 				s = e.connected(o)
 			}
 			question := e.post("send the recording")
-			size := int64(multipartMaxBytes) + 1<<20 + 4321
+			if !toolsOnly {
+				require.Equal(t, question.ID, s.notification().Meta["message_id"])
+			}
+			// Four times the size of one multipart post: what the server and the channel allocate grows with
+			// the chunks, while what other work of the process allocates in the meantime does not, so the
+			// bound keeps room for it on a slow runner.
+			size := int64(4*multipartMaxBytes) + 4321
 			path, sha := randomFile(t, "recording.bin", size)
 
 			var before, after runtime.MemStats
-			runtime.GC()
+			settleAllocs(t)
 			runtime.ReadMemStats(&before)
 			text, isErr := s.call("send_file", toolArgs("room", "Support", "path", path, "caption", "the recording", "reply_to", question.ID))
 			runtime.ReadMemStats(&after)
@@ -258,7 +298,7 @@ func TestSendFileGoesUpInChunks(t *testing.T) {
 			stored := requireDelivered(t, e, s, text, "recording.bin", size, sha)
 			require.Equal(t, []string{"the recording", question.ID}, []string{stored.Text, stored.ReplyTo})
 
-			require.Len(t, rec.sent("/api/v1/agent/uploads"), 1+10, "one session and ten chunks of 1 MB")
+			require.Len(t, rec.sent("/api/v1/agent/uploads"), 1+33, "one session and 33 chunks of up to 1 MB")
 			for _, put := range rec.sent("/api/v1/agent/uploads/") {
 				require.Equal(t, http.MethodPut, put.method)
 				require.LessOrEqual(t, put.length, int64(1<<20))
@@ -574,30 +614,35 @@ func TestSendFileThroughAConnectionToAServerWithoutUploads(t *testing.T) {
 	require.Len(t, rec.sent("/connections/"), 1, "only the first file was posted")
 }
 
-// LF-08: a download that keeps bringing bytes goes on past the bound of an ordinary tool call, streamed
-// to disk; one that brings nothing for the stall time fails and says so. The bounds are shortened here:
-// 200 ms for a tool call, 400 ms of stall, a download of about 600 ms.
+// LF-08: a download that keeps bringing bytes goes on past the bound of an ordinary tool call and past
+// the stall time, streamed to disk; one that brings nothing for the stall time fails and says so. The
+// bounds are shortened here: 200 ms for a tool call, 1 s of stall, and a download of 32 reads of 4 KB,
+// each 40 ms after the last, so at least 1.28 s. The stall's wait starts before the request, so it also
+// covers the wait for the answer: 1 s leaves a slow runner most of a second for it, while the download
+// still lasts longer than the stall only because every read that brings bytes starts its wait again.
 func TestDownloadAttachmentOutlastsTheToolBoundWhileBytesArrive(t *testing.T) {
+	const toolLimit, stall = 200 * time.Millisecond, time.Second
 	e := newChanEnv(t)
-	content := strings.Repeat("0123456789abcdef", 64<<10/16)
+	content := strings.Repeat("0123456789abcdef", 128<<10/16)
 	m := e.postFile("big.txt", content)
 
 	rec := newRecorder()
 	rec.setSlowDownload(40 * time.Millisecond)
 	o := e.options()
 	o.HTTPClient = rec.client()
-	o.toolLimit, o.readStall = 200*time.Millisecond, 400*time.Millisecond
+	o.toolLimit, o.readStall = toolLimit, stall
 	s := e.connected(o)
 
 	start := time.Now()
 	path, isErr := s.call("download_attachment", toolArgs("attachment_id", m.Attachments[0].ID))
 	require.False(t, isErr, path)
-	require.Greater(t, time.Since(start), 200*time.Millisecond, "longer than the bound of a tool call")
+	require.Greater(t, time.Since(start), stall, "longer than the stall, and so than the bound of a tool call")
 	got, err := os.ReadFile(path) // #nosec G304 -- the test's download
 	require.NoError(t, err)
 	require.Equal(t, content, string(got))
 
-	rec.setSlowDownload(600 * time.Millisecond)
+	// The answer comes and then no byte: the download ends by the stall, whatever the runner's speed.
+	rec.setSlowDownload(noBytes)
 	text, isErr := s.call("download_attachment", toolArgs("attachment_id", m.Attachments[0].ID))
 	require.True(t, isErr)
 	require.Equal(t, "download stalled: the server sent nothing for 1 second; try again", text)
