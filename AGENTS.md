@@ -40,6 +40,11 @@ Override a tool path with the Makefile variables, e.g. `make lint GOLANGCI_LINT=
   integrations tests and the build, with the independent stages running in parallel. It must
   pass before every commit. `make check-race` (`make check RACE=1`) runs the same gate with the
   race detector before pushing; CI runs that gate.
+- CI splits the gate: the `check` job runs `make check` with `CHECK_SKIP=test-go`, and the
+  `go-test` matrix runs `make test-go RACE=1 GOTEST_SPLIT=k/N`, part k of N on each runner. Each
+  part fails unless it ran exactly the tests assigned to it, and the `go-test` summary job
+  (`scripts/gotest-union.sh`) checks that the parts together ran every listed test once. To try a
+  part locally: `make test-go GOTEST_SPLIT=2/4` (all parts must use the same `SHARDS`).
 - Commits follow Conventional Commits (`feat(scope): ...`, `fix: ...`), one logical change each.
 
 ## Rules

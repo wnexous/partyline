@@ -8,6 +8,10 @@
 #
 # RACE=1 adds -race to the Go tests; SHARDS=N overrides the shard count (both are passed to
 # the sub-makes, and `make check` itself accepts them as variables).
+#
+# CHECK_SKIP="stage ..." (space- or comma-separated) leaves those parallel stages out, e.g.
+# CHECK_SKIP=test-go in CI, where the Go tests run split over a matrix of their own
+# (GOTEST_SPLIT, see gotest.sh). A skipped stage is reported as skipped; an unknown name fails.
 set -uo pipefail
 
 cd "$(dirname "$0")/.." || exit 1
@@ -15,6 +19,7 @@ cd "$(dirname "$0")/.." || exit 1
 MAKE=${MAKE:-make}
 RACE=${RACE:-0}
 SHARDS=${SHARDS:-}
+CHECK_SKIP=${CHECK_SKIP:-}
 HAS_WEB=0
 [ -f web/package.json ] && HAS_WEB=1
 
@@ -25,15 +30,27 @@ now_ms() {
 	date +%s%3N 2>/dev/null || echo $((SECONDS * 1000))
 }
 
+all_stages=(check-drift lint vet test-go integrations-test web-verify)
+skip=" "
+for name in ${CHECK_SKIP//,/ }; do
+	case " ${all_stages[*]} " in
+	*" $name "*) skip="$skip$name " ;;
+	*) echo "check: CHECK_SKIP names an unknown stage: $name (stages: ${all_stages[*]})" >&2; exit 2 ;;
+	esac
+done
+
 echo "=== generate ==="
 if ! "$MAKE" --no-print-directory generate RACE="$RACE" SHARDS="$SHARDS"; then
 	echo "check: generate failed" >&2
 	exit 1
 fi
 
-stages=(check-drift lint vet test-go integrations-test)
+stages=()
+for stage in check-drift lint vet test-go integrations-test; do
+	case "$skip" in *" $stage "*) ;; *) stages+=("$stage") ;; esac
+done
 if [ "$HAS_WEB" -eq 1 ]; then
-	stages+=(web-verify)
+	case "$skip" in *" web-verify "*) ;; *) stages+=(web-verify) ;; esac
 fi
 
 pids=()
@@ -53,6 +70,9 @@ for pid in "${pids[@]}"; do
 done
 
 failed=0
+for stage in ${skip}; do
+	printf '\n=== %s (skipped: CHECK_SKIP) ===\n' "$stage"
+done
 for stage in "${stages[@]}"; do
 	status=$(cat "$tmp/$stage.status" 2>/dev/null || echo 1)
 	ms=$(cat "$tmp/$stage.ms" 2>/dev/null || echo 0)
