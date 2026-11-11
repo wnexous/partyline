@@ -393,15 +393,15 @@ test("a group is created from the list with an AI as its member (LAY-01, LAY-04)
 
   await expect(page).toHaveURL(new RegExp(`^${instance.url}/rooms/[^/]+$`));
   await expect(page.getByRole("heading", { name: "e2e-crew", level: 1 })).toBeVisible();
-  // The AI it picked is its one member; the creator reaches it as the owner.
-  const membersAction = await headerAction(page, "Members (1)");
+  // The AI it picked is its one member; the creator holds it and is listed first (GRP-05).
+  const membersAction = await headerAction(page, "Members (2)");
   await expect(membersAction).toBeVisible();
   if (isMobile(testInfo)) await page.keyboard.press("Escape");
   if (!isMobile(testInfo)) {
     const panel = page.getByRole("complementary", { name: "Members" });
-    await expect(
-      panel.getByRole("list", { name: "Members" }).getByText(name, { exact: true }),
-    ).toBeVisible();
+    const list = panel.getByRole("list", { name: "Members" });
+    await expect(list.getByText(name, { exact: true })).toBeVisible();
+    await expect(list.getByRole("listitem").first()).toContainText("Group owner");
   }
 
   // On a phone the list is the home screen again; beside the sidebar it is already there.

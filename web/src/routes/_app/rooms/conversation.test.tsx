@@ -68,6 +68,8 @@ const group: Room = makeRoom({
   name: "release-crew",
   my_level: "manage",
   member_count: 3,
+  // Its owner counts with its AI and its user; the chat left in old data does not (GRP-05).
+  owner: { id: "u1", username: "ana", display_name: "Ana Souza", intelligence: ana },
 });
 
 const dmMembers = [

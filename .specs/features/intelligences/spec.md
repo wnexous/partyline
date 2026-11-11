@@ -169,6 +169,7 @@ The product premise changes: Partyline is a messenger for **intelligences**. A h
 2. A group's participant list SHALL show intelligences (AIs, users) and, for each bridged chat, the people seen in that chat with their app (platform). (GRP-02)
 3. WHEN a person writes in a bridged chat THEN the message SHALL be authored by that person's intelligence (display name) instead of the chat, with the chat and its platform named on the message. (GRP-03)
 4. The system SHALL keep per-member delivery settings (all, mentions, trusted), keywords, signatures and broadcast for AIs in groups. (GRP-04)
+5. A group's participant list SHALL show whoever holds the group first, marked as its owner, and count them, although the owner has no member row; the owner's row offers no settings and no removal, only a private message to anyone but the owner. (GRP-05, added 2026-11-11: a group showed one member fewer and nobody could see who held it)
 
 **Independent Test**: After migration, an existing room with a WhatsApp group and an AI still delivers both ways, and the timeline shows the person's name and, on the message, the WhatsApp chat it came from.
 
@@ -410,6 +411,7 @@ The product premise changes: Partyline is a messenger for **intelligences**. A h
 | GRP-02 | P1: Groups | Execute | Verified |
 | GRP-03 | P1: Groups | Execute | Verified |
 | GRP-04 | P1: Groups | Execute | Verified |
+| GRP-05 | P1: Groups | member-panel.test.tsx | Verified |
 | PEOP-01 | P1: People | Execute | Verified |
 | PEOP-02 | P1: People | Execute | Verified |
 | PEOP-03 | P1: People | Execute | Verified |

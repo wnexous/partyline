@@ -30,6 +30,8 @@ export interface PersonRow {
   sessions?: SessionInfo[];
   /** The room member behind the row, for what only a group has (settings, remove, owner). */
   member?: RoomMember;
+  /** Set on the row of whoever holds a group, who has no member row (GRP-05). */
+  owner?: true;
 }
 
 const isMember = (source: RoomMember | IntelligenceRef): source is RoomMember =>

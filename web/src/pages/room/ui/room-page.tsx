@@ -19,7 +19,7 @@ import {
   useOpenConversation,
   useRoom,
 } from "@/entities/room";
-import { useRoomMembers } from "@/entities/room-member";
+import { groupRows, useRoomMembers } from "@/entities/room-member";
 import { MemberPicker } from "@/features/add-member";
 import { useDraft, useDraftStore } from "@/features/send-message";
 import { isApiError } from "@/shared/api/client";
@@ -138,7 +138,8 @@ export function RoomPage() {
         }
       : undefined;
   const memberList = members.data ?? [];
-  const participantCount = isDM ? r.participants.length : memberList.length;
+  const owner = isDM ? undefined : r.owner.intelligence;
+  const participantCount = isDM ? r.participants.length : groupRows(memberList, owner).length;
   const title = conversationTitle(r, me.id, t);
 
   const shown = (tab: PanelTab) => (isMobile ? sheetOpen : panelOpen) && panelTab === tab;
@@ -208,6 +209,7 @@ export function RoomPage() {
       roomId={roomId}
       members={memberList}
       participants={isDM ? r.participants : undefined}
+      owner={owner}
       membersLabel={membersLabel}
       count={participantCount}
       canManage={canManage}
@@ -344,6 +346,7 @@ function SidePanel({
   roomId,
   members,
   participants,
+  owner,
   membersLabel,
   count,
   canManage,
@@ -356,6 +359,7 @@ function SidePanel({
   members: RoomMember[];
   /** Set for a DM: its participants replace the member list. */
   participants?: IntelligenceRef[];
+  owner?: IntelligenceRef;
   membersLabel: string;
   count: number;
   canManage: boolean;
@@ -404,6 +408,7 @@ function SidePanel({
           roomId={roomId}
           members={members}
           participants={participants}
+          owner={owner}
           canManage={canManage}
           loading={loading}
         />

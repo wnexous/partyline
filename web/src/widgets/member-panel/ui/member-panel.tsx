@@ -1,7 +1,7 @@
 import type { ReactNode } from "react";
 import { toast } from "sonner";
 import { useMe } from "@/entities/account";
-import { useAddMember, useRemoveMember, visibleRows } from "@/entities/room-member";
+import { groupRows, useAddMember, useRemoveMember, visibleRows } from "@/entities/room-member";
 import type { IntelligenceRef, RoomMember } from "@/shared/api/types.gen";
 import { useI18n } from "@/shared/i18n";
 import { PanelSkeleton } from "@/shared/ui/molecules/panel-skeleton";
@@ -12,7 +12,8 @@ import { MemberRow } from "./member-row";
  * The people of a conversation, in its side panel (UI-10, UI-12, GRP-02, DM-02): a group lists its
  * room members, in the order they joined, with their settings and the actions; a DM lists its two
  * participants and offers no way to change them. Both read through one adapter into one row, with
- * the same loading and empty states. An AI and a user look the same, with avatar, name and @handle;
+ * the same loading and empty states. Whoever holds a group comes first, marked as its owner
+ * (GRP-05). An AI and a user look the same, with avatar, name and @handle;
  * what only an AI has (presence, host, sessions) shows on its own row (AD-024). Chats are never
  * members (CID-20, AD-015), so a chat row left in old data is not rendered.
  */
@@ -20,6 +21,7 @@ export function MemberPanel({
   roomId,
   members,
   participants,
+  owner,
   canManage,
   loading,
 }: {
@@ -28,6 +30,8 @@ export function MemberPanel({
   members: RoomMember[];
   /** Set for a DM: its participants replace the members. */
   participants?: IntelligenceRef[];
+  /** Whoever holds a group, shown first; absent for a DM and for an owner without a profile. */
+  owner?: IntelligenceRef;
   canManage: boolean;
   loading: boolean;
 }) {
@@ -37,7 +41,9 @@ export function MemberPanel({
   const add = useAddMember(roomId);
 
   const isDM = participants !== undefined;
-  const rows = visibleRows(participants ?? members);
+  const rows = isDM ? visibleRows(participants) : groupRows(members, owner);
+  // A group with only its owner still says how to give messages somewhere to go.
+  const noMembers = rows.every((row) => row.owner);
 
   const onRemove = (member: RoomMember) => {
     const name = member.name;
@@ -61,12 +67,8 @@ export function MemberPanel({
         <Skeleton className="h-4 w-44" />
       </PanelSkeleton>
     );
-  } else if (rows.length === 0) {
-    body = (
-      <p className="px-4 py-6 text-sm text-muted-foreground">
-        {t(isDM ? "participants.empty" : "members.empty")}
-      </p>
-    );
+  } else if (rows.length === 0 && isDM) {
+    body = <p className="px-4 py-6 text-sm text-muted-foreground">{t("participants.empty")}</p>;
   } else {
     body = (
       <ul aria-label={t(isDM ? "participants.title" : "members.title")} className="py-3">
@@ -85,6 +87,9 @@ export function MemberPanel({
             />
           );
         })}
+        {noMembers ? (
+          <li className="px-4 py-3 text-sm text-muted-foreground">{t("members.empty")}</li>
+        ) : null}
       </ul>
     );
   }

@@ -36,7 +36,8 @@ export interface MemberRowGroup {
 /**
  * One person of a conversation's side panel, in a group or in a DM (UI-10, UI-12, DM-02): avatar,
  * name and @handle; for an AI, whether it is online and, while it is online with parallel sessions,
- * which ones (SESS-44); in a group also the owner, the room settings and the actions.
+ * which ones (SESS-44); in a group also the owner, the room settings and the actions. Whoever holds
+ * the group is marked as its owner and can only be messaged privately (GRP-05).
  */
 export function MemberRow({
   row,
@@ -106,6 +107,8 @@ export function MemberRow({
         ) : null}
       </>
     );
+  } else if (row.owner) {
+    meta = <span data-testid={`owner-${row.rowId}`}>{t("members.owner")}</span>;
   } else if (isAI) {
     // A DM participant is only a profile: its status and sessions come from the AI's own profile.
     meta = <AiStatusLine id={row.id} className="flex" />;
@@ -120,7 +123,9 @@ export function MemberRow({
 
   // PDM-04: nobody messages herself.
   const canMessageRow =
-    !!member && canMessage(viewerId ?? "", { id: row.id, role: row.kind === "ai" ? "ai" : "user" });
+    (!!member || !!row.owner) &&
+    canMessage(viewerId ?? "", { id: row.id, role: row.kind === "ai" ? "ai" : "user" });
+  const ownerActions = row.owner && canMessageRow ? <MessagePrivately row={row} /> : null;
   const actions = group ? (
     <>
       {canMessageRow ? <MessagePrivately row={row} /> : null}
@@ -139,7 +144,9 @@ export function MemberRow({
         </Button>
       ) : null}
     </>
-  ) : null;
+  ) : (
+    ownerActions
+  );
 
   return (
     <IntelligenceRow

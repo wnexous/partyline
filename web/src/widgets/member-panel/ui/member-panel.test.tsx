@@ -229,6 +229,61 @@ describe("member panel, group (CID-20, CID-22)", () => {
   });
 });
 
+describe("member panel, the group's owner (GRP-05)", () => {
+  const carla = makeIntelligence({ id: "u3", display_name: "Carla Dias", handle: "carla" });
+
+  it("lists whoever holds the group first, marked as its owner, with no settings or remove", async () => {
+    mockApi({ "GET /me": json(200, makeMe()) });
+    renderWithRouter(
+      <MemberPanel roomId="r1" members={members} owner={carla} canManage loading={false} />,
+    );
+
+    const list = await screen.findByRole("list", { name: "Members" });
+    const rows = within(list).getAllByRole("listitem");
+    expect(rows[0]).toHaveTextContent("Carla Dias");
+    expect(rows[0]).toHaveTextContent("Group owner");
+    expect(screen.queryByRole("button", { name: "Remove Carla Dias" })).toBeNull();
+    expect(screen.getByRole("button", { name: "Actions for Carla Dias" })).toBeInTheDocument();
+    expect(screen.getByTestId("member-mb-atlas")).toHaveTextContent("Atlas");
+  });
+
+  it("offers the viewer no way to message themself on their own owner row (PDM-04)", async () => {
+    mockApi({ "GET /me": json(200, makeMe()) });
+    const me = makeIntelligence({ id: "u1", display_name: "Ana Souza", handle: "ana" });
+    renderWithRouter(
+      <MemberPanel roomId="r1" members={members} owner={me} canManage loading={false} />,
+    );
+
+    expect(await screen.findByText("Group owner")).toBeInTheDocument();
+    await waitFor(() =>
+      expect(screen.queryByRole("button", { name: "Actions for Ana Souza" })).toBeNull(),
+    );
+  });
+
+  it("does not repeat an owner who also has a member row in old data", async () => {
+    mockApi({ "GET /me": json(200, makeMe()) });
+    const owner = makeIntelligence({ id: "u2", display_name: "Bob Lima", handle: "bob" });
+    renderWithRouter(
+      <MemberPanel roomId="r1" members={members} owner={owner} canManage loading={false} />,
+    );
+
+    expect(await screen.findAllByText("Bob Lima")).toHaveLength(1);
+    expect(screen.getByText("Group owner")).toBeInTheDocument();
+  });
+
+  it("still says how to add members when the group holds only its owner", async () => {
+    mockApi({ "GET /me": json(200, makeMe()) });
+    renderWithRouter(
+      <MemberPanel roomId="r1" members={[]} owner={carla} canManage loading={false} />,
+    );
+
+    expect(await screen.findByText("Carla Dias")).toBeInTheDocument();
+    expect(
+      screen.getByText("No members yet. Add members so messages have somewhere to go."),
+    ).toBeInTheDocument();
+  });
+});
+
 describe("member sessions (SESS-44)", () => {
   const at = "2026-10-28T14:05:00Z";
   it("an online AI with a parallel session lists principal and its labels; a single or offline one none", async () => {
