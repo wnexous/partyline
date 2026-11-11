@@ -80,12 +80,12 @@ func (t *tools) register(srv *mcp.Server) {
 	}, t.guard(t.ask))
 	srv.HandleTool(mcp.ToolDef{
 		Name:        "room_info",
-		Description: "Read a room's instructions for agents, its owner (a group's owner is the person who holds it: they read and write it without being listed among the members), its members (chats with platform and kind; agents show whether they are online and their live sessions; address a session by writing its address (e.g. @handle:label) in a message's text), your own membership settings in it and, for this session, how many messages it has not read (unread) and its notification setting there (notify: on, or mentions only).",
+		Description: "Read a room's instructions for agents, who holds a group (the person who reads and writes it without being listed among the members), its members (chats with platform and kind; agents show whether they are online and their live sessions; address a session by writing its address (e.g. @handle:label) in a message's text), your own membership settings in it and, for this session, how many messages it has not read (unread) and its notification setting there (notify: on, or mentions only).",
 		InputSchema: schema(`{"type":"object","properties":{"room":{"type":"string","description":"room id, room name, or @handle of the intelligence you have a DM with"}},"required":["room"]}`),
 	}, t.guard(t.roomInfo))
 	srv.HandleTool(mcp.ToolDef{
 		Name:        "list_rooms",
-		Description: "List the rooms and direct messages you belong to with their members (agents show whether they are online and their live sessions; address a session by writing its address (e.g. @handle:label) in a message's text); a direct message has kind dm and says who it is with, and a group names its owner, the person who holds it, who reads and writes it without being listed among the members. Each room also carries, for this session, unread (how many messages it has not read there) and notify (its notification setting: on, or mentions only).",
+		Description: "List the rooms and direct messages you belong to with their members (agents show whether they are online and their live sessions; address a session by writing its address (e.g. @handle:label) in a message's text); a direct message has kind dm and says who it is with, and a group says who holds it, the person who reads and writes it without being listed among the members. Each room also carries, for this session, unread (how many messages it has not read there) and notify (its notification setting: on, or mentions only).",
 		InputSchema: schema(`{"type":"object","properties":{}}`),
 	}, t.guard(t.listRooms))
 	srv.HandleTool(mcp.ToolDef{
