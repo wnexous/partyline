@@ -191,7 +191,7 @@ On 2026-10-24 the product owner asked to edit and delete messages in conversatio
 
 1. WHEN the user presses Enter in the composer on a touch device THEN the app SHALL insert a new line and SHALL NOT send; the Send button SHALL be the only way to send. (ENT-01)
 2. WHEN the user presses Enter in the composer on a device with a mouse or trackpad THEN the app SHALL send the trimmed text, and Shift+Enter SHALL add a new line, as before. (ENT-02)
-3. The hint in the composer SHALL follow the device: "Enter to send · Shift+Enter for a new line" with a mouse or trackpad, "Enter for a new line · tap Send to send" on a touch device, which shows it at every width. (ENT-03)
+3. The composer SHALL show the hint "Enter to send · Shift+Enter for a new line" (in edit mode "Enter to save · Esc to cancel") on a wide screen with a mouse or trackpad, and no keyboard hint on a touch device, where Enter writes a new line as in any messenger, the keyboard shows a new-line key (ENT-04) and the Send button is in sight. (ENT-03; changed 2026-11-11: the touch hint took two lines, or a row of its own with large text, to say what the device already shows.)
 4. The on-screen keyboard's Return key SHALL show a new-line key on a touch device (`enterkeyhint="enter"`) and a send key with a mouse or trackpad. (ENT-04)
 5. WHEN the mention list is open THEN Enter SHALL still complete the mention on both kinds of device, and SHALL NOT send (MEN-03 holds). (ENT-05)
 

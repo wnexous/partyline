@@ -962,7 +962,7 @@ test("Enter sends with a mouse and adds a line on a phone, where only Send sends
   await expect(message(page)).toContainText("second line");
   await expect(box).toHaveValue("");
 
-  // A phone: Enter writes, Send sends, and the hint says so at 360 px without breaking the row.
+  // A phone: Enter writes and Send sends, with no keyboard hint taking the row's room.
   const phone = await browser.newContext({
     viewport: { width: 360, height: 780 },
     hasTouch: true,
@@ -974,11 +974,8 @@ test("Enter sends with a mouse and adds a line on a phone, where only Send sends
     await touch.goto(`/rooms/${room.id}`);
     const field = touch.getByRole("textbox", { name: "Message e2e-enter" });
     await expect(field).toHaveAttribute("enterkeyhint", "enter");
-    const hint = touch.getByText("Enter for a new line · tap Send to send");
-    await expect(hint).toBeVisible();
+    await expect(touch.getByText(/Enter for a new line|Enter to send/)).toHaveCount(0);
     const send = touch.getByRole("button", { name: "Send" });
-    const [hintBox, sendBox] = [await hint.boundingBox(), await send.boundingBox()];
-    expect((hintBox?.x ?? 0) + (hintBox?.width ?? 0)).toBeLessThanOrEqual(sendBox?.x ?? 0);
 
     await field.tap();
     await touch.keyboard.type("one");

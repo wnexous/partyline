@@ -548,7 +548,6 @@ export const en = {
   "composer.announceFileAttached": "1 file attached",
   "composer.announceFilesAttached": "{count} files attached",
   "composer.hint": "Enter to send · Shift+Enter for a new line",
-  "composer.hintTouch": "Enter for a new line · tap Send to send",
   "composer.mentions": "Mention someone",
   "composer.readOnly": "You can read this room but not post. Ask a room manager for post access.",
   "composer.forbidden": "You’re not allowed to post in this room.",
@@ -572,7 +571,6 @@ export const en = {
   "composer.cancelEdit": "Cancel editing",
   "composer.saveEdit": "Save changes",
   "composer.editHint": "Enter to save · Esc to cancel",
-  "composer.editHintTouch": "Enter for a new line · tap Save to save",
   "composer.editGone": "This message was deleted, so it can’t be edited.",
   "composer.editForbidden": "You can only edit your own messages.",
   "composer.editCounterpartDisabled":
