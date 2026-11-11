@@ -44,9 +44,10 @@ lint:
 vet:
 	go vet ./...
 
-## test-go: sharded Go tests only (RACE=1 adds -race; SHARDS=N sets the shard count)
+## test-go: sharded Go tests only (RACE=1 adds -race; SHARDS=N sets the shard count;
+## GOTEST_SPLIT=k/N runs only part k of N, as the CI matrix does: see scripts/gotest.sh)
 test-go:
-	RACE=$(RACE) SHARDS=$(SHARDS) scripts/gotest.sh
+	RACE=$(RACE) SHARDS=$(SHARDS) GOTEST_SPLIT=$(GOTEST_SPLIT) scripts/gotest.sh
 
 ## test: all Go tests (sharded; plus web tests when web/ exists)
 test: test-go
