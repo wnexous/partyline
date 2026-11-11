@@ -47,6 +47,22 @@ jobs:
       - uses: actions/setup-go@v5
         with:
           go-version-file: go.mod
+          # The setup-go cache holds the non-race build the other jobs save; the race build has its own.
+          cache: false
+      # Each part first builds every race test binary (about 2-3 minutes cold). The compiled
+      # packages of the last main push make that a relink of what changed. Tests always run
+      # (-count=1), so the cache only saves compiling.
+      - name: Restore the race build cache
+        id: race-cache
+        uses: actions/cache/restore@v4
+        with:
+          path: |
+            ~/.cache/go-build
+            ~/go/pkg/mod
+          key: go-race-${{ runner.os }}-${{ hashFiles('go.mod', 'go.sum') }}-${{ github.sha }}
+          restore-keys: |
+            go-race-${{ runner.os }}-${{ hashFiles('go.mod', 'go.sum') }}-
+            go-race-${{ runner.os }}-
       - name: make test-go
         run: make test-go RACE=1 GOTEST_SPLIT=${{ matrix.part }}/${{ strategy.job-total }}
         env:
@@ -56,6 +72,17 @@ jobs:
           # hung test still fails fast there.
           TIMEOUT: "40m"
           GOTEST_REPORT: ${{ runner.temp }}/gotest-report
+      # Every part builds the same binaries, so one part saves them, and only on main, whose caches
+      # every branch can read. Go trims entries unused for five days, which keeps the cache bounded.
+      - name: Save the race build cache
+        if: always() && matrix.part == 1 && github.event_name == 'push' && steps.race-cache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v4
+        continue-on-error: true # a cache that cannot be saved never fails the tests
+        with:
+          path: |
+            ~/.cache/go-build
+            ~/go/pkg/mod
+          key: ${{ steps.race-cache.outputs.cache-primary-key }}
       - name: Upload the split report
         if: always()
         uses: actions/upload-artifact@v4
