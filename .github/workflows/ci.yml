@@ -128,14 +128,16 @@ jobs:
         run: make web-install
       - name: Install Playwright Chromium
         working-directory: web
-        # The runner's apt mirrors sometimes fail to resolve for a minute; try three times.
+        # The system packages come from the Ubuntu mirrors, which the runners sometimes cannot reach
+        # for an hour or more. The runner image already has the libraries Chrome needs, so without
+        # the mirrors install Chromium alone instead of failing the job.
         run: |
-          for attempt in 1 2 3; do
-            bunx playwright install --with-deps chromium && exit 0
-            echo "install failed (attempt $attempt of 3); retrying in 30 s"
-            sleep 30
-          done
-          exit 1
+          if timeout 20 getent hosts archive.ubuntu.com >/dev/null &&
+            timeout 600 bunx playwright install --with-deps chromium; then
+            exit 0
+          fi
+          echo "::warning::Ubuntu mirrors unreachable; installing Chromium without system packages"
+          bunx playwright install chromium
       - name: make e2e
         run: make e2e
       - name: Upload Playwright traces
