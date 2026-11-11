@@ -3,6 +3,7 @@ package channel
 import (
 	"context"
 	"crypto/sha256"
+	"encoding/binary"
 	"encoding/hex"
 	"errors"
 	"io"
@@ -182,8 +183,8 @@ func randomFile(t *testing.T, name string, size int64) (string, string) {
 	block := make([]byte, 64<<10)
 	for left := size; left > 0; {
 		n := min(int64(len(block)), left)
-		for i := range block[:n] {
-			block[i] = byte(rng.Uint32())
+		for i := 0; i < len(block); i += 8 {
+			binary.LittleEndian.PutUint64(block[i:], rng.Uint64())
 		}
 		_, err := f.Write(block[:n])
 		require.NoError(t, err)
@@ -221,6 +222,24 @@ func requireDelivered(t *testing.T, e *chanEnv, s *session, text, name string, s
 	return stored
 }
 
+// settleAllocs waits until the process allocates less than 64 KB in 50 ms, at most 10 s, so the work
+// a step started in the background (the dispatcher's handling of a post, the channel's notification of
+// it) is done before a measure of allocations begins.
+func settleAllocs(t *testing.T) {
+	t.Helper()
+	var m runtime.MemStats
+	runtime.GC()
+	runtime.ReadMemStats(&m)
+	for deadline := time.Now().Add(10 * time.Second); time.Now().Before(deadline); {
+		last := m.TotalAlloc
+		time.Sleep(50 * time.Millisecond)
+		runtime.ReadMemStats(&m)
+		if m.TotalAlloc-last < 64<<10 {
+			return
+		}
+	}
+}
+
 // LF-02: a file over the size of one multipart post goes to the room through an upload session, in
 // chunks of the size the server gives (a lowered PARTYLINE_MAX_UPLOAD_MB), streamed from the file:
 // the room gets one attachment, byte-identical, with the caption and reply_to; no multipart post is
@@ -242,11 +261,17 @@ func TestSendFileGoesUpInChunks(t *testing.T) {
 				s = e.connected(o)
 			}
 			question := e.post("send the recording")
-			size := int64(multipartMaxBytes) + 1<<20 + 4321
+			if !toolsOnly {
+				require.Equal(t, question.ID, s.notification().Meta["message_id"])
+			}
+			// Four times the size of one multipart post: what the server and the channel allocate grows with
+			// the chunks, while what other work of the process allocates in the meantime does not, so the
+			// bound keeps room for it on a slow runner.
+			size := int64(4*multipartMaxBytes) + 4321
 			path, sha := randomFile(t, "recording.bin", size)
 
 			var before, after runtime.MemStats
-			runtime.GC()
+			settleAllocs(t)
 			runtime.ReadMemStats(&before)
 			text, isErr := s.call("send_file", toolArgs("room", "Support", "path", path, "caption", "the recording", "reply_to", question.ID))
 			runtime.ReadMemStats(&after)
@@ -258,7 +283,7 @@ func TestSendFileGoesUpInChunks(t *testing.T) {
 			stored := requireDelivered(t, e, s, text, "recording.bin", size, sha)
 			require.Equal(t, []string{"the recording", question.ID}, []string{stored.Text, stored.ReplyTo})
 
-			require.Len(t, rec.sent("/api/v1/agent/uploads"), 1+10, "one session and ten chunks of 1 MB")
+			require.Len(t, rec.sent("/api/v1/agent/uploads"), 1+33, "one session and 33 chunks of up to 1 MB")
 			for _, put := range rec.sent("/api/v1/agent/uploads/") {
 				require.Equal(t, http.MethodPut, put.method)
 				require.LessOrEqual(t, put.length, int64(1<<20))
