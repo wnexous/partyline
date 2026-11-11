@@ -207,6 +207,20 @@ func channelCmd(ctx context.Context, args []string, io stdio) int {
 	if code != 0 {
 		return code
 	}
+	// A session's channel follows the server's version: a supervisor runs it in a child process and hands
+	// the harness over to the updated program (AU-04). The child runs the channel itself.
+	if supervisedParent(io.getenv) == 0 {
+		if au, note := autoUpdateFor(io, c.url); au != nil {
+			return superviseChannel(ctx, args, io, au)
+		} else if note != "" {
+			fmt.Fprintln(io.stderr, note)
+		}
+	}
+	// A child that takes over from the one before it is the same session (AU-06).
+	resumed := strings.TrimSpace(io.getenv(resumedVar)) == "1"
+	if resumed {
+		c.takeover, c.principal = false, false
+	}
 	if *harness != "" {
 		c.id.Harness = *harness
 	}
@@ -219,12 +233,19 @@ func channelCmd(ctx context.Context, args []string, io stdio) int {
 	if *toolsOnly && slices.Contains(pushedHarnesses, c.id.Harness) {
 		liveID = sessionLiveID(io)
 	}
+	// The children of one supervisor share its live id: to the server they are one process (AU-06).
+	var linkLive string
+	if supervisedParent(io.getenv) > 0 {
+		if v := strings.TrimSpace(io.getenv(linkLiveVar)); liveIDPattern.MatchString(v) {
+			linkLive = v
+		}
+	}
 	err := channel.Run(ctx, channel.Options{
 		URL: c.url, Token: c.token, Machine: c.id.Machine, Folder: c.id.Folder, MainFolder: c.id.MainFolder,
-		Home: c.id.Home, Adopt: c.id.Adopt, LiveID: liveID,
+		Home: c.id.Home, Adopt: c.id.Adopt, LiveID: liveID, LinkLiveID: linkLive,
 		Org: c.id.Org, Position: c.id.Position, Parent: c.id.Parent,
 		Harness: c.id.Harness, Version: buildVersion(), ToolsOnly: *toolsOnly, Takeover: c.takeover,
-		HarnessSession: c.id.HarnessSession, Principal: c.principal,
+		HarnessSession: c.id.HarnessSession, Principal: c.principal, Resumed: resumed,
 		Stdin: io.stdin, Stdout: io.stdout, Stderr: io.stderr,
 	})
 	if err != nil && !errors.Is(err, context.Canceled) {
@@ -252,19 +273,64 @@ func listenCmd(ctx context.Context, args []string, io stdio) int {
 		return code
 	}
 	c.id.HarnessSession = ownHarnessSessionID(io) // listen is never Claude Code itself
+	resumed := strings.TrimSpace(io.getenv(resumedVar)) == "1"
+	if resumed {
+		c.takeover, c.principal = false, false // the same session again (AU-06)
+	}
+	// listen follows the server's version: once the updated program is in place it closes its socket and
+	// becomes that program, with the same pid and pipes, so the adapter sees nothing (AU-07).
+	ctx, cancel := context.WithCancel(ctx)
+	defer cancel()
+	updated := make(chan string, 1)
+	au, note := autoUpdateFor(io, c.url)
+	if au != nil {
+		go func() {
+			if v := au.run(ctx); v != "" {
+				updated <- v
+				cancel()
+			}
+		}()
+	} else if note != "" {
+		fmt.Fprintln(io.stderr, note)
+	}
 	err := channel.Listen(ctx, channel.ListenOptions{
 		URL: c.url, Token: c.token, Machine: c.id.Machine, Folder: c.id.Folder, MainFolder: c.id.MainFolder,
 		Home: c.id.Home, Harness: c.id.Harness, Adopt: c.id.Adopt, LiveID: sessionLiveID(withLauncherEnv(io)),
 		Org: c.id.Org, Position: c.id.Position, Parent: c.id.Parent,
 		Takeover: c.takeover, HarnessSession: c.id.HarnessSession, Principal: c.principal, Version: buildVersion(),
-		Stdin: io.stdin, Stdout: io.stdout, Stderr: io.stderr,
+		Resumed: resumed,
+		Stdin:   io.stdin, Stdout: io.stdout, Stderr: io.stderr,
 	})
+	select {
+	case v := <-updated:
+		return restartListen(io, au.exe, args, v)
+	default:
+	}
 	switch {
 	case errors.Is(err, channel.ErrSessionLost):
 		return exitSessionLost // the notice is on stdout
 	case err != nil:
 		fmt.Fprintln(io.stderr, "partyline listen:", err)
 		return 1
+	}
+	return 0
+}
+
+// restartListen becomes the updated program, as the same `partyline listen` of the same session (AU-06,
+// AU-07). Where that fails it ends with 0, and the adapter starts listen again by itself.
+func restartListen(io stdio, exe string, args []string, version string) int {
+	fmt.Fprintf(io.stderr, "partyline: listen starts again on %s\n", version)
+	run := io.exec
+	if run == nil {
+		run = execProgram
+	}
+	environ := io.environ
+	if environ == nil {
+		environ = os.Environ
+	}
+	env := append(environ(), resumedVar+"=1", "PARTYLINE_TAKEOVER=0", principalEnvVar+"=0")
+	if _, err := run(exe, append([]string{exe, "listen"}, args...), env); err != nil {
+		fmt.Fprintf(io.stderr, "partyline: cannot start the updated listen (%v); it starts again with the session\n", err)
 	}
 	return 0
 }

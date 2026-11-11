@@ -33,6 +33,9 @@ type ListenOptions struct {
 	// HarnessSession and Principal mean what they mean for Run.
 	HarnessSession string
 	Principal      bool
+	// Resumed is a listen that became the updated program (AU-06): it says nothing on stderr about the
+	// session the first one already announced.
+	Resumed bool
 	// Version is the partyline client version, sent as X-Partyline-Client-Version on every connection so
 	// the server can tell an outdated session (SESS-63); empty sends none.
 	Version string
@@ -85,6 +88,7 @@ func Listen(ctx context.Context, o ListenOptions) error {
 	out := &lineWriter{w: o.Stdout}
 	l := newLink(base, o.Token, id, o.HTTPClient, out, o.Stderr, o.timing)
 	l.takeover, l.principal, l.zone = o.Takeover, o.Principal, o.zone
+	l.announcedSession, l.announcedOutdated = o.Resumed, o.Resumed
 	if o.LiveID != "" {
 		l.liveID = o.LiveID
 	}

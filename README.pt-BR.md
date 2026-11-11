@@ -345,8 +345,13 @@ cabeçalhos e códigos de erro das organizações, está em [docs/api.md](docs/a
 
 ## Atualização
 
-Rode a nova imagem (ou binário) e `partyline update` em toda máquina que roda sessões. Antes de aplicar
-uma migração, o servidor copia o banco, então uma atualização normal não pede backup manual. Vindo da
+Rode a nova imagem (ou binário). As sessões acompanham o servidor sozinhas: em até uns 15 minutos cada
+uma instala a versão do servidor (conferida com os checksums da release, como faz o `partyline update`)
+e reinicia nela dentro da mesma sessão do harness, que segue com as ferramentas novas. Só uma mudança
+no próprio adaptador do pi, do OpenCode ou do omp ainda pede reiniciar o harness.
+`PARTYLINE_AUTO_UPDATE=0` desliga isso. No Windows, que não troca um programa em execução, e numa cópia
+em pasta sem permissão de escrita, continue usando `partyline update` e reinicie a sessão. Antes de
+aplicar uma migração, o servidor copia o banco, então uma atualização normal não pede backup manual. Vindo da
 v0.5 ou anterior, leia antes o [docs/upgrading.pt-BR.md](docs/upgrading.pt-BR.md): essas versões
 mudaram o modelo de dados.
 
