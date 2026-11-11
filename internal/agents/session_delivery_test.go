@@ -231,8 +231,13 @@ func TestAFallenBackMessageIsNeverTheLabelsAgain(t *testing.T) {
 	require.Equal(t, m.ID, parallel.Message(time.Minute).Message.ID)
 	parallel.Close()
 	require.Equal(t, m.ID, principal.Message(time.Minute).Message.ID)
+	// The principal had its copy already (SN-04): the session is gone, and its row fell back, before the
+	// next session takes the label.
+	f.waitSessionGone(t, "claude-2")
+	f.waitDeliveryRow(t, "claude-2", m.ID, func(row db.AgentSessionDelivery) bool { return row.FellBackAt.Valid })
 
 	again := f.dial(t)
+	require.Equal(t, "claude-2", f.env.App.Presence.Sessions(f.agentID)[1].Label)
 	again.ExpectNone(500 * time.Millisecond)
 	require.Len(t, f.rows(t, "claude-2"), 1, "the row stays the principal's")
 }
@@ -503,10 +508,11 @@ func TestTheEndOfAnOldConnectionLeavesTheRowsOfANewOneAlone(t *testing.T) {
 
 	old.Close()
 	f.waitSessionGone(t, "wt")
+	// The presence drops the session before its sweep has run: the sweep is done once its own row fell back.
+	f.waitDeliveryRow(t, "wt", r.ID, func(row db.AgentSessionDelivery) bool { return row.FellBackAt.Valid })
 	// The principal already has a copy of r (SN-04): its row falls back but the principal is not told twice.
 	principal.ExpectNone(500 * time.Millisecond)
 	require.False(t, f.rowOf(t, "wt", own.ID).FellBackAt.Valid, "the old sweep did not touch the new owner's row")
-	require.True(t, f.rowOf(t, "wt", r.ID).FellBackAt.Valid, "its own unacknowledged row fell back")
 
 	fresh := f.dialWorktreeAs(t, newLive)
 	require.Equal(t, own.ID, fresh.Message(time.Minute).Message.ID, "the new connection receives the row it owns")
@@ -569,6 +575,10 @@ func TestAnEditOfAFallenBackMessageReachesThePrincipalOnly(t *testing.T) {
 	require.Equal(t, m.ID, old.Message(time.Minute).Message.ID)
 	old.Close()
 	require.Equal(t, m.ID, principal.Message(time.Minute).Message.ID)
+	// That is the principal's copy (SN-04), not the fallback: the old session is gone, and its row fell
+	// back, before the newer one takes the label.
+	f.waitSessionGone(t, "wt")
+	f.waitDeliveryRow(t, "wt", m.ID, func(row db.AgentSessionDelivery) bool { return row.FellBackAt.Valid })
 
 	newer := f.dialWorktreeAs(t, testkit.NewLiveID())
 	f.settle(t, newer)

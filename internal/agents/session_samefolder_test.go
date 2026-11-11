@@ -166,10 +166,16 @@ func TestAMentionOfAnOfflinePrincipalIsNotQueued(t *testing.T) {
 	f.waitPrincipalGone(t)
 
 	f.postFrom(t, s, "@atlas ping")
-	time.Sleep(500 * time.Millisecond) // the dispatcher runs after the post: let it find nobody
+	// The dispatcher handles the post before the principal connects again: a later one would find it live
+	// and push the mention, which is not what this checks.
+	f.flushDispatchElsewhere(t)
 	again, resp := f.token.DialFolder(p)
 	require.NotNil(t, again, "upgrade refused: %d %s", resp.Status, resp.Body)
 	t.Cleanup(again.Close)
 	again.Welcome(time.Minute)
-	again.ExpectNone(500 * time.Millisecond)
+	// A message posted after the welcome is pushed live, after whatever the connection was given on
+	// attach: the mention, had it been queued, would come before the marker.
+	marker := f.post(t, "marker")
+	require.Equal(t, marker.ID, again.Message(time.Minute).Message.ID, "the mention was not queued")
+	again.ExpectNone(300 * time.Millisecond)
 }

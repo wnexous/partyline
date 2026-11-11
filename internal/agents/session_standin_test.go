@@ -85,6 +85,26 @@ func (f *sessionFixture) flushDispatch(t *testing.T) {
 	}
 }
 
+// flushDispatchElsewhere is flushDispatch through a room the fixture's AI is not in, so its sessions get
+// no frame of it: another AI is told of a message posted there now, and the dispatcher handles the events
+// of every room in order.
+func (f *sessionFixture) flushDispatchElsewhere(t *testing.T) {
+	t.Helper()
+	observerID := f.env.NewAI(f.alice, "observer")
+	room := testkit.Decode[dto.Room](f.alice.Post("/api/v1/rooms", dto.CreateRoomRequest{Name: "Elsewhere"}).RequireStatus(http.StatusCreated))
+	f.alice.Post("/api/v1/rooms/"+room.ID+"/members", dto.AddMemberRequest{Kind: dto.MemberKindAgent, MemberID: observerID}).RequireStatus(http.StatusCreated)
+	observer, resp := f.token.DialFolder(testkit.FolderOf("observer"))
+	require.NotNil(t, observer, "upgrade refused: %d %s", resp.Status, resp.Body)
+	defer observer.Close()
+	observer.Welcome(time.Minute)
+	sync := testkit.Decode[dto.Message](f.alice.Post("/api/v1/rooms/"+room.ID+"/messages", dto.PostMessageRequest{Text: "sync"}).RequireStatus(http.StatusCreated))
+	for {
+		if observer.Message(time.Minute).Message.ID == sync.ID {
+			return
+		}
+	}
+}
+
 // messageIDs reads the message frames of a drained connection.
 func messageIDs(t *testing.T, frames []testkit.AgentFrame) []string {
 	t.Helper()
@@ -205,14 +225,18 @@ func TestABareMentionReachesTheParallelSessionsWhileThePrincipalIsOffline(t *tes
 	require.True(t, frame.Trusted)
 
 	code := f.post(t, "the config says `@atlas` there")
+	// The dispatcher handles it before the principal connects: a later one would push it live to the
+	// principal, with a catch-up that is not what this checks.
+	f.flushDispatchElsewhere(t)
 	parallel.ExpectNone(400 * time.Millisecond)
 
 	parallel.Ack(mention.ID)
 	f.waitStandInAcked(t, "claude-2", mention.ID)
 
 	again := f.dial(t)
-	got := messageIDs(t, again.Drain(700*time.Millisecond))
-	require.Equal(t, []string{plain.ID, code.ID}, got, "the principal's backlog has what was its own, once")
+	got := framesUntil(t, again, code.ID)
+	require.Equal(t, []string{plain.ID}, frameIDs(got), "the principal's backlog has what was its own, once")
+	again.ExpectNone(400 * time.Millisecond)
 }
 
 // SN-10: with the principal live nothing changes: it is the one a bare @handle notifies, and a parallel
