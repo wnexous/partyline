@@ -136,6 +136,19 @@ fi
 all_groups=$((SHARDS * parts))
 list_start=$SECONDS
 
+# finished prefix n counts the background jobs prefix-0 .. prefix-(n-1) that wrote their
+# prefix-i.status file. Running jobs are the launched ones that have not finished; they are not
+# counted from the returns of `wait -n`, because bash's `wait -n` also returns for process
+# substitutions (`< <(...)`), and a counter decremented on every return lets the last jobs be
+# read while they still run. `wait -n` only sleeps until some child ends; 127 means none is left.
+finished() {
+	local n=0 i
+	for ((i = 0; i < $2; i++)); do
+		[ -e "$tmp/$1-$i.status" ] && n=$((n + 1))
+	done
+	echo "$n"
+}
+
 # list_pkg idx pkg writes the package's test listing to list-idx.txt and its exit status to
 # list-idx.status. Listing builds the package's test binary, so a split part (which must build
 # them all anyway) lists SHARDS packages at a time; otherwise they are listed one by one, while
@@ -145,14 +158,12 @@ list_pkg() {
 	printf '%d\n' "$?" >"$tmp/list-$1.status"
 }
 if [ "$split" -eq 1 ]; then
-	listing=0
 	for idx in "${!packages[@]}"; do
-		if [ "$listing" -ge "$SHARDS" ]; then
-			wait -n || true
-			listing=$((listing - 1))
-		fi
+		while [ $((idx - $(finished list "$idx"))) -ge "$SHARDS" ]; do
+			wait -n
+			[ "$?" -ne 127 ] || break
+		done
 		list_pkg "$idx" "${packages[idx]}" &
-		listing=$((listing + 1))
 	done
 	wait
 fi
@@ -293,16 +304,16 @@ annotate() {
 # Keep at most SHARDS test processes alive: one per shard group, and one per package that was
 # not worth sharding.
 launched=0
-running=0
-while [ "$launched" -lt "$total" ] || [ "$running" -gt 0 ]; do
-	while [ "$launched" -lt "$total" ] && [ "$running" -lt "$SHARDS" ]; do
+while [ "$launched" -lt "$total" ]; do
+	while [ "$launched" -lt "$total" ] && [ $((launched - $(finished job "$total"))) -lt "$SHARDS" ]; do
 		run_job "${order[launched]}" &
 		launched=$((launched + 1))
-		running=$((running + 1))
 	done
-	wait -n || true
-	running=$((running - 1))
+	[ "$launched" -lt "$total" ] || break
+	wait -n
+	[ "$?" -ne 127 ] || break
 done
+wait
 
 failed=0
 for ((i = 0; i < total; i++)); do
