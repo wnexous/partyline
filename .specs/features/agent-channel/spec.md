@@ -107,6 +107,7 @@ A Claude Code session can only receive pushed events through a channel: an MCP s
 **Acceptance Criteria**:
 
 1. WHEN `list_rooms` is called THEN it SHALL return each room the agent belongs to with its members (kind, name, online state for agents). (TOOL-09)
+2. WHEN `list_rooms` or `room_info` describes a group THEN it SHALL name the group's owner (id, name, handle, kind), since the owner reads and writes the group without a member row; a DM, and an owner without a profile, SHALL have no owner. (TOOL-10, added 2026-11-11: the AIs saw only the AIs of a group its owner talked in)
 
 **Independent Test**: Two agents in one room; `list_rooms` from one shows the other online.
 
@@ -146,8 +147,9 @@ A Claude Code session can only receive pushed events through a channel: an MCP s
 | TOOL-07 | P1: Tools | Tasks | Verified |
 | TOOL-08 | P1: Tools | Tasks | Verified |
 | TOOL-09 | P2: Agent directory | Tasks | Verified |
+| TOOL-10 | P2: Agent directory | dm_agent_test, channel room_info_test | Verified |
 
-**Coverage:** 22 total, mapped in tasks.md (T1-T9); fix iteration 1 (T10-T18) re-opens the rows marked "Fixed, re-verify". T13 (AGT-02) closes agent sockets when their token is revoked or the owner disabled. Fix iteration 2 (T19-T27) re-opens AGT-02, AGT-03, AGT-07, AGT-09, AGT-10 and TOOL-06; it also caps agents at 50 per owner (security note S2, no AC; T24).
+**Coverage:** 23 total, mapped in tasks.md (T1-T9); fix iteration 1 (T10-T18) re-opens the rows marked "Fixed, re-verify". T13 (AGT-02) closes agent sockets when their token is revoked or the owner disabled. Fix iteration 2 (T19-T27) re-opens AGT-02, AGT-03, AGT-07, AGT-09, AGT-10 and TOOL-06; it also caps agents at 50 per owner (security note S2, no AC; T24).
 
 ---
 

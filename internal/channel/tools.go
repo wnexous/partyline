@@ -80,12 +80,12 @@ func (t *tools) register(srv *mcp.Server) {
 	}, t.guard(t.ask))
 	srv.HandleTool(mcp.ToolDef{
 		Name:        "room_info",
-		Description: "Read a room's instructions for agents, its members (chats with platform and kind; agents show whether they are online and their live sessions; address a session by writing its address (e.g. @handle:label) in a message's text), your own membership settings in it and, for this session, how many messages it has not read (unread) and its notification setting there (notify: on, or mentions only).",
+		Description: "Read a room's instructions for agents, its owner (a group's owner is the person who holds it: they read and write it without being listed among the members), its members (chats with platform and kind; agents show whether they are online and their live sessions; address a session by writing its address (e.g. @handle:label) in a message's text), your own membership settings in it and, for this session, how many messages it has not read (unread) and its notification setting there (notify: on, or mentions only).",
 		InputSchema: schema(`{"type":"object","properties":{"room":{"type":"string","description":"room id, room name, or @handle of the intelligence you have a DM with"}},"required":["room"]}`),
 	}, t.guard(t.roomInfo))
 	srv.HandleTool(mcp.ToolDef{
 		Name:        "list_rooms",
-		Description: "List the rooms and direct messages you belong to with their members (agents show whether they are online and their live sessions; address a session by writing its address (e.g. @handle:label) in a message's text); a direct message has kind dm and says who it is with. Each room also carries, for this session, unread (how many messages it has not read there) and notify (its notification setting: on, or mentions only).",
+		Description: "List the rooms and direct messages you belong to with their members (agents show whether they are online and their live sessions; address a session by writing its address (e.g. @handle:label) in a message's text); a direct message has kind dm and says who it is with, and a group names its owner, the person who holds it, who reads and writes it without being listed among the members. Each room also carries, for this session, unread (how many messages it has not read there) and notify (its notification setting: on, or mentions only).",
 		InputSchema: schema(`{"type":"object","properties":{}}`),
 	}, t.guard(t.listRooms))
 	srv.HandleTool(mcp.ToolDef{
@@ -624,7 +624,9 @@ type roomListing struct {
 	Name        string               `json:"name"`
 	With        *contactListing      `json:"with,omitempty"`
 	Description string               `json:"description,omitempty"`
-	Members     []memberListing      `json:"members"`
+	// Owner is the person who holds a group, who is not among its members (TOOL-10).
+	Owner   *contactListing `json:"owner,omitempty"`
+	Members []memberListing `json:"members"`
 	// Unread is how many messages of the room this session has not read, and Notify its setting
 	// there (SN-02, SN-05).
 	Unread int64  `json:"unread"`
@@ -637,6 +639,14 @@ type contactListing struct {
 	Name   string               `json:"name"`
 	Handle string               `json:"handle"`
 	Kind   dto.IntelligenceKind `json:"kind"`
+}
+
+// contact is the listing of an intelligence the room names (a DM's other side, a group's owner).
+func contact(ref *dto.IntelligenceRef) *contactListing {
+	if ref == nil {
+		return nil
+	}
+	return &contactListing{ID: ref.ID, Name: ref.DisplayName, Handle: ref.Handle, Kind: ref.Kind}
 }
 
 type memberListing struct {
@@ -693,9 +703,7 @@ func (t *tools) listRooms(ctx context.Context, _ json.RawMessage) (string, error
 	out := make([]roomListing, 0, len(rooms.Items))
 	for _, r := range rooms.Items {
 		l := roomListing{ID: r.ID, Kind: r.Kind, Name: r.Name, Description: r.Description, Members: make([]memberListing, 0, len(r.Members)), Unread: r.Unread, Notify: r.Notify}
-		if r.With != nil {
-			l.With = &contactListing{ID: r.With.ID, Name: r.With.DisplayName, Handle: r.With.Handle, Kind: r.With.Kind}
-		}
+		l.With, l.Owner = contact(r.With), contact(r.Owner)
 		for _, m := range r.Members {
 			l.Members = append(l.Members, memberListing{Kind: m.Kind, MemberID: m.MemberID, Name: m.Name, Handle: memberHandle(m), Owner: m.Owner, Online: m.Online, Sessions: listSessions(m)})
 		}
@@ -716,10 +724,12 @@ type roomInfoListing struct {
 	InstructionsNote    string `json:"instructions_note,omitempty"`
 	// RoomTextTrusted tells whether an identity that manages the agent wrote the room's name and
 	// description; RoomTextNote labels them as data otherwise (INS-06).
-	RoomTextTrusted bool               `json:"room_text_trusted"`
-	RoomTextNote    string             `json:"room_text_note,omitempty"`
-	Members         []roomInfoMember   `json:"members"`
-	Me              membershipSettings `json:"me"`
+	RoomTextTrusted bool   `json:"room_text_trusted"`
+	RoomTextNote    string `json:"room_text_note,omitempty"`
+	// Owner is the person who holds a group, who is not among its members (TOOL-10).
+	Owner   *contactListing    `json:"owner,omitempty"`
+	Members []roomInfoMember   `json:"members"`
+	Me      membershipSettings `json:"me"`
 	// Unread is how many messages of the room this session has not read, and Notify its setting
 	// there (SN-02, SN-05).
 	Unread int64  `json:"unread"`
@@ -772,9 +782,9 @@ func (t *tools) roomInfo(ctx context.Context, args json.RawMessage) (string, err
 	out := roomInfoListing{
 		Room: info.Room, Instructions: info.Instructions, InstructionsBy: info.InstructionsBy,
 		InstructionsTrusted: info.InstructionsTrusted, RoomTextTrusted: info.RoomTextTrusted,
-		Members: make([]roomInfoMember, 0, len(info.Members)),
-		Me:      membershipSettings{DisplayName: info.Me.DisplayName, Delivery: info.Me.Delivery, Keywords: info.Me.Keywords},
-		Unread:  info.Unread, Notify: info.Notify,
+		Owner: contact(info.Owner), Members: make([]roomInfoMember, 0, len(info.Members)),
+		Me:     membershipSettings{DisplayName: info.Me.DisplayName, Delivery: info.Me.Delivery, Keywords: info.Me.Keywords},
+		Unread: info.Unread, Notify: info.Notify,
 	}
 	if out.Me.Keywords == nil {
 		out.Me.Keywords = []string{}
