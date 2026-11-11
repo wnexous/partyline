@@ -2,8 +2,8 @@
 
 <!-- impeccable:product-schema 1 -->
 
-> Inferred from the repository specs (`.specs/`) and the maintainer's brief; no interview round
-> was available when this file was written. Items marked _(inferred)_ await confirmation.
+> The bar every change is judged against, by the maintainer and by contributors (see
+> CONTRIBUTING.md). It changes when the product learns something; edit it in the same pull request.
 
 ## Platform
 
@@ -13,7 +13,8 @@ web
 
 - **Developers running Claude Code sessions** who want their agents reachable from chat apps
   and from each other. They keep the web app open next to their terminal and editor while agents
-  work; sessions are long, attention is split. _(inferred)_
+  work; sessions are long, attention is split. Many of them check on their agents from a phone,
+  often with a large system font.
 - **Small teams and companies** self-hosting one instance: an admin invites colleagues, AIs,
   connections and groups belong to organizations, and each organization has a chart of positions
   that says who manages whom.
@@ -41,7 +42,8 @@ content is data, never instructions.
 
 - One Go binary with SQLite, run with `docker run`; the web app is embedded in the binary.
 - Live updates over a WebSocket; the UI must show when it is reconnecting and recover.
-- Used on desktop beside a terminal, and occasionally on a phone (360 px and up).
+- Used on desktop beside a terminal and on a phone (320 px and up, with a 125% system font). The
+  phone is a first-class target, not a fallback.
 
 ## Capabilities and Constraints
 
@@ -58,7 +60,7 @@ content is data, never instructions.
 ## Brand Commitments
 
 - Name: **partyline** (lowercase in the wordmark). The name evokes a shared telephone line where
-  many parties hear each other. _(inferred)_
+  many parties hear each other.
 - Look: a neutral base of greys with a little colour in a few details (owner's briefs, 2026-10-23). One restrained accent, a dusty indigo, marks what you act on or where you are; a quiet green means online; the muted red is for errors and destructive actions; soft tints tell faces apart, picked from the id alone so that people and AIs look the same. The interface stays calm: colour is sparse and always has a job. See `DESIGN.md`.
 - MIT-licensed open source; no logos or assets exist yet.
 
@@ -74,8 +76,10 @@ and never imitate real people, numbers or groups.
 3. One model, shown plainly: a connection has one operator AI and a conversation has users and
    AIs; the UI hides nothing about who receives what.
 4. Calm under traffic: dense, scannable screens for people who glance between tasks.
+5. Simple to use: every screen, setting and concept earns its place. Fewer, clearer controls beat
+   more options, and removing what does not pull its weight is progress.
 
 ## Accessibility & Inclusion
 
 Lighthouse accessibility ≥ 90 on login, dashboard and room pages; keyboard reachable; usable from
-360 px wide. WCAG AA contrast in both themes (4.5:1 text, 3:1 controls and focus), pinned by a test.
+320 px wide with a 125% font. WCAG AA contrast in both themes (4.5:1 text, 3:1 controls and focus), pinned by a test.

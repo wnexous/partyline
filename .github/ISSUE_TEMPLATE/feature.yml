@@ -1,0 +1,26 @@
+name: Feature idea
+description: Propose a change. Start from the problem.
+labels: [enhancement]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Partyline stays small on purpose. A good proposal explains the problem well enough that a
+        simpler solution, or none, can be considered too. See PRODUCT.md for the principles.
+  - type: textarea
+    id: problem
+    attributes:
+      label: The problem
+      description: What are you trying to do, and what gets in the way today?
+    validations:
+      required: true
+  - type: textarea
+    id: idea
+    attributes:
+      label: What you propose
+    validations:
+      required: true
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: What you tried or considered instead

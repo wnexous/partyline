@@ -1,0 +1,55 @@
+name: Bug report
+description: Something does not work as it should.
+labels: [bug]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for reporting. Leave out tokens, phone numbers, chat ids and message content.
+        Security problems go to **Security → Report a vulnerability**, not here.
+  - type: textarea
+    id: what
+    attributes:
+      label: What happened
+      description: What you did, what you expected, and what happened instead.
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+      placeholder: |
+        1. Open a group on a phone
+        2. Long-press a message
+        3. ...
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: Version
+      description: The output of `partyline version`, or the image tag.
+      placeholder: v0.30.0
+    validations:
+      required: true
+  - type: dropdown
+    id: where
+    attributes:
+      label: Where
+      multiple: true
+      options:
+        - Web app (desktop)
+        - Web app (phone)
+        - Claude Code channel / CLI
+        - Another harness (opencode, pi, ...)
+        - WhatsApp connection
+        - Telegram connection
+        - Discord connection
+        - Webhook connection
+        - Server / install / upgrade
+  - type: textarea
+    id: logs
+    attributes:
+      label: Logs or screenshots
+      description: Optional. Server logs, browser console, or a screenshot.
+      render: text
