@@ -36,6 +36,11 @@ every browser, phone and connection gets the same text, and the audio never leav
 7. The language SHALL be detected by the model; the sender's app language is the hint. (TR-07)
 8. Transcription SHALL run one job at a time per instance, oldest first, with a cap of 10 minutes of
    audio per message; longer audio is sent without a transcript. (TR-08)
+9. The message text SHALL be read as a browser transcript only for a recording made in the composer
+   (named `voice-message-<date>-<time>.<ext>`). WHEN any other audio file is posted in a room with
+   text THEN the text SHALL show as its caption, as ordinary message text, and the server SHALL
+   transcribe the file as if it came without text. (TR-09; owner report 2026-11-11: an audio file
+   sent from the computer with a caption showed the caption as its transcript.)
 
 ## Design
 - **Engine:** an OpenAI-compatible transcription server running as a second container:
@@ -136,7 +141,8 @@ every browser, phone and connection gets the same text, and the audio never leav
 60 s for the transcript.
 
 ## Out of scope
-- Transcribing audio files that are not voice messages (music, recordings attached as files).
+- Telling speech from music: every audio file posted in a room is transcribed; music yields little or
+  no text.
 - Translating the transcript.
 - Showing word timings in the player.
 
@@ -146,6 +152,7 @@ every browser, phone and connection gets the same text, and the audio never leav
 - A slow service: the AI gets the audio alone at the limit; the text still arrives in the web app.
 - A failing service: no error to anyone, the message as today.
 - A browser transcript is kept; an over-long audio is skipped.
+- An audio file that is not a recording keeps its text as a caption and is transcribed (TR-09).
 - A restart with a queued job finishes it.
 - Phase 2: a platform voice note reaches its AI once with the transcript; a later platform item does
   not overtake it; a slow service sends it alone at the limit; a caption, oversize audio, a failing

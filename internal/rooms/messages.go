@@ -480,9 +480,9 @@ func (s *Service) insert(ctx context.Context, q *db.Queries, roomID string, d dr
 	if err != nil {
 		return db.Room{}, events.MessageCreated{}, err
 	}
-	// A voice message the sender's browser gave no transcript is transcribed on the server (TR-01);
-	// one with text keeps it (TR-05).
-	untranscribed := s.transcribe && strings.TrimSpace(d.text) == ""
+	// An audio file is transcribed on the server (TR-01), except a recording whose text is the
+	// transcript the sender's browser made (TR-05); the text of any other audio is a caption (TR-09).
+	browserTranscript := strings.TrimSpace(d.text) != ""
 	for _, f := range d.files {
 		status := f.Status
 		if status == "" {
@@ -495,7 +495,8 @@ func (s *Service) insert(ctx context.Context, q *db.Queries, roomID string, d dr
 		}); err != nil {
 			return db.Room{}, events.MessageCreated{}, err
 		}
-		if untranscribed && transcribe.IsVoice(f.Mime, status) {
+		keepsText := browserTranscript && transcribe.IsRecording(f.Name)
+		if s.transcribe && !keepsText && transcribe.IsVoice(f.Mime, status) {
 			if err := q.CreateTranscription(ctx, db.CreateTranscriptionParams{
 				AttachmentID: attachmentID, MessageID: id, RoomID: roomID,
 				State: string(transcribe.InitialState(f.Size)), CreatedAt: now, UpdatedAt: now,
