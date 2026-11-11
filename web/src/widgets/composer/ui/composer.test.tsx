@@ -294,7 +294,6 @@ describe("mentioning a session (SESS-33)", () => {
 
 describe("Enter on touch devices (ENT-01..ENT-05)", () => {
   const sendsOnEnter = "Enter to send · Shift+Enter for a new line";
-  const newLineOnEnter = "Enter for a new line · tap Send to send";
 
   const touchDevices: [string, () => void][] = [
     ["a coarse pointer", () => stubPointer("coarse")],
@@ -331,30 +330,18 @@ describe("Enter on touch devices (ENT-01..ENT-05)", () => {
       expect(posts(calls)).toHaveLength(0);
     });
 
-    it("ENT-03: the hint says Enter is a new line and the Send button sends", () => {
+    it("ENT-03: shows no keyboard hint, in either language", () => {
       touch();
       mockApi({});
-      renderComposer();
-      expect(screen.getByText(newLineOnEnter)).toBeInTheDocument();
+      const { unmount } = renderComposer();
       expect(screen.queryByText(sendsOnEnter)).toBeNull();
-    });
+      expect(screen.queryByText(/^Enter for a new line/)).toBeNull();
+      unmount();
 
-    it("ENT-03: the hint wraps to a second line beside the three buttons, never cut with an ellipsis", () => {
-      touch();
-      mockApi({});
-      renderComposer();
-      const hint = screen.getByText(newLineOnEnter);
-      expect(hint).toHaveClass("line-clamp-2");
-      expect(hint).not.toHaveClass("truncate");
-    });
-
-    it("ENT-03: the hint is in Portuguese when the app is", () => {
-      touch();
       useLiveStore.setState({ locale: "pt-BR" });
-      mockApi({});
       renderComposer();
-      expect(screen.getByText("Enter quebra a linha · toque em Enviar")).toBeInTheDocument();
-      expect(screen.queryByText("Enter envia · Shift+Enter quebra a linha")).toBeNull();
+      expect(screen.queryByText(/Enter quebra a linha/)).toBeNull();
+      expect(screen.queryByText(/Enter envia/)).toBeNull();
     });
 
     it("ENT-04: the on-screen keyboard's Return key is a new-line key", () => {
@@ -417,7 +404,7 @@ describe("Enter on touch devices (ENT-01..ENT-05)", () => {
       mockApi({});
       renderComposer();
       expect(screen.getByText(sendsOnEnter)).toBeInTheDocument();
-      expect(screen.queryByText(newLineOnEnter)).toBeNull();
+      expect(screen.queryByText(/^Enter for a new line/)).toBeNull();
     });
 
     it("ENT-04: the on-screen keyboard's Return key is a send key", () => {
@@ -704,7 +691,7 @@ describe("editing a message in the composer (EDT-10)", () => {
     const { calls } = mockApi({ [`PATCH ${patchPath}`]: saved() });
     const user = userEvent.setup();
     renderEditing();
-    expect(screen.getByText("Enter for a new line · tap Save to save")).toBeInTheDocument();
+    expect(screen.queryByText(/Enter to save|Enter for a new line/)).toBeNull();
     await user.type(box(), "{Enter}more");
     expect(patches(calls)).toHaveLength(0);
     expect(box()).toHaveValue("helo wrld\nmore");

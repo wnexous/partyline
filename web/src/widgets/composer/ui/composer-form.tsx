@@ -699,28 +699,12 @@ export function ComposerForm({
               <PaperclipIcon className="size-4" aria-hidden="true" />
             </label>
           )}
-          {/* A phone has no Shift key to remember, but it does need to be told Enter no longer
-              sends: its hint shows at every width and gives way to the counter's room (ENT-03). */}
-          {voiceOn ? null : (
-            <span
-              className={cn(
-                "min-w-0 flex-1 text-balance text-right text-[0.7rem] leading-tight text-muted-foreground",
-                // Two lines keep the whole hint beside the three buttons of a 360 px phone. With
-                // large text there is no room beside them: the hint takes a row of its own above.
-                sendsOnEnter
-                  ? "hidden truncate lg:block"
-                  : "line-clamp-2 @max-[17rem]:order-first @max-[17rem]:basis-full @max-[17rem]:px-1.5 @max-[17rem]:text-left",
-              )}
-            >
-              {t(
-                editing
-                  ? sendsOnEnter
-                    ? "composer.editHint"
-                    : "composer.editHintTouch"
-                  : sendsOnEnter
-                    ? "composer.hint"
-                    : "composer.hintTouch",
-              )}
+          {/* The keys to remember with a keyboard, on a wide screen. A phone gets no hint: Enter
+              writes a new line there as in any messenger, its keyboard shows a new-line key and the
+              Send button is in sight, so the row keeps its room for the message (ENT-03). */}
+          {voiceOn || !sendsOnEnter ? null : (
+            <span className="hidden min-w-0 flex-1 truncate text-right text-[0.7rem] leading-tight text-muted-foreground lg:block">
+              {t(editing ? "composer.editHint" : "composer.hint")}
             </span>
           )}
           <div className="ml-auto flex items-center gap-1">

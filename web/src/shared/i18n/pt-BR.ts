@@ -550,7 +550,6 @@ export const ptBR: Dictionary = {
   "composer.announceFileAttached": "1 arquivo anexado",
   "composer.announceFilesAttached": "{count} arquivos anexados",
   "composer.hint": "Enter envia · Shift+Enter quebra a linha",
-  "composer.hintTouch": "Enter quebra a linha · toque em Enviar",
   "composer.mentions": "Mencionar alguém",
   "composer.readOnly":
     "Você pode ler esta sala, mas não postar. Peça acesso de postagem a quem gerencia a sala.",
@@ -575,7 +574,6 @@ export const ptBR: Dictionary = {
   "composer.cancelEdit": "Cancelar edição",
   "composer.saveEdit": "Salvar alterações",
   "composer.editHint": "Enter salva · Esc cancela",
-  "composer.editHintTouch": "Enter quebra a linha · toque em Salvar",
   "composer.editGone": "Esta mensagem foi apagada, então não pode ser editada.",
   "composer.editForbidden": "Você só pode editar as suas próprias mensagens.",
   "composer.editCounterpartDisabled":
