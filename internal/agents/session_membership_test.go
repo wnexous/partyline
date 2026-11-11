@@ -170,6 +170,8 @@ func TestAContextBatchThatWasNotAckedComesBack(t *testing.T) {
 	// The session drops before acknowledging anything: the AI's cursor and the session's read position stay
 	// where they were.
 	parallel.Close()
+	// The next session takes the label only once this one is gone: before that it would be pi-3.
+	f.waitSessionGone(t, "pi-2")
 
 	again := f.dialHarness(t, "pi")
 	f.settle(t, again)
