@@ -3,6 +3,7 @@ package agents_test
 import (
 	"context"
 	"database/sql"
+	"encoding/json"
 	"net/http"
 	"sync"
 	"testing"
@@ -289,8 +290,17 @@ func TestSilentConnectionGoesOffline(t *testing.T) {
 
 	conn := alice.Token(dto.TokenKindAgent, "laptop").DialFolderSilent(testkit.FolderOf("builder"))
 	defer func() { _ = conn.CloseNow() }()
-	require.Eventually(t, func() bool { return env.App.Presence.Online(id) }, 5*time.Second, 5*time.Millisecond,
-		"the session attaches")
+	// The welcome frame is written after the session attached, so it proves the attach without sampling
+	// the short online window. The client answers pings only while it reads, and it reads nothing after.
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+	_, data, err := conn.Read(ctx)
+	require.NoError(t, err, "the session attaches")
+	var frame struct {
+		Type dto.AgentFrameType `json:"type"`
+	}
+	require.NoError(t, json.Unmarshal(data, &frame))
+	require.Equal(t, dto.AgentFrameTypeWelcome, frame.Type, "the session attaches")
 	require.Eventually(t, func() bool { return !env.App.Presence.Online(id) }, 5*time.Second, 10*time.Millisecond,
 		"a session that stops answering pings goes offline")
 }
