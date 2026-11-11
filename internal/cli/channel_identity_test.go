@@ -4,6 +4,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"strconv"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -90,6 +91,16 @@ func TestChannelIgnoresProject(t *testing.T) {
 	initialize(c)
 	e.ai(t, "/work/acme")
 	require.Equal(t, "partyline channel: --project is ignored: an AI is identified by its folder\n", c.stderr.String(), "a session with its harness session id is current and says nothing else")
+}
+
+// A supervised child runs the same arguments as its supervisor, which already printed the line (AU-04).
+func TestSupervisedChannelDoesNotRepeatProject(t *testing.T) {
+	e := newChannelEnv(t)
+	env := e.launched("claude", "PARTYLINE_HARNESS_SESSION", "sess-project-02", supervisedVar, strconv.Itoa(os.Getpid()))
+	c := startChannel(t, []string{"--project", "Atlas Videos"}, env, "/work/acme")
+	initialize(c)
+	e.ai(t, "/work/acme")
+	require.Empty(t, c.stderr.String())
 }
 
 // AID-07: the identity a process gathers: the canonical folder (PARTYLINE_FOLDER, else the
