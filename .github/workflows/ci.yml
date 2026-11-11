@@ -128,7 +128,14 @@ jobs:
         run: make web-install
       - name: Install Playwright Chromium
         working-directory: web
-        run: bunx playwright install --with-deps chromium
+        # The runner's apt mirrors sometimes fail to resolve for a minute; try three times.
+        run: |
+          for attempt in 1 2 3; do
+            bunx playwright install --with-deps chromium && exit 0
+            echo "install failed (attempt $attempt of 3); retrying in 30 s"
+            sleep 30
+          done
+          exit 1
       - name: make e2e
         run: make e2e
       - name: Upload Playwright traces
