@@ -138,7 +138,8 @@ func resolveAgent(cmd string, f agentFlags, io stdio) (agentConn, int) {
 		fmt.Fprintf(io.stderr, "partyline %s: set PARTYLINE_URL and PARTYLINE_TOKEN (or --url and --token), or run partyline setup\n", cmd)
 		return agentConn{}, 2
 	}
-	if strings.TrimSpace(*f.project) != "" {
+	// A supervised child shares the supervisor's stderr, which already said it (AU-04).
+	if strings.TrimSpace(*f.project) != "" && supervisedParent(io.getenv) == 0 {
 		fmt.Fprintln(io.stderr, projectIgnored(cmd))
 	}
 	adopt := slices.DeleteFunc([]string{*f.as, *f.name, *f.agent}, func(v string) bool { return strings.TrimSpace(v) == "" })
