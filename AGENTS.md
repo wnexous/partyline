@@ -9,7 +9,7 @@ of one AI (AD-015). Read `.specs/STATE.md` for the binding architecture decision
 
 - `cmd/partyline` - entry point; calls `internal/cli.Run`.
 - `internal/<pkg>` - one small package per concern (see `.specs/features/core-platform/design.md`).
-- `internal/store/db` - sqlc output, `web/src/lib/api/types.gen.ts` - tygo output. Both are
+- `internal/store/db` - sqlc output, `web/src/shared/api/types.gen.ts` - tygo output. Both are
   generated, committed and never edited by hand.
 - `internal/webui` - embeds the web app with `go:embed`. `make web-build` (also run by
   `make build`, `make check` and the Dockerfile) builds `web/` and copies `web/dist` into

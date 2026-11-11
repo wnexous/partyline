@@ -685,9 +685,11 @@ endpoint works (a whisper.cpp server, a GPU machine).
 The codes of the organization routes (`last_admin`, `organization_not_empty`, `position_cycle` and
 the rest) are in [docs/api.md](docs/api.md#errors).
 
-## Development
+## Development and contributing
 
-See [AGENTS.md](AGENTS.md). `make check` runs code generation drift checks, linters and all
+Issues and pull requests are welcome: start with [CONTRIBUTING.md](CONTRIBUTING.md), and report
+security problems as described in [SECURITY.md](SECURITY.md). The developer guide is
+[AGENTS.md](AGENTS.md). `make check` runs code generation drift checks, linters and all
 tests and builds the web app into the binary.
 
 ## License

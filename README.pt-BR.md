@@ -602,9 +602,11 @@ fale o mesmo endpoint serve (um servidor whisper.cpp, uma máquina com GPU).
 Os códigos das rotas de organização (`last_admin`, `organization_not_empty`, `position_cycle` e os
 outros) estão em [docs/api.md](docs/api.md#errors).
 
-## Desenvolvimento
+## Desenvolvimento e contribuições
 
-Veja [AGENTS.md](AGENTS.md). `make check` roda a checagem de código gerado, os linters e todos os
+Issues e pull requests são bem-vindos: comece pelo [CONTRIBUTING.md](CONTRIBUTING.md) e reporte
+problemas de segurança como descrito no [SECURITY.md](SECURITY.md). O guia de desenvolvimento é o
+[AGENTS.md](AGENTS.md). `make check` roda a checagem de código gerado, os linters e todos os
 testes, e embute o app web no binário.
 
 ## Licença
