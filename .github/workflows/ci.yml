@@ -9,6 +9,7 @@ permissions:
   contents: read
 
 jobs:
+  # Everything in `make check` except the Go tests, which run split over the go-test matrix.
   check:
     runs-on: ubuntu-latest
     steps:
@@ -24,13 +25,67 @@ jobs:
           go install github.com/sqlc-dev/sqlc/cmd/sqlc@v1.31.1
           go install github.com/gzuidhof/tygo@v0.2.21
           go install github.com/golangci/golangci-lint/v2/cmd/golangci-lint@v2.15.0
-      - name: make check
+      - name: make check (without the Go tests)
         run: make check
         env:
-          RACE: "1"
-          # The race detector on a 4-core runner makes a shard of internal/api take close to 20 minutes;
-          # local runs keep the 20-minute default, so a hung test still fails fast there.
+          CHECK_SKIP: test-go
+
+  # The race-detector Go tests, split over the parts of the matrix (GOTEST_SPLIT, see
+  # scripts/gotest.sh). Each part fails unless it ran exactly the tests assigned to it; go-test-union
+  # checks that the parts together ran every listed test. The generated code is committed (the check
+  # job fails on drift) and the build embeds only internal/webui/dist/.gitkeep, so the tests need
+  # neither the generators nor the web build. To change the number of parts, edit the part list.
+  go-test:
+    name: go-test (${{ matrix.part }}/${{ strategy.job-total }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        part: [1, 2, 3, 4]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+      - name: make test-go
+        run: make test-go RACE=1 GOTEST_SPLIT=${{ matrix.part }}/${{ strategy.job-total }}
+        env:
+          # Every part must split with the same SHARDS; pinned so a runner's CPU count cannot change it.
+          SHARDS: "4"
+          # The race detector on a 4-core runner is slow; local runs keep the 20-minute default, so a
+          # hung test still fails fast there.
           TIMEOUT: "40m"
+          GOTEST_REPORT: ${{ runner.temp }}/gotest-report
+      - name: Upload the split report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: gotest-report-${{ matrix.part }}
+          path: ${{ runner.temp }}/gotest-report/
+          if-no-files-found: error
+          retention-days: 7
+
+  # One status for the whole matrix: every part passed and together they ran every listed test once.
+  go-test-union:
+    name: go-test
+    needs: go-test
+    if: always()
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: gotest-report-*
+          path: reports
+      - name: Check that the parts ran every test exactly once
+        run: |
+          status=0
+          if [ "${{ needs.go-test.result }}" != success ]; then
+            echo "::error title=go test::a go-test part did not pass (${{ needs.go-test.result }}); see its log"
+            status=1
+          fi
+          scripts/gotest-union.sh reports/* || status=1
+          exit "$status"
 
   e2e:
     runs-on: ubuntu-latest
