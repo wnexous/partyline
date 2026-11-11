@@ -72,6 +72,13 @@ func TestToolRoomInfo(t *testing.T) {
 		"kind": "agent", "member_id": e.agentID, "name": "Builder", "handle": "builder", "owner": "alice", "online": true,
 		"sessions": []any{map[string]any{"label": "", "harness": "claude", "address": "@builder"}},
 	}, byKind["agent"])
+	// TOOL-10: alice holds the group without a member row, so room_info and list_rooms name her.
+	require.Equal(t, map[string]any{
+		"id": e.alice.User.ID, "name": "alice", "handle": "alice", "kind": "human",
+	}, got["owner"], "the group names its owner")
+	listed := e.roomsOf(s)
+	require.NotNil(t, listed.Owner, "list_rooms names the group's owner")
+	require.Equal(t, []any{e.alice.User.ID, "alice"}, []any{listed.Owner.ID, listed.Owner.Handle})
 }
 
 // INS-03: the instructions notice reaches the session as a system event of its room, once

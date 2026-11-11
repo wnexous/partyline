@@ -55,7 +55,10 @@ type AgentRoom struct {
 	Name        string `json:"name"`
 	Description string `json:"description"`
 	// With is the other participant of a DM, relative to the AI; absent for a group.
-	With    *IntelligenceRef `json:"with,omitempty"`
+	With *IntelligenceRef `json:"with,omitempty"`
+	// Owner is the person who holds a group: they read and write it without being one of its
+	// members. Absent for a DM, and for an owner without a profile (TOOL-10).
+	Owner   *IntelligenceRef `json:"owner,omitempty"`
 	Members []RoomMember     `json:"members"`
 	// Unread is how many messages of the room the calling session has not read, and Notify its
 	// notification setting there (SN-02, SN-05): on, or mentions only.
@@ -123,9 +126,11 @@ type RoomInfo struct {
 	InstructionsTrusted bool `json:"instructions_trusted"`
 	// RoomTextTrusted is true only when whoever created the room or last changed its name or
 	// description manages the calling agent in the agent's home organization (INS-06, POS-10).
-	RoomTextTrusted bool         `json:"room_text_trusted"`
-	Members         []RoomMember `json:"members"`
-	Me              RoomMember   `json:"me"`
+	RoomTextTrusted bool `json:"room_text_trusted"`
+	// Owner is the person who holds a group, as in AgentRoom (TOOL-10).
+	Owner   *IntelligenceRef `json:"owner,omitempty"`
+	Members []RoomMember     `json:"members"`
+	Me      RoomMember       `json:"me"`
 	// Unread is how many messages of the room the calling session has not read, and Notify its
 	// notification setting there (SN-02, SN-05).
 	Unread int64  `json:"unread"`

@@ -498,7 +498,7 @@ func (s *server) agentRooms(w http.ResponseWriter, r *http.Request, p authn.Prin
 		n := byRoom[st.ID]
 		ar := dto.AgentRoom{
 			ID: room.ID, Kind: dto.ConversationKind(room.Kind), Name: st.Name, Description: room.Description,
-			Members: make([]dto.RoomMember, len(members)), Unread: n.Unread, Notify: n.Notify,
+			Owner: groupOwner(room), Members: make([]dto.RoomMember, len(members)), Unread: n.Unread, Notify: n.Notify,
 		}
 		for _, part := range room.Participants {
 			if part.ID != p.AgentID { // a DM, seen from the AI: the other participant
@@ -513,6 +513,17 @@ func (s *server) agentRooms(w http.ResponseWriter, r *http.Request, p authn.Prin
 	}
 	httpx.WriteJSON(w, http.StatusOK, out)
 	return nil
+}
+
+// groupOwner is the person who holds a group, whom the members list leaves out: the owner reads and
+// writes the room through its ownership, not through a member row (TOOL-10). A DM has none, since
+// its two participants are the conversation, and so has an owner without a profile.
+func groupOwner(room rooms.Room) *dto.IntelligenceRef {
+	if room.Kind != string(dto.ConversationKindGroup) || room.OwnerIntelligence.ID == "" {
+		return nil
+	}
+	ref := convert.IntelligenceRef(room.OwnerIntelligence, dto.IntelligenceRoleUser, "")
+	return &ref
 }
 
 // agentRoomInfo returns the room's name, instructions, members and the agent's own
@@ -546,6 +557,7 @@ func (s *server) agentRoomInfo(w http.ResponseWriter, r *http.Request, p authn.P
 		InstructionsBy:      room.InstructionsByName,
 		InstructionsTrusted: room.Instructions != "" && instructionsTrusted,
 		RoomTextTrusted:     textTrusted,
+		Owner:               groupOwner(room),
 		Members:             make([]dto.RoomMember, len(members)),
 	}
 	cs, err := s.callingSession(r, p)

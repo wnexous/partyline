@@ -79,6 +79,11 @@ export interface AgentRoom {
    * With is the other participant of a DM, relative to the AI; absent for a group.
    */
   with?: IntelligenceRef;
+  /**
+   * Owner is the person who holds a group: they read and write it without being one of its
+   * members. Absent for a DM, and for an owner without a profile (TOOL-10).
+   */
+  owner?: IntelligenceRef;
   members: RoomMember[];
   /**
    * Unread is how many messages of the room the calling session has not read, and Notify its
@@ -168,6 +173,10 @@ export interface RoomInfo {
    * description manages the calling agent in the agent's home organization (INS-06, POS-10).
    */
   room_text_trusted: boolean;
+  /**
+   * Owner is the person who holds a group, as in AgentRoom (TOOL-10).
+   */
+  owner?: IntelligenceRef;
   members: RoomMember[];
   me: RoomMember;
   /**

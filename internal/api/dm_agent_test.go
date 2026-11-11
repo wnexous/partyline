@@ -197,7 +197,7 @@ func TestDMBacklogArrivesAsDMs(t *testing.T) {
 }
 
 // TOOL-09 with DMs: list_rooms (GET /agent/rooms) includes the AI's DMs with their kind and the
-// other participant, and its groups with theirs.
+// other participant, and its groups with theirs and their owner (TOOL-10).
 func TestAgentRoomsListsDMs(t *testing.T) {
 	f := newDMEnv(t)
 	hers := dmWith(f.alice, f.atlas, http.StatusCreated)
@@ -217,11 +217,22 @@ func TestAgentRoomsListsDMs(t *testing.T) {
 	require.NotNil(t, dm.With)
 	require.Equal(t, []any{f.alice.User.ID, "alice", dto.IntelligenceRoleUser}, []any{dm.With.ID, dm.With.Handle, dm.With.Role})
 	require.Len(t, dm.Members, 2)
+	require.Nil(t, dm.Owner, "a DM names its other side, not an owner")
 
 	g := byID[group.ID]
 	require.Equal(t, dto.ConversationKindGroup, g.Kind)
 	require.Equal(t, "Ops", g.Name)
 	require.Nil(t, g.With)
+	// TOOL-10: the owner reads and writes the group without a member row, so the room names them.
+	require.Len(t, g.Members, 1, "the owner is no member row")
+	require.NotNil(t, g.Owner, "a group names its owner")
+	require.Equal(t, []any{f.alice.User.ID, "alice", dto.IntelligenceRoleUser}, []any{g.Owner.ID, g.Owner.Handle, g.Owner.Role})
+
+	info := testkit.Decode[dto.RoomInfo](f.asAtlas().Get("/api/v1/agent/rooms/" + group.ID + "/info").RequireStatus(http.StatusOK))
+	require.NotNil(t, info.Owner, "room_info names the group's owner too")
+	require.Equal(t, f.alice.User.ID, info.Owner.ID)
+	dmInfo := testkit.Decode[dto.RoomInfo](f.asAtlas().Get("/api/v1/agent/rooms/" + hers.ID + "/info").RequireStatus(http.StatusOK))
+	require.Nil(t, dmInfo.Owner, "a DM has no owner in room_info")
 }
 
 // TOOL-04 with DMs: a room is found by id, by name, or for a DM by the @handle of the other
