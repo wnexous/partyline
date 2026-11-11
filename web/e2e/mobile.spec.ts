@@ -747,7 +747,35 @@ async function openActions(
   const { x, y } = await centre(target);
   if (isMobile(testInfo)) {
     const finger = await pointer(page, context, testInfo);
+    await countPointerEvents(page);
     await finger.down(x, y);
+    // On CI the first long press after a room opens was twice never answered (the page stood still,
+    // no sheet), and it never failed locally. What the page saw is logged, and the finger is lifted
+    // and rests again once, as a person whose press did nothing would.
+    const opened = await surface(page, testInfo, name)
+      .waitFor({ timeout: 3_000 })
+      .then(() => true)
+      .catch(() => false);
+    if (!opened) {
+      const seen = await page.evaluate(
+        ([px, py]) => {
+          const hit = document.elementFromPoint(px, py);
+          const row = hit?.closest("[data-testid]");
+          return {
+            ...window.__pointerSeen,
+            hit: hit?.tagName,
+            row: row?.getAttribute("data-testid"),
+          };
+        },
+        [x, y] as const,
+      );
+      console.warn(
+        `openActions: no sheet 3 s after the press at ${x},${y}: ${JSON.stringify(seen)}`,
+      );
+      testInfo.annotations.push({ type: "press-again", description: JSON.stringify(seen) });
+      await finger.up();
+      await finger.down(x, y);
+    }
     await expect(surface(page, testInfo, name)).toBeVisible();
     return {
       release: async () => {
@@ -760,6 +788,33 @@ async function openActions(
   await page.mouse.click(x, y, { button: "right" });
   await expect(surface(page, testInfo, name)).toBeVisible();
   return { release: async () => {}, x, y };
+}
+
+declare global {
+  interface Window {
+    __pointerSeen?: Record<string, number>;
+  }
+}
+
+/** Counts the pointer events the page receives from now on, for the log of a press that did nothing. */
+async function countPointerEvents(page: Page) {
+  await page.evaluate(() => {
+    if (window.__pointerSeen) {
+      for (const k of Object.keys(window.__pointerSeen)) window.__pointerSeen[k] = 0;
+      return;
+    }
+    const seen: Record<string, number> = {};
+    window.__pointerSeen = seen;
+    for (const type of ["pointerdown", "pointercancel", "pointerup", "contextmenu", "touchstart"]) {
+      window.addEventListener(
+        type,
+        () => {
+          seen[type] = (seen[type] ?? 0) + 1;
+        },
+        { capture: true, passive: true },
+      );
+    }
+  });
 }
 
 /** The sheet of a phone or the menu of a mouse that was just opened, named after what it acts on. */
