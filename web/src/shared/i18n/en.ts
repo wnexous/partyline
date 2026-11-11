@@ -666,6 +666,7 @@ export const en = {
   "presence.online": "Online",
   "presence.offline": "Offline",
   "members.title": "Members",
+  "members.owner": "Group owner",
   "members.empty": "No members yet. Add members so messages have somewhere to go.",
   "members.chatKind.group": "group",
   "members.chatKind.dm": "direct",

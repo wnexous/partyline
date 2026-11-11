@@ -668,6 +668,7 @@ export const ptBR: Dictionary = {
   "presence.online": "Online",
   "presence.offline": "Offline",
   "members.title": "Membros",
+  "members.owner": "Responsável pelo grupo",
   "members.empty": "Nenhum membro ainda. Adicione membros para as mensagens terem para onde ir.",
   "members.chatKind.group": "grupo",
   "members.chatKind.dm": "direto",
