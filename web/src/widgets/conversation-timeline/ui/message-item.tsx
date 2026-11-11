@@ -9,6 +9,7 @@ import {
   chatTitle,
   chatTrust,
   isAudio,
+  isVoiceName,
   LazyMarkdown,
   platformName,
   ReplyContext,
@@ -131,12 +132,13 @@ export const MessageItem = memo(function MessageItem({
   const kind = AUTHOR_KIND[message.author_kind] ?? AUTHOR_KIND.system;
   // A deleted message is a placeholder (DLT-10): its author and time stay, nothing it said does.
   const deleted = message.deleted_at !== undefined;
-  // A voice note with text: the text is its transcript, shown under the player of the first voice
-  // file instead of above the attachments (VOI-09). Any audio with a caption reads this way, whatever
-  // made the file. Every voice file without it shows the transcript the server made, or
-  // "Transcribing…" (TR-02).
+  // A recording made in the composer with text: the text is the transcript the sender's browser
+  // heard, shown under the player of the first recording instead of above the attachments (VOI-09).
+  // The text of any other audio file is a caption, shown as ordinary text (TR-09). Every audio file
+  // without the browser's text shows the transcript the server made, or "Transcribing…" (TR-02).
   const isVoiceFile = (a: Attachment) => a.status === "stored" && isAudio(a.mime);
-  const voice = deleted ? undefined : message.attachments.find(isVoiceFile);
+  const isRecording = (a: Attachment) => isVoiceFile(a) && isVoiceName(a.name);
+  const voice = deleted ? undefined : message.attachments.find(isRecording);
   const transcript = voice && message.text.trim() ? message.text : null;
   // Whether the row shows text above its attachments, which decides their top margin when grouped.
   const textAbove = message.text !== "" && transcript === null;

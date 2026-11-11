@@ -160,8 +160,15 @@ func (f *voiceRoom) newRoom(t *testing.T, name string) dto.Room {
 	return r
 }
 
-// postVoice posts a voice note (multipart, as the web app does) with the given text.
+// postVoice posts a voice note recorded in the composer (multipart, named as the web app names a
+// recording) with the given text.
 func (f *voiceRoom) postVoice(t *testing.T, roomID, text string, audio []byte) dto.Message {
+	t.Helper()
+	return f.postAudio(t, roomID, text, "voice-message-2026-10-24-140509.webm", audio)
+}
+
+// postAudio posts an audio file named name with the given text.
+func (f *voiceRoom) postAudio(t *testing.T, roomID, text, name string, audio []byte) dto.Message {
 	t.Helper()
 	var buf bytes.Buffer
 	mw := multipart.NewWriter(&buf)
@@ -169,7 +176,7 @@ func (f *voiceRoom) postVoice(t *testing.T, roomID, text string, audio []byte) d
 	require.NoError(t, err)
 	require.NoError(t, json.NewEncoder(part).Encode(dto.PostMessageRequest{Text: text}))
 	h := textproto.MIMEHeader{}
-	h.Set("Content-Disposition", fmt.Sprintf(`form-data; name=%q; filename=%q`, dto.MultipartFileField, "voice.webm"))
+	h.Set("Content-Disposition", fmt.Sprintf(`form-data; name=%q; filename=%q`, dto.MultipartFileField, name))
 	h.Set("Content-Type", "audio/webm;codecs=opus")
 	w, err := mw.CreatePart(h)
 	require.NoError(t, err)
@@ -230,7 +237,7 @@ func TestAVoiceMessageReachesTheAIOnceWithTheServerTranscript(t *testing.T) {
 	require.Len(t, calls, 1)
 	require.Equal(t, transcribe.DefaultModel, calls[0].model)
 	require.Equal(t, "json", calls[0].format)
-	require.Equal(t, "voice.webm", calls[0].filename)
+	require.Equal(t, "voice-message-2026-10-24-140509.webm", calls[0].filename)
 	require.Equal(t, "audio/webm; codecs=opus", calls[0].mime)
 	require.Equal(t, audio, calls[0].audio)
 
@@ -344,6 +351,28 @@ func TestABrowserTranscriptIsKept(t *testing.T) {
 	require.Empty(t, got.Message.Attachments[0].TranscriptState)
 	require.Zero(t, f.rows(t, voice.ID))
 	require.Empty(t, f.svc.calls())
+}
+
+// TR-09: the text of an audio file that is not a recording is a caption: the file is transcribed
+// as if it came without text, and the caption stays the message text.
+func TestACaptionedAudioFileIsTranscribed(t *testing.T) {
+	f := newVoiceRoom(t)
+
+	voice := f.postAudio(t, f.room.ID, "listen to this one", "interview.webm", audio)
+	require.Equal(t, dto.TranscriptStatePending, voice.Attachments[0].TranscriptState)
+	got := f.ai.Message(wait)
+	require.Equal(t, voice.ID, got.Message.ID)
+	require.Equal(t, "listen to this one", got.Message.Text)
+	require.Equal(t, dto.TranscriptStateDone, got.Message.Attachments[0].TranscriptState)
+	require.Len(t, f.svc.calls(), 1)
+}
+
+func TestIsRecording(t *testing.T) {
+	require.True(t, transcribe.IsRecording("voice-message-2026-10-24-140509.webm"))
+	require.True(t, transcribe.IsRecording("voice-message-2026-10-24-140509.m4a"))
+	require.False(t, transcribe.IsRecording("voice-message.webm"))
+	require.False(t, transcribe.IsRecording("my voice-message-2026-10-24-140509.webm"))
+	require.False(t, transcribe.IsRecording("interview.mp3"))
 }
 
 // TR-08: audio over the cap is not sent; the AI gets it at once, without a transcript.

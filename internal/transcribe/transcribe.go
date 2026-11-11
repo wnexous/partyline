@@ -19,6 +19,7 @@ import (
 	"net/http"
 	"net/textproto"
 	"path"
+	"regexp"
 	"strings"
 	"time"
 	"unicode"
@@ -55,6 +56,15 @@ const maxResponse = 1 << 20
 // that is stored here.
 func IsVoice(mime string, status dto.AttachmentStatus) bool {
 	return status == dto.AttachmentStatusStored && strings.HasPrefix(strings.ToLower(strings.TrimSpace(mime)), "audio/")
+}
+
+// recordingName is the name the web app's composer gives a recording (voice-message-<date>-<time>.<ext>).
+var recordingName = regexp.MustCompile(`^voice-message-\d{4}-\d{2}-\d{2}-\d{6}\.[a-z0-9]+$`)
+
+// IsRecording tells a recording made in the composer, whose message text is the transcript the
+// sender's browser heard (TR-05), from any other audio file, whose text is a caption (TR-09).
+func IsRecording(name string) bool {
+	return recordingName.MatchString(name)
 }
 
 // InitialState is the state a voice file of size bytes starts in: pending, or skipped over MaxBytes.

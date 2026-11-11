@@ -110,6 +110,30 @@ describe("a voice note with text (VOI-09)", () => {
     expect(screen.getAllByText("the deploy is green")).toHaveLength(1);
   });
 
+  it("shows the caption of an audio file that is not a recording as ordinary text (TR-09)", async () => {
+    renderItem(
+      makeMessage({
+        text: "listen to this one",
+        attachments: [
+          {
+            id: "a1",
+            name: "interview.mp3",
+            mime: "audio/mpeg",
+            size: 52_000,
+            status: "stored",
+            transcript_state: "done",
+            transcript: "what the server heard",
+          },
+        ],
+      }),
+    );
+    await screen.findByText("listen to this one");
+
+    // The caption stays the message text; the transcript under the player is the server's.
+    expect(screen.getByTestId("voice-transcript")).toHaveTextContent("what the server heard");
+    expect(screen.getByTestId("voice-transcript")).not.toHaveTextContent("listen to this one");
+  });
+
   it("shows a caption of a non-audio file as ordinary message text", async () => {
     renderItem(
       makeMessage({
