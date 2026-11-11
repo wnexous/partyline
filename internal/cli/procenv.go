@@ -117,7 +117,7 @@ func ownHarnessSessionID(io stdio) string {
 // session over; the PARTYLINE_LAUNCH_* ones carry what the session asked for.
 var launcherVars = []string{
 	folderEnvVar, mainFolderVar, "PARTYLINE_HARNESS", "PARTYLINE_TAKEOVER", principalEnvVar, "PARTYLINE_AGENT",
-	launchOrgVar, launchPositionVar, launchParentVar, liveEnvVar,
+	launchOrgVar, launchPositionVar, launchParentVar, liveEnvVar, autoUpdateVar,
 }
 
 // maxAncestors is how many processes, starting at the parent, the lookup reads.

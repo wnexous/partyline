@@ -126,12 +126,19 @@ type stdio struct {
 func Run(args []string, stdout, stderr io.Writer) int {
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
-	return execute(ctx, args, stdio{
+	io := stdio{
 		stdin: os.Stdin, stdout: stdout, stderr: stderr,
 		getenv: os.Getenv, getwd: os.Getwd, launcherEnv: procLauncherEnv, rawTerm: osRawTerm{},
 		isTerminal: term.IsTerminal,
 		termSize:   term.GetSize,
-	})
+	}
+	// The channel a supervisor runs reads the harness as its parent, as it would without the supervisor
+	// between them (AU-04): the live id belongs to the harness and the launcher's variables are on its side.
+	if p := supervisedParent(os.Getenv); p > 0 {
+		io.ppid = func() int { return p }
+		io.launcherEnv = func() map[string]string { return ancestorLauncherEnv("/proc", p) }
+	}
+	return execute(ctx, args, io)
 }
 
 func execute(ctx context.Context, args []string, io stdio) int {

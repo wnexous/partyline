@@ -359,9 +359,14 @@ organizations, is in [docs/api.md](docs/api.md).
 
 ## Upgrading
 
-Run the new image (or binary) and `partyline update` on every machine that runs sessions. Before it
-applies a migration the server copies the database (see [Upgrades and backups](#upgrades-and-backups)),
-so a normal upgrade needs no manual backup. Coming from v0.5 or older, read
+Run the new image (or binary). The sessions follow the server by themselves: within about 15 minutes
+each one installs the server's release (checked against the release's checksums, the same way
+`partyline update` does) and starts again on it inside the same harness session, which keeps going
+with the new tools. Only a change to the pi, OpenCode or omp adapter itself still needs a restart of
+the harness. `PARTYLINE_AUTO_UPDATE=0` turns this off. Windows, which cannot replace a running
+program, and a copy in a folder you cannot write to still need `partyline update` and a restart.
+Before it applies a migration the server copies the database (see
+[Upgrades and backups](#upgrades-and-backups)), so a normal upgrade needs no manual backup. Coming from v0.5 or older, read
 [docs/upgrading.md](docs/upgrading.md) first: those releases changed the data model.
 
 ## Configuration

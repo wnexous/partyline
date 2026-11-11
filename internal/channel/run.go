@@ -65,6 +65,12 @@ type Options struct {
 	// Principal makes the first connection the AI's principal session and pins it (--principal, SESS-57);
 	// later connections, after a drop, never ask again.
 	Principal bool
+	// LinkLiveID is the live id the full channel connects with, set by the supervisor that runs it so that
+	// every program of the session is one process to the server (AU-06); empty means a new one.
+	LinkLiveID string
+	// Resumed is a process that took the session over from the one before it after an update (AU-06): it
+	// says neither who the AI is nor which parallel session it is again, the first one already did.
+	Resumed bool
 
 	Stdin  io.Reader
 	Stdout io.Writer
@@ -144,11 +150,15 @@ func Run(ctx context.Context, o Options) error {
 		return err
 	}
 	l := newLink(base, o.Token, id, o.HTTPClient, srv, o.Stderr, o.timing)
+	if o.LinkLiveID != "" {
+		l.liveID = o.LinkLiveID
+	}
 	// The tools post as the process whose socket is connected, so the server records the session
 	// each message came from (SESS-29). A tools-only process has no link and sends no live id.
 	id.LiveID = l.liveID
 	t.api.identity = id
-	l.takeover, l.principal, l.zone, l.announce = o.Takeover, o.Principal, o.zone, true
+	l.takeover, l.principal, l.zone, l.announce = o.Takeover, o.Principal, o.zone, !o.Resumed
+	l.announcedSession, l.announcedOutdated = o.Resumed, o.Resumed
 	l.keepTryingWhenBusy = true // a channel reconnects by itself, it never gives up (SES-04)
 	l.onLost = func(reason lostReason, text string) {
 		fmt.Fprintf(o.Stderr, "partyline: %s\n", text)
