@@ -219,3 +219,43 @@ func TestListenRestartsAsTheSameSession(t *testing.T) {
 	require.Equal(t, []string{"PARTYLINE_TAKEOVER=1", "PARTYLINE_LIVE=1:abcdefghijklmnop", resumedVar + "=1", "PARTYLINE_TAKEOVER=0", principalEnvVar + "=0"}, gotEnv)
 	require.Equal(t, "partyline: listen starts again on v9.9.9\n", errOut.String())
 }
+
+// AU-11: doctor says whether this machine's sessions follow the server, and warns only when they cannot
+// though nobody turned that off; a build that is not a release gets no line.
+func TestDoctorReportsAutoUpdate(t *testing.T) {
+	exeIn := func(dir string) func() (string, error) {
+		exe := filepath.Join(dir, "partyline")
+		require.NoError(t, os.WriteFile(exe, []byte("bin"), 0o755))
+		return func() (string, error) { return exe, nil }
+	}
+	env := func(vars map[string]string) func(string) string { return func(k string) string { return vars[k] } }
+
+	withVersion(t, "dev")
+	withBuildInfo(t, "", false)
+	_, shown := checkAutoUpdate(stdio{getenv: env(nil), goos: "linux", goarch: "amd64", executable: exeIn(t.TempDir())})
+	require.False(t, shown, "a local build never updates itself")
+
+	withVersion(t, "v0.4.0")
+	c, shown := checkAutoUpdate(stdio{getenv: env(nil), goos: "linux", goarch: "amd64", executable: exeIn(t.TempDir())})
+	require.True(t, shown)
+	require.Equal(t, check{name: "auto-update", ok: true, detail: "on: sessions follow the server's version"}, c)
+
+	c, _ = checkAutoUpdate(stdio{getenv: env(map[string]string{autoUpdateVar: "0"}), goos: "linux", goarch: "amd64", executable: exeIn(t.TempDir())})
+	require.True(t, c.ok)
+	require.False(t, c.warn, "turned off on purpose")
+	require.Contains(t, c.detail, "off (PARTYLINE_AUTO_UPDATE=0)")
+
+	c, _ = checkAutoUpdate(stdio{getenv: env(nil), goos: "windows", goarch: "amd64", executable: exeIn(t.TempDir())})
+	require.True(t, c.warn)
+	require.Contains(t, c.detail, "automatic updates are off on Windows")
+
+	needUnixPerms(t)
+	dir := t.TempDir()
+	exe := exeIn(dir)
+	require.NoError(t, os.Chmod(dir, 0o555))
+	t.Cleanup(func() { _ = os.Chmod(dir, 0o755) })
+	c, _ = checkAutoUpdate(stdio{getenv: env(nil), goos: "linux", goarch: "amd64", executable: exe})
+	require.True(t, c.warn)
+	require.Equal(t, dir+" is not writable, so sessions cannot update themselves", c.detail)
+	require.Contains(t, c.fix, "install.sh")
+}

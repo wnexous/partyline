@@ -248,3 +248,42 @@ func supervisedParent(getenv func(string) string) int {
 	}
 	return p
 }
+
+// checkAutoUpdate is the doctor line on automatic updates (AU-11), and false for a build that is not a
+// release, which never updates itself. It warns when the sessions cannot follow the server though
+// nobody turned that off: a harness shows the session's stderr to nobody, so doctor is where it shows.
+func checkAutoUpdate(io stdio) (check, bool) {
+	c := check{name: "auto-update", ok: true}
+	if !isRelease(buildVersion()) {
+		return c, false
+	}
+	if strings.TrimSpace(io.getenv(autoUpdateVar)) == "0" {
+		c.detail = "off (" + autoUpdateVar + "=0); run partyline update when the server moves"
+		return c, true
+	}
+	au, note := autoUpdateFor(io, "")
+	if au == nil {
+		c.warn, c.detail = true, strings.TrimPrefix(note, "partyline: ")
+		return c, true
+	}
+	dir := filepath.Dir(au.exe)
+	if err := writableDir(dir); err != nil {
+		c.warn = true
+		c.detail = dir + " is not writable, so sessions cannot update themselves"
+		c.fix = "install where you can write (" + installCommand(io, "") + "), or run partyline update as its owner when the server moves"
+		return c, true
+	}
+	c.detail = "on: sessions follow the server's version"
+	return c, true
+}
+
+// writableDir reports whether dir takes a new file, as an update needs (UPD-05).
+func writableDir(dir string) error {
+	f, err := os.CreateTemp(dir, ".partyline-doctor-*")
+	if err != nil {
+		return err
+	}
+	name := f.Name()
+	_ = f.Close()
+	return os.Remove(name)
+}
