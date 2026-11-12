@@ -48,6 +48,11 @@ again on it inside the same harness session, which carries on with the new tools
     one supervisor connects with the same live id, so the server sees one process replacing its socket
     (SESS-14) and the session keeps its label, start time and role; a client on plain releases follows
     no release candidate. (AU-10)
+11. `partyline doctor` SHALL say whether this machine's sessions update themselves: on, off because
+    `PARTYLINE_AUTO_UPDATE=0`, or a warning with the reason when they cannot (Windows, or the
+    executable's folder takes no new file, with how to install where it can). A build that is not a
+    release gets no line. A harness shows the session's stderr to nobody, so this is where the person
+    sees it. (AU-11)
 
 ## Contract the supervisor freezes
 The supervisor stays at the version the harness started for the whole harness session, so every later
@@ -83,6 +88,8 @@ sends requests to the harness (the supervisor tracks only the harness's requests
 replayed initialize, list_changed, string ids, unexpected child exit, harness EOF, fallback on a start
 failure, a handshake timeout and a crash right after the handover, an old child that does not end),
 `internal/cli/autoupdate_test.go` (decisions: older/newer/dev/not a release, disk already updated, a
-local build on disk, unwritable, opt-out, Windows, the listen restart). Checked by hand with two real
+local build on disk, unwritable, opt-out, Windows, the listen restart, the doctor line). Checked by hand with two real
 builds (v0.30.3 → v0.30.9) under a scripted MCP client: the harness kept its connection, the new child
-ran the new build with the harness's pid and answered ping and tools/list.
+ran the new build with the harness's pid and answered ping and tools/list. Against a live server: a v0.30.9-labelled
+client and a local v0.31.0 instance — it downloaded the real v0.31.0 release, swapped its child and
+kept answering tool calls every 5 seconds through the change.

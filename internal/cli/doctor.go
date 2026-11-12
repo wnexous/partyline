@@ -60,6 +60,9 @@ func doctor(ctx context.Context, io stdio) int {
 		add(c)
 	}
 	add(checkVersions(buildVersion(), serverVersion, creds.URL))
+	if c, shown := checkAutoUpdate(io); shown {
+		add(c)
+	}
 
 	failed := 0
 	for _, c := range checks {

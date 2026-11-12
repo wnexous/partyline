@@ -226,7 +226,7 @@ its home organization: a later `--org` may only name it. See
 | `partyline agents [--url URL] [--token TOKEN]` | Print the AIs you host, grouped by organization, with online markers. |
 | `partyline orgs [slug]` | List your organizations (slug, name, permission, position; the default marked `*`), or one organization's positions as a tree. |
 | `partyline <harness> [--take-over] [--principal] [--as handle] [--org slug] [--position name] [--parent @handle]` | Start a session in the current folder; `--principal` makes it the AI's principal session; `--as` adopts an AI that has no folder yet; `--org`, `--position` and `--parent` place a new AI. |
-| `partyline doctor` | Check the machine: binary, config, server, token, harness registrations and versions. |
+| `partyline doctor` | Check the machine: binary, config, server, token, harness registrations, versions and automatic updates. |
 | `partyline update [--check]` | Replace this binary with the latest release after checking the archive's SHA-256 against the release's `checksums.txt`; `--check` only prints the current and latest versions and exits 1 when a newer release exists. |
 
 The session replies with the `reply`, `send_message`, `history`, `list_rooms`,
@@ -364,7 +364,8 @@ each one installs the server's release (checked against the release's checksums,
 `partyline update` does) and starts again on it inside the same harness session, which keeps going
 with the new tools. Only a change to the pi, OpenCode or omp adapter itself still needs a restart of
 the harness. `PARTYLINE_AUTO_UPDATE=0` turns this off. Windows, which cannot replace a running
-program, and a copy in a folder you cannot write to still need `partyline update` and a restart.
+program, and a copy in a folder you cannot write to still need `partyline update` and a restart;
+`partyline doctor` says whether this machine updates by itself.
 Before it applies a migration the server copies the database (see
 [Upgrades and backups](#upgrades-and-backups)), so a normal upgrade needs no manual backup. Coming from v0.5 or older, read
 [docs/upgrading.md](docs/upgrading.md) first: those releases changed the data model.
