@@ -148,6 +148,7 @@ func (s *server) writeMe(w http.ResponseWriter, r *http.Request, status int, u d
 	if me.DefaultOrgID, err = s.Orgs.DefaultOrg(r.Context(), u.ID); err != nil {
 		return err
 	}
+	me.ServerTranscription = s.Config != nil && s.Config.TranscribeURL != ""
 	httpx.WriteJSON(w, status, me)
 	return nil
 }

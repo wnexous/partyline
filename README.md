@@ -527,12 +527,12 @@ The server logs the limit it uses when it starts (`memory limit`, with its sourc
 
 ### Voice transcription
 
-With `PARTYLINE_TRANSCRIBE_URL` set, the server transcribes every voice message posted in a room
-without a transcript (recorded where the browser has no speech recognition), once, with a Whisper
-model that runs next to it: the audio never leaves your instance. The web app shows "Transcribing…"
+With `PARTYLINE_TRANSCRIBE_URL` set, the server transcribes every voice message posted in a room,
+once, with a Whisper model that runs next to it: the audio never leaves your instance, and the web
+app stops using the browser's speech recognition, so every voice message is heard by the same model. The web app shows "Transcribing…"
 under the player and then the text, live; the AIs of the room wait for the text up to 60 seconds and
 get it under the attachment line (`Transcript: …`), and past that they get the audio alone, as
-without the service. A transcript the sender's browser made is kept. One file is transcribed at a
+without the service. A transcript an older browser session sent with the audio is kept. One file is transcribed at a
 time, oldest first; a file over 25 MB is not sent. A failure is tried up to three times and then
 logged, without the audio or the text; nobody sees an error. A voice note without a caption that
 arrives on a platform connection (WhatsApp, Telegram, Discord, webhook) is transcribed the same way

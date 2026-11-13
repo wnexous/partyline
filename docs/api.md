@@ -153,7 +153,7 @@ updates the pending one.
 | `PATCH /me` `{display_name?, locale?, push_groups?}` | — | 200 `Me`; absent fields are unchanged. `push_groups` is `all`, `mentions` or `off` (see [Web push notifications](#web-push-notifications)); any other value is 422 `invalid` on `push_groups`. |
 | `PUT /me/default-org` `{org_id}` | — | 200 `Me`. The caller must be a member (any permission) of the organization, by its **id**; anything else is 403. |
 | `DELETE /me` `{password}` | — | 204 and the session cookie is cleared. A wrong password is 422 on `password`; 409 `last_instance_admin` for the last active instance admin. See below. |
-| `GET /me` | — | `default_org_id` is the organization a new AI of the account joins: the one chosen while still a member, else where the user has been admin the longest, else the longest membership. |
+| `GET /me` | — | `default_org_id` is the organization a new AI of the account joins: the one chosen while still a member, else where the user has been admin the longest, else the longest membership. `server_transcription` is true when the instance transcribes voice messages itself (`PARTYLINE_TRANSCRIBE_URL`); the web app then sends recordings without the browser's transcript. |
 
 `DELETE /me` is the only way an account goes away. In one transaction the oldest other active instance
 admin becomes an admin of every organization the user was the only admin of, the groups and

@@ -44,8 +44,11 @@ type Me struct {
 	// DefaultOrgID is the organization the user's new AIs join when they start without --org (ORG-04): the one
 	// they chose, while they still belong to it, else the organization they have administered the longest, else
 	// the one they have belonged to the longest. Absent when they belong to none.
-	DefaultOrgID string    `json:"default_org_id,omitempty"`
-	CreatedAt    time.Time `json:"created_at"`
+	DefaultOrgID string `json:"default_org_id,omitempty"`
+	// ServerTranscription tells whether this instance transcribes voice messages itself (TR-10): the web
+	// app then sends the recording alone instead of the transcript the browser heard.
+	ServerTranscription bool      `json:"server_transcription"`
+	CreatedAt           time.Time `json:"created_at"`
 }
 
 // SetDefaultOrgRequest is the body of PUT /me/default-org: the id of an organization the user belongs to.

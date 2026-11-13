@@ -169,12 +169,14 @@ export function ComposerForm({
   const errorId = useId();
   const barId = useId();
   const mentionListId = useId();
-  const viewerId = useMe().data?.id;
+  const me = useMe().data;
+  const viewerId = me?.id;
   // False on a touch device, where Enter is a new line (ENT-01).
   const sendsOnEnter = useEnterSends();
   const voice = useVoiceRecorder();
-  // The browser hears the recording as it happens (VOI-09): its final text goes with the audio.
-  const transcript = useLiveTranscript(voice.phase === "recording");
+  // The browser hears the recording as it happens (VOI-09): its final text goes with the audio. Where
+  // the server transcribes voice messages it alone does, so every message is heard the same way (TR-10).
+  const transcript = useLiveTranscript(voice.phase === "recording" && !me?.server_transcription);
   // A finger that is down on the microphone: a hold, and whether it has slid far enough to cancel.
   const [hold, setHold] = useState<HoldState>("off");
   const [announcement, setAnnouncement] = useState("");
