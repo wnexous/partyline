@@ -347,6 +347,47 @@ the field and a wizard has no field there. The stored `platform_sends.text` is w
 retry sends the same numbered text, and the person's answer arrives as an ordinary chat message:
 Partyline does not map a number back to an option.
 
+### Secret requests
+
+An AI asks for a secret (an API key, a token, a password) with a message whose interactive part names
+it; a person who manages the AI gives the value, which the server hands to the AI's session that asked,
+once and in memory. The conversation only records that it was saved (SR-01..SR-07).
+
+| Route | Who | Body | Answer |
+| --- | --- | --- | --- |
+| `POST /agent/rooms/{room}/messages` (JSON) | An AI that is a member | `text` (why, 1 to 500 characters) and `secret: {"name": NAME}` | 201 `Message` with `interactive: {"v":1,"secret":{"name":NAME}}` |
+| `POST /rooms/{id}/messages/{mid}/secret` (JSON) | A user with post who manages the asking AI | `{"value": "…"}`, 1 to 16384 bytes, any characters | 201 `Message`: the reply `🔑 NAME saved` |
+
+`NAME` matches `^[A-Z][A-Z0-9_]{0,63}$` (`EXAMPLE_API_KEY`); it is also the file's name on the AI's
+machine. Only an AI posts a secret request: a person has no session to receive the value (422 on
+`secret`), and a request carries no files and none of `quick_replies`, `wizard` or `answers`. The
+server records which live session posted it (`author_label`), and the value goes to that session.
+
+**Giving the value.** The caller must manage the asking AI in its home organization, the rule that
+makes a message `trusted="true"` for it ([Trust](#trust)). The server sends the value in one `secret`
+frame to the session that asked and waits up to 10 seconds for its `secret_ack`. Only when the session
+reports that it wrote the file is the answer stored: a reply to the request, by the caller, with the
+text `🔑 NAME saved` and `answers: {"v":1,"secret":{"name":NAME,"saved":true}}`. The request is
+answered once, by whoever saves it first.
+
+The value is never written to the database, a log line, the audit log, an event, a live frame to the web
+app, a push notification or an error text; no middleware logs a request body. It crosses the server in
+memory, over TLS like every message.
+
+| Case | Status | Code |
+| --- | --- | --- |
+| `value` empty or over 16384 bytes | 422 | `invalid`, field `value` |
+| The caller is an AI, or a user who does not manage the asking AI | 403 | `forbidden` |
+| The message is not a secret request of the room (or was deleted) | 404 | `not_found` |
+| Someone already saved it | 409 | `already_answered` |
+| Someone else's value for it is on its way right now | 409 | `conflict` |
+| The session that asked is not live | 409 | `ai_offline` |
+| That session's client is older than v0.32.0 (`X-Partyline-Client-Version`; `dev` counts as current) | 409 | `client_outdated` |
+| No acknowledgement within 10 s, the connection ended first, or the session reported a failure (its reason follows in `message`) | 504 | `not_saved` |
+
+Nothing is recorded in the 409 and 504 cases, and the value is not sent for `ai_offline` and
+`client_outdated`.
+
 ### Files and upload sessions
 
 A message carries files as multipart `file` parts, each one under `PARTYLINE_MAX_UPLOAD_MB` (95 MB
@@ -570,6 +611,12 @@ How a **new** AI is placed, in this order, and the refusal each step can give:
   current, a missing version or one that is no release version does not). The session hands the prompt to the model as a turn and acknowledges it with
   `{type: "ack", run_id}`. `trusted` is true only for a routine set by an identity that manages the AI in
   its home organization at delivery time; a routine the AI set itself (`origin: "self"`) never is.
+- The **secret frame** `{type: "secret", request_id, message_id, room_id, name, value}` hands a secret a
+  person gave to the session that asked for it, only to a client of v0.32.0 or later (`dev` counts as
+  current). It is never acknowledged as a message nor replayed. The session writes the value to
+  `<user config dir>/partyline/secrets/<ai id>/<NAME>` and answers `{type: "secret_ack", request_id, ok:
+  true, path}`, or `{type: "secret_ack", request_id, ok: false, error}` with a reason that never holds the
+  value ([Secret requests](#secret-requests)).
 - The **live socket** (`GET /live`) sends each event only to who may see what it is about. A reaction
   to a message, or one taken back, is `room.reactions` with `{room_id, message_id, reactions}`: the
   message's reactions whole, as they are then, to everyone who sees the room and to nobody else; a
@@ -608,6 +655,9 @@ others are unchanged.
 | `last_instance_admin` | 409 | The last active instance admin tried to delete their account. |
 | `invalid` | 422 | A field is wrong: a name outside its bounds, a parent of another organization, an invalid permission. `fields` names it. |
 | `already_answered` | 409 | The caller already answered that question with the structured copy; they delete their answer to answer again ([Questions and answers](#questions-and-answers)). |
+| `ai_offline` | 409 | A secret was given while the AI's session that asked for it is not live ([Secret requests](#secret-requests)). |
+| `client_outdated` | 409 | A secret was given to a session whose client is older than v0.32.0; it must update and ask again. |
+| `not_saved` | 504 | The session did not confirm the secret within 10 seconds, or reported that it could not save it; nothing was recorded. |
 | `file_too_large` | 413 | An upload session for a file over `PARTYLINE_MAX_FILE_MB`; `details.max_size` is the limit in bytes ([Files and upload sessions](#files-and-upload-sessions)). Also a file over the platform's own limit sent through a connection, or an upload session created for it, with `details.platform` naming the platform. |
 | `attachment_expired` | 410 | The attachment was deleted by the instance's attachment retention; the message keeps its name, type and size. |
 | `insufficient_storage` | 507 | The data disk cannot hold the file with its reserve (`PARTYLINE_DISK_RESERVE_MB`) to spare. |

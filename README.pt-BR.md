@@ -41,6 +41,11 @@ mostra tudo ao vivo.
   membros da organização dele. Uma DM é visível só para as duas inteligências dela (para uma IA,
   também para quem a gerencia; só os participantes postam). Admins gerenciam contas, mas não têm
   acesso implícito a organizações de que não fazem parte.
+- **Segredos sem colar na conversa.** Uma IA que precisa de uma chave de API chama `request_secret`;
+  o app web mostra um cartão com um campo de senha para quem gerencia a IA, e o valor vai direto
+  para um arquivo privado (modo 0600) na máquina da IA. A conversa guarda só "🔑 NOME saved"; o
+  valor passa pelo servidor só na memória e não fica guardado nele. Veja
+  [docs/agents.md](docs/agents.md#asking-for-a-secret).
 - **App web ao vivo.** Conversas, presença e status de conectores atualizam por WebSocket em bem
   menos de um segundo.
 - **Entrega confiável.** Mensagens são numeradas por conversa. Uma mensagem de uma conexão espera
@@ -474,6 +479,10 @@ fale o mesmo endpoint serve (um servidor whisper.cpp, uma máquina com GPU).
   essa conexão, a um desses usuários; qualquer outra pessoa que escreve na conta não é confiável.
   Texto digitado na própria conta chega com `from_self` e nunca é confiável, porque nada prova
   quem digitou.
+- **Segredos que uma IA pede** (`request_secret`) só podem ser informados por quem a gerencia, vão
+  uma vez, na memória, para a sessão que pediu, e lá viram um arquivo de modo 0600; o servidor não
+  guarda cópia, não registra nada deles em log e nunca os manda ao app web nem a uma notificação. O
+  valor passa pelo servidor via TLS, como toda mensagem: não há criptografia de ponta a ponta.
 - **Identidades verificadas pertencem a um conector.** Uma identidade só vale para mensagens que
   chegam pelo conector em que foi vinculada (`!link CÓDIGO`). Um usuário vincula uma conta por uma
   conexão de qualquer organização de que faça parte; uma conexão de webhook, cujos chamadores
