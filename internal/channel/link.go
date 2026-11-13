@@ -184,6 +184,11 @@ type link struct {
 	// expectReconnect is set once a channel told onLost that it keeps trying while busy: the welcome of
 	// the connection that follows then tells the harness that Partyline is back (SES-04).
 	expectReconnect bool
+
+	// secretsDir is where the session writes the secrets people give it, one folder per AI
+	// (<user config dir>/partyline/secrets, SR-08); empty when there is no config directory, and every
+	// secret then fails with the reason.
+	secretsDir string
 }
 
 // lostReason says why a link gave up on its connection.
@@ -750,6 +755,17 @@ func (l *link) session(ctx context.Context) (outcome, error) {
 			}
 			return outDropped, nil // dropped, shutting down (ctx ends next) or a failed ack
 		}
+		if isSecretFrame(data) {
+			// A secret is written and answered at once, before any notification and whether or not the
+			// harness is ready: the person who gave it waits for the answer (SR-06, SR-08).
+			if err := l.saveSecret(readCtx, ws, data); err != nil {
+				_ = ws.CloseNow()
+				stopRead()
+				<-delivered
+				return outDropped, nil
+			}
+			continue
+		}
 		if !q.push(data) {
 			// Claude Code stopped reading: drop the connection instead of growing without
 			// bound; unacknowledged messages come back with the backlog after reconnecting.
@@ -856,7 +872,10 @@ func (l *link) handle(ctx context.Context, ws *websocket.Conn, data []byte) erro
 			return nil
 		}
 		ack, _ := json.Marshal(dto.AgentAckFrame{Type: dto.AgentFrameTypeAck, MessageID: f.Message.ID})
-		return l.notifyThenAck(ctx, ws, f.Message.ID, func() Notification { return FormatFor(f.AgentMessage, l.selfRef().ID) }, ack)
+		return l.notifyThenAck(ctx, ws, f.Message.ID, func() Notification {
+			self := l.selfRef().ID
+			return withSecretNote(FormatFor(f.AgentMessage, self), f.Message, l.secretsDir, self)
+		}, ack)
 	case dto.AgentFrameTypeMessageEdited, dto.AgentFrameTypeMessageDeleted:
 		// A message that was delivered before changed (EDT-07, DLT-07). It is told as it happened, in order with
 		// the messages around it, and neither acknowledged nor remembered: its id is the message's own, which the

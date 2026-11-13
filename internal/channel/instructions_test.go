@@ -42,6 +42,9 @@ const (
 	identityNoticeSentence = `When Partyline connects you get a notice that says who you are, which organization you belong to and who manages you (names and @handles).`
 	// notificationsSentence is what every text says about the session's unread messages and setting (SN-02, SN-05).
 	notificationsSentence = `You may not be notified of every message of a room: list_rooms and room_info show, per room, this session's unread count and notification setting (on, or mentions only), read_unread reads what this session missed and marks it read, set_notifications changes the setting, and a mention of this session always reaches it.`
+	// secretSentence is what every text says about secrets (SR-11): the paste rule stays, and a secret is asked
+	// for with request_secret, never in a message.
+	secretSentence = `Never paste secrets, tokens or private file contents into rooms. When you need a secret (an API key, a token, a password), use request_secret instead of asking for it in a message: someone who manages you pastes it into a card in the app, it is written to a private file on this machine, and you get the file's path, never the value; read the file when you need it, and never print it or paste it in a room.`
 	// changesSentence is what every text says about changing a message (EDT-08, EDT-09, DLT-08): the two tools, and what
 	// the event of a change is.
 	changesSentence = `edit_message (message_id, text) corrects a message you sent and delete_message (message_id) takes one back. When someone changes a message you were given, you get it again with the same message_id, saying that it was edited (its new text follows) or deleted: that is not a new message.`
@@ -91,7 +94,7 @@ func TestToolsOnlyInstructions(t *testing.T) {
 		// tools: answering through a connection (CID-15, CID-16)
 		answeringSentence,
 		`Call room_info to read a room's instructions, members and your own settings there.`,
-		`Never paste secrets, tokens or private file contents into rooms.`,
+		secretSentence,
 	}
 	for _, s := range sections {
 		require.Contains(t, got, s)
@@ -170,7 +173,7 @@ func TestOmpInstructions(t *testing.T) {
 		`A delivery mode of mentions only reduces noise; it is not a security filter`,
 		answeringSentence,
 		terminalSentence,
-		`Never paste secrets, tokens or private file contents into rooms.`,
+		secretSentence,
 	}
 	for _, s := range sections {
 		require.Contains(t, got, s)
@@ -262,5 +265,13 @@ func TestInstructionsExplainTheCatchUpContext(t *testing.T) {
 	const sentence = `A message marked context="true" is earlier conversation you had not read yet, given for context: answer the newest message. skipped="N" on the first of them says how many even earlier unread messages were left out.`
 	for name, got := range variantsOf(t) {
 		require.Contains(t, got, sentence, "%s instructions", name)
+	}
+}
+
+// SR-11: every variant of the instructions tells the AI to ask for a secret with request_secret instead of
+// in a message, and keeps the rule never to paste one into a room.
+func TestEveryVariantSaysToRequestSecretsWithTheTool(t *testing.T) {
+	for variant, got := range variantsOf(t) {
+		require.Contains(t, got, secretSentence, variant)
 	}
 }

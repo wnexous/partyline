@@ -60,6 +60,17 @@ func Path(getenv func(string) string) (string, error) {
 	return "", ErrNoPath
 }
 
+// SecretsDir returns the folder the sessions of this machine write the secrets people give them in, one
+// folder per AI (SR-08): the secrets folder next to the config file, $XDG_CONFIG_HOME/partyline/secrets or
+// ~/.config/partyline/secrets, as an absolute path.
+func SecretsDir(getenv func(string) string) (string, error) {
+	path, err := Path(getenv)
+	if err != nil {
+		return "", err
+	}
+	return filepath.Abs(filepath.Join(filepath.Dir(path), "secrets"))
+}
+
 // Load reads the config file at path. A missing file returns an error matching
 // fs.ErrNotExist; a file or directory others can access returns *NotPrivateError without
 // reading the file.

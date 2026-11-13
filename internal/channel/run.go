@@ -42,6 +42,9 @@ type Options struct {
 	// TempDir is where download_attachment saves files (<TempDir>/partyline/<folder name>/);
 	// empty means os.TempDir().
 	TempDir string
+	// SecretsDir is where the secrets people give the AI are written, one folder per AI (SR-08):
+	// <user config dir>/partyline/secrets. Empty refuses every secret with the reason.
+	SecretsDir string
 	// Version is reported in the initialize answer.
 	Version string
 	// ToolsOnly serves the tools without the agent WebSocket, for harnesses that get the
@@ -137,7 +140,7 @@ func Run(ctx context.Context, o Options) error {
 	if err != nil {
 		return fmt.Errorf("temp dir: %w", err)
 	}
-	t := &tools{dir: filepath.Join(tmp, "partyline", downloadDirName(o.Folder)), limit: o.toolLimit, stall: o.readStall}
+	t := &tools{dir: filepath.Join(tmp, "partyline", downloadDirName(o.Folder)), secretsDir: o.SecretsDir, limit: o.toolLimit, stall: o.readStall}
 	t.api = &client{base: base, token: o.Token, identity: id, http: o.HTTPClient}
 	ctx, cancel := context.WithCancel(ctx)
 	defer cancel()
@@ -158,6 +161,7 @@ func Run(ctx context.Context, o Options) error {
 	id.LiveID = l.liveID
 	t.api.identity = id
 	l.takeover, l.principal, l.zone, l.announce = o.Takeover, o.Principal, o.zone, !o.Resumed
+	l.secretsDir = o.SecretsDir
 	l.announcedSession, l.announcedOutdated = o.Resumed, o.Resumed
 	l.keepTryingWhenBusy = true // a channel reconnects by itself, it never gives up (SES-04)
 	l.onLost = func(reason lostReason, text string) {
