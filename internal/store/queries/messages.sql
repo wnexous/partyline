@@ -85,5 +85,11 @@ WHERE id = sqlc.arg(id) AND deleted_at IS NULL;
 SELECT COUNT(*) FROM messages
 WHERE reply_to = sqlc.arg(question_id) AND author_iid = sqlc.arg(author_iid) AND answers_json <> '';
 
+-- name: CountAnswers :one
+-- Counts the live structured answers anyone gave to a message: a secret request is answered once, by
+-- whoever saved it first (SR-05). A deleted answer cleared its answers_json and is not counted.
+SELECT COUNT(*) FROM messages
+WHERE reply_to = sqlc.arg(question_id) AND answers_json <> '';
+
 -- name: DeleteMessageAttachments :exec
 DELETE FROM attachments WHERE message_id = ?;

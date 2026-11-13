@@ -232,9 +232,15 @@ export const AgentFrameTypeMessageDeleted = "message_deleted"; // server → cha
  */
 export const AgentFrameTypeHeartbeat = "heartbeat"; // server → channel
 /**
+ * AgentFrameTypeSecret hands a secret a person gave to the live session that asked for it (SR-06), only to a
+ * client of agents.MinSecretClientVersion or later (SR-10); the session answers with AgentFrameTypeSecretAck.
+ */
+export const AgentFrameTypeSecret = "secret"; // server → channel
+export const AgentFrameTypeSecretAck = "secret_ack"; // channel → server
+/**
  * Agent WebSocket frame types.
  */
-export type AgentFrameType = typeof AgentFrameTypeWelcome | typeof AgentFrameTypeMessage | typeof AgentFrameTypeNotice | typeof AgentFrameTypeAck | typeof AgentFrameTypePlatform | typeof AgentFrameTypePlatformAck | typeof AgentFrameTypeMessageEdited | typeof AgentFrameTypeMessageDeleted | typeof AgentFrameTypeHeartbeat;
+export type AgentFrameType = typeof AgentFrameTypeWelcome | typeof AgentFrameTypeMessage | typeof AgentFrameTypeNotice | typeof AgentFrameTypeAck | typeof AgentFrameTypePlatform | typeof AgentFrameTypePlatformAck | typeof AgentFrameTypeMessageEdited | typeof AgentFrameTypeMessageDeleted | typeof AgentFrameTypeHeartbeat | typeof AgentFrameTypeSecret | typeof AgentFrameTypeSecretAck;
 /**
  * AgentInfo identifies the connected agent in the welcome frame.
  */
@@ -858,6 +864,15 @@ export const ErrorCodeIdentityOnline = "identity_online";
  */
 export const ErrorCodeAlreadyAnswered = "already_answered";
 /**
+ * ErrorCodeAIOffline is a secret given while the session that asked for it is not live (409, SR-06);
+ * ErrorCodeClientOutdated one whose session runs a client too old to receive it (409, SR-10); and
+ * ErrorCodeNotSaved one the session did not confirm within 10 seconds or failed to save (504, SR-06).
+ * Nothing is recorded in any of the three cases.
+ */
+export const ErrorCodeAIOffline = "ai_offline";
+export const ErrorCodeClientOutdated = "client_outdated";
+export const ErrorCodeNotSaved = "not_saved";
+/**
  * ErrorCodeFileTooLarge is an upload session for a file over the largest one (413, LF-03); Details
  * give max_size in bytes.
  */
@@ -909,7 +924,7 @@ export const ErrorCodeNoManager = "no_manager";
 /**
  * Error codes and the HTTP status they come with.
  */
-export type ErrorCode = typeof ErrorCodeInvalid | typeof ErrorCodeUnauthorized | typeof ErrorCodeForbidden | typeof ErrorCodeNotFound | typeof ErrorCodeConflict | typeof ErrorCodeGone | typeof ErrorCodeTooLarge | typeof ErrorCodeRateLimited | typeof ErrorCodeInternal | typeof ErrorCodeUnavailable | typeof ErrorCodeHandleTaken | typeof ErrorCodeAvatarInvalid | typeof ErrorCodeLastInstanceAdmin | typeof ErrorCodeLastAdmin | typeof ErrorCodeHomeOrganization | typeof ErrorCodeAlreadyMember | typeof ErrorCodeNotOperator | typeof ErrorCodeUnknownChat | typeof ErrorCodeUnsupported | typeof ErrorCodeFolderRequired | typeof ErrorCodeFolderInvalid | typeof ErrorCodeHarnessRemoved | typeof ErrorCodePositionUnknown | typeof ErrorCodeOrganizationMismatch | typeof ErrorCodeIdentityBusy | typeof ErrorCodeDMMembersFixed | typeof ErrorCodeReactionLimit | typeof ErrorCodeDMSelf | typeof ErrorCodeContactNotFound | typeof ErrorCodeNoRouteToPerson | typeof ErrorCodeHistoryOnly | typeof ErrorCodeCounterpartDisabled | typeof ErrorCodeChatsNotMembers | typeof ErrorCodeMembersRefused | typeof ErrorCodeOrganizationRequired | typeof ErrorCodeOrganizationNotEmpty | typeof ErrorCodePositionCycle | typeof ErrorCodeIdentityOnline | typeof ErrorCodeAlreadyAnswered | typeof ErrorCodeFileTooLarge | typeof ErrorCodeInsufficientStorage | typeof ErrorCodeUploadOffset | typeof ErrorCodeUploadBusy | typeof ErrorCodeUploadSent | typeof ErrorCodeUploadIncomplete | typeof ErrorCodeAttachmentExpired | typeof ErrorCodeTooFrequent | typeof ErrorCodeTooMany | typeof ErrorCodeNoManager;
+export type ErrorCode = typeof ErrorCodeInvalid | typeof ErrorCodeUnauthorized | typeof ErrorCodeForbidden | typeof ErrorCodeNotFound | typeof ErrorCodeConflict | typeof ErrorCodeGone | typeof ErrorCodeTooLarge | typeof ErrorCodeRateLimited | typeof ErrorCodeInternal | typeof ErrorCodeUnavailable | typeof ErrorCodeHandleTaken | typeof ErrorCodeAvatarInvalid | typeof ErrorCodeLastInstanceAdmin | typeof ErrorCodeLastAdmin | typeof ErrorCodeHomeOrganization | typeof ErrorCodeAlreadyMember | typeof ErrorCodeNotOperator | typeof ErrorCodeUnknownChat | typeof ErrorCodeUnsupported | typeof ErrorCodeFolderRequired | typeof ErrorCodeFolderInvalid | typeof ErrorCodeHarnessRemoved | typeof ErrorCodePositionUnknown | typeof ErrorCodeOrganizationMismatch | typeof ErrorCodeIdentityBusy | typeof ErrorCodeDMMembersFixed | typeof ErrorCodeReactionLimit | typeof ErrorCodeDMSelf | typeof ErrorCodeContactNotFound | typeof ErrorCodeNoRouteToPerson | typeof ErrorCodeHistoryOnly | typeof ErrorCodeCounterpartDisabled | typeof ErrorCodeChatsNotMembers | typeof ErrorCodeMembersRefused | typeof ErrorCodeOrganizationRequired | typeof ErrorCodeOrganizationNotEmpty | typeof ErrorCodePositionCycle | typeof ErrorCodeIdentityOnline | typeof ErrorCodeAlreadyAnswered | typeof ErrorCodeAIOffline | typeof ErrorCodeClientOutdated | typeof ErrorCodeNotSaved | typeof ErrorCodeFileTooLarge | typeof ErrorCodeInsufficientStorage | typeof ErrorCodeUploadOffset | typeof ErrorCodeUploadBusy | typeof ErrorCodeUploadSent | typeof ErrorCodeUploadIncomplete | typeof ErrorCodeAttachmentExpired | typeof ErrorCodeTooFrequent | typeof ErrorCodeTooMany | typeof ErrorCodeNoManager;
 /**
  * ErrorBody is the envelope of every error response.
  */
@@ -2522,12 +2537,13 @@ export interface Wizard {
 /**
  * MessageInteractive is the canonical question a message carries, stored in
  * messages.interactive_json and returned as Message.Interactive (QR-01, QR-02): at most 4 quick
- * replies, or one wizard. V is the version of the document.
+ * replies, or one wizard, or the secret an AI asks for (SR-01). V is the version of the document.
  */
 export interface MessageInteractive {
   v: number /* int */;
   quick_replies?: QuickReply[];
   wizard?: Wizard;
+  secret?: MessageSecret;
 }
 /**
  * MessageAnswerItem is one answered wizard question in the structured answer: the question's
@@ -2541,12 +2557,14 @@ export interface MessageAnswerItem {
 /**
  * MessageAnswers is the canonical structured answer a reply carries, stored in
  * messages.answers_json and returned as Message.Answers (QR-06, QR-07): one quick reply label, or
- * one item per answered wizard question. V is the version of the document.
+ * one item per answered wizard question, or the secret the session saved (SR-06). V is the version of
+ * the document.
  */
 export interface MessageAnswers {
   v: number /* int */;
   quick_reply?: string;
   answers?: MessageAnswerItem[];
+  secret?: MessageSecretAnswer;
 }
 /**
  * WizardRequest is the body part of a post that asks a wizard: the questions and their labels;
@@ -2963,6 +2981,11 @@ export interface PostMessageRequest {
   wizard?: WizardRequest;
   answers?: AnswerSubmission;
   /**
+   * Secret asks for a secret instead (SR-01): only an AI posts one, with a text of 1 to
+   * MaxSecretReason characters, no files and none of the other three shapes (SR-03).
+   */
+  secret?: MessageSecret;
+  /**
    * UploadIDs attaches finished upload sessions of the poster, in order, after any multipart files;
    * each upload is used up by the message (LF-03).
    */
@@ -3228,6 +3251,80 @@ export interface AgentHeartbeatFrame {
  */
 export interface AgentSchedulesData {
   agent_id: string;
+}
+
+//////////
+// source: secretrequests.go
+
+/**
+ * SecretNamePattern is the regular expression a secret's name matches (SR-01): an environment variable
+ * name in upper case, at most 64 characters. It is also the name of the file the session writes, so it
+ * can never be a path.
+ */
+export const SecretNamePattern = "^[A-Z][A-Z0-9_]{0,63}$"; // #nosec G101 -- a pattern of names, no credential
+/**
+ * MaxSecretReason is the longest text of a secret request in characters: why the AI needs it (SR-01).
+ */
+export const MaxSecretReason = 500;
+/**
+ * MaxSecretValue is the largest secret value in bytes (SR-05); any characters, newlines included.
+ */
+export const MaxSecretValue = 16384;
+/**
+ * MessageSecret is the secret a message asks for, the interactive part of a secret request
+ * (`{"v":1,"secret":{"name":NAME}}`, SR-01). Only an AI posts one (SR-03).
+ */
+export interface MessageSecret {
+  name: string;
+}
+/**
+ * MessageSecretAnswer is the structured answer of a saved secret (`{"v":1,"secret":{"name":NAME,
+ * "saved":true}}`, SR-06): the name and that the session saved it, never the value. The answer is a
+ * reply to the request whose author is the person who gave it.
+ */
+export interface MessageSecretAnswer {
+  name: string;
+  saved: boolean;
+}
+/**
+ * GiveSecretRequest is the body of POST /rooms/{id}/messages/{mid}/secret (SR-05): the value, 1 to
+ * MaxSecretValue bytes. Only a person who manages the asking AI may send it; the answer is the reply
+ * "🔑 NAME saved", never the value (SR-06, SR-07).
+ */
+export interface GiveSecretRequest {
+  value: string;
+}
+/**
+ * AgentSecretFrame hands a secret to the live session that asked for it (SR-06): once, in memory. Only
+ * a client of agents.MinSecretClientVersion or later is sent one (SR-10). The session writes Value to
+ * <user config dir>/partyline/secrets/<ai id>/<Name> and answers with an AgentSecretAckFrame carrying
+ * the same RequestID (SR-08). It is never acknowledged as a message, never replayed and never shown to
+ * the harness.
+ */
+export interface AgentSecretFrame {
+  type: typeof AgentFrameTypeSecret;
+  /**
+   * RequestID pairs the frame with its acknowledgement.
+   */
+  request_id: string;
+  /**
+   * MessageID is the secret request the value answers; RoomID its room.
+   */
+  message_id: string;
+  room_id: string;
+  name: string;
+  value: string;
+}
+/**
+ * AgentSecretAckFrame answers an AgentSecretFrame (SR-08): OK with the absolute Path of the file the
+ * session wrote, or not OK with the reason in Error, which never holds the value.
+ */
+export interface AgentSecretAckFrame {
+  type: typeof AgentFrameTypeSecretAck;
+  request_id: string;
+  ok: boolean;
+  path?: string;
+  error?: string;
 }
 
 //////////

@@ -181,6 +181,10 @@ const (
 	// client of agents.MinHeartbeatClientVersion or later (HB-07); the session acknowledges it with an ack carrying
 	// its run_id.
 	AgentFrameTypeHeartbeat AgentFrameType = "heartbeat" // server → channel
+	// AgentFrameTypeSecret hands a secret a person gave to the live session that asked for it (SR-06), only to a
+	// client of agents.MinSecretClientVersion or later (SR-10); the session answers with AgentFrameTypeSecretAck.
+	AgentFrameTypeSecret    AgentFrameType = "secret"     // server → channel
+	AgentFrameTypeSecretAck AgentFrameType = "secret_ack" // channel → server
 )
 
 // AgentInfo identifies the connected agent in the welcome frame.

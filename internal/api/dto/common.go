@@ -204,6 +204,13 @@ const (
 	// ErrorCodeAlreadyAnswered is a second structured answer by the same author to the same question
 	// (409, QR-08): the member answers once, and deletes the answer to answer again.
 	ErrorCodeAlreadyAnswered ErrorCode = "already_answered"
+	// ErrorCodeAIOffline is a secret given while the session that asked for it is not live (409, SR-06);
+	// ErrorCodeClientOutdated one whose session runs a client too old to receive it (409, SR-10); and
+	// ErrorCodeNotSaved one the session did not confirm within 10 seconds or failed to save (504, SR-06).
+	// Nothing is recorded in any of the three cases.
+	ErrorCodeAIOffline      ErrorCode = "ai_offline"
+	ErrorCodeClientOutdated ErrorCode = "client_outdated"
+	ErrorCodeNotSaved       ErrorCode = "not_saved"
 	// ErrorCodeFileTooLarge is an upload session for a file over the largest one (413, LF-03); Details
 	// give max_size in bytes.
 	ErrorCodeFileTooLarge ErrorCode = "file_too_large"
