@@ -260,6 +260,9 @@ bubble checked on a phone, so that I can run the feature and trust its size.
    quick replies nor the wizard scrolls sideways or spills out of the bubble. (QR-24)
 3. The end-to-end suite SHALL drive a quick reply and a wizard in the real web app, SHALL see the
    answer as one reply with the expected text, and SHALL see the chosen state after a reload. (QR-25)
+4. The channel instructions SHALL tell an AI to use `ask` with quick replies (or a wizard) when it
+   needs a person to choose or decide, and that the tool returns at once, so it keeps working while
+   the answer comes later as a reply: AIs that were never told kept asking in plain text. (QR-26)
 
 **Independent Test**: `make e2e` passes for both phone projects with the seeded questions;
 `docs/api.md` lists `quick_replies`, `wizard` and `answers` with their limits and 422/403/409.
