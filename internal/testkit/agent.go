@@ -166,6 +166,25 @@ func (a *AgentConn) Ack(messageID string) {
 	require.NoError(a.T, a.Conn.Write(ctx, websocket.MessageText, data))
 }
 
+// Secret reads the next frame, which must be a secret frame (SR-06).
+func (a *AgentConn) Secret(timeout time.Duration) dto.AgentSecretFrame {
+	a.T.Helper()
+	var f dto.AgentSecretFrame
+	a.nextOf(dto.AgentFrameTypeSecret, &f, timeout)
+	return f
+}
+
+// AckSecret answers a secret frame as the session does once it wrote the file, or could not (SR-08).
+func (a *AgentConn) AckSecret(ack dto.AgentSecretAckFrame) {
+	a.T.Helper()
+	ack.Type = dto.AgentFrameTypeSecretAck
+	data, err := json.Marshal(ack)
+	require.NoError(a.T, err)
+	ctx, cancel := context.WithTimeout(context.Background(), IOTimeout)
+	defer cancel()
+	require.NoError(a.T, a.Conn.Write(ctx, websocket.MessageText, data))
+}
+
 // AckPlatform confirms a platform event, as the channel does after handing it to the harness.
 func (a *AgentConn) AckPlatform(itemID string) {
 	a.T.Helper()

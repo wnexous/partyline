@@ -37,6 +37,7 @@ func (s *server) roomRoutes(mux *http.ServeMux) {
 	s.handle(mux, "POST /api/v1/rooms/{id}/messages", authed(s.postMessage))
 	s.handle(mux, "PATCH /api/v1/rooms/{id}/messages/{mid}", authed(s.editMessage))
 	s.handle(mux, "DELETE /api/v1/rooms/{id}/messages/{mid}", authed(s.deleteMessage))
+	s.handle(mux, "POST /api/v1/rooms/{id}/messages/{mid}/secret", authed(s.giveSecret))
 	s.handle(mux, "POST /api/v1/rooms/{id}/resume", authed(s.resumeRoom))
 	s.handle(mux, "GET /api/v1/rooms/{id}/attachments", authed(s.listRoomFiles))
 	s.handle(mux, "GET /api/v1/attachments/{id}", authed(s.downloadAttachment))
@@ -271,7 +272,7 @@ func (s *server) postTo(w http.ResponseWriter, r *http.Request, p authn.Principa
 	}
 	m, err := s.Rooms.Post(r.Context(), p, roomID, rooms.PostInput{
 		Text: req.Text, ReplyTo: req.ReplyTo, Files: files,
-		QuickReplies: req.QuickReplies, Wizard: req.Wizard, Answers: req.Answers,
+		QuickReplies: req.QuickReplies, Wizard: req.Wizard, Answers: req.Answers, Secret: req.Secret,
 		SessionLabel: s.sessionLabel(r, p),
 	})
 	if err != nil {

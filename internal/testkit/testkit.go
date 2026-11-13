@@ -84,6 +84,7 @@ type options struct {
 	transcriptHold   time.Duration
 	transcribeWait   func(ctx context.Context, d time.Duration) error
 	freeSpace        func(dir string) (int64, bool)
+	secretTimeout    time.Duration
 }
 
 // Option customizes New.
@@ -148,6 +149,10 @@ func WithConnectorWait(wait func(ctx context.Context, d time.Duration) error) Op
 // a minute.
 func WithTranscriptHold(d time.Duration) Option { return func(o *options) { o.transcriptHold = d } }
 
+// WithSecretTimeout sets how long a given secret waits for its session's acknowledgement (default 10 s,
+// SR-06), so a test of a session that never answers does not wait that long.
+func WithSecretTimeout(d time.Duration) Option { return func(o *options) { o.secretTimeout = d } }
+
 // WithTranscribeWait replaces the sleep between the attempts of a transcription (TR-08).
 func WithTranscribeWait(wait func(ctx context.Context, d time.Duration) error) Option {
 	return func(o *options) { o.transcribeWait = wait }
@@ -184,7 +189,7 @@ func New(t testing.TB, opts ...Option) *Env {
 	e := &Env{
 		T: t, Server: srv, URL: base, Origin: cfg.PublicURL.Scheme + "://" + cfg.PublicURL.Host, cfg: cfg,
 		appOpts: app.Options{Logger: o.logger, Now: o.now, LiveSessionCheck: o.liveSessionCheck, ConnectorKinds: o.kinds, DisableOutbox: !o.outbox, DisablePush: o.push, PushQueueSize: o.pushQueueSize, Version: o.version, InboundWait: o.inboundWait, ConnectorWait: o.connectorWait,
-			TranscriptHold: o.transcriptHold, TranscribeWait: o.transcribeWait, FreeSpace: o.freeSpace},
+			TranscriptHold: o.transcriptHold, TranscribeWait: o.transcribeWait, FreeSpace: o.freeSpace, SecretTimeout: o.secretTimeout},
 	}
 	e.startApp()
 	srv.Config.Handler = http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { (*e.handler.Load()).ServeHTTP(w, r) })

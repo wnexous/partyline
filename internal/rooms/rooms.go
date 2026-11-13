@@ -92,6 +92,8 @@ type Service struct {
 	attachmentDays func(context.Context) (int, error)
 	// kick wakes the retention job before its interval (KickRetention).
 	kick chan struct{}
+	// secrets are the secret requests whose value is on its way to a session (SR-05).
+	secrets secretFlights
 }
 
 // New returns a Service.

@@ -100,6 +100,9 @@ type GatewayDeps struct {
 	// Now is the clock the wait is measured with, the one the queue stamps its jobs with; defaults to
 	// time.Now.
 	Now func() time.Time
+	// SecretTimeout is how long a secret waits for its session's acknowledgement (SR-06); defaults to
+	// DefaultSecretTimeout.
+	SecretTimeout time.Duration
 }
 
 // Gateway serves the agent WebSocket (GET /api/v1/agent/ws): it registers the agent, sends
@@ -156,6 +159,9 @@ func NewGateway(d GatewayDeps) *Gateway {
 	}
 	if d.Now == nil {
 		d.Now = time.Now
+	}
+	if d.SecretTimeout <= 0 {
+		d.SecretTimeout = DefaultSecretTimeout
 	}
 	ctx, stop := context.WithCancel(context.Background())
 	g := &Gateway{d: d, ctx: ctx, stop: stop}
@@ -583,8 +589,8 @@ func (g *Gateway) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	defer stopReq()
 
 	c := &conn{
-		ws: ws, queue: make(chan outbound, queueSize), cancel: cancel,
-		liveID: hs.liveID, owner: ownerKey(hs.liveID),
+		ws: ws, queue: make(chan outbound, queueSize), cancel: cancel, done: ctx.Done(),
+		liveID: hs.liveID, owner: ownerKey(hs.liveID), clientVersion: hs.clientVersion,
 		delivered: map[string]struct{}{}, pushed: map[string]struct{}{},
 	}
 	if g.beforeAttach != nil {
@@ -870,6 +876,14 @@ type conn struct {
 	lab atomic.Value
 	// liveID is the id of the process that holds the connection; empty when the client sent none.
 	liveID string
+	// clientVersion is the partyline client version the connection sent; "" for a client older than the
+	// header (SESS-63). A secret goes only to a client that knows the frame (SR-10).
+	clientVersion string
+	// done is closed when the connection ends: a secret waiting for its acknowledgement stops waiting.
+	done <-chan struct{}
+	// secretAcks are the secret frames written to this connection that wait for their acknowledgement
+	// (SR-06).
+	secretAcks secretWaits
 	// owner is the key of the delivery rows pushed to this connection (ownerKey): its live id, or a key
 	// no other connection has.
 	owner string
@@ -1519,6 +1533,12 @@ func (g *Gateway) readAcks(ctx context.Context, c *conn, agentID string) {
 			}
 			if err := g.ack(ctx, c, agentID, head.MessageID); err != nil && ctx.Err() == nil {
 				g.d.Logger.Error("agent: ack failed", "agent_id", agentID, "err", err)
+			}
+		case head.Type == dto.AgentFrameTypeSecretAck:
+			// The session wrote a secret, or could not (SR-08); the request that waits for it decides.
+			var ack dto.AgentSecretAckFrame
+			if json.Unmarshal(data, &ack) == nil && ack.RequestID != "" {
+				c.secretAcks.answer(ack)
 			}
 		case head.Type == dto.AgentFrameTypePlatformAck && head.ItemID != "" && g.d.Platform != nil:
 			if err := g.d.Platform.Ack(ctx, agentID, head.ItemID); err != nil {
