@@ -39,6 +39,9 @@ type ListenOptions struct {
 	// Version is the partyline client version, sent as X-Partyline-Client-Version on every connection so
 	// the server can tell an outdated session (SESS-63); empty sends none.
 	Version string
+	// SecretsDir means what it means for Run: listen holds the socket of pi and OpenCode, so it is the
+	// process that writes their secrets (SR-08).
+	SecretsDir string
 
 	// Stdin ending (the harness that spawned listen went away) stops Listen; nil never does.
 	Stdin  io.Reader
@@ -88,6 +91,7 @@ func Listen(ctx context.Context, o ListenOptions) error {
 	out := &lineWriter{w: o.Stdout}
 	l := newLink(base, o.Token, id, o.HTTPClient, out, o.Stderr, o.timing)
 	l.takeover, l.principal, l.zone = o.Takeover, o.Principal, o.zone
+	l.secretsDir = o.SecretsDir
 	l.announcedSession, l.announcedOutdated = o.Resumed, o.Resumed
 	if o.LiveID != "" {
 		l.liveID = o.LiveID

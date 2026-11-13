@@ -85,6 +85,7 @@ func TestToolsList(t *testing.T) {
 		"create_group":        {"name", "members"},
 		"update_profile":      nil,      // at least one field, checked by the tool
 		"ask":                 {"text"}, // room or connection with chat, exactly one: the schema cannot say so
+		"request_secret":      {"room", "name", "text"},
 		"list_schedules":      nil,
 		"set_schedule":        nil, // create or change: the server checks the fields (HB-01)
 		"delete_schedule":     {"id"},

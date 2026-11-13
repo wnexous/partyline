@@ -83,6 +83,8 @@ type PostInput struct {
 	QuickReplies []string
 	Wizard       *dto.WizardRequest
 	Answers      *dto.AnswerSubmission
+	// Secret asks for a secret instead (SR-01): only an AI posts one, with none of the other shapes.
+	Secret *dto.MessageSecret
 	// SessionLabel is the session an AI posts from, resolved by the API (SESS-29). It is stored for
 	// agent principals only: a user's post and a chat's message never carry one (SESS-28).
 	SessionLabel string
@@ -139,6 +141,9 @@ type draft struct {
 	// originalText is the text the caller gave, before the server renders an answer's text
 	// (QR-05).
 	originalText string
+	// answerOnce marks the answer to a secret request, which nobody may have answered before (SR-05):
+	// the post transaction checks it again next to the insert.
+	answerOnce bool
 }
 
 // Post stores a message from the calling user (needs post, ACL-04) or agent (needs
@@ -161,12 +166,20 @@ func (s *Service) Post(ctx context.Context, p authn.Principal, roomID string, in
 	if err := checkPostShapes(in.QuickReplies, in.Wizard, in.Answers); err != nil {
 		return Message{}, err
 	}
+	if err := checkSecretShape(in); err != nil {
+		return Message{}, err
+	}
 
 	var interactiveJSON string
 	if kind != dto.MessageKindReaction {
 		interactive, err := questionFrom(in.QuickReplies, in.Wizard)
 		if err != nil {
 			return Message{}, err
+		}
+		if in.Secret != nil {
+			if interactive, err = secretRequestFrom(p, in); err != nil {
+				return Message{}, err
+			}
 		}
 		if interactive != nil {
 			b, err := json.Marshal(interactive)
@@ -175,9 +188,13 @@ func (s *Service) Post(ctx context.Context, p authn.Principal, roomID string, in
 			}
 			interactiveJSON = string(b)
 		}
-	} else if in.QuickReplies != nil || in.Wizard != nil {
+	} else if in.QuickReplies != nil || in.Wizard != nil || in.Secret != nil {
 		check := validation.Check{}
-		check.Add("quick_replies", "must not be combined with a reaction message")
+		field := "quick_replies"
+		if in.Secret != nil {
+			field = "secret"
+		}
+		check.Add(field, "must not be combined with a reaction message")
 		return Message{}, check.Err()
 	}
 
@@ -296,6 +313,9 @@ func ValidatePost(in PostInput) error {
 	if err := checkPostShapes(in.QuickReplies, in.Wizard, in.Answers); err != nil {
 		return err
 	}
+	if err := checkSecretShape(in); err != nil {
+		return err
+	}
 	return draft{text: in.Text, files: in.Files}.validate()
 }
 
@@ -350,6 +370,14 @@ func (s *Service) post(ctx context.Context, roomID string, d draft) (Message, er
 		}
 		if err := s.checkAnswer(ctx, q, roomID, d); err != nil {
 			return err
+		}
+		if d.answerOnce {
+			// A secret request is answered once, by anyone (SR-05).
+			if n, err := q.CountAnswers(ctx, d.replyTo); err != nil {
+				return err
+			} else if n > 0 {
+				return ErrAlreadyAnswered
+			}
 		}
 		previous, err := q.GetRoom(ctx, roomID)
 		if err != nil {

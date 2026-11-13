@@ -78,6 +78,9 @@ type Deps struct {
 	Live http.Handler
 	// AgentWS serves the agent WebSocket at GET /api/v1/agent/ws.
 	AgentWS http.Handler
+	// Secrets hands the value of a secret request to the live session that asked for it (SR-06): the
+	// agent gateway. Without it no secret can be given (503).
+	Secrets SecretDeliverer
 	// Trust opens the trust of each request that tells an AI what it may trust: the history tool and the
 	// room's instructions (POS-10). Without it nothing is trusted.
 	Trust delivery.TrustSource
@@ -226,6 +229,7 @@ func mapError(err error) error {
 	var verr *validation.Error
 	var refused *conversations.MembersRefusedError
 	var notEmpty *orgs.NotEmptyError
+	var notSaved *agents.SecretNotSavedError
 	switch {
 	case errors.As(err, &verr):
 		return httpx.Invalid(verr.Fields)
@@ -311,6 +315,16 @@ func mapError(err error) error {
 		return httpx.NewError(http.StatusTooManyRequests, dto.ErrorCodeRateLimited, "too many new conversations, try again later")
 	case errors.Is(err, rooms.ErrMessageDeleted):
 		return httpx.NewError(http.StatusConflict, dto.ErrorCodeConflict, "the message was deleted")
+	case errors.Is(err, rooms.ErrNotSecretRequest):
+		return httpx.NewError(http.StatusNotFound, dto.ErrorCodeNotFound, "not a secret request")
+	case errors.Is(err, rooms.ErrSecretInFlight):
+		return httpx.NewError(http.StatusConflict, dto.ErrorCodeConflict, "someone is saving this secret right now; look again in a moment")
+	case errors.Is(err, agents.ErrSecretOffline):
+		return httpx.NewError(http.StatusConflict, dto.ErrorCodeAIOffline, "the AI's session that asked for the secret is not online; try again when it is")
+	case errors.Is(err, agents.ErrSecretOutdated):
+		return httpx.NewError(http.StatusConflict, dto.ErrorCodeClientOutdated, "the AI's Partyline is too old to receive a secret; it must update (partyline update) and ask again")
+	case errors.As(err, &notSaved):
+		return httpx.NewError(http.StatusGatewayTimeout, dto.ErrorCodeNotSaved, "the secret was not saved: "+notSaved.Reason)
 	case errors.Is(err, rooms.ErrAlreadyAnswered):
 		return httpx.NewError(http.StatusConflict, dto.ErrorCodeAlreadyAnswered, "the question was already answered by this author")
 	case errors.Is(err, rooms.ErrAlreadyMember):

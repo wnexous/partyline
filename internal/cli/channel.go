@@ -247,13 +247,24 @@ func channelCmd(ctx context.Context, args []string, io stdio) int {
 		Org: c.id.Org, Position: c.id.Position, Parent: c.id.Parent,
 		Harness: c.id.Harness, Version: buildVersion(), ToolsOnly: *toolsOnly, Takeover: c.takeover,
 		HarnessSession: c.id.HarnessSession, Principal: c.principal, Resumed: resumed,
-		Stdin: io.stdin, Stdout: io.stdout, Stderr: io.stderr,
+		SecretsDir: secretsDir(io),
+		Stdin:      io.stdin, Stdout: io.stdout, Stderr: io.stderr,
 	})
 	if err != nil && !errors.Is(err, context.Canceled) {
 		fmt.Fprintln(io.stderr, "partyline channel:", err)
 		return 1
 	}
 	return 0
+}
+
+// secretsDir is where the session writes the secrets people give its AI (SR-08); empty without a config
+// directory, which makes every secret fail with that reason instead of landing somewhere unexpected.
+func secretsDir(io stdio) string {
+	dir, err := cliconfig.SecretsDir(withLauncherEnv(io).getenv)
+	if err != nil {
+		return ""
+	}
+	return dir
 }
 
 // exitSessionLost is the exit code of `partyline listen` when another session holds the AI or
@@ -299,8 +310,8 @@ func listenCmd(ctx context.Context, args []string, io stdio) int {
 		Home: c.id.Home, Harness: c.id.Harness, Adopt: c.id.Adopt, LiveID: sessionLiveID(withLauncherEnv(io)),
 		Org: c.id.Org, Position: c.id.Position, Parent: c.id.Parent,
 		Takeover: c.takeover, HarnessSession: c.id.HarnessSession, Principal: c.principal, Version: buildVersion(),
-		Resumed: resumed,
-		Stdin:   io.stdin, Stdout: io.stdout, Stderr: io.stderr,
+		Resumed: resumed, SecretsDir: secretsDir(io),
+		Stdin: io.stdin, Stdout: io.stdout, Stderr: io.stderr,
 	})
 	select {
 	case v := <-updated:

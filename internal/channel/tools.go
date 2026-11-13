@@ -18,6 +18,7 @@ import (
 	"strconv"
 	"strings"
 	"time"
+	"unicode/utf8"
 
 	"github.com/wnexous/partyline/internal/api/dto"
 	"github.com/wnexous/partyline/internal/avatars"
@@ -39,6 +40,9 @@ type tools struct {
 	link *link
 	// dir is where downloads are saved: <TempDir>/partyline/<agent> (TOOL-06).
 	dir string
+	// secretsDir is where the session writes the secrets it asks for (SR-08); request_secret names the
+	// file it will be.
+	secretsDir string
 	// limit bounds an ordinary tool call (toolTimeout) and stall a download that brings no byte
 	// (readStall); tests shorten them.
 	limit, stall time.Duration
@@ -78,6 +82,11 @@ func (t *tools) register(srv *mcp.Server) {
 		Description: "Ask a question whose answer arrives as a message: give text and 1 to 4 quick_replies (each 1 to 48 characters on one line), or a wizard of 1 to 8 questions instead of quick_replies. Give exactly one target: room (ask in a room or DM you belong to, with an optional reply_to), or connection together with chat (ask in a chat of a connection you operate, from your own account and unsigned). In a room the person taps a button or answers the wizard in the app, and the answer reaches you as a reply to your question. A chat renders no buttons: there your text is sent with the options appended as numbered lines (1. Sim, 2. Não) and the person answers with a number in an ordinary message, so a wizard needs a room.",
 		InputSchema: schema(`{"type":"object","properties":{"room":{"type":"string","description":"room id, room name, or @handle of a DM with the intelligence to ask"},"connection":{"type":"string","description":"instead of room: the connection_id of a connection you operate, together with chat"},"chat":{"type":"string","description":"with connection: the chat_id to ask in, or the address of someone who never wrote to you, as for send_message"},"reply_to":{"type":"string","description":"with room: optional message_id this question answers"},"text":{"type":"string","description":"the question, at most 16000 characters"},"quick_replies":{"type":"array","items":{"type":"string"},"description":"1 to 4 buttons, each 1 to 48 characters on one line"},"wizard":{"type":"object","properties":{"questions":{"type":"array","items":{"type":"object","properties":{"title":{"type":"string"},"kind":{"type":"string","enum":["single","multi"]},"options":{"type":"array","items":{"type":"string"}},"allow_text":{"type":"boolean"}},"required":["title","options"]},"description":"1 to 8 questions"}},"description":"instead of quick_replies: a wizard answered step by step in the web app"}},"required":["text"]}`),
 	}, t.guard(t.ask))
+	srv.HandleTool(mcp.ToolDef{
+		Name:        "request_secret",
+		Description: "Ask a person who manages you for a secret (an API key, a token, a password) instead of asking for it in a message, where it would stay in the history. Give room (a room or DM you belong to, or the @handle of the DM), name (the variable name, like EXAMPLE_API_KEY: an upper-case letter, then up to 63 upper-case letters, digits or underscores) and text (why you need it, 1 to 500 characters). It posts a card where someone who manages you pastes the value; the value goes straight to a private file on this machine and never into the conversation or this session. It returns at once with the message_id and the path of that file; when the secret is saved you get a reply saying so. Read the file when you need the value, and never print it or paste it in a room. A chat of a connection cannot show the card, so this tool works in rooms and DMs only.",
+		InputSchema: schema(`{"type":"object","properties":{"room":{"type":"string","description":"room id, room name, or @handle of the DM with the person to ask"},"name":{"type":"string","description":"the secret's name, like EXAMPLE_API_KEY: ^[A-Z][A-Z0-9_]{0,63}$; it is also the file's name"},"text":{"type":"string","description":"why you need it, 1 to 500 characters"}},"required":["room","name","text"]}`),
+	}, t.guard(t.requestSecret))
 	srv.HandleTool(mcp.ToolDef{
 		Name:        "room_info",
 		Description: "Read a room's instructions for agents, who holds a group (the person who reads and writes it without being listed among the members), its members (chats with platform and kind; agents show whether they are online and their live sessions; address a session by writing its address (e.g. @handle:label) in a message's text), your own membership settings in it and, for this session, how many messages it has not read (unread) and its notification setting there (notify: on, or mentions only).",
@@ -465,6 +474,64 @@ func (t *tools) ask(ctx context.Context, args json.RawMessage) (string, error) {
 		return "", err
 	}
 	return sent(m), nil
+}
+
+// The refusals of request_secret (SR-02): each says why, so the model can ask again correctly.
+const (
+	secretOnAChat  = "request_secret works in rooms and DMs only: a chat of a connection cannot show the card with the password field, and a value typed there would stay in the platform's history; ask in a room or a DM with someone who manages you"
+	secretBadName  = "name must be an upper-case letter followed by up to 63 upper-case letters, digits or underscores, like EXAMPLE_API_KEY: it is also the name of the file the value is written to" // #nosec G101 -- a refusal message, not a credential
+	secretNoText   = "text is required: say in 1 to 500 characters why you need the secret, so the person knows what they are giving"
+	secretLongText = "text must have at most 500 characters: say briefly why you need the secret"
+)
+
+// requestSecret posts a secret request in a room or DM (SR-01, SR-02): the server stores the name as the
+// message's interactive part and records which session asked, so the value later reaches this session. It
+// returns at once with the message id and the path the value will be written to, which is the AI's own
+// folder of secrets on this machine.
+func (t *tools) requestSecret(ctx context.Context, args json.RawMessage) (string, error) {
+	var a struct {
+		Room       string `json:"room"`
+		Name       string `json:"name"`
+		Text       string `json:"text"`
+		Connection string `json:"connection"`
+		Chat       string `json:"chat"`
+		To         string `json:"to"`
+	}
+	if err := decode(args, &a); err != nil {
+		return "", err
+	}
+	// An empty value is not given, as some models send every parameter (DM-04).
+	if strings.TrimSpace(a.Connection) != "" || strings.TrimSpace(a.Chat) != "" {
+		return "", errors.New(secretOnAChat)
+	}
+	room := strings.TrimSpace(a.Room)
+	if room == "" {
+		room = strings.TrimSpace(a.To) // a DM named the way send_message names it
+	}
+	if err := required("room", room); err != nil {
+		return "", err
+	}
+	name := strings.TrimSpace(a.Name)
+	if !secretNamePattern.MatchString(name) {
+		return "", errors.New(secretBadName)
+	}
+	text := strings.TrimSpace(a.Text)
+	switch {
+	case text == "":
+		return "", errors.New(secretNoText)
+	case utf8.RuneCountInString(text) > dto.MaxSecretReason:
+		return "", errors.New(secretLongText)
+	}
+	var m dto.Message
+	if err := t.api.json(ctx, http.MethodPost, roomPath(room, "/messages"), nil,
+		dto.PostMessageRequest{Text: text, Secret: &dto.MessageSecret{Name: name}}, &m); err != nil {
+		return "", err
+	}
+	out := map[string]string{"message_id": m.ID, "name": name, "status": "asked: when someone who manages you saves it, the value is written to path and you get a reply saying so; read the file when you need it, never print it or paste it in a room"}
+	if t.secretsDir != "" && safeComponent(m.AuthorID) {
+		out["path"] = secretPath(t.secretsDir, m.AuthorID, name)
+	}
+	return marshal(out)
 }
 
 // count is how many of the flags are set.

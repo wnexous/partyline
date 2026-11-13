@@ -11,6 +11,20 @@ import (
 	"strings"
 )
 
+const countAnswers = `-- name: CountAnswers :one
+SELECT COUNT(*) FROM messages
+WHERE reply_to = ?1 AND answers_json <> ''
+`
+
+// Counts the live structured answers anyone gave to a message: a secret request is answered once, by
+// whoever saved it first (SR-05). A deleted answer cleared its answers_json and is not counted.
+func (q *Queries) CountAnswers(ctx context.Context, questionID string) (int64, error) {
+	row := q.db.QueryRowContext(ctx, countAnswers, questionID)
+	var count int64
+	err := row.Scan(&count)
+	return count, err
+}
+
 const countAnswersByAuthor = `-- name: CountAnswersByAuthor :one
 SELECT COUNT(*) FROM messages
 WHERE reply_to = ?1 AND author_iid = ?2 AND answers_json <> ''

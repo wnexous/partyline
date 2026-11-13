@@ -23,6 +23,16 @@ func checkPostShapes(quickReplies []string, wizard *dto.WizardRequest, answers *
 	return check.Err()
 }
 
+// checkSecretShape refuses a secret request that also carries a question or an answer (SR-01): a
+// message asks for a secret, asks a question or answers one, never two of them.
+func checkSecretShape(in PostInput) error {
+	check := validation.Check{}
+	if in.Secret != nil && (in.QuickReplies != nil || in.Wizard != nil || in.Answers != nil) {
+		check.Add("secret", "a message asks for a secret, asks a question or answers one, not two of them")
+	}
+	return check.Err()
+}
+
 // questionFrom canonicalises the question of a post (QR-01..QR-03): the server assigns the ids
 // from the order the author gave, trims the labels and refuses the design's limits and two shapes
 // in one message. It returns nil when the post carries no interactive part, which is every other

@@ -148,6 +148,7 @@ let room: Room;
 let dm: Room;
 let questionAt: Message;
 let wizardAt: Message;
+let secretAt: Message;
 let sessions: { close: () => void }[] = [];
 
 /**
@@ -229,6 +230,40 @@ async function checkQuestions(page: Page) {
   await expect(next).toBeEnabled();
 }
 
+/** The longest secret name (SR-01, 64 characters): one word the card must break, never spill. */
+const FIT_SECRET_NAME = `EXAMPLE_${"LONG_".repeat(11)}API_KEY`.slice(0, 64);
+
+/**
+ * The seeded secret request (SR-13): the owner manages the AI, so the card offers the field, the show
+ * toggle and Save, and on a touch screen each of them is a 44 px target.
+ */
+async function checkSecretCard(page: Page) {
+  const card = page
+    .getByRole("log")
+    .locator(`[data-testid="message-${secretAt.seq}"]`)
+    .getByRole("region", { name: `Secret requested: ${FIT_SECRET_NAME}` });
+  await card.scrollIntoViewIfNeeded();
+  await expect(card).toBeVisible();
+  const field = card.getByLabel(`Value of ${FIT_SECRET_NAME}`);
+  await expect(field).toBeVisible();
+  const targets = [
+    field,
+    card.getByRole("button", { name: "Show the value" }),
+    card.getByRole("button", { name: "Save" }),
+  ];
+  const coarse = await page.evaluate(() => window.matchMedia("(pointer: coarse)").matches);
+  for (const target of targets) {
+    await expect(target).toBeVisible();
+    const box = await target.boundingBox();
+    expect(box, "the control has a box").not.toBeNull();
+    if (coarse && box) {
+      expect(box.height, "a touch target of the secret card is 44 px tall").toBeGreaterThanOrEqual(
+        44,
+      );
+    }
+  }
+}
+
 /** The conversation of the seeded group, with its long author, long word, image, voice and questions. */
 async function checkConversation(page: Page, where: string, font: Font) {
   await page.goto(`/rooms/${room.id}`);
@@ -254,6 +289,7 @@ async function checkConversation(page: Page, where: string, font: Font) {
   });
   expect(lines, `${where}: the empty composer is taller than one line`).toBeLessThan(0.5);
   await checkQuestions(page);
+  await checkSecretCard(page);
   await settled(page);
   await scrollThrough(page);
   await settled(page);
@@ -834,6 +870,18 @@ test.beforeAll(async ({ browser, fit }) => {
       {
         text: "Plan the release",
         wizard: { questions: FIT_QUESTIONS },
+      } satisfies PostMessageRequest,
+    );
+    // The secret request the fit check measures (SR-13): the longest name and a reason that wraps.
+    secretAt = await agentJSON<Message>(
+      context,
+      fit,
+      agent,
+      "POST",
+      `/agent/rooms/${room.id}/messages`,
+      {
+        text: "To send the weekly release report by email I need the key of the mail service; paste it here and it goes to a private file on this machine.",
+        secret: { name: FIT_SECRET_NAME },
       } satisfies PostMessageRequest,
     );
     // The AI's two live sessions, the principal first; the second is the worktree whose 40-character

@@ -68,11 +68,12 @@ type Wizard struct {
 
 // MessageInteractive is the canonical question a message carries, stored in
 // messages.interactive_json and returned as Message.Interactive (QR-01, QR-02): at most 4 quick
-// replies, or one wizard. V is the version of the document.
+// replies, or one wizard, or the secret an AI asks for (SR-01). V is the version of the document.
 type MessageInteractive struct {
-	V            int          `json:"v"`
-	QuickReplies []QuickReply `json:"quick_replies,omitempty"`
-	Wizard       *Wizard      `json:"wizard,omitempty"`
+	V            int            `json:"v"`
+	QuickReplies []QuickReply   `json:"quick_replies,omitempty"`
+	Wizard       *Wizard        `json:"wizard,omitempty"`
+	Secret       *MessageSecret `json:"secret,omitempty"`
 }
 
 // MessageAnswerItem is one answered wizard question in the structured answer: the question's
@@ -85,11 +86,13 @@ type MessageAnswerItem struct {
 
 // MessageAnswers is the canonical structured answer a reply carries, stored in
 // messages.answers_json and returned as Message.Answers (QR-06, QR-07): one quick reply label, or
-// one item per answered wizard question. V is the version of the document.
+// one item per answered wizard question, or the secret the session saved (SR-06). V is the version of
+// the document.
 type MessageAnswers struct {
-	V          int                 `json:"v"`
-	QuickReply string              `json:"quick_reply,omitempty"`
-	Answers    []MessageAnswerItem `json:"answers,omitempty"`
+	V          int                  `json:"v"`
+	QuickReply string               `json:"quick_reply,omitempty"`
+	Answers    []MessageAnswerItem  `json:"answers,omitempty"`
+	Secret     *MessageSecretAnswer `json:"secret,omitempty"`
 }
 
 // WizardRequest is the body part of a post that asks a wizard: the questions and their labels;

@@ -221,6 +221,23 @@ function pongFrame(payload: Buffer): Buffer {
   return Buffer.concat([header, mask, payload.map((byte, i) => byte ^ mask.readUInt8(i % 4))]);
 }
 
+/** A masked text frame from the client side, for an answer the session writes (RFC 6455 §5.2). */
+function textFrame(text: string): Buffer {
+  const payload = Buffer.from(text, "utf8");
+  const mask = randomBytes(4);
+  let header: Buffer;
+  if (payload.length < 126) {
+    header = Buffer.from([0x81, 0x80 | payload.length]);
+  } else {
+    // An answer of the session is well under 64 KiB: the 16-bit extended length is enough.
+    header = Buffer.alloc(4);
+    header.writeUInt8(0x81, 0);
+    header.writeUInt8(0x80 | 126, 1);
+    header.writeUInt16BE(payload.length, 2);
+  }
+  return Buffer.concat([header, mask, payload.map((byte, i) => byte ^ mask.readUInt8(i % 4))]);
+}
+
 /** What a live session says about itself besides the AI's machine and folder (SESS-10..SESS-14). */
 export interface SessionOptions {
   /** The process id the socket sends as `X-Partyline-Live`; absent sends none. */
@@ -233,6 +250,13 @@ export interface SessionOptions {
   mainFolder?: string;
   /** The harness's own session id (`X-Partyline-Harness-Session`): what the principal role is pinned to. */
   harnessSession?: string;
+  /** The partyline client version the session reports (`X-Partyline-Client-Version`); absent sends none. */
+  clientVersion?: string;
+  /**
+   * Reads every text frame the server writes, the welcome included, with a way to answer it: what a test
+   * that acts as the session's client (a secret it must save, SR-08) needs.
+   */
+  onText?: (text: string, reply: (text: string) => void) => void;
 }
 
 /**
@@ -258,6 +282,7 @@ export function openSession(instance: Instance, agent: AgentClient, options: Ses
     if (live) headers["X-Partyline-Live"] = live;
     if (options.harness) headers["X-Partyline-Harness"] = options.harness;
     if (options.harnessSession) headers["X-Partyline-Harness-Session"] = options.harnessSession;
+    if (options.clientVersion) headers["X-Partyline-Client-Version"] = options.clientVersion;
     if (options.mainFolder) {
       headers["X-Partyline-MainFolder"] = encodeURIComponent(options.mainFolder);
     }
@@ -285,7 +310,12 @@ export function openSession(instance: Instance, agent: AgentClient, options: Ses
           buffered = buffered.subarray(frame.size);
           if (frame.opcode === 0x9) socket.write(pongFrame(frame.payload));
           else if (frame.opcode === 0x8) socket.destroy();
-          else if (frame.opcode === 0x1) welcome();
+          else if (frame.opcode === 0x1) {
+            welcome();
+            options.onText?.(frame.payload.toString("utf8"), (text) =>
+              socket.write(textFrame(text)),
+            );
+          }
         }
       };
       socket.on("data", read);

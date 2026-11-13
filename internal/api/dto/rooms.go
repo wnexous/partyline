@@ -247,6 +247,9 @@ type PostMessageRequest struct {
 	QuickReplies []string          `json:"quick_replies,omitempty"`
 	Wizard       *WizardRequest    `json:"wizard,omitempty"`
 	Answers      *AnswerSubmission `json:"answers,omitempty"`
+	// Secret asks for a secret instead (SR-01): only an AI posts one, with a text of 1 to
+	// MaxSecretReason characters, no files and none of the other three shapes (SR-03).
+	Secret *MessageSecret `json:"secret,omitempty"`
 	// UploadIDs attaches finished upload sessions of the poster, in order, after any multipart files;
 	// each upload is used up by the message (LF-03).
 	UploadIDs []string `json:"upload_ids,omitempty"`

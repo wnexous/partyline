@@ -17,6 +17,8 @@ export interface Instance {
   url: string;
   /** Setup token captured from the first-run WARN log line. */
   setupToken: string;
+  /** Everything the server wrote to its log (stderr) so far, for checks of what it never logs. */
+  log: () => string;
   stop: () => Promise<void>;
 }
 
@@ -68,6 +70,13 @@ export async function startInstance(env: Record<string, string> = {}): Promise<I
     stdio: ["ignore", "ignore", "pipe"],
   });
 
+  let logged = "";
+  proc.stderr?.setEncoding("utf8");
+  proc.stderr?.on("data", (chunk: string) => {
+    logged += chunk;
+  });
+  const log = () => logged;
+
   const stop = async () => {
     await stopProcess(proc);
     await rm(dataDir, { recursive: true, force: true });
@@ -107,7 +116,7 @@ export async function startInstance(env: Record<string, string> = {}): Promise<I
         }
       });
     });
-    return { url, setupToken, stop };
+    return { url, setupToken, log, stop };
   } catch (err) {
     await stop();
     throw err;

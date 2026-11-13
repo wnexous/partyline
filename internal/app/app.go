@@ -91,6 +91,9 @@ type Options struct {
 	// (TR-03), and the platform feed a platform voice note (TR-04); zero means
 	// delivery.DefaultTranscriptHold. Tests shorten it.
 	TranscriptHold time.Duration
+	// SecretTimeout is how long a given secret waits for its session's acknowledgement (SR-06); zero
+	// means agents.DefaultSecretTimeout. Tests shorten it.
+	SecretTimeout time.Duration
 	// TranscribeWait sleeps between the attempts of a transcription (TR-08); nil sleeps for real.
 	TranscribeWait func(ctx context.Context, d time.Duration) error
 	// FreeSpace reports the free bytes of the data disk for the upload sessions' check (LF-07); nil
@@ -298,6 +301,7 @@ func New(cfg *config.Config, opts Options) (*App, error) {
 	a.Gateway = agents.NewGateway(agents.GatewayDeps{
 		Store: st, Registry: a.Agents, Presence: a.Presence, Rooms: a.Rooms, Platform: a.Platform, Heartbeats: a.Schedules, Logger: opts.Logger,
 		Bus: bus, Sessions: usersSvc, Trust: trust, Authz: authz, TranscriptHold: opts.TranscriptHold, Now: opts.Now,
+		SecretTimeout: opts.SecretTimeout,
 	})
 	kinds := opts.ConnectorKinds
 	if kinds == nil {
@@ -388,6 +392,7 @@ func New(cfg *config.Config, opts Options) (*App, error) {
 		Sends:         a.Sends,
 		Live:          a.Live,
 		AgentWS:       a.Gateway,
+		Secrets:       a.Gateway,
 		Trust:         trust,
 		Push:          a.PushService,
 		WebUI:         webui.Handler(cfg.PublicURL),
