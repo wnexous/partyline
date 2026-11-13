@@ -254,3 +254,12 @@ func TestTokenEndpoints(t *testing.T) {
 	require.Contains(t, e.Fields, "name")
 	env.Anon().Get("/api/v1/tokens").RequireError(http.StatusUnauthorized, dto.ErrorCodeUnauthorized)
 }
+
+// TR-10: /me says whether the instance transcribes voice messages, so the web app leaves it to the server.
+func TestMeSaysWhetherTheServerTranscribes(t *testing.T) {
+	off := testkit.New(t).NewUser("ana")
+	require.False(t, testkit.Decode[dto.Me](off.Get("/api/v1/me").RequireStatus(http.StatusOK)).ServerTranscription)
+
+	on := testkit.New(t, testkit.WithEnv(map[string]string{"PARTYLINE_TRANSCRIBE_URL": "http://127.0.0.1:1"})).NewUser("ana")
+	require.True(t, testkit.Decode[dto.Me](on.Get("/api/v1/me").RequireStatus(http.StatusOK)).ServerTranscription)
+}

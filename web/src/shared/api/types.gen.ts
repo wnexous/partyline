@@ -3376,6 +3376,11 @@ export interface Me {
    * the one they have belonged to the longest. Absent when they belong to none.
    */
   default_org_id?: string;
+  /**
+   * ServerTranscription tells whether this instance transcribes voice messages itself (TR-10): the web
+   * app then sends the recording alone instead of the transcript the browser heard.
+   */
+  server_transcription: boolean;
   created_at: string /* RFC 3339 */;
 }
 /**

@@ -41,6 +41,10 @@ every browser, phone and connection gets the same text, and the audio never leav
    text THEN the text SHALL show as its caption, as ordinary message text, and the server SHALL
    transcribe the file as if it came without text. (TR-09; owner report 2026-11-11: an audio file
    sent from the computer with a caption showed the caption as its transcript.)
+10. WHERE a transcription service is configured the web app SHALL NOT run the browser's live
+   transcript: a recording goes alone and the server transcribes it, so every voice message is heard
+   by the same model. `GET /me` says so in `server_transcription`. (TR-10; owner, 2026-11-13: "we
+   agreed to always transcribe with the server".)
 
 ## Design
 - **Engine:** an OpenAI-compatible transcription server running as a second container:
@@ -153,6 +157,8 @@ every browser, phone and connection gets the same text, and the audio never leav
 - A failing service: no error to anyone, the message as today.
 - A browser transcript is kept; an over-long audio is skipped.
 - An audio file that is not a recording keeps its text as a caption and is transcribed (TR-09).
+- With a service configured the composer starts no browser recognition and `/me` says
+  `server_transcription: true` (TR-10).
 - A restart with a queued job finishes it.
 - Phase 2: a platform voice note reaches its AI once with the transcript; a later platform item does
   not overtake it; a slow service sends it alone at the limit; a caption, oversize audio, a failing

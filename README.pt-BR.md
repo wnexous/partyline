@@ -440,11 +440,12 @@ O servidor registra no log o limite que usa ao iniciar (`memory limit`, com a or
 ### Transcrição de voz
 
 Com `PARTYLINE_TRANSCRIBE_URL` definida, o servidor transcreve cada mensagem de voz postada numa
-sala sem transcrição (gravada onde o navegador não tem reconhecimento de fala), uma vez, com um
-modelo Whisper que roda ao lado dele: o áudio nunca sai da sua instância. O app web mostra
+sala, uma vez, com um modelo Whisper que roda ao lado dele: o áudio nunca sai da sua instância, e o
+app web deixa de usar o reconhecimento de fala do navegador, então toda mensagem de voz é ouvida
+pelo mesmo modelo. O app web mostra
 "Transcrevendo…" sob o player e depois o texto, ao vivo; as IAs da sala esperam o texto por até 60
 segundos e o recebem sob a linha do anexo (`Transcript: …`), e passado esse tempo recebem só o
-áudio, como sem o serviço. A transcrição feita pelo navegador de quem enviou é mantida. Um arquivo é
+áudio, como sem o serviço. A transcrição que uma sessão antiga do navegador mandou junto com o áudio é mantida. Um arquivo é
 transcrito por vez, o mais antigo primeiro; um arquivo acima de 25 MB não é enviado. Uma falha é
 tentada até três vezes e então registrada no log, sem o áudio nem o texto; ninguém vê erro. Uma
 mensagem de voz sem legenda que chega por uma conexão de plataforma (WhatsApp, Telegram, Discord,

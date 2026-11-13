@@ -5,7 +5,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { VoicePhase } from "@/features/send-voice-message";
 import { MicButton } from "@/features/send-voice-message";
 import { apiError, json, mockApi } from "@/test/fetch";
-import { makeMessage } from "@/test/fixtures";
+import { makeMe, makeMessage } from "@/test/fixtures";
 import { useLiveStore } from "@/test/live-store";
 import { stubPointer } from "@/test/media";
 import { type FakeMicrophone, FakeRecorder, stubMicrophone } from "@/test/recorder";
@@ -647,6 +647,28 @@ describe("a hold records while held (VOI-03)", () => {
     await screen.findByRole("alert");
     const bar = screen.getByText("Voice message").closest("div") as HTMLElement;
     expect(within(bar.parentElement as HTMLElement).queryByText("Slide left to cancel")).toBeNull();
+  });
+});
+
+describe("where the server transcribes (TR-10)", () => {
+  it("does not listen in the browser: the recording goes alone and the server transcribes it", async () => {
+    stubSpeech();
+    const { calls } = mockApi({
+      "GET /me": json(200, makeMe({ server_transcription: true })),
+      "POST /rooms/r1/messages": json(201, makeMessage({ seq: 9 })),
+    });
+    const user = userEvent.setup();
+    renderComposer();
+    await waitFor(() => expect(calls.some((c) => c.path === "/me")).toBe(true));
+    await act(async () => {});
+    await user.click(record());
+    await screen.findByText("Recording");
+
+    expect(FakeRecognition.instances).toHaveLength(0);
+    expect(screen.queryByTestId("live-transcript")).toBeNull();
+    await user.click(sendVoice());
+    await waitFor(() => expect(posts(calls)).toHaveLength(1));
+    expect(voicePost(calls).message).toEqual({ text: "" });
   });
 });
 
