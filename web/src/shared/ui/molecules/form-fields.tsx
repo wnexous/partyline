@@ -32,7 +32,21 @@ export function FieldError() {
   );
 }
 
-function PasswordInput(props: ComponentProps<typeof Input>) {
+/**
+ * A masked input with a show/hide toggle, the one password field of the app. `toggleClassName` sizes
+ * the toggle for a taller input (a 44 px touch target, say); `pr-10` leaves its room by default.
+ * `showLabel` and `hideLabel` name the toggle for a value that is not a password.
+ */
+export function PasswordInput({
+  toggleClassName,
+  showLabel,
+  hideLabel,
+  ...props
+}: ComponentProps<typeof Input> & {
+  toggleClassName?: string;
+  showLabel?: string;
+  hideLabel?: string;
+}) {
   const t = useT();
   const [shown, setShown] = useState(false);
   return (
@@ -46,8 +60,13 @@ function PasswordInput(props: ComponentProps<typeof Input>) {
         type="button"
         variant="ghost"
         size="icon"
-        className="absolute top-1/2 right-0.5 size-8 -translate-y-1/2 text-muted-foreground hover:text-foreground"
-        aria-label={shown ? t("auth.hidePassword") : t("auth.showPassword")}
+        className={cn(
+          "absolute top-1/2 right-0.5 size-8 -translate-y-1/2 text-muted-foreground hover:text-foreground",
+          toggleClassName,
+        )}
+        aria-label={
+          shown ? (hideLabel ?? t("auth.hidePassword")) : (showLabel ?? t("auth.showPassword"))
+        }
         aria-pressed={shown}
         onClick={() => setShown((v) => !v)}
       >

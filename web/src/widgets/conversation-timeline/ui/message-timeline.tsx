@@ -384,6 +384,12 @@ export function MessageTimeline({
                     onSwipeReply={messageActionSet(m, capabilities).reply ? onReply : undefined}
                     onReact={messageActionSet(m, capabilities).react ? react : undefined}
                     myAnswer={answersByQuestion.get(m.id)?.get(meId)}
+                    // A secret request is answered once, by whoever saved it (SR-05).
+                    secretAnswer={
+                      m.interactive?.secret
+                        ? answersByQuestion.get(m.id)?.values().next().value
+                        : undefined
+                    }
                     // Reacting is offered to whoever may post (RCT-03): the same permission answers.
                     canAnswer={canReact}
                     frozen={frozen}

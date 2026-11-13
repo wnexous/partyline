@@ -17,6 +17,7 @@ import {
   voiceTranscript,
 } from "@/entities/message";
 import { QuestionBubble } from "@/features/answer-question";
+import { SecretRequestCard } from "@/features/give-secret";
 import type { Attachment, Message, RoomMember } from "@/shared/api/types.gen";
 import { type MessageKey, useI18n } from "@/shared/i18n";
 import { formatAbsolute } from "@/shared/lib/time";
@@ -89,6 +90,11 @@ export interface MessageItemProps {
    * bubble shows the chosen label and stops acting.
    */
   myAnswer?: Message;
+  /**
+   * The answer that saved the secret this message asks for, by whoever gave it, when the timeline holds
+   * it (SR-06): the card shows who saved it and offers no field.
+   */
+  secretAnswer?: Message;
   /** The viewer may post in this conversation, so the question's quick replies act (QR-13). */
   canAnswer?: boolean;
   /** The conversation is history (CID-21): its question shows its labels and no action (QR-13). */
@@ -118,6 +124,7 @@ export const MessageItem = memo(function MessageItem({
   onSwipeReply,
   onReact,
   myAnswer,
+  secretAnswer,
   canAnswer,
   frozen,
 }: MessageItemProps) {
@@ -336,7 +343,15 @@ export const MessageItem = memo(function MessageItem({
           )}
         </div>
 
-        {!deleted && message.interactive ? (
+        {!deleted && message.interactive?.secret ? (
+          <SecretRequestCard
+            message={message}
+            meId={meId}
+            answer={secretAnswer}
+            canAnswer={canAnswer}
+            frozen={frozen}
+          />
+        ) : !deleted && message.interactive ? (
           <QuestionBubble
             message={message}
             meId={meId}
