@@ -176,3 +176,15 @@ func TestListenWritesTheSecretAndPrintsNoLineOfIt(t *testing.T) {
 	r.mu.Unlock()
 	require.NotContains(t, out, "example-secret-value")
 }
+
+// SR-08: the read loop learns who the AI is from the welcome as it arrives, not when the queue hands the
+// welcome to the harness, so a secret that follows a reconnect is written into the AI's folder at once.
+func TestTheReadLoopLearnsTheAIFromTheWelcome(t *testing.T) {
+	l := &link{}
+	l.noteWelcome([]byte(`{"type":"message","intelligence":{"id":"not-a-welcome"}}`))
+	require.Empty(t, l.selfRef().ID, "only a welcome says who the AI is")
+	l.noteWelcome([]byte(`{"type":"welcome","intelligence":{"id":"ai-1","handle":"atlas"}}`))
+	require.Equal(t, "ai-1", l.selfRef().ID)
+	l.noteWelcome([]byte(`{"type":"welcome","intelligence":{}}`))
+	require.Equal(t, "ai-1", l.selfRef().ID, "a welcome without an id changes nothing")
+}

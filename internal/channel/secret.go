@@ -124,6 +124,21 @@ func isSecretFrame(data []byte) bool {
 	return json.Unmarshal(data, &head) == nil && head.Type == dto.AgentFrameTypeSecret
 }
 
+// noteWelcome records who the AI is from a welcome frame as the read loop receives it, before the queue
+// hands the frame to the harness; any other frame is left alone.
+func (l *link) noteWelcome(data []byte) {
+	var f struct {
+		Type         dto.AgentFrameType  `json:"type"`
+		Intelligence dto.IntelligenceRef `json:"intelligence"`
+	}
+	if json.Unmarshal(data, &f) != nil || f.Type != dto.AgentFrameTypeWelcome || f.Intelligence.ID == "" {
+		return
+	}
+	l.mu.Lock()
+	l.self = f.Intelligence
+	l.mu.Unlock()
+}
+
 // saveSecret writes the value of a secret frame and answers it (SR-08): secret_ack with the path, or with
 // the reason it failed. Nothing of the frame reaches the harness or stderr, and the frame's bytes are
 // cleared once it is handled. A failed answer ends the connection, like a failed ack.
