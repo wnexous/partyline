@@ -755,6 +755,9 @@ func (l *link) session(ctx context.Context) (outcome, error) {
 			}
 			return outDropped, nil // dropped, shutting down (ctx ends next) or a failed ack
 		}
+		// The welcome waits in the queue until the harness is ready, but a secret is written at once into
+		// the AI's own folder: the read loop learns who the AI is as soon as the welcome arrives (SR-08).
+		l.noteWelcome(data)
 		if isSecretFrame(data) {
 			// A secret is written and answered at once, before any notification and whether or not the
 			// harness is ready: the person who gave it waits for the answer (SR-06, SR-08).
