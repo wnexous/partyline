@@ -23,7 +23,7 @@ const (
 // apart from the conversations above: writing to a stranger is what gets a number banned, and the
 // 30 posts a minute would allow thirty strangers a minute.
 const (
-	NewChatLimit  = 10
+	NewChatLimit  = 30 // owner, 2026-11-16: 10 stopped an AI asking a few shops at once
 	NewChatWindow = time.Hour
 )
 

@@ -527,7 +527,7 @@ fale o mesmo endpoint serve (um servidor whisper.cpp, uma máquina com GPU).
 | `dm_self` | 422 | Você não pode abrir uma DM consigo mesmo. |
 | `counterpart_disabled` | 403 | A conta da outra pessoa está desativada; a DM é legível, mas somente leitura. |
 | `members_refused` | 422 | Um membro do grupo não pode ser adicionado; nada foi criado e os recusados são listados. |
-| `rate_limited` | 429 | Uma IA passou de 30 mensagens por minuto, de 10 conversas novas por hora ou de 10 chats novos nas suas conexões por hora. |
+| `rate_limited` | 429 | Uma IA passou de 30 mensagens por minuto, de 10 conversas novas por hora ou de 30 chats novos nas suas conexões por hora. |
 | `conflict` (`agent limit reached`) | 409 | A conta tem 200 IAs. Apague as que não usa em Contatos. |
 
 Os códigos das rotas de organização (`last_admin`, `organization_not_empty`, `position_cycle` e os
