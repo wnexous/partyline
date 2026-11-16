@@ -8,6 +8,7 @@ import (
 
 	"github.com/stretchr/testify/require"
 
+	"github.com/wnexous/partyline/internal/agents"
 	"github.com/wnexous/partyline/internal/api/dto"
 	"github.com/wnexous/partyline/internal/store"
 	"github.com/wnexous/partyline/internal/testkit"
@@ -86,43 +87,48 @@ func TestOnlyTheOperatorStartsAChatThroughTheAPI(t *testing.T) {
 	require.Empty(t, f.inst.Sent())
 }
 
-// CID-31: an AI starts at most 10 chats an hour on its connections. The 11th address is 429
-// rate_limited and creates nothing; the chats it has are still free to write to, and so is an address
-// it already wrote to; an hour later it may start another.
-func TestStartingChatsIsLimitedToTenAnHour(t *testing.T) {
+// CID-31: an AI starts at most agents.NewChatLimit (30) chats an hour on its connections. The next
+// address is 429 rate_limited and creates nothing; the chats it has are still free to write to, and so
+// is an address it already wrote to; an hour later it may start another.
+func TestStartingChatsIsLimitedAnHour(t *testing.T) {
 	clock := testkit.NewClock(time.Now())
 	f := newReplyFixture(t, testkit.WithClock(clock.Now))
 	before := len(f.chatsOf(t))
 	number := func(i int) string { return fmt.Sprintf("55419999900%02d", i) }
 
-	for i := range 10 {
+	limit := agents.NewChatLimit
+	require.Equal(t, 30, limit, "the owner's limit (2026-11-16)")
+	for i := range limit {
 		f.sendToChat("Atlas", f.conn.ID, number(i), "good morning").RequireStatus(http.StatusCreated)
-		clock.Advance(time.Minute) // under the 30 posts a minute, far from an hour
+		clock.Advance(time.Minute) // under the 30 posts a minute, within the hour
 	}
-	e := f.sendToChat("Atlas", f.conn.ID, number(10), "one too many").RequireError(http.StatusTooManyRequests, dto.ErrorCodeRateLimited)
-	require.Equal(t, "rate limited: at most 10 new chats an hour", e.Message)
-	require.Len(t, f.chatsOf(t), before+10, "the refused chat was not created")
-	require.Len(t, f.inst.Sent(), 10)
+	e := f.sendToChat("Atlas", f.conn.ID, number(limit), "one too many").RequireError(http.StatusTooManyRequests, dto.ErrorCodeRateLimited)
+	require.Equal(t, "rate limited: at most 30 new chats an hour", e.Message)
+	require.Len(t, f.chatsOf(t), before+limit, "the refused chat was not created")
+	require.Len(t, f.inst.Sent(), limit)
 
 	f.sendToChat("Atlas", f.conn.ID, f.group.ID, "a chat it has").RequireStatus(http.StatusCreated)
 	f.sendToChat("Atlas", f.conn.ID, number(3), "an address it wrote to").RequireStatus(http.StatusCreated)
-	f.sendToChat("Atlas", f.conn.ID, number(10), "still one too many").RequireError(http.StatusTooManyRequests, dto.ErrorCodeRateLimited)
+	f.sendToChat("Atlas", f.conn.ID, number(limit), "still one too many").RequireError(http.StatusTooManyRequests, dto.ErrorCodeRateLimited)
 
 	clock.Advance(time.Hour)
-	f.sendToChat("Atlas", f.conn.ID, number(10), "an hour later").RequireStatus(http.StatusCreated)
-	require.Len(t, f.chatsOf(t), before+11)
+	f.sendToChat("Atlas", f.conn.ID, number(limit), "an hour later").RequireStatus(http.StatusCreated)
+	require.Len(t, f.chatsOf(t), before+limit+1)
 }
 
 // CID-31: a request that is refused does not spend the allowance for new chats: unknown addresses,
-// unusable texts and another AI's attempts leave all ten starts to the operator.
+// unusable texts and another AI's attempts leave every start to the operator.
 func TestRefusedRequestsDoNotSpendTheAllowanceForNewChats(t *testing.T) {
-	f := newReplyFixture(t)
+	clock := testkit.NewClock(time.Now())
+	f := newReplyFixture(t, testkit.WithClock(clock.Now))
 	for range 12 {
 		f.sendToChat("Atlas", f.conn.ID, "hello", "x").RequireError(http.StatusNotFound, dto.ErrorCodeUnknownChat)
 		f.sendToChat("Atlas", f.conn.ID, newNumber, " ").RequireError(http.StatusUnprocessableEntity, dto.ErrorCodeInvalid)
 		f.sendToChat("Notes", f.conn.ID, newNumber, "x").RequireError(http.StatusForbidden, dto.ErrorCodeNotOperator)
 	}
-	for i := range 10 {
+	clock.Advance(time.Minute)
+	for i := range agents.NewChatLimit {
 		f.sendToChat("Atlas", f.conn.ID, fmt.Sprintf("55419999900%02d", i), "good morning").RequireStatus(http.StatusCreated)
+		clock.Advance(time.Minute) // under the 30 posts a minute
 	}
 }

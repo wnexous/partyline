@@ -12,6 +12,7 @@ import (
 
 	"github.com/stretchr/testify/require"
 
+	"github.com/wnexous/partyline/internal/agents"
 	"github.com/wnexous/partyline/internal/api/dto"
 	"github.com/wnexous/partyline/internal/connectors"
 	"github.com/wnexous/partyline/internal/connectors/connectortest"
@@ -365,7 +366,8 @@ func TestToolReactRefusals(t *testing.T) {
 // tool says it was sent. What is no address stays an unknown chat, and the 11th chat started in an
 // hour is the server's "rate limited" in its own words.
 func TestToolSendMessageStartsAChatAtAnAddress(t *testing.T) {
-	c := newConnectionChan(t)
+	clock := testkit.NewClock(time.Now())
+	c := newConnectionChan(t, testkit.WithClock(clock.Now))
 	s := c.connected(c.options())
 
 	text, isErr := s.call("send_message", toolArgs("connection", c.conn, "chat", "5541999990000", "text", "good morning"))
@@ -378,16 +380,17 @@ func TestToolSendMessageStartsAChatAtAnAddress(t *testing.T) {
 	require.True(t, isErr, text)
 	require.Equal(t, "unknown_chat: the chat does not belong to this connection", text)
 
-	for i := range 9 {
+	for i := range agents.NewChatLimit - 1 {
+		clock.Advance(time.Minute) // under the 30 posts a minute, within the hour
 		text, isErr = s.call("send_message", toolArgs("connection", c.conn, "chat", fmt.Sprintf("55429999900%02d", i), "text", "good morning"))
 		require.False(t, isErr, text)
 	}
 	text, isErr = s.call("send_message", toolArgs("connection", c.conn, "chat", "5541999990099", "text", "one too many"))
 	require.True(t, isErr, text)
-	require.Equal(t, "rate limited: at most 10 new chats an hour", text)
+	require.Equal(t, "rate limited: at most 30 new chats an hour", text)
 	text, isErr = s.call("send_message", toolArgs("connection", c.conn, "chat", "5541999990000", "text", "an address it wrote to is free"))
 	require.False(t, isErr, text)
-	require.Len(t, c.inst.Sent(), 11)
+	require.Len(t, c.inst.Sent(), agents.NewChatLimit+1)
 }
 
 // CID-31: the tool says that chat may also be the address of a chat the AI has not heard from, which
@@ -403,7 +406,7 @@ func TestToolSendMessageTellsHowToStartAChat(t *testing.T) {
 			continue
 		}
 		chat := tool["inputSchema"].(map[string]any)["properties"].(map[string]any)["chat"].(map[string]any)["description"].(string)
-		for _, want := range []string{"chat_id", "address", "WhatsApp", "country code", "Telegram chat id", "Discord channel id", "10"} {
+		for _, want := range []string{"chat_id", "address", "WhatsApp", "country code", "Telegram chat id", "Discord channel id", "30"} {
 			require.Contains(t, chat, want)
 		}
 		require.Contains(t, tool["description"], "never wrote to you", "the description says a conversation can be started")
