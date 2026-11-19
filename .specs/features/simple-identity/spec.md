@@ -57,8 +57,15 @@ Removing guests, positions, the org chart, creator chains, People history and Ho
 
 ## Traceability
 
-| Req | Code (expected) | Test |
+| Req | Code | Test |
 | --- | --- | --- |
-| SI-01..03 | internal/access/access.go CanSeeAI | access tests, conversations DM test |
-| SI-04..08 | internal/agents/folder.go ResolveFolder/LookupFolder/linkOrCreate; internal/channel/identity.go; internal/cli launcher | agents folder tests, cli launcher tests |
-| SI-09..10 | internal/agents/gateway.go bus loop + welcome; internal/orgs standing; internal/channel/link.go announce | gateway test, channel link test |
+| SI-01 | `internal/access/access.go` `Authorizer.CanSeeAI` (same `agents.owner_id` for an AI caller); used by `intelligences.Service.CanSee` (DMs, `send_message` with `to`, profiles, mentions) | `internal/access/access_test.go` `TestCanSeeAI`; `internal/api/simple_identity_test.go` `TestAIsOfTheSameHostSeeEachOther` |
+| SI-02 | `internal/rooms/members.go` `Service.CheckMember` (unchanged: org membership still required) | `TestAIsOfTheSameHostSeeEachOther` (`not_org_member`) |
+| SI-03 | `internal/delivery` trust (unchanged) | `TestAIsOfTheSameHostSeeEachOther` (`trusted` false) |
+| SI-04 | `internal/agents/folder.go` `folderAgent`, `ancestorFolders`, used by `ResolveFolder`, `linkOrCreate`; label from `Gateway.register` | `internal/agents/simple_identity_test.go` `TestResolveFolderJoinsTheAIOfTheNearestFolderAbove`; `internal/api/simple_identity_test.go` `TestASessionInASubfolderIsAParallelSessionOfTheAIAbove` |
+| SI-05 | `internal/agents/folder.go` `ancestorFolders` (stops before home, above home and the root; no home, no search) | `TestResolveFolderNeverJoinsTheHomeFolderOrAbove`, `TestAncestorFolders` |
+| SI-06 | `internal/agents/folder.go` `folderAgent` (exact match first) | `TestResolveFolderJoinsTheAIOfTheNearestFolderAbove` |
+| SI-07 | `internal/agents/folder.go` `FolderID.ownAI`, `FolderIDFromHeader` (`X-Partyline-New-AI`); `internal/cli/launcher.go` `launcherFlags`, `placementOf`, `launch`, `launchMainFolder`, `setIdentityHeaders`; `internal/cli/procenv.go` `PARTYLINE_NEW_AI`, `PARTYLINE_LAUNCH_NEW_AI`; `internal/cli/channel.go` `sessionIdentity`; `internal/channel/identity.go` `Identity.setHeaders` | `TestResolveFolderOwnAIWithParentOrNewAI`; `internal/cli/launcher_newai_test.go`; `internal/channel/identity_test.go` `TestIdentityHeadersCarryNewAI` |
+| SI-08 | `internal/agents/folder.go` `LookupFolder`; `internal/agents/placement.go` `CheckStart` | `TestLookupFolderFindsTheAIOfTheFolderAbove`; `TestASessionInASubfolderIsAParallelSessionOfTheAIAbove` |
+| SI-09 | `internal/agents/gateway.go` `watchBus` (`events.OrgChanged`, `Lagged`), `conn.pokeWelcome`, `Gateway.refreshWelcome`, `Gateway.welcome`, `Gateway.memberships`; `internal/channel/link.go` `announceIdentity` (`announcedText`), `identityText` | `internal/api/simple_identity_test.go` `TestALiveSessionIsWelcomedAgainWhenItsOrganizationsChange`; `internal/channel/identity_refresh_test.go` `TestAFreshWelcomeAnnouncesOnlyAChangedIdentity` |
+| SI-10 | `internal/agents/gateway.go` `Gateway.lineage` (`agents.creator_iid`, query `ListAgentIDsCreatedBy`); `dto.AgentWelcomeFrame` `creator`, `created`; `internal/channel/link.go` `identityText` | `TestALiveSessionIsWelcomedAgainWhenItsOrganizationsChange`; `TestIdentityNoticeSaysCreatorCreatedAndMemberships` |
