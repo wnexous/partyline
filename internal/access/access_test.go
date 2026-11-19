@@ -530,6 +530,9 @@ func TestCanSeeAI(t *testing.T) {
 	f.home(t, sibling, globex, host, orgs.PermissionMember, "")
 	colleague := f.ai(t, f.human(t, "other-host", dto.RoleMember))
 	f.home(t, colleague, acme, "", orgs.PermissionMember, "")
+	hostsColleague := f.ai(t, f.human(t, "globex-host", dto.RoleMember)) // in the host's organization only
+	f.home(t, hostsColleague, globex, "", orgs.PermissionMember, "")
+	loner := f.ai(t, host) // hosted by the same user, in no organization at all
 
 	member := func(name string, perm orgs.Permission) string {
 		u := f.human(t, name, dto.RoleMember)
@@ -573,7 +576,13 @@ func TestCanSeeAI(t *testing.T) {
 	}{
 		{"an AI sees itself", ai(atlas), atlas, true},
 		{"an AI sees an AI of its organization", ai(atlas), colleague, true},
-		{"an AI does not see an AI of its host's organization, which shares none with it", ai(atlas), sibling, false},
+		// SI-01: two AIs of the same host see each other whatever organizations either belongs to.
+		{"SI-01: an AI sees another AI of its host, which shares no organization with it", ai(atlas), sibling, true},
+		{"SI-01: the other way round", ai(sibling), atlas, true},
+		{"SI-01: an AI sees an AI of its host that belongs to no organization", ai(atlas), loner, true},
+		{"SI-01: and is seen by it", ai(loner), atlas, true},
+		{"an AI does not see an AI of its host's organization, which shares none with it", ai(atlas), hostsColleague, false},
+		{"an AI in no organization sees no AI of another host", ai(loner), colleague, false},
 		{"an agent token that names no AI sees nothing", ai(""), atlas, false},
 	} {
 		ok, err := f.az.CanSeeAI(ctx, tc.who, tc.target)
