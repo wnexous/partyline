@@ -248,6 +248,8 @@ type Folder struct {
 	Org       string
 	Position  string
 	Parent    string
+	// NewAI sends X-Partyline-New-AI: the folder gets its own AI, not the one of a folder above it (SI-07).
+	NewAI bool
 }
 
 // WithPlatform returns the folder of a client that understands platform events (CID-06).
@@ -284,6 +286,9 @@ func (f Folder) Headers() http.Header {
 	}
 	if f.Principal {
 		h.Set(dto.HeaderPrincipal, "1")
+	}
+	if f.NewAI {
+		h.Set(dto.HeaderNewAI, "1")
 	}
 	return h
 }

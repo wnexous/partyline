@@ -598,6 +598,40 @@ func (q *Queries) ListAgentBacklog(ctx context.Context, arg ListAgentBacklogPara
 	return items, nil
 }
 
+const listAgentIDsCreatedBy = `-- name: ListAgentIDsCreatedBy :many
+SELECT id FROM agents WHERE creator_iid = ?1 AND id <> ?1
+ORDER BY created_at, id LIMIT ?2
+`
+
+type ListAgentIDsCreatedByParams struct {
+	CreatorIid sql.NullString
+	Max        int64
+}
+
+// The AIs the identity created (SI-10): the AIs it started with --parent, oldest first.
+func (q *Queries) ListAgentIDsCreatedBy(ctx context.Context, arg ListAgentIDsCreatedByParams) ([]string, error) {
+	rows, err := q.db.QueryContext(ctx, listAgentIDsCreatedBy, arg.CreatorIid, arg.Max)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []string
+	for rows.Next() {
+		var id string
+		if err := rows.Scan(&id); err != nil {
+			return nil, err
+		}
+		items = append(items, id)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const listAgentRoomIDs = `-- name: ListAgentRoomIDs :many
 SELECT room_id FROM room_members WHERE kind = 'agent' AND member_id = ?
 `

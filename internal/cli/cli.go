@@ -54,7 +54,10 @@ Start a session with Partyline (the arguments go to the harness unchanged):
   opencode [args...]     OpenCode
   pi [args...]           pi
   omp [args...]          oh-my-pi
-A session is the AI of the folder it starts in. The AI's principal session is the one whose harness
+A session is the AI of the folder it starts in. In a folder without an AI of its own it is a parallel
+session of the AI of the nearest folder above it (never your home folder or a folder above it); put
+--new-ai before the arguments (or set PARTYLINE_NEW_AI=1) to give the folder an AI of its own instead.
+The AI's principal session is the one whose harness
 session id (Claude Code's session id) was pinned: a parallel session never takes the role by itself.
 Put --principal before the arguments to make this session the AI's principal one, --take-over to
 replace the live principal session with it, and --as <handle> to adopt an AI that has no folder yet

@@ -150,9 +150,13 @@ type link struct {
 	principal bool
 	// zone is where the busy text shows the time the other session connected; nil is the local zone.
 	zone *time.Location
-	// announce makes the first welcome of the process a notice that says who the AI is and who
-	// its owner is (the full channel; listen prints message lines only).
+	// announce makes the welcomes of the process a notice that says who the AI is and who
+	// its owner is (the full channel; listen prints message lines only): the first one, and a later one
+	// whose text differs from the last notice (SI-09).
 	announce bool
+	// resumed is set for a channel that became the updated program (AU-06): the first welcome's text is
+	// what the harness was already told, so it is recorded as announced without a notice.
+	resumed bool
 	// keepTryingWhenBusy keeps the link dialing every busyPoll once the busy retries are used up
 	// instead of giving up: a channel connects by itself when the session that holds the AI ends
 	// (SES-04). listen leaves it false and ends after the retries, as it always did.
@@ -171,8 +175,9 @@ type link struct {
 	// empty when it was taken over by another session (stateTakenOver).
 	endedBy string
 	seen    *idRing
-	// announced is set once the identity notice was sent: a reconnect is the same session.
-	announced bool
+	// announcedText is the text of the last identity notice sent ("" before the first): a welcome that
+	// says the same, such as the one of a reconnect, sends none (SI-09).
+	announcedText string
 	// announcedSession is set once the process said which parallel session it became: a reconnect of the
 	// same process says it again neither on stderr nor in the identity notice (SESS-15).
 	announcedSession bool
@@ -355,7 +360,11 @@ func systemNotice(reason, text string) Notification {
 // in Acme, so no message is marked trusted." (POS-10). A welcome that names no organization - an older
 // server - gets the sentences it always had: "You are <name> (@handle). Your owner is <name> (@handle)."
 // The text is empty when the server named no AI, and has no operate sentence when the AI operates no
-// connection (CID-06): the ids are what platform events name their connection by.
+// connection (CID-06): the ids are what platform events name their connection by. It then says the other
+// organizations the AI belongs to ("You also belong to Globex (globex), Initech (initech) as a guest.", SI-09),
+// who created it when that is not its host ("You were created by Lead (@lead)."; the host starts most AIs and
+// saying so tells nothing) and the AIs it created ("You created: W1 (@w1).",
+// SI-10), each sentence only when there is something to say.
 func identityText(w dto.AgentWelcomeFrame) string {
 	named := func(r dto.IntelligenceRef) string { return r.DisplayName + " (@" + r.Handle + ")" }
 	if w.Intelligence.Handle == "" {
@@ -382,6 +391,29 @@ func identityText(w dto.AgentWelcomeFrame) string {
 		if w.Owner.Handle != "" {
 			text += " Your owner is " + named(w.Owner) + "."
 		}
+	}
+	if len(w.Memberships) > 0 {
+		orgs := make([]string, len(w.Memberships))
+		for i, m := range w.Memberships {
+			orgs[i] = orgLabel(m.Organization)
+			switch m.Permission {
+			case "guest":
+				orgs[i] += " as a guest"
+			case "admin":
+				orgs[i] += " as an admin"
+			}
+		}
+		text += " You also belong to " + strings.Join(orgs, ", ") + "."
+	}
+	if c := w.Creator; c != nil && c.Handle != "" && c.ID != w.Intelligence.ID && c.ID != w.Owner.ID {
+		text += " You were created by " + named(*c) + "."
+	}
+	if len(w.Created) > 0 {
+		created := make([]string, len(w.Created))
+		for i, c := range w.Created {
+			created[i] = named(c)
+		}
+		text += " You created: " + strings.Join(created, ", ") + "."
 	}
 	if len(w.Connections) > 0 {
 		operated := make([]string, len(w.Connections))
@@ -448,14 +480,20 @@ func (l *link) announceSession(w dto.AgentWelcomeFrame) {
 	fmt.Fprintf(l.stderr, "partyline: opened as parallel session %s\n", label)
 }
 
-// announceIdentity sends the notice that says who the AI is, once per process: the welcome of a
-// reconnect, which follows a dropped connection of the same session, says nothing.
+// announceIdentity sends the notice that says who the AI is when its text differs from the last one sent
+// (SI-09): the first welcome of the process says it, the welcome of a reconnect, which follows a dropped
+// connection of the same session, says nothing, and a fresh welcome the server sends after an organization
+// change says it again only when something it says changed.
 func (l *link) announceIdentity(w dto.AgentWelcomeFrame) error {
 	l.announceSession(w)
 	l.announceOutdatedClient(w)
 	text := identityText(w)
 	l.mu.Lock()
-	skip := !l.announce || l.announced || text == ""
+	if l.resumed && text != "" {
+		l.resumed = false
+		l.announcedText = text // the harness was told this before the program was updated
+	}
+	skip := !l.announce || text == "" || text == l.announcedText
 	l.mu.Unlock()
 	if skip {
 		return nil
@@ -464,7 +502,7 @@ func (l *link) announceIdentity(w dto.AgentWelcomeFrame) error {
 		return err
 	}
 	l.mu.Lock()
-	l.announced = true
+	l.announcedText = text
 	l.mu.Unlock()
 	return nil
 }

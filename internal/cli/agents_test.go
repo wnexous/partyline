@@ -30,11 +30,12 @@ func runAgents(env map[string]string, args ...string) (code int, stdout, stderr 
 }
 
 // aiOn creates alice's AI of the folder on a machine with its home and harness, and names it
-// (display name and handle).
+// (display name and handle). It asks for an AI of its own (--new-ai), so a folder inside another AI's folder
+// gets one too (SI-07).
 func (e *channelEnv) aiOn(t *testing.T, machine, folder, home, harness, name, handle string) db.Agent {
 	t.Helper()
 	a, err := e.env.App.Agents.ResolveFolder(context.Background(), e.alice.User.ID,
-		agents.FolderID{Machine: machine, Folder: folder, Home: home, Harness: harness}, false)
+		agents.FolderID{Machine: machine, Folder: folder, Home: home, Harness: harness, NewAI: true}, false)
 	require.NoError(t, err)
 	p := authn.Principal{Kind: authn.KindUser, UserID: e.alice.User.ID, Role: string(e.alice.User.Role)}
 	_, err = e.env.App.Intelligences.Update(context.Background(), p, a.ID, intelligences.ProfileUpdate{DisplayName: &name, Handle: &handle})

@@ -89,6 +89,9 @@ const (
 	// It counts when the token holder may act for that AI (their own, hosted on their machines);
 	// otherwise the token holder is the creator (POS-08, AD-020).
 	HeaderParent = "X-Partyline-Parent"
+	// HeaderNewAI set to "1" (--new-ai, PARTYLINE_NEW_AI=1) gives the session's folder an AI of its own: the
+	// server does not look for the AI of a folder above it (SI-07). X-Partyline-Parent does the same.
+	HeaderNewAI = "X-Partyline-New-AI"
 	// HeaderFeatures lists, separated by commas, the optional features the client of the agent
 	// WebSocket understands. FeaturePlatform opts in to platform events (CID-06): a session that
 	// does not name it gets room messages only, and its platform queue waits (CID-10).

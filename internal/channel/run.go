@@ -39,6 +39,8 @@ type Options struct {
 	// Org, Position and Parent are what the session asked for when it started (Identity): sent on every
 	// connection and call, only when set.
 	Org, Position, Parent string
+	// NewAI is --new-ai (Identity): the folder gets its own AI, not the one of a folder above it (SI-07).
+	NewAI bool
 	// TempDir is where download_attachment saves files (<TempDir>/partyline/<folder name>/);
 	// empty means os.TempDir().
 	TempDir string
@@ -110,7 +112,7 @@ func Run(ctx context.Context, o Options) error {
 	}
 	id := Identity{
 		Machine: o.Machine, Folder: o.Folder, MainFolder: o.MainFolder, Home: o.Home, Harness: o.Harness, Adopt: o.Adopt,
-		Org: o.Org, Position: o.Position, Parent: o.Parent, HarnessSession: o.HarnessSession,
+		Org: o.Org, Position: o.Position, Parent: o.Parent, NewAI: o.NewAI, HarnessSession: o.HarnessSession,
 		ClientVersion: o.Version,
 	}
 	if id.Harness == "" && !o.ToolsOnly {
@@ -160,7 +162,7 @@ func Run(ctx context.Context, o Options) error {
 	// each message came from (SESS-29). A tools-only process has no link and sends no live id.
 	id.LiveID = l.liveID
 	t.api.identity = id
-	l.takeover, l.principal, l.zone, l.announce = o.Takeover, o.Principal, o.zone, !o.Resumed
+	l.takeover, l.principal, l.zone, l.announce, l.resumed = o.Takeover, o.Principal, o.zone, true, o.Resumed
 	l.secretsDir = o.SecretsDir
 	l.announcedSession, l.announcedOutdated = o.Resumed, o.Resumed
 	l.keepTryingWhenBusy = true // a channel reconnects by itself, it never gives up (SES-04)

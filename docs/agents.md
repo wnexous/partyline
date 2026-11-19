@@ -166,7 +166,8 @@ starts Claude Code with the Partyline channel loaded
 - The display name defaults to the folder's base name with the first letter upper-cased
   (`notes` → **Notes**); the handle defaults to its slug (`@notes`). Two folders with the same
   base name get the same display name and distinct handles (`@notes`, `@notes-2`). The home
-  folder and `/` are ordinary folders.
+  folder and `/` are ordinary folders, except that a session in a folder below them never joins
+  their AI.
 - A session in a **linked git worktree** is the AI of the repository's main worktree: the
   worktree is a working copy, not another identity. The CLI compares `git rev-parse
   --git-common-dir` with `git rev-parse --git-dir` in the session's folder, takes the main folder
@@ -177,6 +178,13 @@ starts Claude Code with the Partyline channel loaded
   its working directory and what its tools and files use. Without git, outside a repository or
   when git does not answer within a second, no main folder is sent and the folder is its own AI,
   as before.
+- A folder (or, in a linked worktree, a main folder) that has no AI of its own but sits inside the
+  folder of one of your AIs on the same machine is a **session of that AI**, labelled after the
+  session's folder like a worktree session: `~/projects/atlas/server` joins the AI of
+  `~/projects/atlas`, and nothing is created. The nearest folder above wins and an AI of the exact
+  folder always wins over one above it. The search never reaches your home folder, a folder above
+  it or `/`, and a client that sends no home folder does not search. `partyline <harness> --new-ai`
+  (or `PARTYLINE_NEW_AI=1`) gives the folder its own AI instead, and so does `--parent`.
 - Resuming a session, restarting it or switching harness in the same folder keeps the same AI,
   its history, its groups and its DMs. The contact list shows the harness as the AI's **app**.
 - Moving or renaming the folder creates a new AI; its earlier history stays with the old one,
@@ -236,7 +244,8 @@ and both sessions are live. People and the AI's other sessions address one of th
   [The principal session is fixed](#the-principal-session-is-fixed)): its label is `""` and the web
   app shows it as "principal". With no session pinned it is the first live session in the AI's
   own folder.
-- A session in a linked git worktree is labelled with the worktree folder's name, slugged
+- A session in a linked git worktree, or in a subfolder that joined the AI of a folder above it, is
+  labelled with its own folder's name, slugged
   (`a-z0-9-`, at most 40 characters): `~/repo/Acme API-wt` is `:acme-api-wt`, and a folder whose
   name has no usable character is `:session`.
 - A second live session in a folder whose preferred label is taken gets `<harness>-<n>` with the

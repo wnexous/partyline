@@ -90,9 +90,12 @@ func New(st *store.Store, opts Options) *Authorizer {
 func (a *Authorizer) Authz() *orgs.Authz { return a.authz }
 
 // CanSeeAI reports whether the caller can see the AI (AD-016): a user sees the AIs hosted on their
-// computers and the AIs of the organizations they belong to; an AI sees itself and the AIs it shares an
-// organization with, and never reaches further through its host, because it acts as itself. A disabled
-// user and an unknown AI see and are seen by nobody.
+// computers and the AIs of the organizations they belong to; an AI sees itself, the AIs it shares an
+// organization with and the other AIs of its own host (SI-01), whatever organizations either belongs to.
+// It reaches no further through its host: the host's organizations and people give it nothing, because it
+// acts as itself. Seeing an AI never makes its messages trusted (SI-03), and adding it to a group still
+// needs membership of the group's organization (SI-02). A disabled user and an unknown AI see and are seen
+// by nobody.
 func (a *Authorizer) CanSeeAI(ctx context.Context, p authn.Principal, aiID string) (bool, error) {
 	if aiID == "" {
 		return false, nil
@@ -111,6 +114,15 @@ func (a *Authorizer) CanSeeAI(ctx context.Context, p authn.Principal, aiID strin
 	if p.Kind == authn.KindAgent {
 		if p.AgentID == aiID {
 			return true, nil
+		}
+		self, err := a.store.R().GetAgent(ctx, p.AgentID)
+		switch {
+		case errors.Is(err, sql.ErrNoRows):
+			return false, nil
+		case err != nil:
+			return false, err
+		case self.OwnerID == agent.OwnerID:
+			return true, nil // two AIs of the same host always see each other (SI-01)
 		}
 		return a.authz.SharesOrg(ctx, p.AgentID, aiID)
 	}

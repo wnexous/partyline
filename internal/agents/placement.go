@@ -227,7 +227,7 @@ func checkStart(ctx context.Context, q *db.Queries, host string, a db.Agent, id 
 // person reads the refusal in the terminal where they typed the command instead of finding a harness that
 // cannot connect (ORG-05, POS-07). It decides with the rules the start itself uses, on a read snapshot:
 //
-//   - the AI of the folder, if there is one, and the unlinked identity a session would adopt (MIG-02) are judged by
+//   - the AI of the folder (or of the nearest folder above it, SI-04), if there is one, and the unlinked identity a session would adopt (MIG-02) are judged by
 //     the rules of a later start (checkStart: --org may only name the home organization, --position must be
 //     allowed to move the AI, --parent is ignored);
 //   - a folder that would get a new AI is judged by the rules of its creation (place).
@@ -241,7 +241,7 @@ func (r *Registry) CheckStart(ctx context.Context, ownerID string, id FolderID) 
 	}
 	id.Machine = cleanText(id.Machine, MaxMachineLength)
 	q := r.store.R()
-	a, err := q.GetAgentByFolder(ctx, db.GetAgentByFolderParams{OwnerID: ownerID, Machine: id.Machine, Folder: id.key()})
+	a, err := folderAgent(ctx, q, ownerID, id)
 	switch {
 	case err == nil:
 	case errors.Is(err, sql.ErrNoRows):

@@ -60,13 +60,17 @@ type FolderID struct {
 	// means none (POS-07).
 	Position string
 	// Parent is the @handle or id of the AI that starts this one (--parent, PARTYLINE_PARENT). It counts
-	// when the token holder may act for it (POS-08).
+	// when the token holder may act for it (POS-08). A session that names one never joins the AI of a folder
+	// above its own (SI-07).
 	Parent string
+	// NewAI is --new-ai (PARTYLINE_NEW_AI=1): the folder gets its own AI instead of joining the AI of a
+	// folder above it (SI-07).
+	NewAI bool
 }
 
 // FolderIDFromHeader reads the folder headers of a session (AID-07): the folder, the home
 // folder and the position are percent-encoded (url.PathEscape), the machine, harness, the name to
-// adopt, the organization and the parent are plain. A folder that is not valid percent-encoding is
+// adopt, the organization and the parent are plain, and --new-ai is "1" (SI-07). A folder that is not valid percent-encoding is
 // 422 folder_invalid, and a position that is not is 422 position_unknown; a home folder that is not
 // is ignored. A harness that is no longer supported (codex, gemini, antigravity) is 410 harness_removed,
 // on the WebSocket and on every agent route (AD-035). A missing header reads as empty, and so does a blank one. The result is not validated:
@@ -98,7 +102,7 @@ func FolderIDFromHeader(h http.Header) (FolderID, error) {
 		Machine: h.Get(dto.HeaderMachine), Folder: folder, MainFolder: mainFolder, Home: home,
 		Harness: h.Get(dto.HeaderHarness), Adopt: h.Get(dto.HeaderAdopt),
 		Org: strings.TrimSpace(h.Get(dto.HeaderOrg)), Position: strings.TrimSpace(position),
-		Parent: strings.TrimSpace(h.Get(dto.HeaderParent)),
+		Parent: strings.TrimSpace(h.Get(dto.HeaderParent)), NewAI: h.Get(dto.HeaderNewAI) == "1",
 	}, nil
 }
 
@@ -170,6 +174,76 @@ func (id FolderID) key() string {
 		return id.MainFolder
 	}
 	return id.Folder
+}
+
+// ownAI is whether the session asked for an AI of its own folder (--parent or --new-ai), which skips the
+// search for the AI of a folder above it (SI-07).
+func (id FolderID) ownAI() bool { return id.Parent != "" || id.NewAI }
+
+// folderAgent finds the owner's AI that a session of the folder is (SI-04..SI-07): the AI of its folder (of
+// the main worktree in a linked one, SESS-01) when there is one, which always wins (SI-06); else the AI
+// whose folder is the nearest proper ancestor of that folder below the home folder (ancestorFolders), so
+// that a session in a subfolder of an AI's folder is a parallel session of that AI, exactly like a session
+// in a linked worktree; never when the session asked for its own AI (ownAI). It answers sql.ErrNoRows when
+// there is none, and reads only: q may be a snapshot or the caller's transaction.
+func folderAgent(ctx context.Context, q *db.Queries, ownerID string, id FolderID) (db.Agent, error) {
+	a, err := q.GetAgentByFolder(ctx, db.GetAgentByFolderParams{OwnerID: ownerID, Machine: id.Machine, Folder: id.key()})
+	if !errors.Is(err, sql.ErrNoRows) || id.ownAI() {
+		return a, err
+	}
+	for _, folder := range ancestorFolders(id.key(), id.Home) {
+		a, err = q.GetAgentByFolder(ctx, db.GetAgentByFolderParams{OwnerID: ownerID, Machine: id.Machine, Folder: folder})
+		if !errors.Is(err, sql.ErrNoRows) {
+			return a, err
+		}
+	}
+	return db.Agent{}, sql.ErrNoRows
+}
+
+// ancestorFolders are the folders above folder whose AI a session of folder may join (SI-04, SI-05), nearest
+// first: its proper ancestors, stopping before the home folder, any folder above the home folder and the
+// root. A session that sent no usable home folder (an old CLI) gets none: without the home the search could
+// reach the folders every project of the machine is in.
+func ancestorFolders(folder, home string) []string {
+	if home == "" || checkFolder(home, "home", "the home folder") != nil {
+		return nil
+	}
+	var out []string
+	for p, ok := parentFolder(folder); ok; p, ok = parentFolder(p) {
+		if root, _, _ := folderRoot(p); p == root || within(home, p) {
+			break // the root, the home folder or a folder above it, and so is everything further up
+		}
+		out = append(out, p)
+	}
+	return out
+}
+
+// parentFolder is the folder that contains a valid folder; ok is false for a root.
+func parentFolder(folder string) (string, bool) {
+	root, seps, ok := folderRoot(folder)
+	if !ok || len(folder) <= len(root) {
+		return "", false
+	}
+	i := strings.LastIndexAny(folder[len(root):], seps)
+	if i < 0 {
+		return root, true
+	}
+	return folder[:len(root)+i], true
+}
+
+// within reports whether folder is base or a folder below it.
+func within(folder, base string) bool {
+	if folder == base {
+		return true
+	}
+	root, seps, ok := folderRoot(base)
+	if !ok {
+		return false
+	}
+	if base == root {
+		return strings.HasPrefix(folder, root)
+	}
+	return len(folder) > len(base) && strings.HasPrefix(folder, base) && strings.ContainsRune(seps, rune(folder[len(base)]))
 }
 
 // folderRoot splits the root off an absolute folder: "/" for Unix paths ("/" is the only
@@ -247,6 +321,10 @@ func (r *Registry) touchMachine(ctx context.Context, ownerID, hostname, home str
 // always for a live session (live), and for a tools-only call (the tools half of pi and
 // OpenCode) only while nobody is connected, so a tool call never relabels a live session (AID-04).
 //
+// A folder without an AI of its own inside the folder of one of the owner's AIs on the machine resolves
+// that AI, the one of the nearest folder above it, as a parallel session, and creates nothing (folderAgent,
+// SI-04..SI-07).
+//
 // When the folder has no identity yet, the owner's unlinked identity (one of v0.3, without a
 // folder) is linked to it instead of creating one: the one named by FolderID.Adopt, else the
 // one whose handle is the folder's handle; a name that is missing or already linked is ignored,
@@ -269,7 +347,7 @@ func (r *Registry) ResolveFolder(ctx context.Context, ownerID string, id FolderI
 	if err := r.touchMachine(ctx, ownerID, id.Machine, id.Home); err != nil {
 		return db.Agent{}, err
 	}
-	a, err := r.store.R().GetAgentByFolder(ctx, db.GetAgentByFolderParams{OwnerID: ownerID, Machine: id.Machine, Folder: id.key()})
+	a, err := folderAgent(ctx, r.store.R(), ownerID, id)
 	switch {
 	case errors.Is(err, sql.ErrNoRows):
 		if r.afterFolderMiss != nil {
@@ -324,7 +402,8 @@ func (r *Registry) RegisterFolder(ctx context.Context, ownerID string, id Folder
 }
 
 // LookupFolder returns the owner's AI of the machine and folder (of the main worktree, for a
-// session in a linked worktree), if there is one, and changes nothing: no identity is created, no
+// session in a linked worktree, else of the nearest folder above it, folderAgent, SI-08), if there is one,
+// and changes nothing: no identity is created, no
 // unlinked one adopted, no machine recorded and no app relabeled (SES-01). An invalid machine or
 // folder is a 422 like for ResolveFolder.
 func (r *Registry) LookupFolder(ctx context.Context, ownerID string, id FolderID) (db.Agent, bool, error) {
@@ -335,7 +414,8 @@ func (r *Registry) LookupFolder(ctx context.Context, ownerID string, id FolderID
 	if err := ValidateMainFolder(id.MainFolder); err != nil {
 		return db.Agent{}, false, err
 	}
-	a, err := r.store.R().GetAgentByFolder(ctx, db.GetAgentByFolderParams{OwnerID: ownerID, Machine: machine, Folder: id.key()})
+	id.Machine = machine
+	a, err := folderAgent(ctx, r.store.R(), ownerID, id)
 	if errors.Is(err, sql.ErrNoRows) {
 		return db.Agent{}, false, nil
 	}
@@ -353,7 +433,7 @@ func (r *Registry) linkOrCreate(ctx context.Context, ownerID string, id FolderID
 	var changed string // the organization whose chart this call changed
 	err := r.store.WithTx(ctx, func(q *db.Queries) error {
 		changed = ""
-		a, err := q.GetAgentByFolder(ctx, db.GetAgentByFolderParams{OwnerID: ownerID, Machine: id.Machine, Folder: id.key()})
+		a, err := folderAgent(ctx, q, ownerID, id)
 		if !errors.Is(err, sql.ErrNoRows) { // found (created while this call waited), or a failure
 			out = a
 			if err == nil {

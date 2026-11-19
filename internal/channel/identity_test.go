@@ -339,3 +339,13 @@ func TestMachineName(t *testing.T) {
 	require.Equal(t, strings.Repeat("m", MaxMachineName), MachineName(host(strings.Repeat("m", 80), nil)), "cut to what the server keeps")
 	require.Equal(t, "devbox", MachineName(host("de\x00vbox\x07", nil)), "control characters are dropped")
 }
+
+// SI-07: --new-ai travels as X-Partyline-New-AI: 1, and only when it was asked for.
+func TestIdentityHeadersCarryNewAI(t *testing.T) {
+	h := http.Header{}
+	Identity{Machine: "devbox", Folder: "/work/acme", NewAI: true}.setHeaders(h)
+	require.Equal(t, "1", h.Get(dto.HeaderNewAI))
+	bare := http.Header{}
+	Identity{Machine: "devbox", Folder: "/work/acme"}.setHeaders(bare)
+	require.NotContains(t, bare, http.CanonicalHeaderKey(dto.HeaderNewAI))
+}
