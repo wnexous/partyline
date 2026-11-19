@@ -18,7 +18,7 @@ const folderEnvVar = "PARTYLINE_FOLDER"
 
 // mainFolderVar is the canonical folder of the main worktree when the launch runs in a linked git
 // worktree: the session reads it and sends it beside its own folder, so the server resolves the AI of
-// the repository (SESS-01, SESS-09). Empty outside a linked worktree and for a --parent launch.
+// the repository (SESS-01, SESS-09). Empty outside a linked worktree and for a --parent or --new-ai launch.
 const mainFolderVar = "PARTYLINE_MAIN_FOLDER"
 
 // What a session asked for when it was launched (--org, --position, --parent; ORG-04, POS-07, POS-08). The
@@ -34,6 +34,14 @@ const (
 	launchOrgVar      = "PARTYLINE_LAUNCH_ORG"
 	launchPositionVar = "PARTYLINE_LAUNCH_POSITION"
 	launchParentVar   = "PARTYLINE_LAUNCH_PARENT"
+)
+
+// --new-ai works like the placement flags (SI-07): the launcher reads PARTYLINE_NEW_AI=1 when the flag is absent,
+// consumes it and hands it to the session's processes as PARTYLINE_LAUNCH_NEW_AI=1, which they send as
+// X-Partyline-New-AI. A launch from inside a launched session does not inherit it.
+const (
+	newAIEnvVar    = "PARTYLINE_NEW_AI"
+	launchNewAIVar = "PARTYLINE_LAUNCH_NEW_AI"
 )
 
 // liveEnvVar carries, to the processes of a pi or OpenCode session, the live id of that session as
@@ -117,7 +125,7 @@ func ownHarnessSessionID(io stdio) string {
 // session over; the PARTYLINE_LAUNCH_* ones carry what the session asked for.
 var launcherVars = []string{
 	folderEnvVar, mainFolderVar, "PARTYLINE_HARNESS", "PARTYLINE_TAKEOVER", principalEnvVar, "PARTYLINE_AGENT",
-	launchOrgVar, launchPositionVar, launchParentVar, liveEnvVar, autoUpdateVar,
+	launchOrgVar, launchPositionVar, launchParentVar, launchNewAIVar, liveEnvVar, autoUpdateVar,
 }
 
 // maxAncestors is how many processes, starting at the parent, the lookup reads.

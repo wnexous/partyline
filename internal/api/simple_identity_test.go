@@ -49,3 +49,44 @@ func TestAIsOfTheSameHostSeeEachOther(t *testing.T) {
 	// The same-host rule reaches no further: globex's AI of another host stays hidden from atlas.
 	sendDM(atlasAI, globex.TargetAI, "psst").RequireError(http.StatusNotFound, dto.ErrorCodeContactNotFound)
 }
+
+// SI-04, SI-07, SI-08: a session started in a subfolder of an AI's folder connects as a parallel session of that
+// AI, labelled after its own folder like a linked worktree session, and GET /agent/session from the subfolder
+// names that AI; with X-Partyline-New-AI the subfolder gets an AI of its own instead.
+func TestASessionInASubfolderIsAParallelSessionOfTheAIAbove(t *testing.T) {
+	env := testkit.New(t)
+	alice := env.NewUser("alice")
+	tok := alice.Token(dto.TokenKindAgent, "laptop")
+	folder := func(path string) testkit.Folder {
+		return testkit.Folder{Machine: testkit.Machine, Path: path, Home: "/home/alice", Harness: "claude"}
+	}
+	main, resp := tok.DialFolder(folder("/home/alice/projects/atlas"))
+	require.NotNil(t, main, resp)
+	defer main.Close()
+	atlas := main.Welcome(wsWait)
+	require.Empty(t, atlas.Session.Label, "the AI's own folder is its principal session")
+
+	sub := folder("/home/alice/projects/atlas/server")
+	state := testkit.Decode[dto.SessionState](tok.AsFolder(sub).Get("/api/v1/agent/session").RequireStatus(http.StatusOK))
+	require.True(t, state.Exists, "SI-08: the lookup finds the AI above")
+	require.Equal(t, atlas.Intelligence.ID, state.Intelligence.ID)
+
+	conn, resp := tok.DialFolder(sub)
+	require.NotNil(t, conn, resp)
+	defer conn.Close()
+	w := conn.Welcome(wsWait)
+	require.Equal(t, atlas.Intelligence.ID, w.Intelligence.ID, "SI-04: the subfolder is a session of the AI above")
+	require.Equal(t, "server", w.Session.Label, "a parallel session named after its folder")
+
+	// SI-07: --new-ai makes the subfolder its own AI.
+	own := folder("/home/alice/projects/atlas/tools")
+	own.NewAI = true
+	state = testkit.Decode[dto.SessionState](tok.AsFolder(own).Get("/api/v1/agent/session").RequireStatus(http.StatusOK))
+	require.False(t, state.Exists, "SI-07: a folder that asks for its own AI has none yet")
+	fresh, resp := tok.DialFolder(own)
+	require.NotNil(t, fresh, resp)
+	defer fresh.Close()
+	fw := fresh.Welcome(wsWait)
+	require.NotEqual(t, atlas.Intelligence.ID, fw.Intelligence.ID)
+	require.Empty(t, fw.Session.Label, "the principal session of its own AI")
+}

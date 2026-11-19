@@ -24,12 +24,12 @@ import (
 	"github.com/wnexous/partyline/internal/testkit"
 )
 
-// aiAt creates the owner's AI of a folder on a machine, as its first session would, and names it
-// (display name and handle). It returns the AI's id.
+// aiAt creates the owner's AI of a folder on a machine, as its first session would with --new-ai (so a folder
+// inside another AI's folder gets one too, SI-07), and names it (display name and handle). It returns the AI's id.
 func aiAt(t *testing.T, env *testkit.Env, owner *testkit.Client, name, handle, machine, folder, home, harness string) string {
 	t.Helper()
 	ctx := context.Background()
-	a, err := env.App.Agents.ResolveFolder(ctx, owner.User.ID, agents.FolderID{Machine: machine, Folder: folder, Home: home, Harness: harness}, false)
+	a, err := env.App.Agents.ResolveFolder(ctx, owner.User.ID, agents.FolderID{Machine: machine, Folder: folder, Home: home, Harness: harness, NewAI: true}, false)
 	require.NoError(t, err)
 	p := authn.Principal{Kind: authn.KindUser, UserID: owner.User.ID, Role: string(owner.User.Role)}
 	_, err = env.App.Intelligences.Update(ctx, p, a.ID, intelligences.ProfileUpdate{DisplayName: &name, Handle: &handle})

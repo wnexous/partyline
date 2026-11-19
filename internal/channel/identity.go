@@ -87,6 +87,9 @@ type Identity struct {
 	// id of the AI that starts this one. They place a new AI (ORG-04, POS-07, POS-08); each is sent only when
 	// set, so a session that asks for nothing sends nothing and gets the server's defaults (AD-020).
 	Org, Position, Parent string
+	// NewAI is --new-ai (PARTYLINE_NEW_AI=1, handed on as PARTYLINE_LAUNCH_NEW_AI=1), sent as
+	// X-Partyline-New-AI: 1: the folder gets its own AI instead of joining the AI of a folder above it (SI-07).
+	NewAI bool
 }
 
 // setHeaders sets the identity headers. The folder, the main worktree folder, the home folder and
@@ -112,6 +115,9 @@ func (id Identity) setHeaders(h http.Header) {
 	}
 	if id.Home != "" {
 		h.Set(dto.HeaderHome, url.PathEscape(id.Home))
+	}
+	if id.NewAI {
+		h.Set(dto.HeaderNewAI, "1")
 	}
 }
 

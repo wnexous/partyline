@@ -91,7 +91,8 @@ func homeFolder(io stdio) string {
 // (PARTYLINE_HARNESS, set by the launchers), the identity to adopt (adopt, else
 // PARTYLINE_AGENT) (MIG-02) and what the session asked for when it was launched: the organization,
 // the position and the parent AI the launcher handed on as PARTYLINE_LAUNCH_ORG, _POSITION and _PARENT
-// (ORG-04, POS-07, POS-08). Only those are read: PARTYLINE_ORG and the others are the launcher's input.
+// (ORG-04, POS-07, POS-08), and --new-ai as PARTYLINE_LAUNCH_NEW_AI=1 (SI-07). Only those are read:
+// PARTYLINE_ORG and the others are the launcher's input.
 func sessionIdentity(adopt string, io stdio) channel.Identity {
 	id := channel.Identity{
 		Machine: channel.MachineName(hostnameOf(io)),
@@ -100,18 +101,19 @@ func sessionIdentity(adopt string, io stdio) channel.Identity {
 		Org:      strings.TrimSpace(io.getenv(launchOrgVar)),
 		Position: strings.TrimSpace(io.getenv(launchPositionVar)),
 		Parent:   strings.TrimSpace(io.getenv(launchParentVar)),
+		NewAI:    strings.TrimSpace(io.getenv(launchNewAIVar)) == "1",
 	}
 	if id.Adopt == "" {
 		id.Adopt = strings.TrimSpace(io.getenv("PARTYLINE_AGENT"))
 	}
-	// A child session (a launch parent) never sends a main folder, whatever its environment holds, so --parent
-	// keeps its own AI (SESS-09). A session whose folder is unknown sends none either.
+	// A child session (a launch parent) and a --new-ai one never send a main folder, whatever their environment
+	// holds, so they keep their own AI (SESS-09, SI-07). A session whose folder is unknown sends none either.
 	switch main := strings.TrimSpace(io.getenv(mainFolderVar)); {
-	case id.Parent != "":
+	case id.Parent != "" || id.NewAI:
 	case main != "":
 		id.MainFolder = main // the launcher computed it once for the whole session
 	case id.Folder != "":
-		id.MainFolder = launchMainFolder(id.Folder, "") // a session started by hand computes it once
+		id.MainFolder = launchMainFolder(id.Folder, false) // a session started by hand computes it once
 	}
 	return id
 }
@@ -244,7 +246,7 @@ func channelCmd(ctx context.Context, args []string, io stdio) int {
 	err := channel.Run(ctx, channel.Options{
 		URL: c.url, Token: c.token, Machine: c.id.Machine, Folder: c.id.Folder, MainFolder: c.id.MainFolder,
 		Home: c.id.Home, Adopt: c.id.Adopt, LiveID: liveID, LinkLiveID: linkLive,
-		Org: c.id.Org, Position: c.id.Position, Parent: c.id.Parent,
+		Org: c.id.Org, Position: c.id.Position, Parent: c.id.Parent, NewAI: c.id.NewAI,
 		Harness: c.id.Harness, Version: buildVersion(), ToolsOnly: *toolsOnly, Takeover: c.takeover,
 		HarnessSession: c.id.HarnessSession, Principal: c.principal, Resumed: resumed,
 		SecretsDir: secretsDir(io),
@@ -308,7 +310,7 @@ func listenCmd(ctx context.Context, args []string, io stdio) int {
 	err := channel.Listen(ctx, channel.ListenOptions{
 		URL: c.url, Token: c.token, Machine: c.id.Machine, Folder: c.id.Folder, MainFolder: c.id.MainFolder,
 		Home: c.id.Home, Harness: c.id.Harness, Adopt: c.id.Adopt, LiveID: sessionLiveID(withLauncherEnv(io)),
-		Org: c.id.Org, Position: c.id.Position, Parent: c.id.Parent,
+		Org: c.id.Org, Position: c.id.Position, Parent: c.id.Parent, NewAI: c.id.NewAI,
 		Takeover: c.takeover, HarnessSession: c.id.HarnessSession, Principal: c.principal, Version: buildVersion(),
 		Resumed: resumed, SecretsDir: secretsDir(io),
 		Stdin: io.stdin, Stdout: io.stdout, Stderr: io.stderr,
