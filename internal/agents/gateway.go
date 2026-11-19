@@ -1,6 +1,7 @@
 package agents
 
 import (
+	"bytes"
 	"context"
 	"database/sql"
 	"encoding/json"
@@ -591,7 +592,7 @@ func (g *Gateway) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	c := &conn{
 		ws: ws, queue: make(chan outbound, queueSize), cancel: cancel, done: ctx.Done(),
 		liveID: hs.liveID, owner: ownerKey(hs.liveID), clientVersion: hs.clientVersion,
-		delivered: map[string]struct{}{}, pushed: map[string]struct{}{},
+		delivered: map[string]struct{}{}, pushed: map[string]struct{}{}, rewelcome: make(chan struct{}, 1),
 	}
 	if g.beforeAttach != nil {
 		g.beforeAttach()
@@ -668,7 +669,8 @@ func (g *Gateway) active(ctx context.Context, p authn.Principal) (bool, error) {
 // 1013 so the channel reconnects and authenticates again). A connection that receives platform
 // events reads its queue again when an item was queued for its AI or a voice note of its AI was
 // transcribed, and after a lagged bus, which may have dropped those events. A principal session claims its
-// due heartbeats when a run of its AI came due, and after a lagged bus (HB-04).
+// due heartbeats when a run of its AI came due, and after a lagged bus (HB-04). Every session reads its welcome
+// again after an organization changed, and after a lagged bus, and sends it when it says something new (SI-09).
 func (g *Gateway) watchBus(ctx context.Context, c *conn, p authn.Principal, sub <-chan events.Event) {
 	for {
 		select {
@@ -696,7 +698,10 @@ func (g *Gateway) watchBus(ctx context.Context, c *conn, p authn.Principal, sub 
 				if c.beats != nil && e.AgentID == c.beats.agentID {
 					c.beats.poke()
 				}
+			case events.OrgChanged:
+				c.pokeWelcome() // memberships, positions, managers or the AIs it created may have changed (SI-09)
 			case events.Lagged:
+				c.pokeWelcome()
 				if c.feed != nil {
 					c.feed.poke()
 				}
@@ -909,6 +914,10 @@ type conn struct {
 	// beats sends the due runs of the AI's schedules; nil for every labelled session, which receives none
 	// (HB-04).
 	beats *heartbeatFeed
+	// rewelcome wakes the run loop to read the welcome again (pokeWelcome, SI-09); welcomed is the welcome
+	// frame the connection last sent, as written. Only the run loop touches welcomed.
+	rewelcome chan struct{}
+	welcomed  []byte
 
 	// consuming holds the messages this parallel session was given as messages of its own that are not
 	// addressed to it, and has not acknowledged yet: the ones it stands in for while the principal is offline
@@ -941,6 +950,15 @@ func (c *conn) takeConsuming(messageID string) bool {
 	_, ok := c.consuming[messageID]
 	delete(c.consuming, messageID)
 	return ok
+}
+
+// pokeWelcome asks the run loop to read the AI's welcome again and send it when it changed (SI-09). Pokes
+// that come while one is pending are one.
+func (c *conn) pokeWelcome() {
+	select {
+	case c.rewelcome <- struct{}{}:
+	default:
+	}
 }
 
 // labelOf returns the label of the live session the connection became ("" before it attached).
@@ -1013,15 +1031,7 @@ func (c *conn) write(ctx context.Context, v any) error {
 // session the connection became; the welcome names it (SESS-15).
 func (g *Gateway) run(ctx context.Context, c *conn, row db.GetAgentWithOwnerRow, live Live) error {
 	a := row.Agent
-	ai, owner, err := g.welcomeRefs(ctx, row)
-	if err != nil {
-		return err
-	}
-	where, err := g.placement(ctx, a)
-	if err != nil {
-		return err
-	}
-	connections, err := g.connections(ctx, a.ID)
+	hello, err := g.welcome(ctx, row, live)
 	if err != nil {
 		return err
 	}
@@ -1034,14 +1044,7 @@ func (g *Gateway) run(ctx context.Context, c *conn, row db.GetAgentWithOwnerRow,
 	if err != nil {
 		return err
 	}
-	if err := c.write(ctx, dto.AgentWelcomeFrame{
-		Type:         dto.AgentFrameTypeWelcome,
-		Agent:        dto.AgentInfo{ID: a.ID, Name: row.Handle, DisplayName: row.ProfileName, Owner: row.OwnerUsername},
-		Intelligence: ai, Owner: owner,
-		Organization: where.org, Position: where.position, Managers: where.managers,
-		Connections: connections,
-		Session:     dto.SessionInfo{Label: live.Label, Harness: live.Harness, ConnectedAt: live.Since.UTC(), Outdated: live.Outdated},
-	}); err != nil {
+	if err := c.writeWelcome(ctx, hello); err != nil {
 		return err
 	}
 	if g.afterWelcome != nil {
@@ -1091,6 +1094,10 @@ func (g *Gateway) run(ctx context.Context, c *conn, row db.GetAgentWithOwnerRow,
 			if err := c.beats.fill(ctx, c); err != nil {
 				return err
 			}
+		case <-c.rewelcome:
+			if err := g.refreshWelcome(ctx, c, a.ID, live); err != nil {
+				return err
+			}
 		case <-ping.C:
 			pctx, cancel := context.WithTimeout(ctx, g.d.PingTimeout)
 			err := c.ws.Ping(pctx)
@@ -1133,6 +1140,138 @@ func (g *Gateway) run(ctx context.Context, c *conn, row db.GetAgentWithOwnerRow,
 			}
 		}
 	}
+}
+
+// welcome builds the welcome frame of the live session the connection became (SESS-15): who the AI is, where it
+// stands in its home organization and who manages it there (POS-10), the other organizations it belongs to
+// (SI-09), who created it and the AIs it created (SI-10), and the connections it operates (CID-01).
+func (g *Gateway) welcome(ctx context.Context, row db.GetAgentWithOwnerRow, live Live) (dto.AgentWelcomeFrame, error) {
+	a := row.Agent
+	ai, owner, err := g.welcomeRefs(ctx, row)
+	if err != nil {
+		return dto.AgentWelcomeFrame{}, err
+	}
+	where, err := g.placement(ctx, a)
+	if err != nil {
+		return dto.AgentWelcomeFrame{}, err
+	}
+	memberships, err := g.memberships(ctx, a)
+	if err != nil {
+		return dto.AgentWelcomeFrame{}, err
+	}
+	creator, created, err := g.lineage(ctx, a)
+	if err != nil {
+		return dto.AgentWelcomeFrame{}, err
+	}
+	connections, err := g.connections(ctx, a.ID)
+	if err != nil {
+		return dto.AgentWelcomeFrame{}, err
+	}
+	return dto.AgentWelcomeFrame{
+		Type:         dto.AgentFrameTypeWelcome,
+		Agent:        dto.AgentInfo{ID: a.ID, Name: row.Handle, DisplayName: row.ProfileName, Owner: row.OwnerUsername},
+		Intelligence: ai, Owner: owner,
+		Organization: where.org, Position: where.position, Managers: where.managers,
+		Memberships: memberships, Creator: creator, Created: created,
+		Connections: connections,
+		Session:     dto.SessionInfo{Label: live.Label, Harness: live.Harness, ConnectedAt: live.Since.UTC(), Outdated: live.Outdated},
+	}, nil
+}
+
+// memberships lists the organizations the AI belongs to besides its home one, by name (SI-09); never nil.
+func (g *Gateway) memberships(ctx context.Context, a db.Agent) ([]dto.AgentMembership, error) {
+	rows, err := g.d.Store.R().ListOrgsOfMember(ctx, a.ID)
+	if err != nil {
+		return nil, err
+	}
+	out := make([]dto.AgentMembership, 0, len(rows))
+	for _, r := range rows {
+		if a.OrgID.Valid && r.Organization.ID == a.OrgID.String {
+			continue
+		}
+		out = append(out, dto.AgentMembership{
+			Organization: dto.ContactOrg{ID: r.Organization.ID, Name: r.Organization.Name, Slug: r.Organization.Slug},
+			Permission:   r.Permission,
+		})
+	}
+	return out, nil
+}
+
+// lineage reads who created the AI (nil when no other identity is recorded) and the AIs it created, oldest
+// first and at most dto.MaxCreated, never nil (SI-10).
+func (g *Gateway) lineage(ctx context.Context, a db.Agent) (*dto.IntelligenceRef, []dto.IntelligenceRef, error) {
+	q := g.d.Store.R()
+	ids, err := q.ListAgentIDsCreatedBy(ctx, db.ListAgentIDsCreatedByParams{
+		CreatorIid: sql.NullString{String: a.ID, Valid: true}, Max: dto.MaxCreated,
+	})
+	if err != nil {
+		return nil, nil, err
+	}
+	want := ids
+	creatorID := ""
+	if a.CreatorIid.Valid && a.CreatorIid.String != a.ID {
+		creatorID = a.CreatorIid.String
+		want = append(slices.Clone(ids), creatorID)
+	}
+	if len(want) == 0 {
+		return nil, []dto.IntelligenceRef{}, nil
+	}
+	rows, err := q.ListIntelligencesByIDs(ctx, want)
+	if err != nil {
+		return nil, nil, err
+	}
+	byID := make(map[string]db.Intelligence, len(rows))
+	for _, r := range rows {
+		byID[r.ID] = r
+	}
+	var creator *dto.IntelligenceRef
+	if row, ok := byID[creatorID]; ok {
+		ref := convert.ManagerRef(row)
+		creator = &ref
+	}
+	return creator, convert.ManagerRefs(ids, byID), nil
+}
+
+// writeWelcome writes the welcome frame and remembers it, so that a fresh one that says the same is not sent
+// again (SI-09).
+func (c *conn) writeWelcome(ctx context.Context, w dto.AgentWelcomeFrame) error {
+	data, err := json.Marshal(w)
+	if err != nil {
+		return err
+	}
+	wctx, cancel := context.WithTimeout(ctx, writeTimeout)
+	defer cancel()
+	if err := c.ws.Write(wctx, websocket.MessageText, data); err != nil {
+		return err
+	}
+	c.welcomed = data
+	return nil
+}
+
+// refreshWelcome reads the AI's welcome again and sends it when it differs from the one the connection last sent
+// (SI-09): an organization change moved, promoted or demoted the AI, changed who manages it, the organizations it
+// belongs to or the AIs it created. The session stays the one the connection became. An AI deleted meanwhile
+// sends nothing: its connection is closed by the deletion.
+func (g *Gateway) refreshWelcome(ctx context.Context, c *conn, agentID string, live Live) error {
+	row, err := g.d.Store.R().GetAgentWithOwner(ctx, agentID)
+	if errors.Is(err, sql.ErrNoRows) {
+		return nil
+	}
+	if err != nil {
+		return err
+	}
+	w, err := g.welcome(ctx, row, live)
+	if err != nil {
+		return err
+	}
+	data, err := json.Marshal(w)
+	if err != nil {
+		return err
+	}
+	if bytes.Equal(data, c.welcomed) {
+		return nil
+	}
+	return c.writeWelcome(ctx, w)
 }
 
 // backlog delivers, per room of the agent (paused rooms excepted), the messages after the

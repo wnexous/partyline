@@ -3,6 +3,7 @@ package api_test
 import (
 	"net/http"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/require"
 
@@ -89,4 +90,55 @@ func TestASessionInASubfolderIsAParallelSessionOfTheAIAbove(t *testing.T) {
 	fw := fresh.Welcome(wsWait)
 	require.NotEqual(t, atlas.Intelligence.ID, fw.Intelligence.ID)
 	require.Empty(t, fw.Session.Label, "the principal session of its own AI")
+}
+
+// SI-09, SI-10: an organization change that alters what a live session was told sends it a fresh welcome of the
+// same session: a new position, a membership of another organization, an AI it created (which in turn is told who
+// created it). A change that alters nothing it was told sends nothing.
+func TestALiveSessionIsWelcomedAgainWhenItsOrganizationsChange(t *testing.T) {
+	env := testkit.New(t)
+	alice := env.NewUser("alice")
+	tok := alice.Token(dto.TokenKindAgent, "laptop")
+	conn, resp := tok.DialAgent("atlas")
+	require.NotNil(t, conn, resp)
+	defer conn.Close()
+	first := conn.Welcome(wsWait)
+	atlas := first.Intelligence
+	require.Empty(t, first.Position)
+	require.Empty(t, first.Memberships)
+	require.Empty(t, first.Created)
+	require.NotNil(t, first.Creator)
+	require.Equal(t, alice.User.ID, first.Creator.ID, "SI-10: the user who started it created it")
+	conn.Drain(300 * time.Millisecond)
+
+	// A position nobody holds changes nothing atlas was told.
+	home := alice.PersonalOrg().ID
+	lead := env.AddPosition(home, "Lead", "")
+	conn.ExpectNone(300 * time.Millisecond)
+
+	// SI-09: promoted to Lead.
+	alice.Patch("/api/v1/orgs/"+home+"/members/"+atlas.ID, map[string]any{"position_id": lead}).RequireStatus(http.StatusOK)
+	promoted := conn.Welcome(wsWait)
+	require.Equal(t, "Lead", promoted.Position)
+	require.Equal(t, first.Session, promoted.Session, "the same session")
+
+	// SI-09: a member of another organization.
+	globex := env.OrgRoles("globex")
+	env.AddMember(globex.Org.ID, atlas.ID, orgs.PermissionMember, "")
+	joined := conn.Welcome(wsWait)
+	require.Equal(t, []dto.AgentMembership{{
+		Organization: dto.ContactOrg{ID: globex.Org.ID, Name: globex.Org.Name, Slug: globex.Org.Slug}, Permission: "member",
+	}}, joined.Memberships)
+
+	// SI-10: atlas starts a child; atlas is told it created it, and the child is told atlas created it.
+	child, resp := tok.DialFolder(testkit.Folder{Machine: testkit.Machine, Path: "/work/atlas-child", Harness: "claude", Parent: "@" + atlas.Handle})
+	require.NotNil(t, child, resp)
+	defer child.Close()
+	cw := child.Welcome(wsWait)
+	require.NotNil(t, cw.Creator)
+	require.Equal(t, atlas.ID, cw.Creator.ID)
+	parent := conn.Welcome(wsWait)
+	require.Len(t, parent.Created, 1)
+	require.Equal(t, cw.Intelligence.ID, parent.Created[0].ID)
+	require.Equal(t, cw.Intelligence.Handle, parent.Created[0].Handle)
 }

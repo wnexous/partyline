@@ -196,6 +196,11 @@ SELECT room_id FROM room_members WHERE kind = 'agent' AND member_id = ?;
 -- name: GetAgentByFolder :one
 SELECT * FROM agents WHERE owner_id = ? AND machine = ? AND folder = ? AND folder <> '';
 
+-- name: ListAgentIDsCreatedBy :many
+-- The AIs the identity created (SI-10): the AIs it started with --parent, oldest first.
+SELECT id FROM agents WHERE creator_iid = sqlc.arg(creator_iid) AND id <> sqlc.arg(creator_iid)
+ORDER BY created_at, id LIMIT sqlc.arg(max);
+
 -- name: InsertFolderAgent :exec
 -- A new AI of a folder (AID-01): the row stores its id as its v0.3 name. org_id is its home
 -- organization and creator_iid the identity that created it (ORG-02, ORG-04).

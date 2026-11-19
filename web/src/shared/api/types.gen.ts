@@ -276,7 +276,23 @@ export interface AgentConnection {
  */
 export const MaxManagers = 10;
 /**
- * AgentWelcomeFrame is the first frame after the agent WebSocket opens.
+ * MaxCreated is the most AIs the welcome frame lists as created by the AI: the oldest ones (SI-10).
+ */
+export const MaxCreated = 50;
+/**
+ * AgentMembership is an organization the AI belongs to besides its home one, as the welcome frame lists it
+ * (SI-09): it shares that organization with the identities there, and is a member, an admin or a guest.
+ */
+export interface AgentMembership {
+  organization: ContactOrg;
+  /**
+   * Permission is the AI's in it: admin, member or guest.
+   */
+  permission: string;
+}
+/**
+ * AgentWelcomeFrame is the first frame after the agent WebSocket opens. The server sends it again, with the
+ * same session, when an organization change alters what it says (SI-09).
  */
 export interface AgentWelcomeFrame {
   type: typeof AgentFrameTypeWelcome;
@@ -306,6 +322,21 @@ export interface AgentWelcomeFrame {
    * empty when nobody manages it.
    */
   managers: IntelligenceRef[];
+  /**
+   * Memberships are the organizations the AI belongs to besides its home one, by name; always present,
+   * empty when it belongs to no other (SI-09).
+   */
+  memberships: AgentMembership[];
+  /**
+   * Creator is the identity that created the AI: the user who started it, or the AI that started it with
+   * --parent; absent when none is recorded (SI-10).
+   */
+  creator?: IntelligenceRef;
+  /**
+   * Created are the AIs this AI created (with --parent), oldest first and at most MaxCreated; always
+   * present, empty when it created none (SI-10).
+   */
+  created: IntelligenceRef[];
   /**
    * Connections are the connections the AI operates, by name; always present, empty when it
    * operates none (CID-01).

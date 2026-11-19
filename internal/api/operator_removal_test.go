@@ -3,6 +3,7 @@ package api_test
 import (
 	"context"
 	"database/sql"
+	"encoding/json"
 	"net/http"
 	"path/filepath"
 	"testing"
@@ -254,7 +255,8 @@ func TestMergeHandsTheQueueOfItsConnectionsToTheSurvivor(t *testing.T) {
 }
 
 // CID-05, MRG-01: a survivor that is online when the merge commits receives the items it was
-// handed without reconnecting, oldest first, behind what it already held.
+// handed without reconnecting, oldest first, behind what it already held. It is welcomed again too, as the
+// connections it operates changed (SI-09).
 func TestMergeWakesTheSurvivorsSession(t *testing.T) {
 	w := newMergedWorld(t)
 	conn, resp := w.alice.Token(dto.TokenKindAgent, "laptop").DialPlatform("atlas")
@@ -266,8 +268,35 @@ func TestMergeWakesTheSurvivorsSession(t *testing.T) {
 
 	merge(w.alice, w.old, w.atlas).RequireStatus(http.StatusOK)
 
-	require.Equal(t, []string{w.m1, w.m2}, platformIDs(t, conn, 2), "the unacknowledged items it was handed, oldest first")
+	var ids []string
+	var welcomes []dto.AgentWelcomeFrame
+	for len(ids) < 2 || len(welcomes) == 0 {
+		f := conn.Next(wsWait)
+		switch f.Type {
+		case dto.AgentFrameTypePlatform:
+			var p dto.AgentPlatformFrame
+			require.NoError(t, json.Unmarshal(f.Raw, &p))
+			ids = append(ids, p.Event.ID)
+		case dto.AgentFrameTypeWelcome:
+			var hello dto.AgentWelcomeFrame
+			require.NoError(t, json.Unmarshal(f.Raw, &hello))
+			welcomes = append(welcomes, hello)
+		default:
+			require.Failf(t, "unexpected frame", "%s", f.Raw)
+		}
+	}
+	require.Equal(t, []string{w.m1, w.m2}, ids, "the unacknowledged items it was handed, oldest first")
+	require.Len(t, welcomes, 1)
+	require.Contains(t, connectionIDs(welcomes[0].Connections), w.wa.ID, "it now operates the merged AI's connection")
 	conn.ExpectNone(300 * time.Millisecond)
+}
+
+func connectionIDs(cs []dto.AgentConnection) []string {
+	out := make([]string, len(cs))
+	for i, c := range cs {
+		out[i] = c.ID
+	}
+	return out
 }
 
 // CID-05: the merge is one transaction, queue included: when its last step fails the items, the

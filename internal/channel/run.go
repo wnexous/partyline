@@ -162,7 +162,7 @@ func Run(ctx context.Context, o Options) error {
 	// each message came from (SESS-29). A tools-only process has no link and sends no live id.
 	id.LiveID = l.liveID
 	t.api.identity = id
-	l.takeover, l.principal, l.zone, l.announce = o.Takeover, o.Principal, o.zone, !o.Resumed
+	l.takeover, l.principal, l.zone, l.announce, l.resumed = o.Takeover, o.Principal, o.zone, true, o.Resumed
 	l.secretsDir = o.SecretsDir
 	l.announcedSession, l.announcedOutdated = o.Resumed, o.Resumed
 	l.keepTryingWhenBusy = true // a channel reconnects by itself, it never gives up (SES-04)

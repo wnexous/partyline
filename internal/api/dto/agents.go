@@ -210,7 +210,19 @@ type AgentConnection struct {
 // MaxManagers is the most managers the welcome frame and GET /agent/whoami list: the nearest ones.
 const MaxManagers = 10
 
-// AgentWelcomeFrame is the first frame after the agent WebSocket opens.
+// MaxCreated is the most AIs the welcome frame lists as created by the AI: the oldest ones (SI-10).
+const MaxCreated = 50
+
+// AgentMembership is an organization the AI belongs to besides its home one, as the welcome frame lists it
+// (SI-09): it shares that organization with the identities there, and is a member, an admin or a guest.
+type AgentMembership struct {
+	Organization ContactOrg `json:"organization"`
+	// Permission is the AI's in it: admin, member or guest.
+	Permission string `json:"permission"`
+}
+
+// AgentWelcomeFrame is the first frame after the agent WebSocket opens. The server sends it again, with the
+// same session, when an organization change alters what it says (SI-09).
 type AgentWelcomeFrame struct {
 	Type  AgentFrameType `json:"type" tstype:"typeof AgentFrameTypeWelcome"`
 	Agent AgentInfo      `json:"agent"`
@@ -229,6 +241,15 @@ type AgentWelcomeFrame struct {
 	// messages are marked trusted (POS-10): nearest first, at most MaxManagers, always present and
 	// empty when nobody manages it.
 	Managers []IntelligenceRef `json:"managers"`
+	// Memberships are the organizations the AI belongs to besides its home one, by name; always present,
+	// empty when it belongs to no other (SI-09).
+	Memberships []AgentMembership `json:"memberships"`
+	// Creator is the identity that created the AI: the user who started it, or the AI that started it with
+	// --parent; absent when none is recorded (SI-10).
+	Creator *IntelligenceRef `json:"creator,omitempty"`
+	// Created are the AIs this AI created (with --parent), oldest first and at most MaxCreated; always
+	// present, empty when it created none (SI-10).
+	Created []IntelligenceRef `json:"created"`
 	// Connections are the connections the AI operates, by name; always present, empty when it
 	// operates none (CID-01).
 	Connections []AgentConnection `json:"connections"`

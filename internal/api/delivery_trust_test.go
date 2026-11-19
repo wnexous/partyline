@@ -2,6 +2,7 @@ package api_test
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"net/http"
 	"testing"
@@ -241,7 +242,8 @@ func TestHistoryIsTrustedOnlyWhenTheAuthorManagesTheAI(t *testing.T) {
 
 // POS-10 is decided when the message is delivered, so a promotion or a demotion takes effect on the
 // next message: the peer is untrusted, then trusted once it holds a position above the AI's creator,
-// then untrusted again.
+// then untrusted again. The session is welcomed again when the change alters who manages its AI (SI-09), before or
+// after the message.
 func TestTrustFollowsThePositionsAtDeliveryTime(t *testing.T) {
 	ctx := context.Background()
 	w := newTrustWorld(t)
@@ -251,9 +253,17 @@ func TestTrustFollowsThePositionsAtDeliveryTime(t *testing.T) {
 	next := func(text string) bool {
 		t.Helper()
 		id := w.userPost(t, peer, text)
-		got := conn.Message(wsWait)
-		require.Equal(t, id, got.Message.ID)
-		return got.Trusted
+		for {
+			f := conn.Next(wsWait)
+			if f.Type == dto.AgentFrameTypeWelcome {
+				continue
+			}
+			require.Equal(t, dto.AgentFrameTypeMessage, f.Type)
+			var got dto.AgentMessageFrame
+			require.NoError(t, json.Unmarshal(f.Raw, &got))
+			require.Equal(t, id, got.Message.ID)
+			return got.Trusted
+		}
 	}
 
 	require.False(t, next("as a peer"))
