@@ -545,12 +545,12 @@ before the AI that operates the connection gets it: that AI's platform messages 
 so the ones after the voice note wait behind it, up to the same 60 seconds.
 
 [docker-compose.yml](docker-compose.yml) has an optional `whisper` service
-([speaches](https://github.com/speaches-ai/speaches), CPU) with hard limits of 2 CPUs and 1.5 GB,
+([speaches](https://github.com/speaches-ai/speaches), CPU) with hard limits of 2 CPUs and 3 GB,
 and a volume for its model cache. Start it with `docker compose --profile transcribe up -d` and
 uncomment `PARTYLINE_TRANSCRIBE_URL` in the `partyline` service. speaches serves the models it has
 downloaded: download the model once with its model API (`POST /v1/models/<model id>`, see the
-speaches documentation); it stays in the volume. The `small` model takes about 1 GB of memory while
-it works and 10 to 20 seconds of CPU per minute of audio on 2 cores. Any server that speaks the same
+speaches documentation); it stays in the volume. The `small` model peaks above 1.5 GB of memory while
+it works (a lower limit gets it killed) and 10 to 20 seconds of CPU per minute of audio on 2 cores. Any server that speaks the same
 endpoint works (a whisper.cpp server, a GPU machine).
 
 ## Security model

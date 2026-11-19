@@ -39,7 +39,14 @@ const DefaultModel = "Systran/faster-whisper-small"
 const MaxBytes int64 = 25 << 20
 
 // Attempts is how many times a transient failure (network, 5xx, 429) is tried before the row fails.
-const Attempts = 3
+// With the waits of retryWait, the attempts of a failing service span about 45 seconds: long enough
+// for a speech service that restarts (a crash, a redeploy) to come back, and inside the 60 seconds a
+// voice message is held for its transcript (TR-03), so the message still reaches the AIs with it
+// (TR-11).
+const Attempts = 5
+
+// retryWait is the wait after failed attempt number n: 3, 6, 12 and 24 seconds (TR-11).
+func retryWait(n int64) time.Duration { return time.Duration(1<<(n-1)) * 3 * time.Second }
 
 // RequestTimeout bounds one request to the service, so a service that hangs holds the queue for at
 // most Attempts times as long.
@@ -288,7 +295,7 @@ func (w *Worker) process(ctx context.Context, j job) {
 			return
 		}
 		w.d.Logger.Info("transcribe: attempt failed, retrying", append(j.ids(), "attempt", attempt, "err", err)...)
-		if err := w.d.Wait(ctx, time.Duration(1<<(attempt-1))*2*time.Second); err != nil {
+		if err := w.d.Wait(ctx, retryWait(attempt)); err != nil {
 			return
 		}
 	}
