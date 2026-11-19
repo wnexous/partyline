@@ -312,7 +312,7 @@ func TestASlowServiceDeliversTheAudioAloneAtTheLimit(t *testing.T) {
 	f.ai.ExpectNone(500 * time.Millisecond)
 }
 
-// TR-06, TR-08: a service that keeps failing is tried three times; the row fails, the AI still gets
+// TR-06, TR-08: a service that keeps failing is tried Attempts times; the row fails, the AI still gets
 // the message, and nobody sees an error.
 func TestAFailingServiceLeavesTheMessageAsItWas(t *testing.T) {
 	f := newVoiceRoom(t)
@@ -325,6 +325,44 @@ func TestAFailingServiceLeavesTheMessageAsItWas(t *testing.T) {
 	require.Empty(t, got.Message.Attachments[0].Transcript)
 	require.Len(t, f.svc.calls(), transcribe.Attempts)
 	require.Equal(t, dto.TranscriptStateFailed, f.stored(t, f.room.ID, voice.ID).Attachments[0].TranscriptState)
+}
+
+// TR-11: a service that comes back while the attempts last (a restart) still transcribes the voice
+// message; the waits between attempts are 3, 6, 12 and 24 seconds, about 45 in all, inside the
+// 60-second hold of TR-03.
+func TestAServiceThatComesBackInTimeStillTranscribes(t *testing.T) {
+	f := newRoomOn(t, testkit.New(t), newFakeService(t))
+	f.svc.fail(http.StatusServiceUnavailable)
+	voice := f.postVoice(t, f.room.ID, "", audio)
+	f.pendingRow(t, voice)
+
+	var mu sync.Mutex
+	var waits []time.Duration
+	ownWorker(t, f, func(d *transcribe.Deps) {
+		d.Wait = func(_ context.Context, wait time.Duration) error {
+			mu.Lock()
+			waits = append(waits, wait)
+			back := len(waits) == transcribe.Attempts-1
+			mu.Unlock()
+			if back {
+				f.svc.fail(0) // the service is up again for the last attempt
+			}
+			return nil
+		}
+	})
+
+	require.Eventually(t, func() bool {
+		return f.stored(t, f.room.ID, voice.ID).Attachments[0].TranscriptState == dto.TranscriptStateDone
+	}, wait, 20*time.Millisecond)
+	require.Len(t, f.svc.calls(), transcribe.Attempts)
+	mu.Lock()
+	defer mu.Unlock()
+	require.Equal(t, []time.Duration{3 * time.Second, 6 * time.Second, 12 * time.Second, 24 * time.Second}, waits)
+	var total time.Duration
+	for _, w := range waits {
+		total += w
+	}
+	require.Less(t, total, 60*time.Second, "the attempts end inside the hold of TR-03")
 }
 
 // TR-06: an answer another attempt would not fix fails the row at once.

@@ -459,12 +459,12 @@ plataforma dessa IA mantêm a ordem, então as que vêm depois da mensagem de vo
 pelos mesmos 60 segundos no máximo.
 
 O [docker-compose.yml](docker-compose.yml) tem um serviço opcional `whisper`
-([speaches](https://github.com/speaches-ai/speaches), CPU) com limites rígidos de 2 CPUs e 1,5 GB, e
+([speaches](https://github.com/speaches-ai/speaches), CPU) com limites rígidos de 2 CPUs e 3 GB, e
 um volume para o cache de modelos. Suba-o com `docker compose --profile transcribe up -d` e
 descomente `PARTYLINE_TRANSCRIBE_URL` no serviço `partyline`. O speaches serve os modelos que já
 baixou: baixe o modelo uma vez pela API de modelos dele (`POST /v1/models/<id do modelo>`, veja a
-documentação do speaches); ele fica no volume. O modelo `small` ocupa cerca de 1 GB de memória
-enquanto trabalha e 10 a 20 segundos de CPU por minuto de áudio em 2 núcleos. Qualquer servidor que
+documentação do speaches); ele fica no volume. O modelo `small` passa de 1,5 GB de memória
+enquanto trabalha (com um limite menor ele é derrubado) e 10 a 20 segundos de CPU por minuto de áudio em 2 núcleos. Qualquer servidor que
 fale o mesmo endpoint serve (um servidor whisper.cpp, uma máquina com GPU).
 
 ## Modelo de segurança

@@ -45,6 +45,10 @@ every browser, phone and connection gets the same text, and the audio never leav
    transcript: a recording goes alone and the server transcribes it, so every voice message is heard
    by the same model. `GET /me` says so in `server_transcription`. (TR-10; owner, 2026-11-13: "we
    agreed to always transcribe with the server".)
+11. WHEN a transcription attempt fails for a transient reason THEN the server SHALL try again after 3, 6,
+   12 and 24 seconds (5 attempts, about 45 seconds), so a speech service that restarts comes back
+   inside the 60-second hold of TR-03. (TR-11; 2026-11-18: the service crashed out of memory and the
+   3 attempts over 6 seconds all failed while it restarted.)
 
 ## Design
 - **Engine:** an OpenAI-compatible transcription server running as a second container:
@@ -52,7 +56,7 @@ every browser, phone and connection gets the same text, and the audio never leav
   HTTP endpoint, so the engine can be swapped (whisper.cpp server, a GPU box later) without code
   changes. Config: `PARTYLINE_TRANSCRIBE_URL`, `PARTYLINE_TRANSCRIBE_MODEL`.
 - **Compose:** `docker-compose.yml` gets an optional `whisper` service with hard limits
-  (`cpus: 2`, `memory: 1.5G`) and a volume for the model cache; the partyline service points at it.
+  (`cpus: 2`, `memory: 3G`) and a volume for the model cache; the partyline service points at it.
 - **Server (phase 1, rooms):**
   - Migration 0035: `transcriptions(attachment_id PK → attachments ON DELETE CASCADE, message_id,
     room_id, state 'pending'|'done'|'failed'|'skipped', text, attempts, created_at, updated_at)`.
@@ -62,7 +66,7 @@ every browser, phone and connection gets the same text, and the audio never leav
   - Package `internal/transcribe`: one worker goroutine, oldest pending first. It reads the blob
     (`attachments.Store.Open`), posts it as multipart to `<URL>/v1/audio/transcriptions` (`file`,
     `model`, `response_format=json`), stores `done` + text, or retries a transient failure (network,
-    5xx) up to 3 attempts with backoff, then `failed`. A restart resumes `pending` rows. Logs never
+    5xx) up to 5 attempts, waiting 3, 6, 12 and 24 s between them (TR-11), then `failed`. A restart resumes `pending` rows. Logs never
     hold audio or text. Then it publishes `events.MessageTranscribed{RoomID, MessageID}`.
   - Not an edit: `MessageUpdated` would send AIs an "edited" frame. The transcript is a field of the
     attachment (`dto.Attachment.Transcript`, `TranscriptState`), filled by the same loaders that read
@@ -80,12 +84,12 @@ every browser, phone and connection gets the same text, and the audio never leav
   - **Language (TR-07):** the model detects it; no hint in phase 1.
 - **Config:** `PARTYLINE_TRANSCRIBE_URL` (base URL; empty = off), `PARTYLINE_TRANSCRIBE_MODEL`
   (default `Systran/faster-whisper-small`). The URL is the operator's: plain `http.Client`, not
-  safehttp, with a 90-second request timeout, so a hung service holds the queue for about 5 minutes
-  at most (3 attempts).
+  safehttp, with a 90-second request timeout, so a hung service holds the queue for about 7.5 minutes
+  at most (5 attempts).
 - **Web:** the voice bubble shows the browser transcript (message text) when there is one, else the
   attachment transcript; `pending` shows "Transcribing…" (pt-BR "Transcrevendo…").
 - **Compose:** `docker-compose.yml` gets an optional `whisper` service (speaches, CPU) with hard
-  limits (`cpus: 2`, `memory: 1.5G`), a model-cache volume, and the partyline service's
+  limits (`cpus: 2`, `memory: 3G`), a model-cache volume, and the partyline service's
   `PARTYLINE_TRANSCRIBE_URL: http://whisper:8000`.
 - **Phase 2, connections (TR-04):** the platform feed stops at the first item whose voice attachment is
   pending (60 s at most) so its order holds, and `PlatformRecord` content gets the same transcript line.
