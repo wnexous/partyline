@@ -9,7 +9,6 @@ import (
 
 	"github.com/wnexous/partyline/internal/events"
 	"github.com/wnexous/partyline/internal/orgs"
-	"github.com/wnexous/partyline/internal/store"
 	"github.com/wnexous/partyline/internal/store/db"
 )
 
@@ -27,7 +26,7 @@ func (c *Client) PersonalOrg() db.Organization {
 }
 
 // ShareAI gives the users sight of the AI, as its admin would by inviting them to the organization the AI
-// belongs to (AD-016): they become members of its home organization with no position, unless they already are
+// belongs to (AD-016): they become members of its home organization, unless they already are
 // members of it.
 func (c *Client) ShareAI(aiID string, users ...*Client) {
 	c.T.Helper()
@@ -39,13 +38,13 @@ func (c *Client) ShareAI(aiID string, users ...*Client) {
 		_, member, err := c.env.App.Authz.Member(ctx, home, u.User.ID)
 		require.NoError(c.T, err)
 		if !member {
-			c.env.AddMember(home, u.User.ID, orgs.PermissionMember, "")
+			c.env.AddMember(home, u.User.ID, orgs.PermissionMember)
 		}
 	}
 }
 
 // ShareConnection gives the users sight of the connection, as an admin of its organization would by inviting
-// them: they become members of it with no position, unless they already are members (AD-016).
+// them: they become members of it, unless they already are members (AD-016).
 func (c *Client) ShareConnection(connectorID string, userIDs ...string) {
 	c.T.Helper()
 	ctx := context.Background()
@@ -56,39 +55,30 @@ func (c *Client) ShareConnection(connectorID string, userIDs ...string) {
 		_, member, err := c.env.App.Authz.Member(ctx, conn.OrgID.String, id)
 		require.NoError(c.T, err)
 		if !member {
-			c.env.AddMember(conn.OrgID.String, id, orgs.PermissionMember, "")
+			c.env.AddMember(conn.OrgID.String, id, orgs.PermissionMember)
 		}
 	}
 }
 
-// AddPosition adds a position named name to the organization's chart under parent ("" for a root) and
-// returns its id. It writes the position directly, with no authorization, to set a chart up.
-func (e *Env) AddPosition(org, name, parent string) string {
+// AddMember makes the identity (a user or an AI) a member of the organization with the permission, directly
+// and with no authorization. It fails the test for an identity that already is a member.
+func (e *Env) AddMember(org, iid string, perm orgs.Permission) {
+	e.T.Helper()
+	e.addMember(orgs.AddMemberInput{OrgID: org, IID: iid, Permission: perm})
+}
+
+// AddInstructor makes the identity an instructor of the AI (SR2-06), directly and with no authorization.
+func (e *Env) AddInstructor(agent, iid string) {
 	e.T.Helper()
 	ctx := context.Background()
-	id := store.NewID()
 	require.NoError(e.T, e.App.Store.WithTx(ctx, func(q *db.Queries) error {
-		return q.CreatePosition(ctx, db.CreatePositionParams{
-			ID: id, OrgID: org, Name: name, ParentID: nullable(parent), CreatedAt: time.Now().UnixMilli(),
+		_, err := q.AddAgentInstructor(ctx, db.AddAgentInstructorParams{
+			AgentIid: agent, InstructorIid: iid, CreatedBy: "", CreatedAt: time.Now().UnixMilli(),
 		})
+		return err
 	}))
-	e.App.Bus.Publish(events.OrgChanged{OrgID: org})
-	return id
-}
-
-// AddMember makes the identity (a user or an AI) a member of the organization with the permission and
-// position ("" for none), directly and with no authorization. It fails the test for an identity that
-// already is a member.
-func (e *Env) AddMember(org, iid string, perm orgs.Permission, position string) {
-	e.T.Helper()
-	e.addMember(orgs.AddMemberInput{OrgID: org, IID: iid, Permission: perm, PositionID: position})
-}
-
-// AddGuest makes the identity a guest of the organization, invited by inviter (an identity id), with an
-// optional position.
-func (e *Env) AddGuest(org, iid, inviter, position string) {
-	e.T.Helper()
-	e.addMember(orgs.AddMemberInput{OrgID: org, IID: iid, Permission: orgs.PermissionGuest, PositionID: position, InviterIID: inviter})
+	e.App.Bus.Publish(events.OrgChanged{})
+	e.App.Bus.Publish(events.IntelligenceChanged{ID: agent})
 }
 
 func (e *Env) addMember(in orgs.AddMemberInput) {
@@ -99,7 +89,8 @@ func (e *Env) addMember(in orgs.AddMemberInput) {
 	e.App.Bus.Publish(events.OrgChanged{OrgID: in.OrgID})
 }
 
-// SetCreator records the identity as the creator of the AI, so the creator rule of POS-03 applies to it.
+// SetCreator records the identity as the creator of the AI: history the welcome names (SI-10), which gives
+// nothing (SR2-07).
 func (e *Env) SetCreator(agent, iid string) {
 	e.T.Helper()
 	ctx := context.Background()
@@ -126,8 +117,8 @@ func (e *Env) NewAIIn(owner *Client, org, name string) string {
 }
 
 // PlaceInDefaultOrg gives an AI that has no organization (NewLegacyAI) the home the upgrade gives a v0.3
-// identity (OUPG-01): its owner's default organization, which the owner created it in, as a member with no
-// position, created by the owner.
+// identity (OUPG-01): its owner's default organization, which the owner created it in, as a member, created by
+// the owner.
 func (e *Env) PlaceInDefaultOrg(owner *Client, aiID string) {
 	e.T.Helper()
 	ctx := context.Background()
@@ -148,29 +139,22 @@ func (e *Env) PlaceInDefaultOrg(owner *Client, aiID string) {
 	e.App.Bus.Publish(events.OrgChanged{OrgID: orgID})
 }
 
-// OrgRoles is one organization with an identity in every role of the authorization matrices (design,
-// "Authorization matrix per route group"), all logged in:
+// OrgRoles is one organization with an identity in every role of the authorization matrices, all logged in:
 //
-//	Admin ── holds the root position "Admin" ── admin of the organization
-//	 └ Manager ── member holding "Manager", above Target's position
-//	    └ Target, Peer ── members holding "Worker" (the same position: peers)
-//
-//	Member ── member with no position and no relation to Target
-//	Inviter ── member with no position; Guest ── a guest it invited (so it manages the guest)
+//	Admin ── admin of the organization
+//	Manager ── member; hosts TargetAI, so it instructs and manages it (SR2-07, SR2-13)
+//	Instructor ── member; a user instructor of TargetAI, so it instructs and manages it too
+//	Target, Peer, Member ── members with no link to anything
 //	Outsider ── not a member; InstanceAdmin ── the instance's admin account, not a member
 //
-// Admin manages Target and Manager through the root position; Manager manages Target; Peer does not;
-// Inviter manages Guest; nobody manages Admin. TargetAI is an AI of the organization (home, member, no
-// position) that Manager created and hosts.
+// TargetAI is an AI whose home is the organization, created and hosted by Manager.
 type OrgRoles struct {
 	Org db.Organization
 
-	Admin, Manager, Target, Peer, Member, Inviter, Guest, Outsider, InstanceAdmin *Client
+	Admin, Manager, Instructor, Target, Peer, Member, Outsider, InstanceAdmin *Client
 
-	// TargetAI is the id of an AI whose home is Org: a member with no position, created by Manager.
+	// TargetAI is the id of an AI whose home is Org, created and hosted by Manager.
 	TargetAI string
-	// The positions of the chart, by id.
-	AdminPosition, ManagerPosition, WorkerPosition string
 }
 
 // RoleClient is a client with the name of its role.
@@ -179,12 +163,12 @@ type RoleClient struct {
 	Client *Client
 }
 
-// All lists the clients by role name - admin, manager, target, peer, member, inviter, guest, outsider
-// and instance_admin - for tests that go through every role.
+// All lists the clients by role name - admin, manager, instructor, target, peer, member, outsider and
+// instance_admin - for tests that go through every role.
 func (r *OrgRoles) All() []RoleClient {
 	return []RoleClient{
-		{"admin", r.Admin}, {"manager", r.Manager}, {"target", r.Target}, {"peer", r.Peer}, {"member", r.Member},
-		{"inviter", r.Inviter}, {"guest", r.Guest}, {"outsider", r.Outsider}, {"instance_admin", r.InstanceAdmin},
+		{"admin", r.Admin}, {"manager", r.Manager}, {"instructor", r.Instructor}, {"target", r.Target},
+		{"peer", r.Peer}, {"member", r.Member}, {"outsider", r.Outsider}, {"instance_admin", r.InstanceAdmin},
 	}
 }
 
@@ -197,22 +181,16 @@ func (e *Env) OrgRoles(name string) *OrgRoles {
 	ctx := context.Background()
 	user := func(role string) *Client { return e.NewUser(name + "-" + role) }
 	r := &OrgRoles{
-		Admin: user("admin"), Manager: user("manager"), Target: user("target"), Peer: user("peer"),
-		Member: user("member"), Inviter: user("inviter"), Guest: user("guest"), Outsider: user("outsider"),
-		InstanceAdmin: e.NewAdmin(name + "-root"),
+		Admin: user("admin"), Manager: user("manager"), Instructor: user("instructor"), Target: user("target"),
+		Peer: user("peer"), Member: user("member"), Outsider: user("outsider"), InstanceAdmin: e.NewAdmin(name + "-root"),
 	}
 	created, err := e.App.Orgs.Create(ctx, r.Admin.User.ID, name)
 	require.NoError(e.T, err)
 	r.Org = created.Organization
-	r.AdminPosition = created.PositionID
-	r.ManagerPosition = e.AddPosition(r.Org.ID, "Manager", r.AdminPosition)
-	r.WorkerPosition = e.AddPosition(r.Org.ID, "Worker", r.ManagerPosition)
-	e.AddMember(r.Org.ID, r.Manager.User.ID, orgs.PermissionMember, r.ManagerPosition)
-	e.AddMember(r.Org.ID, r.Target.User.ID, orgs.PermissionMember, r.WorkerPosition)
-	e.AddMember(r.Org.ID, r.Peer.User.ID, orgs.PermissionMember, r.WorkerPosition)
-	e.AddMember(r.Org.ID, r.Member.User.ID, orgs.PermissionMember, "")
-	e.AddMember(r.Org.ID, r.Inviter.User.ID, orgs.PermissionMember, "")
-	e.AddGuest(r.Org.ID, r.Guest.User.ID, r.Inviter.User.ID, "")
+	for _, c := range []*Client{r.Manager, r.Instructor, r.Target, r.Peer, r.Member} {
+		e.AddMember(r.Org.ID, c.User.ID, orgs.PermissionMember)
+	}
 	r.TargetAI = e.NewAIIn(r.Manager, r.Org.ID, name+"-ai")
+	e.AddInstructor(r.TargetAI, r.Instructor.User.ID)
 	return r
 }

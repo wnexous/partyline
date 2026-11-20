@@ -27,7 +27,7 @@ const TruncatedMarker = "…[truncated]"
 // pairingCommand matches "!link CODE" and "/link CODE" (IDN-02), case-insensitively.
 var pairingCommand = regexp.MustCompile(`(?i)^\s*[!/]link\s+([A-Z2-9]{6})\s*$`)
 
-// Trust tells whether the identity manages the AI in the AI's home organization (POS-10, AD-018);
+// Trust tells whether the identity instructs the AI (its host or an instructor) (SR2-07, AD-018);
 // orgs.Authz is one.
 type Trust interface {
 	Trusts(ctx context.Context, managerIID, agentID string) (bool, error)
@@ -39,8 +39,8 @@ type PipelineDeps struct {
 	Bus        *events.Bus
 	Blobs      *attachments.Store
 	Identities *identities.Service
-	// Trust decides which senders are trusted: the user a sender resolves to must manage the operator AI
-	// in its home organization (POS-10). Without it no message is trusted (optional).
+	// Trust decides which senders are trusted: the user a sender resolves to must instruct the operator AI
+	// - be its host or an instructor (SR2-07). Without it no message is trusted (optional).
 	Trust Trust
 	// Queue takes the messages that pass the connection's filters, for the AI that operates it
 	// (AD-015).
@@ -96,7 +96,7 @@ func NewPipeline(d PipelineDeps) *Pipeline {
 //  5. the connection's deliver setting drops the chats it excludes;
 //  6. mentions-only drops a group message that neither mentions the account nor replies to a
 //     message Partyline sent (CID-12);
-//  7. the sender is resolved to a user who manages the operator or not (CID-13, POS-10), the media
+//  7. the sender is resolved to a user who manages the operator or not (CID-13, SR2-07), the media
 //     are stored as blobs and the message is queued for the operator, once (CID-26).
 //
 // Nothing becomes a message of a conversation, a person or a DM (CID-07). Failures are logged
@@ -192,8 +192,8 @@ func (p *Pipeline) repliesToAccount(ctx context.Context, chatID, replyToID strin
 
 // enqueue stores the media as blobs and queues the message for the connection's operator, once
 // (CID-26): a repeat downloads nothing and queues nothing. The sender is trusted only when it is a
-// verified account, on this connector, of a user who manages the operator in its home organization,
-// never the account's own typing (CID-13, CID-14, POS-10). That is decided now and stored with the
+// verified account, on this connector, of a user who instructs the operator (its host or an instructor),
+// never the account's own typing (CID-13, CID-14, SR2-07). That is decided now and stored with the
 // event: a later change of the chart does not change the events already queued (AD-018).
 func (p *Pipeline) enqueue(ctx context.Context, src Source, conn db.Connector, chat db.Chat, m Inbound) error {
 	operator, err := p.d.Store.R().GetAgent(ctx, conn.OperatorIid.String)
@@ -226,8 +226,8 @@ func (p *Pipeline) enqueue(ctx context.Context, src Source, conn db.Connector, c
 	return err
 }
 
-// trusted tells whether the sender resolves, through this connector (AD-008), to a user who manages
-// the operator AI in the AI's home organization (CID-13, POS-10).
+// trusted tells whether the sender resolves, through this connector (AD-008), to a user who instructs
+// the operator AI: its host or an instructor (CID-13, SR2-07).
 func (p *Pipeline) trusted(ctx context.Context, src Source, operatorID string, m Inbound) (bool, error) {
 	user, err := p.d.Identities.ResolveSender(ctx, src.ConnectorID, m.SenderID, m.SenderAltID)
 	if err != nil || user == "" || p.d.Trust == nil {

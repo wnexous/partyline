@@ -36,8 +36,8 @@ func TestCreateGroupWithMembers(t *testing.T) {
 	atlas := env.NewAI(alice, "atlas")
 	orion := env.NewAI(carol, "orion")
 	acme := alice.PersonalOrg().ID
-	env.AddMember(acme, bob.User.ID, orgs.PermissionMember, "")
-	env.AddMember(acme, orion, orgs.PermissionMember, "") // carol's AI works in alice's organization; carol does not
+	env.AddMember(acme, bob.User.ID, orgs.PermissionMember)
+	env.AddMember(acme, orion, orgs.PermissionMember) // carol's AI works in alice's organization; carol does not
 
 	room := testkit.Decode[dto.Room](createGroup(alice, "Launch", bob.User.ID, atlas, orion).RequireStatus(http.StatusCreated))
 	require.Equal(t, dto.ConversationKindGroup, room.Kind)
@@ -91,10 +91,10 @@ func TestCreateGroupRefusesTheMembersItsCreatorCannotAdd(t *testing.T) {
 	alice, bob, carol, dave := env.NewUser("alice"), env.NewUser("bob"), env.NewUser("carol"), env.NewUser("dave")
 	atlas := env.NewAI(alice, "atlas")
 	orion := env.NewAI(bob, "orion") // an AI alice shares no organization with
-	env.AddMember(alice.PersonalOrg().ID, bob.User.ID, orgs.PermissionMember, "")
-	env.AddMember(alice.PersonalOrg().ID, carol.User.ID, orgs.PermissionMember, "")
-	env.AddMember(alice.PersonalOrg().ID, dave.User.ID, orgs.PermissionMember, "") // then disabled
-	line, err := env.App.Orgs.Create(context.Background(), alice.User.ID, "line")  // carol is not in it
+	env.AddMember(alice.PersonalOrg().ID, bob.User.ID, orgs.PermissionMember)
+	env.AddMember(alice.PersonalOrg().ID, carol.User.ID, orgs.PermissionMember)
+	env.AddMember(alice.PersonalOrg().ID, dave.User.ID, orgs.PermissionMember)    // then disabled
+	line, err := env.App.Orgs.Create(context.Background(), alice.User.ID, "line") // carol is not in it
 	require.NoError(t, err)
 	connector, _ := storeChatIn(t, env, alice.User.ID, line.ID, "chat")
 	person := seedPerson(t, env, connector, "5511999990000", "Contact")
@@ -150,7 +150,7 @@ func TestCreateGroupRefusesTheMembersItsCreatorCannotAdd(t *testing.T) {
 	// without the refused ones.
 	shareAI(bob, orion, alice)
 	createGroup(alice, "Launch", bob.User.ID, atlas, orion).RequireError(http.StatusUnprocessableEntity, dto.ErrorCodeMembersRefused)
-	env.AddMember(alice.PersonalOrg().ID, orion, orgs.PermissionMember, "")
+	env.AddMember(alice.PersonalOrg().ID, orion, orgs.PermissionMember)
 	ok := testkit.Decode[dto.Room](createGroup(alice, "Launch", bob.User.ID, atlas, orion).RequireStatus(http.StatusCreated))
 	require.Equal(t, 3, ok.MemberCount)
 }
@@ -190,7 +190,7 @@ func TestCreateGroupValidation(t *testing.T) {
 		ids := make([]string, 0, dto.MaxGroupMembers+1)
 		for i := range dto.MaxGroupMembers + 1 {
 			member := env.NewUser(fmt.Sprintf("member%02d", i))
-			env.AddMember(alice.PersonalOrg().ID, member.User.ID, orgs.PermissionMember, "")
+			env.AddMember(alice.PersonalOrg().ID, member.User.ID, orgs.PermissionMember)
 			ids = append(ids, member.User.ID)
 		}
 		e := createGroup(alice, "Big", ids...).RequireError(http.StatusUnprocessableEntity, dto.ErrorCodeInvalid)
@@ -237,7 +237,7 @@ func TestCreateGroupAuthorization(t *testing.T) {
 func TestCreateGroupAnnouncesTheRoomLive(t *testing.T) {
 	env := testkit.New(t)
 	alice, bob, carol := env.NewUser("alice"), env.NewUser("bob"), env.NewUser("carol")
-	env.AddMember(alice.PersonalOrg().ID, bob.User.ID, orgs.PermissionMember, "")
+	env.AddMember(alice.PersonalOrg().ID, bob.User.ID, orgs.PermissionMember)
 	bobLive, carolLive := dialLive(t, bob), dialLive(t, carol)
 
 	room := testkit.Decode[dto.Room](createGroup(alice, "Launch", bob.User.ID).RequireStatus(http.StatusCreated))

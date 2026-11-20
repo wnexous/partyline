@@ -44,7 +44,7 @@ func newAlertFixture(t *testing.T, env *testkit.Env) *alertFixture {
 func (f *alertFixture) member(name string, permission orgs.Permission) *testkit.Client {
 	f.t.Helper()
 	c := f.env.NewUser(name)
-	f.env.AddMember(f.org, c.User.ID, permission, "")
+	f.env.AddMember(f.org, c.User.ID, permission)
 	return c
 }
 

@@ -130,7 +130,7 @@ func TestSessionIdentity(t *testing.T) {
 	id = sessionIdentity("", std(map[string]string{
 		"PARTYLINE_FOLDER": target, "PARTYLINE_LAUNCH_ORG": " acme ", "PARTYLINE_LAUNCH_POSITION": " Lead developer ", "PARTYLINE_LAUNCH_PARENT": " @lead ",
 	}, "/ignored"))
-	require.Equal(t, channel.Identity{Machine: "devbox", Folder: target, Org: "acme", Position: "Lead developer", Parent: "@lead"}, id)
+	require.Equal(t, channel.Identity{Machine: "devbox", Folder: target, Org: "acme", Parent: "@lead"}, id, "SR2-05: a stale launch position is never read")
 	// ... and only from there: the user-facing variables are the launcher's input, not the session's, and an empty
 	// or blank launch variable asks for nothing (L-035)
 	id = sessionIdentity("", std(map[string]string{

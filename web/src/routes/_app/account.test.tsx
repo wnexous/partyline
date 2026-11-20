@@ -530,7 +530,7 @@ describe("notifications on this device (PUSH-18)", () => {
  * they are started without --org, and deleting the account.
  */
 describe("default organization (ORG-04)", () => {
-  const memberships = [memberIn("o1", "admin"), memberIn("o2", "member"), memberIn("o3", "guest")];
+  const memberships = [memberIn("o1", "admin"), memberIn("o2", "member"), memberIn("o3", "member")];
   const withOrgs = (defaultOrg: string | undefined, extra: Parameters<typeof mockApi>[0] = {}) => ({
     ...base,
     "GET /me": json(200, { ...me, ...(defaultOrg ? { default_org_id: defaultOrg } : {}) }),
@@ -544,7 +544,7 @@ describe("default organization (ORG-04)", () => {
       .getAllByRole("option")
       .map((o) => o.textContent);
 
-  it("lists every organization the viewer belongs to, guest ones too, and shows the current default", async () => {
+  it("lists every organization the viewer belongs to and shows the current default", async () => {
     mockApi(withOrgs("o2"));
     renderRoute("/account");
     const field = await select();

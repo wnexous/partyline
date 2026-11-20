@@ -270,8 +270,8 @@ func creatorOrg(ctx context.Context, q *db.Queries, creator authn.Principal, req
 		}
 		orgID = o.ID
 	}
-	m, err := q.GetOrgMember(ctx, db.GetOrgMemberParams{OrgID: orgID, Iid: iid})
-	if errors.Is(err, sql.ErrNoRows) || (err == nil && m.Permission == string(orgs.PermissionGuest)) {
+	_, err := q.GetOrgMember(ctx, db.GetOrgMemberParams{OrgID: orgID, Iid: iid})
+	if errors.Is(err, sql.ErrNoRows) {
 		return "", access.ErrForbidden
 	}
 	return orgID, err
@@ -313,7 +313,7 @@ func (s *Service) CreateWithMembers(ctx context.Context, creator authn.Principal
 		if err := q.CreateRoom(ctx, db.CreateRoomParams{
 			ID: id, OwnerID: creator.UserID, Name: name, Description: description, Instructions: instructions,
 			InstructionsBy: author, RetentionDays: int64(retention), CreatedAt: now, UpdatedAt: now,
-			UpdatedBy: creator.IID(), // INS-06, POS-10: the creator wrote the name and description - an AI itself, not its host
+			UpdatedBy: creator.IID(), // INS-06, SR2-07: the creator wrote the name and description - an AI itself, not its host
 			OrgID:     sql.NullString{String: orgID, Valid: true}, CreatorIid: sql.NullString{String: creator.IID(), Valid: creator.IID() != ""},
 		}); err != nil {
 			return err

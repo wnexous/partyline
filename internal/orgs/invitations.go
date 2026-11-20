@@ -20,8 +20,7 @@ const (
 	// InvitationTTL is how long an invitation waits for an answer (OMEM-07).
 	InvitationTTL = 14 * 24 * time.Hour
 	// InvitationsPerHour is the most invitations an organization sends per hour, counted from the audit
-	// log: guest invitations and re-invitations included, AIs started with --parent not (they are not
-	// invitations).
+	// log: re-invitations included, AIs started with --parent not (they are not invitations).
 	InvitationsPerHour = 30
 )
 
@@ -44,7 +43,6 @@ type Invitation struct {
 	InviteeKind                                  string // "user" or "ai"
 	InviteeAvatarSha256                          string
 	Permission                                   Permission
-	PositionID, PositionName                     string
 	InvitedByIID, InvitedByHandle, InvitedByName string
 	InvitedByKind                                string // "user" or "ai"
 	InvitedByAvatarSha256                        string
@@ -57,41 +55,23 @@ func inviteesHandle(h string) string {
 	return strings.TrimSpace(strings.TrimPrefix(strings.TrimSpace(h), "@"))
 }
 
-// Invite invites a user or an AI, named by @handle, to the organization (OMEM-01). An admin may give any
-// permission and a position; every other member or guest may only invite as a guest, with no position,
-// else ErrForbidden (OMEM-04). The inviter is recorded and becomes the guest's inviter when the
-// invitation is accepted. The handle of a person (an external account), a disabled user or nobody is
-// ErrContactNotFound; an identity that already is a member is ErrAlreadyMember. Inviting again updates
-// the pending invitation and starts its 14 days over; whoever may invite only guests cannot replace a
-// pending invitation for another permission. The organization sends at most InvitationsPerHour
-// invitations per hour (ErrRateLimited): the count and the invitation are one transaction, so a burst
-// cannot pass the limit.
-func (s *Service) Invite(ctx context.Context, actorIID, orgID, handle string, perm Permission, positionID string) (Invitation, error) {
+// Invite invites a user or an AI, named by @handle, to the organization (OMEM-01) as an admin or a member;
+// only an admin invites (OMEM-04, SR2-01), anyone else gets ErrForbidden. The inviter is recorded. The
+// handle of a person (an external account), a disabled user or nobody is ErrContactNotFound; an identity
+// that already is a member is ErrAlreadyMember. Inviting again updates the pending invitation and starts
+// its 14 days over. The organization sends at most InvitationsPerHour invitations per hour
+// (ErrRateLimited): the count and the invitation are one transaction, so a burst cannot pass the limit.
+func (s *Service) Invite(ctx context.Context, actorIID, orgID, handle string, perm Permission) (Invitation, error) {
 	if err := s.z.RequireMember(ctx, orgID, actorIID); err != nil {
 		return Invitation{}, err
 	}
 	var invitationID string
 	err := s.store.WithTx(ctx, func(q *db.Queries) error {
-		actor, ok, err := memberOf(ctx, q, orgID, actorIID)
-		if err != nil {
+		if err := requireAdmin(ctx, q, orgID, actorIID); err != nil {
 			return err
 		}
-		if !ok {
-			return ErrNotFound
-		}
-		if actor.Permission != PermissionAdmin {
-			if perm != PermissionGuest || positionID != "" {
-				return ErrForbidden
-			}
-		} else {
-			if !perm.Valid() {
-				return &validation.Error{Fields: map[string]string{"permission": "must be admin, member or guest"}}
-			}
-			if positionID != "" {
-				if err := requirePositionIn(ctx, q, orgID, positionID, "position_id"); err != nil {
-					return err
-				}
-			}
+		if !perm.Valid() {
+			return &validation.Error{Fields: map[string]string{"permission": "must be admin or member"}}
 		}
 		now := s.now()
 		sent, err := q.CountAuditEntriesSince(ctx, db.CountAuditEntriesSinceParams{
@@ -116,10 +96,6 @@ func (s *Service) Invite(ctx context.Context, actorIID, orgID, handle string, pe
 		pending, err := q.GetOrgInvitationOf(ctx, db.GetOrgInvitationOfParams{OrgID: orgID, InviteeIid: invitee})
 		switch {
 		case err == nil:
-			// Someone who may only invite guests does not replace an invitation for more.
-			if actor.Permission != PermissionAdmin && Permission(pending.Permission) != PermissionGuest && pending.ExpiresAt > now.UnixMilli() {
-				return ErrForbidden
-			}
 			invitationID = pending.ID
 		case errors.Is(err, sql.ErrNoRows):
 			invitationID = store.NewID()
@@ -127,13 +103,13 @@ func (s *Service) Invite(ctx context.Context, actorIID, orgID, handle string, pe
 			return err
 		}
 		if err := q.UpsertOrgInvitation(ctx, db.UpsertOrgInvitationParams{
-			ID: invitationID, OrgID: orgID, InviteeIid: invitee, Permission: string(perm), PositionID: nullable(positionID),
+			ID: invitationID, OrgID: orgID, InviteeIid: invitee, Permission: string(perm),
 			InvitedBy: actorIID, CreatedAt: now.UnixMilli(), ExpiresAt: now.Add(InvitationTTL).UnixMilli(),
 		}); err != nil {
 			return err
 		}
 		return s.record(ctx, q, actorIID, audit.ActionOrgInvite, orgID, map[string]any{
-			"invitation": invitationID, "invitee": invitee, "permission": string(perm), "position_id": positionID,
+			"invitation": invitationID, "invitee": invitee, "permission": string(perm),
 		})
 	})
 	if err != nil {
@@ -199,13 +175,12 @@ func (s *Service) invitationView(ctx context.Context, id string) (Invitation, er
 	return list[0], nil
 }
 
-// invitationViews adds the names of the organizations, positions, invitees and inviters to rows.
+// invitationViews adds the names of the organizations, invitees and inviters to rows.
 func (s *Service) invitationViews(ctx context.Context, q *db.Queries, rows []db.OrgInvitation) ([]Invitation, error) {
 	if len(rows) == 0 {
 		return nil, nil
 	}
 	orgs := map[string]db.Organization{}
-	positionNames := map[string]string{}
 	people := map[string]db.Intelligence{}
 	var ids []string
 	for _, r := range rows {
@@ -218,13 +193,6 @@ func (s *Service) invitationViews(ctx context.Context, q *db.Queries, rows []db.
 			return nil, err
 		}
 		orgs[r.OrgID] = o
-		positions, err := q.ListOrgPositions(ctx, r.OrgID)
-		if err != nil {
-			return nil, err
-		}
-		for _, p := range positions {
-			positionNames[p.ID] = p.Name
-		}
 	}
 	found, err := q.ListIntelligencesByIDs(ctx, ids)
 	if err != nil {
@@ -240,7 +208,7 @@ func (s *Service) invitationViews(ctx context.Context, q *db.Queries, rows []db.
 			ID: r.ID, OrgID: r.OrgID, OrgName: orgs[r.OrgID].Name, OrgSlug: orgs[r.OrgID].Slug,
 			InviteeIID: r.InviteeIid, InviteeHandle: invitee.Handle, InviteeName: invitee.DisplayName,
 			InviteeKind: roleOf(invitee), InviteeAvatarSha256: invitee.AvatarSha256,
-			Permission: Permission(r.Permission), PositionID: r.PositionID.String, PositionName: positionNames[r.PositionID.String],
+			Permission:   Permission(r.Permission),
 			InvitedByIID: r.InvitedBy, InvitedByHandle: inviter.Handle, InvitedByName: inviter.DisplayName,
 			InvitedByKind: roleOf(inviter), InvitedByAvatarSha256: inviter.AvatarSha256,
 			CreatedAt: time.UnixMilli(r.CreatedAt).UTC(), ExpiresAt: time.UnixMilli(r.ExpiresAt).UTC(),
@@ -258,7 +226,7 @@ func roleOf(i db.Intelligence) string {
 }
 
 // InvitationFor returns the pending invitation for the identity that answers it - the invited user, or for
-// an invited AI whoever manages it in its home organization - and ErrNotFound for anyone else, for an
+// an invited AI whoever manages it (SR2-13) - and ErrNotFound for anyone else, for an
 // unknown invitation and for one that has expired. It is how the live hub tells who hears of an invitation.
 func (s *Service) InvitationFor(ctx context.Context, actorIID, invitationID string) (Invitation, error) {
 	q := s.store.R()
@@ -298,7 +266,7 @@ func (s *Service) ListInvitations(ctx context.Context, actorIID, orgID string) (
 }
 
 // MyInvitations lists the pending invitations the identity answers: its own, and those of the AIs it manages
-// in their home organization (OMEM-01), newest first.
+// (OMEM-01, SR2-13), newest first.
 func (s *Service) MyInvitations(ctx context.Context, actorIID string) ([]Invitation, error) {
 	if actorIID == "" {
 		return nil, nil
@@ -309,28 +277,18 @@ func (s *Service) MyInvitations(ctx context.Context, actorIID string) ([]Invitat
 	if err != nil {
 		return nil, err
 	}
-	around, err := q.ListInvitationsForAIsAround(ctx, db.ListInvitationsForAIsAroundParams{MemberIid: actorIID, Now: now})
+	managed, err := q.ListInvitationsForManagedAIs(ctx, db.ListInvitationsForManagedAIsParams{ManagerIid: actorIID, Now: now})
 	if err != nil {
 		return nil, err
 	}
-	session := s.z.Session()
 	seen := map[string]bool{}
 	var rows []db.OrgInvitation
 	for _, r := range own {
 		seen[r.ID] = true
 		rows = append(rows, r)
 	}
-	for _, r := range around {
-		if seen[r.ID] {
-			continue
-		}
-		home, err := session.homeOf(ctx, r.InviteeIid)
-		if err != nil {
-			return nil, err
-		}
-		if ok, err := session.Manages(ctx, actorIID, r.InviteeIid, home); err != nil {
-			return nil, err
-		} else if ok && home != "" {
+	for _, r := range managed {
+		if !seen[r.ID] {
 			rows = append(rows, r)
 		}
 	}
@@ -344,7 +302,7 @@ func (s *Service) MyInvitations(ctx context.Context, actorIID string) ([]Invitat
 }
 
 // mayAnswer reports whether actor answers an invitation of invitee: the user itself, or for an AI whoever
-// manages it in its home organization.
+// manages it (SR2-13).
 func mayAnswer(ctx context.Context, q *db.Queries, actor, invitee string) (bool, error) {
 	if actor == "" {
 		return false, nil
@@ -360,15 +318,11 @@ func mayAnswer(ctx context.Context, q *db.Queries, actor, invitee string) (bool,
 	case "user":
 		return actor == invitee, nil
 	case "ai":
-		home, err := q.GetAgentOrg(ctx, invitee)
-		if err != nil || home == "" {
-			return false, err
+		if actor == invitee {
+			return false, nil
 		}
-		chart, err := Load(ctx, q, home)
-		if err != nil {
-			return false, err
-		}
-		return chart.Manages(actor, invitee), nil
+		l, ok, err := LoadLinks(ctx, q, invitee)
+		return ok && l.Manages(actor), err
 	}
 	return false, nil
 }
@@ -397,7 +351,7 @@ func (s *Service) answer(ctx context.Context, q *db.Queries, actorIID, invitatio
 }
 
 // Accept accepts an invitation for the invitee: the identity becomes a member of the organization with the
-// invitation's permission and position, and for a guest the inviter is recorded (OMEM-02). The invitee is
+// invitation's permission (OMEM-02). The invitee is
 // the user itself, or for an AI whoever manages it; anyone else gets ErrNotFound, an expired invitation
 // ErrGone (OMEM-07). An invitee that already became a member another way gets ErrAlreadyMember and the
 // stale invitation goes. It returns the invitee's membership.
@@ -419,29 +373,18 @@ func (s *Service) Accept(ctx context.Context, actorIID, invitationID string) (Me
 			stale = true
 			return q.DeleteOrgInvitation(ctx, inv.ID)
 		}
-		// An invitation for more than a guest is only as good as its inviter's standing now: once the
-		// inviter is no longer an admin of the organization it is gone. (A guest invitation whose inviter
-		// left still stands; the guest then has no inviter.)
+		// An invitation is only as good as its inviter's standing now: once the inviter is no longer an
+		// admin of the organization it is gone.
 		by, ok, err := memberOf(ctx, q, inv.OrgID, inv.InvitedBy)
 		if err != nil {
 			return err
 		}
-		if Permission(inv.Permission) != PermissionGuest && (!ok || by.Permission != PermissionAdmin) {
+		if !ok || by.Permission != PermissionAdmin {
 			gone = true
 			return q.DeleteOrgInvitation(ctx, inv.ID)
 		}
-		inviter := ""
-		if Permission(inv.Permission) == PermissionGuest {
-			// The inviter is the guest's responsibility link; an account that is gone leaves none.
-			if _, err := q.GetIntelligence(ctx, inv.InvitedBy); err == nil {
-				inviter = inv.InvitedBy
-			} else if !errors.Is(err, sql.ErrNoRows) {
-				return err
-			}
-		}
 		if err := AddMember(ctx, q, AddMemberInput{
-			OrgID: inv.OrgID, IID: inv.InviteeIid, Permission: Permission(inv.Permission), PositionID: inv.PositionID.String,
-			InviterIID: inviter, Now: s.now(),
+			OrgID: inv.OrgID, IID: inv.InviteeIid, Permission: Permission(inv.Permission), Now: s.now(),
 		}); err != nil {
 			return err
 		}
@@ -453,7 +396,7 @@ func (s *Service) Accept(ctx context.Context, actorIID, invitationID string) (Me
 			return err
 		}
 		if err := s.record(ctx, q, actorIID, audit.ActionOrgMemberJoin, inv.OrgID, map[string]any{
-			"iid": inv.InviteeIid, "by": "invitation", "permission": inv.Permission, "position_id": inv.PositionID.String, "invited_by": inv.InvitedBy,
+			"iid": inv.InviteeIid, "by": "invitation", "permission": inv.Permission, "invited_by": inv.InvitedBy,
 		}); err != nil {
 			return err
 		}

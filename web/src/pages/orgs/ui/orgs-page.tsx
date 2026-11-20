@@ -6,7 +6,6 @@ import { useMe } from "@/entities/account";
 import {
   type MyOrg,
   OrgAvatar,
-  PermissionGuest,
   permissionLabel,
   useAnswerInvitation,
   useCurrentOrg,
@@ -16,7 +15,7 @@ import {
 import { NewOrgDialog } from "@/features/create-org";
 import { isApiError } from "@/shared/api/client";
 import { ErrorCodeAlreadyMember, type Invitation } from "@/shared/api/types.gen";
-import { type MessageKey, type Translate, useI18n, useT } from "@/shared/i18n";
+import { type MessageKey, useI18n, useT } from "@/shared/i18n";
 import { RelativeTime } from "@/shared/ui/atoms/relative-time";
 import { EmptyState } from "@/shared/ui/molecules/empty-state";
 import { PageHeader } from "@/shared/ui/molecules/page-header";
@@ -26,9 +25,7 @@ import { Skeleton } from "@/shared/ui/primitives/skeleton";
 
 /*
  * The viewer's organizations (ORG-01, OMEM-03) and the invitations waiting for them or for an AI
- * they manage (OMEM-01, OMEM-02, OMEM-07), with what accepting grants said in words: a position
- * puts the invitee under the identities above it, and a guest is the responsibility of its
- * inviter, who may remove it (POS-05).
+ * they manage (OMEM-01, OMEM-02, OMEM-07, SR2-13).
  */
 export function OrgsPage() {
   const t = useT();
@@ -134,11 +131,11 @@ function OrgRow({
       <div className="flex max-w-full flex-wrap items-center gap-1">
         <Button asChild variant="ghost" size="sm">
           <Link
-            to="/orgs/$orgId/chart"
+            to="/orgs/$orgId/members"
             params={{ orgId: org.id }}
-            aria-label={t("orgs.chartLink", { org: org.name })}
+            aria-label={t("orgs.membersLink", { org: org.name })}
           >
-            {t("orgs.tabChart")}
+            {t("orgs.tabMembers")}
           </Link>
         </Button>
         <Button asChild variant="ghost" size="sm">
@@ -197,23 +194,7 @@ function Invitations() {
 const INVITED_AS: Record<string, MessageKey> = {
   admin: "orgs.inviteAdmin",
   member: "orgs.inviteMember",
-  guest: "orgs.inviteGuest",
 };
-
-/** What accepting puts the invitee under, or nothing when it grants no one power over them (L-011). */
-export function grantText(t: Translate, inv: Invitation, who: string): string | null {
-  const guest = inv.permission === PermissionGuest;
-  const position = inv.position_name;
-  const vars = {
-    who,
-    org: inv.org_name,
-    inviter: inv.invited_by.display_name,
-    position: position ?? "",
-  };
-  if (position) return t(guest ? "orgs.grantPositionGuest" : "orgs.grantPosition", vars);
-  if (guest) return t("orgs.grantGuest", vars);
-  return null;
-}
 
 function InvitationItem({ invitation: inv }: { invitation: Invitation }) {
   const { t, locale } = useI18n();
@@ -241,7 +222,6 @@ function InvitationItem({ invitation: inv }: { invitation: Invitation }) {
     who,
     org,
   });
-  const grants = grantText(t, inv, who);
 
   return (
     <li aria-label={t("orgs.invitationTo", { org })} className="space-y-3 px-4 py-4 md:px-8">
@@ -251,12 +231,6 @@ function InvitationItem({ invitation: inv }: { invitation: Invitation }) {
           <p id={sentenceId} className="text-sm font-medium text-pretty">
             {sentence}
           </p>
-          {inv.position_name ? (
-            <p className="text-sm text-muted-foreground">
-              {t("orgs.invitePosition", { position: inv.position_name })}
-            </p>
-          ) : null}
-          {grants ? <p className="text-sm text-pretty">{grants}</p> : null}
           <p className="text-xs text-muted-foreground">
             <RelativeTime value={inv.expires_at} locale={locale}>
               {(when) => t("orgs.expires", { when })}

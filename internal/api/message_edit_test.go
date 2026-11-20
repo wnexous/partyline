@@ -57,14 +57,14 @@ func plantMessage(t *testing.T, env *testkit.Env, roomID string, p db.CreateMess
 }
 
 // groupMessageSetup is the setup of the message matrices over a group: a group of the organization made by
-// the role "member", with the roles "target" and "guest" in the room, and a message of "target".
+// the role "member", with the roles "target" and "peer" in the room, and a message of "target".
 func groupMessageSetup(env *testkit.Env, roles *testkit.OrgRoles) func(t *testing.T) map[string]string {
 	return func(t *testing.T) map[string]string {
 		creator, target := *roles.Member, *roles.Target
 		creator.T, target.T = t, t
 		room := groupIn(t, env, &creator, roles.Org.ID, "messages")
 		addToRoom(t, env, &creator, room.ID, roles.Target)
-		addToRoom(t, env, &creator, room.ID, roles.Guest)
+		addToRoom(t, env, &creator, room.ID, roles.Peer)
 		return map[string]string{"room": room.ID, "message": say(&target, room.ID, "original").ID}
 	}
 }
@@ -86,11 +86,11 @@ func dmMessageSetup(env *testkit.Env, roles *testkit.OrgRoles) func(t *testing.T
 
 // messageWant is the expected status of a route on a message that the role "target" wrote in the group the role
 // "member" made, by role: the author, whoever manages the group (its creator and the admin of the organization),
-// the other person in the room ("guest", who only posts) and everybody else.
+// the other person in the room ("peer", who only posts) and everybody else.
 func messageWant(author, managers, poster, other int) map[string]int {
 	return map[string]int{
-		"target": author, "member": managers, "admin": managers, "guest": poster,
-		"manager": other, "peer": other, "inviter": other, "outsider": other, "instance_admin": other,
+		"target": author, "member": managers, "admin": managers, "peer": poster,
+		"manager": other, "instructor": other, "outsider": other, "instance_admin": other,
 	}
 }
 

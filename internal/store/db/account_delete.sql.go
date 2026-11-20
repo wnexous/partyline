@@ -105,8 +105,8 @@ const listHostedAgentOrgIDs = `-- name: ListHostedAgentOrgIDs :many
 SELECT DISTINCT m.org_id FROM org_members m JOIN agents a ON a.id = m.iid WHERE a.owner_id = ? ORDER BY m.org_id
 `
 
-// The organizations those AIs are members of: the creator link of a positionless one goes with the
-// account, so who manages it there changes.
+// The organizations those AIs are members of: their host changes, so who instructs and manages them
+// there changes.
 func (q *Queries) ListHostedAgentOrgIDs(ctx context.Context, ownerID string) ([]string, error) {
 	rows, err := q.db.QueryContext(ctx, listHostedAgentOrgIDs, ownerID)
 	if err != nil {

@@ -33,7 +33,7 @@ func TestRetentionDeletesExpiredOrganizationInvitations(t *testing.T) {
 		}
 		for invitee, expires := range map[string]time.Time{"u-bob": now.Add(-time.Minute), "u-carol": now.Add(time.Hour)} {
 			if err := q.UpsertOrgInvitation(ctx, db.UpsertOrgInvitationParams{
-				ID: "inv-" + invitee, OrgID: "o1", InviteeIid: invitee, Permission: "guest", InvitedBy: "u-alice",
+				ID: "inv-" + invitee, OrgID: "o1", InviteeIid: invitee, Permission: "member", InvitedBy: "u-alice",
 				CreatedAt: 1, ExpiresAt: expires.UnixMilli(),
 			}); err != nil {
 				return err

@@ -7,8 +7,8 @@ import (
 	"github.com/wnexous/partyline/internal/store/db"
 )
 
-// Trust answers whether a message written by authorIID is trusted by the AI agentID (POS-10, AD-018):
-// true only when the author manages the AI in the AI's home organization. orgs.Session is a Trust.
+// Trust answers whether a message written by authorIID is trusted by the AI agentID (SR2-07, AD-018):
+// true only when the author is the AI's host or one of its instructors. orgs.Session is a Trust.
 type Trust interface {
 	Trusts(ctx context.Context, authorIID, agentID string) (bool, error)
 }

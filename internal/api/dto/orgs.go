@@ -1,38 +1,32 @@
 package dto
 
-import (
-	"encoding/json"
-	"time"
-)
+import "time"
 
-// Permission is what a membership allows in an organization itself, independent of the position
-// the identity holds there (OMEM-04).
+// Permission is what a membership allows in an organization (OMEM-04, SR2-01): an admin looks after it,
+// a member takes part.
 type Permission string
 
 // Organization permissions.
 const (
 	PermissionAdmin  Permission = "admin"
 	PermissionMember Permission = "member"
-	PermissionGuest  Permission = "guest"
 )
 
 // Organization is an organization as one of its members sees it: its address, its avatar and the
-// viewer's own permission and position (ORG-01, OMEM-03).
+// viewer's own permission (ORG-01, OMEM-03).
 type Organization struct {
 	ID   string `json:"id"`
 	Name string `json:"name"`
 	Slug string `json:"slug"`
 	// AvatarURL is /api/v1/orgs/{id}/avatar?v=<sha>; absent without an avatar.
 	AvatarURL string `json:"avatar_url,omitempty"`
-	// Permission and PositionID are the viewer's membership ("" for no position).
+	// Permission is the viewer's.
 	Permission Permission `json:"permission"`
-	PositionID string     `json:"position_id,omitempty"`
 	CreatedAt  time.Time  `json:"created_at"`
 	UpdatedAt  time.Time  `json:"updated_at"`
 }
 
-// CreateOrganizationRequest is the body of POST /orgs. The creator becomes its admin, holding the
-// root position (ORG-01).
+// CreateOrganizationRequest is the body of POST /orgs. The creator becomes its admin (ORG-01).
 type CreateOrganizationRequest struct {
 	Name string `json:"name"`
 }
@@ -44,33 +38,10 @@ type UpdateOrganizationRequest struct {
 	Slug *string `json:"slug,omitempty"`
 }
 
-// Position is one node of an organization's chart (POS-01). ParentID is absent for a root.
-type Position struct {
-	ID       string `json:"id"`
-	Name     string `json:"name"`
-	ParentID string `json:"parent_id,omitempty"`
-}
-
-// CreatePositionRequest is the body of POST /orgs/{org}/positions (POS-01); ParentID is empty for a
-// root position.
-type CreatePositionRequest struct {
-	Name     string `json:"name"`
-	ParentID string `json:"parent_id,omitempty"`
-}
-
-// UpdatePositionRequest is the body of PATCH /orgs/{org}/positions/{id}; absent fields are
-// unchanged, and an empty ParentID makes the position a root.
-type UpdatePositionRequest struct {
-	Name     *string `json:"name,omitempty"`
-	ParentID *string `json:"parent_id,omitempty"`
-}
-
-// UpdateOrgMemberRequest is the body of PATCH /orgs/{org}/members/{iid}. Permission changes the
-// member's permission (admin only); PositionID moves it to a position of the organization, or clears
-// it with null or "" (POS-04). A field that is absent is left alone.
+// UpdateOrgMemberRequest is the body of PATCH /orgs/{org}/members/{iid}: Permission changes the member's
+// permission (admin only). An absent field is left alone.
 type UpdateOrgMemberRequest struct {
-	Permission *Permission     `json:"permission,omitempty"`
-	PositionID json.RawMessage `json:"position_id,omitempty" tstype:"string | null"`
+	Permission *Permission `json:"permission,omitempty"`
 }
 
 // DeleteEffect is what deleting a member of an organization does there (POS-06): an AI whose home is the
@@ -84,96 +55,23 @@ const (
 )
 
 // OrgMember is one membership of an organization as the members list shows it (OMEM-01, OMEM-03):
-// the identity, its permission and position, the inviter of a guest, and what the viewer may do to it.
+// the identity, its permission, and what the viewer may do to it.
 type OrgMember struct {
 	Intelligence IntelligenceRef `json:"intelligence"`
 	Permission   Permission      `json:"permission"`
-	// PositionID and PositionName are absent when the member holds no position.
-	PositionID   string `json:"position_id,omitempty"`
-	PositionName string `json:"position_name,omitempty"`
-	// InvitedBy is the identity that invited a guest (POS-05); absent for other permissions.
-	InvitedBy *IntelligenceRef `json:"invited_by,omitempty"`
-	JoinedAt  time.Time        `json:"joined_at"`
-	// CanDelete says whether the viewer may delete the member in this organization (POS-05), and DeleteEffect
-	// what that does (POS-06). CanMove says whether the viewer may move the member to another position
-	// (POS-04): an admin may move anyone; anyone else a member it manages, to a position below its own.
+	JoinedAt     time.Time       `json:"joined_at"`
+	// CanDelete says whether the viewer may delete the member in this organization (SR2-12): an admin may
+	// take anyone else out, and the host of an AI whose home is the organization may delete it. DeleteEffect
+	// says what that does (POS-06).
 	CanDelete    bool         `json:"can_delete"`
 	DeleteEffect DeleteEffect `json:"delete_effect"`
-	CanMove      bool         `json:"can_move"`
-	// CanShareAccess says whether the viewer may give this person "the same access": put them in the
-	// position the viewer holds (ST-01). It follows the move rule (POS-04), so today only an admin who holds
-	// a position is offered it, for a user other than themselves who does not hold that position yet.
-	CanShareAccess bool `json:"can_share_access"`
 }
 
-// MovePreview is what moving a member to another position would change about management (POS-04, ST-05).
-// Every list is present; an empty one means nobody.
-type MovePreview struct {
-	// LoseManagement are the identities that manage the member now and would stop doing so.
-	LoseManagement []IntelligenceRef `json:"lose_management"`
-	// WillManage are the identities the member would manage after the move, by name.
-	WillManage []IntelligenceRef `json:"will_manage"`
-	// WillBeTrustedBy are the AIs among WillManage whose home is this organization: they would treat the
-	// member's messages as trusted (POS-10), by name.
-	WillBeTrustedBy []IntelligenceRef `json:"will_be_trusted_by"`
-	// NotShared are the identities the viewer manages that the member would still not manage after the move
-	// (the viewer manages them because it created or invited them, or through a position the member would not
-	// hold), by name.
-	NotShared []IntelligenceRef `json:"not_shared"`
-}
-
-// OrgChart is an organization's org chart as one of its members, guests included, sees it (CHART-01..03).
-// Every member appears once: in the Holders of its position, in Members, or in Unassigned.
-type OrgChart struct {
-	Viewer ChartViewer `json:"viewer"`
-	// Positions is every position of the organization as a flat list in tree order - a parent before its
-	// children, siblings by name - which ParentID links into the tree.
-	Positions []ChartPosition `json:"positions"`
-	// Members are the members with no position that hang under another member: a guest under its inviter,
-	// an AI under its creator (Under names it). A member Under names may be a holder, or itself one of
-	// Members or Unassigned.
-	Members []ChartMember `json:"members"`
-	// Unassigned are the members with no position and nobody to hang under.
-	Unassigned []ChartMember `json:"unassigned"`
-}
-
-// ChartViewer is what the chart says about the person looking at it.
-type ChartViewer struct {
-	// Admin tells whether the viewer is an admin of the organization, who may edit its positions (CHART-03).
-	Admin bool `json:"admin"`
-}
-
-// ChartPosition is one position with the members that hold it, ordered by name.
-type ChartPosition struct {
-	ID   string `json:"id"`
-	Name string `json:"name"`
-	// ParentID is absent for a root.
-	ParentID string        `json:"parent_id,omitempty"`
-	Holders  []ChartMember `json:"holders"`
-}
-
-// ChartMember is a member as the chart draws it, with what the viewer may do to it (CHART-03).
-type ChartMember struct {
-	Intelligence IntelligenceRef `json:"intelligence"`
-	// Permission carries the admin and guest badges.
-	Permission Permission `json:"permission"`
-	// Online is true for an AI that has a live session; people have no presence and are always false.
-	Online bool `json:"online"`
-	// Under is the id of the member this one hangs under; set only in Chart.Members.
-	Under string `json:"under,omitempty"`
-	// CanDelete, DeleteEffect and CanMove are the viewer's rights over the member, as in OrgMember.
-	CanDelete    bool         `json:"can_delete"`
-	DeleteEffect DeleteEffect `json:"delete_effect"`
-	CanMove      bool         `json:"can_move"`
-}
-
-// CreateInvitationRequest is the body of POST /orgs/{org}/invitations (OMEM-01). Handle is the @handle of
-// a user or an AI. Permission is required: an admin gives any, and every other member or guest invites
-// guests with no position only. PositionID is a position of the organization.
+// CreateInvitationRequest is the body of POST /orgs/{org}/invitations (OMEM-01), which only an admin sends.
+// Handle is the @handle of a user or an AI; Permission is admin or member.
 type CreateInvitationRequest struct {
 	Handle     string     `json:"handle"`
 	Permission Permission `json:"permission"`
-	PositionID string     `json:"position_id,omitempty"`
 }
 
 // Invitation is a pending invitation to an organization (OMEM-01) as the invitee, whoever manages an
@@ -187,13 +85,30 @@ type Invitation struct {
 	OrgSlug string `json:"org_slug"`
 	// Invitee is the user or AI invited.
 	Invitee IntelligenceRef `json:"invitee"`
-	// Permission and the position are what the invitee becomes on accepting; the position is absent when
-	// the invitation carries none.
-	Permission   Permission `json:"permission"`
-	PositionID   string     `json:"position_id,omitempty"`
-	PositionName string     `json:"position_name,omitempty"`
-	// InvitedBy is the identity that sent it; for a guest it becomes the guest's inviter (POS-05).
+	// Permission is what the invitee becomes on accepting.
+	Permission Permission `json:"permission"`
+	// InvitedBy is the admin that sent it.
 	InvitedBy IntelligenceRef `json:"invited_by"`
 	CreatedAt time.Time       `json:"created_at"`
 	ExpiresAt time.Time       `json:"expires_at"`
+}
+
+// AddInstructorRequest is the body of POST /agents/{id}/instructors (SR2-10): the @handle of a user or of an
+// AI the host can see.
+type AddInstructorRequest struct {
+	Handle string `json:"handle"`
+}
+
+// AgentInstructor is one identity that instructs an AI besides its host (SR2-06).
+type AgentInstructor struct {
+	Intelligence IntelligenceRef `json:"intelligence"`
+	// AddedAt is when the link was made.
+	AddedAt time.Time `json:"added_at"`
+}
+
+// AgentInstructors is GET /agents/{id}/instructors (SR2-10): who instructs the AI - its host and its
+// instructors, whose messages it treats as trusted (SR2-07). Instructors is always present, oldest first.
+type AgentInstructors struct {
+	Host        IntelligenceRef   `json:"host"`
+	Instructors []AgentInstructor `json:"instructors"`
 }

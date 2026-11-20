@@ -221,10 +221,9 @@ func (c *Client) DialAgentHeaders(h http.Header) (*AgentConn, *Response) {
 // process that holds the WebSocket (DialFolder gives every dial its own when it is empty, as
 // every process has its own: pass one to reconnect as the same process) and Takeover asks to
 // take over the AI's live session (SES-02). Features are the optional features the client
-// understands (dto.HeaderFeatures); none is a client from before platform events. Org, Position and
-// Parent are what --org, --position and --parent send (dto.HeaderOrg, HeaderPosition, HeaderParent): the
-// organization (slug or id), the name of the position, and the @handle or id of the AI that starts this
-// one; empty fields send no header, as a v0.5 CLI does.
+// understands (dto.HeaderFeatures); none is a client from before platform events. Org and
+// Parent are what --org and --parent send (dto.HeaderOrg, HeaderParent): the organization (slug or id) and
+// the @handle or id of the AI that starts this one; empty fields send no header, as a v0.5 CLI does.
 type Folder struct {
 	Machine string
 	Path    string
@@ -246,7 +245,6 @@ type Folder struct {
 	// Principal sends X-Partyline-Principal: the session asks to be the AI's principal (--principal).
 	Principal bool
 	Org       string
-	Position  string
 	Parent    string
 	// NewAI sends X-Partyline-New-AI: the folder gets its own AI, not the one of a folder above it (SI-07).
 	NewAI bool
@@ -275,7 +273,7 @@ func (f Folder) Headers() http.Header {
 		dto.HeaderHome: escapePath(f.Home), dto.HeaderLive: f.Live, dto.HeaderHarnessSession: f.HarnessSession,
 		dto.HeaderClientVersion: f.ClientVersion,
 		dto.HeaderFeatures:      strings.Join(f.Features, ","),
-		dto.HeaderOrg:           f.Org, dto.HeaderPosition: escapePath(f.Position), dto.HeaderParent: f.Parent,
+		dto.HeaderOrg:           f.Org, dto.HeaderParent: f.Parent,
 	} {
 		if v != "" {
 			h.Set(k, v)

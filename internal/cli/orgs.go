@@ -5,7 +5,6 @@ import (
 	"flag"
 	"fmt"
 	"io"
-	"slices"
 	"strings"
 	"text/tabwriter"
 	"time"
@@ -18,10 +17,10 @@ import (
 // the line is a courtesy and never holds a login up.
 const loginOrgsTimeout = 5 * time.Second
 
-// orgsCmd runs `partyline orgs [slug]` (ORG-04): the organizations of the token's user - address, name,
-// permission and position - with a star on the one a new AI joins when --org is not given, or, with an address,
-// that organization's chart of positions, so --org and --position can be told by name. The default itself is a
-// setting of the account, changed in the web app: agent tokens only reach the agent API (AD-020).
+// orgsCmd runs `partyline orgs [slug]` (ORG-04): the organizations of the token's user - address, name and
+// permission - with a star on the one a new AI joins when --org is not given; with an address, only that one.
+// The default itself is a setting of the account, changed in the web app: agent tokens only reach the agent API
+// (AD-020). Organizations have no chart any more (SR2-05).
 func orgsCmd(ctx context.Context, args []string, io stdio) int {
 	fs := flag.NewFlagSet("orgs", flag.ContinueOnError)
 	fs.SetOutput(io.stderr)
@@ -58,7 +57,7 @@ func orgsCmd(ctx context.Context, args []string, io stdio) int {
 		fmt.Fprintf(io.stderr, "partyline orgs: you belong to no organization with the address %q; partyline orgs lists yours\n", ref)
 		return 1
 	}
-	printOrgTree(io.stdout, org)
+	printOrgs(io.stdout, []dto.AgentOrg{org})
 	return 0
 }
 
@@ -79,76 +78,25 @@ func findOrg(list []dto.AgentOrg, ref string) (dto.AgentOrg, bool) {
 }
 
 // printOrgs writes the organizations in tab-aligned columns under a header - address (starred when it is the
-// default), name, permission and position - and then how the default is used and changed. Trailing empty
-// columns are left out, so a member with no position has no trailing spaces. A user in none is told how to get one.
+// default), name and permission - and then how the default is used and changed. A user in none is told how to
+// get one.
 func printOrgs(out io.Writer, list []dto.AgentOrg) {
 	if len(list) == 0 {
 		fmt.Fprintln(out, "You belong to no organization: create one in the web app, or ask an admin to invite you.")
 		return
 	}
 	w := tabwriter.NewWriter(out, 0, 0, 2, ' ', 0)
-	fmt.Fprintln(w, "  SLUG\tNAME\tPERMISSION\tPOSITION")
+	fmt.Fprintln(w, "  SLUG\tNAME\tPERMISSION")
 	for _, o := range list {
 		marker := "  "
 		if o.Default {
 			marker = "* "
 		}
-		cells := []string{marker + o.Slug, o.Name, o.Permission, o.Position}
-		for len(cells) > 1 && cells[len(cells)-1] == "" {
-			cells = cells[:len(cells)-1]
-		}
-		fmt.Fprintln(w, strings.Join(cells, "\t"))
+		fmt.Fprintln(w, strings.Join([]string{marker + o.Slug, o.Name, o.Permission}, "\t"))
 	}
 	_ = w.Flush()
 	fmt.Fprintln(out)
 	fmt.Fprintln(out, "New AIs join the one marked * unless you pass --org; change your default in Settings.")
-}
-
-// printOrgTree writes the organization's name and its chart of positions as a tree, two spaces in per level,
-// marking the one the user holds. A position whose parent is not in the chart is a root.
-func printOrgTree(out io.Writer, o dto.AgentOrg) {
-	fmt.Fprintln(out, orgTitle(&dto.ContactOrg{ID: o.ID, Name: o.Name, Slug: o.Slug}))
-	if len(o.Positions) == 0 {
-		fmt.Fprintln(out, "  No positions yet.")
-		return
-	}
-	listed := map[string]bool{}
-	for _, p := range o.Positions {
-		listed[p.ID] = true
-	}
-	under := map[string][]dto.AgentOrgPosition{}
-	for _, p := range o.Positions {
-		parent := p.ParentID
-		if !listed[parent] {
-			parent = ""
-		}
-		under[parent] = append(under[parent], p)
-	}
-	for _, siblings := range under {
-		slices.SortStableFunc(siblings, func(a, b dto.AgentOrgPosition) int {
-			if c := strings.Compare(strings.ToLower(a.Name), strings.ToLower(b.Name)); c != 0 {
-				return c
-			}
-			return strings.Compare(a.ID, b.ID)
-		})
-	}
-	seen := map[string]bool{}
-	var walk func(parent string, depth int)
-	walk = func(parent string, depth int) {
-		for _, p := range under[parent] {
-			if seen[p.ID] {
-				continue // a chart is a forest; this only guards against a loop in bad data
-			}
-			seen[p.ID] = true
-			line := strings.Repeat("  ", depth+1) + p.Name
-			if o.Position != "" && strings.EqualFold(p.Name, o.Position) {
-				line += " (you)"
-			}
-			fmt.Fprintln(out, line)
-			walk(p.ID, depth+1)
-		}
-	}
-	walk("", 0)
 }
 
 // printDefaultOrg tells which organization the new AIs of the user just logged in join - the one GET /agent/orgs

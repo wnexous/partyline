@@ -171,7 +171,7 @@ func visibleAgents(t *testing.T, c *testkit.Client) []string {
 func TestMergeMovesGroupsCursorsAndMessages(t *testing.T) {
 	w := newMergeWorld(t)
 	// Bob belongs to alice's organization, which is how he sees the AIs she runs and how his socket hears of them.
-	w.env.AddMember(w.alice.PersonalOrg().ID, w.bob.User.ID, orgs.PermissionMember, "")
+	w.env.AddMember(w.alice.PersonalOrg().ID, w.bob.User.ID, orgs.PermissionMember)
 
 	ops, dev, ahead, solo := createRoom(w.alice, "ops"), createRoom(w.alice, "dev"), createRoom(w.alice, "ahead"), createRoom(w.alice, "solo")
 	bobs := createRoom(w.bob, "bobs")
@@ -185,7 +185,7 @@ func TestMergeMovesGroupsCursorsAndMessages(t *testing.T) {
 	join(t, w.alice, ahead.ID, w.atlas)
 	soloAtlas := join(t, w.alice, solo.ID, w.atlas)
 	settle(t, w.alice, solo.ID, soloAtlas, dto.UpdateMemberRequest{DisplayName: ptr("Solo")})
-	w.env.AddMember(w.bob.PersonalOrg().ID, w.old, orgs.PermissionMember, "") // old also belongs to bob's organization
+	w.env.AddMember(w.bob.PersonalOrg().ID, w.old, orgs.PermissionMember) // old also belongs to bob's organization
 	join(t, w.bob, bobs.ID, w.old)
 
 	for _, room := range []string{ops.ID, dev.ID, ahead.ID, solo.ID} {
@@ -563,7 +563,8 @@ func auditActions(t *testing.T, admin *testkit.Client) []string {
 	return actions
 }
 
-// POS-04, AD-016: authorization of POST /agents/{id}/merge: the caller must manage both AIs and the AIs
+// SR2-13, AD-016: authorization of POST /agents/{id}/merge: the caller must manage both AIs (host them or
+// instruct them as a user) and the AIs
 // must share a home organization. Someone who only sees an AI is forbidden, someone who cannot see it gets
 // 404 (an admin of the instance included), and the checks on the target never answer before the caller's
 // right to the AI in the path. A missing or equal target is 422, an AI of another home organization 403,
@@ -573,7 +574,7 @@ func TestMergeAuthorization(t *testing.T) {
 	roles := env.OrgRoles("acme")
 	manager := roles.Manager
 	pairs := 0
-	// pair makes two AIs the manager created and hosts, positionless in acme: whoever manages the manager manages them.
+	// pair makes two AIs the manager created and hosts in acme: only the host manages them.
 	pair := func() (from, into string) {
 		pairs++
 		return env.NewAIIn(manager, roles.Org.ID, fmt.Sprintf("old%d", pairs)), env.NewAIIn(manager, roles.Org.ID, fmt.Sprintf("new%d", pairs))
@@ -583,13 +584,12 @@ func TestMergeAuthorization(t *testing.T) {
 		c    *testkit.Client
 		want int
 	}{
-		{"admin", roles.Admin, http.StatusOK}, // not the host, but above the creator in the chart
+		{"admin", roles.Admin, http.StatusForbidden}, // an admin of the organization does not manage its AIs
 		{"manager", roles.Manager, http.StatusOK},
+		{"instructor", roles.Instructor, http.StatusForbidden}, // it instructs another AI of the host
 		{"target", roles.Target, http.StatusForbidden},
 		{"peer", roles.Peer, http.StatusForbidden},
 		{"member", roles.Member, http.StatusForbidden},
-		{"inviter", roles.Inviter, http.StatusForbidden},
-		{"guest", roles.Guest, http.StatusForbidden},
 		{"outsider", roles.Outsider, http.StatusNotFound},
 		{"instance admin", roles.InstanceAdmin, http.StatusNotFound},
 	} {
@@ -664,7 +664,7 @@ func TestMergeAuthorization(t *testing.T) {
 			merges++
 		}
 	}
-	require.Equal(t, 3, merges, "only the merges that happened are audited: the admin's, the manager's and the user token's")
+	require.Equal(t, 2, merges, "only the merges that happened are audited: the manager's and the user token's")
 }
 
 // The merge is one transaction: when its last step fails nothing of it is left, and it works once
@@ -673,7 +673,7 @@ func TestMergeIsAllOrNothing(t *testing.T) {
 	w := newMergeWorld(t)
 	ctx := context.Background()
 	bobOrg := w.bob.PersonalOrg().ID
-	w.env.AddMember(bobOrg, w.old, orgs.PermissionMember, "") // old also works in bob's organization, where atlas is not
+	w.env.AddMember(bobOrg, w.old, orgs.PermissionMember) // old also works in bob's organization, where atlas is not
 	room := createRoom(w.alice, "ops")
 	oldMember := join(t, w.alice, room.ID, w.old)
 	w.say(t, w.old, room.ID, "from old")
@@ -740,13 +740,13 @@ func TestMergeEndsASessionThatAttachedAfterTheCheck(t *testing.T) {
 	require.Equal(t, []string{w.old}, kicked)
 }
 
-// POS-04, ORG-02: a merge moves the organizations of the merged AI to the survivor and re-points what the
+// ORG-02, SR2-06: a merge moves the organizations of the merged AI to the survivor and re-points what the
 // merged AI created to it. The organizations only the merged AI belongs to become the survivor's, with the
-// permission, position and inviter it had there; where both belong, the survivor's membership stays as it
-// is (it wins). The AIs and groups the merged AI created, and the guests it invited, are the survivor's
-// from then on. When the merged AI created the survivor, the survivor's creator is the merged AI's creator,
-// so that it is not left as its own. The merged AI is in no organization afterwards, and the organizations
-// are told.
+// permission it had there; where both belong, the survivor's membership stays as it is (it wins). The AIs and
+// groups the merged AI created are the survivor's from then on. Who instructed the merged AI instructs the
+// survivor, and the AIs the merged AI instructed are instructed by the survivor - never the survivor itself.
+// When the merged AI created the survivor, the survivor's creator is the merged AI's creator, so that it is not
+// left as its own. The merged AI is in no organization afterwards, and the organizations are told.
 func TestMergeMovesOrganizationMembershipsAndWhatTheMergedAICreated(t *testing.T) {
 	ctx := context.Background()
 	env := testkit.New(t)
@@ -755,20 +755,19 @@ func TestMergeMovesOrganizationMembershipsAndWhatTheMergedAICreated(t *testing.T
 	q := env.App.Store.R()
 	side, err := env.App.Orgs.Create(ctx, mgr.User.ID, "side")
 	require.NoError(t, err)
-	bots := env.AddPosition(side.ID, "Bots", side.PositionID)
 
-	alpha := env.NewAIIn(mgr, roles.Org.ID, "alpha") // the merged AI: of acme, and of side with the position Bots
-	env.AddMember(side.ID, alpha, orgs.PermissionMember, bots)
-	beta := env.NewAIIn(mgr, roles.Org.ID, "beta") // the survivor: of acme only, holding Worker there
+	alpha := env.NewAIIn(mgr, roles.Org.ID, "alpha") // the merged AI: a member of acme, an admin of side
+	env.AddMember(side.ID, alpha, orgs.PermissionAdmin)
+	beta := env.NewAIIn(mgr, roles.Org.ID, "beta") // the survivor: an admin of acme only
 	require.NoError(t, env.App.Store.WithTx(ctx, func(q *db.Queries) error {
-		return q.UpdateOrgMemberPosition(ctx, db.UpdateOrgMemberPositionParams{
-			PositionID: sql.NullString{String: roles.WorkerPosition, Valid: true}, OrgID: roles.Org.ID, Iid: beta,
-		})
+		return q.UpdateOrgMemberPermission(ctx, db.UpdateOrgMemberPermissionParams{Permission: string(orgs.PermissionAdmin), OrgID: roles.Org.ID, Iid: beta})
 	}))
 	env.SetCreator(beta, alpha) // alpha created beta
 	gamma := env.NewAIIn(mgr, roles.Org.ID, "gamma")
-	env.SetCreator(gamma, alpha)                                  // and gamma
-	env.AddGuest(roles.Org.ID, roles.Outsider.User.ID, alpha, "") // and invited a guest
+	env.SetCreator(gamma, alpha) // and gamma
+	env.AddInstructor(alpha, roles.Instructor.User.ID)
+	env.AddInstructor(beta, alpha)  // alpha instructs the survivor
+	env.AddInstructor(gamma, alpha) // and gamma
 	created := testkit.Decode[dto.CreatedGroup](mgr.Token(dto.TokenKindAgent, "laptop").AsAgent("alpha").
 		Post("/api/v1/agent/groups", dto.CreateGroupRequest{Name: "Made by alpha"}).RequireStatus(http.StatusCreated))
 	creatorOf := func(id string) string {
@@ -788,10 +787,10 @@ func TestMergeMovesOrganizationMembershipsAndWhatTheMergedAICreated(t *testing.T
 
 	inSide, err := q.GetOrgMember(ctx, db.GetOrgMemberParams{OrgID: side.ID, Iid: beta})
 	require.NoError(t, err, "the survivor joined the organization only the merged AI belonged to")
-	require.Equal(t, []any{string(orgs.PermissionMember), bots}, []any{inSide.Permission, inSide.PositionID.String}, "with the permission and position it had there")
+	require.Equal(t, string(orgs.PermissionAdmin), inSide.Permission, "with the permission it had there")
 	inAcme, err := q.GetOrgMember(ctx, db.GetOrgMemberParams{OrgID: roles.Org.ID, Iid: beta})
 	require.NoError(t, err)
-	require.Equal(t, roles.WorkerPosition, inAcme.PositionID.String, "where both belong, the survivor's membership wins")
+	require.Equal(t, string(orgs.PermissionAdmin), inAcme.Permission, "where both belong, the survivor's membership wins")
 	for _, orgID := range []string{roles.Org.ID, side.ID} {
 		_, err := q.GetOrgMember(ctx, db.GetOrgMemberParams{OrgID: orgID, Iid: alpha})
 		require.ErrorIs(t, err, sql.ErrNoRows, "the merged AI is in no organization any more")
@@ -801,9 +800,9 @@ func TestMergeMovesOrganizationMembershipsAndWhatTheMergedAICreated(t *testing.T
 	group, err := q.GetRoom(ctx, created.Room)
 	require.NoError(t, err)
 	require.Equal(t, beta, group.CreatorIid.String)
-	guest, err := q.GetOrgMember(ctx, db.GetOrgMemberParams{OrgID: roles.Org.ID, Iid: roles.Outsider.User.ID})
-	require.NoError(t, err)
-	require.Equal(t, beta, guest.InviterIid.String, "the guests it invited answer to the survivor")
+	require.Equal(t, []string{roles.Instructor.User.ID}, instructorsOf(t, env, beta), "who instructed the merged AI instructs the survivor, which does not instruct itself")
+	require.Equal(t, []string{beta}, instructorsOf(t, env, gamma), "the survivor instructs what the merged AI instructed")
+	require.Zero(t, countRows(t, env, `SELECT COUNT(*) FROM agent_instructors WHERE agent_iid = ? OR instructor_iid = ?`, alpha, alpha), "nothing of the merged AI is left")
 
 	told := map[string]bool{}
 	for {

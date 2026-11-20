@@ -3,6 +3,7 @@ package cli
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	goio "io"
 	"net/http"
@@ -73,13 +74,13 @@ func findLauncher(name string) (launcher, bool) {
 }
 
 // launcherOptions are the leading launcher flags: the identity to adopt (as), the ignored
-// project, where the AI asks to be put (org, position, parent), whether the folder gets its own AI (newAI)
+// project, where the AI asks to be put (org, parent), whether the folder gets its own AI (newAI)
 // and whether the person already agreed to take a live session over.
 type launcherOptions struct {
-	as, project           string
-	org, position, parent string
-	newAI                 bool
-	takeOver              bool
+	as, project string
+	org, parent string
+	newAI       bool
+	takeOver    bool
 	// principal is --principal: this session becomes the AI's principal one and pins its harness session id.
 	principal bool
 	// args is what goes to the harness unchanged.
@@ -87,13 +88,14 @@ type launcherOptions struct {
 }
 
 // launcherValueFlags are the leading flags that take a value, as `--x v` or `--x=v`.
-var launcherValueFlags = []string{"--as", "--name", "--project", "--org", "--position", "--parent"}
+var launcherValueFlags = []string{"--as", "--name", "--project", "--org", "--position", "--parent"} // --position only to refuse it
 
 // launcherFlags takes the leading --take-over, --principal, --new-ai, --as (also --name, its older spelling),
-// --project, --org, --position and --parent flags (also --as=<v>) off args (CLI-01, ORG-04, SI-07); the rest
-// goes to the harness unchanged. as is the identity to adopt; project is accepted and ignored, since AIs no
-// longer belong to projects; org, position and parent are where the AI asks to be put; --new-ai gives the
-// folder its own AI instead of joining the AI of a folder above it.
+// --project, --org and --parent flags (also --as=<v>) off args (CLI-01, ORG-04, SI-07); the rest goes to the
+// harness unchanged. as is the identity to adopt; project is accepted and ignored, since AIs no longer belong to
+// projects; org and parent are where the AI asks to be put; --new-ai gives the folder its own AI instead of
+// joining the AI of a folder above it. --position is refused (errPositionRemoved, SR2-05): positions were
+// removed, and starting without the one asked for would place the AI where the person did not want it.
 func launcherFlags(args []string) (launcherOptions, error) {
 	var opts launcherOptions
 	for len(args) > 0 {
@@ -113,6 +115,9 @@ func launcherFlags(args []string) (launcherOptions, error) {
 		if !slices.Contains(launcherValueFlags, flag) {
 			break
 		}
+		if flag == "--position" {
+			return launcherOptions{}, errPositionRemoved
+		}
 		if !inline {
 			if len(args) < 2 {
 				return launcherOptions{}, fmt.Errorf("%s needs a value", flag)
@@ -125,8 +130,6 @@ func launcherFlags(args []string) (launcherOptions, error) {
 			opts.project = value
 		case "--org":
 			opts.org = value
-		case "--position":
-			opts.position = value
 		case "--parent":
 			opts.parent = value
 		default:
@@ -137,13 +140,16 @@ func launcherFlags(args []string) (launcherOptions, error) {
 	return opts, nil
 }
 
-// launchPlacement is where the AI of a launch asks to be put (ORG-04, POS-07, POS-08): the organization
-// (a slug or an id), the name of the position and the @handle or id of the AI that starts it. An empty
-// field asks for nothing, and the server applies its defaults (AD-020). newAI is --new-ai: the folder gets its
-// own AI (SI-07); the server never refuses it, so it is no placement to check.
+// errPositionRemoved is the refusal of a launch given --position (SR2-05).
+var errPositionRemoved = errors.New("--position was removed: positions no longer exist; use --parent <@handle> to let an AI instruct the new one, or add instructors on the AI's profile")
+
+// launchPlacement is where the AI of a launch asks to be put (ORG-04, POS-08, SR2-09): the organization (a slug
+// or an id) and the @handle or id of the AI that starts it, which becomes its instructor. An empty field asks for
+// nothing, and the server applies its defaults (AD-020). newAI is --new-ai: the folder gets its own AI (SI-07);
+// the server never refuses it, so it is no placement to check.
 type launchPlacement struct {
-	org, position, parent string
-	newAI                 bool
+	org, parent string
+	newAI       bool
 }
 
 // ownAI is whether the launch asked for an AI of its own folder (--parent or --new-ai): it sends no main
@@ -151,10 +157,10 @@ type launchPlacement struct {
 func (p launchPlacement) ownAI() bool { return p.parent != "" || p.newAI }
 
 // any is whether the launch asked for something.
-func (p launchPlacement) any() bool { return p.org != "" || p.position != "" || p.parent != "" }
+func (p launchPlacement) any() bool { return p.org != "" || p.parent != "" }
 
-// placementOf is what a launch asks for: each flag, else its PARTYLINE_ORG, PARTYLINE_POSITION,
-// PARTYLINE_PARENT or PARTYLINE_NEW_AI=1 variable; a flag wins, and a blank one is no flag. Only these are read as input: the
+// placementOf is what a launch asks for: each flag, else its PARTYLINE_ORG, PARTYLINE_PARENT or
+// PARTYLINE_NEW_AI=1 variable; a flag wins, and a blank one is no flag. Only these are read as input: the
 // PARTYLINE_LAUNCH_* ones of a session the launcher itself runs in belong to that session.
 func placementOf(opts launcherOptions, io stdio) launchPlacement {
 	pick := func(flag, variable string) string {
@@ -164,24 +170,23 @@ func placementOf(opts launcherOptions, io stdio) launchPlacement {
 		return strings.TrimSpace(io.getenv(variable))
 	}
 	return launchPlacement{
-		org: pick(opts.org, orgEnvVar), position: pick(opts.position, positionEnvVar), parent: pick(opts.parent, parentEnvVar),
+		org: pick(opts.org, orgEnvVar), parent: pick(opts.parent, parentEnvVar),
 		newAI: opts.newAI || strings.TrimSpace(io.getenv(newAIEnvVar)) == "1",
 	}
 }
 
 // launch runs `partyline <harness> [--take-over] [--principal] [--new-ai] [--as <identity>] [--org <slug>]
-// [--position <name>] [--parent <@handle>] [args…]`: it replaces this process with the harness binary found on PATH, the
+// [--parent <@handle>] [args…]`: it replaces this process with the harness binary found on PATH, the
 // launcher's own arguments and then args unchanged, in this environment with PARTYLINE_FOLDER set to
 // the canonical folder it runs in, PARTYLINE_MAIN_FOLDER to the main worktree of a linked one (the
 // session resolves the AI of the repository from it, SESS-01; a --parent or --new-ai launch sets none,
 // SESS-09, SI-07), PARTYLINE_LAUNCH_NEW_AI=1 for --new-ai (else PARTYLINE_NEW_AI=1, which is consumed) and
 // PARTYLINE_HARNESS to the harness id, which the session's partyline processes read so that the channel,
 // listen and the tools-only server of one session act as the same AI (HAR-03, AID-07), and
-// PARTYLINE_AGENT set from --as to adopt that identity (MIG-02). What the AI asks for - --org,
-// --position and --parent, else PARTYLINE_ORG,
-// PARTYLINE_POSITION and PARTYLINE_PARENT - is consumed: those variables are removed from the harness's
-// environment and the values are handed on as PARTYLINE_LAUNCH_ORG, _POSITION and _PARENT, which the
-// session's processes send to the server as headers (ORG-04, POS-07, POS-08, AD-020). Placement
+// PARTYLINE_AGENT set from --as to adopt that identity (MIG-02). What the AI asks for - --org and --parent,
+// else PARTYLINE_ORG and PARTYLINE_PARENT - is consumed: those variables are removed from the harness's
+// environment and the values are handed on as PARTYLINE_LAUNCH_ORG and _PARENT, which the session's processes
+// send to the server as headers (ORG-04, POS-08, SR2-09, AD-020). Placement
 // variables the launcher itself inherited from a session it runs in are replaced, never read: a nested
 // launch is another AI. When a placement is asked for the server is asked first whether the start would
 // be refused, and a refusal is printed and exits 1 without starting anything. A harness that opens a
@@ -260,7 +265,7 @@ func launch(ctx context.Context, l launcher, args []string, io stdio) int {
 		}
 		set[liveEnvVar] = strconv.Itoa(pid()) + ":" + channel.NewLiveID()
 	}
-	for name, v := range map[string]string{launchOrgVar: place.org, launchPositionVar: place.position, launchParentVar: place.parent} {
+	for name, v := range map[string]string{launchOrgVar: place.org, launchParentVar: place.parent} {
 		if v != "" {
 			set[name] = v
 		}
@@ -275,7 +280,7 @@ func launch(ctx context.Context, l launcher, args []string, io stdio) int {
 	}
 	for _, k := range []string{
 		folderEnvVar, mainFolderVar, "PARTYLINE_HARNESS", "PARTYLINE_TAKEOVER", principalEnvVar, "PARTYLINE_AGENT",
-		launchOrgVar, launchPositionVar, launchParentVar, launchNewAIVar, liveEnvVar,
+		launchOrgVar, launchParentVar, launchNewAIVar, liveEnvVar,
 	} {
 		if v, ok := set[k]; ok {
 			env = append(env, k+"="+v)
@@ -303,11 +308,12 @@ func launch(ctx context.Context, l launcher, args []string, io stdio) int {
 
 // consumedVars are the variables a launch takes out of the harness's environment: the consent to take a live
 // session over, which only this launch may give; the main worktree folder of the session it may itself run in
-// (this launch computes its own); the placement variables it consumed (PARTYLINE_ORG, PARTYLINE_POSITION,
-// PARTYLINE_PARENT, PARTYLINE_NEW_AI); and those of the session it may itself run in (PARTYLINE_LAUNCH_*), which
-// this launch replaces with its own.
+// (this launch computes its own); the placement variables it consumed (PARTYLINE_ORG, PARTYLINE_PARENT,
+// PARTYLINE_NEW_AI); those of the session it may itself run in (PARTYLINE_LAUNCH_*), which this launch replaces
+// with its own; and the position variables of before SR2-05, which nothing reads any more.
 var consumedVars = []string{
-	"PARTYLINE_TAKEOVER", principalEnvVar, mainFolderVar, orgEnvVar, positionEnvVar, parentEnvVar, launchOrgVar, launchPositionVar, launchParentVar,
+	"PARTYLINE_TAKEOVER", principalEnvVar, mainFolderVar, orgEnvVar, parentEnvVar, launchOrgVar, launchParentVar,
+	removedPositionVar, removedLaunchPositionVar,
 	newAIEnvVar, launchNewAIVar,
 	liveEnvVar, // the live id of the session this launch may itself run in is never the new session's
 }
@@ -378,7 +384,7 @@ func lookupSession(ctx context.Context, l launcher, as string, place launchPlace
 	identity := sessionIdentity(as, io)
 	identity.Folder, identity.Harness = launchFolder(io), l.id
 	// This launch's own placement, never the one of a session it may run in (sessionIdentity reads that one).
-	identity.Org, identity.Position, identity.Parent, identity.NewAI = place.org, place.position, place.parent, place.newAI
+	identity.Org, identity.Parent, identity.NewAI = place.org, place.parent, place.newAI
 	// The main folder of the folder being launched in, never the one of the session this may run in; a child
 	// launch is another AI, which its own folder identifies (SESS-09).
 	identity.MainFolder = launchMainFolder(identity.Folder, place.ownAI())
@@ -407,8 +413,7 @@ func lookupSession(ctx context.Context, l launcher, as string, place launchPlace
 
 // setIdentityHeaders sets the folder headers of a session request like channel.Identity does
 // for the channel: the machine and the percent-encoded folder always, the rest when known - the home
-// folder, the harness, the identity to adopt and the placement the launch asks for (the position
-// percent-encoded like the folder).
+// folder, the harness, the identity to adopt and the placement the launch asks for.
 func setIdentityHeaders(h http.Header, id channel.Identity) {
 	machine := id.Machine
 	if machine == "" {
@@ -430,9 +435,6 @@ func setIdentityHeaders(h http.Header, id channel.Identity) {
 	}
 	if id.Org != "" {
 		h.Set(dto.HeaderOrg, id.Org)
-	}
-	if id.Position != "" {
-		h.Set(dto.HeaderPosition, url.PathEscape(id.Position))
 	}
 	if id.Parent != "" {
 		h.Set(dto.HeaderParent, id.Parent)

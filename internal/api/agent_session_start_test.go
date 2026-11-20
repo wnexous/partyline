@@ -1,7 +1,6 @@
 package api_test
 
 import (
-	"context"
 	"fmt"
 	"net/http"
 	"strings"
@@ -22,9 +21,9 @@ func sessionCheck(tok *testkit.Client, f testkit.Folder) *testkit.Response {
 }
 
 // launchFolder is the folder of a start with the placement a launcher passes on.
-func launchFolder(name, org, position, parent string) testkit.Folder {
+func launchFolder(name, org, parent string) testkit.Folder {
 	f := placementFolder(name)
-	f.Org, f.Position, f.Parent = org, position, parent
+	f.Org, f.Parent = org, parent
 	return f
 }
 
@@ -51,41 +50,29 @@ func (w *placementWorld) quiet(t *testing.T) func() {
 	}
 }
 
-// SES-01, ORG-04, ORG-05, POS-07, POS-08 (T36): before the launcher starts the harness it asks GET
-// /agent/session. When the start names an organization, a position or a parent, the answer is the refusal the
+// SES-01, ORG-04, ORG-05, POS-08 (T36): before the launcher starts the harness it asks GET
+// /agent/session. When the start names an organization or a parent, the answer is the refusal the
 // session itself would get - the same status and code, the same words - so that the person reads it in the
 // terminal where they typed the command. The check changes nothing: no AI, profile, membership or audit entry.
 func TestTheSessionCheckRefusesWhatTheStartWouldRefuse(t *testing.T) {
 	w := newPlacementWorld(t)
-	globexOnly := w.env.AddPosition(w.globex.ID, "Treasurer", "")
-	require.NotEmpty(t, globexOnly)
 
 	refusals := []struct {
 		name   string
 		host   *testkit.Client
 		org    string
-		pos    string
 		parent string
 		status int
 		code   dto.ErrorCode
 	}{
-		{"an organization that does not exist", w.alice, "no-such-organization", "", "", http.StatusUnprocessableEntity, dto.ErrorCodeOrganizationRequired},
-		{"an organization the host is not in", w.carol, "acme", "", "", http.StatusForbidden, dto.ErrorCodeForbidden},
-		{"the same organization by its id", w.carol, w.acme.ID, "", "", http.StatusForbidden, dto.ErrorCodeForbidden},
-		{"a position that does not exist", w.alice, "acme", "Nope", "", http.StatusUnprocessableEntity, dto.ErrorCodePositionUnknown},
-		{"a position only another organization has", w.alice, "acme", "Treasurer", "", http.StatusUnprocessableEntity, dto.ErrorCodePositionUnknown},
-		{"the creator's own level", w.bob, "", "Director", "", http.StatusForbidden, dto.ErrorCodeForbidden},
-		{"above the creator", w.bob, "", "Admin", "", http.StatusForbidden, dto.ErrorCodeForbidden},
-		{"another branch of the chart", w.bob, "", "Sentinel", "", http.StatusForbidden, dto.ErrorCodeForbidden},
-		{"a creator without a position", w.erin, "", "Worktrees", "", http.StatusForbidden, dto.ErrorCodeForbidden},
-		{"a guest creator", w.gus, "", "Worktrees", "", http.StatusForbidden, dto.ErrorCodeForbidden},
-		{"a parent AI that is not in the organization", w.alice, w.globex.Slug, "", "@lead", http.StatusForbidden, dto.ErrorCodeForbidden},
-		{"a position above the parent AI's own, though the host is an admin", w.alice, "", "Director", "@lead", http.StatusForbidden, dto.ErrorCodeForbidden},
-		{"a parent AI of another branch", w.alice, "", "Worktrees", "@sentinel", http.StatusForbidden, dto.ErrorCodeForbidden},
+		{"an organization that does not exist", w.alice, "no-such-organization", "", http.StatusUnprocessableEntity, dto.ErrorCodeOrganizationRequired},
+		{"an organization the host is not in", w.carol, "acme", "", http.StatusForbidden, dto.ErrorCodeForbidden},
+		{"the same organization by its id", w.carol, w.acme.ID, "", http.StatusForbidden, dto.ErrorCodeForbidden},
+		{"a parent AI that is not in the organization", w.alice, w.globex.Slug, "@lead", http.StatusForbidden, dto.ErrorCodeForbidden},
 	}
 	for i, c := range refusals {
 		t.Run(c.name, func(t *testing.T) {
-			f := launchFolder(fmt.Sprintf("refused-%d", i), c.org, c.pos, c.parent)
+			f := launchFolder(fmt.Sprintf("refused-%d", i), c.org, c.parent)
 			tok := w.agentToken(c.host)
 			before := w.census(t)
 			noEvents := w.quiet(t)
@@ -104,7 +91,7 @@ func TestTheSessionCheckRefusesWhatTheStartWouldRefuse(t *testing.T) {
 	}
 }
 
-// ORG-04, POS-07, POS-08: a start the server would accept is answered like any lookup of a folder that has no AI
+// ORG-04, POS-08: a start the server would accept is answered like any lookup of a folder that has no AI
 // yet - 200, and the AI does not exist - and the check still creates nothing; the start that follows works.
 func TestTheSessionCheckAcceptsWhatTheStartWouldAccept(t *testing.T) {
 	w := newPlacementWorld(t)
@@ -112,16 +99,14 @@ func TestTheSessionCheckAcceptsWhatTheStartWouldAccept(t *testing.T) {
 		name   string
 		host   *testkit.Client
 		org    string
-		pos    string
 		parent string
 	}{
-		{"no placement at all", w.alice, "", "", ""},
-		{"an organization, in capitals", w.alice, "ACME", "", ""},
-		{"an organization by its id", w.alice, "", "", ""},
-		{"a position below the creator's, in other letters", w.bob, "", "lead DEVELOPER", ""},
-		{"an admin creator, at any position", w.alice, "acme", "Sentinel", ""},
-		{"a parent AI and a position below its own", w.alice, "", "Worktrees", "@lead"},
-		{"a parent the host cannot act for is ignored", w.alice, "", "", "@bob"},
+		{"no placement at all", w.alice, "", ""},
+		{"an organization, in capitals", w.alice, "ACME", ""},
+		{"an organization by its id", w.alice, "", ""},
+		{"a member's start in their default organization", w.bob, "", ""},
+		{"a parent AI", w.alice, "", "@lead"},
+		{"a parent the host cannot act for is ignored", w.alice, "", "@bob"},
 	}
 	for i, c := range accepted {
 		t.Run(c.name, func(t *testing.T) {
@@ -129,7 +114,7 @@ func TestTheSessionCheckAcceptsWhatTheStartWouldAccept(t *testing.T) {
 			if c.name == "an organization by its id" {
 				org = w.acme.ID
 			}
-			f := launchFolder(fmt.Sprintf("accepted-%d", i), org, c.pos, c.parent)
+			f := launchFolder(fmt.Sprintf("accepted-%d", i), org, c.parent)
 			tok := w.agentToken(c.host)
 			before := w.census(t)
 			noEvents := w.quiet(t)
@@ -146,13 +131,12 @@ func TestTheSessionCheckAcceptsWhatTheStartWouldAccept(t *testing.T) {
 	}
 }
 
-// ORG-04, POS-07: for an AI that already exists the check applies the later-start rules. --org may only name
-// its home organization (409 organization_mismatch, with the home organization in the details, for any other),
-// --position that it holds is nothing and another one is allowed or refused under the rule of a later start,
-// and --parent is ignored. An allowed move is only checked: the AI keeps its position.
+// ORG-04: for an AI that already exists the check applies the later-start rules. --org may only name its home
+// organization (409 organization_mismatch, with the home organization in the details, for any other), and
+// --parent is ignored (SR2-09).
 func TestTheSessionCheckAppliesTheRulesOfALaterStart(t *testing.T) {
 	w := newPlacementWorld(t)
-	f := testkit.FolderOf("lead") // the AI lead of acme, hosted by alice, holding Lead developer
+	f := testkit.FolderOf("lead") // the AI lead of acme, hosted by alice
 	alice := w.agentToken(w.alice)
 
 	for _, ref := range []string{"acme", "ACME", w.acme.ID} {
@@ -180,48 +164,11 @@ func TestTheSessionCheckAppliesTheRulesOfALaterStart(t *testing.T) {
 			require.Equal(t, before, w.census(t))
 		})
 	}
-	t.Run("the position it holds", func(*testing.T) {
-		f := f
-		f.Position = "Lead developer"
-		sessionCheck(alice, f).RequireStatus(http.StatusOK)
-	})
-	t.Run("a position that does not exist", func(*testing.T) {
-		f := f
-		f.Position = "Nope"
-		sessionCheck(alice, f).RequireError(http.StatusUnprocessableEntity, dto.ErrorCodePositionUnknown)
-	})
-	t.Run("a move an admin may make is checked, not made", func(t *testing.T) {
-		f := f
-		f.Position = "Director"
-		noEvents := w.quiet(t)
-		sessionCheck(alice, f).RequireStatus(http.StatusOK)
-		require.Equal(t, w.leadDev, w.positionOf(t, w.acme.ID, w.lead), "the AI keeps its position")
-		noEvents()
-	})
-	t.Run("a move the host may not make", func(t *testing.T) {
-		// erin, a member with no position, hosts an AI that gus created: she does not manage it
-		ctx := context.Background()
-		erins := w.env.NewAIIn(w.erin, w.acme.ID, "erins")
-		w.env.SetCreator(erins, w.gus.User.ID)
-		managed, err := w.env.App.Authz.Manages(ctx, w.erin.User.ID, erins, w.acme.ID)
-		require.NoError(t, err)
-		require.False(t, managed, "fixture: erin does not manage her own AI")
-
-		f := testkit.FolderOf("erins")
-		f.Position = "Worktrees"
-		before := w.census(t)
-		checked := sessionCheck(w.agentToken(w.erin), f).RequireError(http.StatusForbidden, dto.ErrorCodeForbidden)
-		require.Equal(t, before, w.census(t))
-		require.Equal(t, "", w.positionOf(t, w.acme.ID, erins), "nothing moved")
-
-		_, refused := startPaths[0].start(t, w.agentToken(w.erin), f)
-		started := refused.RequireError(http.StatusForbidden, dto.ErrorCodeForbidden)
-		require.Equal(t, started.Message, checked.Message, "the session is told the same")
-	})
 	t.Run("a parent is ignored", func(*testing.T) {
 		f := f
 		f.Parent = "@sentinel"
 		sessionCheck(alice, f).RequireStatus(http.StatusOK)
+		require.Empty(t, instructorsOf(t, w.env, w.lead), "the check adds no instructor")
 	})
 }
 

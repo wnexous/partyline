@@ -27,14 +27,14 @@ var ErrIdentityOnline = errors.New("the AI is online: end its session before mer
 func MergeNotice(handle string) string { return "History merged from @" + handle }
 
 // Merge merges the AI fromID into the AI intoID, which the caller manages and which share their home
-// organization: everything the first had becomes the second's and the first is deleted (MRG-01, POS-04,
+// organization: everything the first had becomes the second's and the first is deleted (MRG-01, SR2-13,
 // AD-016).
 //
 //   - Group memberships move; where both are members, the surviving AI's settings win.
 //   - Delivery cursors in groups become the larger of the two.
-//   - The organizations only the first belongs to become the second's, with the permission, position and
-//     inviter it had there; where both belong, the surviving AI's membership wins. Whoever the first
-//     created or invited is the second's.
+//   - The organizations only the first belongs to become the second's, with the permission it had there;
+//     where both belong, the surviving AI's membership wins. Whoever the first created is the second's, its
+//     instructors instruct the second, and the AIs it instructed are instructed by the second (SR2-06).
 //   - A DM of the first with someone the second has no DM with becomes the second's DM, kept as it
 //     is. Where the second has a DM with that someone too, the first's messages (with their files
 //     and deliveries) are appended to it after a system message naming the first, its chats join
@@ -46,14 +46,12 @@ func MergeNotice(handle string) string { return "History merged from @" + handle
 //     of those connectors (acknowledged items included) and the count of platform messages the
 //     first lost to the bound or to expiry, which the second is told about on its next
 //     connection (CID-05, CID-10).
-//   - The organizations only the first belongs to become the second's, with the permission, position
-//     and inviter it had there; where both belong, the second's membership stays. What the first
-//     created - AIs, groups - and the guests it invited are the second's. If the first created the
-//     second, the second's creator is the first's creator, so that it is not left as its own.
+//   - What the first created - AIs, groups - is the second's. If the first created the second, the second's
+//     creator is the first's creator, so that it is not left as its own.
 //
 // It is one write transaction and is audited as agent.merge. The first AI must be offline
 // (ErrIdentityOnline). An AI the caller cannot see is access.ErrNotFound; one they see and do not
-// manage - in its home organization, where management is decided - or an AI of another home
+// manage (its host or a user instructor, SR2-13) - or an AI of another home
 // organization than the first's is access.ErrForbidden; fromID and intoID must differ.
 func (s *Service) Merge(ctx context.Context, p authn.Principal, fromID, intoID string) error {
 	if p.Kind != authn.KindUser {
@@ -94,9 +92,9 @@ func (s *Service) Merge(ctx context.Context, p authn.Principal, fromID, intoID s
 	return nil
 }
 
-// manages requires the user to manage the AI in its home organization (POS-03) and returns that
-// organization: an AI the user cannot see is access.ErrNotFound; one they see and do not manage, or one
-// that has no home organization and so no manager, access.ErrForbidden.
+// manages requires the user to manage the AI (its host or a user that instructs it, SR2-13) and returns its
+// home organization: an AI the user cannot see is access.ErrNotFound; one they see and do not manage, or one
+// that has no home organization, access.ErrForbidden.
 func (s *Service) manages(ctx context.Context, p authn.Principal, agentID string) (string, error) {
 	see, err := s.az.CanSeeAI(ctx, p, agentID)
 	if err != nil {
@@ -112,7 +110,7 @@ func (s *Service) manages(ctx context.Context, p authn.Principal, agentID string
 	if home == "" {
 		return "", access.ErrForbidden
 	}
-	ok, err := s.az.Authz().Manages(ctx, p.IID(), agentID, home)
+	ok, err := s.az.Authz().Manages(ctx, p.IID(), agentID)
 	if err != nil {
 		return "", err
 	}
@@ -259,10 +257,10 @@ func (s *Service) merge(ctx context.Context, q *db.Queries, actorID, fromID, int
 }
 
 // mergeOrganizations moves what the merged AI is in the organizations to the surviving one: its
-// memberships (the survivor's win), and who it created or invited.
+// memberships (the survivor's win), who it created and invited, and its instructors (SR2-06).
 func (s *Service) mergeOrganizations(ctx context.Context, q *db.Queries, from, into db.Agent, out *mergeOutcome) error {
-	// What the merged AI created and invited is the survivor's. This also makes the survivor its own
-	// creator or inviter when the merged AI had made it; those two are repaired below.
+	// What the merged AI created is the survivor's. This also makes the survivor its own creator when the
+	// merged AI had made it; that is repaired below.
 	if err := q.ReassignAgentCreator(ctx, db.ReassignAgentCreatorParams{FromID: sql.NullString{String: from.ID, Valid: true}, IntoID: sql.NullString{String: into.ID, Valid: true}}); err != nil {
 		return err
 	}
@@ -274,10 +272,12 @@ func (s *Service) mergeOrganizations(ctx context.Context, q *db.Queries, from, i
 	if err := q.ReassignRoomCreator(ctx, db.ReassignRoomCreatorParams{FromID: sql.NullString{String: from.ID, Valid: true}, IntoID: sql.NullString{String: into.ID, Valid: true}}); err != nil {
 		return err
 	}
-	if err := q.ReassignInviter(ctx, db.ReassignInviterParams{FromID: sql.NullString{String: from.ID, Valid: true}, IntoID: sql.NullString{String: into.ID, Valid: true}}); err != nil {
+	// Who instructed the merged AI instructs the survivor, and the AIs the merged one instructed are
+	// instructed by the survivor; the merged AI's rows go with it, and nothing instructs itself.
+	if err := q.MergeAgentInstructors(ctx, db.MergeAgentInstructorsParams{FromID: from.ID, IntoID: into.ID}); err != nil {
 		return err
 	}
-	if err := q.ClearSelfInviter(ctx, db.ClearSelfInviterParams{FromID: from.ID, IntoID: into.ID}); err != nil {
+	if err := q.ReassignInstructor(ctx, db.ReassignInstructorParams{FromID: from.ID, IntoID: into.ID}); err != nil {
 		return err
 	}
 	if err := q.ReassignInvitationInviter(ctx, db.ReassignInvitationInviterParams{FromID: from.ID, IntoID: into.ID}); err != nil {

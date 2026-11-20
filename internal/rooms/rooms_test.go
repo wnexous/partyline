@@ -269,7 +269,8 @@ func TestStrangerAndAdminGetNotFound(t *testing.T) {
 	require.ErrorIs(t, err, access.ErrNotFound)
 }
 
-// ACL-02/ACL-04 in the service: a room member posts and reads but cannot manage, guests included; a
+// ACL-02/ACL-04 in the service: a room member posts and reads but cannot manage, an admin of the organization
+// aside (it manages every group); a
 // member of the organization who is not in the room cannot even see it.
 func TestRoomMemberWithoutManageIsForbidden(t *testing.T) {
 	ctx := context.Background()
@@ -280,7 +281,7 @@ func TestRoomMemberWithoutManageIsForbidden(t *testing.T) {
 	_, err := f.svc.AddMember(ctx, alice, r.ID, MemberInput{Kind: dto.MemberKindAgent, MemberID: f.agent(t, alice, "builder")})
 	require.NoError(t, err)
 
-	for _, perm := range []orgs.Permission{orgs.PermissionMember, orgs.PermissionGuest} {
+	for _, perm := range []orgs.Permission{orgs.PermissionMember} {
 		g := f.colleague(t, acme, "g-"+string(perm), perm)
 		_, err := f.svc.Get(ctx, g, r.ID)
 		require.ErrorIs(t, err, access.ErrNotFound, "not in the room yet")

@@ -51,16 +51,25 @@ func isMember(t *testing.T, env *testkit.Env, org, iid string) bool {
 	return ok
 }
 
-// requireStanding checks, from the chart, what one identity may do to another in an organization: it is the
-// precondition that makes a refusal below a test of one rule only (L-018).
+// requireStanding checks what one identity may do to another in an organization: whether it manages it
+// (SR2-13) and whether it may delete it there (SR2-12: an AI whose home is the organization by its host or an
+// admin, anyone else by an admin). It is the precondition that makes a refusal below a test of one rule only
+// (L-018).
 func requireStanding(t *testing.T, env *testkit.Env, org, actor, target string, manages, canDelete bool) {
 	t.Helper()
 	ctx := context.Background()
-	got, err := env.App.Authz.Manages(ctx, actor, target, org)
+	got, err := env.App.Authz.Manages(ctx, actor, target)
 	require.NoError(t, err)
 	require.Equal(t, manages, got, "manages")
-	got, err = env.App.Authz.CanDelete(ctx, actor, target, org)
-	require.NoError(t, err)
+	home, err := env.App.Store.R().GetAgentOrg(ctx, target)
+	if err == nil && home == org {
+		got, err = env.App.Authz.CanDeleteAI(ctx, actor, target)
+		require.NoError(t, err)
+	} else {
+		roster, err := env.App.Authz.Roster(ctx, org)
+		require.NoError(t, err)
+		got = roster.CanRemove(actor, target)
+	}
 	require.Equal(t, canDelete, got, "can delete")
 }
 
@@ -157,7 +166,7 @@ func runDeletionMatrix(t *testing.T, build func(t *testing.T) *deletion, cases [
 	}
 }
 
-// deletePerson deletes Target, a member below Manager, in the organization.
+// deletePerson deletes Target, a member, in the organization.
 func deletePerson(t *testing.T) *deletion {
 	env := testkit.New(t)
 	r := env.OrgRoles("acme")
@@ -167,34 +176,6 @@ func deletePerson(t *testing.T) *deletion {
 			require.True(t, isMember(t, env, r.Org.ID, r.Target.User.ID), "still a member")
 		},
 		done: func(t *testing.T) { requireRemovedOnly(t, env, r.Org.ID, r.Target) },
-	}
-}
-
-// deleteGuest deletes Guest, whom Inviter invited.
-func deleteGuest(t *testing.T) *deletion {
-	env := testkit.New(t)
-	r := env.OrgRoles("acme")
-	return &deletion{env: env, roles: r, target: r.Guest.User.ID,
-		do: func(c *testkit.Client) *testkit.Response { return c.Delete(memberPath(r.Org.ID, r.Guest.User.ID)) },
-		intact: func(t *testing.T) {
-			require.True(t, isMember(t, env, r.Org.ID, r.Guest.User.ID), "still a member")
-		},
-		done: func(t *testing.T) { requireRemovedOnly(t, env, r.Org.ID, r.Guest) },
-	}
-}
-
-// deletePositionedGuest deletes a guest Inviter invited that holds the position Worker, which Manager is above.
-func deletePositionedGuest(t *testing.T) *deletion {
-	env := testkit.New(t)
-	r := env.OrgRoles("acme")
-	guest := env.NewUser("acme-positioned")
-	env.AddGuest(r.Org.ID, guest.User.ID, r.Inviter.User.ID, r.WorkerPosition)
-	return &deletion{env: env, roles: r, target: guest.User.ID,
-		do: func(c *testkit.Client) *testkit.Response { return c.Delete(memberPath(r.Org.ID, guest.User.ID)) },
-		intact: func(t *testing.T) {
-			require.True(t, isMember(t, env, r.Org.ID, guest.User.ID), "still a member")
-		},
-		done: func(t *testing.T) { requireRemovedOnly(t, env, r.Org.ID, guest) },
 	}
 }
 
@@ -209,7 +190,7 @@ var aiRoutes = []aiRoute{
 	{"DELETE /agents/{id}", func(_, ai string) string { return agentDeletePath(ai) }},
 }
 
-// deleteAI deletes TargetAI, a member AI Manager created and hosts, by the route.
+// deleteAI deletes TargetAI, a member AI Manager created and hosts and Instructor instructs, by the route.
 func deleteAI(route aiRoute) func(t *testing.T) *deletion {
 	return func(t *testing.T) *deletion {
 		env := testkit.New(t)
@@ -222,47 +203,23 @@ func deleteAI(route aiRoute) func(t *testing.T) *deletion {
 	}
 }
 
-// POS-05, POS-06 (matrix of DELETE /orgs/{org}/members/{iid}, a member): only an admin deletes a member, so
-// the manager above Target is refused while the admin is not - each refusal is the only thing wrong with the
-// call (L-018). A person is removed from the organization and keeps their account. Outsiders, the instance
+// SR2-12, POS-06 (matrix of DELETE /orgs/{org}/members/{iid}, a person): only an admin removes a person, so the
+// host of an AI and its instructor are refused while the admin is not - each refusal is the only thing wrong with
+// the call (L-018). A person is removed from the organization and keeps their account. Outsiders, the instance
 // admin included, cannot see the organization (404); a member may leave (204).
-func TestDeletingAMemberOfAnOrganization(t *testing.T) {
+func TestSR212DeletingAMemberOfAnOrganization(t *testing.T) {
 	probe := deletePerson(t)
 	org, r := probe.roles.Org.ID, probe.roles
-	requireStanding(t, probe.env, org, r.Manager.User.ID, probe.target, true, false) // manages it, but a member
-	requireStanding(t, probe.env, org, r.Admin.User.ID, probe.target, true, true)
+	requireStanding(t, probe.env, org, r.Manager.User.ID, probe.target, false, false)
+	requireStanding(t, probe.env, org, r.Admin.User.ID, probe.target, false, true) // removes, never manages a user
 	requireStanding(t, probe.env, org, r.Peer.User.ID, probe.target, false, false)
 
 	runDeletionMatrix(t, deletePerson, []matrixCase{
 		{"admin", http.StatusNoContent},
 		{"target", http.StatusNoContent}, // leaving
 		{"manager", http.StatusForbidden},
+		{"instructor", http.StatusForbidden},
 		{"peer", http.StatusForbidden},
-		{"member", http.StatusForbidden},
-		{"inviter", http.StatusForbidden},
-		{"guest", http.StatusForbidden},
-		{"outsider", http.StatusNotFound},
-		{"instance_admin", http.StatusNotFound},
-		{"anonymous", http.StatusUnauthorized},
-		{"agent token", http.StatusForbidden},
-	})
-}
-
-// POS-05 (guests): whoever invited a guest, and anyone who manages the inviter, deletes it; a manager who does
-// not manage the inviter, and a peer, do not. The guest may leave.
-func TestDeletingAGuestOfAnOrganization(t *testing.T) {
-	probe := deleteGuest(t)
-	org, r := probe.roles.Org.ID, probe.roles
-	requireStanding(t, probe.env, org, r.Inviter.User.ID, probe.target, true, true)
-	requireStanding(t, probe.env, org, r.Manager.User.ID, probe.target, false, false) // does not manage the inviter
-
-	runDeletionMatrix(t, deleteGuest, []matrixCase{
-		{"admin", http.StatusNoContent},
-		{"inviter", http.StatusNoContent},
-		{"guest", http.StatusNoContent}, // leaving
-		{"manager", http.StatusForbidden},
-		{"peer", http.StatusForbidden},
-		{"target", http.StatusForbidden},
 		{"member", http.StatusForbidden},
 		{"outsider", http.StatusNotFound},
 		{"instance_admin", http.StatusNotFound},
@@ -271,45 +228,26 @@ func TestDeletingAGuestOfAnOrganization(t *testing.T) {
 	})
 }
 
-// POS-03 + POS-05: a guest that holds a position is managed through the chart too, so the manager above its
-// position deletes it although Manager did not invite it, and the member who invited it still does; a peer in
-// the position does not.
-func TestAManagerDeletesAGuestItsPositionReaches(t *testing.T) {
-	probe := deletePositionedGuest(t)
-	org, r := probe.roles.Org.ID, probe.roles
-	requireStanding(t, probe.env, org, r.Manager.User.ID, probe.target, true, true)
-	requireStanding(t, probe.env, org, r.Peer.User.ID, probe.target, false, false)
-
-	runDeletionMatrix(t, deletePositionedGuest, []matrixCase{
-		{"manager", http.StatusNoContent},
-		{"inviter", http.StatusNoContent},
-		{"admin", http.StatusNoContent},
-		{"peer", http.StatusForbidden},
-		{"member", http.StatusForbidden},
-		{"outsider", http.StatusNotFound},
-	})
-}
-
-// POS-05, POS-06 (matrix of both routes that delete an AI of the organization): the AI is a member that Manager
-// created, so Manager manages it and still may not delete it - only an admin deletes a member - while the admin
-// deletes it for good. Whoever cannot see it gets 404 (including the instance admin), an AI token 403 whatever
-// AI it acts as, and the answers are the same on the two routes (L-034).
-func TestDeletingAnAIOfAnOrganization(t *testing.T) {
+// SR2-12, POS-06 (matrix of both routes that delete an AI of the organization): the AI is deleted for good by its
+// host (Manager) or by an admin of its home organization. Its user instructor manages it and still may not delete
+// it. Whoever cannot see it gets 404 (including the instance admin), an AI token 403 whatever AI it acts as, and
+// the answers are the same on the two routes (L-034).
+func TestSR212DeletingAnAIOfAnOrganization(t *testing.T) {
 	for _, route := range aiRoutes {
 		t.Run(route.name, func(t *testing.T) {
 			probe := deleteAI(route)(t)
 			org, r := probe.roles.Org.ID, probe.roles
-			requireStanding(t, probe.env, org, r.Manager.User.ID, probe.target, true, false)
-			requireStanding(t, probe.env, org, r.Admin.User.ID, probe.target, true, true)
+			requireStanding(t, probe.env, org, r.Manager.User.ID, probe.target, true, true)
+			requireStanding(t, probe.env, org, r.Instructor.User.ID, probe.target, true, false)
+			requireStanding(t, probe.env, org, r.Admin.User.ID, probe.target, false, true)
 
 			runDeletionMatrix(t, deleteAI(route), []matrixCase{
 				{"admin", http.StatusNoContent},
-				{"manager", http.StatusForbidden},
+				{"manager", http.StatusNoContent},
+				{"instructor", http.StatusForbidden},
 				{"peer", http.StatusForbidden},
 				{"target", http.StatusForbidden},
 				{"member", http.StatusForbidden},
-				{"inviter", http.StatusForbidden},
-				{"guest", http.StatusForbidden},
 				{"outsider", http.StatusNotFound},
 				{"instance_admin", http.StatusNotFound},
 				{"anonymous", http.StatusUnauthorized},
@@ -320,23 +258,12 @@ func TestDeletingAnAIOfAnOrganization(t *testing.T) {
 	}
 }
 
-// leadWorld is the spec's Independent Test of the org chart: in Acme, a Lead developer starts three workers with
-// --parent @lead --position Worktrees.
-//
-//	Admin ── alice
-//	 ├ Director
-//	 │   └ Lead developer ── lee, and the AI lead (hosted by lee)
-//	 │       └ Worktrees ── three AIs the AI lead started: guests of Acme whose inviter is lead
-//	 └ Sentinel ── sam, and the AI sentinel (hosted by sam)
-//
-// Lee and Sam are the people who act in the web app and Lead and Sentinel the AIs that act inside: an AI token
-// reaches no organization route (path rule), so a call that is made for an AI is made by its host or by the
-// admin, and what the AIs themselves may do is read from the chart.
+// leadWorld: in Acme, the AI lead (hosted by lee) starts three workers with --parent @lead. Lead instructs the
+// workers, lee hosts them; sam hosts the AI sentinel and alice is Acme's admin.
 type leadWorld struct {
 	env             *testkit.Env
 	alice, lee, sam *testkit.Client
 	acme            db.Organization
-	worktrees       string // position id
 	lead, sentinel  string // AI ids
 	workers         []string
 	live            *testkit.AgentConn // the session of workers[0]
@@ -350,22 +277,14 @@ func newLeadWorld(t *testing.T) *leadWorld {
 	acme, err := env.App.Orgs.Create(ctx, w.alice.User.ID, "Acme")
 	require.NoError(t, err)
 	w.acme = acme.Organization
-	director := env.AddPosition(w.acme.ID, "Director", acme.PositionID)
-	leadDev := env.AddPosition(w.acme.ID, "Lead developer", director)
-	w.worktrees = env.AddPosition(w.acme.ID, "Worktrees", leadDev)
-	sentinelPos := env.AddPosition(w.acme.ID, "Sentinel", acme.PositionID)
-	env.AddMember(w.acme.ID, w.lee.User.ID, orgs.PermissionMember, leadDev)
-	env.AddMember(w.acme.ID, w.sam.User.ID, orgs.PermissionMember, sentinelPos)
+	env.AddMember(w.acme.ID, w.lee.User.ID, orgs.PermissionMember)
+	env.AddMember(w.acme.ID, w.sam.User.ID, orgs.PermissionMember)
 	w.lead = env.NewAIIn(w.lee, w.acme.ID, "lead")
 	w.sentinel = env.NewAIIn(w.sam, w.acme.ID, "sentinel")
-	for ai, pos := range map[string]string{w.lead: leadDev, w.sentinel: sentinelPos} {
-		_, err := env.App.Orgs.SetPosition(ctx, w.alice.User.ID, w.acme.ID, ai, pos)
-		require.NoError(t, err)
-	}
 
 	token := w.lee.Token(dto.TokenKindAgent, "laptop")
 	start := func(i int) testkit.Folder {
-		return testkit.Folder{Machine: "devbox", Path: fmt.Sprintf("/work/lead/wt%d", i), Harness: "claude", Parent: "@lead", Position: "Worktrees"}
+		return testkit.Folder{Machine: "devbox", Path: fmt.Sprintf("/work/lead/wt%d", i), Harness: "claude", Parent: "@lead"}
 	}
 	conn, resp := token.DialFolder(start(0)) // the first worker is a live session
 	require.NotNil(t, conn, "upgrade refused: %d %s", resp.Status, resp.Body)
@@ -378,34 +297,36 @@ func newLeadWorld(t *testing.T) *leadWorld {
 		m, ok, err := env.App.Authz.Member(ctx, w.acme.ID, id)
 		require.NoError(t, err)
 		require.True(t, ok)
-		require.Equal(t, orgs.Member{IID: id, Permission: orgs.PermissionGuest, PositionID: w.worktrees, CreatorIID: w.lead, InviterIID: w.lead}, m,
-			"a worker is a guest of Acme that lead started, in Worktrees")
+		require.Equal(t, orgs.Member{IID: id, Permission: orgs.PermissionMember}, m, "SR2-02: a worker is a member of Acme")
+		require.Equal(t, []string{w.lead}, instructorsOf(t, env, id), "SR2-09: lead instructs it")
 	}
 	return w
 }
 
-// POS-05, POS-06 (the spec's Independent Test): Lead deletes the three workers it started, for good, whichever
-// route does it; Sentinel, which is not above them, gets 403 on both routes and the workers stay. The
-// deletion ends a live session as that of a deleted AI (4001).
-func TestALeadDeletesTheWorkersItStartedAndASentinelCannot(t *testing.T) {
+// SR2-12, POS-06: the workers lead started are deleted for good by their host lee or by the admin, whichever
+// route does it; lead instructs them and still does not delete them, and sam, who neither hosts nor administers,
+// gets 403 on both routes while the workers stay. The deletion ends a live session as that of a deleted AI (4001).
+func TestSR212TheHostDeletesTheWorkersAndAnInstructorCannot(t *testing.T) {
 	ctx := context.Background()
 	w := newLeadWorld(t)
 	for _, id := range w.workers {
-		for who, actor := range map[string]string{"lead (the AI)": w.lead, "lee (Lead developer)": w.lee.User.ID, "alice (admin)": w.alice.User.ID} {
-			can, err := w.env.App.Authz.CanDelete(ctx, actor, id, w.acme.ID)
+		for who, actor := range map[string]string{"lee (the host)": w.lee.User.ID, "alice (admin)": w.alice.User.ID} {
+			can, err := w.env.App.Authz.CanDeleteAI(ctx, actor, id)
 			require.NoError(t, err)
 			require.True(t, can, "%s may delete a worker", who)
 		}
-		for who, actor := range map[string]string{"sentinel (the AI)": w.sentinel, "sam (Sentinel)": w.sam.User.ID} {
-			can, err := w.env.App.Authz.CanDelete(ctx, actor, id, w.acme.ID)
+		for who, actor := range map[string]string{"lead (an AI instructor)": w.lead, "sentinel (the AI)": w.sentinel, "sam": w.sam.User.ID} {
+			can, err := w.env.App.Authz.CanDeleteAI(ctx, actor, id)
 			require.NoError(t, err)
-			require.False(t, can, "%s is not above a worker", who)
+			require.False(t, can, "%s may not delete a worker", who)
 		}
 	}
 
+	leadToken := w.lee.Token(dto.TokenKindAgent, "laptop").AsAgent("lead")
 	for _, id := range w.workers {
 		requireRefusal(t, w.sam.Delete(memberPath(w.acme.ID, id)), http.StatusForbidden)
 		requireRefusal(t, w.sam.Delete(agentDeletePath(id)), http.StatusForbidden)
+		requireRefusal(t, leadToken.Delete(agentDeletePath(id)), http.StatusForbidden)
 		requireAIIntact(t, w.env, id, w.acme.ID)
 	}
 	require.NoError(t, w.live.Closed(300*time.Millisecond), "the refusals did not end the worker's session")
@@ -421,66 +342,21 @@ func TestALeadDeletesTheWorkersItStartedAndASentinelCannot(t *testing.T) {
 	requireDeletedForGood(t, w.env, w.workers[1])
 	w.alice.Delete(memberPath(w.acme.ID, w.workers[2])).RequireStatus(http.StatusNoContent)
 	requireDeletedForGood(t, w.env, w.workers[2])
+	require.Zero(t, countRows(t, w.env, `SELECT COUNT(*) FROM agent_instructors WHERE agent_iid IN (?, ?, ?)`, w.workers[0], w.workers[1], w.workers[2]),
+		"the links go with the AIs")
 
 	requireAIIntact(t, w.env, w.lead, w.acme.ID)
 	requireAIIntact(t, w.env, w.sentinel, w.acme.ID)
 	// deleted for good: the folder starts a new AI instead of finding the old one
 	again := testkit.Decode[dto.AgentInfo](w.lee.Token(dto.TokenKindAgent, "laptop").AsFolder(testkit.Folder{
-		Machine: "devbox", Path: "/work/lead/wt1", Harness: "claude", Parent: "@lead", Position: "Worktrees",
+		Machine: "devbox", Path: "/work/lead/wt1", Harness: "claude", Parent: "@lead",
 	}).Post("/api/v1/agent/register", nil).RequireStatus(http.StatusOK)).ID
 	require.NotContains(t, w.workers, again)
 }
 
-// POS-05 (the inviter chain): Bob invites guest Carol, who invites guest Dave. Bob deletes Dave, who is up his
-// chain; Bob's manager deletes Carol; Bob's peer, who manages neither, cannot, and neither can Dave delete the
-// guest above him.
-func TestGuestsInviteGuestsAndTheChainDeletesThem(t *testing.T) {
-	ctx := context.Background()
-	build := func(t *testing.T) (*testkit.Env, *testkit.OrgRoles, *testkit.Client, *testkit.Client) {
-		env := testkit.New(t)
-		r := env.OrgRoles("acme")
-		carol, dave := env.NewUser("carol"), env.NewUser("dave")
-		invite := func(inviter, invitee *testkit.Client) {
-			inv, err := env.App.Orgs.Invite(ctx, inviter.User.ID, r.Org.ID, "@"+handleOf(t, invitee), orgs.PermissionGuest, "")
-			require.NoError(t, err)
-			_, err = env.App.Orgs.Accept(ctx, invitee.User.ID, inv.ID)
-			require.NoError(t, err)
-		}
-		invite(r.Target, carol) // Bob is Target: a member below Manager
-		invite(carol, dave)
-		return env, r, carol, dave
-	}
-
-	env, r, carol, dave := build(t)
-	bob := r.Target
-	requireStanding(t, env, r.Org.ID, bob.User.ID, carol.User.ID, true, true)       // the guest it invited
-	requireStanding(t, env, r.Org.ID, bob.User.ID, dave.User.ID, true, true)        // up the chain: bob → carol → dave
-	requireStanding(t, env, r.Org.ID, r.Manager.User.ID, carol.User.ID, true, true) // through bob, whom it manages
-	requireStanding(t, env, r.Org.ID, r.Peer.User.ID, carol.User.ID, false, false)  // a member that manages neither
-	requireStanding(t, env, r.Org.ID, r.Peer.User.ID, dave.User.ID, false, false)
-	requireStanding(t, env, r.Org.ID, dave.User.ID, carol.User.ID, false, false) // nothing over the same level or above
-
-	requireRefusal(t, r.Peer.Delete(memberPath(r.Org.ID, dave.User.ID)), http.StatusForbidden)
-	requireRefusal(t, r.Peer.Delete(memberPath(r.Org.ID, carol.User.ID)), http.StatusForbidden)
-	requireRefusal(t, dave.Delete(memberPath(r.Org.ID, carol.User.ID)), http.StatusForbidden)
-	require.True(t, isMember(t, env, r.Org.ID, carol.User.ID) && isMember(t, env, r.Org.ID, dave.User.ID), "the refusals changed nothing")
-
-	bob.Delete(memberPath(r.Org.ID, dave.User.ID)).RequireStatus(http.StatusNoContent)
-	requireRemovedOnly(t, env, r.Org.ID, dave)
-	r.Manager.Delete(memberPath(r.Org.ID, carol.User.ID)).RequireStatus(http.StatusNoContent)
-	requireRemovedOnly(t, env, r.Org.ID, carol)
-	require.True(t, isMember(t, env, r.Org.ID, bob.User.ID), "bob stays")
-
-	// a guest deletes the guest it invited
-	env2, r2, carol2, dave2 := build(t)
-	carol2.Delete(memberPath(r2.Org.ID, dave2.User.ID)).RequireStatus(http.StatusNoContent)
-	requireRemovedOnly(t, env2, r2.Org.ID, dave2)
-	require.True(t, isMember(t, env2, r2.Org.ID, carol2.User.ID))
-}
-
-// OMEM-06, POS-06: an admin deletes a person from Acme. They are taken out of Acme's groups and their position
-// in it, and out of nothing else: their account, their other organization and its groups stay, and so do Acme's
-// AIs - the one Manager made and the one the person made - which only the admins reach afterwards.
+// OMEM-06, POS-06: an admin deletes a person from Acme. They are taken out of Acme's groups, and out of nothing
+// else: their account, their other organization and its groups stay, and so do Acme's AIs - the one Manager made
+// and the one the person hosts, which the person still deletes as its host and the admins as admins (SR2-12).
 func TestDeletingAPersonOnlyRemovesThemFromThatOrganization(t *testing.T) {
 	ctx := context.Background()
 	env := testkit.New(t)
@@ -507,11 +383,11 @@ func TestDeletingAPersonOnlyRemovesThemFromThatOrganization(t *testing.T) {
 	require.Equal(t, 1, countRows(t, env, `SELECT COUNT(*) FROM room_members WHERE room_id = ? AND member_id = ?`, acmeChat.ID, r.Manager.User.ID), "the others stay in it")
 	require.Equal(t, 1, countRows(t, env, `SELECT COUNT(*) FROM room_members WHERE room_id = ? AND member_id = ?`, globexChat.ID, bob.User.ID), "and in the group of another organization")
 	require.True(t, isMember(t, env, globex.ID, bob.User.ID), "a member of the other organization")
-	require.Zero(t, countRows(t, env, `SELECT COUNT(*) FROM org_members WHERE org_id = ? AND iid = ? AND position_id IS NOT NULL`, r.Org.ID, bob.User.ID), "and holds no position in Acme")
 
 	requireAIIntact(t, env, r.TargetAI, r.Org.ID)
 	requireAIIntact(t, env, bobsAI, r.Org.ID)
-	// Bob created it and is out, so nobody manages it any more and only an admin deletes it
+	// Bob is out of Acme and still hosts it: hosting does not depend on the organization (SR2-13, SR2-12)
+	requireStanding(t, env, r.Org.ID, bob.User.ID, bobsAI, true, true)
 	requireStanding(t, env, r.Org.ID, r.Manager.User.ID, bobsAI, false, false)
 	requireStanding(t, env, r.Org.ID, r.Admin.User.ID, bobsAI, false, true)
 
@@ -556,7 +432,7 @@ func TestDeletingAnAIOfAnotherOrganizationRemovesItOnlyFromThisOne(t *testing.T)
 	globex, err := env.App.Orgs.Create(ctx, gina.User.ID, "Globex")
 	require.NoError(t, err)
 	visitor := env.NewAIIn(gina, globex.ID, "visitor") // its home is Globex
-	env.AddMember(r.Org.ID, visitor, orgs.PermissionMember, "")
+	env.AddMember(r.Org.ID, visitor, orgs.PermissionMember)
 	acmeChat := createRoom(r.Admin, "Acme chat")
 	execSQL(t, env, `UPDATE rooms SET org_id = ?, creator_iid = ? WHERE id = ?`, r.Org.ID, r.Admin.User.ID, acmeChat.ID)
 	addRoomMember(t, env, acmeChat.ID, "agent", visitor, r.Admin.User.ID)
@@ -606,7 +482,7 @@ func TestDeletingAnAIIsAnnouncedToEveryOrganizationItBelongedToAndAudited(t *tes
 	gina := env.NewUser("gina")
 	globex, err := env.App.Orgs.Create(ctx, gina.User.ID, "Globex")
 	require.NoError(t, err)
-	env.AddMember(globex.ID, r.TargetAI, orgs.PermissionGuest, "")
+	env.AddMember(globex.ID, r.TargetAI, orgs.PermissionMember)
 	sub, cancel := env.App.Bus.Subscribe(64)
 	defer cancel()
 
@@ -614,7 +490,7 @@ func TestDeletingAnAIIsAnnouncedToEveryOrganizationItBelongedToAndAudited(t *tes
 
 	told := drainEvents(sub)
 	require.Contains(t, told, events.OrgChanged{OrgID: r.Org.ID}, "its home organization")
-	require.Contains(t, told, events.OrgChanged{OrgID: globex.ID}, "and the one it was only a guest of")
+	require.Contains(t, told, events.OrgChanged{OrgID: globex.ID}, "and the one it was only a member of")
 	entry := findAudit(t, auditPage(r.InstanceAdmin, "").Items, "agent.delete")
 	require.Equal(t, r.Admin.User.ID, entry.Actor.ID)
 	require.Equal(t, "agent", entry.TargetKind)
@@ -633,7 +509,7 @@ func TestAnAIThatIsTheOnlyAdminOfAnOrganizationCannotBeDeleted(t *testing.T) {
 	gina := env.NewUser("gina")
 	globex, err := env.App.Orgs.Create(ctx, gina.User.ID, "Globex")
 	require.NoError(t, err)
-	env.AddMember(globex.ID, r.TargetAI, orgs.PermissionAdmin, "")
+	env.AddMember(globex.ID, r.TargetAI, orgs.PermissionAdmin)
 	_, err = env.App.Orgs.SetPermission(ctx, r.TargetAI, globex.ID, gina.User.ID, orgs.PermissionMember)
 	require.NoError(t, err, "gina steps down: the AI is Globex's only admin")
 

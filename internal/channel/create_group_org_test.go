@@ -30,7 +30,7 @@ func newOrgCast(t *testing.T) *orgCast {
 	globex, err := c.env.App.Orgs.Create(ctx, c.bob.User.ID, "Globex")
 	require.NoError(t, err)
 	for _, iid := range []string{c.agentID, c.helper, c.bob.User.ID} {
-		c.env.AddMember(acme.ID, iid, orgs.PermissionMember, "")
+		c.env.AddMember(acme.ID, iid, orgs.PermissionMember)
 	}
 	return &orgCast{cast: c, acme: acme, globex: globex}
 }
@@ -103,13 +103,12 @@ func TestCreateGroupMembersMustBelongToTheChosenOrganization(t *testing.T) {
 	mustCall(t, s, "create_group", toolArgs("name", "Ops 2", "organization", "acme", "members", []string{"@alice", "@bob"}))
 }
 
-// ORG-03, OMEM-04: an organization the AI is not a member of, one it is only a guest of and one that does not exist
-// are refused alike, and the tool says it is a 403: "forbidden (403)", the organization the AI named, and what an AI
-// needs there. The server tells nothing about organizations the caller is not in, so the words are the tool's. No
-// group is created. Each is the only thing different (L-018): the same valid members for all.
+// ORG-03, OMEM-04: an organization the AI is not a member of and one that does not exist are refused alike, and
+// the tool says it is a 403: "forbidden (403)", the organization the AI named, and what an AI needs there. The
+// server tells nothing about organizations the caller is not in, so the words are the tool's. No group is created.
+// Each is the only thing different (L-018): the same valid members for all.
 func TestCreateGroupInAnOrganizationTheAIMayNotUseNamesTheRefusal(t *testing.T) {
 	c := newOrgCast(t)
-	c.env.AddGuest(c.globex.ID, c.agentID, c.bob.User.ID, "") // builder is only a guest of Globex
 	other, err := c.env.App.Orgs.Create(context.Background(), c.carol.User.ID, "Initech")
 	require.NoError(t, err)
 	require.NotEmpty(t, other.ID)
@@ -118,42 +117,17 @@ func TestCreateGroupInAnOrganizationTheAIMayNotUseNamesTheRefusal(t *testing.T) 
 
 	for name, org := range map[string]string{
 		"an organization it is not in":        "initech",
-		"an organization it is a guest of":    "globex",
 		"an organization that does not exist": "no-such-organization",
 		"an organization by its id":           other.ID,
 		"an address with spaces around it":    "  initech  ",
 	} {
 		text, isErr := s.call("create_group", toolArgs("name", "Ops", "organization", org, "members", []string{"@alice", c.helper}))
 		require.True(t, isErr, "%s: %s", name, text)
-		require.Equal(t, `forbidden (403): you cannot create a group in "`+strings.TrimSpace(org)+`": it must be an organization you belong to as a member or an admin, not as a guest`, text, name)
+		require.Equal(t, `forbidden (403): you cannot create a group in "`+strings.TrimSpace(org)+`": it must be an organization you belong to as a member or an admin`, text, name)
 	}
 	require.Len(t, c.listRooms(s), rooms, "nothing was created")
 	require.Equal(t, c.alice.PersonalOrg().ID, c.roomOrg(decodeText[dto.CreatedGroup](t, mustCall(t, s, "create_group",
 		toolArgs("name", "Ops", "members", []string{"@alice", c.helper}))).Room), "and the AI can still create groups where it belongs")
-}
-
-// ORG-03, OMEM-04: an AI that is only a guest of its home organization cannot create a group there; without an
-// organization the tool says so in terms of the home one.
-func TestCreateGroupForAGuestAIInItsHomeOrganization(t *testing.T) {
-	c := newOrgCast(t)
-	ctx := context.Background()
-	_, err := c.env.App.Orgs.SetPermission(ctx, c.alice.User.ID, c.alice.PersonalOrg().ID, c.agentID, orgs.PermissionGuest)
-	require.NoError(t, err)
-	s := c.connected(c.options())
-
-	const home = "forbidden (403): you cannot create a group in your home organization: guests cannot create groups, and you must be a member or an admin there"
-	for name, args := range map[string]map[string]any{
-		"left out": toolArgs("name", "Ops", "members", []string{"@alice"}),
-		"blank":    toolArgs("name", "Ops", "organization", "   ", "members", []string{"@alice"}),
-	} {
-		text, isErr := s.call("create_group", args)
-		require.True(t, isErr, "%s: %s", name, text)
-		require.Equal(t, home, text, name)
-	}
-
-	// naming an organization where it is a member works
-	text, isErr := s.call("create_group", toolArgs("name", "Ops", "organization", "acme", "members", []string{"@alice"}))
-	require.False(t, isErr, text)
 }
 
 // An organization that is not text is an argument error; nothing is sent.

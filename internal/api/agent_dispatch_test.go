@@ -30,7 +30,7 @@ func newTwoAgents(t *testing.T) *twoAgents {
 	f.bob = f.env.NewUser("bobby")
 	addToRoom(t, f.env, f.alice, f.room.ID, f.bob)
 	f.helperID = registerAgent(t, f.env, f.bob, "helper")
-	f.env.AddMember(f.alice.PersonalOrg().ID, f.helperID, orgs.PermissionMember, "") // bob's AI joins alice's organization
+	f.env.AddMember(f.alice.PersonalOrg().ID, f.helperID, orgs.PermissionMember) // bob's AI joins alice's organization
 	f.alice.Post("/api/v1/rooms/"+f.room.ID+"/members", dto.AddMemberRequest{Kind: dto.MemberKindAgent, MemberID: f.helperID}).RequireStatus(http.StatusCreated)
 
 	f.builder = f.dial(t)

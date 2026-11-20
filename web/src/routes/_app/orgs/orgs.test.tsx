@@ -27,7 +27,7 @@ const NOW = new Date("2026-10-24T12:00:00Z");
 
 const acme = makeOrg({ id: "o1", name: "Acme", slug: "acme", permission: "admin" });
 const globex = makeOrg({ id: "o2", name: "Globex", slug: "globex", permission: "member" });
-const initech = makeOrg({ id: "o3", name: "Initech", slug: "initech", permission: "guest" });
+const initech = makeOrg({ id: "o3", name: "Initech", slug: "initech", permission: "member" });
 
 const bob = makeIntelligence({ id: "u2", display_name: "Bob Lima", handle: "bob" });
 const atlas = makeAI();
@@ -65,7 +65,7 @@ describe("my organizations (ORG-01, OMEM-03)", () => {
     expect(within(items[0] as HTMLElement).getByText("acme")).toBeInTheDocument();
     expect(within(items[0] as HTMLElement).getByText("Admin")).toBeInTheDocument();
     expect(within(items[1] as HTMLElement).getByText("Member")).toBeInTheDocument();
-    expect(within(items[2] as HTMLElement).getByText("Guest")).toBeInTheDocument();
+    expect(within(items[2] as HTMLElement).getByText("Member")).toBeInTheDocument();
   });
 
   it("marks the current organization and switches to another one on request", async () => {
@@ -416,55 +416,21 @@ describe("the invitations waiting for the viewer (OMEM-01, OMEM-02)", () => {
 });
 
 /*
- * What accepting grants, in words (L-011: asserted literally). A position puts the invitee under
- * the identities above it; a guest is the responsibility of its inviter, who may remove it.
+ * An invitation is to be an admin or a member (SR2-01): accepting puts nobody over the invitee, so
+ * the invitation says only who invited them and as what (L-011: asserted literally).
  */
-describe("what the invitation grants (OMEM-01, POS-05)", () => {
+describe("what the invitation says (OMEM-01, SR2-01)", () => {
   const warned = async (inv: ReturnType<typeof makeInvitation>) => {
     api({ "GET /invitations": json(200, { items: [inv] }) });
     renderRoute("/orgs");
     return invitation(inv.org_name);
   };
 
-  it("says that the identities above the position will manage the invitee", async () => {
-    const item = await warned(
-      makeInvitation({ permission: "member", position_id: "pos3", position_name: "Worktrees" }),
-    );
-    expect(within(item).getByText("Position: Worktrees")).toBeInTheDocument();
-    expect(
-      within(item).getByText("Identities above Worktrees will manage you."),
-    ).toBeInTheDocument();
-  });
-
-  it("adds that they may remove a guest from the organization", async () => {
-    const item = await warned(
-      makeInvitation({
-        permission: "guest",
-        position_id: "pos3",
-        position_name: "Worktrees",
-        invited_by: bob,
-      }),
-    );
-    expect(within(item).getByText("Bob Lima invited you to Acme as a guest.")).toBeInTheDocument();
-    expect(
-      within(item).getByText(
-        "Identities above Worktrees will manage you and may remove you from Acme.",
-      ),
-    ).toBeInTheDocument();
-  });
-
-  it("names the inviter as the one responsible for a guest with no position", async () => {
-    const item = await warned(makeInvitation({ permission: "guest", invited_by: bob }));
-    expect(within(item).queryByText(/^Position:/)).toBeNull();
-    expect(
-      within(item).getByText("Bob Lima will manage you and may remove you from Acme."),
-    ).toBeInTheDocument();
-  });
-
-  it("grants nothing to say for a member or an admin with no position", async () => {
+  it("SR2-01 says who invited the viewer and as what, and that nobody will manage them", async () => {
     const item = await warned(makeInvitation({ permission: "admin", invited_by: bob }));
     expect(within(item).getByText("Bob Lima invited you to Acme as an admin.")).toBeInTheDocument();
     expect(within(item).queryByText(/will manage/)).toBeNull();
+    expect(within(item).queryByText(/^Position:/)).toBeNull();
   });
 });
 
@@ -472,7 +438,7 @@ describe("the invitations of the AIs the viewer manages (OMEM-01)", () => {
   const forAtlas = makeInvitation({
     id: "i7",
     invitee: atlas,
-    permission: "guest",
+    permission: "member",
     invited_by: bob,
     org_id: "o2",
     org_name: "Globex",
@@ -482,16 +448,13 @@ describe("the invitations of the AIs the viewer manages (OMEM-01)", () => {
   it("names the AI, accepts for it and says it joined", async () => {
     const { calls } = api({
       "GET /invitations": json(200, { items: [forAtlas] }),
-      "POST /invitations/i7/accept": json(200, makeOrg({ ...globex, permission: "guest" })),
+      "POST /invitations/i7/accept": json(200, makeOrg({ ...globex, permission: "member" })),
     });
     const user = userEvent.setup();
     renderRoute("/orgs");
     const item = await invitation("Globex");
     expect(
-      within(item).getByText("Bob Lima invited Atlas to Globex as a guest."),
-    ).toBeInTheDocument();
-    expect(
-      within(item).getByText("Bob Lima will manage Atlas and may remove Atlas from Globex."),
+      within(item).getByText("Bob Lima invited Atlas to Globex as a member."),
     ).toBeInTheDocument();
     await user.click(within(item).getByRole("button", { name: "Accept" }));
     expect(await screen.findByText("Atlas joined Globex")).toBeInTheDocument();
@@ -518,14 +481,7 @@ describe("in Portuguese and for assistive technology", () => {
     api({
       "GET /me": json(200, makeMe({ locale: "pt-BR" })),
       "GET /invitations": json(200, {
-        items: [
-          makeInvitation({
-            permission: "guest",
-            position_id: "pos3",
-            position_name: "Worktrees",
-            invited_by: bob,
-          }),
-        ],
+        items: [makeInvitation({ permission: "member", invited_by: bob })],
       }),
     });
     renderRoute("/orgs");
@@ -534,12 +490,7 @@ describe("in Portuguese and for assistive technology", () => {
     ).toBeInTheDocument();
     const item = await screen.findByRole("listitem", { name: "Convite para Acme" });
     expect(
-      within(item).getByText("Bob Lima convidou você para Acme como convidado."),
-    ).toBeInTheDocument();
-    expect(
-      within(item).getByText(
-        "As identidades acima de Worktrees vão gerenciar você e podem remover você de Acme.",
-      ),
+      within(item).getByText("Bob Lima convidou você para Acme como membro."),
     ).toBeInTheDocument();
     expect(within(item).getByRole("button", { name: "Aceitar" })).toBeInTheDocument();
     expect(within(item).getByRole("button", { name: "Recusar" })).toBeInTheDocument();
@@ -549,12 +500,7 @@ describe("in Portuguese and for assistive technology", () => {
     api({
       "GET /invitations": json(200, {
         items: [
-          makeInvitation({
-            permission: "guest",
-            position_id: "pos3",
-            position_name: "Worktrees",
-            invited_by: bob,
-          }),
+          makeInvitation({ permission: "member", invited_by: bob }),
           makeInvitation({
             id: "i7",
             invitee: atlas,

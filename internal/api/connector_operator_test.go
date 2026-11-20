@@ -45,7 +45,7 @@ func newOperatorFixture(t *testing.T) *operatorFixture {
 	f.bobby = env.NewAI(f.bob, "Bobby")
 	side, err := env.App.Orgs.Create(context.Background(), f.dave.User.ID, "side")
 	require.NoError(t, err)
-	env.AddMember(side.ID, f.atlas, orgs.PermissionMember, "")
+	env.AddMember(side.ID, f.atlas, orgs.PermissionMember)
 	ref := func(c *testkit.Client, id string) *dto.IntelligenceRef {
 		r := profileOf(t, c, id).IntelligenceRef
 		return &r
@@ -195,10 +195,10 @@ func TestOperatorMustBeAnAIOfTheConnectionsOrganization(t *testing.T) {
 	f := newOperatorFixture(t)
 	person := seedPerson(t, f.env, f.conn.ID, "5511999990000", "Pat")
 	aliceOrg := f.alice.PersonalOrg().ID
-	f.env.AddMember(aliceOrg, f.bobby, orgs.PermissionMember, "")  // Bobby works in alice's organization too, but its home is bob's
-	scout := f.env.NewAI(f.carol, "Scout")                         // an AI of carol's organization
-	homeless := f.env.NewLegacyAI(f.alice, "drifter")              // a v0.3 identity: no home organization
-	f.env.AddMember(aliceOrg, homeless, orgs.PermissionMember, "") // a member, but no AI of the organization
+	f.env.AddMember(aliceOrg, f.bobby, orgs.PermissionMember)  // Bobby works in alice's organization too, but its home is bob's
+	scout := f.env.NewAI(f.carol, "Scout")                     // an AI of carol's organization
+	homeless := f.env.NewLegacyAI(f.alice, "drifter")          // a v0.3 identity: no home organization
+	f.env.AddMember(aliceOrg, homeless, orgs.PermissionMember) // a member, but no AI of the organization
 
 	for _, c := range []struct{ name, id string }{
 		{"the creator's own id", f.alice.User.ID},

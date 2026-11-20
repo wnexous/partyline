@@ -50,7 +50,7 @@ export function trackLive(page: Page) {
 }
 
 /**
- * The page itself must not scroll sideways (UI-24, CHART-04): the document is never wider than the
+ * The page itself must not scroll sideways (UI-24): the document is never wider than the
  * window it sits in. The shell lets these pages scroll as a document, so its metrics are the ones to
  * read. A failure names the elements that stick out, which is where to look.
  */
@@ -135,12 +135,10 @@ export interface AgentClient {
   folder: string;
 }
 
-/** Where a new AI goes, as `partyline <harness> --org --position --parent` sends it (ORG-04, POS-07, POS-08). */
+/** Where a new AI goes, as `partyline <harness> --org --parent` sends it (ORG-04, POS-08, SR2-09). */
 export interface Placement {
   /** An organization's address or id. */
   org?: string;
-  /** A position's name in that organization. */
-  position?: string;
   /** The @handle of the AI that starts this one. */
   parent?: string;
 }
@@ -164,9 +162,6 @@ export async function connectAI(
       "X-Partyline-Machine": machine,
       "X-Partyline-Folder": folderHeader,
       ...(placement.org ? { "X-Partyline-Org": placement.org } : {}),
-      ...(placement.position
-        ? { "X-Partyline-Position": encodeURIComponent(placement.position) }
-        : {}),
       ...(placement.parent ? { "X-Partyline-Parent": placement.parent } : {}),
     },
   });

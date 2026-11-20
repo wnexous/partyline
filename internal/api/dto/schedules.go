@@ -135,7 +135,7 @@ type HeartbeatSetter struct {
 // AgentHeartbeatFrame delivers one run of a schedule to the principal session (HB-04): the session hands
 // Prompt to the model as a turn and acknowledges the frame with an AgentAckFrame carrying RunID. Origin tells
 // whether the AI set the routine itself or someone who manages it did (SetBy), and Trusted is true only when
-// the setter manages the AI in its home organization at delivery time (HB-08).
+// the setter instructs the AI (its host or an instructor) at delivery time (HB-08).
 type AgentHeartbeatFrame struct {
 	Type       AgentFrameType  `json:"type" tstype:"typeof AgentFrameTypeHeartbeat"`
 	RunID      string          `json:"run_id"`

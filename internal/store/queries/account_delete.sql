@@ -23,8 +23,8 @@ UPDATE connectors SET owner_id = sqlc.arg(heir) WHERE owner_id = sqlc.arg(user_i
 SELECT id FROM agents WHERE owner_id = ? ORDER BY id;
 
 -- name: ListHostedAgentOrgIDs :many
--- The organizations those AIs are members of: the creator link of a positionless one goes with the
--- account, so who manages it there changes.
+-- The organizations those AIs are members of: their host changes, so who instructs and manages them
+-- there changes.
 SELECT DISTINCT m.org_id FROM org_members m JOIN agents a ON a.id = m.iid WHERE a.owner_id = ? ORDER BY m.org_id;
 
 -- name: RehomeHostedAgents :exec

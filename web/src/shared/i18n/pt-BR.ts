@@ -156,7 +156,6 @@ export const ptBR: Dictionary = {
   "conversations.newGroup": "Novo grupo",
 
   "contacts.instance": "Nesta instância",
-  "contacts.people": "Pessoas",
   "contacts.hostedBy": "hospedada por @{handle}",
   "contacts.loadError": "Não foi possível carregar seus contatos.",
   "contacts.filter": "Filtrar contatos",
@@ -171,23 +170,13 @@ export const ptBR: Dictionary = {
   "contacts.noAIs": "Você ainda não tem IAs.",
   "contacts.noAIsBody":
     "Use “Conectar um agente” acima: a sessão aparece aqui, na sua organização.",
-  "contacts.hosted": "Hospedadas por mim",
-  "contacts.hostedBody":
-    "IAs que rodam nos seus computadores e não pertencem mais a nenhuma das suas organizações. Envie mensagem, una ou apague.",
-  "contacts.peopleBody": "Pessoas que seus conectores já viram. Abra um conector para listá-las.",
   "contacts.message": "Mensagem",
   "contacts.messageWith": "Enviar mensagem a {name}",
   "contacts.onlineCount": "{online} de {total} online",
   "contacts.lastSeen": "Visto por último {time}",
   "contacts.neverSeen": "Nunca conectou",
-  "contacts.peopleOne": "1 pessoa",
-  "contacts.peopleMany": "{count} pessoas",
-  "contacts.peopleNoMatch": "Ninguém encontrado.",
-  "contacts.peopleLoadError": "Não foi possível carregar as pessoas de {name}.",
-  "contacts.showMore": "Mostrar mais",
 
   "ai.delete": "Apagar {name}",
-  "ai.deleteShort": "Apagar",
   "ai.deleteTitle": "Apagar {name}?",
   "ai.deleteBody":
     "Ela sai de todos os grupos e organizações, suas mensagens diretas são apagadas e as conexões que ela opera ficam sem operador. Uma sessão que começar de novo na pasta dela cria uma nova IA.",
@@ -234,25 +223,22 @@ export const ptBR: Dictionary = {
   "profile.conversations": "Conversas",
   "profile.noConversations": "Nenhuma conversa que você possa ver ainda.",
   "profile.directMessage": "Mensagem direta",
-  "profile.instructedBy": "Quem pode dar ordens a esta IA",
+  "profile.instructedBy": "Pode dar instruções",
   "profile.instructedByBody":
-    "As mensagens destas pessoas e IAs chegam a {name} como confiáveis: ela pode agir sobre elas como pedidos de quem as enviou. São quem a gerencia em {org}.",
-  "profile.instructedByBodyNoOrg":
-    "As mensagens destas pessoas e IAs chegam a {name} como confiáveis: ela pode agir sobre elas como pedidos de quem as enviou. São quem a gerencia na organização dela.",
-  "profile.instructedByNone":
-    "Ninguém: {name} trata toda mensagem como informação, não como instrução.",
-  "profile.instructedByManage": "Mudar isso na página de Membros",
+    "Mensagens do anfitrião e destas pessoas e IAs chegam a {name} como confiáveis: ela pode agir sobre elas como pedidos de quem as mandou. Nada mais torna uma mensagem confiável.",
+  "profile.instructedByHostOnly":
+    "Só as mensagens do anfitrião chegam a {name} como confiáveis: qualquer outra mensagem ela trata como informação, não como instrução.",
+  "profile.host": "Anfitrião",
   "profile.orgs": "Organizações",
   "profile.homeOrg": "Organização principal",
   "profile.permissionAdmin": "Administrador",
   "profile.permissionMember": "Membro",
-  "profile.permissionGuest": "Convidado",
   "profile.removeFrom": "Remover de {org}",
   "profile.removeTitle": "Remover {name} de {org}?",
   "profile.removeBodyPerson":
-    "{name} sai dos grupos de {org} e perde o cargo que tem lá. Remover alguém só tira essa pessoa de {org}: a conta e as outras organizações dela continuam.",
+    "{name} sai dos grupos de {org}. Remover alguém só tira essa pessoa de {org}: a conta e as outras organizações dela continuam.",
   "profile.removeBodyAI":
-    "{name} sai dos grupos de {org} e perde o cargo que tem lá. Remover uma IA de uma organização que não é a principal dela só a tira de {org}: a IA continua existindo, na organização principal.",
+    "{name} sai dos grupos de {org}. Remover uma IA de uma organização que não é a principal dela só a tira de {org}: a IA continua existindo, na organização principal.",
   "profile.removed": "{name} saiu de {org}",
   "profile.removeFailed": "Não foi possível remover {name} de {org}. Tente de novo.",
   "profile.removeLastAdmin":
@@ -374,6 +360,24 @@ export const ptBR: Dictionary = {
   "routines.changed":
     "Esta rotina mudou enquanto isso. A lista foi recarregada: confira e tente de novo.",
   "routines.gone": "Esta rotina não existe mais. A lista foi recarregada.",
+  "instructors.add": "Adicionar",
+  "instructors.addTitle": "Quem mais pode dar instruções a {name}?",
+  "instructors.addBody":
+    "Mensagens desta pessoa ou IA chegarão a {name} como confiáveis, como as suas. Uma pessoa também pode editar {name} e encerrar as sessões dela.",
+  "instructors.handle": "Handle",
+  "instructors.handleHint": "O @handle de uma pessoa, ou de uma IA que você vê.",
+  "instructors.addSubmit": "Adicionar",
+  "instructors.adding": "Adicionando…",
+  "instructors.added": "{who} agora pode dar instruções a {name}",
+  "instructors.unknown": "Nenhuma pessoa ou IA que você vê tem esse handle.",
+  "instructors.forbidden": "Só o anfitrião desta IA pode mudar quem dá instruções a ela.",
+  "instructors.gone": "Esta IA não existe mais.",
+  "instructors.remove": "Remover",
+  "instructors.removeAction": "Remover {who} de quem dá instruções",
+  "instructors.removeTitle": "{who} deixa de dar instruções a {name}?",
+  "instructors.removeBody":
+    "{name} vai tratar as mensagens de {who} como informação, não como instruções, e {who} não poderá mais editá-la.",
+  "instructors.removed": "{who} não dá mais instruções a {name}",
   "routines.forbidden": "Só quem gerencia esta IA pode mudar as rotinas dela.",
   "routines.rateLimited": "Muitas mudanças em pouco tempo. Espere um pouco e tente de novo.",
   "routines.history": "Histórico",
@@ -462,8 +466,6 @@ export const ptBR: Dictionary = {
   "newGroup.org": "Organização",
   "newGroup.orgHint": "Só quem é membro da organização entra no grupo.",
   "newGroup.forbidden": "Só membros e administradores de {org} podem criar grupos nela.",
-  "newGroup.guestOnly":
-    "Você é convidado em todas as organizações de que faz parte, e convidados não criam grupos.",
   "newGroup.noOrg":
     "Você ainda não faz parte de nenhuma organização. Crie ou entre em uma primeiro.",
   "home.title": "Escolha uma conversa",
@@ -1195,7 +1197,7 @@ export const ptBR: Dictionary = {
     "@nome, respostas às mensagens dele, palavras-chave e todo chat direto.",
   "memberSettings.delivery.trusted": "Só confiáveis",
   "memberSettings.delivery.trustedHint":
-    "Só identidades que a gerenciam, ou contas de chat verificadas por elas.",
+    "Só o anfitrião e quem dá instruções a ela, ou contas de chat verificadas por eles.",
   "memberSettings.deliveryHint":
     "Só menções reduz o ruído; não é um filtro de segurança. Use Só confiáveis para limitar quem chega ao agente.",
   "memberSettings.keywords": "Palavras-chave",
@@ -1264,13 +1266,7 @@ export const ptBR: Dictionary = {
   "orgs.you": "você",
   "orgs.inviteAdmin": "{inviter} convidou {who} para {org} como administrador.",
   "orgs.inviteMember": "{inviter} convidou {who} para {org} como membro.",
-  "orgs.inviteGuest": "{inviter} convidou {who} para {org} como convidado.",
   "orgs.inviteOther": "{inviter} convidou {who} para {org}.",
-  "orgs.invitePosition": "Cargo: {position}",
-  "orgs.grantPosition": "As identidades acima de {position} vão gerenciar {who}.",
-  "orgs.grantPositionGuest":
-    "As identidades acima de {position} vão gerenciar {who} e podem remover {who} de {org}.",
-  "orgs.grantGuest": "{inviter} vai gerenciar {who} e pode remover {who} de {org}.",
   "orgs.expires": "Expira {when}",
   "orgs.accept": "Aceitar",
   "orgs.decline": "Recusar",
@@ -1288,6 +1284,7 @@ export const ptBR: Dictionary = {
   "orgs.notFoundBody": "Ela foi excluída, ou você não é membro dela.",
   "orgs.notFoundBack": "Voltar às organizações",
   "orgs.orgLoadError": "Não foi possível carregar esta organização.",
+  "orgs.membersLink": "Membros de {org}",
   "orgs.settingsLink": "Configurações de {org}",
   "orgs.tabConnectors": "Conectores",
   "orgs.tabSettings": "Configurações",
@@ -1309,7 +1306,7 @@ export const ptBR: Dictionary = {
   "orgs.leaveOpen": "Sair de {org}",
   "orgs.leaveTitle": "Sair de {org}?",
   "orgs.leaveDialogBody":
-    "Você sai dos grupos de {org} e perde o cargo que tem lá. Sua conta e suas outras organizações continuam.",
+    "Você sai dos grupos de {org}. Sua conta e suas outras organizações continuam.",
   "orgs.leaveConfirm": "Sair",
   "orgs.left": "Você saiu de {org}",
   "orgs.leaveLastAdmin":
@@ -1320,7 +1317,7 @@ export const ptBR: Dictionary = {
   "orgs.deleteOpen": "Excluir organização",
   "orgs.deleteTitle": "Excluir {org}?",
   "orgs.deleteDialogBody":
-    "{org} é excluída de vez, com seus cargos e convites pendentes. Ela não pode ter nenhuma IA, conexão ou grupo: exclua isso antes. Isso não pode ser desfeito.",
+    "{org} é excluída de vez, com seus convites pendentes. Ela não pode ter nenhuma IA, conexão ou grupo: exclua isso antes. Isso não pode ser desfeito.",
   "orgs.deleteConfirm": "Excluir organização",
   "orgs.deleted": "{org} excluída",
   "orgs.deleteForbidden": "Só quem administra {org} pode excluí-la.",
@@ -1337,62 +1334,25 @@ export const ptBR: Dictionary = {
   // Organizations (T42): members, invitations and what the viewer may do about each member
   "orgs.tabMembers": "Membros",
   "orgs.membersTitle": "Membros",
-  "orgs.membersBody": "Todo mundo em {org}, o que cada um é nela e onde fica no organograma.",
+  "orgs.membersBody": "Todo mundo em {org} e o que cada um é nela: administrador ou membro.",
   "orgs.membersLabel": "Membros de {org}",
   "orgs.membersError": "Não foi possível carregar os membros.",
   "orgs.colMember": "Membro",
   "orgs.colPermission": "Permissão",
-  "orgs.colPosition": "Cargo",
-  "orgs.colInvitedBy": "Convidado por",
   "orgs.colActions": "Ações",
-  "orgs.noPosition": "Sem cargo",
   "orgs.invitedBy": "Convidado por {name}",
   "orgs.permissionOf": "Permissão de {name}",
   "orgs.permissionSet": "{name} agora é {role}",
   "orgs.permissionForbidden": "Só quem administra {org} muda permissões.",
   "orgs.permissionFailed": "Não foi possível mudar a permissão de {name}. Tente de novo.",
-  "orgs.move": "Mover",
-  "orgs.moveTitle": "Mover {name}",
-  "orgs.moveBody":
-    "Escolha o cargo de {name} em {org}. As identidades acima dele gerenciam {name}.",
-  "orgs.movePosition": "Cargo",
-  "orgs.moved": "{name} mudou para {position}",
-  "orgs.movedNone": "{name} não tem mais cargo",
-  "orgs.moveForbidden": "Você só pode mover pessoas para um cargo abaixo do seu.",
-  "orgs.moveFailed": "Não foi possível mover {name}. Tente de novo.",
-  "orgs.moveLoses":
-    "Depois desta mudança, {names} deixará de gerenciar {member}. {member} vai parar de tratar as mensagens dessa pessoa como vindas de quem a gerencia.",
-  "orgs.share": "Dar o mesmo acesso que o meu",
-  "orgs.shareTitle": "Dar a {name} o mesmo acesso que o seu?",
-  "orgs.shareBody":
-    "{name} vai ocupar o seu cargo, {position}, em {org}. Vai gerenciar as pessoas e IAs que você gerencia por esse cargo, e essas IAs vão tratar as mensagens dessa pessoa como confiáveis: podem agir sobre elas como pedidos.",
-  "orgs.shareTrusted": "IAs que vão seguir as instruções dessa pessoa: {names}.",
-  "orgs.shareTrustedNone":
-    "Nenhuma IA de {org} vai seguir as instruções dessa pessoa por enquanto.",
-  "orgs.shareNotShared":
-    "Fica de fora: {names}. Você gerencia essas identidades porque as criou ou convidou, e isso não é compartilhado. Para incluí-las, mova-as para um cargo abaixo de {position}.",
-  "orgs.shareLoses": "{names} deixará de gerenciar {name}.",
-  "orgs.sharePermission":
-    "A permissão continua {permission}. Para desfazer, mova {name} para outro cargo.",
-  "orgs.sharePreviewLoading": "Verificando quem isso afeta…",
-  "orgs.sharePreviewFailed":
-    "Não foi possível verificar quem isso afeta. A mudança em si continua funcionando.",
-  "orgs.shareConfirm": "Dar o mesmo acesso",
-  "orgs.shared": "{name} agora tem o mesmo acesso que você em {org}",
-  "orgs.shareForbidden": "Só quem administra pode dar o seu cargo a alguém.",
-  "orgs.shareFailed": "Não foi possível dar o seu acesso a {name}. Tente de novo.",
   "orgs.deleteMember": "Apagar",
   "profile.removeHome": "{name} pertence a {org}. Peça a quem administra que apague essa IA.",
   "orgs.invite": "Convidar",
   "orgs.inviteTitle": "Convidar para {org}",
-  "orgs.inviteBodyAdmin":
-    "Quem recebe o convite entra ao aceitar. Defina a permissão e, se quiser, um cargo.",
-  "orgs.inviteBodyGuest":
-    "Você pode convidar convidados. Um convidado fica sob sua responsabilidade: você, e as identidades acima de você, podem gerenciá-lo e removê-lo de {org}.",
+  "orgs.inviteBodyAdmin": "Quem recebe o convite entra ao aceitar, como administrador ou membro.",
   "orgs.inviteHandle": "Handle",
   "orgs.inviteHandleHint": "Qualquer pessoa desta instância, como @bob.",
   "orgs.invitePermission": "Permissão",
-  "orgs.invitePositionLabel": "Cargo",
   "orgs.inviteSend": "Enviar convite",
   "orgs.inviteSending": "Enviando…",
   "orgs.invited": "Convite enviado a {name}",
@@ -1400,67 +1360,11 @@ export const ptBR: Dictionary = {
   "orgs.inviteUnknown": "Ninguém tem esse handle.",
   "orgs.inviteAlready": "{handle} já é membro de {org}.",
   "orgs.inviteRate": "Convites demais na última hora. Tente mais tarde.",
-  "orgs.inviteForbidden": "Você só pode convidar convidados.",
+  "orgs.inviteForbidden": "Só admins desta organização convidam.",
   "orgs.pending": "Convites pendentes",
   "orgs.pendingBody": "Esperando resposta. Cada um expira em 14 dias.",
   "orgs.pendingLabel": "Convites pendentes de {org}",
   "orgs.revoke": "Revogar",
   "orgs.revoked": "Convite para {name} revogado",
   "orgs.revokeFailed": "Não foi possível revogar o convite para {name}. Tente de novo.",
-
-  // Organizations (T43): the positions editor
-  "orgs.tabPositions": "Cargos",
-  "orgs.positionsTitle": "Cargos",
-  "orgs.positionsBody":
-    "O organograma de {org}. Quem tem um cargo gerencia as identidades dos cargos abaixo dele.",
-  "orgs.positionsLabel": "Cargos de {org}",
-  "orgs.positionsError": "Não foi possível carregar os cargos.",
-  "orgs.positionsEmptyTitle": "Nenhum cargo ainda",
-  "orgs.positionsEmptyBody": "Crie o primeiro: ele é o topo do organograma de {org}.",
-  "orgs.addRoot": "Adicionar cargo",
-  "orgs.addChild": "Adicionar um cargo abaixo de {name}",
-  "orgs.positionNameLabel": "Nome do novo cargo",
-  "orgs.rename": "Renomear {name}",
-  "orgs.renameLabel": "Novo nome para {name}",
-  "orgs.positionRule": "De 1 a 60 caracteres",
-  "orgs.parentOf": "Cargo acima de {name}",
-  "orgs.noParent": "Nenhum (cargo do topo)",
-  "orgs.holdersNone": "Ninguém ocupa",
-  "orgs.holdersOne": "1 pessoa ou IA",
-  "orgs.holdersMany": "{count} pessoas ou IAs",
-  "orgs.deletePosition": "Excluir {name}",
-  "orgs.deletePositionTitle": "Excluir {name}?",
-  "orgs.deletePositionBody":
-    "Quem ocupa o cargo e os cargos abaixo dele passam para {parent}. Ninguém sai da organização.",
-  "orgs.deletePositionBodyRoot":
-    "Ele não tem cargo acima, então quem o ocupa fica sem cargo e os cargos abaixo viram cargos do topo. Ninguém sai da organização.",
-  "orgs.deletePositionConfirm": "Excluir cargo",
-  "orgs.positionCreated": "Cargo {name} criado",
-  "orgs.positionRenamed": "Agora se chama {name}",
-  "orgs.positionMoved": "{name} mudou de lugar",
-  "orgs.positionDeleted": "Cargo {name} excluído",
-  "orgs.positionTaken": "Já existe um cargo com esse nome.",
-  "orgs.positionCycle":
-    "Um cargo não pode ficar abaixo de si mesmo nem dos cargos que estão abaixo dele.",
-  "orgs.positionForbidden": "Só quem administra {org} edita os cargos.",
-  "orgs.positionFailed": "Não foi possível salvar a mudança. Tente de novo.",
-
-  // Organizations (T44): the org chart
-  "orgs.tabChart": "Organograma",
-  "orgs.chartTitle": "Organograma",
-  "orgs.chartBody":
-    "Quem está onde em {org}. Quem tem um cargo gerencia as identidades abaixo dele, e um convidado fica sob quem o convidou.",
-  "orgs.chartLabel": "Organograma de {org}",
-  "orgs.chartError": "Não foi possível carregar o organograma.",
-  "orgs.editPositions": "Editar cargos",
-  "orgs.unassigned": "Sem lugar definido",
-  "orgs.expand": "Expandir {name}",
-  "orgs.collapse": "Recolher {name}",
-  "orgs.chartMove": "Mover {name}",
-  "orgs.chartDelete": "Apagar {name}",
-  "orgs.chartRemove": "Remover {name} de {org}",
-  "orgs.removeShort": "Remover",
-
-  "orgs.chartLink": "Organograma de {org}",
-  "orgs.unassignedHint": "Sem cargo e sem ninguém sob quem ficar.",
 };

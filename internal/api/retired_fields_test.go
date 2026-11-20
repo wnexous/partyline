@@ -74,7 +74,7 @@ func newUpgradedAPI(t *testing.T) *upgradedAPI {
 	add := func(kind dto.MemberKind, id string) dto.RoomMember {
 		return testkit.Decode[dto.RoomMember](f.alice.Post(f.roomPath()+"/members", dto.AddMemberRequest{Kind: kind, MemberID: id}).RequireStatus(http.StatusCreated))
 	}
-	env.AddMember(f.alice.PersonalOrg().ID, f.bob.User.ID, orgs.PermissionMember, "") // a group is made of the members of its organization
+	env.AddMember(f.alice.PersonalOrg().ID, f.bob.User.ID, orgs.PermissionMember) // a group is made of the members of its organization
 	f.atlasMember, f.bobMember = add(dto.MemberKindAgent, f.atlas), add(dto.MemberKindUser, f.bob.User.ID)
 	f.conn = createFake(f.alice, "wa", true)
 	f.chat = insertChat(t, env, f.conn.ID, teamChat, "Support group")
@@ -206,14 +206,14 @@ func TestDeletingAFormerCatchAllRoomLeavesTheConnectionAlone(t *testing.T) {
 
 // retiredRoomFieldSetup returns the setup of the room routes the retired fields used to act on: a group of
 // the organization created by the role "member" with her AI Atlas as a member, the roles "target" and
-// "guest" in it, and another AI of hers, Nova, to add.
+// "peer" in it, and another AI of hers, Nova, to add.
 func retiredRoomFieldSetup(env *testkit.Env, roles *testkit.OrgRoles) func(t *testing.T) map[string]string {
 	return func(t *testing.T) map[string]string {
 		owner := *roles.Member
 		owner.T = t
 		room := groupIn(t, env, &owner, roles.Org.ID, "Atlas HQ")
 		addToRoom(t, env, &owner, room.ID, roles.Target)
-		addToRoom(t, env, &owner, room.ID, roles.Guest)
+		addToRoom(t, env, &owner, room.ID, roles.Peer)
 		member := testkit.Decode[dto.RoomMember](owner.Post("/api/v1/rooms/"+room.ID+"/members",
 			dto.AddMemberRequest{Kind: dto.MemberKindAgent, MemberID: env.NewAIIn(&owner, roles.Org.ID, "Atlas")}).RequireStatus(http.StatusCreated))
 		nova := env.NewAIIn(&owner, roles.Org.ID, "Nova")

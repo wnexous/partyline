@@ -114,23 +114,6 @@ func (q *Queries) CountOrganizationSlug(ctx context.Context, slug string) (int64
 	return count, err
 }
 
-const countPositionName = `-- name: CountPositionName :one
-SELECT COUNT(*) FROM positions WHERE org_id = ? AND name = ?
-`
-
-type CountPositionNameParams struct {
-	OrgID string
-	Name  string
-}
-
-// Positions of the organization with this name, ignoring case.
-func (q *Queries) CountPositionName(ctx context.Context, arg CountPositionNameParams) (int64, error) {
-	row := q.db.QueryRowContext(ctx, countPositionName, arg.OrgID, arg.Name)
-	var count int64
-	err := row.Scan(&count)
-	return count, err
-}
-
 const countSharedOrgs = `-- name: CountSharedOrgs :one
 SELECT COUNT(*) FROM org_members x JOIN org_members y ON y.org_id = x.org_id
 WHERE x.iid = ?1 AND y.iid = ?2
@@ -149,16 +132,14 @@ func (q *Queries) CountSharedOrgs(ctx context.Context, arg CountSharedOrgsParams
 }
 
 const createOrgMember = `-- name: CreateOrgMember :exec
-INSERT INTO org_members (org_id, iid, permission, position_id, inviter_iid, joined_at)
-VALUES (?, ?, ?, ?, ?, ?)
+INSERT INTO org_members (org_id, iid, permission, joined_at)
+VALUES (?, ?, ?, ?)
 `
 
 type CreateOrgMemberParams struct {
 	OrgID      string
 	Iid        string
 	Permission string
-	PositionID sql.NullString
-	InviterIid sql.NullString
 	JoinedAt   int64
 }
 
@@ -167,8 +148,6 @@ func (q *Queries) CreateOrgMember(ctx context.Context, arg CreateOrgMemberParams
 		arg.OrgID,
 		arg.Iid,
 		arg.Permission,
-		arg.PositionID,
-		arg.InviterIid,
 		arg.JoinedAt,
 	)
 	return err
@@ -200,31 +179,8 @@ func (q *Queries) CreateOrganization(ctx context.Context, arg CreateOrganization
 	return err
 }
 
-const createPosition = `-- name: CreatePosition :exec
-INSERT INTO positions (id, org_id, name, parent_id, created_at) VALUES (?, ?, ?, ?, ?)
-`
-
-type CreatePositionParams struct {
-	ID        string
-	OrgID     string
-	Name      string
-	ParentID  sql.NullString
-	CreatedAt int64
-}
-
-func (q *Queries) CreatePosition(ctx context.Context, arg CreatePositionParams) error {
-	_, err := q.db.ExecContext(ctx, createPosition,
-		arg.ID,
-		arg.OrgID,
-		arg.Name,
-		arg.ParentID,
-		arg.CreatedAt,
-	)
-	return err
-}
-
 const deleteExpiredOrgInvitations = `-- name: DeleteExpiredOrgInvitations :many
-DELETE FROM org_invitations WHERE expires_at <= ? RETURNING id, org_id, invitee_iid, permission, position_id, invited_by, created_at, expires_at
+DELETE FROM org_invitations WHERE expires_at <= ? RETURNING id, org_id, invitee_iid, permission, invited_by, created_at, expires_at
 `
 
 func (q *Queries) DeleteExpiredOrgInvitations(ctx context.Context, expiresAt int64) ([]OrgInvitation, error) {
@@ -241,7 +197,6 @@ func (q *Queries) DeleteExpiredOrgInvitations(ctx context.Context, expiresAt int
 			&i.OrgID,
 			&i.InviteeIid,
 			&i.Permission,
-			&i.PositionID,
 			&i.InvitedBy,
 			&i.CreatedAt,
 			&i.ExpiresAt,
@@ -342,20 +297,6 @@ func (q *Queries) DeletePlatformItemsOfAgentOnConnector(ctx context.Context, arg
 	return err
 }
 
-const deletePosition = `-- name: DeletePosition :exec
-DELETE FROM positions WHERE id = ? AND org_id = ?
-`
-
-type DeletePositionParams struct {
-	ID    string
-	OrgID string
-}
-
-func (q *Queries) DeletePosition(ctx context.Context, arg DeletePositionParams) error {
-	_, err := q.db.ExecContext(ctx, deletePosition, arg.ID, arg.OrgID)
-	return err
-}
-
 const getAgentOrg = `-- name: GetAgentOrg :one
 SELECT CAST(COALESCE(org_id, '') AS TEXT) AS org_id FROM agents WHERE id = ?
 `
@@ -388,44 +329,8 @@ func (q *Queries) GetOldestOrgOf(ctx context.Context, arg GetOldestOrgOfParams) 
 	return org_id, err
 }
 
-const getOrgChartMember = `-- name: GetOrgChartMember :one
-SELECT m.iid, m.permission,
-       CAST(COALESCE(m.position_id, '') AS TEXT) AS position_id,
-       CAST(COALESCE(m.inviter_iid, '') AS TEXT) AS inviter_iid,
-       CAST(COALESCE(a.creator_iid, '') AS TEXT) AS creator_iid
-FROM org_members m LEFT JOIN agents a ON a.id = m.iid
-WHERE m.org_id = ? AND m.iid = ?
-`
-
-type GetOrgChartMemberParams struct {
-	OrgID string
-	Iid   string
-}
-
-type GetOrgChartMemberRow struct {
-	Iid        string
-	Permission string
-	PositionID string
-	InviterIid string
-	CreatorIid string
-}
-
-// One member of ListOrgChartMembers.
-func (q *Queries) GetOrgChartMember(ctx context.Context, arg GetOrgChartMemberParams) (GetOrgChartMemberRow, error) {
-	row := q.db.QueryRowContext(ctx, getOrgChartMember, arg.OrgID, arg.Iid)
-	var i GetOrgChartMemberRow
-	err := row.Scan(
-		&i.Iid,
-		&i.Permission,
-		&i.PositionID,
-		&i.InviterIid,
-		&i.CreatorIid,
-	)
-	return i, err
-}
-
 const getOrgInvitation = `-- name: GetOrgInvitation :one
-SELECT id, org_id, invitee_iid, permission, position_id, invited_by, created_at, expires_at FROM org_invitations WHERE id = ?
+SELECT id, org_id, invitee_iid, permission, invited_by, created_at, expires_at FROM org_invitations WHERE id = ?
 `
 
 func (q *Queries) GetOrgInvitation(ctx context.Context, id string) (OrgInvitation, error) {
@@ -436,7 +341,6 @@ func (q *Queries) GetOrgInvitation(ctx context.Context, id string) (OrgInvitatio
 		&i.OrgID,
 		&i.InviteeIid,
 		&i.Permission,
-		&i.PositionID,
 		&i.InvitedBy,
 		&i.CreatedAt,
 		&i.ExpiresAt,
@@ -445,7 +349,7 @@ func (q *Queries) GetOrgInvitation(ctx context.Context, id string) (OrgInvitatio
 }
 
 const getOrgInvitationOf = `-- name: GetOrgInvitationOf :one
-SELECT id, org_id, invitee_iid, permission, position_id, invited_by, created_at, expires_at FROM org_invitations WHERE org_id = ? AND invitee_iid = ?
+SELECT id, org_id, invitee_iid, permission, invited_by, created_at, expires_at FROM org_invitations WHERE org_id = ? AND invitee_iid = ?
 `
 
 type GetOrgInvitationOfParams struct {
@@ -461,7 +365,6 @@ func (q *Queries) GetOrgInvitationOf(ctx context.Context, arg GetOrgInvitationOf
 		&i.OrgID,
 		&i.InviteeIid,
 		&i.Permission,
-		&i.PositionID,
 		&i.InvitedBy,
 		&i.CreatedAt,
 		&i.ExpiresAt,
@@ -470,7 +373,7 @@ func (q *Queries) GetOrgInvitationOf(ctx context.Context, arg GetOrgInvitationOf
 }
 
 const getOrgMember = `-- name: GetOrgMember :one
-SELECT org_id, iid, permission, position_id, inviter_iid, joined_at FROM org_members WHERE org_id = ? AND iid = ?
+SELECT org_id, iid, permission, joined_at FROM org_members WHERE org_id = ? AND iid = ?
 `
 
 type GetOrgMemberParams struct {
@@ -485,27 +388,15 @@ func (q *Queries) GetOrgMember(ctx context.Context, arg GetOrgMemberParams) (Org
 		&i.OrgID,
 		&i.Iid,
 		&i.Permission,
-		&i.PositionID,
-		&i.InviterIid,
 		&i.JoinedAt,
 	)
 	return i, err
 }
 
 const getOrgMemberView = `-- name: GetOrgMemberView :one
-SELECT m.iid, m.permission, m.joined_at,
-       CAST(COALESCE(m.position_id, '') AS TEXT) AS position_id,
-       CAST(COALESCE(p.name, '') AS TEXT) AS position_name,
-       i.kind, i.display_name, i.handle, i.avatar_sha256,
-       CAST(COALESCE(m.inviter_iid, '') AS TEXT) AS inviter_iid,
-       CAST(COALESCE(inv.kind, '') AS TEXT) AS inviter_kind,
-       CAST(COALESCE(inv.display_name, '') AS TEXT) AS inviter_display_name,
-       CAST(COALESCE(inv.handle, '') AS TEXT) AS inviter_handle,
-       CAST(COALESCE(inv.avatar_sha256, '') AS TEXT) AS inviter_avatar_sha256
+SELECT m.iid, m.permission, m.joined_at, i.kind, i.display_name, i.handle, i.avatar_sha256
 FROM org_members m
 JOIN intelligences i ON i.id = m.iid
-LEFT JOIN positions p ON p.id = m.position_id AND p.org_id = m.org_id
-LEFT JOIN intelligences inv ON inv.id = m.inviter_iid
 WHERE m.org_id = ?1 AND m.iid = ?2
 `
 
@@ -515,20 +406,13 @@ type GetOrgMemberViewParams struct {
 }
 
 type GetOrgMemberViewRow struct {
-	Iid                 string
-	Permission          string
-	JoinedAt            int64
-	PositionID          string
-	PositionName        string
-	Kind                string
-	DisplayName         string
-	Handle              string
-	AvatarSha256        string
-	InviterIid          string
-	InviterKind         string
-	InviterDisplayName  string
-	InviterHandle       string
-	InviterAvatarSha256 string
+	Iid          string
+	Permission   string
+	JoinedAt     int64
+	Kind         string
+	DisplayName  string
+	Handle       string
+	AvatarSha256 string
 }
 
 // One row of ListOrgMembers.
@@ -539,23 +423,16 @@ func (q *Queries) GetOrgMemberView(ctx context.Context, arg GetOrgMemberViewPara
 		&i.Iid,
 		&i.Permission,
 		&i.JoinedAt,
-		&i.PositionID,
-		&i.PositionName,
 		&i.Kind,
 		&i.DisplayName,
 		&i.Handle,
 		&i.AvatarSha256,
-		&i.InviterIid,
-		&i.InviterKind,
-		&i.InviterDisplayName,
-		&i.InviterHandle,
-		&i.InviterAvatarSha256,
 	)
 	return i, err
 }
 
 const getOrgMembership = `-- name: GetOrgMembership :one
-SELECT o.id, o.name, o.slug, o.avatar_sha256, o.created_by, o.created_at, o.updated_at, m.permission, CAST(COALESCE(m.position_id, '') AS TEXT) AS position_id
+SELECT o.id, o.name, o.slug, o.avatar_sha256, o.created_by, o.created_at, o.updated_at, m.permission
 FROM org_members m JOIN organizations o ON o.id = m.org_id
 WHERE m.org_id = ? AND m.iid = ?
 `
@@ -568,10 +445,9 @@ type GetOrgMembershipParams struct {
 type GetOrgMembershipRow struct {
 	Organization Organization
 	Permission   string
-	PositionID   string
 }
 
-// An organization with the permission and position of one of its members.
+// An organization with the permission of one of its members.
 func (q *Queries) GetOrgMembership(ctx context.Context, arg GetOrgMembershipParams) (GetOrgMembershipRow, error) {
 	row := q.db.QueryRowContext(ctx, getOrgMembership, arg.OrgID, arg.Iid)
 	var i GetOrgMembershipRow
@@ -584,8 +460,29 @@ func (q *Queries) GetOrgMembership(ctx context.Context, arg GetOrgMembershipPara
 		&i.Organization.CreatedAt,
 		&i.Organization.UpdatedAt,
 		&i.Permission,
-		&i.PositionID,
 	)
+	return i, err
+}
+
+const getOrgRosterMember = `-- name: GetOrgRosterMember :one
+SELECT m.iid, m.permission FROM org_members m WHERE m.org_id = ? AND m.iid = ?
+`
+
+type GetOrgRosterMemberParams struct {
+	OrgID string
+	Iid   string
+}
+
+type GetOrgRosterMemberRow struct {
+	Iid        string
+	Permission string
+}
+
+// One member of ListOrgRosterMembers.
+func (q *Queries) GetOrgRosterMember(ctx context.Context, arg GetOrgRosterMemberParams) (GetOrgRosterMemberRow, error) {
+	row := q.db.QueryRowContext(ctx, getOrgRosterMember, arg.OrgID, arg.Iid)
+	var i GetOrgRosterMemberRow
+	err := row.Scan(&i.Iid, &i.Permission)
 	return i, err
 }
 
@@ -648,51 +545,6 @@ func (q *Queries) GetPersonalOrg(ctx context.Context, createdBy string) (Organiz
 	return i, err
 }
 
-const getPosition = `-- name: GetPosition :one
-SELECT id, org_id, name, parent_id, created_at FROM positions WHERE id = ?1 AND org_id = ?2
-`
-
-type GetPositionParams struct {
-	ID    string
-	OrgID string
-}
-
-func (q *Queries) GetPosition(ctx context.Context, arg GetPositionParams) (Position, error) {
-	row := q.db.QueryRowContext(ctx, getPosition, arg.ID, arg.OrgID)
-	var i Position
-	err := row.Scan(
-		&i.ID,
-		&i.OrgID,
-		&i.Name,
-		&i.ParentID,
-		&i.CreatedAt,
-	)
-	return i, err
-}
-
-const getPositionByName = `-- name: GetPositionByName :one
-SELECT id, org_id, name, parent_id, created_at FROM positions WHERE org_id = ? AND name = ?
-`
-
-type GetPositionByNameParams struct {
-	OrgID string
-	Name  string
-}
-
-// The position of the organization with this name, ignoring case.
-func (q *Queries) GetPositionByName(ctx context.Context, arg GetPositionByNameParams) (Position, error) {
-	row := q.db.QueryRowContext(ctx, getPositionByName, arg.OrgID, arg.Name)
-	var i Position
-	err := row.Scan(
-		&i.ID,
-		&i.OrgID,
-		&i.Name,
-		&i.ParentID,
-		&i.CreatedAt,
-	)
-	return i, err
-}
-
 const getUserDefaultOrg = `-- name: GetUserDefaultOrg :one
 SELECT CAST(m.org_id AS TEXT) AS org_id FROM users u
 JOIN org_members m ON m.org_id = u.default_org_id AND m.iid = u.id
@@ -707,55 +559,8 @@ func (q *Queries) GetUserDefaultOrg(ctx context.Context, id string) (string, err
 	return org_id, err
 }
 
-const listInvitationsForAIsAround = `-- name: ListInvitationsForAIsAround :many
-SELECT inv.id, inv.org_id, inv.invitee_iid, inv.permission, inv.position_id, inv.invited_by, inv.created_at, inv.expires_at FROM org_invitations inv
-JOIN agents a ON a.id = inv.invitee_iid
-JOIN org_members om ON om.org_id = a.org_id AND om.iid = ?1
-WHERE inv.expires_at > ?2
-ORDER BY inv.created_at DESC, inv.id
-`
-
-type ListInvitationsForAIsAroundParams struct {
-	MemberIid string
-	Now       int64
-}
-
-// The pending invitations of the AIs whose home organization the identity belongs to: the candidates
-// of the invitations an identity answers for the AIs it manages.
-func (q *Queries) ListInvitationsForAIsAround(ctx context.Context, arg ListInvitationsForAIsAroundParams) ([]OrgInvitation, error) {
-	rows, err := q.db.QueryContext(ctx, listInvitationsForAIsAround, arg.MemberIid, arg.Now)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	var items []OrgInvitation
-	for rows.Next() {
-		var i OrgInvitation
-		if err := rows.Scan(
-			&i.ID,
-			&i.OrgID,
-			&i.InviteeIid,
-			&i.Permission,
-			&i.PositionID,
-			&i.InvitedBy,
-			&i.CreatedAt,
-			&i.ExpiresAt,
-		); err != nil {
-			return nil, err
-		}
-		items = append(items, i)
-	}
-	if err := rows.Close(); err != nil {
-		return nil, err
-	}
-	if err := rows.Err(); err != nil {
-		return nil, err
-	}
-	return items, nil
-}
-
 const listInvitationsForInvitee = `-- name: ListInvitationsForInvitee :many
-SELECT id, org_id, invitee_iid, permission, position_id, invited_by, created_at, expires_at FROM org_invitations WHERE invitee_iid = ?1 AND expires_at > ?2
+SELECT id, org_id, invitee_iid, permission, invited_by, created_at, expires_at FROM org_invitations WHERE invitee_iid = ?1 AND expires_at > ?2
 ORDER BY created_at DESC, id
 `
 
@@ -778,7 +583,6 @@ func (q *Queries) ListInvitationsForInvitee(ctx context.Context, arg ListInvitat
 			&i.OrgID,
 			&i.InviteeIid,
 			&i.Permission,
-			&i.PositionID,
 			&i.InvitedBy,
 			&i.CreatedAt,
 			&i.ExpiresAt,
@@ -796,40 +600,40 @@ func (q *Queries) ListInvitationsForInvitee(ctx context.Context, arg ListInvitat
 	return items, nil
 }
 
-const listOrgChartMembers = `-- name: ListOrgChartMembers :many
-SELECT m.iid, m.permission,
-       CAST(COALESCE(m.position_id, '') AS TEXT) AS position_id,
-       CAST(COALESCE(m.inviter_iid, '') AS TEXT) AS inviter_iid,
-       CAST(COALESCE(a.creator_iid, '') AS TEXT) AS creator_iid
-FROM org_members m LEFT JOIN agents a ON a.id = m.iid
-WHERE m.org_id = ?
+const listInvitationsForManagedAIs = `-- name: ListInvitationsForManagedAIs :many
+SELECT inv.id, inv.org_id, inv.invitee_iid, inv.permission, inv.invited_by, inv.created_at, inv.expires_at FROM org_invitations inv
+JOIN agents a ON a.id = inv.invitee_iid
+WHERE inv.expires_at > ?1
+  AND (a.owner_id = ?2
+       OR EXISTS (SELECT 1 FROM agent_instructors ai JOIN intelligences i ON i.id = ai.instructor_iid
+                  WHERE ai.agent_iid = a.id AND ai.instructor_iid = ?2 AND i.kind = 'human'))
+ORDER BY inv.created_at DESC, inv.id
 `
 
-type ListOrgChartMembersRow struct {
-	Iid        string
-	Permission string
-	PositionID string
-	InviterIid string
-	CreatorIid string
+type ListInvitationsForManagedAIsParams struct {
+	Now        int64
+	ManagerIid string
 }
 
-// The members of an organization with what the rules of the chart read (AD-017): permission,
-// position, a guest's inviter and, for an AI, its creator.
-func (q *Queries) ListOrgChartMembers(ctx context.Context, orgID string) ([]ListOrgChartMembersRow, error) {
-	rows, err := q.db.QueryContext(ctx, listOrgChartMembers, orgID)
+// The pending invitations of the AIs the identity manages (SR2-13): the AIs it hosts and those it instructs
+// as a user.
+func (q *Queries) ListInvitationsForManagedAIs(ctx context.Context, arg ListInvitationsForManagedAIsParams) ([]OrgInvitation, error) {
+	rows, err := q.db.QueryContext(ctx, listInvitationsForManagedAIs, arg.Now, arg.ManagerIid)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
-	var items []ListOrgChartMembersRow
+	var items []OrgInvitation
 	for rows.Next() {
-		var i ListOrgChartMembersRow
+		var i OrgInvitation
 		if err := rows.Scan(
-			&i.Iid,
+			&i.ID,
+			&i.OrgID,
+			&i.InviteeIid,
 			&i.Permission,
-			&i.PositionID,
-			&i.InviterIid,
-			&i.CreatorIid,
+			&i.InvitedBy,
+			&i.CreatedAt,
+			&i.ExpiresAt,
 		); err != nil {
 			return nil, err
 		}
@@ -844,25 +648,30 @@ func (q *Queries) ListOrgChartMembers(ctx context.Context, orgID string) ([]List
 	return items, nil
 }
 
-const listOrgHomeAgentIDs = `-- name: ListOrgHomeAgentIDs :many
-SELECT id FROM agents WHERE org_id = ? ORDER BY id
+const listOrgHomeAgents = `-- name: ListOrgHomeAgents :many
+SELECT id, owner_id FROM agents WHERE org_id = ? ORDER BY id
 `
 
-// The AIs whose home is this organization: deleting one of them here deletes it for good, while any other
-// member is only removed (POS-06).
-func (q *Queries) ListOrgHomeAgentIDs(ctx context.Context, orgID sql.NullString) ([]string, error) {
-	rows, err := q.db.QueryContext(ctx, listOrgHomeAgentIDs, orgID)
+type ListOrgHomeAgentsRow struct {
+	ID      string
+	OwnerID string
+}
+
+// The AIs whose home is this organization, with their hosts: deleting one of them here deletes it for good,
+// while any other member is only removed (POS-06), and its host may delete it (SR2-12).
+func (q *Queries) ListOrgHomeAgents(ctx context.Context, orgID sql.NullString) ([]ListOrgHomeAgentsRow, error) {
+	rows, err := q.db.QueryContext(ctx, listOrgHomeAgents, orgID)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
-	var items []string
+	var items []ListOrgHomeAgentsRow
 	for rows.Next() {
-		var id string
-		if err := rows.Scan(&id); err != nil {
+		var i ListOrgHomeAgentsRow
+		if err := rows.Scan(&i.ID, &i.OwnerID); err != nil {
 			return nil, err
 		}
-		items = append(items, id)
+		items = append(items, i)
 	}
 	if err := rows.Close(); err != nil {
 		return nil, err
@@ -874,7 +683,7 @@ func (q *Queries) ListOrgHomeAgentIDs(ctx context.Context, orgID sql.NullString)
 }
 
 const listOrgInvitations = `-- name: ListOrgInvitations :many
-SELECT id, org_id, invitee_iid, permission, position_id, invited_by, created_at, expires_at FROM org_invitations WHERE org_id = ?1 AND expires_at > ?2
+SELECT id, org_id, invitee_iid, permission, invited_by, created_at, expires_at FROM org_invitations WHERE org_id = ?1 AND expires_at > ?2
 ORDER BY created_at DESC, id
 `
 
@@ -898,7 +707,6 @@ func (q *Queries) ListOrgInvitations(ctx context.Context, arg ListOrgInvitations
 			&i.OrgID,
 			&i.InviteeIid,
 			&i.Permission,
-			&i.PositionID,
 			&i.InvitedBy,
 			&i.CreatedAt,
 			&i.ExpiresAt,
@@ -917,42 +725,24 @@ func (q *Queries) ListOrgInvitations(ctx context.Context, arg ListOrgInvitations
 }
 
 const listOrgMembers = `-- name: ListOrgMembers :many
-SELECT m.iid, m.permission, m.joined_at,
-       CAST(COALESCE(m.position_id, '') AS TEXT) AS position_id,
-       CAST(COALESCE(p.name, '') AS TEXT) AS position_name,
-       i.kind, i.display_name, i.handle, i.avatar_sha256,
-       CAST(COALESCE(m.inviter_iid, '') AS TEXT) AS inviter_iid,
-       CAST(COALESCE(inv.kind, '') AS TEXT) AS inviter_kind,
-       CAST(COALESCE(inv.display_name, '') AS TEXT) AS inviter_display_name,
-       CAST(COALESCE(inv.handle, '') AS TEXT) AS inviter_handle,
-       CAST(COALESCE(inv.avatar_sha256, '') AS TEXT) AS inviter_avatar_sha256
+SELECT m.iid, m.permission, m.joined_at, i.kind, i.display_name, i.handle, i.avatar_sha256
 FROM org_members m
 JOIN intelligences i ON i.id = m.iid
-LEFT JOIN positions p ON p.id = m.position_id AND p.org_id = m.org_id
-LEFT JOIN intelligences inv ON inv.id = m.inviter_iid
 WHERE m.org_id = ?
 ORDER BY i.display_name COLLATE NOCASE, m.iid
 `
 
 type ListOrgMembersRow struct {
-	Iid                 string
-	Permission          string
-	JoinedAt            int64
-	PositionID          string
-	PositionName        string
-	Kind                string
-	DisplayName         string
-	Handle              string
-	AvatarSha256        string
-	InviterIid          string
-	InviterKind         string
-	InviterDisplayName  string
-	InviterHandle       string
-	InviterAvatarSha256 string
+	Iid          string
+	Permission   string
+	JoinedAt     int64
+	Kind         string
+	DisplayName  string
+	Handle       string
+	AvatarSha256 string
 }
 
-// The members of an organization with the identity, its position name and, for a guest, the identity
-// that invited it: what the members table shows (OMEM-01, OMEM-03).
+// The members of an organization with the identity: what the members table shows (OMEM-03).
 func (q *Queries) ListOrgMembers(ctx context.Context, orgID string) ([]ListOrgMembersRow, error) {
 	rows, err := q.db.QueryContext(ctx, listOrgMembers, orgID)
 	if err != nil {
@@ -966,17 +756,10 @@ func (q *Queries) ListOrgMembers(ctx context.Context, orgID string) ([]ListOrgMe
 			&i.Iid,
 			&i.Permission,
 			&i.JoinedAt,
-			&i.PositionID,
-			&i.PositionName,
 			&i.Kind,
 			&i.DisplayName,
 			&i.Handle,
 			&i.AvatarSha256,
-			&i.InviterIid,
-			&i.InviterKind,
-			&i.InviterDisplayName,
-			&i.InviterHandle,
-			&i.InviterAvatarSha256,
 		); err != nil {
 			return nil, err
 		}
@@ -991,27 +774,26 @@ func (q *Queries) ListOrgMembers(ctx context.Context, orgID string) ([]ListOrgMe
 	return items, nil
 }
 
-const listOrgPositions = `-- name: ListOrgPositions :many
-SELECT id, name, CAST(COALESCE(parent_id, '') AS TEXT) AS parent_id FROM positions WHERE org_id = ?
+const listOrgRosterMembers = `-- name: ListOrgRosterMembers :many
+SELECT m.iid, m.permission FROM org_members m WHERE m.org_id = ?
 `
 
-type ListOrgPositionsRow struct {
-	ID       string
-	Name     string
-	ParentID string
+type ListOrgRosterMembersRow struct {
+	Iid        string
+	Permission string
 }
 
-// The positions of an organization; parent_id is empty for a root.
-func (q *Queries) ListOrgPositions(ctx context.Context, orgID string) ([]ListOrgPositionsRow, error) {
-	rows, err := q.db.QueryContext(ctx, listOrgPositions, orgID)
+// The members of an organization with their permission: what the membership rules read (AD-017).
+func (q *Queries) ListOrgRosterMembers(ctx context.Context, orgID string) ([]ListOrgRosterMembersRow, error) {
+	rows, err := q.db.QueryContext(ctx, listOrgRosterMembers, orgID)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
-	var items []ListOrgPositionsRow
+	var items []ListOrgRosterMembersRow
 	for rows.Next() {
-		var i ListOrgPositionsRow
-		if err := rows.Scan(&i.ID, &i.Name, &i.ParentID); err != nil {
+		var i ListOrgRosterMembersRow
+		if err := rows.Scan(&i.Iid, &i.Permission); err != nil {
 			return nil, err
 		}
 		items = append(items, i)
@@ -1026,7 +808,7 @@ func (q *Queries) ListOrgPositions(ctx context.Context, orgID string) ([]ListOrg
 }
 
 const listOrgsOfMember = `-- name: ListOrgsOfMember :many
-SELECT o.id, o.name, o.slug, o.avatar_sha256, o.created_by, o.created_at, o.updated_at, m.permission, CAST(COALESCE(m.position_id, '') AS TEXT) AS position_id
+SELECT o.id, o.name, o.slug, o.avatar_sha256, o.created_by, o.created_at, o.updated_at, m.permission
 FROM org_members m JOIN organizations o ON o.id = m.org_id
 WHERE m.iid = ?
 ORDER BY o.name COLLATE NOCASE, o.id
@@ -1035,10 +817,9 @@ ORDER BY o.name COLLATE NOCASE, o.id
 type ListOrgsOfMemberRow struct {
 	Organization Organization
 	Permission   string
-	PositionID   string
 }
 
-// The organizations an identity belongs to, with its permission and position, by name.
+// The organizations an identity belongs to, with its permission, by name.
 func (q *Queries) ListOrgsOfMember(ctx context.Context, iid string) ([]ListOrgsOfMemberRow, error) {
 	rows, err := q.db.QueryContext(ctx, listOrgsOfMember, iid)
 	if err != nil {
@@ -1057,7 +838,6 @@ func (q *Queries) ListOrgsOfMember(ctx context.Context, iid string) ([]ListOrgsO
 			&i.Organization.CreatedAt,
 			&i.Organization.UpdatedAt,
 			&i.Permission,
-			&i.PositionID,
 		); err != nil {
 			return nil, err
 		}
@@ -1105,51 +885,6 @@ func (q *Queries) ListSharedOrgIDs(ctx context.Context, arg ListSharedOrgIDsPara
 		return nil, err
 	}
 	return items, nil
-}
-
-const movePositionChildren = `-- name: MovePositionChildren :exec
-UPDATE positions SET parent_id = ?1 WHERE org_id = ?2 AND parent_id = ?3
-`
-
-type MovePositionChildrenParams struct {
-	ToPosition   sql.NullString
-	OrgID        string
-	FromPosition sql.NullString
-}
-
-func (q *Queries) MovePositionChildren(ctx context.Context, arg MovePositionChildrenParams) error {
-	_, err := q.db.ExecContext(ctx, movePositionChildren, arg.ToPosition, arg.OrgID, arg.FromPosition)
-	return err
-}
-
-const movePositionHolders = `-- name: MovePositionHolders :exec
-UPDATE org_members SET position_id = ?1 WHERE org_id = ?2 AND position_id = ?3
-`
-
-type MovePositionHoldersParams struct {
-	ToPosition   sql.NullString
-	OrgID        string
-	FromPosition sql.NullString
-}
-
-func (q *Queries) MovePositionHolders(ctx context.Context, arg MovePositionHoldersParams) error {
-	_, err := q.db.ExecContext(ctx, movePositionHolders, arg.ToPosition, arg.OrgID, arg.FromPosition)
-	return err
-}
-
-const movePositionInvitations = `-- name: MovePositionInvitations :exec
-UPDATE org_invitations SET position_id = ?1 WHERE org_id = ?2 AND position_id = ?3
-`
-
-type MovePositionInvitationsParams struct {
-	ToPosition   sql.NullString
-	OrgID        string
-	FromPosition sql.NullString
-}
-
-func (q *Queries) MovePositionInvitations(ctx context.Context, arg MovePositionInvitationsParams) error {
-	_, err := q.db.ExecContext(ctx, movePositionInvitations, arg.ToPosition, arg.OrgID, arg.FromPosition)
-	return err
 }
 
 const setAgentCreator = `-- name: SetAgentCreator :exec
@@ -1210,38 +945,17 @@ func (q *Queries) SetUserDefaultOrg(ctx context.Context, arg SetUserDefaultOrgPa
 }
 
 const updateOrgMemberPermission = `-- name: UpdateOrgMemberPermission :exec
-UPDATE org_members SET permission = ?, inviter_iid = ? WHERE org_id = ? AND iid = ?
+UPDATE org_members SET permission = ? WHERE org_id = ? AND iid = ?
 `
 
 type UpdateOrgMemberPermissionParams struct {
 	Permission string
-	InviterIid sql.NullString
 	OrgID      string
 	Iid        string
 }
 
 func (q *Queries) UpdateOrgMemberPermission(ctx context.Context, arg UpdateOrgMemberPermissionParams) error {
-	_, err := q.db.ExecContext(ctx, updateOrgMemberPermission,
-		arg.Permission,
-		arg.InviterIid,
-		arg.OrgID,
-		arg.Iid,
-	)
-	return err
-}
-
-const updateOrgMemberPosition = `-- name: UpdateOrgMemberPosition :exec
-UPDATE org_members SET position_id = ? WHERE org_id = ? AND iid = ?
-`
-
-type UpdateOrgMemberPositionParams struct {
-	PositionID sql.NullString
-	OrgID      string
-	Iid        string
-}
-
-func (q *Queries) UpdateOrgMemberPosition(ctx context.Context, arg UpdateOrgMemberPositionParams) error {
-	_, err := q.db.ExecContext(ctx, updateOrgMemberPosition, arg.PositionID, arg.OrgID, arg.Iid)
+	_, err := q.db.ExecContext(ctx, updateOrgMemberPermission, arg.Permission, arg.OrgID, arg.Iid)
 	return err
 }
 
@@ -1266,32 +980,11 @@ func (q *Queries) UpdateOrganization(ctx context.Context, arg UpdateOrganization
 	return err
 }
 
-const updatePosition = `-- name: UpdatePosition :exec
-UPDATE positions SET name = ?, parent_id = ? WHERE id = ? AND org_id = ?
-`
-
-type UpdatePositionParams struct {
-	Name     string
-	ParentID sql.NullString
-	ID       string
-	OrgID    string
-}
-
-func (q *Queries) UpdatePosition(ctx context.Context, arg UpdatePositionParams) error {
-	_, err := q.db.ExecContext(ctx, updatePosition,
-		arg.Name,
-		arg.ParentID,
-		arg.ID,
-		arg.OrgID,
-	)
-	return err
-}
-
 const upsertOrgInvitation = `-- name: UpsertOrgInvitation :exec
-INSERT INTO org_invitations (id, org_id, invitee_iid, permission, position_id, invited_by, created_at, expires_at)
-VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+INSERT INTO org_invitations (id, org_id, invitee_iid, permission, invited_by, created_at, expires_at)
+VALUES (?, ?, ?, ?, ?, ?, ?)
 ON CONFLICT (org_id, invitee_iid) DO UPDATE SET
-    permission = excluded.permission, position_id = excluded.position_id, invited_by = excluded.invited_by,
+    permission = excluded.permission, invited_by = excluded.invited_by,
     created_at = excluded.created_at, expires_at = excluded.expires_at
 `
 
@@ -1300,21 +993,19 @@ type UpsertOrgInvitationParams struct {
 	OrgID      string
 	InviteeIid string
 	Permission string
-	PositionID sql.NullString
 	InvitedBy  string
 	CreatedAt  int64
 	ExpiresAt  int64
 }
 
-// Inviting again updates the pending invitation of the invitee (OMEM-01): its permission, position,
-// inviter and the 14 days all start over; the id stays.
+// Inviting again updates the pending invitation of the invitee (OMEM-01): its permission, inviter and
+// the 14 days all start over; the id stays.
 func (q *Queries) UpsertOrgInvitation(ctx context.Context, arg UpsertOrgInvitationParams) error {
 	_, err := q.db.ExecContext(ctx, upsertOrgInvitation,
 		arg.ID,
 		arg.OrgID,
 		arg.InviteeIid,
 		arg.Permission,
-		arg.PositionID,
 		arg.InvitedBy,
 		arg.CreatedAt,
 		arg.ExpiresAt,

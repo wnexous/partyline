@@ -12,7 +12,6 @@ import {
   makeMe,
   makeMembership,
   makeOrg,
-  makeOrgChart,
   makeProfile,
 } from "@/test/fixtures";
 import { useLiveStore } from "@/test/live-store";
@@ -714,14 +713,14 @@ describe("the connections of the organization in the address (SET-05)", () => {
     );
   });
 
-  it("marks the Connectors tab from the org chart too", async () => {
+  it("marks the Connectors tab from the members page too", async () => {
     mockApi({
       "GET /me": json(200, me),
       "GET /orgs/o1": adminAcme,
-      "GET /orgs/o1/chart": json(200, makeOrgChart()),
+      "GET /orgs/o1/members": json(200, { items: [] }),
       ...memberOf(acme, globex),
     });
-    renderRoute("/orgs/o1/chart");
+    renderRoute("/orgs/o1/members");
     const bar = await screen.findByRole("navigation", { name: "Sections of Acme" });
     expect(within(bar).getByRole("link", { name: "Connectors" })).toHaveAttribute(
       "href",

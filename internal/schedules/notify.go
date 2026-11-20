@@ -70,17 +70,14 @@ func (s *Service) notifyFirst(ctx context.Context, agentID, scheduleID string, p
 	return &notice{hash: hash, manager: manager, messageID: msgID}, nil
 }
 
-// nearestManager is the first manager of the AI in its home organization, "" for none.
+// nearestManager is who is told about a routine the AI set (HB-09): its host, who always manages it
+// (SR2-13); "" for an id that is no AI.
 func (s *Service) nearestManager(ctx context.Context, agentID string) (string, error) {
-	home, err := s.d.Store.R().GetAgentOrg(ctx, agentID)
-	if err != nil || home == "" {
+	l, ok, err := s.d.Authz.Links(ctx, agentID)
+	if err != nil || !ok {
 		return "", err
 	}
-	st, ok, err := s.d.Authz.StandingOf(ctx, home, agentID, 1)
-	if err != nil || !ok || len(st.Managers) == 0 {
-		return "", err
-	}
-	return st.Managers[0], nil
+	return l.Host, nil
 }
 
 // recordNotice stores the notice with the write it was sent for.
@@ -203,7 +200,7 @@ func (s *Service) answer(ctx context.Context, messageID string) error {
 	if err != nil {
 		return err
 	}
-	managed, err := s.d.Authz.ManagesAnywhere(ctx, ref.AuthorIid, row.AgentID)
+	managed, err := s.d.Authz.Manages(ctx, ref.AuthorIid, row.AgentID)
 	if err != nil || !managed {
 		return err
 	}

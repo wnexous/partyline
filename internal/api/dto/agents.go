@@ -22,7 +22,7 @@ type Agent struct {
 	// elsewhere; empty without a folder.
 	FolderLabel string     `json:"folder_label"`
 	Owner       User       `json:"owner"`
-	MyLevel     Level      `json:"my_level"` // manage for whoever manages the AI in an organization they share, use otherwise
+	MyLevel     Level      `json:"my_level"` // manage for whoever manages the AI (its host or a user instructor), use otherwise
 	Online      bool       `json:"online"`
 	LastSeenAt  *time.Time `json:"last_seen_at,omitempty"`
 	CreatedAt   time.Time  `json:"created_at"`
@@ -94,8 +94,8 @@ type RoomNotification struct {
 }
 
 // AgentMessage is a message delivered to an agent. Trusted is computed for the receiving
-// agent when the message is delivered: true only when its author manages the agent in the
-// agent's home organization (POS-10, AD-018). Its owner, its other AIs and its peers do not.
+// agent when the message is delivered: true only when its author is the agent's host or one of its
+// instructors (SR2-07, AD-018). Its other AIs and its peers are not, unless they are instructors.
 type AgentMessage struct {
 	Room    RoomRef `json:"room"`
 	Trusted bool    `json:"trusted"`
@@ -122,10 +122,10 @@ type RoomInfo struct {
 	// unknown (INS-04).
 	InstructionsBy string `json:"instructions_by,omitempty"`
 	// InstructionsTrusted is true only when that user manages the calling agent in the agent's
-	// home organization (INS-04, POS-10).
+	// home organization (INS-04, SR2-07).
 	InstructionsTrusted bool `json:"instructions_trusted"`
 	// RoomTextTrusted is true only when whoever created the room or last changed its name or
-	// description manages the calling agent in the agent's home organization (INS-06, POS-10).
+	// description manages the calling agent in the agent's home organization (INS-06, SR2-07).
 	RoomTextTrusted bool `json:"room_text_trusted"`
 	// Owner is the person who holds a group, as in AgentRoom (TOOL-10).
 	Owner   *IntelligenceRef `json:"owner,omitempty"`
@@ -207,17 +207,14 @@ type AgentConnection struct {
 	AccountLabel string `json:"account_label"`
 }
 
-// MaxManagers is the most managers the welcome frame and GET /agent/whoami list: the nearest ones.
-const MaxManagers = 10
-
 // MaxCreated is the most AIs the welcome frame lists as created by the AI: the oldest ones (SI-10).
 const MaxCreated = 50
 
 // AgentMembership is an organization the AI belongs to besides its home one, as the welcome frame lists it
-// (SI-09): it shares that organization with the identities there, and is a member, an admin or a guest.
+// (SI-09): it shares that organization with the identities there, and is a member or an admin.
 type AgentMembership struct {
 	Organization ContactOrg `json:"organization"`
-	// Permission is the AI's in it: admin, member or guest.
+	// Permission is the AI's in it: admin or member.
 	Permission string `json:"permission"`
 }
 
@@ -229,17 +226,16 @@ type AgentWelcomeFrame struct {
 	// Intelligence is the AI the session is: the channel tells the harness who it is and who it
 	// works for.
 	Intelligence IntelligenceRef `json:"intelligence"`
-	// Owner is the user who hosts the AI, whose computer and token run it. It is deprecated since
-	// organizations: it gives nothing, and the identities an AI answers to are its
-	// Managers. It stays so that v0.5 CLIs, which print it, keep working.
+	// Owner is the user who hosts the AI, whose computer and token run it: its messages are always trusted
+	// (SR2-07).
 	Owner IntelligenceRef `json:"owner"`
 	// Organization is the AI's home organization (ORG-02); absent for an AI that has none.
 	Organization *ContactOrg `json:"organization,omitempty"`
-	// Position is the name of the position the AI holds in its home organization; empty for none.
-	Position string `json:"position"`
-	// Managers are the identities that manage the AI in its home organization, the ones whose
-	// messages are marked trusted (POS-10): nearest first, at most MaxManagers, always present and
-	// empty when nobody manages it.
+	// Instructors are the identities that instruct the AI besides its host (SR2-06, SR2-11): with the host,
+	// the ones whose messages are marked trusted. Oldest link first, always present, empty when none.
+	Instructors []IntelligenceRef `json:"instructors"`
+	// Managers is deprecated since release 2 of simple identity: the host followed by Instructors, the
+	// identities whose messages are marked trusted. It stays so that older CLIs, which print it, keep working.
 	Managers []IntelligenceRef `json:"managers"`
 	// Memberships are the organizations the AI belongs to besides its home one, by name; always present,
 	// empty when it belongs to no other (SI-09).
@@ -259,45 +255,27 @@ type AgentWelcomeFrame struct {
 }
 
 // AgentWhoAmI is GET /agent/whoami: the intelligence of the user the agent token belongs to - the
-// fields of an IntelligenceRef, as before organizations - and the same three facts about the user
-// that the welcome frame tells an AI, read in the user's default organization (the one a new AI of
-// theirs joins when --org is not given): where they stand and who manages them there.
+// fields of an IntelligenceRef, as before organizations - and the user's default organization (the one a new
+// AI of theirs joins when --org is not given).
 type AgentWhoAmI struct {
 	IntelligenceRef `tstype:",extends"`
 	// Organization is the user's default organization; absent when they belong to none.
 	Organization *ContactOrg `json:"organization,omitempty"`
-	// Position is the name of the position the user holds there; empty for none.
-	Position string `json:"position"`
-	// Managers are the identities that manage the user there, nearest first, at most MaxManagers;
-	// always present.
-	Managers []IntelligenceRef `json:"managers"`
 }
 
 // AgentOrg is one organization of the token's user as GET /agent/orgs gives it, for `partyline orgs`
-// (ORG-04): where the user stands in it, whether a new AI of theirs joins it when --org is not given, and its
-// chart of positions, so that --org and --position can be told by name.
+// (ORG-04): where the user stands in it and whether a new AI of theirs joins it when --org is not given, so
+// that --org can be told by name.
 type AgentOrg struct {
 	ID   string `json:"id"`
 	Name string `json:"name"`
 	// Slug is the address --org takes.
 	Slug string `json:"slug"`
-	// Permission is the user's in it: admin, member or guest.
+	// Permission is the user's in it: admin or member.
 	Permission string `json:"permission"`
-	// Position is the name of the position the user holds in it; empty for none.
-	Position string `json:"position"`
 	// Default tells whether it is the organization a new AI of the user joins when --org is not given. Exactly
 	// one organization is the default, unless the user belongs to none.
 	Default bool `json:"default"`
-	// Positions is the organization's chart, each position with the one above it, by name; always present.
-	Positions []AgentOrgPosition `json:"positions"`
-}
-
-// AgentOrgPosition is one position of an organization's chart.
-type AgentOrgPosition struct {
-	ID   string `json:"id"`
-	Name string `json:"name"`
-	// ParentID is the position above this one; absent for a root.
-	ParentID string `json:"parent_id,omitempty"`
 }
 
 // SessionInfo is one live session of an AI (SESS-15, SESS-32): its label, the app it runs in and
@@ -392,8 +370,8 @@ type AgentAckFrame struct {
 // receives it (CID-06): never a message of a Partyline conversation. ID is what the AI answers
 // with (reply); ChatID names the chat for send_message together with ConnectionID. A chat of
 // another connection, a message of the account itself (FromSelf) and a sender whose account is not
-// linked to a user who manages the AI in its home organization are never trusted (CID-13, CID-14,
-// POS-10).
+// linked to a user who instructs the AI (its host or an instructor) are never trusted (CID-13, CID-14,
+// SR2-07).
 type PlatformEvent struct {
 	ID           string `json:"id"`
 	Platform     string `json:"platform"` // whatsapp, telegram, discord or webhook
@@ -405,7 +383,7 @@ type PlatformEvent struct {
 	SenderName string   `json:"sender_name"`
 	SenderID   string   `json:"sender_id"`
 	// Trusted is true only when the sender's account is linked, through this connection, to a user
-	// who manages the AI in its home organization (POS-10, AD-018). It is decided when the message
+	// who instructs the AI (its host or an instructor) (SR2-07, AD-018). It is decided when the message
 	// arrives.
 	Trusted bool `json:"trusted"`
 	// FromSelf is true for a message written from the connection's own account on the platform

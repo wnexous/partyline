@@ -107,13 +107,14 @@ func TestNoInstructionsAreTrustedByNobody(t *testing.T) {
 	conn.ExpectNone(300 * time.Millisecond)
 }
 
-// A writer who has left the organization manages nothing there, so what it saved is untrusted once it is gone.
-func TestInstructionsOfAFormerManagerAreNotTrusted(t *testing.T) {
+// SR2-07: a writer the host removed from the instructors instructs nothing any more, so what it saved is untrusted
+// once it is removed.
+func TestInstructionsOfARemovedInstructorAreNotTrusted(t *testing.T) {
 	w := newTrustWorld(t)
-	w.setRoomWriters(t, "Keep answers short.", w.acme.Manager.User.ID, w.acme.Manager.User.ID)
+	w.setRoomWriters(t, "Keep answers short.", w.acme.Instructor.User.ID, w.acme.Instructor.User.ID)
 	require.True(t, w.roomInfo(t).InstructionsTrusted)
 
-	require.NoError(t, w.env.App.Orgs.Leave(context.Background(), w.acme.Manager.User.ID, w.acme.Org.ID))
+	w.acme.Manager.Delete(instructorsPath(w.ai) + "/" + w.acme.Instructor.User.ID).RequireStatus(http.StatusNoContent)
 	info := w.roomInfo(t)
 	require.False(t, info.InstructionsTrusted)
 	require.False(t, info.RoomTextTrusted)

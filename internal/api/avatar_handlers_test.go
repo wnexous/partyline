@@ -128,15 +128,15 @@ func TestAvatarIsStoredAsASquarePNGAndServed(t *testing.T) {
 	env.Anon().Get("/api/v1/intelligences/"+alice.User.ID+"/avatar").RequireError(http.StatusUnauthorized, dto.ErrorCodeUnauthorized)
 }
 
-// PROF-07: an AI's avatar is served to the people who can see the AI - the members of its organization, guests
-// included, and the user who hosts it - and is 404 for everybody else (not 403).
+// PROF-07: an AI's avatar is served to the people who can see the AI - the members of its organization and the
+// user who hosts it - and is 404 for everybody else (not 403).
 func TestAIAvatarIsServedToWhoCanSeeTheAI(t *testing.T) {
 	env := testkit.New(t)
 	alice, bob, carol, dave, erin := env.NewUser("alice"), env.NewUser("bob"), env.NewUser("carol"), env.NewUser("dave"), env.NewUser("erin")
 	id := registerAgent(t, env, alice, "builder")
 	org := alice.PersonalOrg().ID
-	env.AddMember(org, bob.User.ID, orgs.PermissionMember, "")
-	env.AddGuest(org, erin.User.ID, alice.User.ID, "")
+	env.AddMember(org, bob.User.ID, orgs.PermissionMember)
+	env.AddMember(org, erin.User.ID, orgs.PermissionMember)
 	putAvatar(alice, id, pngBytes(t, bands(300, 300))).RequireStatus(http.StatusOK)
 
 	getAvatar(alice, id).RequireStatus(http.StatusOK)
@@ -151,7 +151,7 @@ func TestAIAvatarIsServedToWhoCanSeeTheAI(t *testing.T) {
 	patchProfile(bob, id, dto.UpdateProfileRequest{Bio: ptr("hijack")}).RequireError(http.StatusForbidden, dto.ErrorCodeForbidden)
 
 	// Joining the organization is what shows the AI: carol joins and gets the avatar.
-	env.AddMember(org, carol.User.ID, orgs.PermissionMember, "")
+	env.AddMember(org, carol.User.ID, orgs.PermissionMember)
 	getAvatar(carol, id).RequireStatus(http.StatusOK)
 }
 
@@ -272,6 +272,7 @@ func TestAgentUpdatesItsOwnProfile(t *testing.T) {
 	require.True(t, mine.CanEndSession, "alice manages the AI, which cannot end its own session")
 	require.Equal(t, []bool{true}, []bool{mine.Memberships[0].CanDelete}, "and she may delete it, which it cannot do itself")
 	mine.CanEndSession, mine.Memberships[0].CanDelete = got.CanEndSession, got.Memberships[0].CanDelete // what the reader may do about it
+	mine.AI.CanEditInstructors = got.AI.CanEditInstructors                                              // only the host changes them
 	require.Equal(t, got, mine, "the owner reads the same profile")
 	require.Equal(t, "Atlas", listedAgent(t, alice, builder).Intelligence.DisplayName, "the agents list follows (AID-06)")
 

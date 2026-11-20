@@ -17,7 +17,7 @@ import (
 // joinOrion puts bob's AI in alice's organization, so that atlas, which is of it, sees orion and can put it in
 // a group of the organization (AD-016: sharing is organization membership).
 func (f *fixture) joinOrion() {
-	f.env.AddMember(f.alice.PersonalOrg().ID, f.orion, orgs.PermissionMember, "")
+	f.env.AddMember(f.alice.PersonalOrg().ID, f.orion, orgs.PermissionMember)
 }
 
 // AGRP-01, ORG-03 (service side): an AI creates a group in its home organization, with a user of the
@@ -105,7 +105,7 @@ func TestOnlyCreatedGroupsOfAnAICountAgainstTheLimit(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, 2, f.asked())
 
-	f.env.AddMember(f.alice.PersonalOrg().ID, f.bob.User.ID, orgs.PermissionMember, "")
+	f.env.AddMember(f.alice.PersonalOrg().ID, f.bob.User.ID, orgs.PermissionMember)
 	_, err = f.svc.CreateGroup(ctx, f.user(f.alice), conversations.GroupInput{Name: "Mine", Members: []string{f.bob.User.ID}})
 	require.NoError(t, err)
 	require.Equal(t, 2, f.asked(), "users are not limited")

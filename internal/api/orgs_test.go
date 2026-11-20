@@ -29,8 +29,7 @@ func TestOrganizationRoutesMatrix(t *testing.T) {
 		{"target", http.StatusOK, http.StatusForbidden, http.StatusForbidden, http.StatusForbidden},
 		{"peer", http.StatusOK, http.StatusForbidden, http.StatusForbidden, http.StatusForbidden},
 		{"member", http.StatusOK, http.StatusForbidden, http.StatusForbidden, http.StatusForbidden},
-		{"inviter", http.StatusOK, http.StatusForbidden, http.StatusForbidden, http.StatusForbidden},
-		{"guest", http.StatusOK, http.StatusForbidden, http.StatusForbidden, http.StatusForbidden},
+		{"instructor", http.StatusOK, http.StatusForbidden, http.StatusForbidden, http.StatusForbidden},
 		{"outsider", http.StatusNotFound, http.StatusNotFound, http.StatusNotFound, http.StatusNotFound},
 		{"instance_admin", http.StatusNotFound, http.StatusNotFound, http.StatusNotFound, http.StatusNotFound},
 	}
@@ -80,14 +79,13 @@ func TestOrganizationRoutesMatrix(t *testing.T) {
 	}
 }
 
-// OMEM-03: GET /orgs lists the caller's own memberships only, guests included.
+// OMEM-03: GET /orgs lists the caller's own memberships only.
 func TestListOrganizationsShowsOnlyMyMemberships(t *testing.T) {
 	env := testkit.New(t)
 	r := env.OrgRoles("acme")
 	permission := map[string]dto.Permission{
 		"admin": dto.PermissionAdmin, "manager": dto.PermissionMember, "target": dto.PermissionMember,
-		"peer": dto.PermissionMember, "member": dto.PermissionMember, "inviter": dto.PermissionMember,
-		"guest": dto.PermissionGuest,
+		"peer": dto.PermissionMember, "member": dto.PermissionMember, "instructor": dto.PermissionMember,
 	}
 
 	for _, role := range r.All() {
@@ -112,7 +110,6 @@ func TestCreateOrganizationValidatesTheName(t *testing.T) {
 	require.Equal(t, "acme", created.Name)
 	require.Equal(t, "acme", created.Slug)
 	require.Equal(t, dto.PermissionAdmin, created.Permission)
-	require.NotEmpty(t, created.PositionID, "the creator holds the root position")
 
 	resp := bob.Post("/api/v1/orgs", dto.CreateOrganizationRequest{Name: "  "})
 	body := resp.RequireError(http.StatusUnprocessableEntity, dto.ErrorCodeInvalid)

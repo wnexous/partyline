@@ -2,9 +2,8 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { act, renderHook, waitFor } from "@testing-library/react";
 import type { ReactNode } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { ApiError } from "@/shared/api/client";
 import { queryKeys } from "@/shared/api/query-keys";
-import type { Contacts, IntelligenceProfile, IntelligenceRef } from "@/shared/api/types.gen";
+import type { Contacts, IntelligenceProfile } from "@/shared/api/types.gen";
 import { apiError, json, mockApi } from "@/test/fetch";
 import {
   makeAgent,
@@ -17,7 +16,7 @@ import {
   makeProfile,
 } from "@/test/fixtures";
 import { useDeleteAgent, useMergeAgent } from "./agents";
-import { useContacts, usePeople } from "./contacts";
+import { useContacts } from "./contacts";
 import { useIntelligence } from "./profile";
 
 /*
@@ -68,88 +67,6 @@ describe("contacts (CONT-01)", () => {
     const { result } = renderHook(() => useContacts(), { wrapper });
     await waitFor(() => expect(result.current.isSuccess).toBe(true));
     expect(qc.getQueryData<Contacts>(queryKeys.contacts)).toEqual(result.current.data);
-  });
-});
-
-describe("the people of a connector (CONT-01)", () => {
-  const person = (n: number): IntelligenceRef =>
-    makePerson({ id: `p${n}`, display_name: `Person ${n}`, handle: `person-${n}` });
-  const page = (from: number, to: number, hasMore: boolean) => ({
-    items: Array.from({ length: to - from + 1 }, (_, i) => person(from + i)),
-    has_more: hasMore,
-  });
-
-  it("asks for the first page of the connector, with no search and no cursor", async () => {
-    const { calls } = mockApi({ "GET /contacts/people": json(200, page(1, 2, false)) });
-    const { result } = renderHook(() => usePeople("k1"), { wrapper });
-    await waitFor(() => expect(result.current.isSuccess).toBe(true));
-    expect(calls).toHaveLength(1);
-    expect(Object.fromEntries(calls[0]?.url.searchParams ?? [])).toEqual({
-      connector_id: "k1",
-      limit: "50",
-    });
-    expect(result.current.data?.pages[0]?.items.map((p) => p.id)).toEqual(["p1", "p2"]);
-    expect(result.current.hasNextPage).toBe(false);
-  });
-
-  it("sends the search text, and the same text again for every later page", async () => {
-    const { calls } = mockApi({
-      "GET /contacts/people": (url) =>
-        json(200, url.searchParams.has("after") ? page(3, 3, false) : page(1, 2, true)),
-    });
-    const { result } = renderHook(() => usePeople("k1", "lia"), { wrapper });
-    await waitFor(() => expect(result.current.isSuccess).toBe(true));
-    expect(calls[0]?.url.searchParams.get("q")).toBe("lia");
-    expect(result.current.hasNextPage).toBe(true);
-
-    await act(async () => {
-      await result.current.fetchNextPage();
-    });
-    // The cursor is the id of the last person of the page before; no gaps, no repeats.
-    expect(Object.fromEntries(calls[1]?.url.searchParams ?? [])).toEqual({
-      connector_id: "k1",
-      q: "lia",
-      after: "p2",
-      limit: "50",
-    });
-    await waitFor(() =>
-      expect(result.current.data?.pages.flatMap((p) => p.items.map((i) => i.id))).toEqual([
-        "p1",
-        "p2",
-        "p3",
-      ]),
-    );
-    expect(result.current.hasNextPage).toBe(false);
-  });
-
-  it("keeps one cache entry per connector and search, so a new search never shows another's pages", async () => {
-    mockApi({ "GET /contacts/people": json(200, page(1, 1, false)) });
-    const a = renderHook(() => usePeople("k1", ""), { wrapper });
-    const b = renderHook(() => usePeople("k2", ""), { wrapper });
-    const c = renderHook(() => usePeople("k1", "lia"), { wrapper });
-    await waitFor(() => {
-      expect(a.result.current.isSuccess).toBe(true);
-      expect(b.result.current.isSuccess).toBe(true);
-      expect(c.result.current.isSuccess).toBe(true);
-    });
-    expect(qc.getQueryData(queryKeys.people("k1", ""))).toBeDefined();
-    expect(qc.getQueryData(queryKeys.people("k2", ""))).toBeDefined();
-    expect(qc.getQueryData(queryKeys.people("k1", "lia"))).toBeDefined();
-  });
-
-  it("does not ask while disabled", async () => {
-    const { calls } = mockApi({ "GET /contacts/people": json(200, page(1, 1, false)) });
-    renderHook(() => usePeople("k1", "", false), { wrapper });
-    await new Promise((r) => setTimeout(r, 20));
-    expect(calls).toHaveLength(0);
-  });
-
-  it("rejects with the server's reason for a connector the user cannot read", async () => {
-    mockApi({ "GET /contacts/people": apiError(404, "not_found") });
-    const { result } = renderHook(() => usePeople("k9"), { wrapper });
-    await waitFor(() => expect(result.current.isError).toBe(true));
-    expect(result.current.error).toBeInstanceOf(ApiError);
-    expect(result.current.error).toMatchObject({ status: 404 });
   });
 });
 

@@ -28,58 +28,54 @@ func memberOfOrg(t *testing.T, f *fixture, org, iid string) Member {
 	return m
 }
 
-// OMEM-03: an identity is a member of several organizations, with its own permission and position in
-// each.
+// OMEM-03: an identity is a member of several organizations, with its own permission in each.
 func TestOneIdentityInTwoOrganizationsKeepsEachMembership(t *testing.T) {
 	ctx := context.Background()
 	f := newFixture(t)
 	a := f.acme()
 	globex := f.org("globex")
-	boss := f.position(globex, "Boss", "")
 
-	require.NoError(t, f.addMember(AddMemberInput{OrgID: globex, IID: a.walt, Permission: PermissionAdmin, PositionID: boss}))
+	require.NoError(t, f.addMember(AddMemberInput{OrgID: globex, IID: a.walt, Permission: PermissionAdmin}))
 
-	require.Equal(t, Member{IID: a.walt, Permission: PermissionMember, PositionID: a.trees}, memberOfOrg(t, f, a.org, a.walt))
-	require.Equal(t, Member{IID: a.walt, Permission: PermissionAdmin, PositionID: boss}, memberOfOrg(t, f, globex, a.walt))
+	require.Equal(t, Member{IID: a.walt, Permission: PermissionMember}, memberOfOrg(t, f, a.org, a.walt))
+	require.Equal(t, Member{IID: a.walt, Permission: PermissionAdmin}, memberOfOrg(t, f, globex, a.walt))
 	mine, err := f.svc.ListMine(ctx, a.walt)
 	require.NoError(t, err)
 	require.Len(t, mine, 2)
 	// Changing one membership leaves the other alone.
-	_, err = f.svc.SetPosition(ctx, a.alice, a.org, a.walt, "")
+	_, err = f.svc.SetPermission(ctx, a.alice, a.org, a.walt, PermissionAdmin)
 	require.NoError(t, err)
-	require.Equal(t, boss, memberOfOrg(t, f, globex, a.walt).PositionID)
+	_, err = f.svc.SetPermission(ctx, a.alice, a.org, a.walt, PermissionMember)
+	require.NoError(t, err)
+	require.Equal(t, PermissionAdmin, memberOfOrg(t, f, globex, a.walt).Permission)
 }
 
 // AddMember is the transaction helper invitations and placement use: one membership per identity and
-// organization, a valid permission, a position of the organization, an inviter only for guests.
+// organization, and a permission that is admin or member (SR2-01).
 func TestAddMember(t *testing.T) {
 	f := newFixture(t)
 	a := f.acme()
 	zed := f.user("zed")
-	globex := f.org("globex")
-	foreign := f.position(globex, "Boss", "")
 
-	require.NoError(t, f.addMember(AddMemberInput{OrgID: a.org, IID: zed, Permission: PermissionGuest, InviterIID: a.bob}))
-	require.Equal(t, Member{IID: zed, Permission: PermissionGuest, InviterIID: a.bob}, memberOfOrg(t, f, a.org, zed), "a guest carries its inviter")
+	require.NoError(t, f.addMember(AddMemberInput{OrgID: a.org, IID: zed, Permission: PermissionMember}))
+	require.Equal(t, Member{IID: zed, Permission: PermissionMember}, memberOfOrg(t, f, a.org, zed))
 	require.Equal(t, int(t0.UnixMilli()), f.count(`SELECT joined_at FROM org_members WHERE org_id = ? AND iid = ?`, a.org, zed), "joined now")
 
 	require.ErrorIs(t, f.addMember(AddMemberInput{OrgID: a.org, IID: zed, Permission: PermissionMember}), ErrAlreadyMember)
-	require.ErrorIs(t, f.addMember(AddMemberInput{OrgID: a.org, IID: a.walt, Permission: PermissionGuest}), ErrAlreadyMember, "any permission")
-
-	yan := f.user("yan")
-	require.NoError(t, f.addMember(AddMemberInput{OrgID: a.org, IID: yan, Permission: PermissionMember, PositionID: a.designer, InviterIID: a.bob}))
-	require.Equal(t, Member{IID: yan, Permission: PermissionMember, PositionID: a.designer}, memberOfOrg(t, f, a.org, yan), "a position; an inviter only for guests")
+	require.ErrorIs(t, f.addMember(AddMemberInput{OrgID: a.org, IID: a.walt, Permission: PermissionAdmin}), ErrAlreadyMember, "any permission")
 
 	xi := f.user("xi")
 	for _, in := range []AddMemberInput{
+		{OrgID: a.org, IID: xi, Permission: "guest"}, // SR2-01: no guests any more
 		{OrgID: a.org, IID: xi, Permission: "owner"}, // an unknown permission
 		{OrgID: a.org, IID: xi},                      // none
 	} {
 		invalid(t, f.addMember(in), "permission")
 	}
-	invalid(t, f.addMember(AddMemberInput{OrgID: a.org, IID: xi, Permission: PermissionMember, PositionID: foreign}), "position_id")
-	invalid(t, f.addMember(AddMemberInput{OrgID: a.org, IID: xi, Permission: PermissionMember, PositionID: "p-nothing"}), "position_id")
 	require.Zero(t, f.count(`SELECT COUNT(*) FROM org_members WHERE iid = ?`, xi), "a refused join adds nothing")
+	// The database refuses a guest too: the CHECK of migration 0040.
+	_, err := f.raw.Exec(`INSERT INTO org_members (org_id, iid, permission, joined_at) VALUES (?, ?, 'guest', 1)`, a.org, xi)
+	require.Error(t, err)
 }
 
 // OMEM-04: only an admin changes permissions; the identity must be a member.
@@ -92,9 +88,9 @@ func TestSetPermissionIsForAdmins(t *testing.T) {
 		_, err := f.svc.SetPermission(ctx, who, a.org, a.walt, PermissionAdmin)
 		require.ErrorIs(t, err, want, who)
 	}
-	_, err := f.svc.SetPermission(ctx, a.alice, a.org, out, PermissionGuest)
+	_, err := f.svc.SetPermission(ctx, a.alice, a.org, out, PermissionAdmin)
 	require.ErrorIs(t, err, ErrNotFound, "the target is not a member")
-	_, err = f.svc.SetPermission(ctx, a.alice, "o-nothing", a.walt, PermissionGuest)
+	_, err = f.svc.SetPermission(ctx, a.alice, "o-nothing", a.walt, PermissionAdmin)
 	require.ErrorIs(t, err, ErrNotFound)
 	require.Equal(t, PermissionMember, memberOfOrg(t, f, a.org, a.walt).Permission)
 	require.Empty(t, f.audited())
@@ -103,10 +99,11 @@ func TestSetPermissionIsForAdmins(t *testing.T) {
 	require.ErrorIs(t, err, ErrForbidden)
 	_, err = f.svc.SetPermission(ctx, a.alice, a.org, a.walt, "owner")
 	invalid(t, err, "permission")
+	_, err = f.svc.SetPermission(ctx, a.alice, a.org, a.walt, "guest")
+	invalid(t, err, "permission")
 }
 
-// OMEM-04: an admin promotes, demotes and turns a member into a guest; a guest that becomes a member
-// is nobody's guest any more.
+// OMEM-04: an admin promotes and demotes members, people and AIs alike.
 func TestSetPermissionChangesTheMembership(t *testing.T) {
 	ctx := context.Background()
 	f := newFixture(t)
@@ -115,21 +112,19 @@ func TestSetPermissionChangesTheMembership(t *testing.T) {
 
 	got, err := f.svc.SetPermission(ctx, a.alice, a.org, a.walt, PermissionAdmin)
 	require.NoError(t, err)
-	require.Equal(t, Member{IID: a.walt, Permission: PermissionAdmin, PositionID: a.trees}, got, "the position stays")
+	require.Equal(t, Member{IID: a.walt, Permission: PermissionAdmin}, got)
 
-	got, err = f.svc.SetPermission(ctx, a.alice, a.org, a.bob, PermissionGuest)
+	got, err = f.svc.SetPermission(ctx, a.alice, a.org, a.walt, PermissionMember)
 	require.NoError(t, err)
-	require.Equal(t, PermissionGuest, got.Permission, "a member can be made a guest")
-	require.Empty(t, got.InviterIID)
+	require.Equal(t, PermissionMember, got.Permission)
 
-	got, err = f.svc.SetPermission(ctx, a.alice, a.org, a.gus, PermissionMember)
+	got, err = f.svc.SetPermission(ctx, a.alice, a.org, a.gus, PermissionAdmin)
 	require.NoError(t, err)
-	require.Equal(t, Member{IID: a.gus, Permission: PermissionMember}, got, "a promoted guest has no inviter")
-	require.Empty(t, f.str(`SELECT inviter_iid FROM org_members WHERE org_id = ? AND iid = ?`, a.org, a.gus))
+	require.Equal(t, PermissionAdmin, got.Permission)
 
 	got, err = f.svc.SetPermission(ctx, a.alice, a.org, a.w1, PermissionAdmin)
 	require.NoError(t, err)
-	require.Equal(t, Member{IID: a.w1, Permission: PermissionAdmin, PositionID: a.trees, CreatorIID: a.lee}, got, "an AI too")
+	require.Equal(t, Member{IID: a.w1, Permission: PermissionAdmin}, got, "an AI too")
 
 	require.Equal(t, []events.Event{
 		events.OrgChanged{OrgID: a.org}, events.OrgChanged{OrgID: a.org}, events.OrgChanged{OrgID: a.org}, events.OrgChanged{OrgID: a.org},
@@ -145,7 +140,7 @@ func TestSetPermissionChangesTheMembership(t *testing.T) {
 
 	// The same permission again is nothing.
 	next()
-	got, err = f.svc.SetPermission(ctx, a.alice, a.org, a.walt, PermissionAdmin)
+	got, err = f.svc.SetPermission(ctx, a.alice, a.org, a.w1, PermissionAdmin)
 	require.NoError(t, err)
 	require.Equal(t, PermissionAdmin, got.Permission)
 	require.Empty(t, next())
@@ -174,19 +169,6 @@ func TestTheLastAdminCannotBeDemotedRemovedOrLeave(t *testing.T) {
 				require.Equal(t, PermissionMember, memberOfOrg(t, f, a.org, a.alice).Permission)
 			},
 		},
-		"demoted to guest": {
-			last: func(f *fixture, a acmeChart) error {
-				_, err := f.svc.SetPermission(ctx, a.alice, a.org, a.alice, PermissionGuest)
-				return err
-			},
-			second: func(f *fixture, a acmeChart) error {
-				_, err := f.svc.SetPermission(ctx, a.alice, a.org, a.alice, PermissionGuest)
-				return err
-			},
-			afterOK: func(t *testing.T, f *fixture, a acmeChart) {
-				require.Equal(t, PermissionGuest, memberOfOrg(t, f, a.org, a.alice).Permission)
-			},
-		},
 		"left": {
 			last:   func(f *fixture, a acmeChart) error { return f.svc.Leave(ctx, a.alice, a.org) },
 			second: func(f *fixture, a acmeChart) error { return f.svc.Leave(ctx, a.alice, a.org) },
@@ -201,11 +183,10 @@ func TestTheLastAdminCannotBeDemotedRemovedOrLeave(t *testing.T) {
 			next := f.events()
 			require.ErrorIs(t, tc.last(f, a), ErrLastAdmin)
 			require.Equal(t, PermissionAdmin, memberOfOrg(t, f, a.org, a.alice).Permission, "nothing changed")
-			require.Equal(t, a.admin, memberOfOrg(t, f, a.org, a.alice).PositionID)
 			require.Empty(t, next())
 			require.Empty(t, f.audited())
 
-			f.join(a.org, f.user("zoe"), PermissionAdmin, "", "") // a second admin
+			f.join(a.org, f.user("zoe"), PermissionAdmin) // a second admin
 			require.NoError(t, tc.second(f, a))
 			tc.afterOK(t, f, a)
 		})
@@ -217,7 +198,7 @@ func TestTheLastAdminCannotBeDemotedRemovedOrLeave(t *testing.T) {
 		f := newFixture(t)
 		a := f.bareOrg()
 		zoe := f.user("zoe")
-		f.join(a.org, zoe, PermissionAdmin, "", "")
+		f.join(a.org, zoe, PermissionAdmin)
 		require.NoError(t, f.svc.Remove(ctx, a.alice, a.org, zoe), "with two admins one removes the other")
 		require.ErrorIs(t, f.svc.Remove(ctx, a.alice, a.org, a.alice), ErrLastAdmin, "removing yourself is leaving")
 		require.ErrorIs(t, f.svc.Remove(ctx, a.bob, a.org, a.alice), ErrForbidden, "and a member cannot remove an admin")
@@ -233,7 +214,7 @@ func TestTwoAdminsLeavingAtOnceLeaveOne(t *testing.T) {
 		f := newFixture(t)
 		a := f.bareOrg()
 		zoe := f.user("zoe")
-		f.join(a.org, zoe, PermissionAdmin, "", "")
+		f.join(a.org, zoe, PermissionAdmin)
 		start := make(chan struct{})
 		errs := make([]error, 2)
 		var wg sync.WaitGroup
@@ -260,134 +241,6 @@ func TestTwoAdminsLeavingAtOnceLeaveOne(t *testing.T) {
 	}
 }
 
-// POS-04: an admin gives anyone any position of the organization, or none; a position that is not the
-// organization's is told to the admin as a validation error.
-func TestAdminSetsAnyPosition(t *testing.T) {
-	ctx := context.Background()
-	f := newFixture(t)
-	a := f.acme()
-	other := f.position(f.org("globex"), "Boss", "")
-	next := f.events()
-
-	got, err := f.svc.SetPosition(ctx, a.alice, a.org, a.bob, a.manager)
-	require.NoError(t, err)
-	require.Equal(t, Member{IID: a.bob, Permission: PermissionMember, PositionID: a.manager}, got)
-	got, err = f.svc.SetPosition(ctx, a.alice, a.org, a.mia, a.admin)
-	require.NoError(t, err)
-	require.Equal(t, a.admin, got.PositionID, "an admin is not bound by positions")
-	got, err = f.svc.SetPosition(ctx, a.alice, a.org, a.lee, "")
-	require.NoError(t, err)
-	require.Empty(t, got.PositionID, "none")
-	got, err = f.svc.SetPosition(ctx, a.alice, a.org, a.alice, a.trees)
-	require.NoError(t, err)
-	require.Equal(t, a.trees, got.PositionID, "an admin moves itself too")
-	_, err = f.svc.SetPosition(ctx, a.alice, a.org, a.bob, other)
-	invalid(t, err, "position_id")
-	_, err = f.svc.SetPosition(ctx, a.alice, a.org, a.bob, "p-nothing")
-	invalid(t, err, "position_id")
-	require.Equal(t, a.manager, memberOfOrg(t, f, a.org, a.bob).PositionID, "a refused position changes nothing")
-	require.Len(t, next(), 4)
-	require.Len(t, f.audited(), 4)
-	rows, _, err := f.audit.List(ctx, "")
-	require.NoError(t, err)
-	var detail map[string]any
-	require.NoError(t, json.Unmarshal([]byte(rows[3].DetailJson), &detail))
-	require.Equal(t, map[string]any{"iid": a.bob, "from": "", "to": a.manager}, detail)
-}
-
-// POS-04: a manager moves a subordinate between positions strictly below its own; to its own level,
-// above it, to none, or by someone who does not manage the subordinate, it is forbidden.
-func TestManagerMovesASubordinateBelowItself(t *testing.T) {
-	ctx := context.Background()
-	f := newFixture(t)
-	a := f.acme() // mia holds Manager, lee Lead, walt Worktrees, dee Designer; notes (created by lee) has no position
-	extra := f.position(a.org, "Reviewers", a.lead)
-
-	got, err := f.svc.SetPosition(ctx, a.mia, a.org, a.walt, extra)
-	require.NoError(t, err)
-	require.Equal(t, extra, got.PositionID, "a subordinate moves to another position below the manager's own")
-	got, err = f.svc.SetPosition(ctx, a.mia, a.org, a.walt, a.lead)
-	require.NoError(t, err)
-	require.Equal(t, a.lead, got.PositionID, "Lead is below Manager")
-
-	for name, tc := range map[string]struct{ actor, target, position string }{
-		"to its own level":                     {a.mia, a.walt, a.manager},
-		"above its own level":                  {a.mia, a.walt, a.director},
-		"to the root":                          {a.mia, a.walt, a.admin},
-		"to a position of another branch":      {a.mia, a.walt, a.designer},
-		"to none":                              {a.mia, a.walt, ""},
-		"a peer of the target":                 {a.dee, a.walt, a.trees},
-		"a subordinate of the target":          {a.walt, a.lee, a.trees},
-		"the target itself":                    {a.walt, a.walt, extra},
-		"the manager itself":                   {a.mia, a.mia, extra},
-		"someone the manager does not manage":  {a.mia, a.dee, extra},
-		"a position that does not exist":       {a.mia, a.walt, "p-nothing"},
-		"an inviter without a position":        {a.bob, a.gus, a.trees},
-		"a member of no relation to an AI":     {a.dee, a.notes, a.trees},
-		"a member without a position on an AI": {a.bob, a.notes, a.trees},
-		"a subordinate moving its manager":     {a.walt, a.mia, a.trees},
-		"an AI moving its creator":             {a.notes, a.lee, a.trees},
-		"a guest moving anyone":                {a.gus, a.walt, a.trees},
-		"a manager moving an admin above it":   {a.mia, a.alice, extra},
-		"a peer (walt now holds Lead too)":     {a.lee, a.walt, a.trees},
-	} {
-		_, err := f.svc.SetPosition(ctx, tc.actor, a.org, tc.target, tc.position)
-		require.ErrorIs(t, err, ErrForbidden, name)
-	}
-	require.Equal(t, a.lead, memberOfOrg(t, f, a.org, a.walt).PositionID, "none of them changed anything")
-	require.Equal(t, a.designer, memberOfOrg(t, f, a.org, a.dee).PositionID)
-
-	// A creator manages the AI it created, which has no position; the manager of the creator too.
-	got, err = f.svc.SetPosition(ctx, a.lee, a.org, a.notes, a.trees)
-	require.NoError(t, err)
-	require.Equal(t, a.trees, got.PositionID, "lee positions the AI it created below its own Lead position")
-	got, err = f.svc.SetPosition(ctx, a.mia, a.org, a.notes, extra)
-	require.NoError(t, err)
-	require.Equal(t, extra, got.PositionID, "so does the manager of its creator")
-	// ... and an inviter with a position positions its guest.
-	g := f.user("guest2")
-	f.join(a.org, g, PermissionGuest, "", a.lee)
-	got, err = f.svc.SetPosition(ctx, a.lee, a.org, g, a.trees)
-	require.NoError(t, err)
-	require.Equal(t, a.trees, got.PositionID)
-}
-
-// POS-04: a manager cannot clear a position, an admin can.
-func TestOnlyAnAdminClearsAPosition(t *testing.T) {
-	ctx := context.Background()
-	f := newFixture(t)
-	a := f.acme()
-	_, err := f.svc.SetPosition(ctx, a.mia, a.org, a.walt, "")
-	require.ErrorIs(t, err, ErrForbidden)
-	require.Equal(t, a.trees, memberOfOrg(t, f, a.org, a.walt).PositionID)
-	got, err := f.svc.SetPosition(ctx, a.alice, a.org, a.walt, "")
-	require.NoError(t, err)
-	require.Empty(t, got.PositionID)
-}
-
-func TestSetPositionNeedsMembers(t *testing.T) {
-	ctx := context.Background()
-	f := newFixture(t)
-	a := f.acme()
-	out := f.user("out")
-	_, err := f.svc.SetPosition(ctx, out, a.org, a.walt, a.trees)
-	require.ErrorIs(t, err, ErrNotFound, "an outsider does not see the organization")
-	_, err = f.svc.SetPosition(ctx, a.alice, a.org, out, a.trees)
-	require.ErrorIs(t, err, ErrNotFound, "the target is not a member")
-	_, err = f.svc.SetPosition(ctx, a.alice, "o-nothing", a.walt, a.trees)
-	require.ErrorIs(t, err, ErrNotFound)
-	// The same position is nothing: no audit entry, no announcement.
-	next := f.events()
-	got, err := f.svc.SetPosition(ctx, a.mia, a.org, a.walt, a.trees)
-	require.NoError(t, err)
-	require.Equal(t, a.trees, got.PositionID)
-	got, err = f.svc.SetPosition(ctx, a.alice, a.org, a.bob, "")
-	require.NoError(t, err)
-	require.Empty(t, got.PositionID)
-	require.Empty(t, next())
-	require.Empty(t, f.audited())
-}
-
 // OMEM-06: a member who leaves or is removed is taken out of the organization's groups and of its
 // position; its groups of other organizations, the AIs of the organization and its other memberships
 // stay.
@@ -396,7 +249,7 @@ func TestRemovalDropsOnlyThatOrganizationsGroupsAndKeepsTheAIs(t *testing.T) {
 	f := newFixture(t)
 	a := f.acme() // lee created notes and w1, whose home is acme
 	globex := f.org("globex")
-	f.join(globex, a.lee, PermissionMember, "", "")
+	f.join(globex, a.lee, PermissionMember)
 	f.group("g-acme-1", a.alice, a.org)
 	f.group("g-acme-2", a.alice, a.org)
 	f.group("g-globex", a.alice, globex)
@@ -415,21 +268,23 @@ func TestRemovalDropsOnlyThatOrganizationsGroupsAndKeepsTheAIs(t *testing.T) {
 
 	_, ok, err := f.z.Member(ctx, a.org, a.lee)
 	require.NoError(t, err)
-	require.False(t, ok, "out of the organization, and so of its position")
+	require.False(t, ok, "out of the organization")
 	require.Equal(t, []string{"dm-1", "g-globex"}, f.roomsOf(a.lee), "only the groups of acme are gone: the other organization's group and the DM stay")
 	require.Equal(t, []string{"g-acme-1"}, f.roomsOf(a.bob), "other members stay")
 	require.Equal(t, a.lee, f.str(`SELECT creator_iid FROM agents WHERE id = ?`, a.notes), "the AIs it created keep it as their creator")
 	require.Equal(t, a.org, f.str(`SELECT org_id FROM agents WHERE id = ?`, a.notes), "the AIs of the organization stay in it")
 	require.Equal(t, a.org, f.str(`SELECT org_id FROM agents WHERE id = ?`, a.w1))
 	require.Equal(t, PermissionMember, memberOfOrg(t, f, a.org, a.notes).Permission)
-	require.Equal(t, PermissionGuest, memberOfOrg(t, f, a.org, a.w1).Permission)
+	require.Equal(t, PermissionMember, memberOfOrg(t, f, a.org, a.w1).Permission)
 	require.Equal(t, PermissionMember, memberOfOrg(t, f, globex, a.lee).Permission, "its other organization")
 	require.Empty(t, f.str(`SELECT default_org_id FROM users WHERE id = ?`, a.lee), "the default organization it left is cleared")
-	c, err := Load(ctx, f.st.R(), a.org)
+	// SR2-07: the host who left the organization still instructs and manages the AIs it hosts there.
+	ok, err = f.z.Trusts(ctx, a.lee, a.notes)
 	require.NoError(t, err)
-	require.False(t, c.Manages(a.lee, a.notes), "a creator who left manages nothing there")
-	require.False(t, c.Manages(a.mia, a.notes), "and the chain through the creator ends: only an admin reaches the AI now")
-	require.True(t, c.CanDelete(a.alice, a.notes))
+	require.True(t, ok, "hosting is not membership")
+	ok, err = f.z.CanDeleteAI(ctx, a.alice, a.notes)
+	require.NoError(t, err)
+	require.True(t, ok, "and an admin still deletes it")
 
 	got := next()
 	require.Contains(t, got, events.OrgChanged{OrgID: a.org})
@@ -445,58 +300,40 @@ func TestRemovalDropsOnlyThatOrganizationsGroupsAndKeepsTheAIs(t *testing.T) {
 	require.Equal(t, map[string]any{"iid": a.lee, "groups": float64(2)}, detail)
 }
 
-// POS-05: removing someone follows the deletion rule - an admin removes anyone, a manager or an inviter
-// only a guest below them - and an identity removes itself by leaving. Each case alone (L-018).
-func TestRemoveFollowsTheDeletionRule(t *testing.T) {
+// SR2-12, SR2-03: an admin removes anyone else; nobody else removes anyone - not a host, an instructor or
+// whoever invited the target - and an identity removes itself by leaving. Each case alone (L-018).
+func TestSR212RemoveIsForAdmins(t *testing.T) {
 	ctx := context.Background()
-	// A case picks who acts and who is removed on a fresh acme chart.
 	type pick func(f *fixture, a acmeChart) (actor, target string)
-	guestBelow := func(f *fixture, a acmeChart) string { // a guest held in Worktrees, with no inviter
-		g := f.user("guestw")
-		f.join(a.org, g, PermissionGuest, a.trees, "")
-		return g
-	}
-	guestOfLee := func(f *fixture, a acmeChart) string { // a guest lee invited
-		g := f.user("guestl")
-		f.join(a.org, g, PermissionGuest, "", a.lee)
-		return g
-	}
 	for name, tc := range map[string]struct {
 		pick pick
 		want error // nil: removed
 	}{
-		"an admin removes a member with no position":        {func(_ *fixture, a acmeChart) (string, string) { return a.alice, a.bob }, nil},
-		"an admin removes a member who holds a position":    {func(_ *fixture, a acmeChart) (string, string) { return a.alice, a.dee }, nil},
-		"an admin removes a guest":                          {func(_ *fixture, a acmeChart) (string, string) { return a.alice, a.gus }, nil},
-		"an admin removes another admin":                    {func(f *fixture, a acmeChart) (string, string) { return a.alice, f.adminOf(a.org) }, nil},
-		"an inviter removes its guest":                      {func(_ *fixture, a acmeChart) (string, string) { return a.bob, a.gus }, nil},
-		"a manager removes a guest positioned below it":     {func(f *fixture, a acmeChart) (string, string) { return a.mia, guestBelow(f, a) }, nil},
-		"the manager of an inviter removes its guest":       {func(f *fixture, a acmeChart) (string, string) { return a.mia, guestOfLee(f, a) }, nil},
-		"a manager cannot remove a member below":            {func(_ *fixture, a acmeChart) (string, string) { return a.mia, a.walt }, ErrForbidden},
-		"a manager cannot remove an AI member below":        {func(_ *fixture, a acmeChart) (string, string) { return a.mia, a.notes }, ErrForbidden},
-		"a peer cannot remove a guest it did not invite":    {func(_ *fixture, a acmeChart) (string, string) { return a.dee, a.gus }, ErrForbidden},
-		"a manager of another branch cannot remove a guest": {func(f *fixture, a acmeChart) (string, string) { return a.dee, guestOfLee(f, a) }, ErrForbidden},
-		"a member cannot remove an admin":                   {func(_ *fixture, a acmeChart) (string, string) { return a.bob, a.alice }, ErrForbidden},
-		"a guest cannot remove its inviter":                 {func(_ *fixture, a acmeChart) (string, string) { return a.gus, a.bob }, ErrForbidden},
-		"an AI cannot remove anyone":                        {func(_ *fixture, a acmeChart) (string, string) { return a.notes, a.bob }, ErrForbidden},
-		"an outsider does not see the organization":         {func(f *fixture, a acmeChart) (string, string) { return f.user("out"), a.bob }, ErrNotFound},
-		"the target is not a member":                        {func(f *fixture, a acmeChart) (string, string) { return a.alice, f.user("out") }, ErrNotFound},
+		"an admin removes a member":                 {func(_ *fixture, a acmeChart) (string, string) { return a.alice, a.bob }, nil},
+		"an admin removes another admin":            {func(f *fixture, a acmeChart) (string, string) { return a.alice, f.adminOf(a.org) }, nil},
+		"a member cannot remove a member":           {func(_ *fixture, a acmeChart) (string, string) { return a.dee, a.gus }, ErrForbidden},
+		"a member cannot remove an admin":           {func(_ *fixture, a acmeChart) (string, string) { return a.bob, a.alice }, ErrForbidden},
+		"a host cannot remove a person":             {func(_ *fixture, a acmeChart) (string, string) { return a.lee, a.bob }, ErrForbidden},
+		"an AI cannot remove anyone":                {func(_ *fixture, a acmeChart) (string, string) { return a.notes, a.bob }, ErrForbidden},
+		"an outsider does not see the organization": {func(f *fixture, a acmeChart) (string, string) { return f.user("out"), a.bob }, ErrNotFound},
+		"the target is not a member":                {func(f *fixture, a acmeChart) (string, string) { return a.alice, f.user("out") }, ErrNotFound},
 	} {
 		t.Run(name, func(t *testing.T) {
 			f := newFixture(t)
 			a := f.acme()
 			actor, target := tc.pick(f, a)
+			before := len(f.audited())
 			err := f.svc.Remove(ctx, actor, a.org, target)
 			if tc.want != nil {
 				require.ErrorIs(t, err, tc.want)
-				require.Empty(t, f.audited())
+				require.Len(t, f.audited(), before)
 				return
 			}
 			require.NoError(t, err)
 			_, ok, err := f.z.Member(ctx, a.org, target)
 			require.NoError(t, err)
 			require.False(t, ok, "removed")
-			require.Equal(t, []string{"org.member_remove " + a.org}, f.audited())
+			require.Contains(t, f.audited(), "org.member_remove "+a.org)
 		})
 	}
 	require.ErrorIs(t, newFixture(t).svc.Remove(ctx, "u-a", "o-nothing", "u-b"), ErrNotFound, "no such organization")
@@ -511,8 +348,8 @@ func TestRemovingAnAIOfAnotherOrganization(t *testing.T) {
 	globex := f.org("globex")
 	xi := f.user("xi")
 	bot := f.ai("visitor", xi)
-	f.home(bot, globex, xi, PermissionMember, "")
-	f.join(a.org, bot, PermissionMember, a.designer, "")
+	f.home(bot, globex, xi, PermissionMember)
+	f.join(a.org, bot, PermissionMember)
 	f.group("g-acme", a.alice, a.org)
 	f.group("g-globex", xi, globex)
 	f.roomMember("g-acme", "agent", bot)
@@ -535,15 +372,15 @@ func TestAnAIDoesNotLeaveItsHomeOrganization(t *testing.T) {
 	require.ErrorIs(t, f.svc.Leave(ctx, a.notes, a.org), ErrHomeOrganization, "an AI leaving by itself")
 	require.ErrorIs(t, f.svc.Remove(ctx, a.notes, a.org, a.notes), ErrHomeOrganization, "which is what Remove with itself means")
 	require.ErrorIs(t, f.svc.Remove(ctx, a.alice, a.org, a.notes), ErrHomeOrganization, "an admin cannot remove it either: it is deleted")
-	require.ErrorIs(t, f.svc.Remove(ctx, a.lee, a.org, a.w1), ErrHomeOrganization, "nor the manager that may delete a guest AI")
+	require.ErrorIs(t, f.svc.Remove(ctx, a.lee, a.org, a.w1), ErrForbidden, "its host deletes it, it does not remove members")
 	require.Equal(t, PermissionMember, memberOfOrg(t, f, a.org, a.notes).Permission)
-	require.Equal(t, PermissionGuest, memberOfOrg(t, f, a.org, a.w1).Permission)
+	require.Equal(t, PermissionMember, memberOfOrg(t, f, a.org, a.w1).Permission)
 	require.Empty(t, f.audited())
 
 	// A user, and an AI in an organization that is not its home, leave freely.
 	require.NoError(t, f.svc.Leave(ctx, a.walt, a.org))
 	globex := f.org("globex")
-	f.join(globex, a.notes, PermissionMember, "", "")
+	f.join(globex, a.notes, PermissionMember)
 	require.NoError(t, f.svc.Leave(ctx, a.notes, globex))
 	require.ErrorIs(t, f.z.RequireMember(ctx, globex, a.notes), ErrNotFound)
 	require.NoError(t, f.z.RequireMember(ctx, a.org, a.notes), "still at home")
@@ -572,8 +409,8 @@ func TestRemovingAnOperatorClearsItsConnections(t *testing.T) {
 	globex := f.org("globex")
 	xi := f.user("xi")
 	bot := f.ai("visitor", xi)
-	f.home(bot, globex, xi, PermissionMember, "")
-	f.join(a.org, bot, PermissionMember, "", "")
+	f.home(bot, globex, xi, PermissionMember)
+	f.join(a.org, bot, PermissionMember)
 	f.connector("k-acme", a.alice, a.org)
 	f.connector("k-acme-2", a.alice, a.org)
 	f.connector("k-globex", xi, globex)
@@ -604,141 +441,31 @@ func TestAFailedRemovalChangesNothing(t *testing.T) {
 	require.Empty(t, next())
 }
 
-// OMEM-04, POS-04: UpdateMember changes the permission and the position in one transaction: both change,
-// with one audit entry each and one announcement, or neither does.
-func TestUpdateMemberChangesPermissionAndPositionTogether(t *testing.T) {
-	ctx := context.Background()
-	f := newFixture(t)
-	a := f.acme()
-	next := f.events()
-
-	got, err := f.svc.UpdateMember(ctx, a.alice, a.org, a.bob, MemberUpdate{Permission: ptr(PermissionGuest), PositionID: ptr(a.designer)})
-	require.NoError(t, err)
-	require.Equal(t, Member{IID: a.bob, Permission: PermissionGuest, PositionID: a.designer}, got)
-	require.Equal(t, got, memberOfOrg(t, f, a.org, a.bob))
-	require.Equal(t, []string{"org.member_permission " + a.org, "org.member_position " + a.org}, f.audited())
-	require.Equal(t, []events.Event{events.OrgChanged{OrgID: a.org}}, next(), "one announcement for the request")
-
-	// Only one of the two changes is a change: only that one is recorded.
-	got, err = f.svc.UpdateMember(ctx, a.alice, a.org, a.bob, MemberUpdate{Permission: ptr(PermissionGuest), PositionID: ptr(a.manager)})
-	require.NoError(t, err)
-	require.Equal(t, a.manager, got.PositionID)
-	require.Len(t, f.audited(), 3)
-	require.Len(t, next(), 1)
-	// Nothing changes at all: nothing is recorded or announced.
-	_, err = f.svc.UpdateMember(ctx, a.alice, a.org, a.bob, MemberUpdate{Permission: ptr(PermissionGuest), PositionID: ptr(a.manager)})
-	require.NoError(t, err)
-	require.Len(t, f.audited(), 3)
-	require.Empty(t, next())
-}
-
-// A change that is refused changes nothing, not even the half of it that would have been fine.
-func TestAFailedUpdateMemberChangesNothing(t *testing.T) {
-	ctx := context.Background()
-	f := newFixture(t)
-	a := f.acme()
-	other := f.position(f.org("globex"), "Boss", "")
-	next := f.events()
-	unchanged := func(iid string, want Member) {
-		t.Helper()
-		require.Equal(t, want, memberOfOrg(t, f, a.org, iid))
-		require.Empty(t, f.audited())
-		require.Empty(t, next())
-	}
-
-	// The last admin cannot step down, so it does not move either.
-	alice := memberOfOrg(t, f, a.org, a.alice)
-	_, err := f.svc.UpdateMember(ctx, a.alice, a.org, a.alice, MemberUpdate{Permission: ptr(PermissionMember), PositionID: ptr(a.trees)})
-	require.ErrorIs(t, err, ErrLastAdmin)
-	unchanged(a.alice, alice)
-
-	// A position the organization does not have stops the permission change.
-	bob := memberOfOrg(t, f, a.org, a.bob)
-	_, err = f.svc.UpdateMember(ctx, a.alice, a.org, a.bob, MemberUpdate{Permission: ptr(PermissionGuest), PositionID: ptr(other)})
-	invalid(t, err, "position_id")
-	unchanged(a.bob, bob)
-
-	// A manager may move a subordinate but not change its permission: the move is not made either.
-	walt := memberOfOrg(t, f, a.org, a.walt)
-	_, err = f.svc.UpdateMember(ctx, a.mia, a.org, a.walt, MemberUpdate{Permission: ptr(PermissionGuest), PositionID: ptr(a.lead)})
-	require.ErrorIs(t, err, ErrForbidden)
-	unchanged(a.walt, walt)
-
-	// A bad permission is told to the admin, and nothing is moved.
-	_, err = f.svc.UpdateMember(ctx, a.alice, a.org, a.bob, MemberUpdate{Permission: ptr(Permission("owner")), PositionID: ptr(a.designer)})
-	invalid(t, err, "permission")
-	unchanged(a.bob, bob)
-}
-
-// The actor's rights are the ones it had when it asked: an admin that steps down and moves in the same
-// request is still an admin for the move.
-func TestUpdateMemberJudgesTheActorAsItWasWhenItAsked(t *testing.T) {
-	ctx := context.Background()
-	f := newFixture(t)
-	a := f.acme()
-	f.adminOf(a.org) // a second admin, so alice may step down
-
-	got, err := f.svc.UpdateMember(ctx, a.alice, a.org, a.alice, MemberUpdate{Permission: ptr(PermissionMember), PositionID: ptr("")})
-	require.NoError(t, err)
-	require.Equal(t, Member{IID: a.alice, Permission: PermissionMember}, got, "alice stepped down and left her position")
-	// Now a plain member, she can neither change a permission nor position anybody.
-	_, err = f.svc.UpdateMember(ctx, a.alice, a.org, a.bob, MemberUpdate{Permission: ptr(PermissionGuest)})
-	require.ErrorIs(t, err, ErrForbidden)
-	_, err = f.svc.UpdateMember(ctx, a.alice, a.org, a.bob, MemberUpdate{PositionID: ptr(a.designer)})
-	require.ErrorIs(t, err, ErrForbidden)
-}
-
-// A request that asks for nothing needs a member and changes nothing; it names the member as it is.
-func TestUpdateMemberWithNothingToChange(t *testing.T) {
-	ctx := context.Background()
-	f := newFixture(t)
-	a := f.acme()
-	out := f.user("out")
-	next := f.events()
-
-	got, err := f.svc.UpdateMember(ctx, a.bob, a.org, a.walt, MemberUpdate{})
-	require.NoError(t, err)
-	require.Equal(t, memberOfOrg(t, f, a.org, a.walt), got)
-	_, err = f.svc.UpdateMember(ctx, out, a.org, a.walt, MemberUpdate{})
-	require.ErrorIs(t, err, ErrNotFound)
-	_, err = f.svc.UpdateMember(ctx, a.bob, a.org, out, MemberUpdate{})
-	require.ErrorIs(t, err, ErrNotFound, "the target is not a member")
-	require.Empty(t, next())
-	require.Empty(t, f.audited())
-}
-
-// OMEM-01, OMEM-03: the list names each member with its profile summary, permission, position and, for a
-// guest, its inviter; every member sees it, a guest included, and only this organization's members are in it.
-func TestListMembersShowsTheProfileThePermissionThePositionAndTheInviter(t *testing.T) {
+// OMEM-03, SR2-12: the list names each member with its profile summary and permission, and what the viewer
+// may do: an admin deletes anyone else, the host deletes the AIs it hosts whose home is the organization; every
+// member sees it, and only this organization's members are in it.
+func TestListMembersShowsTheProfileThePermissionAndTheRights(t *testing.T) {
 	ctx := context.Background()
 	f := newFixture(t)
 	a := f.acme()
 	globex := f.org("globex")
 	stranger := f.user("stranger")
-	f.join(globex, stranger, PermissionAdmin, "", "")
+	f.join(globex, stranger, PermissionAdmin)
 	f.exec(`UPDATE intelligences SET avatar_sha256 = 'sha-bob' WHERE id = ?`, a.bob)
 
-	list, err := f.svc.ListMembers(ctx, a.gus, a.org) // a guest sees the members (CHART-02)
+	list, err := f.svc.ListMembers(ctx, a.gus, a.org)
 	require.NoError(t, err)
 	byID := map[string]MemberRow{}
 	for _, m := range list {
 		byID[m.IID] = m
 	}
 	require.Len(t, byID, len(list))
-	require.Len(t, list, 10, "eight people (one a guest) and two AIs of acme, and not the stranger of globex")
+	require.Len(t, list, 10, "eight people and two AIs of acme, and not the stranger of globex")
 	require.NotContains(t, byID, stranger)
-
-	require.Equal(t, MemberRow{
-		IID: a.walt, Permission: "member", PositionID: a.trees, PositionName: "Worktrees",
-		Kind: "human", DisplayName: "walt", Handle: "walt", JoinedAt: 1,
-	}, byID[a.walt])
-	require.Equal(t, MemberRow{
-		IID: a.gus, Permission: "guest", Kind: "human", DisplayName: "gus", Handle: "gus", JoinedAt: 1,
-		InviterIID: a.bob, InviterKind: "human", InviterDisplayName: "bob", InviterHandle: "bob", InviterAvatarSha256: "sha-bob",
-	}, byID[a.gus], "a guest carries the identity that invited it")
+	require.Equal(t, MemberRow{IID: a.walt, Permission: "member", Kind: "human", DisplayName: "walt", Handle: "walt", JoinedAt: 1}, byID[a.walt])
 	require.Equal(t, "ai", byID[a.w1].Kind)
-	require.Equal(t, "guest", byID[a.w1].Permission)
-	require.Empty(t, byID[a.bob].InviterIID)
+	require.True(t, byID[a.w1].DeletedForGood, "acme is w1's home")
+	require.False(t, byID[a.w1].CanDelete, "gus neither administers acme nor hosts w1")
 	require.Equal(t, "sha-bob", byID[a.bob].AvatarSha256)
 
 	names := make([]string, len(list))
@@ -747,87 +474,30 @@ func TestListMembersShowsTheProfileThePermissionThePositionAndTheInviter(t *test
 	}
 	require.IsIncreasing(t, names, "ordered by display name")
 
+	rights := func(viewer string) map[string]bool {
+		rows, err := f.svc.ListMembers(ctx, viewer, a.org)
+		require.NoError(t, err)
+		out := map[string]bool{}
+		for _, r := range rows {
+			out[r.IID] = r.CanDelete
+		}
+		return out
+	}
+	admin := rights(a.alice)
+	require.True(t, admin[a.bob])
+	require.True(t, admin[a.w1])
+	require.False(t, admin[a.alice], "not itself")
+	host := rights(a.lee)
+	require.True(t, host[a.w1], "SR2-12: the host deletes its AI")
+	require.True(t, host[a.notes])
+	require.False(t, host[a.bob], "but removes no person")
+	instructor := rights(a.mia)
+	require.False(t, instructor[a.w1], "an instructor does not delete")
+
 	_, err = f.svc.ListMembers(ctx, stranger, a.org)
 	require.ErrorIs(t, err, ErrNotFound, "an outsider")
 	_, err = f.svc.ListMembers(ctx, a.alice, "o-nothing")
 	require.ErrorIs(t, err, ErrNotFound)
-}
-
-// MemberView is one row of the list as the same viewer sees it (the flags are the viewer's); an outsider or a
-// target that is not a member is not found.
-// POS-04: MovePreview names the managers a move would take away, in the order of the current
-// ManagersOf, and changes nothing. AD-029: moving an AI to its creator's own position takes no manager
-// away, because the creator always manages what it created.
-func TestMovePreviewNamesWhoStopsManagingTheTarget(t *testing.T) {
-	ctx := context.Background()
-	f := newFixture(t)
-	org := f.org("preview")
-	adminPosition := f.position(org, "Admin", "")
-	staff := f.position(org, "Staff", adminPosition)
-	u := f.user("u")
-	f.join(org, u, PermissionAdmin, adminPosition, "")
-	a := f.ai("a", u)
-	f.home(a, org, u, PermissionMember, "")
-	next := f.events()
-
-	preview := func(actor, target, position string) ([]string, error) {
-		return f.svc.MovePreview(ctx, actor, org, target, position)
-	}
-
-	// AD-029: a moves to the same position as its creator u, and u keeps managing it: nobody loses it.
-	lose, err := preview(u, a, adminPosition)
-	require.NoError(t, err)
-	require.Equal(t, []string{}, lose)
-	require.Equal(t, Member{IID: a, Permission: PermissionMember, CreatorIID: u}, memberOfOrg(t, f, org, a), "the preview did not move it")
-
-	// Below u's position, u still manages it, so nobody loses management.
-	lose, err = preview(u, a, staff)
-	require.NoError(t, err)
-	require.NotNil(t, lose)
-	require.Empty(t, lose)
-
-	// Already positionless and moved to no position: nothing changes.
-	lose, err = preview(u, a, "")
-	require.NoError(t, err)
-	require.NotNil(t, lose)
-	require.Empty(t, lose)
-	audited := f.audited()
-	require.Empty(t, audited, "no preview wrote an audit entry")
-	require.Empty(t, next(), "no preview announced a change")
-
-	// From u's own position back to none, u regains the management instead of losing it.
-	_, err = f.svc.SetPosition(ctx, u, org, a, adminPosition)
-	require.NoError(t, err)
-	require.Len(t, f.audited(), 1, "the move itself is recorded")
-	require.Len(t, next(), 1, "and announced")
-	audited = f.audited()
-	lose, err = preview(u, a, "")
-	require.NoError(t, err)
-	require.NotNil(t, lose)
-	require.Empty(t, lose)
-
-	// A plain member may not move it, and the preview answers what the move would.
-	v := f.user("v")
-	f.join(org, v, PermissionMember, "", "")
-	_, moveErr := f.svc.UpdateMember(ctx, v, org, a, MemberUpdate{PositionID: ptr(staff)})
-	_, previewErr := preview(v, a, staff)
-	require.ErrorIs(t, moveErr, ErrForbidden)
-	require.ErrorIs(t, previewErr, moveErr)
-
-	// An admin can ask about a position that does not exist, and gets the move's validation error.
-	_, err = preview(u, a, "p-nothing")
-	invalid(t, err, "position_id")
-
-	// A stranger does not find the organization; a target that is not a member is not found.
-	out := f.user("out")
-	_, err = preview(out, a, staff)
-	require.ErrorIs(t, err, ErrNotFound)
-	_, err = preview(u, out, staff)
-	require.ErrorIs(t, err, ErrNotFound)
-
-	require.Equal(t, adminPosition, memberOfOrg(t, f, org, a).PositionID, "no preview changed the membership")
-	require.Equal(t, audited, f.audited(), "no preview wrote an audit entry")
-	require.Empty(t, next(), "no preview announced a change")
 }
 
 func TestMemberViewIsOneRowOfTheList(t *testing.T) {
@@ -836,7 +506,7 @@ func TestMemberViewIsOneRowOfTheList(t *testing.T) {
 	a := f.acme()
 	out := f.user("out")
 
-	for _, viewer := range []string{a.alice, a.mia, a.gus} {
+	for _, viewer := range []string{a.alice, a.lee, a.mia, a.gus} {
 		list, err := f.svc.ListMembers(ctx, viewer, a.org)
 		require.NoError(t, err)
 		require.NotEmpty(t, list)

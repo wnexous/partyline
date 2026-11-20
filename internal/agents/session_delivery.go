@@ -111,7 +111,7 @@ func loadSessionFallbacks(ctx context.Context, q *db.Queries, agentID, roomID st
 }
 
 // trustedFor recomputes a fallback row's trust for the principal: a fallback is not filtered by the
-// delivery mode again, but its trusted flag is still the author's for this AI (POS-10).
+// delivery mode again, but its trusted flag is still the author's for this AI (SR2-07).
 func trustedFor(ctx context.Context, trust delivery.Trust, view db.MessageView, agentID string) (bool, error) {
 	author := delivery.AuthorOf(view)
 	if author == "" {

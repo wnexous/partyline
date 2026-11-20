@@ -142,8 +142,8 @@ func roomAvatarSetup(env *testkit.Env, roles *testkit.OrgRoles) func(t *testing.
 
 // GAV-02, ACL-01..04 (auth matrix, design): the avatar routes of a group over the roles of the organization.
 // Whoever manages the group - its creator and the admins of its organization - changes the photo; the people in
-// the room read it and cannot change it (403); everybody else - a manager above the creator who is not in the
-// room, a peer, an inviter, an outsider, an admin of the instance - finds nothing (404).
+// the room read it and cannot change it (403); everybody else - the host of an AI who is not in the room, the
+// instructor of an AI, an outsider, an admin of the instance - finds nothing (404).
 func TestRoomAvatarRoutesAuthMatrix(t *testing.T) {
 	env := testkit.New(t)
 	roles := env.OrgRoles("acme")
@@ -175,8 +175,8 @@ func TestRoomAvatarRefusalsChangeNothing(t *testing.T) {
 		status int
 	}{
 		{"a member of the room", roles.Target, http.StatusForbidden},
-		{"a guest in the room", roles.Guest, http.StatusForbidden},
-		{"a colleague outside the room", roles.Peer, http.StatusNotFound},
+		{"a second member of the room", roles.Peer, http.StatusForbidden},
+		{"a colleague outside the room", roles.Instructor, http.StatusNotFound},
 		{"an outsider", roles.Outsider, http.StatusNotFound},
 		{"the admin of the instance", roles.InstanceAdmin, http.StatusNotFound},
 	} {

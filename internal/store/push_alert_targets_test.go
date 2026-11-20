@@ -43,7 +43,7 @@ func (e *schemaEnv) alertDevice(id, userID string, created int64) {
 }
 
 // alertFixture builds the organization of ALERT-02: two admins (one with two devices, one without
-// any), a disabled admin, a member, a guest, an AI admin and a second AI hosted by a member that
+// any), a disabled admin, a member, another member, an AI admin and a second AI hosted by a member that
 // operates the connection k1.
 func (e *schemaEnv) alertFixture() {
 	e.t.Helper()
@@ -59,7 +59,7 @@ func (e *schemaEnv) alertFixture() {
 	require.NoError(e.t, e.member("o1", "u2", "admin"))
 	require.NoError(e.t, e.member("o1", "u6", "admin"))
 	require.NoError(e.t, e.member("o1", "u3", "member"))
-	require.NoError(e.t, e.member("o1", "u4", "guest"))
+	require.NoError(e.t, e.member("o1", "u4", "member"))
 	e.alertAgent("a1", "u2")
 	require.NoError(e.t, e.member("o1", "a1", "admin"))
 	e.alertAgent("a2", "u5")
@@ -93,7 +93,7 @@ func TestConnectorAlertTargetsAreTheAdminsAndTheOperatorsHost(t *testing.T) {
 	e := newSchemaEnv(t)
 	e.alertFixture()
 
-	// u2 (an admin), u3 (a member), u4 (a guest) and a1 (an AI admin) have no row: only u6 has a
+	// u2 (an admin), u3 (a member), u4 (another member) and a1 (an AI admin) have no row: only u6 has a
 	// device among them, and its disabled account keeps it out of the audience.
 	expected := []alertTarget{{user: "u1", device: "p1"}, {user: "u1", device: "p2"}, {user: "u5", device: "p5"}}
 	require.Equal(t, expected, e.alertTargets("k1"))

@@ -939,6 +939,7 @@ LEFT JOIN machines mc ON mc.owner_id = a.owner_id AND mc.hostname = a.machine
 WHERE a.owner_id = ?1
    OR a.id IN (SELECT y.iid FROM org_members x JOIN org_members y ON y.org_id = x.org_id
                WHERE x.iid = ?1)
+   OR a.id IN (SELECT ai.agent_iid FROM agent_instructors ai WHERE ai.instructor_iid = ?1)
 ORDER BY a.name, u.username, a.id
 `
 
@@ -955,7 +956,7 @@ type ListVisibleAgentsRow struct {
 }
 
 // The AIs a user sees (AD-016): those hosted on their computers and those of the organizations they
-// belong to, whatever their permission there.
+// belong to, whatever their permission there, and those they instruct (SR2-07).
 func (q *Queries) ListVisibleAgents(ctx context.Context, userID string) ([]ListVisibleAgentsRow, error) {
 	rows, err := q.db.QueryContext(ctx, listVisibleAgents, userID)
 	if err != nil {

@@ -215,7 +215,7 @@ func TestAnUpdateOfASelfWrittenMessageFollowsItsContextHolders(t *testing.T) {
 // untrusted for the AI (POS-10).
 func (f *sessionFixture) addUserMember(t *testing.T, u *testkit.Client) {
 	t.Helper()
-	f.env.AddMember(f.alice.PersonalOrg().ID, u.User.ID, orgs.PermissionMember, "")
+	f.env.AddMember(f.alice.PersonalOrg().ID, u.User.ID, orgs.PermissionMember)
 	f.alice.Post("/api/v1/rooms/"+f.room.ID+"/members",
 		dto.AddMemberRequest{Kind: dto.MemberKindUser, MemberID: u.User.ID}).RequireStatus(http.StatusCreated)
 }

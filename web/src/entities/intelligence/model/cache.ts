@@ -1,5 +1,5 @@
 import type { QueryClient } from "@tanstack/react-query";
-import type { MessagePages, PeoplePages } from "@/shared/api/cache-types";
+import type { MessagePages } from "@/shared/api/cache-types";
 import { queryKeys } from "@/shared/api/query-keys";
 import type {
   Connector,
@@ -92,16 +92,6 @@ export function patchIntelligence(qc: QueryClient, ref: IntelligenceRef) {
 
   // The contacts page, the pickers and the connectors that name this intelligence as operator.
   qc.setQueryData<Contacts>(queryKeys.contacts, (old) => old && withIntelligence(old, ref));
-  for (const [key, data] of qc.getQueriesData<PeoplePages>({ queryKey: ["contacts", "people"] })) {
-    if (!data?.pages.some((page) => page.items.some((p) => p.id === ref.id))) continue;
-    qc.setQueryData<PeoplePages>(key, {
-      ...data,
-      pages: data.pages.map((page) => ({
-        ...page,
-        items: page.items.map((p) => (p.id === ref.id ? ref : p)),
-      })),
-    });
-  }
   patchOperator(qc, ref);
 }
 

@@ -96,8 +96,8 @@ func secretRequestFrom(p authn.Principal, in PostInput) (*dto.MessageInteractive
 func secretSavedText(name string) string { return "🔑 " + name + " saved" }
 
 // GiveSecret hands the value of a secret request to the session that asked for it and records that it was
-// saved (SR-05, SR-06). The caller must be a person who may post in the room and who manages the asking AI
-// in its home organization, the same rule that makes a message trusted="true" for it (POS-10); 403
+// saved (SR-05, SR-06). The caller must be a person who may post in the room and who instructs the asking AI
+// (its host or an instructor), the same rule that makes a message trusted="true" for it (SR2-07); 403
 // otherwise. The message must be a live secret request of the room (ErrNotSecretRequest), answered by
 // nobody yet (ErrAlreadyAnswered) and not being saved by someone else (ErrSecretInFlight).
 //

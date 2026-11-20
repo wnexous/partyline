@@ -17,7 +17,7 @@ import (
 )
 
 // fixture is a migrated database with the organization authorization on top: the tests of this
-// package build their users, AIs, organizations and charts through it with the store's queries only,
+// package build their users, AIs, organizations and links through it with the store's queries only,
 // so they do not depend on any service that arrives later.
 type fixture struct {
 	t     *testing.T
@@ -123,8 +123,8 @@ func (f *fixture) ai(name, owner string) string {
 }
 
 // home makes org the home organization of the AI, created by creator ("" for nobody), and a member of
-// it with the permission and position.
-func (f *fixture) home(ai, org, creator string, perm Permission, position string) {
+// it with the permission.
+func (f *fixture) home(ai, org, creator string, perm Permission) {
 	f.t.Helper()
 	f.tx(func(ctx context.Context, q *db.Queries) error {
 		if err := q.SetAgentHome(ctx, db.SetAgentHomeParams{OrgID: nullable(org), ID: ai}); err != nil {
@@ -133,7 +133,16 @@ func (f *fixture) home(ai, org, creator string, perm Permission, position string
 		if err := q.SetAgentCreator(ctx, db.SetAgentCreatorParams{CreatorIid: nullable(creator), ID: ai}); err != nil {
 			return err
 		}
-		return q.CreateOrgMember(ctx, db.CreateOrgMemberParams{OrgID: org, Iid: ai, Permission: string(perm), PositionID: nullable(position), JoinedAt: 1})
+		return q.CreateOrgMember(ctx, db.CreateOrgMemberParams{OrgID: org, Iid: ai, Permission: string(perm), JoinedAt: 1})
+	})
+}
+
+// instruct makes iid an instructor of the AI (SR2-06).
+func (f *fixture) instruct(ai, iid string) {
+	f.t.Helper()
+	f.tx(func(ctx context.Context, q *db.Queries) error {
+		_, err := q.AddAgentInstructor(ctx, db.AddAgentInstructorParams{AgentIid: ai, InstructorIid: iid, CreatedAt: 1})
+		return err
 	})
 }
 
@@ -147,23 +156,11 @@ func (f *fixture) org(slug string) string {
 	return id
 }
 
-// position creates a position of org under parent ("" for a root); the id is "p-<org slug>-<name>".
-func (f *fixture) position(org, name, parent string) string {
-	f.t.Helper()
-	id := "p-" + org[2:] + "-" + name
-	f.tx(func(ctx context.Context, q *db.Queries) error {
-		return q.CreatePosition(ctx, db.CreatePositionParams{ID: id, OrgID: org, Name: name, ParentID: nullable(parent), CreatedAt: 1})
-	})
-	return id
-}
-
 // join makes iid a member of org.
-func (f *fixture) join(org, iid string, perm Permission, position, inviter string) {
+func (f *fixture) join(org, iid string, perm Permission) {
 	f.t.Helper()
 	f.tx(func(ctx context.Context, q *db.Queries) error {
-		return q.CreateOrgMember(ctx, db.CreateOrgMemberParams{
-			OrgID: org, Iid: iid, Permission: string(perm), PositionID: nullable(position), InviterIid: nullable(inviter), JoinedAt: 1,
-		})
+		return q.CreateOrgMember(ctx, db.CreateOrgMemberParams{OrgID: org, Iid: iid, Permission: string(perm), JoinedAt: 1})
 	})
 }
 
@@ -208,7 +205,7 @@ func (f *fixture) group(id, creator, org string) {
 func (f *fixture) adminOf(org string) string {
 	f.t.Helper()
 	u := f.user("admin-" + org[2:])
-	f.join(org, u, PermissionAdmin, "", "")
+	f.join(org, u, PermissionAdmin)
 	return u
 }
 

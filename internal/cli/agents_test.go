@@ -217,7 +217,7 @@ func TestAgentsListsOnlyTheAIsTheTokenUserHosts(t *testing.T) {
 	e := newChannelEnv(t)
 	acme := e.newOrg(t, "Acme")
 	bob := e.env.NewUser("bob")
-	e.env.AddMember(acme.ID, bob.User.ID, orgs.PermissionMember, "")
+	e.env.AddMember(acme.ID, bob.User.ID, orgs.PermissionMember)
 	e.aiIn(t, acme.ID, "devbox", "/srv/lab", "/home/alice", "claude", "Lab", "lab")
 	require.NotEmpty(t, e.env.NewAIIn(bob, acme.ID, "sage"), "an AI bob hosts in Acme, which alice is in too")
 

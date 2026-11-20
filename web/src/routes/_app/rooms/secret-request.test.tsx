@@ -61,12 +61,12 @@ function saved(over: Partial<Message> = {}): Message {
   });
 }
 
-/** Atlas's profile, managed by the identities given (its instructed_by). */
+/** Atlas's profile, hosted by Hal and instructed by the identities given (its instructed_by, SR2-07). */
 function atlasProfile(managers: string[]) {
   return makeProfile({
     ...atlas,
     ai: {
-      owner: makeIntelligence(),
+      owner: makeIntelligence({ id: "u8", display_name: "Hal", handle: "hal" }),
       folder: "/work/atlas",
       folder_label: "~/atlas",
       app: "claude",

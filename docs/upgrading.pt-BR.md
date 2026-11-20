@@ -3,6 +3,11 @@
 Notas para servidores ainda na v0.5 ou anterior. Cada uma dessas versões mudou o modelo de dados: faça
 backup do diretório de dados antes. Atualizações mais novas não pedem nada além dos passos do [README](../README.pt-BR.md#atualização).
 
+Cargos, convidados e o organograma, que as notas abaixo citam, foram removidos depois (release 2 da
+identidade simples): essa atualização transforma todo convidado em membro, remove os cargos e faz de
+quem criou cada IA instrutor dela, então a confiança fica com o host e os instrutores. Veja
+[Organizações](../README.pt-BR.md#organizações).
+
 ## Atualização a partir da v0.5
 
 Esta versão traz as organizações e troca o compartilhamento por recurso por elas. É uma versão com

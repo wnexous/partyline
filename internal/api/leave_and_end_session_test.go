@@ -27,16 +27,17 @@ func requireEnded(t *testing.T, conn *testkit.AgentConn, handle string) {
 	require.Equal(t, "ended by @"+handle, ce.Reason)
 }
 
-// POS-04 (matrix of DELETE /agents/{id}/session): whoever manages the AI in an organization they share ends its
-// live session. Manager created it and Admin manages Manager, so both do; a peer, a member and a guest see the AI
-// and may not (403), and whoever cannot see it gets 404 - the instance admin included. Each refusal leaves the
-// session up; the end closes the socket with 4002 and "ended by @handle".
-func TestAManagerEndsALiveSession(t *testing.T) {
+// SR2-13 (matrix of DELETE /agents/{id}/session): whoever manages the AI ends its live session - its host
+// (Manager) and its user instructor; the admin of its organization, a peer and a member see the AI and may not
+// (403), and whoever cannot see it gets 404 - the instance admin included. Each refusal leaves the session up; the
+// end closes the socket with 4002 and "ended by @handle".
+func TestSR213TheHostAndAUserInstructorEndALiveSession(t *testing.T) {
 	env := testkit.New(t)
 	r := env.OrgRoles("acme")
 	ai := r.TargetAI
-	requireStanding(t, env, r.Org.ID, r.Manager.User.ID, ai, true, false)
-	requireStanding(t, env, r.Org.ID, r.Admin.User.ID, ai, true, true)
+	requireStanding(t, env, r.Org.ID, r.Manager.User.ID, ai, true, true)
+	requireStanding(t, env, r.Org.ID, r.Instructor.User.ID, ai, true, false)
+	requireStanding(t, env, r.Org.ID, r.Admin.User.ID, ai, false, true)
 	requireStanding(t, env, r.Org.ID, r.Peer.User.ID, ai, false, false)
 	host := r.Manager.Token(dto.TokenKindAgent, "laptop")
 	dial := func() *testkit.AgentConn {
@@ -50,7 +51,7 @@ func TestAManagerEndsALiveSession(t *testing.T) {
 	d := &deletion{env: env, roles: r}
 	for _, c := range []matrixCase{
 		{"peer", http.StatusForbidden}, {"target", http.StatusForbidden}, {"member", http.StatusForbidden},
-		{"inviter", http.StatusForbidden}, {"guest", http.StatusForbidden},
+		{"admin", http.StatusForbidden},
 		{"outsider", http.StatusNotFound}, {"instance_admin", http.StatusNotFound},
 		{"anonymous", http.StatusUnauthorized}, {"agent token", http.StatusForbidden}, {"the AI itself", http.StatusForbidden},
 	} {
@@ -67,21 +68,22 @@ func TestAManagerEndsALiveSession(t *testing.T) {
 	requireAIIntact(t, env, ai, r.Org.ID)
 
 	live = dial() // the AI may connect again: ending a session does not delete or ban it
-	r.Admin.Delete(sessionPath(ai)).RequireStatus(http.StatusNoContent)
-	requireEnded(t, live, handleOf(t, r.Admin))
+	r.Instructor.Delete(sessionPath(ai)).RequireStatus(http.StatusNoContent)
+	requireEnded(t, live, handleOf(t, r.Instructor))
 
-	r.Admin.Delete(sessionPath(ai)).RequireStatus(http.StatusNoContent) // nothing is live: nothing to end
-	requireRefusal(t, r.Admin.Delete(sessionPath(r.Member.User.ID)), http.StatusNotFound)
-	requireRefusal(t, r.Admin.Delete(sessionPath(store.NewID())), http.StatusNotFound)
+	r.Instructor.Delete(sessionPath(ai)).RequireStatus(http.StatusNoContent) // nothing is live: nothing to end
+	requireRefusal(t, r.Manager.Delete(sessionPath(r.Member.User.ID)), http.StatusNotFound)
+	requireRefusal(t, r.Manager.Delete(sessionPath(store.NewID())), http.StatusNotFound)
 }
 
-// POS-04 + POS-05: the AIs a Lead developer started are its guests, in a position it is above, so it ends their
-// live sessions, as the admin does, and Sentinel, which is not above them, cannot.
-func TestALeadEndsTheSessionsOfItsWorkers(t *testing.T) {
+// SR2-13: the host of the workers the AI lead started ends their live sessions; sam, who neither hosts nor
+// instructs them, cannot, and neither can lead, which instructs them but is no user.
+func TestSR213TheHostEndsTheSessionsOfTheWorkers(t *testing.T) {
 	w := newLeadWorld(t)
 
 	requireRefusal(t, w.sam.Delete(sessionPath(w.workers[0])), http.StatusForbidden)
-	require.NoError(t, w.live.Closed(300*time.Millisecond), "Sentinel did not end it")
+	requireRefusal(t, w.lee.Token(dto.TokenKindAgent, "laptop").AsAgent("lead").Delete(sessionPath(w.workers[0])), http.StatusForbidden)
+	require.NoError(t, w.live.Closed(300*time.Millisecond), "neither ended it")
 
 	w.lee.Delete(sessionPath(w.workers[0])).RequireStatus(http.StatusNoContent)
 	requireEnded(t, w.live, handleOf(t, w.lee))
@@ -129,29 +131,28 @@ func TestDeleteInAnOrganizationOfWhatTheCallerCannotSee(t *testing.T) {
 	require.True(t, isMember(t, env, r.Org.ID, r.Target.User.ID) && isMember(t, env, other.Org.ID, other.Target.User.ID))
 	requireAIIntact(t, env, other.TargetAI, other.Org.ID)
 
-	r.Admin.Delete(memberPath("ACME", r.Guest.User.ID)).RequireStatus(http.StatusNoContent) // the address, in another case
-	require.False(t, isMember(t, env, r.Org.ID, r.Guest.User.ID))
+	r.Admin.Delete(memberPath("ACME", r.Peer.User.ID)).RequireStatus(http.StatusNoContent) // the address, in another case
+	require.False(t, isMember(t, env, r.Org.ID, r.Peer.User.ID))
 	r.Admin.Delete(memberPath(r.Org.ID, r.Member.User.ID)).RequireStatus(http.StatusNoContent) // the id
 	require.False(t, isMember(t, env, r.Org.ID, r.Member.User.ID))
 }
 
-// AD-016: an AI is seen by its host and by the members of its organizations, an organization only by its members.
-// A host who left the organization still sees the AI it hosts there, so deleting it by its own route is refused
-// (403), but the organization is not theirs to see any more, so its route finds nothing (404). Neither deletes it.
-func TestAHostWhoLeftTheOrganizationSeesItsAIButNotTheOrganization(t *testing.T) {
+// AD-016, SR2-12, SR2-13: an AI is seen by its host and by the members of its organizations, an organization
+// only by its members. A host who left the organization still hosts the AI there: it ends its session and deletes
+// it by the AI's own route, while the organization's route finds nothing (404).
+func TestSR212AHostWhoLeftTheOrganizationStillDeletesItsAI(t *testing.T) {
 	ctx := context.Background()
 	env := testkit.New(t)
 	r := env.OrgRoles("acme")
 	hank := env.NewUser("hank")
-	env.AddMember(r.Org.ID, hank.User.ID, orgs.PermissionMember, "")
+	env.AddMember(r.Org.ID, hank.User.ID, orgs.PermissionMember)
 	ai := env.NewAIIn(hank, r.Org.ID, "ward")
 	require.NoError(t, env.App.Orgs.Leave(ctx, hank.User.ID, r.Org.ID))
 
-	requireRefusal(t, hank.Delete(agentDeletePath(ai)), http.StatusForbidden)
 	requireRefusal(t, hank.Delete(memberPath(r.Org.ID, ai)), http.StatusNotFound)
-	requireRefusal(t, hank.Delete(sessionPath(ai)), http.StatusForbidden) // sees it, and nothing in the chart makes them its manager
+	hank.Delete(sessionPath(ai)).RequireStatus(http.StatusNoContent) // nothing live, and hank manages it
 	requireAIIntact(t, env, ai, r.Org.ID)
 
-	r.Admin.Delete(agentDeletePath(ai)).RequireStatus(http.StatusNoContent)
+	hank.Delete(agentDeletePath(ai)).RequireStatus(http.StatusNoContent)
 	requireDeletedForGood(t, env, ai)
 }

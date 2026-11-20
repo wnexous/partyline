@@ -21,7 +21,7 @@ type PersonalParams struct {
 
 // CreatePersonal gives an account its own organization, in the transaction that creates the account:
 // named after it (the display name, else the username, cut to 100 characters), at the first free
-// address derived from the username, with the account as its admin holding the root position Admin, and
+// address derived from the username, with the account as its admin, and
 // it becomes the account's default organization (AD-021, ORG-04). The caller audits it, since it knows the
 // account.
 func CreatePersonal(ctx context.Context, q *db.Queries, p PersonalParams) (Membership, error) {

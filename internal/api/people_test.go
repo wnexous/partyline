@@ -3,7 +3,6 @@ package api_test
 import (
 	"bytes"
 	"context"
-	"database/sql"
 	"fmt"
 	"net/http"
 	"testing"
@@ -267,30 +266,20 @@ func TestPersonProfileFollowsTheConnector(t *testing.T) {
 	}
 }
 
-// DM-08, PEOP-04 (AD-016, which supersedes AD-013): the managers of the AI that operates a connector account
-// read the AI's platform DMs with external people and those people's profiles and avatars: the user that
-// holds a position above the AI's, and the admin of the organization whose position is above that one. They
-// belong to the AI's home organization, which is the connection's (ORG-07), so they see the account behind
-// the person too. A user with no relation to the AI finds neither the DM nor the person, an admin of the
-// instance included, and the members of the connection's organization see the person but not the AI's DM.
+// DM-08, PEOP-04 (AD-016, which supersedes AD-013), SR2-13: the managers of the AI that operates a connector
+// account read the AI's platform DMs with external people and those people's profiles and avatars: its host and
+// its user instructor. They belong to the AI's home organization, which is the connection's (ORG-07), so they
+// see the account behind the person too. A user with no relation to the AI finds neither the DM nor the person,
+// an admin of the instance included, and the members of the connection's organization see the person but not
+// the AI's DM.
 func TestManagersOfAnAIReadItsPlatformDMsAndPeople(t *testing.T) {
-	ctx := context.Background()
 	f := newPeopleFixture(t)
 	atlas := f.env.NewAIIn(f.alice, f.line, "atlas")
 	f.alice.OperateConnector(f.conn.ID, atlas)
 
-	// the chart of "line": alice holds the root Admin; dave holds Lead below it and manages Atlas, who holds Worker below him.
-	org := f.line
-	root, err := f.env.App.Store.R().GetPositionByName(ctx, db.GetPositionByNameParams{OrgID: org, Name: "Admin"})
-	require.NoError(t, err)
-	lead := f.env.AddPosition(org, "Lead", root.ID)
-	worker := f.env.AddPosition(org, "Worker", lead)
-	f.env.AddMember(org, f.dave.User.ID, orgs.PermissionMember, lead) // dave works in "line" too
-	require.NoError(t, f.env.App.Store.WithTx(ctx, func(q *db.Queries) error {
-		return q.UpdateOrgMemberPosition(ctx, db.UpdateOrgMemberPositionParams{
-			PositionID: sql.NullString{String: worker, Valid: true}, OrgID: org, Iid: atlas,
-		})
-	}))
+	// alice hosts Atlas; dave works in "line" too and instructs it.
+	f.env.AddMember(f.line, f.dave.User.ID, orgs.PermissionMember)
+	f.env.AddInstructor(atlas, f.dave.User.ID)
 
 	f.clock.Advance(time.Minute)
 	_, dm, person := f.platformDM(atlas, "5511999990003@s.whatsapp.net", "Dana", "hello Atlas")

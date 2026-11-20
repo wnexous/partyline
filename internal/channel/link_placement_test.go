@@ -9,9 +9,9 @@ import (
 	"github.com/wnexous/partyline/internal/api/dto"
 )
 
-// ORG-05, POS-07, ORG-04 (design "Error Handling Strategy"): a start the server refuses because of where it
-// would put the AI - a creator who is not in the organization (403), a position it may not give (403), an
-// organization other than the AI's home (409), an organization or position that does not exist (422) - is told
+// ORG-05, ORG-04 (design "Error Handling Strategy"): a start the server refuses because of where it would put the
+// AI - a creator who is not in the organization (403), an organization other than the AI's home (409), an
+// organization that does not exist (422) - is told
 // to the person in the server's own words, once, and not retried: asking again would be refused again. The
 // message is not the one for a rejected token or for the agent limit, which 403 and 409 mean otherwise.
 func TestLinkReportsARefusedPlacementWithoutRetrying(t *testing.T) {
@@ -23,11 +23,9 @@ func TestLinkReportsARefusedPlacementWithoutRetrying(t *testing.T) {
 		message string
 	}{
 		{"a creator who is not in the organization", Identity{Org: "acme"}, 403, dto.ErrorCodeForbidden, "you are not a member of that organization"},
-		{"a position the creator may not give", Identity{Position: "Director"}, 403, dto.ErrorCodeForbidden, "that position is not below your own"},
-		{"an organization and a position", Identity{Org: "acme", Position: "Director", Parent: "@lead"}, 403, dto.ErrorCodeForbidden, "that position is not below the parent AI's own"},
+		{"an organization and a parent", Identity{Org: "acme", Parent: "@lead"}, 403, dto.ErrorCodeForbidden, "the parent AI is not a member of that organization"},
 		{"an organization other than the AI's home", Identity{Org: "globex"}, 409, dto.ErrorCodeOrganizationMismatch, "this AI belongs to Acme (acme): an AI does not move to another organization"},
 		{"an organization that does not exist", Identity{Org: "nope"}, 422, dto.ErrorCodeOrganizationRequired, "no organization has that slug or id: partyline orgs lists yours"},
-		{"a position that does not exist", Identity{Position: "Nope"}, 422, dto.ErrorCodePositionUnknown, "the organization has no position with that name: partyline orgs <slug> lists them"},
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {

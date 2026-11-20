@@ -221,8 +221,8 @@ type Profile struct {
 	// Memberships are the organizations the caller shares with the intelligence (all of its own when the
 	// caller is it), by name; a person has none (OMEM-03, CHART-02).
 	Memberships []Membership
-	// CanEndSession tells whether the caller may end the AI's live session: it manages the AI in an
-	// organization they share (POS-04). Always false for users and people.
+	// CanEndSession tells whether the caller may end the AI's live session: it manages the AI (SR2-13).
+	// Always false for users and people.
 	CanEndSession bool
 }
 
@@ -242,9 +242,7 @@ const (
 type Membership struct {
 	Organization db.Organization
 	Permission   orgs.Permission
-	// PositionID and PositionName are empty for a member with no position.
-	PositionID, PositionName string
-	// CanDelete tells whether the caller may delete the intelligence in the organization (POS-05) and
+	// CanDelete tells whether the caller may delete the intelligence in the organization (SR2-12) and
 	// DeleteEffect what that would do to it (POS-06).
 	CanDelete    bool
 	DeleteEffect DeleteEffect
@@ -254,18 +252,21 @@ type Membership struct {
 type AgentInfo struct {
 	db.Agent
 	// Owner is the intelligence of the user who hosts the AI: the user whose computer and token run it (AD-019).
+	// The host instructs and manages the AI (SR2-07, SR2-13).
 	Owner db.Intelligence
 	// Home is the canonical home folder of the machine the AI lives on, empty when unknown. The machine
 	// itself is not shown (AD-022); the home folder only lets the folder read "~".
 	Home string
-	// Level is the caller's level on the AI: manage for whoever manages it in an organization they share
-	// with it, and the AI itself; use for whoever only sees it.
+	// Level is the caller's level on the AI: manage for whoever manages it (its host and its user
+	// instructors, SR2-13) and the AI itself; use for whoever only sees it.
 	Level access.Level
-	// InstructedBy are the identities whose messages the AI treats as trusted: its managers in its home
-	// organization, nearest first (POS-10, ST-06). Shown only to whoever shares that organization with the AI,
-	// and to the AI itself: InstructedByShown is false for anyone else, and the list is then empty.
-	InstructedBy      []db.Intelligence
-	InstructedByShown bool
+	// InstructedBy are the identities that instruct the AI besides its host, oldest link first (SR2-06,
+	// SR2-10): with the host, the ones whose messages it treats as trusted. Shown to the host, the AI itself,
+	// whoever manages it and whoever shares its home organization: InstructedByShown is false for anyone else,
+	// and the list is then empty. CanEditInstructors says the caller is the host, who adds and removes them.
+	InstructedBy       []db.Intelligence
+	InstructedByShown  bool
+	CanEditInstructors bool
 }
 
 // profile builds the profile of d as the caller reads it.
@@ -318,12 +319,20 @@ func (s *Service) profile(ctx context.Context, p authn.Principal, d db.GetIntell
 }
 
 // memberships fills the organizations the viewer shares with the profile's intelligence (all of its own when
-// the viewer is it), with what the viewer may do about each (POS-05, POS-06), and whether the viewer may end the
-// AI's session because they manage it in one of them (POS-04). Each chart is read once.
+// the viewer is it), with what the viewer may do about each (SR2-12, POS-06), and for an AI whether the viewer
+// may end its session (SR2-13) and who instructs it (SR2-10).
 func (s *Service) memberships(ctx context.Context, viewer string, out *Profile) error {
+	z := s.az.Authz().Session()
+	if out.Agent != nil {
+		managed, err := z.Manages(ctx, viewer, out.ID)
+		if err != nil {
+			return err
+		}
+		out.CanEndSession = managed
+	}
 	q := s.store.R()
 	rows, err := q.ListOrgsOfMember(ctx, out.ID)
-	if err != nil || len(rows) == 0 {
+	if err != nil {
 		return err
 	}
 	shared := map[string]bool{}
@@ -344,52 +353,45 @@ func (s *Service) memberships(ctx context.Context, viewer string, out *Profile) 
 	if out.Agent != nil {
 		home = out.Agent.OrgID.String
 	}
-	z := s.az.Authz().Session()
 	for _, r := range rows {
 		if !shared[r.Organization.ID] {
 			continue
 		}
-		chart, err := z.Chart(ctx, r.Organization.ID)
+		roster, err := z.Roster(ctx, r.Organization.ID)
 		if err != nil {
 			return err
 		}
 		m := Membership{
-			Organization: r.Organization, Permission: orgs.Permission(r.Permission), PositionID: r.PositionID,
-			PositionName: chart.Positions[r.PositionID].Name, CanDelete: chart.CanDelete(viewer, out.ID), DeleteEffect: DeleteEffectRemove,
+			Organization: r.Organization, Permission: orgs.Permission(r.Permission),
+			CanDelete: roster.CanRemove(viewer, out.ID), DeleteEffect: DeleteEffectRemove,
 		}
 		if out.Role == RoleAI && r.Organization.ID == home {
 			m.DeleteEffect = DeleteEffectDelete
-		}
-		if out.Role == RoleAI && chart.Manages(viewer, out.ID) {
-			out.CanEndSession = true
-		}
-		if out.Agent != nil && r.Organization.ID == home {
-			if err := s.instructedBy(ctx, chart, out.Agent); err != nil {
+			if m.CanDelete, err = z.CanDeleteAI(ctx, viewer, out.ID); err != nil {
 				return err
 			}
 		}
 		out.Memberships = append(out.Memberships, m)
 	}
+	if out.Agent != nil && (viewer == out.Agent.OwnerID || viewer == out.ID || shared[home] || out.CanEndSession) {
+		return s.instructedBy(ctx, viewer, out.Agent)
+	}
 	return nil
 }
 
-// instructedBy fills the identities the AI trusts from the chart of its home organization (ST-06): the ones
-// Chart.ManagersOf lists, the same ones Authz.Trusts answers true for.
-func (s *Service) instructedBy(ctx context.Context, chart *orgs.Chart, a *AgentInfo) error {
-	ids := chart.ManagersOf(a.ID)
-	a.InstructedBy, a.InstructedByShown = make([]db.Intelligence, 0, len(ids)), true
-	if len(ids) == 0 {
-		return nil
-	}
-	rows, err := s.Rows(ctx, ids)
+// instructedBy fills the identities that instruct the AI besides its host (SR2-06, SR2-10): the ones
+// Authz.Trusts answers true for, with the host (AgentInfo.Owner). Whether the viewer may change them is
+// whether it is the host.
+func (s *Service) instructedBy(ctx context.Context, viewer string, a *AgentInfo) error {
+	list, err := orgs.ListInstructors(ctx, s.store.R(), a.ID)
 	if err != nil {
 		return err
 	}
-	for _, id := range ids {
-		if row, ok := rows[id]; ok {
-			a.InstructedBy = append(a.InstructedBy, row)
-		}
+	a.InstructedBy, a.InstructedByShown = make([]db.Intelligence, len(list)), true
+	for i, in := range list {
+		a.InstructedBy[i] = in.Intelligence
 	}
+	a.CanEditInstructors = viewer != "" && viewer == a.OwnerID
 	return nil
 }
 
@@ -489,17 +491,16 @@ func (s *Service) rights(ctx context.Context, p authn.Principal, d db.GetIntelli
 	}
 	switch Role(d.Role) {
 	case RoleUser:
-		// Every user sees every user (the directory); whoever manages one edits it.
-		managed, err := s.az.Authz().ManagesAnywhere(ctx, iid, id)
-		return true, managed, err
+		// Every user sees every user (the directory); a user edits only their own profile.
+		return true, false, nil
 	case RoleAI:
-		// An AI is seen by the people of the organizations it belongs to, and by the user who hosts it. Hosting
-		// is sight, never management.
+		// An AI is seen by the people of the organizations it belongs to, by its host and by its instructors;
+		// its host and its user instructors edit it (SR2-13).
 		sees, err := s.az.CanSeeAI(ctx, p, id)
 		if err != nil || !sees {
 			return false, false, err
 		}
-		managed, err := s.az.Authz().ManagesAnywhere(ctx, iid, id)
+		managed, err := s.az.Authz().Manages(ctx, iid, id)
 		return true, managed, err
 	case RolePerson:
 		// The members of the connection's organization see its people (PEOP-04, AD-016); a user who can

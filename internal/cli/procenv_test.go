@@ -38,9 +38,9 @@ func (f fakeProc) add(pid, ppid int, comm string, env []string) {
 }
 
 // AID-07, AD-020: only the launcher variables are taken from an environment block - the four of a session and the
-// three PARTYLINE_LAUNCH_* ones that carry what it asked for (--org, --position, --parent); empty values and
-// every other variable (URL, token, PATH, the v0.3 session and project ones, and the user-facing PARTYLINE_ORG,
-// PARTYLINE_POSITION and PARTYLINE_PARENT, which the launcher consumes) are left out.
+// PARTYLINE_LAUNCH_* ones that carry what it asked for (--org, --parent); empty values and every other variable
+// (URL, token, PATH, the v0.3 session and project ones, the user-facing PARTYLINE_ORG, PARTYLINE_POSITION and
+// PARTYLINE_PARENT, and the PARTYLINE_LAUNCH_POSITION of an older launcher, SR2-05) are left out.
 func TestLauncherEnvironKeepsOnlyLauncherVariables(t *testing.T) {
 	block := []byte("PATH=/usr/bin\x00PARTYLINE_FOLDER=/work/my notes\x00PARTYLINE_TOKEN=pl_agent_secret\x00" +
 		"PARTYLINE_URL=https://pl.example\x00PARTYLINE_HARNESS=pi\x00PARTYLINE_TAKEOVER=1\x00PARTYLINE_SESSION=pl-old\x00" +
@@ -49,7 +49,7 @@ func TestLauncherEnvironKeepsOnlyLauncherVariables(t *testing.T) {
 		"PARTYLINE_ORG=globex\x00PARTYLINE_POSITION=Director\x00PARTYLINE_PARENT=@boss\x00PARTYLINE_LAUNCH_X=no\x00")
 	require.Equal(t, map[string]string{
 		"PARTYLINE_FOLDER": "/work/my notes", "PARTYLINE_HARNESS": "pi", "PARTYLINE_TAKEOVER": "1",
-		"PARTYLINE_LAUNCH_ORG": "acme", "PARTYLINE_LAUNCH_POSITION": "Lead developer", "PARTYLINE_LAUNCH_PARENT": "@lead",
+		"PARTYLINE_LAUNCH_ORG": "acme", "PARTYLINE_LAUNCH_PARENT": "@lead",
 	}, launcherEnviron(block))
 	require.Empty(t, launcherEnviron([]byte("PARTYLINE_LAUNCH_ORG=\x00PARTYLINE_LAUNCH_POSITION=  \x00")), "empty values are left out")
 	require.Empty(t, launcherEnviron(nil))
@@ -165,15 +165,14 @@ func TestStrippedToolsOnlyChannelRecoversLauncherVariables(t *testing.T) {
 	require.Equal(t, []string{"/work/one", "/work/two"}, e.folders(t), "one AI per session folder")
 }
 
-// ORG-04, POS-07 (AD-020): a harness may start its MCP servers with a filtered environment, so what the session asked
-// for with --org and --position reaches the tools-only channel through the launched ancestor
-// (PARTYLINE_LAUNCH_*), like the folder does: the AI it registers is created in that organization holding that
-// position. The ancestor's user-facing PARTYLINE_ORG, which the launcher consumes, is not what it sends.
+// ORG-04 (AD-020): a harness may start its MCP servers with a filtered environment, so what the session asked for
+// with --org reaches the tools-only channel through the launched ancestor (PARTYLINE_LAUNCH_*), like the folder
+// does: the AI it registers is created in that organization. The ancestor's user-facing PARTYLINE_ORG, which the
+// launcher consumes, is not what it sends, and a stale PARTYLINE_LAUNCH_POSITION is ignored (SR2-05).
 func TestStrippedToolsOnlyChannelRecoversThePlacement(t *testing.T) {
 	e := newChannelEnv(t)
 	acme, err := e.env.App.Orgs.Create(context.Background(), e.alice.User.ID, "Acme")
 	require.NoError(t, err)
-	e.env.AddPosition(acme.ID, "Worktrees", acme.PositionID)
 
 	launched := map[string]string{
 		"PARTYLINE_FOLDER": "/work/placed", "PARTYLINE_HARNESS": "pi",
@@ -187,7 +186,7 @@ func TestStrippedToolsOnlyChannelRecoversThePlacement(t *testing.T) {
 	prof := e.registered(t, "/work/placed")
 	require.Len(t, prof.Memberships, 1)
 	got := prof.Memberships[0]
-	require.Equal(t, []any{acme.ID, "acme", "member", "Worktrees"}, []any{got.OrgID, got.OrgSlug, got.Permission, got.PositionName})
+	require.Equal(t, []any{acme.ID, "acme", "member"}, []any{got.OrgID, got.OrgSlug, got.Permission})
 }
 
 // launch-only: without a launched ancestor and without PARTYLINE_HARNESS a tools-only channel

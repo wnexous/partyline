@@ -165,7 +165,7 @@ type Agent struct {
 	// Home is the home folder of the host's machine the AI lives on, as the machine reported it; empty
 	// when unknown. It lets a folder read "~/x".
 	Home string
-	// Level is manage for whoever manages the agent in an organization they share with it, use for
+	// Level is manage for whoever manages the agent (its host or a user instructor), use for
 	// whoever only sees it.
 	Level access.Level
 	// Online tells whether the agent has a live connection.
@@ -221,8 +221,8 @@ func (r *Registry) AllowNewChat(agentID string) bool { return r.newChats.allow(a
 // messages within PostWindow (TOOL-08).
 func (r *Registry) AllowPost(agentID string) bool { return r.posts.allow(agentID) }
 
-// authorize requires the user to hold want on the agent (AD-016): use is seeing it - hosting it, or sharing
-// an organization with it - and manage is managing it in an organization they share with it (POS-03).
+// authorize requires the user to hold want on the agent (AD-016): use is seeing it - hosting it, sharing an
+// organization with it or instructing it - and manage is managing it: hosting it or instructing it (SR2-13).
 // No access is access.ErrNotFound; use without manage is access.ErrForbidden.
 func (r *Registry) authorize(ctx context.Context, p authn.Principal, agentID string, want access.Level) (access.Level, error) {
 	if p.Kind != authn.KindUser {
@@ -236,7 +236,7 @@ func (r *Registry) authorize(ctx context.Context, p authn.Principal, agentID str
 		return access.None, access.ErrNotFound
 	}
 	l := dto.LevelUse
-	managed, err := r.az.Authz().ManagesAnywhere(ctx, p.UserID, agentID)
+	managed, err := r.az.Authz().Manages(ctx, p.UserID, agentID)
 	if err != nil {
 		return access.None, err
 	}
@@ -275,8 +275,8 @@ func (r *Registry) view(a db.Agent, ownerUsername, ownerDisplay, handle, profile
 	}
 }
 
-// ListVisible returns the agents the user hosts plus those of the organizations they belong to, by name,
-// each at manage when the user manages it in an organization they share with it and at use otherwise.
+// ListVisible returns the agents the user hosts plus those of the organizations they belong to and those they
+// instruct, by name, each at manage when the user manages it (SR2-13) and at use otherwise.
 func (r *Registry) ListVisible(ctx context.Context, p authn.Principal) ([]Agent, error) {
 	if p.Kind != authn.KindUser {
 		return nil, access.ErrForbidden
@@ -285,40 +285,20 @@ func (r *Registry) ListVisible(ctx context.Context, p authn.Principal) ([]Agent,
 	if err != nil {
 		return nil, err
 	}
-	managed, err := r.managedBy(ctx, p.UserID)
-	if err != nil {
-		return nil, err
-	}
+	z := r.az.Authz().Session()
 	out := make([]Agent, 0, len(rows))
 	for _, row := range rows {
 		l := dto.LevelUse
-		if managed[row.Agent.ID] {
+		managed, err := z.Manages(ctx, p.UserID, row.Agent.ID)
+		if err != nil {
+			return nil, err
+		}
+		if managed {
 			l = dto.LevelManage
 		}
 		a := r.view(row.Agent, row.OwnerUsername, row.OwnerDisplayName, row.Handle, row.ProfileName, row.ProfileAvatar, l)
 		a.OrgName, a.OrgSlug, a.Home = row.OrgName, row.OrgSlug, row.MachineHome
 		out = append(out, a)
-	}
-	return out, nil
-}
-
-// managedBy is the set of identities the user manages in the organizations they belong to (POS-03),
-// reading the chart of each organization once.
-func (r *Registry) managedBy(ctx context.Context, iid string) (map[string]bool, error) {
-	memberships, err := r.store.R().ListOrgsOfMember(ctx, iid)
-	if err != nil {
-		return nil, err
-	}
-	z := r.az.Authz().Session()
-	out := map[string]bool{}
-	for _, m := range memberships {
-		chart, err := z.Chart(ctx, m.Organization.ID)
-		if err != nil {
-			return nil, err
-		}
-		for id := range chart.ManagedBy(iid) {
-			out[id] = true
-		}
 	}
 	return out, nil
 }
@@ -333,7 +313,7 @@ type AgentUpdate struct {
 	Fixed *bool
 }
 
-// Update changes the agent's description or display name; requires managing it (POS-04). An
+// Update changes the agent's description or display name; requires managing it (SR2-13). An
 // invalid field changes nothing (422).
 func (r *Registry) Update(ctx context.Context, p authn.Principal, agentID string, u AgentUpdate) (Agent, error) {
 	if _, err := r.authorize(ctx, p, agentID, dto.LevelManage); err != nil {
@@ -396,14 +376,14 @@ func (r *Registry) membersChanged(roomIDs []string) {
 	}
 }
 
-// Delete deletes the AI for good in its home organization (POS-05, POS-06): the right is the organization's
+// Delete deletes the AI for good (SR2-12, POS-06): its host or an admin of its home organization may
 // (authorizeDelete), decided in the transaction that deletes. The AI goes with its memberships in every
 // organization and room, and its cursors. Its direct messages go with it (DM-08): the intelligence's
 // deletion cascades to every room that names it as a participant. The platform queue goes too (its rows cascade,
 // CID-24), and the connections the agent operated have no operator afterwards: the bus tells the connector
 // manager, which stops them and shows what to do (CID-02). The AI that is the only admin of an organization is
 // not deleted (orgs.ErrLastAdmin, OMEM-05). Afterwards its live session ends as that of a deleted AI and every
-// organization it belonged to is told its chart changed: the AIs and guests it created or invited lose that link.
+// organization it belonged to is told it changed.
 //
 // The commit is the end of everything that can fail: once the row is gone the delete has happened, and what
 // follows (afterDelete) is best effort that is logged and never returned, so a delete that took effect answers

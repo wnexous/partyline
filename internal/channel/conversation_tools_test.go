@@ -195,7 +195,7 @@ func TestToolDefinitionsFollowOrganizations(t *testing.T) {
 	org, ok := schema["properties"].(map[string]any)["organization"].(map[string]any)
 	require.True(t, ok, "create_group lists organization")
 	require.Equal(t, "string", org["type"])
-	require.Equal(t, "optional: the address (slug) of the organization to create the group in, which you must be a member of and not a guest; your home organization when left out", org["description"])
+	require.Equal(t, "optional: the address (slug) of the organization to create the group in, which you must be a member of; your home organization when left out", org["description"])
 	require.Equal(t, []any{"name", "members"}, schema["required"], "the organization is optional")
 	require.Equal(t, "Create a group in an organization, with you and the given members. You are added automatically; everyone else is a member only when listed, and each must belong to the organization. "+
 		"If any member cannot be added nothing is created and the error lists the refused ones with the reason (not_found: unknown, disabled or not one you can see; person: people from chats cannot be members; not_org_member: not a member of the organization).",
@@ -315,9 +315,9 @@ func TestToolSendMessageToRefusalsFollowWhatTheAISees(t *testing.T) {
 	require.Contains(t, refused("@"+personHandle), "no_route_to_person")
 	require.Empty(t, c.listDMs(s), "a refused call creates no DM")
 
-	c.env.AddMember(c.bob.PersonalOrg().ID, c.alice.User.ID, orgs.PermissionMember, "")
+	c.env.AddMember(c.bob.PersonalOrg().ID, c.alice.User.ID, orgs.PermissionMember)
 	refused("@sage") // alice, its owner, in sage's organization gives the AI no reach
-	c.env.AddMember(c.bob.PersonalOrg().ID, c.agentID, orgs.PermissionMember, "")
+	c.env.AddMember(c.bob.PersonalOrg().ID, c.agentID, orgs.PermissionMember)
 	text, isErr := s.call("send_message", toolArgs("to", "@sage", "text", "now visible"))
 	require.False(t, isErr, text)
 	dms := c.listDMs(s)
@@ -483,7 +483,7 @@ func TestToolCreateGroupRefusesAndCreatesNothing(t *testing.T) {
 	require.Empty(t, c.conversations(c.alice), "nothing was created")
 	require.Len(t, c.listRooms(s), rooms)
 
-	c.env.AddMember(c.alice.PersonalOrg().ID, c.sage, orgs.PermissionMember, "") // sage joins the organization of builder and helper
+	c.env.AddMember(c.alice.PersonalOrg().ID, c.sage, orgs.PermissionMember) // sage joins the organization of builder and helper
 	text, isErr = s.call("create_group", toolArgs("name", "Ops", "members", []string{"@alice", "@sage", c.helper}))
 	require.False(t, isErr, text)
 	group := decodeText[dto.CreatedGroup](t, text)
@@ -820,8 +820,8 @@ func TestChannelTellsTheSessionWhoItIsOnce(t *testing.T) {
 	s.handshake()
 
 	n := s.identityNotice()
-	require.Equal(t, `You are Atlas (@atlas), an AI of alice (alice). Messages marked trusted="true" come from the identities that manage you: Alice Prado (@alice-p).`, n.Content,
-		"alice created the AI in her own organization, where she is the Admin: she is the one who manages it")
+	require.Equal(t, `You are Atlas (@atlas), an AI of alice (alice). Messages from Alice Prado (@alice-p) (your host) are marked trusted="true".`, n.Content,
+		"alice hosts the AI: hers are the trusted messages (SR2-07)")
 	require.Equal(t, map[string]string{
 		"type": "notice", "reason": "identity", "author": "Partyline", "author_kind": "system",
 		"sender_name": "", "trusted": "false", "kind": "system",
@@ -980,7 +980,7 @@ func requireGreenSquare(t *testing.T, body []byte) {
 func TestToolSendMessageToASessionAddress(t *testing.T) {
 	c := newCast(t)
 	s := c.connected(c.options())
-	c.env.AddMember(c.bob.PersonalOrg().ID, c.agentID, orgs.PermissionMember, "")
+	c.env.AddMember(c.bob.PersonalOrg().ID, c.agentID, orgs.PermissionMember)
 
 	text, isErr := s.call("send_message", toolArgs("to", "@sage:wt", "text", "please look"))
 	require.False(t, isErr, text)

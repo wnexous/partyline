@@ -54,7 +54,7 @@ func joinOrgOf(t *testing.T, env *testkit.Env, roomID string, u *testkit.Client,
 	require.NoError(t, err)
 	switch {
 	case !ok:
-		env.AddMember(orgID, u.User.ID, perm, "")
+		env.AddMember(orgID, u.User.ID, perm)
 	case m.Permission != perm:
 		require.NoError(t, env.App.Store.WithTx(ctx, func(q *db.Queries) error {
 			return q.UpdateOrgMemberPermission(ctx, db.UpdateOrgMemberPermissionParams{Permission: string(perm), OrgID: orgID, Iid: u.User.ID})
@@ -69,7 +69,7 @@ func addToRoom(t *testing.T, env *testkit.Env, manager *testkit.Client, roomID s
 	orgID := roomOrg(t, env, roomID)
 	if _, ok, err := env.App.Authz.Member(context.Background(), orgID, u.User.ID); err != nil || !ok {
 		require.NoError(t, err)
-		env.AddMember(orgID, u.User.ID, orgs.PermissionMember, "")
+		env.AddMember(orgID, u.User.ID, orgs.PermissionMember)
 	}
 	return testkit.Decode[dto.RoomMember](manager.Post("/api/v1/rooms/"+roomID+"/members",
 		dto.AddMemberRequest{Kind: dto.MemberKindUser, MemberID: u.User.ID}).RequireStatus(http.StatusCreated))
@@ -77,19 +77,20 @@ func addToRoom(t *testing.T, env *testkit.Env, manager *testkit.Client, roomID s
 
 // groupWant is the expected status of a route on a group by role: the creator (the role "member" of
 // testkit.OrgRoles), an admin of the organization, the people in the room (the roles "target" and
-// "guest") and everybody else (a manager above them, a peer, an inviter, an outsider, an instance admin).
+// "peer") and everybody else (the host of an AI and its instructor, an outsider, an instance admin).
 func groupWant(creator, admin, inRoom, other int) map[string]int {
 	return map[string]int{
-		"member": creator, "admin": admin, "target": inRoom, "guest": inRoom,
-		"manager": other, "peer": other, "inviter": other, "outsider": other, "instance_admin": other,
+		"member": creator, "admin": admin, "target": inRoom, "peer": inRoom,
+		"manager": other, "instructor": other, "outsider": other, "instance_admin": other,
 	}
 }
 
-// dmWant is the expected status of a route on the DM between "target" and the AI "manager" created, by
-// role: the participant, the managers of the AI (its creator and the admin above it) and everybody else.
+// dmWant is the expected status of a route on the DM between "target" and the AI "manager" hosts, by role:
+// the participant, the managers of the AI (its host and its user instructor, SR2-13) and everybody else, the
+// admin of the organization included.
 func dmWant(participant, viewer, other int) map[string]int {
 	return map[string]int{
-		"target": participant, "manager": viewer, "admin": viewer,
-		"member": other, "peer": other, "inviter": other, "guest": other, "outsider": other, "instance_admin": other,
+		"target": participant, "manager": viewer, "instructor": viewer,
+		"admin": other, "member": other, "peer": other, "outsider": other, "instance_admin": other,
 	}
 }

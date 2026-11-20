@@ -46,8 +46,8 @@ type Deps struct {
 	Conversations *conversations.Service
 	// Schedules serves the AIs' scheduled heartbeats (HB-01..HB-12).
 	Schedules *schedules.Service
-	// Orgs is the organization use cases: organizations, their chart, members, positions and
-	// invitations.
+	// Orgs is the organization use cases: organizations, their members and invitations, and the
+	// instructors of an AI.
 	Orgs *orgs.Service
 	// Connectors manages connectors and their chats.
 	Connectors *connectors.Service
@@ -82,7 +82,7 @@ type Deps struct {
 	// agent gateway. Without it no secret can be given (503).
 	Secrets SecretDeliverer
 	// Trust opens the trust of each request that tells an AI what it may trust: the history tool and the
-	// room's instructions (POS-10). Without it nothing is trusted.
+	// room's instructions (SR2-07). Without it nothing is trusted.
 	Trust delivery.TrustSource
 	// Push serves the Web Push routes: the key, the subscriptions and the test notification
 	// (PUSH-02, PUSH-03, PUSH-04, PUSH-05, PUSH-15).
@@ -127,10 +127,8 @@ func (s *server) routes(mux *http.ServeMux) {
 	s.authRoutes(mux)
 	s.adminRoutes(mux)
 	s.orgRoutes(mux)
-	s.positionRoutes(mux)
 	s.orgMemberRoutes(mux)
 	s.orgInvitationRoutes(mux)
-	s.orgChartRoutes(mux)
 	s.roomRoutes(mux)
 	s.reactionRoutes(mux)
 	s.conversationRoutes(mux)
@@ -138,6 +136,7 @@ func (s *server) routes(mux *http.ServeMux) {
 	s.contactRoutes(mux)
 	s.avatarRoutes(mux)
 	s.agentRoutes(mux)
+	s.instructorRoutes(mux)
 	s.identityDeleteRoutes(mux)
 	s.agentAPIRoutes(mux)
 	s.agentConversationRoutes(mux)
@@ -279,10 +278,6 @@ func mapError(err error) error {
 		return he
 	case errors.Is(err, orgs.ErrSlugTaken):
 		return httpx.NewError(http.StatusConflict, dto.ErrorCodeConflict, "slug already taken")
-	case errors.Is(err, orgs.ErrCycle):
-		return httpx.NewError(http.StatusConflict, dto.ErrorCodePositionCycle, "a position cannot be moved below itself or one of its descendants")
-	case errors.Is(err, orgs.ErrPositionNameTaken):
-		return httpx.NewError(http.StatusConflict, dto.ErrorCodeConflict, "position name already taken")
 	case errors.Is(err, access.ErrNotFound):
 		return httpx.NewError(http.StatusNotFound, dto.ErrorCodeNotFound, "not found")
 	case errors.Is(err, avatars.ErrInvalid):

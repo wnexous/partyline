@@ -52,7 +52,7 @@ func IntelligenceOf(ctx context.Context, q *db.Queries, agentID string) (db.Inte
 // Delivered describes a message as one agent sees it.
 type Delivered struct {
 	Text string
-	// Trusted is the message's trust for this agent (POS-10).
+	// Trusted is the message's trust for this agent (SR2-07).
 	Trusted bool
 	// DM is set when the message was posted in a direct message: it is addressed to the AI.
 	DM bool
@@ -165,7 +165,7 @@ func LoadFacts(ctx context.Context, q *db.Queries, v db.MessageView, roomKind st
 }
 
 // WantedBy applies Wants for the AI agentID with prefs. It also reports whether the message is
-// trusted by that AI (POS-10), which the trusted delivery mode needs and the frame that carries the
+// trusted by that AI (SR2-07), which the trusted delivery mode needs and the frame that carries the
 // message tells. A message with no author is not trusted and asks nobody.
 func (f Facts) WantedBy(ctx context.Context, trust Trust, agentID string, prefs MemberPrefs) (wanted, trusted bool, err error) {
 	if f.AuthorIID != "" {

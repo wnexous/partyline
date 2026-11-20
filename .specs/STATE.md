@@ -174,7 +174,7 @@
   - A user's AIs no longer read each other's DMs, and they no longer share the owner's reach.
 - **Scope**: access, orgs, rooms, conversations, agents, intelligences, connectors, identities, live, web-app, store.
 - **Date**: 2026-10-23
-- **Status**: active
+- **Status**: active; amended 2026-11-19 by simple identity release 2 (SR2-01..SR2-04): no `guest` permission, no positions or chart, only admins invite
 - **Supersedes**:
   - AD-005 (grants and presets);
   - AD-013 (use grantees read an AI's DMs).
@@ -195,7 +195,7 @@
 - **Trade-off**: A dispatch loads each involved home organization's chart once. If profiling shows a cost, a version-checked cache (`organizations.chart_version`) is the follow-up.
 - **Scope**: orgs, access, delivery, agents, intelligences, web chart.
 - **Date**: 2026-10-23
-- **Status**: active
+- **Status**: superseded 2026-11-19 by simple identity release 2 (SR2-06, SR2-07, SR2-13): no chart; `orgs.Authz` reads each AI's host and `agent_instructors` (`orgs.Links`), memoized per operation as before
 
 ### AD-018
 - **Decision**: `trusted=true` on anything delivered to an AI means its author manages that AI in the AI's home organization (POS-10).
@@ -206,7 +206,7 @@
 - **Trade-off**: Sibling AIs of one user and peers in the chart are untrusted; after the upgrade a user's AIs stop trusting each other. v0.5 CLIs still describe trust as "your owner" until updated.
 - **Scope**: delivery, agents (gateway, pending, history), connectors (inbound), channel.
 - **Date**: 2026-10-23
-- **Status**: active
+- **Status**: active; amended 2026-11-19 by simple identity release 2 (SR2-07): the author must be the AI's host or one of its instructors, whatever organizations say
 - **Supersedes**:
   - the trust rule of AD-006 (content stays data);
   - AD-014 (the owner's own account is no longer a trust source; `from_self` stays untrusted, as AD-015 already said).
@@ -240,7 +240,7 @@
 - **Trade-off**: v0.5 CLIs cannot choose an organization or position and show stale trust wording.
 - **Scope**: cli, channel, agents, api.
 - **Date**: 2026-10-23
-- **Status**: active
+- **Status**: active; amended 2026-11-19 by simple identity release 2 (SR2-05, SR2-09): `X-Partyline-Position` and `--position` are gone (the server ignores the header, the launcher refuses the flag); `--parent` also adds an instructor; the welcome frame has `instructors`, `managers` is deprecated
 
 ### AD-021
 - **Decision**: Every account has a personal organization: on upgrade (OUPG-01) and when an account is created.
@@ -251,7 +251,7 @@
 - **Trade-off**: An instance with many users has as many organizations; renaming is free, and empty ones can be deleted.
 - **Scope**: users, orgs, cli.
 - **Date**: 2026-10-23
-- **Status**: active
+- **Status**: active; amended 2026-11-19 by simple identity release 2 (SR2-04): no root position
 
 ### AD-022
 - **Decision**: Machines stop being a visible concept.
@@ -375,7 +375,7 @@
 - **Trade-off**: A creator can no longer be removed from managing an AI by moving positions; only an explicit transfer would do that. Moving an AI can no longer make anyone lose management through the creator link, so `MovePreview` reports fewer losses.
 - **Scope**: orgs (`Chart.answersTo`, the comment on `Chart.Manages`), the organizations spec (POS-03), docs (`agents.md`, `api.md`), tests. No API or schema change.
 - **Date**: 2026-10-27
-- **Status**: active
+- **Status**: superseded 2026-11-19 by simple identity release 2 (SR2-07, SR2-08): the creator gives nothing by itself; the upgrade made each creator up the chain an instructor
 - **Amends**: the POS-03 rule (a creator manages an AI even when the AI holds a position). AD-017's chart computation is otherwise unchanged.
 
 ### AD-030

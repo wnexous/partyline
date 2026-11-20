@@ -50,22 +50,24 @@ func storeDM(t *testing.T, env *testkit.Env, ownerID, a, b string) string {
 var dmFixtureCounter atomic.Int32
 
 // dmRoomSetup returns the setup of the DM matrix: a fresh DM between the role "target" and a new AI that
-// the role "manager" created and hosts, like the AI of testkit.OrgRoles (a pair has one DM, so every
-// setup needs its own AI), with a message of the participant so that reading has something to return.
+// the role "manager" created and hosts and the role "instructor" instructs, like the AI of testkit.OrgRoles (a
+// pair has one DM, so every setup needs its own AI), with a message of the participant so that reading has
+// something to return.
 func dmRoomSetup(env *testkit.Env, roles *testkit.OrgRoles) func(t *testing.T) map[string]string {
 	return func(t *testing.T) map[string]string {
 		target, manager := *roles.Target, *roles.Manager
 		target.T, manager.T = t, t
 		ai := env.NewAIIn(&manager, roles.Org.ID, fmt.Sprintf("dm-ai-%d", dmFixtureCounter.Add(1)))
+		env.AddInstructor(ai, roles.Instructor.User.ID)
 		room := storeDM(t, env, target.User.ID, target.User.ID, ai)
 		target.Post("/api/v1/rooms/"+room+"/messages", dto.PostMessageRequest{Text: "hi"}).RequireStatus(http.StatusCreated)
 		return map[string]string{"room": room}
 	}
 }
 
-// DM-08, AD-011, AD-016 over HTTP: the participant posts; whoever manages the AI in its home organization
-// (the manager that created it, and the admin whose position is above the creator's) only views;
-// everybody else - a peer, a member, an inviter, a guest, an outsider, an instance admin - gets 404; and
+// DM-08, AD-011, AD-016, SR2-13 over HTTP: the participant posts; whoever manages the AI (its host and its
+// user instructor) only views; everybody else - the admin of its organization, a peer, a member, an outsider, an
+// instance admin - gets 404; and
 // nobody manages a DM. Nobody manages it, yet everybody who sees it resumes it after the loop guard (DLV-09):
 // there is no one else to, and the AIs it paused cannot.
 func TestDMRoutesAuthMatrix(t *testing.T) {
@@ -137,9 +139,10 @@ func TestRoomListHoldsOwnDMsOnly(t *testing.T) {
 	}
 	require.NotNil(t, listed(roles.Member, byAI), "only its participant lists the DM an AI opened")
 	require.Nil(t, listed(roles.Manager, byAI), "the AI's manager views it and does not list it")
-	require.Nil(t, listed(roles.Admin, byAI), "neither does the admin above the manager")
+	require.Nil(t, listed(roles.Instructor, byAI), "neither does its user instructor")
 	roles.Manager.Get("/api/v1/rooms/" + byAI).RequireStatus(http.StatusOK) // viewed, by id
-	roles.Admin.Get("/api/v1/rooms/" + byAI).RequireStatus(http.StatusOK)
+	roles.Instructor.Get("/api/v1/rooms/" + byAI).RequireStatus(http.StatusOK)
+	roles.Admin.Get("/api/v1/rooms/"+byAI).RequireError(http.StatusNotFound, dto.ErrorCodeNotFound) // SR2-13: an admin does not manage the AI
 
 	for _, role := range roles.All() {
 		got := listed(role.Client, res["room"])
@@ -236,11 +239,11 @@ func TestLiveDMMessagesReachParticipantsAndViewers(t *testing.T) {
 	env := testkit.New(t)
 	roles := env.OrgRoles("acme")
 	res := dmRoomSetup(env, roles)(t)
-	participant, manager, admin := dialLive(t, roles.Target), dialLive(t, roles.Manager), dialLive(t, roles.Admin)
-	member, outsider := dialLive(t, roles.Member), dialLive(t, roles.Outsider)
+	participant, manager, instructor := dialLive(t, roles.Target), dialLive(t, roles.Manager), dialLive(t, roles.Instructor)
+	member, outsider, admin := dialLive(t, roles.Member), dialLive(t, roles.Outsider), dialLive(t, roles.Admin)
 
 	roles.Target.Post("/api/v1/rooms/"+res["room"]+"/messages", dto.PostMessageRequest{Text: "ping"}).RequireStatus(http.StatusCreated)
-	for _, c := range []*testkit.LiveConn{participant, manager, admin} {
+	for _, c := range []*testkit.LiveConn{participant, manager, instructor} {
 		var got dto.Message
 		c.Expect(dto.LiveEventTypeRoomMessage, &got, liveWait)
 		require.Equal(t, "ping", got.Text)
@@ -248,4 +251,5 @@ func TestLiveDMMessagesReachParticipantsAndViewers(t *testing.T) {
 	}
 	member.ExpectNone(quiet)
 	outsider.ExpectNone(quiet)
+	admin.ExpectNone(quiet)
 }

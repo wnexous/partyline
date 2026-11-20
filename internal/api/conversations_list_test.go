@@ -75,7 +75,7 @@ func TestConversationListOrdersByNewestActivity(t *testing.T) {
 	owned := createRoom(alice, "Owned") // created first, never written to
 	clock.Advance(time.Minute)
 	// carol makes a group in alice's organization, which alice administers without being in the group.
-	env.AddMember(alice.PersonalOrg().ID, carol.User.ID, orgs.PermissionMember, "")
+	env.AddMember(alice.PersonalOrg().ID, carol.User.ID, orgs.PermissionMember)
 	administered := groupIn(t, env, carol, alice.PersonalOrg().ID, "Administered")
 	clock.Advance(time.Minute)
 	member := createRoom(bob, "Member of")
@@ -274,7 +274,7 @@ func TestMarkReadAuthorization(t *testing.T) {
 		creator.T = t
 		room := groupIn(t, env, &creator, roles.Org.ID, "Ops")
 		addToRoom(t, env, &creator, room.ID, roles.Target)
-		addToRoom(t, env, &creator, room.ID, roles.Guest)
+		addToRoom(t, env, &creator, room.ID, roles.Peer)
 		say(&creator, room.ID, "hello")
 		return map[string]string{"room": room.ID}
 	}
@@ -451,8 +451,8 @@ func TestConversationsCarryTheirOrganizations(t *testing.T) {
 	ana, bea, cid := env.NewUser("ana"), env.NewUser("bea"), env.NewUser("cid")
 	anas, beas, cids := ana.PersonalOrg().ID, bea.PersonalOrg().ID, cid.PersonalOrg().ID
 	// ana and bea belong to each other's personal organization, so they share two; cid belongs to neither.
-	env.AddMember(anas, bea.User.ID, orgs.PermissionMember, "")
-	env.AddMember(beas, ana.User.ID, orgs.PermissionMember, "")
+	env.AddMember(anas, bea.User.ID, orgs.PermissionMember)
+	env.AddMember(beas, ana.User.ID, orgs.PermissionMember)
 	// ana's default is bea's organization, not the first one she has: a default is not "the first organization".
 	require.NoError(t, env.App.Orgs.SetDefault(ctx, ana.User.ID, beas))
 
@@ -500,8 +500,8 @@ func TestRoomChangedFrameCarriesTheOrganizations(t *testing.T) {
 	env := testkit.New(t)
 	ana, bea, cid := env.NewUser("ana"), env.NewUser("bea"), env.NewUser("cid")
 	anas, beas, cids := ana.PersonalOrg().ID, bea.PersonalOrg().ID, cid.PersonalOrg().ID
-	env.AddMember(anas, bea.User.ID, orgs.PermissionMember, "")
-	env.AddMember(beas, ana.User.ID, orgs.PermissionMember, "")
+	env.AddMember(anas, bea.User.ID, orgs.PermissionMember)
+	env.AddMember(beas, ana.User.ID, orgs.PermissionMember)
 	beaLive, cidLive := dialLive(t, bea), dialLive(t, cid)
 
 	room := dmWith(ana, bea.User.ID, http.StatusCreated)

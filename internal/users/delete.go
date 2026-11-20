@@ -119,7 +119,7 @@ func (s *Service) DeleteAccount(ctx context.Context, userID, password string) er
 }
 
 // inheritAdmin makes the heir an admin of an organization whose last admin is leaving: a member they were not
-// becomes one with no position, one they already were keeps their position and stops being anyone's guest.
+// becomes one, a member they were becomes an admin.
 func (s *Service) inheritAdmin(ctx context.Context, q *db.Queries, orgID, heirID, leavingID string) error {
 	m, err := q.GetOrgMember(ctx, db.GetOrgMemberParams{OrgID: orgID, Iid: heirID})
 	switch {
@@ -128,7 +128,7 @@ func (s *Service) inheritAdmin(ctx context.Context, q *db.Queries, orgID, heirID
 	case err != nil:
 	case m.Permission != string(orgs.PermissionAdmin):
 		err = q.UpdateOrgMemberPermission(ctx, db.UpdateOrgMemberPermissionParams{
-			Permission: string(orgs.PermissionAdmin), InviterIid: sql.NullString{}, OrgID: orgID, Iid: heirID,
+			Permission: string(orgs.PermissionAdmin), OrgID: orgID, Iid: heirID,
 		})
 	}
 	if err != nil {

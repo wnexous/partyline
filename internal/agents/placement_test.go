@@ -26,17 +26,16 @@ func headers(kv ...string) http.Header {
 	return h
 }
 
-// AD-020: the three placement headers are optional; --org and --parent are plain text, --position is
-// percent-encoded like the folder so a name with spaces or accents survives a header.
+// AD-020: the placement headers are optional and plain text. SR2-05: the position header of an older client is
+// ignored: positions were removed.
 func TestFolderIDFromHeaderReadsThePlacementHeaders(t *testing.T) {
 	id, err := FolderIDFromHeader(headers(
 		dto.HeaderOrg, "  acme ",
-		dto.HeaderPosition, url.PathEscape("Líder de equipe"),
+		"X-Partyline-Position", "100%", // not even valid percent-encoding: never read
 		dto.HeaderParent, " @lead ",
 	))
 	require.NoError(t, err)
 	require.Equal(t, "acme", id.Org)
-	require.Equal(t, "Líder de equipe", id.Position)
 	require.Equal(t, "@lead", id.Parent)
 	require.Equal(t, "/work/acme", id.Folder)
 }
@@ -45,27 +44,15 @@ func TestFolderIDFromHeaderReadsThePlacementHeaders(t *testing.T) {
 func TestFolderIDFromHeaderWithoutPlacementHeadersReadsEmpty(t *testing.T) {
 	for name, h := range map[string]http.Header{
 		"absent": headers(),
-		"blank":  headers(dto.HeaderOrg, " ", dto.HeaderPosition, "%20", dto.HeaderParent, "\t"),
+		"blank":  headers(dto.HeaderOrg, " ", dto.HeaderParent, "\t"),
 	} {
 		t.Run(name, func(t *testing.T) {
 			id, err := FolderIDFromHeader(h)
 			require.NoError(t, err)
 			require.Empty(t, id.Org)
-			require.Empty(t, id.Position)
 			require.Empty(t, id.Parent)
 		})
 	}
-}
-
-// A position that is not valid percent-encoding is a position no organization has: 422 position_unknown on
-// the field, never a silent default (a plain "100%" must have been sent as "100%25").
-func TestFolderIDFromHeaderRefusesAPositionThatIsNotPercentEncoded(t *testing.T) {
-	_, err := FolderIDFromHeader(headers(dto.HeaderPosition, "100%"))
-	var he *httpx.Error
-	require.True(t, errors.As(err, &he), "got %v", err)
-	require.Equal(t, http.StatusUnprocessableEntity, he.Status)
-	require.Equal(t, dto.ErrorCodePositionUnknown, he.Code)
-	require.Contains(t, he.Fields, "position")
 }
 
 // teamOf creates an organization the user administers, next to their personal one.
@@ -164,4 +151,59 @@ func TestAFirstSessionThatLosesTheRaceIsHeldToTheWinnersOrganization(t *testing.
 	require.Equal(t, 1, f.count(t, "SELECT COUNT(*) FROM agents"), "one AI")
 	require.Equal(t, team.ID, f.storedAgent(t, winner.ID).OrgID.String)
 	require.Equal(t, 1, f.count(t, "SELECT COUNT(*) FROM org_members WHERE iid = ?", winner.ID), "in one organization")
+}
+
+// SR2-02, SR2-09: an AI started by another AI of the same host (--parent) joins as a member and has its parent
+// as an instructor, so the parent's messages are trusted; the parent named on a later start of an existing AI
+// changes nothing, and a parent the token holder does not host is ignored.
+func TestSR209ParentBecomesTheInstructorOfANewAIOnly(t *testing.T) {
+	f := newFixture(t)
+	ctx := context.Background()
+	alice, bob := f.user(t, "alice"), f.user(t, "bobby")
+	lead, err := f.reg.ResolveFolder(ctx, alice.UserID, FolderID{Machine: "devbox", Folder: "/work/lead"}, false)
+	require.NoError(t, err)
+	handle := f.str(t, "SELECT handle FROM intelligences WHERE id = ?", lead.ID)
+
+	child, err := f.reg.ResolveFolder(ctx, alice.UserID, FolderID{Machine: "devbox", Folder: "/work/lead-w1", Parent: "@" + handle}, false)
+	require.NoError(t, err)
+	require.Equal(t, "member", f.str(t, "SELECT permission FROM org_members WHERE iid = ?", child.ID), "SR2-02: a member, never a guest")
+	require.Equal(t, lead.ID, child.CreatorIid.String, "the creator stays recorded (SI-10)")
+	require.Equal(t, []string{lead.ID}, f.instructorsOf(t, child.ID), "SR2-09: the parent instructs the new AI")
+	ok, err := orgs.NewAuthz(f.st).Trusts(ctx, lead.ID, child.ID)
+	require.NoError(t, err)
+	require.True(t, ok)
+
+	// A later start that names another parent changes nothing.
+	other, err := f.reg.ResolveFolder(ctx, alice.UserID, FolderID{Machine: "devbox", Folder: "/work/other"}, false)
+	require.NoError(t, err)
+	otherHandle := f.str(t, "SELECT handle FROM intelligences WHERE id = ?", other.ID)
+	_, err = f.reg.ResolveFolder(ctx, alice.UserID, FolderID{Machine: "devbox", Folder: "/work/lead-w1", Parent: "@" + otherHandle}, false)
+	require.NoError(t, err)
+	require.Equal(t, []string{lead.ID}, f.instructorsOf(t, child.ID), "an existing AI keeps its instructors")
+
+	// A parent hosted by someone else is no parent: the token holder creates the AI and nobody else instructs it.
+	stray, err := f.reg.ResolveFolder(ctx, bob.UserID, FolderID{Machine: "devbox", Folder: "/work/stray", Parent: "@" + handle}, false)
+	require.NoError(t, err)
+	require.Equal(t, bob.UserID, stray.CreatorIid.String)
+	require.Empty(t, f.instructorsOf(t, stray.ID))
+}
+
+// instructorsOf lists the instructors of an AI, by id.
+func (f *fixture) instructorsOf(t *testing.T, agentID string) []string {
+	t.Helper()
+	ids, err := f.st.R().ListAgentInstructorKinds(context.Background(), agentID)
+	require.NoError(t, err)
+	out := []string{}
+	for _, r := range ids {
+		out = append(out, r.InstructorIid)
+	}
+	return out
+}
+
+// str returns the single text a query selects.
+func (f *fixture) str(t *testing.T, query string, args ...any) string {
+	t.Helper()
+	var s string
+	require.NoError(t, f.raw.QueryRowContext(context.Background(), query, args...).Scan(&s))
+	return s
 }

@@ -18,8 +18,6 @@ export const queryKeys = {
   rooms: ["rooms"] as const,
   conversations: ["conversations"] as const,
   contacts: ["contacts"] as const,
-  /** The people one connector has seen, filtered by a search text ("" = all of them). */
-  people: (connectorId: string, q: string) => ["contacts", "people", connectorId, q] as const,
   intelligence: (id: string) => ["intelligences", id] as const,
   /** One live session's notification setting per conversation (SN-08); the principal's label is "". */
   agentSessionNotifications: (agentId: string, label: string) =>
@@ -35,10 +33,6 @@ export const queryKeys = {
   orgs: ["orgs"] as const,
   org: (id: string) => ["orgs", id] as const,
   orgMembers: (id: string) => ["orgs", id, "members"] as const,
-  /** What moving a member to one position would change about who manages it (POS-04). */
-  orgMovePreview: (id: string, iid: string, positionId: string) =>
-    ["orgs", id, "members", iid, "move-preview", positionId] as const,
-  orgChart: (id: string) => ["orgs", id, "chart"] as const,
   orgInvitations: (id: string) => ["orgs", id, "invitations"] as const,
   /** The invitations waiting for the viewer, or for an AI they manage. */
   invitations: ["invitations"] as const,

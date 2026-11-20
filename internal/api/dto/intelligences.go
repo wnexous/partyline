@@ -70,11 +70,11 @@ type IntelligenceProfile struct {
 	// of and its DMs), the most recently active first (PEOP-03); empty for users.
 	Conversations []RoomRef `json:"conversations"`
 	// Memberships lists, by organization name, the organizations the caller shares with a user or an AI
-	// (all of its own when the caller is the profile), with its permission and position in each and what
-	// the caller may do about it (OMEM-03, CHART-02). Empty for a person.
+	// (all of its own when the caller is the profile), with its permission in each and what the caller may
+	// do about it (OMEM-03). Empty for a person.
 	Memberships []ProfileMembership `json:"memberships"`
-	// CanEndSession tells whether the caller may end the AI's live session: it manages the AI in an
-	// organization they share (POS-04). Always false for users and people.
+	// CanEndSession tells whether the caller may end the AI's live session: it manages the AI - its host or
+	// a user that instructs it (SR2-13). Always false for users and people.
 	CanEndSession bool `json:"can_end_session"`
 }
 
@@ -83,12 +83,9 @@ type ProfileMembership struct {
 	OrgID   string `json:"org_id"`
 	OrgName string `json:"org_name"`
 	OrgSlug string `json:"org_slug"`
-	// Permission is admin, member or guest.
+	// Permission is admin or member.
 	Permission string `json:"permission"`
-	// PositionID and PositionName are absent for a member with no position.
-	PositionID   string `json:"position_id,omitempty"`
-	PositionName string `json:"position_name,omitempty"`
-	// CanDelete tells whether the caller may delete the intelligence in this organization (POS-05).
+	// CanDelete tells whether the caller may delete the intelligence in this organization (SR2-12).
 	CanDelete bool `json:"can_delete"`
 	// DeleteEffect is what deleting it here does (POS-06): "delete" removes an AI for good, because this is its
 	// home organization; "remove" only takes the identity out of this organization.
@@ -110,7 +107,8 @@ type PersonDetail struct {
 
 // AIDetail describes where an AI lives and how the caller stands to it.
 type AIDetail struct {
-	// Owner is the user who hosts the AI: whose computer and token run it. It gives nothing (AD-019).
+	// Owner is the user who hosts the AI: whose computer and token run it. The host instructs and manages it
+	// (SR2-07, SR2-13).
 	Owner IntelligenceRef `json:"owner"`
 	// Folder is the AI's canonical folder; empty for an AI that is not linked to one yet.
 	Folder      string `json:"folder"`
@@ -126,13 +124,15 @@ type AIDetail struct {
 	// PrincipalOfflineSince is when the principal session left while another session is live; absent
 	// when the principal is live or the AI is offline (SESS-61).
 	PrincipalOfflineSince *time.Time `json:"principal_offline_since,omitempty"`
-	// MyLevel is manage for whoever manages the AI in an organization they share with it (and the AI itself)
-	// and use for whoever only sees it.
+	// MyLevel is manage for whoever manages the AI - its host and its user instructors (SR2-13) - and the AI
+	// itself, and use for whoever only sees it.
 	MyLevel Level `json:"my_level,omitempty"`
-	// InstructedBy are the identities whose messages the AI treats as trusted (POS-10, ST-06): its managers in
-	// its home organization, nearest first. Present only for whoever shares that organization with the AI (and
-	// the AI itself), who can see its chart anyway (CHART-02); an empty list means nobody.
+	// InstructedBy are the identities that instruct the AI besides its host (SR2-06, SR2-10), oldest first:
+	// with Owner, the ones whose messages it treats as trusted (SR2-07). Present for the host, the AI itself,
+	// whoever manages it and whoever shares its home organization; an empty list means only the host.
 	InstructedBy *[]IntelligenceRef `json:"instructed_by,omitempty"`
+	// CanEditInstructors tells that the caller is the host, who adds and removes instructors (SR2-10).
+	CanEditInstructors bool `json:"can_edit_instructors,omitempty"`
 }
 
 // App is one place an intelligence speaks from.

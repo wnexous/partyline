@@ -253,7 +253,7 @@ func TestGroupModes(t *testing.T) {
 	env := testkit.New(t, testkit.WithoutPush())
 	alice := account(t, env, "alice", "Alice")
 	bob := account(t, env, "bob", "Bob")
-	env.AddMember(alice.PersonalOrg().ID, bob.User.ID, orgs.PermissionMember, "")
+	env.AddMember(alice.PersonalOrg().ID, bob.User.ID, orgs.PermissionMember)
 	aiID := env.NewAI(alice, "Helper")
 	group := testkit.Decode[dto.Room](alice.Post("/api/v1/groups", dto.CreateGroupRequest{
 		Name: "Team", Members: []string{bob.User.ID, aiID},

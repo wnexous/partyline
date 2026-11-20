@@ -52,13 +52,19 @@ const (
 	ActionAgentAdopt = "agent.adopt"
 	// ActionAgentMerge records an AI identity merged into another of the same owner (MRG-01).
 	ActionAgentMerge = "agent.merge"
-	// ActionAgentDelete records an AI deleted for good in its home organization (POS-05, POS-06).
+	// ActionAgentDelete records an AI deleted for good by its host or an admin of its home organization
+	// (SR2-12, POS-06).
 	ActionAgentDelete = "agent.delete"
-	// Organizations (organizations feature): the organization itself, its org chart and its members.
+	// ActionAgentInstructorAdd and ActionAgentInstructorRemove record the host adding or removing an
+	// instructor of an AI (SR2-10); an AI started with --parent records its instructor in its join entry.
+	ActionAgentInstructorAdd    = "agent.instructor_add"
+	ActionAgentInstructorRemove = "agent.instructor_remove"
+	// Organizations (organizations feature): the organization itself and its members.
 	ActionOrgCreate = "org.create"
 	ActionOrgUpdate = "org.update"
 	ActionOrgDelete = "org.delete"
-	// The org chart: positions added, renamed or moved, and deleted (POS-01, POS-09).
+	// The org chart was removed (SR2-04, SR2-05): entries with these actions are history only, and so are
+	// those of ActionOrgMemberPosition.
 	ActionOrgPositionCreate = "org.position_create"
 	ActionOrgPositionUpdate = "org.position_update"
 	ActionOrgPositionDelete = "org.position_delete"

@@ -241,13 +241,16 @@ func TestSchedulesFollowTheOrgChart(t *testing.T) {
 	h.patch(h.agent, own.ID, dto.ScheduleRequest{Prompt: ptr("check the deploys twice")}).RequireStatus(http.StatusOK)
 
 	// Whoever manages the AI changes any of them; a prompt they rewrite becomes theirs.
-	taken := testkit.Decode[dto.Schedule](h.patch(h.roles.Admin, own.ID, dto.ScheduleRequest{Prompt: ptr("check the deploys and the queue")}).RequireStatus(http.StatusOK))
+	// SR2-13: a user that instructs the AI manages it like its host.
+	taken := testkit.Decode[dto.Schedule](h.patch(h.roles.Instructor, own.ID, dto.ScheduleRequest{Prompt: ptr("check the deploys and the queue")}).RequireStatus(http.StatusOK))
 	require.Equal(t, dto.ScheduleOriginManager, taken.Origin)
-	require.Equal(t, h.roles.Admin.User.ID, taken.SetBy.ID)
+	require.Equal(t, h.roles.Instructor.User.ID, taken.SetBy.ID)
 	h.patch(h.agent, own.ID, dto.ScheduleRequest{Enabled: ptr(false)}).RequireError(http.StatusForbidden, dto.ErrorCodeForbidden)
-	admin := testkit.Decode[dto.ScheduleList](h.roles.Admin.Get(h.path("")).RequireStatus(http.StatusOK))
-	require.Len(t, admin.Items, 2)
-	require.True(t, admin.CanManage)
+	instructor := testkit.Decode[dto.ScheduleList](h.roles.Instructor.Get(h.path("")).RequireStatus(http.StatusOK))
+	require.Len(t, instructor.Items, 2)
+	require.True(t, instructor.CanManage)
+	require.False(t, testkit.Decode[dto.ScheduleList](h.roles.Admin.Get(h.path("")).RequireStatus(http.StatusOK)).CanManage,
+		"an admin of its organization does not manage it")
 
 	// A member who sees the AI learns that it has routines, not what they say (HB-12), and changes none.
 	seen := testkit.Decode[dto.ScheduleList](h.roles.Member.Get(h.path("")).RequireStatus(http.StatusOK))
@@ -394,18 +397,14 @@ func TestAnUnacknowledgedRunHoldsTheNextAndRunsDoNotPileUp(t *testing.T) {
 	h.eventuallyStatuses(s.ID, dto.ScheduleRunDelivered, dto.ScheduleRunSuperseded, dto.ScheduleRunDelivered)
 }
 
-// HB-08: trusted is decided at delivery: a setter who no longer manages the AI is not trusted; a routine the AI
-// set itself never is.
+// HB-08, SR2-07: trusted is decided at delivery: a setter who no longer instructs the AI is not trusted; a
+// routine the AI set itself never is.
 func TestTrustIsDecidedAtDelivery(t *testing.T) {
 	h := newHB(t)
-	set := h.create(h.roles.Admin, daily("from admin"))
+	set := h.create(h.roles.Instructor, daily("from admin"))
 	own := h.create(h.agent, daily("own"))
-	// Admin leaves the root position: Admin no longer manages the AI.
-	require.NoError(t, h.env.App.Store.WithTx(context.Background(), func(q *db.Queries) error {
-		return q.UpdateOrgMemberPosition(context.Background(), db.UpdateOrgMemberPositionParams{
-			PositionID: sql.NullString{}, OrgID: h.roles.Org.ID, Iid: h.roles.Admin.User.ID,
-		})
-	}))
+	// The host takes the instruction back.
+	require.NoError(t, h.env.App.Orgs.RemoveInstructor(context.Background(), h.roles.Manager.User.ID, h.ai, h.roles.Instructor.User.ID))
 	principal := h.principal()
 	h.clk.Set(local(10, 9, 1))
 	h.tick()
@@ -416,7 +415,7 @@ func TestTrustIsDecidedAtDelivery(t *testing.T) {
 	}
 	require.Equal(t, set.ID, byName["from admin"].ScheduleID)
 	require.Equal(t, dto.ScheduleOriginManager, byName["from admin"].Origin)
-	require.False(t, byName["from admin"].Trusted, "the setter no longer manages the AI")
+	require.False(t, byName["from admin"].Trusted, "the setter no longer instructs the AI")
 	require.Equal(t, own.ID, byName["own"].ScheduleID)
 	require.Equal(t, dto.ScheduleOriginSelf, byName["own"].Origin)
 	require.False(t, byName["own"].Trusted)
@@ -572,7 +571,7 @@ func TestTheNearestManagerIsToldAboutARoutineTheAISetAndMayPauseIt(t *testing.T)
 	require.False(t, again.PausedByManager)
 
 	// A manager's plain PATCH that disables it pauses it the same way.
-	h.patch(h.roles.Admin, s.ID, dto.ScheduleRequest{Enabled: ptr(false)}).RequireStatus(http.StatusOK)
+	h.patch(h.roles.Instructor, s.ID, dto.ScheduleRequest{Enabled: ptr(false)}).RequireStatus(http.StatusOK)
 	h.patch(h.agent, s.ID, dto.ScheduleRequest{Enabled: ptr(true)}).RequireError(http.StatusForbidden, dto.ErrorCodeForbidden)
 }
 
@@ -618,27 +617,17 @@ func TestEveryChangeOfAnActiveRoutineIsTold(t *testing.T) {
 // HB-09 fails closed: a routine the AI would make active while nobody manages it, or whose notice cannot be
 // delivered, is refused and nothing changes; the AI may still keep a disabled one.
 func TestARoutineNobodyIsToldAboutIsNeverActive(t *testing.T) {
-	t.Run("nobody manages the AI", func(t *testing.T) {
+	t.Run("SR2-13: the host is always told, whoever created the AI", func(t *testing.T) {
 		h := newHB(t)
-		h.env.SetCreator(h.ai, "") // the creator was the AI's only link to a manager
-		e := h.post(h.agent, hourly("deploys")).RequireError(http.StatusConflict, dto.ErrorCodeNoManager)
-		require.Contains(t, e.Message, "nobody manages you")
-		off := hourly("deploys")
-		off.Enabled = ptr(false)
-		s := h.create(h.agent, off)
-		h.patch(h.agent, s.ID, dto.ScheduleRequest{Enabled: ptr(true)}).RequireError(http.StatusConflict, dto.ErrorCodeNoManager)
-		list := testkit.Decode[dto.ScheduleList](h.agent.Get("/api/v1/agent/schedules").RequireStatus(http.StatusOK))
-		require.Len(t, list.Items, 1)
-		require.False(t, list.Items[0].Enabled)
+		h.env.SetCreator(h.ai, "") // the creator gives nothing any more: the host manages the AI
+		h.create(h.agent, hourly("deploys"))
+		require.Len(t, h.notices(h.dmRoom(h.roles.Manager.User.ID)), 1)
 	})
 	t.Run("the notice cannot be delivered", func(t *testing.T) {
 		h := newHB(t)
-		// Target becomes the AI's creator, so its nearest manager, and is then disabled: a DM to it is refused.
-		h.env.SetCreator(h.ai, h.roles.Target.User.ID)
+		// The host's intelligence is gone (a state the app never leaves), so the DM to it is refused.
 		require.NoError(t, h.env.App.Store.WithTx(context.Background(), func(q *db.Queries) error {
-			return q.SetUserDisabledAt(context.Background(), db.SetUserDisabledAtParams{
-				DisabledAt: sql.NullInt64{Int64: time.Now().UnixMilli(), Valid: true}, ID: h.roles.Target.User.ID,
-			})
+			return q.DeleteIntelligence(context.Background(), h.roles.Manager.User.ID)
 		}))
 		h.post(h.agent, hourly("deploys")).RequireError(http.StatusServiceUnavailable, dto.ErrorCodeUnavailable)
 		list := testkit.Decode[dto.ScheduleList](h.agent.Get("/api/v1/agent/schedules").RequireStatus(http.StatusOK))

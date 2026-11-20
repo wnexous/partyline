@@ -20,7 +20,7 @@ func TestAIsOfTheSameHostSeeEachOther(t *testing.T) {
 	env := testkit.New(t)
 	alice := env.NewUser("alice")
 	globex := env.OrgRoles("globex")
-	env.AddMember(globex.Org.ID, alice.User.ID, orgs.PermissionMember, "")
+	env.AddMember(globex.Org.ID, alice.User.ID, orgs.PermissionMember)
 	atlas := env.NewAI(alice, "atlas")                    // home: alice's personal organization
 	helper := env.NewAIIn(alice, globex.Org.ID, "helper") // home: globex, which atlas does not belong to
 	tok := alice.Token(dto.TokenKindAgent, "laptop")
@@ -92,39 +92,40 @@ func TestASessionInASubfolderIsAParallelSessionOfTheAIAbove(t *testing.T) {
 	require.Empty(t, fw.Session.Label, "the principal session of its own AI")
 }
 
-// SI-09, SI-10: an organization change that alters what a live session was told sends it a fresh welcome of the
-// same session: a new position, a membership of another organization, an AI it created (which in turn is told who
-// created it). A change that alters nothing it was told sends nothing.
+// SI-09, SI-10, SR2-11: an organization change that alters what a live session was told sends it a fresh welcome
+// of the same session: a new instructor, a membership of another organization, an AI it created (which in turn
+// is told who created it and that its parent instructs it). A change that alters nothing it was told sends nothing.
 func TestALiveSessionIsWelcomedAgainWhenItsOrganizationsChange(t *testing.T) {
 	env := testkit.New(t)
 	alice := env.NewUser("alice")
+	bob := env.NewUser("bob")
 	tok := alice.Token(dto.TokenKindAgent, "laptop")
 	conn, resp := tok.DialAgent("atlas")
 	require.NotNil(t, conn, resp)
 	defer conn.Close()
 	first := conn.Welcome(wsWait)
 	atlas := first.Intelligence
-	require.Empty(t, first.Position)
+	require.Empty(t, first.Instructors)
 	require.Empty(t, first.Memberships)
 	require.Empty(t, first.Created)
 	require.NotNil(t, first.Creator)
 	require.Equal(t, alice.User.ID, first.Creator.ID, "SI-10: the user who started it created it")
 	conn.Drain(300 * time.Millisecond)
 
-	// A position nobody holds changes nothing atlas was told.
+	// A change of its organization that tells nothing new sends nothing.
 	home := alice.PersonalOrg().ID
-	lead := env.AddPosition(home, "Lead", "")
+	env.AddMember(home, bob.User.ID, orgs.PermissionMember)
 	conn.ExpectNone(300 * time.Millisecond)
 
-	// SI-09: promoted to Lead.
-	alice.Patch("/api/v1/orgs/"+home+"/members/"+atlas.ID, map[string]any{"position_id": lead}).RequireStatus(http.StatusOK)
-	promoted := conn.Welcome(wsWait)
-	require.Equal(t, "Lead", promoted.Position)
-	require.Equal(t, first.Session, promoted.Session, "the same session")
+	// SR2-11: the host adds bob as an instructor.
+	alice.Post(instructorsPath(atlas.ID), dto.AddInstructorRequest{Handle: "@bob"}).RequireStatus(http.StatusCreated)
+	instructed := conn.Welcome(wsWait)
+	require.Equal(t, []string{"bob"}, handlesOf(instructed.Instructors))
+	require.Equal(t, first.Session, instructed.Session, "the same session")
 
 	// SI-09: a member of another organization.
 	globex := env.OrgRoles("globex")
-	env.AddMember(globex.Org.ID, atlas.ID, orgs.PermissionMember, "")
+	env.AddMember(globex.Org.ID, atlas.ID, orgs.PermissionMember)
 	joined := conn.Welcome(wsWait)
 	require.Equal(t, []dto.AgentMembership{{
 		Organization: dto.ContactOrg{ID: globex.Org.ID, Name: globex.Org.Name, Slug: globex.Org.Slug}, Permission: "member",
@@ -137,6 +138,7 @@ func TestALiveSessionIsWelcomedAgainWhenItsOrganizationsChange(t *testing.T) {
 	cw := child.Welcome(wsWait)
 	require.NotNil(t, cw.Creator)
 	require.Equal(t, atlas.ID, cw.Creator.ID)
+	require.Equal(t, []string{atlas.Handle}, handlesOf(cw.Instructors), "SR2-09: its parent instructs it")
 	parent := conn.Welcome(wsWait)
 	require.Len(t, parent.Created, 1)
 	require.Equal(t, cw.Intelligence.ID, parent.Created[0].ID)

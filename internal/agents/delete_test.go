@@ -12,12 +12,22 @@ import (
 	"github.com/wnexous/partyline/internal/store/db"
 )
 
-// addTo makes the identity a member of the organization (a guest of inviter when the permission says so).
-func (f *fixture) addTo(t *testing.T, org, iid string, perm orgs.Permission, inviter string) {
+// addTo makes the identity a member of the organization.
+func (f *fixture) addTo(t *testing.T, org, iid string, perm orgs.Permission) {
 	t.Helper()
 	ctx := context.Background()
 	require.NoError(t, f.st.WithTx(ctx, func(q *db.Queries) error {
-		return orgs.AddMember(ctx, q, orgs.AddMemberInput{OrgID: org, IID: iid, Permission: perm, InviterIID: inviter, Now: t0})
+		return orgs.AddMember(ctx, q, orgs.AddMemberInput{OrgID: org, IID: iid, Permission: perm, Now: t0})
+	}))
+}
+
+// instruct makes the identity an instructor of the AI (SR2-06).
+func (f *fixture) instruct(t *testing.T, ai, iid string) {
+	t.Helper()
+	ctx := context.Background()
+	require.NoError(t, f.st.WithTx(ctx, func(q *db.Queries) error {
+		_, err := q.AddAgentInstructor(ctx, db.AddAgentInstructorParams{AgentIid: ai, InstructorIid: iid, CreatedAt: t0.UnixMilli()})
+		return err
 	}))
 }
 
@@ -30,56 +40,43 @@ func (f *fixture) aiIn(t *testing.T, host authn.Principal, org db.Organization, 
 	return a.ID
 }
 
-// POS-05, AD-016: an AI is seen by its host and by the members of the organizations it belongs to, but the right
-// to delete it is the home organization's: whoever sees it and is no admin of its home gets access.ErrForbidden -
-// a member, the admin of another organization it is only a member of, its host who is no member of the home - and
-// whoever does not see it access.ErrNotFound. Each case is the only thing that differs from the last (L-018).
-func TestDeleteIsDecidedByTheHomeOrganizationAmongThoseWhoSeeTheAI(t *testing.T) {
+// SR2-12, AD-016: an AI is deleted by its host or by an admin of its home organization. Whoever else sees it - a
+// member, the admin of another organization it is only a member of, a user that instructs it - gets
+// access.ErrForbidden, and whoever does not see it access.ErrNotFound. Each case is the only thing that differs
+// from the last (L-018).
+func TestSR212DeleteIsTheHostsOrAHomeAdmins(t *testing.T) {
 	ctx := context.Background()
 	newWorld := func(t *testing.T) (f *fixture, ai string, who map[string]authn.Principal) {
 		f = newFixture(t)
-		alice, bob, gina, hank, stranger := f.user(t, "alice"), f.user(t, "bobby"), f.user(t, "gina"), f.user(t, "hank"), f.user(t, "stranger")
+		alice, bob, gina, hank, ivy, stranger := f.user(t, "alice"), f.user(t, "bobby"), f.user(t, "gina"), f.user(t, "hank"), f.user(t, "ivy"), f.user(t, "stranger")
 		team, globex := f.teamOf(t, alice, "Team"), f.teamOf(t, gina, "Globex")
-		f.addTo(t, team.ID, bob.UserID, orgs.PermissionMember, "")
-		f.addTo(t, team.ID, hank.UserID, orgs.PermissionMember, "")
+		f.addTo(t, team.ID, bob.UserID, orgs.PermissionMember)
+		f.addTo(t, team.ID, hank.UserID, orgs.PermissionMember)
 		ai = f.aiIn(t, hank, team, "ward") // hosted by hank, its home is Team
-		f.addTo(t, globex.ID, ai, orgs.PermissionMember, "")
-		who = map[string]authn.Principal{"admin of the home": alice, "member of the home": bob, "admin of the other organization": gina, "host": hank, "stranger": stranger}
+		f.addTo(t, globex.ID, ai, orgs.PermissionMember)
+		f.instruct(t, ai, ivy.UserID)
+		who = map[string]authn.Principal{
+			"admin of the home": alice, "member of the home": bob, "admin of the other organization": gina, "host": hank,
+			"instructor": ivy, "stranger": stranger,
+		}
 		return f, ai, who
 	}
 
 	f, ai, who := newWorld(t)
 	require.ErrorIs(t, f.reg.Delete(ctx, who["member of the home"], ai), access.ErrForbidden)
 	require.ErrorIs(t, f.reg.Delete(ctx, who["admin of the other organization"], ai), access.ErrForbidden, "it sees the AI, which is a member of its organization")
-	require.ErrorIs(t, f.reg.Delete(ctx, who["host"], ai), access.ErrForbidden, "hank hosts it and is a member of the home, but no admin")
+	require.ErrorIs(t, f.reg.Delete(ctx, who["instructor"], ai), access.ErrForbidden, "an instructor sees it and does not delete it")
 	require.ErrorIs(t, f.reg.Delete(ctx, who["stranger"], ai), access.ErrNotFound)
 	require.Equal(t, 1, f.count(t, "SELECT COUNT(*) FROM agents WHERE id = ?", ai), "no refusal deleted it")
-
-	// the host sees the AI by hosting it, even when it shares no organization with it
-	f.exec(t, "DELETE FROM org_members WHERE iid = ? AND org_id IN (SELECT org_id FROM org_members WHERE iid = ?)", who["host"].UserID, who["host"].UserID)
-	require.Zero(t, f.count(t, "SELECT COUNT(*) FROM org_members WHERE iid = ?", who["host"].UserID))
-	require.ErrorIs(t, f.reg.Delete(ctx, who["host"], ai), access.ErrForbidden, "a host that left every organization still sees it, and may not delete it")
-
 	require.NoError(t, f.reg.Delete(ctx, who["admin of the home"], ai))
 	require.Zero(t, f.count(t, "SELECT COUNT(*) FROM agents WHERE id = ?", ai))
-}
 
-// POS-05: whoever manages a guest AI deletes it - here the user who started it, a member that keeps no position
-// - while the very same user cannot delete the member AI they also started.
-func TestDeleteLetsWhoeverManagesAGuestAIDeleteIt(t *testing.T) {
-	ctx := context.Background()
-	f := newFixture(t)
-	alice, bob := f.user(t, "alice"), f.user(t, "bobby")
-	team := f.teamOf(t, alice, "Team")
-	f.addTo(t, team.ID, bob.UserID, orgs.PermissionMember, "")
-	member := f.aiIn(t, bob, team, "member-ai")
-	guest := f.aiIn(t, bob, team, "guest-ai")
-	f.exec(t, "UPDATE org_members SET permission = 'guest', inviter_iid = ? WHERE org_id = ? AND iid = ?", bob.UserID, team.ID, guest)
-
-	require.ErrorIs(t, f.reg.Delete(ctx, bob, member), access.ErrForbidden, "bob manages it as its creator, but it is a member")
-	require.NoError(t, f.reg.Delete(ctx, bob, guest), "and the guest he started is his to delete")
-	require.Zero(t, f.count(t, "SELECT COUNT(*) FROM agents WHERE id = ?", guest))
-	require.Equal(t, 1, f.count(t, "SELECT COUNT(*) FROM agents WHERE id = ?", member))
+	f, ai, who = newWorld(t)
+	// the host deletes it, even when it left every organization
+	f.exec(t, "DELETE FROM org_members WHERE iid = ?", who["host"].UserID)
+	require.NoError(t, f.reg.Delete(ctx, who["host"], ai))
+	require.Zero(t, f.count(t, "SELECT COUNT(*) FROM agents WHERE id = ?", ai))
+	require.Zero(t, f.count(t, "SELECT COUNT(*) FROM agent_instructors WHERE agent_iid = ?", ai), "its links go with it")
 }
 
 // An AI no organization owns - only a fixture, since the upgrade gives every AI a home - is deleted by its host.
@@ -103,7 +100,7 @@ func TestDeleteRefusesAnAIThatIsTheOnlyAdminOfAnOrganization(t *testing.T) {
 	alice, gina := f.user(t, "alice"), f.user(t, "gina")
 	team, globex := f.teamOf(t, alice, "Team"), f.teamOf(t, gina, "Globex")
 	ai := f.aiIn(t, alice, team, "steward")
-	f.addTo(t, globex.ID, ai, orgs.PermissionAdmin, "")
+	f.addTo(t, globex.ID, ai, orgs.PermissionAdmin)
 	f.exec(t, "UPDATE org_members SET permission = 'member' WHERE org_id = ? AND iid = ?", globex.ID, gina.UserID)
 
 	require.ErrorIs(t, f.reg.Delete(ctx, alice, ai), orgs.ErrLastAdmin)
@@ -114,21 +111,22 @@ func TestDeleteRefusesAnAIThatIsTheOnlyAdminOfAnOrganization(t *testing.T) {
 	require.NoError(t, f.reg.Delete(ctx, alice, ai))
 }
 
-// POS-04: ending a session closes it with 4002 and the reason "ended by @handle"; whoever sees the AI and does not
-// manage it is refused and whoever does not see it is not found; an AI that is not live has nothing to end.
+// SR2-13: ending a session closes it with 4002 and the reason "ended by @handle"; the host and the users that
+// instruct the AI may; whoever sees the AI and does not manage it is refused and whoever does not see it is not
+// found; an AI that is not live has nothing to end.
 func TestEndSessionClosesTheLiveSessionOfWhoeverIsManagedByTheCaller(t *testing.T) {
 	ctx := context.Background()
 	f := newFixture(t)
 	alice, bob, carol, stranger := f.user(t, "alice"), f.user(t, "bobby"), f.user(t, "carol"), f.user(t, "stranger")
 	team := f.teamOf(t, alice, "Team")
-	f.addTo(t, team.ID, bob.UserID, orgs.PermissionMember, "")
-	f.addTo(t, team.ID, carol.UserID, orgs.PermissionMember, "")
-	ai := f.aiIn(t, bob, team, "worker") // created by bob: bob manages it, carol does not
+	f.addTo(t, team.ID, bob.UserID, orgs.PermissionMember)
+	f.addTo(t, team.ID, carol.UserID, orgs.PermissionMember)
+	ai := f.aiIn(t, bob, team, "worker") // hosted by bob: bob manages it, carol does not
 	session := &fakeSession{}
 	f.presence.AttachLabeled(ctx, mustAgent(t, f, ai).Agent, session, "claude", "process-one", "", false)
 
 	require.ErrorIs(t, f.reg.EndSession(ctx, carol, ai), access.ErrForbidden)
-	require.ErrorIs(t, f.reg.EndSession(ctx, alice, ai), access.ErrForbidden, "an admin is no manager: management is the chart's")
+	require.ErrorIs(t, f.reg.EndSession(ctx, alice, ai), access.ErrForbidden, "an admin is no manager")
 	require.ErrorIs(t, f.reg.EndSession(ctx, stranger, ai), access.ErrNotFound)
 	require.ErrorIs(t, f.reg.EndSession(ctx, bob, "no-such-ai"), access.ErrNotFound)
 	_, _, closed := session.state()
@@ -142,4 +140,13 @@ func TestEndSessionClosesTheLiveSessionOfWhoeverIsManagedByTheCaller(t *testing.
 	require.False(t, f.presence.Online(ai))
 	require.NoError(t, f.reg.EndSession(ctx, bob, ai), "nothing is live: nothing to end")
 	require.Equal(t, 1, f.count(t, "SELECT COUNT(*) FROM agents WHERE id = ?", ai), "the AI is still there")
+
+	// SR2-13: a user that instructs the AI ends its session too.
+	f.instruct(t, ai, carol.UserID)
+	again := &fakeSession{}
+	f.presence.AttachLabeled(ctx, mustAgent(t, f, ai).Agent, again, "claude", "process-two", "", false)
+	require.NoError(t, f.reg.EndSession(ctx, carol, ai))
+	_, reason, closed = again.state()
+	require.Equal(t, 1, closed)
+	require.Equal(t, "ended by @user-carol", reason)
 }

@@ -28,8 +28,8 @@ func (s *server) getIntelligence(w http.ResponseWriter, r *http.Request, p authn
 	return s.writeProfile(w, r, p, prof)
 }
 
-// updateIntelligence changes the profile of a user or an AI: the identity itself and whoever manages it
-// in an organization they share (POS-04). A person is history and cannot be edited (history_only). 403
+// updateIntelligence changes the profile of a user or an AI: the identity itself, and for an AI its host and
+// its user instructors (SR2-13). A person is history and cannot be edited (history_only). 403
 // for a caller who can see but not edit, 404 for one who cannot see, 422 per invalid field, 409
 // handle_taken (PROF-10).
 func (s *server) updateIntelligence(w http.ResponseWriter, r *http.Request, p authn.Principal) error {
@@ -76,8 +76,8 @@ func (s *server) toProfile(prof intelligences.Profile) dto.IntelligenceProfile {
 	for _, m := range prof.Memberships {
 		out.Memberships = append(out.Memberships, dto.ProfileMembership{
 			OrgID: m.Organization.ID, OrgName: m.Organization.Name, OrgSlug: m.Organization.Slug,
-			Permission: string(m.Permission), PositionID: m.PositionID, PositionName: m.PositionName,
-			CanDelete: m.CanDelete, DeleteEffect: string(m.DeleteEffect),
+			Permission: string(m.Permission),
+			CanDelete:  m.CanDelete, DeleteEffect: string(m.DeleteEffect),
 		})
 	}
 	switch prof.Role {
@@ -103,6 +103,7 @@ func (s *server) toProfile(prof intelligences.Profile) dto.IntelligenceProfile {
 				refs = append(refs, convert.ManagerRef(row))
 			}
 			out.AI.InstructedBy = &refs
+			out.AI.CanEditInstructors = a.CanEditInstructors
 		}
 		out.Apps = append(out.Apps, dto.App{Kind: a.Harness, Label: agents.HarnessLabel(a.Harness)})
 	case intelligences.RolePerson:

@@ -206,7 +206,7 @@ func TestPostsNamingChatsKeepTheAuthorizationOfTheirRoute(t *testing.T) {
 	owner := roles.Member
 	room := groupIn(t, env, owner, roles.Org.ID, "Support")
 	addToRoom(t, env, owner, room.ID, roles.Target)
-	addToRoom(t, env, owner, room.ID, roles.Guest)
+	addToRoom(t, env, owner, room.ID, roles.Peer)
 	conn := createFake(owner, "wa", true)
 	chat := insertChat(t, env, conn.ID, "120363000000000001@g.us", "Team")
 	owner.SeedChatMember(room.ID, chat)

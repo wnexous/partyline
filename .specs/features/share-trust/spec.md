@@ -1,5 +1,9 @@
 # Share trust: give someone your access, and see who an AI obeys
 
+> **Superseded by simple identity, release 2** (`.specs/features/simple-identity/spec-release-2.md`, 2026-11-19):
+> - ST-01..ST-05 ("give the same access as me", co-holding a position, the move preview) are gone with positions (SR2-04, SR2-05); sharing an AI is now adding an instructor on its profile (SR2-10).
+> - ST-06, ST-07 ("Who can instruct this AI" from the chart's managers) are replaced by the host and the explicit instructors, in the section "Can instruct this AI" (SR2-07, SR2-10).
+
 Status: Specify + Design + Tests written 2026-11-10. Requirement ids ST-xx. Builds on
 `organizations/spec.md` (POS-03, POS-04, POS-10, CHART-03) and changes none of its rules.
 
@@ -106,4 +110,5 @@ own level), and the profile panel (the side sheet keeps its summary).
 
 | Requirement | Status |
 | --- | --- |
-| ST-01 .. ST-07 | Implemented 2026-11-10 |
+| ST-01 .. ST-05 | Implemented 2026-11-10; superseded by SR2-04, SR2-05, SR2-10 |
+| ST-06 .. ST-07 | Implemented 2026-11-10; superseded by SR2-07, SR2-10 |

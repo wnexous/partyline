@@ -27,8 +27,6 @@ import (
 const (
 	// MaxNameLength is the longest organization name in code points (ORG-01).
 	MaxNameLength = handles.MaxOrgName
-	// RootPositionName is the position the creator of an organization holds (ORG-01).
-	RootPositionName = "Admin"
 )
 
 // Errors of the organization service. The API maps each to one status code.
@@ -68,7 +66,8 @@ type Deps struct {
 	Now func() time.Time
 }
 
-// Service is the organization use cases: organizations, their org chart, members and invitations.
+// Service is the organization use cases: organizations, their members and invitations, and the
+// instructors of an AI.
 // Every method takes the identity it acts as (a user, or an AI that acts as itself) and authorizes it
 // through Authz.
 type Service struct {
@@ -97,12 +96,10 @@ func NewService(d Deps) *Service {
 // Authz returns the authorization facade the service asks.
 func (s *Service) Authz() *Authz { return s.z }
 
-// Membership is an organization with the place of one identity in it: its permission and position.
+// Membership is an organization with the place of one identity in it: its permission.
 type Membership struct {
 	db.Organization
 	Permission Permission
-	// PositionID is the identity's position, "" for none.
-	PositionID string
 }
 
 // changed announces that something about the organization changed; call it after the commit.
@@ -140,7 +137,7 @@ func validName(name string) (string, error) {
 
 // orgParams describe an organization being created.
 type orgParams struct {
-	// Creator becomes the admin of the organization, holding the root position.
+	// Creator becomes the admin of the organization.
 	Creator string
 	Name    string
 	// SlugBase is what the address derives from: the name, or a username for a personal one.
@@ -148,8 +145,7 @@ type orgParams struct {
 	Now      time.Time
 }
 
-// createOrg inserts an organization with its root position "Admin" and its creator as the admin
-// holding it, in the caller's transaction (ORG-01). The address is the first free slug derived from
+// createOrg inserts an organization with its creator as its admin, in the caller's transaction (ORG-01). The address is the first free slug derived from
 // SlugBase.
 func createOrg(ctx context.Context, q *db.Queries, p orgParams) (Membership, error) {
 	var lookupErr error
@@ -166,21 +162,17 @@ func createOrg(ctx context.Context, q *db.Queries, p orgParams) (Membership, err
 	}
 	now := p.Now.UnixMilli()
 	org := db.Organization{ID: store.NewID(), Name: p.Name, Slug: slug, CreatedBy: p.Creator, CreatedAt: now, UpdatedAt: now}
-	positionID := store.NewID()
 	if err := q.CreateOrganization(ctx, db.CreateOrganizationParams{
 		ID: org.ID, Name: org.Name, Slug: org.Slug, CreatedBy: org.CreatedBy, CreatedAt: now, UpdatedAt: now,
 	}); err != nil {
 		return Membership{}, err
 	}
-	if err := q.CreatePosition(ctx, db.CreatePositionParams{ID: positionID, OrgID: org.ID, Name: RootPositionName, CreatedAt: now}); err != nil {
-		return Membership{}, err
-	}
 	if err := q.CreateOrgMember(ctx, db.CreateOrgMemberParams{
-		OrgID: org.ID, Iid: p.Creator, Permission: string(PermissionAdmin), PositionID: nullable(positionID), JoinedAt: now,
+		OrgID: org.ID, Iid: p.Creator, Permission: string(PermissionAdmin), JoinedAt: now,
 	}); err != nil {
 		return Membership{}, err
 	}
-	return Membership{Organization: org, Permission: PermissionAdmin, PositionID: positionID}, nil
+	return Membership{Organization: org, Permission: PermissionAdmin}, nil
 }
 
 // activeUser reports whether iid is an enabled account: only users create organizations.
@@ -199,8 +191,7 @@ func activeUser(ctx context.Context, q *db.Queries, iid string) (bool, error) {
 }
 
 // Create makes a new organization named name (1-100 characters) with an address derived from it,
-// and its creator - which must be an enabled user - its admin holding the root position "Admin"
-// (ORG-01). A name that is too short or too long is a validation error on "name".
+// and its creator - which must be an enabled user - its admin (ORG-01). A name that is too short or too long is a validation error on "name".
 func (s *Service) Create(ctx context.Context, creatorIID, name string) (Membership, error) {
 	if ok, err := activeUser(ctx, s.store.R(), creatorIID); err != nil || !ok {
 		if err == nil {
@@ -234,12 +225,12 @@ func (s *Service) Resolve(ctx context.Context, ref string) (db.Organization, err
 	return ResolveRef(ctx, s.store.R(), ref)
 }
 
-func membership(o db.Organization, permission, position string) Membership {
-	return Membership{Organization: o, Permission: Permission(permission), PositionID: position}
+func membership(o db.Organization, permission string) Membership {
+	return Membership{Organization: o, Permission: Permission(permission)}
 }
 
-// Get returns the organization as its member sees it, with the viewer's permission and position.
-// Every member sees it, guests included; anyone else gets ErrNotFound (CHART-02).
+// Get returns the organization as its member sees it, with the viewer's permission. Every member sees
+// it; anyone else gets ErrNotFound.
 func (s *Service) Get(ctx context.Context, viewerIID, orgID string) (Membership, error) {
 	return getMembership(ctx, s.store.R(), orgID, viewerIID)
 }
@@ -252,11 +243,11 @@ func getMembership(ctx context.Context, q *db.Queries, orgID, iid string) (Membe
 	if err != nil {
 		return Membership{}, err
 	}
-	return membership(r.Organization, r.Permission, r.PositionID), nil
+	return membership(r.Organization, r.Permission), nil
 }
 
 // ListMine lists the organizations the identity belongs to, by name, each with its own permission
-// and position (OMEM-03).
+// (OMEM-03).
 func (s *Service) ListMine(ctx context.Context, iid string) ([]Membership, error) {
 	if iid == "" {
 		return nil, nil
@@ -267,7 +258,7 @@ func (s *Service) ListMine(ctx context.Context, iid string) ([]Membership, error
 	}
 	out := make([]Membership, len(rows))
 	for i, r := range rows {
-		out[i] = membership(r.Organization, r.Permission, r.PositionID)
+		out[i] = membership(r.Organization, r.Permission)
 	}
 	return out, nil
 }

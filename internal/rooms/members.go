@@ -183,7 +183,7 @@ func (s *Service) accessChanged(roomID string) {
 // may (ORG-03, AGRP-02). A user must exist and be enabled, and an AI must exist and be one the
 // principal can see; both are dto.RefusedReasonNotFound otherwise, so that an AI the principal cannot
 // see is not told apart from an id that does not exist. Then the member must belong to the organization,
-// with any permission - a guest in a group posts in it - or it is dto.RefusedReasonNotOrgMember. A chat
+// with any permission, or it is dto.RefusedReasonNotOrgMember. A chat
 // is refused with ErrChatsNotMembers (CID-19) and a kind that is not one with a validation error.
 func (s *Service) CheckMember(ctx context.Context, p authn.Principal, orgID string, in MemberInput) (dto.RefusedReason, error) {
 	switch in.Kind {

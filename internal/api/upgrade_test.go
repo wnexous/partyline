@@ -433,17 +433,14 @@ func checkUpgradedInstallation(t *testing.T, w *upgradeWorld) {
 		aliceOrg = mine[w.aliceSlug]
 		require.NotEmpty(t, aliceOrg.ID)
 		require.Equal(t, dto.PermissionAdmin, aliceOrg.Permission)
-		require.NotEmpty(t, aliceOrg.PositionID, "alice holds the root position")
 		require.Equal(t, aliceOrg.ID, testkit.Decode[dto.Me](w.alice.Get("/api/v1/me").RequireStatus(http.StatusOK)).DefaultOrgID, "it is her default")
 
 		members := orgMembers(t, w.alice, aliceOrg.ID)
-		require.Equal(t, []any{dto.PermissionAdmin, "Admin"}, []any{members["alice"].Permission, members["alice"].PositionName})
+		require.Equal(t, dto.PermissionAdmin, members["alice"].Permission)
 		for _, ai := range []upgradedAI{w.atlas, w.other} {
 			m, ok := members[ai.handle]
 			require.True(t, ok, "%s is a member of its owner's organization", ai.handle)
 			require.Equal(t, dto.PermissionMember, m.Permission, "%s joined as a member", ai.handle)
-			require.Empty(t, m.PositionID, "%s holds no position", ai.handle)
-			require.Nil(t, m.InvitedBy)
 			require.Equal(t, dto.IntelligenceKindAI, m.Intelligence.Kind)
 		}
 		atlasID = members[w.atlas.handle].Intelligence.ID
@@ -451,8 +448,7 @@ func checkUpgradedInstallation(t *testing.T, w *upgradeWorld) {
 		theirs := organizationsOf(t, w.bob)
 		require.Len(t, theirs, 2, "bob has his own organization and joined alice's, where he was granted something")
 		require.Equal(t, dto.PermissionAdmin, theirs[w.bobSlug].Permission)
-		require.NotEmpty(t, theirs[w.bobSlug].PositionID)
-		require.Equal(t, []any{dto.PermissionMember, ""}, []any{theirs[w.aliceSlug].Permission, theirs[w.aliceSlug].PositionID}, "a grantee is a member with no position")
+		require.Equal(t, dto.PermissionMember, theirs[w.aliceSlug].Permission, "a grantee is a member")
 		require.Equal(t, aliceOrg.ID, theirs[w.aliceSlug].ID)
 		require.Equal(t, dto.PermissionMember, orgMembers(t, w.alice, aliceOrg.ID)[w.bobHandle].Permission)
 
@@ -501,7 +497,7 @@ func checkUpgradedInstallation(t *testing.T, w *upgradeWorld) {
 		defer atlas.Close()
 		defer other.Close()
 
-		// alice created both AIs: she manages them, so her post is trusted by each.
+		// alice hosts both AIs, so her post is trusted by each (SR2-07).
 		owner := testkit.Decode[dto.Message](w.alice.Post("/api/v1/rooms/"+w.team+"/messages", dto.PostMessageRequest{Text: "from the owner"}).RequireStatus(http.StatusCreated))
 		for name, conn := range map[string]*testkit.AgentConn{w.atlas.handle: atlas, w.other.handle: other} {
 			got := conn.Message(wsWait)

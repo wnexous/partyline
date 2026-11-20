@@ -117,24 +117,13 @@ WHERE c.agent_id = sqlc.arg(from_id) AND r.kind = 'group'
   AND EXISTS (SELECT 1 FROM room_members m WHERE m.room_id = c.room_id AND m.kind = 'agent' AND m.member_id = sqlc.arg(into_id))
 ON CONFLICT (agent_id, room_id) DO UPDATE SET seq = MAX(agent_cursors.seq, excluded.seq);
 
--- name: ReassignInviter :exec
--- Merge: the guests the merged identity invited answer to the surviving one.
-UPDATE org_members SET inviter_iid = sqlc.arg(into_id) WHERE inviter_iid = sqlc.arg(from_id);
-
--- name: ClearSelfInviter :exec
--- Merge: when the merged identity invited the survivor itself, the survivor answers to whoever invited the
--- merged one in that organization (nobody when it had no inviter), not to itself.
-UPDATE org_members SET inviter_iid = (SELECT f.inviter_iid FROM org_members f
-                                      WHERE f.org_id = org_members.org_id AND f.iid = sqlc.arg(from_id))
-WHERE org_members.iid = sqlc.arg(into_id) AND org_members.inviter_iid = sqlc.arg(into_id);
-
 -- name: ReassignInvitationInviter :exec
 -- Merge: a pending invitation the merged identity sent is the surviving one's.
 UPDATE org_invitations SET invited_by = sqlc.arg(into_id) WHERE invited_by = sqlc.arg(from_id);
 
 -- name: MoveAgentOrgMemberships :many
--- Merge: the organizations only the merged AI belongs to become the surviving AI's, with the permission,
--- position and inviter it had there. Where both belong, the survivor's membership stays (it wins).
+-- Merge: the organizations only the merged AI belongs to become the surviving AI's, with the permission it
+-- had there. Where both belong, the survivor's membership stays (it wins).
 UPDATE org_members SET iid = sqlc.arg(into_id)
 WHERE org_members.iid = sqlc.arg(from_id)
   AND org_members.org_id NOT IN (SELECT o.org_id FROM org_members o WHERE o.iid = sqlc.arg(into_id))

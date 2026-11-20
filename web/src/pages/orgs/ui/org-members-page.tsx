@@ -1,17 +1,15 @@
 import { getRouteApi } from "@tanstack/react-router";
 import { UserPlusIcon } from "lucide-react";
-import { useId, useMemo, useState } from "react";
+import { useId, useState } from "react";
 import { toast } from "sonner";
 import { useMe } from "@/entities/account";
 import { IntelligenceAvatar, IntelligenceName } from "@/entities/intelligence";
 import {
   isAdminOf,
   PermissionAdmin,
-  PermissionGuest,
   PermissionMember,
   permissionLabel,
   useOrg,
-  useOrgChart,
   useOrgInvitations,
   useOrgMembers,
   useRevokeInvitation,
@@ -20,12 +18,8 @@ import {
 import { InviteDialog } from "@/features/invite-to-org";
 import {
   DeleteAIDialog,
-  MoveMemberDialog,
-  type MoveTarget,
   OrgMemberActions,
   RemoveFromOrgDialog,
-  ShareAccessDialog,
-  type ShareTarget,
 } from "@/features/manage-org-member";
 import { isApiError } from "@/shared/api/client";
 import {
@@ -45,26 +39,23 @@ import { Skeleton } from "@/shared/ui/primitives/skeleton";
 const routeApi = getRouteApi("/_app/orgs/$orgId/members");
 
 /*
- * Who belongs to the organization (OMEM-03): each member with what they are in it, the position
- * they hold and, for a guest, who answers for them. Anyone who belongs may invite (guests; an admin
- * gives any permission and a position, OMEM-01, OMEM-04); what the viewer may do about each member
- * is what the server's chart says (CHART-03): move between positions (POS-04), and delete an AI of
- * this organization or remove anyone else from it (POS-05, POS-06), and give a person "the same
- * access" - the position the viewer holds - where the server offers it (ST-02). Admins also change
- * permissions (OMEM-05) and see the invitations still waiting.
+ * Who belongs to the organization (OMEM-03): each member with its permission. Only an admin invites,
+ * as an admin or a member (OMEM-01, OMEM-04, SR2-01); what the viewer may do about each member is
+ * what the server says: delete an AI of this organization (its host or an admin) or remove anyone
+ * else from it (an admin) (SR2-12, POS-06). Admins also change permissions (OMEM-05) and see the
+ * invitations still waiting.
  */
 
 const RANK: Record<string, number> = {
   [PermissionAdmin]: 0,
   [PermissionMember]: 1,
-  [PermissionGuest]: 2,
 };
 
-/** Admins first, then members, then guests; by name inside each. */
+/** Admins first, then members; by name inside each. */
 function inOrder(members: readonly OrgMember[]): OrgMember[] {
   return [...members].sort(
     (a, b) =>
-      (RANK[a.permission] ?? 3) - (RANK[b.permission] ?? 3) ||
+      (RANK[a.permission] ?? 2) - (RANK[b.permission] ?? 2) ||
       a.intelligence.display_name.localeCompare(b.intelligence.display_name, undefined, {
         sensitivity: "base",
       }) ||
@@ -78,21 +69,13 @@ export function OrgMembersPage() {
   // The layout has loaded the organization and shows its failures.
   const org = useOrg(orgId).data;
   const members = useOrgMembers(orgId);
-  const chart = useOrgChart(orgId);
   const me = useMe().data;
   const [inviting, setInviting] = useState(false);
-  const [moving, setMoving] = useState<MoveTarget | null>(null);
-  const [sharing, setSharing] = useState<ShareTarget | null>(null);
   const [removing, setRemoving] = useState<OrgMember | null>(null);
   const [deleting, setDeleting] = useState<OrgMember | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
 
   const admin = !!org && isAdminOf(org);
-  const positions = useMemo(
-    () => (chart.data?.positions ?? []).map(({ id, name, parent_id }) => ({ id, name, parent_id })),
-    [chart.data],
-  );
-  const myPosition = positions.find((p) => p.id === org?.position_id);
   if (!org) return null;
 
   return (
@@ -101,10 +84,12 @@ export function OrgMembersPage() {
         title={t("orgs.membersTitle")}
         description={t("orgs.membersBody", { org: org.name })}
         actions={
-          <Button onClick={() => setInviting(true)}>
-            <UserPlusIcon aria-hidden="true" />
-            {t("orgs.invite")}
-          </Button>
+          admin ? (
+            <Button onClick={() => setInviting(true)}>
+              <UserPlusIcon aria-hidden="true" />
+              {t("orgs.invite")}
+            </Button>
+          ) : undefined
         }
       />
       {notice ? (
@@ -136,49 +121,20 @@ export function OrgMembersPage() {
           admin={admin}
           viewerId={me?.intelligence.id}
           onNotice={setNotice}
-          onMove={(m) =>
-            setMoving({
-              id: m.intelligence.id,
-              name: m.intelligence.display_name,
-              positionId: m.position_id ?? "",
-            })
-          }
-          onShare={(m) =>
-            setSharing({
-              id: m.intelligence.id,
-              name: m.intelligence.display_name,
-              permission: m.permission,
-            })
-          }
           onRemove={setRemoving}
           onDelete={setDeleting}
         />
       )}
       {admin ? <PendingInvitations orgId={org.id} orgName={org.name} /> : null}
 
-      <InviteDialog
-        org={{ id: org.id, name: org.name }}
-        admin={admin}
-        positions={positions}
-        members={members.data ?? []}
-        open={inviting}
-        onOpenChange={setInviting}
-      />
-      <MoveMemberDialog
-        orgId={org.id}
-        orgName={org.name}
-        target={moving}
-        positions={positions}
-        viewer={{ admin, ...(org.position_id ? { positionId: org.position_id } : {}) }}
-        onClose={() => setMoving(null)}
-      />
-      <ShareAccessDialog
-        orgId={org.id}
-        orgName={org.name}
-        target={sharing}
-        position={myPosition ? { id: myPosition.id, name: myPosition.name } : null}
-        onClose={() => setSharing(null)}
-      />
+      {admin ? (
+        <InviteDialog
+          org={{ id: org.id, name: org.name }}
+          members={members.data ?? []}
+          open={inviting}
+          onOpenChange={setInviting}
+        />
+      ) : null}
       <RemoveFromOrgDialog
         identity={
           removing?.intelligence ?? {
@@ -204,8 +160,6 @@ function MembersTable({
   admin,
   viewerId,
   onNotice,
-  onMove,
-  onShare,
   onRemove,
   onDelete,
 }: {
@@ -215,8 +169,6 @@ function MembersTable({
   admin: boolean;
   viewerId: string | undefined;
   onNotice: (message: string | null) => void;
-  onMove: (m: OrgMember) => void;
-  onShare: (m: OrgMember) => void;
   onRemove: (m: OrgMember) => void;
   onDelete: (m: OrgMember) => void;
 }) {
@@ -227,23 +179,17 @@ function MembersTable({
       aria-label={t("orgs.membersLabel", { org: orgName })}
       className="w-full text-sm max-xl:block xl:table-fixed"
     >
-      {/* Fixed columns: a name or a position with no place to break wraps or is cut inside its column, and
-          never widens the page. The widths add up to 100%. */}
+      {/* Fixed columns: a name with no place to break wraps or is cut inside its column, and never
+          widens the page. The widths add up to 100%. */}
       <thead className="max-xl:sr-only">
         <tr className="border-b text-left text-xs text-muted-foreground">
-          <th scope="col" className="px-4 py-2 font-medium xl:w-[30%] xl:px-8">
+          <th scope="col" className="px-4 py-2 font-medium xl:w-[50%] xl:px-8">
             {t("orgs.colMember")}
           </th>
-          <th scope="col" className="px-3 py-2 font-medium xl:w-[16%]">
+          <th scope="col" className="px-3 py-2 font-medium xl:w-[20%]">
             {t("orgs.colPermission")}
           </th>
-          <th scope="col" className="px-3 py-2 font-medium xl:w-[20%]">
-            {t("orgs.colPosition")}
-          </th>
-          <th scope="col" className="px-3 py-2 font-medium whitespace-nowrap xl:w-[16%]">
-            {t("orgs.colInvitedBy")}
-          </th>
-          <th scope="col" className="px-4 py-2 text-right font-medium xl:w-[18%] xl:px-8">
+          <th scope="col" className="px-4 py-2 text-right font-medium xl:w-[30%] xl:px-8">
             {t("orgs.colActions")}
           </th>
         </tr>
@@ -259,8 +205,6 @@ function MembersTable({
             admin={admin}
             viewerId={viewerId}
             onNotice={onNotice}
-            onMove={onMove}
-            onShare={onShare}
             onRemove={onRemove}
             onDelete={onDelete}
           />
@@ -278,8 +222,6 @@ function OrgMemberRow({
   admin,
   viewerId,
   onNotice,
-  onMove,
-  onShare,
   onRemove,
   onDelete,
 }: {
@@ -290,8 +232,6 @@ function OrgMemberRow({
   admin: boolean;
   viewerId: string | undefined;
   onNotice: (message: string | null) => void;
-  onMove: (m: OrgMember) => void;
-  onShare: (m: OrgMember) => void;
   onRemove: (m: OrgMember) => void;
   onDelete: (m: OrgMember) => void;
 }) {
@@ -345,7 +285,7 @@ function OrgMemberRow({
             className="w-32"
             selectClassName="h-8"
           >
-            {[PermissionAdmin, PermissionMember, PermissionGuest].map((p) => (
+            {[PermissionAdmin, PermissionMember].map((p) => (
               <option key={p} value={p}>
                 {permissionLabel(t, p)}
               </option>
@@ -357,30 +297,11 @@ function OrgMemberRow({
           </Badge>
         )}
       </td>
-      <td className="min-w-0 xl:px-3 xl:py-3">
-        {m.position_name ? (
-          <span className="[overflow-wrap:anywhere]">{m.position_name}</span>
-        ) : (
-          <>
-            <span className="sr-only">{t("orgs.noPosition")}</span>
-            <span aria-hidden="true" className="text-muted-foreground">
-              —
-            </span>
-          </>
-        )}
-      </td>
-      <td className="min-w-0 text-muted-foreground [overflow-wrap:anywhere] max-xl:col-span-2 xl:px-3 xl:py-3">
-        {m.invited_by ? t("orgs.invitedBy", { name: m.invited_by.display_name }) : null}
-      </td>
       <td className="max-xl:col-span-2 xl:px-8 xl:py-3">
         <OrgMemberActions
           member={m}
-          name={who.display_name}
           orgName={orgName}
-          variant="table"
           describedBy={nameId}
-          onMove={onMove}
-          onShare={onShare}
           onRemove={onRemove}
           onDelete={onDelete}
         />
@@ -428,7 +349,6 @@ function PendingItem({ orgId, invitation: inv }: { orgId: string; invitation: In
         <Badge variant="secondary" className="px-1.5 py-0 text-[0.68rem] leading-5">
           {permissionLabel(t, inv.permission)}
         </Badge>
-        {inv.position_name ? <span>{inv.position_name}</span> : null}
         <span>{t("orgs.invitedBy", { name: inv.invited_by.display_name })}</span>
         <RelativeTime value={inv.expires_at} locale={locale}>
           {(when) => t("orgs.expires", { when })}

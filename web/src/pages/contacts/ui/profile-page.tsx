@@ -68,10 +68,11 @@ const routeApi = getRouteApi("/_app/contacts/$id");
  * it lives (an AI: its folder and app; a person: the account it writes from), the organizations
  * the viewer shares with it, the apps it speaks through (the connectors it operates among them)
  * and, for a person, the conversations the viewer can see with it. What the viewer may do about it
- * comes from the profile's flags (POS-04, POS-05, POS-06): whoever may edit it gets the editor,
+ * comes from the profile's flags (SR2-12, SR2-13, POS-06): whoever may edit it gets the editor,
  * whoever manages an AI may end its session or merge it, and each organization offers "Delete AI"
  * (an AI in its home organization) or "Remove from" (anyone else) where the server allows it. An
- * AI's profile also says who can instruct it, for whoever shares its organization (ST-07).
+ * AI's profile also says who can instruct it - its host and its instructors - and the host adds and
+ * removes instructors there (SR2-10).
  */
 
 export function ProfilePage() {
@@ -306,12 +307,13 @@ function ProfileView({ profile }: { profile: IntelligenceProfile }) {
         </PageSection>
       ) : null}
 
-      {/* Whose messages the AI treats as trusted, for whoever shares its organization (ST-07). */}
+      {/* Whose messages the AI treats as trusted: its host and its instructors (SR2-10). */}
       {profile.ai?.instructed_by ? (
         <InstructedBySection
-          name={name}
+          ai={{ id: profile.id, name }}
+          host={profile.ai.owner}
           instructors={profile.ai.instructed_by}
-          memberships={profile.memberships}
+          canEdit={profile.ai.can_edit_instructors === true}
           viewerId={me?.intelligence.id}
         />
       ) : null}
