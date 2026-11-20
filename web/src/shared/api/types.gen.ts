@@ -30,7 +30,7 @@ export interface Agent {
    */
   folder_label: string;
   owner: User;
-  my_level: Level; // manage for whoever manages the AI in an organization they share, use otherwise
+  my_level: Level; // manage for whoever manages the AI (its host or a user instructor), use otherwise
   online: boolean;
   last_seen_at?: string /* RFC 3339 */;
   created_at: string /* RFC 3339 */;
@@ -126,8 +126,8 @@ export interface RoomNotification {
 }
 /**
  * AgentMessage is a message delivered to an agent. Trusted is computed for the receiving
- * agent when the message is delivered: true only when its author manages the agent in the
- * agent's home organization (POS-10, AD-018). Its owner, its other AIs and its peers do not.
+ * agent when the message is delivered: true only when its author is the agent's host or one of its
+ * instructors (SR2-07, AD-018). Its other AIs and its peers are not, unless they are instructors.
  */
 export interface AgentMessage {
   room: RoomRef;
@@ -165,12 +165,12 @@ export interface RoomInfo {
   instructions_by?: string;
   /**
    * InstructionsTrusted is true only when that user manages the calling agent in the agent's
-   * home organization (INS-04, POS-10).
+   * home organization (INS-04, SR2-07).
    */
   instructions_trusted: boolean;
   /**
    * RoomTextTrusted is true only when whoever created the room or last changed its name or
-   * description manages the calling agent in the agent's home organization (INS-06, POS-10).
+   * description manages the calling agent in the agent's home organization (INS-06, SR2-07).
    */
   room_text_trusted: boolean;
   /**
@@ -482,8 +482,8 @@ export interface AgentAckFrame {
  * receives it (CID-06): never a message of a Partyline conversation. ID is what the AI answers
  * with (reply); ChatID names the chat for send_message together with ConnectionID. A chat of
  * another connection, a message of the account itself (FromSelf) and a sender whose account is not
- * linked to a user who manages the AI in its home organization are never trusted (CID-13, CID-14,
- * POS-10).
+ * linked to a user who instructs the AI (its host or an instructor) are never trusted (CID-13, CID-14,
+ * SR2-07).
  */
 export interface PlatformEvent {
   id: string;
@@ -499,7 +499,7 @@ export interface PlatformEvent {
   sender_id: string;
   /**
    * Trusted is true only when the sender's account is linked, through this connection, to a user
-   * who manages the AI in its home organization (POS-10, AD-018). It is decided when the message
+   * who instructs the AI (its host or an instructor) (SR2-07, AD-018). It is decided when the message
    * arrives.
    */
   trusted: boolean;
@@ -3102,7 +3102,7 @@ export interface HeartbeatSetter {
  * AgentHeartbeatFrame delivers one run of a schedule to the principal session (HB-04): the session hands
  * Prompt to the model as a turn and acknowledges the frame with an AgentAckFrame carrying RunID. Origin tells
  * whether the AI set the routine itself or someone who manages it did (SetBy), and Trusted is true only when
- * the setter manages the AI in its home organization at delivery time (HB-08).
+ * the setter instructs the AI (its host or an instructor) at delivery time (HB-08).
  */
 export interface AgentHeartbeatFrame {
   type: typeof AgentFrameTypeHeartbeat;
