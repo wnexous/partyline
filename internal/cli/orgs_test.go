@@ -28,16 +28,11 @@ func runOrgs(env map[string]string, args ...string) (code int, stdout, stderr st
 	return code, out.String(), errOut.String()
 }
 
-// orgsWorld is alice, who administers her own organization (her default) and Acme, with the chart
-//
-//	Admin ─ Director ─ Lead developer ─ Worktrees
-//	  └ Sentinel
-//
-// and is a plain member of Globex, where she holds Analyst; Dave is a user in no relation to her.
+// orgsWorld is alice, who administers her own organization (her default) and Acme, and is a plain member of
+// Globex; Dave is a user in no relation to her.
 type orgsWorld struct {
 	*channelEnv
 	acme, globex orgs.Membership
-	analyst      string
 }
 
 func newOrgsWorld(t *testing.T) *orgsWorld {
@@ -48,22 +43,16 @@ func newOrgsWorld(t *testing.T) *orgsWorld {
 	var err error
 	w.acme, err = e.env.App.Orgs.Create(ctx, e.alice.User.ID, "Acme")
 	require.NoError(t, err)
-	director := e.env.AddPosition(w.acme.ID, "Director", w.acme.PositionID)
-	lead := e.env.AddPosition(w.acme.ID, "Lead developer", director)
-	e.env.AddPosition(w.acme.ID, "Worktrees", lead)
-	e.env.AddPosition(w.acme.ID, "Sentinel", w.acme.PositionID)
-
 	bob := e.env.NewUser("bob")
 	w.globex, err = e.env.App.Orgs.Create(ctx, bob.User.ID, "Globex")
 	require.NoError(t, err)
-	w.analyst = e.env.AddPosition(w.globex.ID, "Analyst", w.globex.PositionID)
-	e.env.AddMember(w.globex.ID, e.alice.User.ID, orgs.PermissionMember, w.analyst)
+	e.env.AddMember(w.globex.ID, e.alice.User.ID, orgs.PermissionMember)
 	return w
 }
 
-// ORG-04 (T37): `partyline orgs` lists the organizations of the token's user - slug, name, permission and
-// position - by name, with a star on the default, the one a new AI joins when --org is not given, and says how
-// that is changed. The default follows the user's choice.
+// ORG-04, SR2-05: `partyline orgs` lists the organizations of the token's user - slug, name and permission - by
+// name, with a star on the default, the one a new AI joins when --org is not given, and says how that is
+// changed. The default follows the user's choice. There is no position column any more.
 func TestOrgsListsTheOrganizationsAndMarksTheDefault(t *testing.T) {
 	w := newOrgsWorld(t)
 	const footer = "\nNew AIs join the one marked * unless you pass --org; change your default in Settings.\n"
@@ -71,73 +60,39 @@ func TestOrgsListsTheOrganizationsAndMarksTheDefault(t *testing.T) {
 	code, out, errOut := runOrgs(w.vars())
 	require.Equal(t, 0, code, errOut)
 	require.Empty(t, errOut)
-	require.Equal(t, `  SLUG    NAME    PERMISSION  POSITION
-  acme    Acme    admin       Admin
-* alice   alice   admin       Admin
-  globex  Globex  member      Analyst
+	require.Equal(t, `  SLUG    NAME    PERMISSION
+  acme    Acme    admin
+* alice   alice   admin
+  globex  Globex  member
 `+footer, out)
+	for _, line := range strings.Split(out, "\n") {
+		require.Equal(t, strings.TrimRight(line, " "), line, "no trailing spaces: %q", line)
+	}
 
 	require.NoError(t, w.env.App.Orgs.SetDefault(context.Background(), w.alice.User.ID, w.acme.ID))
 	code, out, errOut = runOrgs(w.vars())
 	require.Equal(t, 0, code, errOut)
-	require.Equal(t, `  SLUG    NAME    PERMISSION  POSITION
-* acme    Acme    admin       Admin
-  alice   alice   admin       Admin
-  globex  Globex  member      Analyst
+	require.Equal(t, `  SLUG    NAME    PERMISSION
+* acme    Acme    admin
+  alice   alice   admin
+  globex  Globex  member
 `+footer, out, "the star follows the default she chose")
 }
 
-// A guest is listed too; the position column of a member with none is empty, with no trailing spaces.
-func TestOrgsListsAGuestAndAnEmptyPosition(t *testing.T) {
+// SR2-05: `partyline orgs <slug>` no longer prints a chart: it lists that one organization. The address is
+// matched in any case, and an id works too.
+func TestOrgsOfOneOrganizationListsOnlyIt(t *testing.T) {
 	w := newOrgsWorld(t)
-	carol := w.env.NewUser("carol")
-	w.env.AddMember(w.globex.ID, carol.User.ID, orgs.PermissionGuest, "")
-	env := map[string]string{"PARTYLINE_URL": w.env.URL, "PARTYLINE_TOKEN": w.tokenOf(t, carol)}
-	code, out, errOut := runOrgs(env)
-	require.Equal(t, 0, code, errOut)
-	require.Equal(t, `  SLUG    NAME    PERMISSION  POSITION
-* carol   carol   admin       Admin
-  globex  Globex  guest
+	const want = `  SLUG  NAME  PERMISSION
+  acme  Acme  admin
 
 New AIs join the one marked * unless you pass --org; change your default in Settings.
-`, out)
-	for _, line := range strings.Split(out, "\n") {
-		require.Equal(t, strings.TrimRight(line, " "), line, "no trailing spaces: %q", line)
-	}
-}
-
-// ORG-04: `partyline orgs <slug>` prints the organization's chart of positions as a tree, so --position names
-// can be found, and marks the one the user holds. The address is matched in any case, and an id works too.
-func TestOrgsPrintsThePositionTreeOfAnOrganization(t *testing.T) {
-	w := newOrgsWorld(t)
-	const want = `Acme
-  Admin (you)
-    Director
-      Lead developer
-        Worktrees
-    Sentinel
 `
 	for _, ref := range []string{"acme", "ACME", w.acme.ID} {
 		code, out, errOut := runOrgs(w.vars(), ref)
 		require.Equal(t, 0, code, "%s: %s", ref, errOut)
 		require.Equal(t, want, out, ref)
 	}
-
-	code, out, errOut := runOrgs(w.vars(), "globex")
-	require.Equal(t, 0, code, errOut)
-	require.Equal(t, "Globex\n  Admin\n    Analyst (you)\n", out, "her own position is the one marked, and only there")
-
-	code, out, errOut = runOrgs(w.vars(), "alice")
-	require.Equal(t, 0, code, errOut)
-	require.Equal(t, "alice\n  Admin (you)\n", out, "a name that is its address is printed once")
-
-	// an address that differs from the name is shown beside it, as partyline agents does
-	updated := "Acme Corp"
-	_, err := w.env.App.Orgs.Update(context.Background(), w.alice.User.ID, w.acme.ID, orgs.UpdateInput{Name: &updated})
-	require.NoError(t, err)
-	code, out, errOut = runOrgs(w.vars(), "acme")
-	require.Equal(t, 0, code, errOut)
-	require.True(t, strings.HasPrefix(out, "Acme Corp (acme)\n  Admin (you)\n"), out)
 }
 
 // L-045: an organization the user does not belong to is not found, whether it exists or not, and says so with
@@ -161,23 +116,16 @@ func TestOrgsWithABlankSlugListsThemAll(t *testing.T) {
 	w := newOrgsWorld(t)
 	code, out, errOut := runOrgs(w.vars(), "  ")
 	require.Equal(t, 0, code, errOut)
-	require.Contains(t, out, "  SLUG    NAME    PERMISSION  POSITION\n")
+	require.Contains(t, out, "  SLUG    NAME    PERMISSION\n")
 }
 
-// A chart with no positions says so; a user in no organization is told how to get one.
+// A user in no organization is told how to get one.
 func TestOrgsWithNothingToShow(t *testing.T) {
 	w := newOrgsWorld(t)
-	for _, p := range testkitPositions(t, w, w.globex.ID) {
-		require.NoError(t, w.env.App.Orgs.DeletePosition(context.Background(), w.globex.CreatedBy, w.globex.ID, p))
-	}
-	code, out, errOut := runOrgs(w.vars(), "globex")
-	require.Equal(t, 0, code, errOut)
-	require.Equal(t, "Globex\n  No positions yet.\n", out)
-
 	loner := w.env.NewUser("loner")
 	require.NoError(t, w.env.App.Orgs.Delete(context.Background(), loner.User.ID, loner.PersonalOrg().ID))
 	env := map[string]string{"PARTYLINE_URL": w.env.URL, "PARTYLINE_TOKEN": w.tokenOf(t, loner)}
-	code, out, errOut = runOrgs(env)
+	code, out, errOut := runOrgs(env)
 	require.Equal(t, 0, code, errOut)
 	require.Equal(t, "You belong to no organization: create one in the web app, or ask an admin to invite you.\n", out)
 	code, out, errOut = runOrgs(env, "acme")
@@ -239,9 +187,8 @@ func TestOrgsFailures(t *testing.T) {
 func TestHelpListsTheOrgsCommand(t *testing.T) {
 	var out bytes.Buffer
 	require.Equal(t, 0, execute(context.Background(), []string{"partyline", "--help"}, stdio{stdout: &out, stderr: &bytes.Buffer{}, getenv: func(string) string { return "" }}))
-	require.Contains(t, out.String(), "  orgs [slug]            list your organizations and where you stand in them; with an address, its positions\n")
-	require.Contains(t, out.String(), "AIs starts it; PARTYLINE_ORG, PARTYLINE_POSITION and PARTYLINE_PARENT stand in for the flags. An AI\n"+
-		"keeps the organization it was created in. partyline orgs lists the organizations and their positions.\n")
+	require.Contains(t, out.String(), "  orgs [slug]            list your organizations and your permission in each; with an address, only that one\n")
+	require.NotContains(t, out.String(), "position")
 }
 
 // ORG-04: after saving, `partyline login` says which organization new AIs join, in the design's words, from
@@ -323,16 +270,4 @@ func (e *channelEnv) userTokenOf(t *testing.T, c *testkit.Client) string {
 	_, secret, err := e.env.App.Users.CreateToken(context.Background(), c.User.ID, users.TokenInput{Kind: dto.TokenKindUser, Name: "cli"})
 	require.NoError(t, err)
 	return secret
-}
-
-// testkitPositions lists the ids of the positions of an organization.
-func testkitPositions(t *testing.T, w *orgsWorld, orgID string) []string {
-	t.Helper()
-	chart, err := w.env.App.Authz.Chart(context.Background(), orgID)
-	require.NoError(t, err)
-	var ids []string
-	for id := range chart.Positions {
-		ids = append(ids, id)
-	}
-	return ids
 }

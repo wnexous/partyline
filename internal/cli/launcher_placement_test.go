@@ -20,7 +20,8 @@ import (
 	"github.com/wnexous/partyline/internal/channel"
 )
 
-// The three placement variables the launcher consumes, and the ones it hands to the session instead.
+// The placement variables the launcher consumes (PARTYLINE_POSITION only to drop it, SR2-05), and the ones it
+// hands to the session instead.
 var (
 	placementUserVars   = []string{"PARTYLINE_ORG", "PARTYLINE_POSITION", "PARTYLINE_PARENT"}
 	placementLaunchVars = []string{"PARTYLINE_LAUNCH_ORG", "PARTYLINE_LAUNCH_POSITION", "PARTYLINE_LAUNCH_PARENT"}
@@ -55,18 +56,18 @@ func requireNoPlacement(t *testing.T, env []string, msgAndArgs ...any) {
 	}
 }
 
-// ORG-04, POS-07, POS-08 (AD-020): the leading --org, --position and --parent (as `--x v` and as `--x=v`, in
-// any order among the leading flags) are taken off the harness's arguments and handed to the session as
-// PARTYLINE_LAUNCH_ORG, PARTYLINE_LAUNCH_POSITION and PARTYLINE_LAUNCH_PARENT. The harness never gets the flags.
-func TestLauncherPassesTheOrganizationPositionAndParent(t *testing.T) {
+// ORG-04, POS-08, SR2-09 (AD-020): the leading --org and --parent (as `--x v` and as `--x=v`, in any order among
+// the leading flags) are taken off the harness's arguments and handed to the session as PARTYLINE_LAUNCH_ORG and
+// PARTYLINE_LAUNCH_PARENT. The harness never gets the flags.
+func TestLauncherPassesTheOrganizationAndParent(t *testing.T) {
 	m := claudeLaunch(t)
-	want := m.launchedWith("PARTYLINE_LAUNCH_ORG=acme", "PARTYLINE_LAUNCH_POSITION=Lead developer", "PARTYLINE_LAUNCH_PARENT=@lead")
+	want := m.launchedWith("PARTYLINE_LAUNCH_ORG=acme", "PARTYLINE_LAUNCH_PARENT=@lead")
 	argv := []string{"claude", "--dangerously-load-development-channels", "server:partyline", "--resume", "--org", "x"}
 
 	for name, flags := range map[string][]string{
-		"separate values":  {"--org", "acme", "--position", "Lead developer", "--parent", "@lead"},
-		"inline values":    {"--org=acme", "--position=Lead developer", "--parent=@lead"},
-		"mixed, reordered": {"--parent", "@lead", "--org=acme", "--take-over", "--position", "Lead developer"},
+		"separate values":  {"--org", "acme", "--parent", "@lead"},
+		"inline values":    {"--org=acme", "--parent=@lead"},
+		"mixed, reordered": {"--parent", "@lead", "--take-over", "--org=acme"},
 	} {
 		t.Run(name, func(t *testing.T) {
 			r := m.run(t, append(append([]string{"claude"}, flags...), "--resume", "--org", "x")...)
@@ -84,7 +85,6 @@ func TestLauncherPassesTheOrganizationPositionAndParent(t *testing.T) {
 	// each one on its own: only what was asked for is passed on (L-018)
 	for _, one := range []struct{ flag, value, variable string }{
 		{"--org", "acme", "PARTYLINE_LAUNCH_ORG"},
-		{"--position", "Lead developer", "PARTYLINE_LAUNCH_POSITION"},
 		{"--parent", "@lead", "PARTYLINE_LAUNCH_PARENT"},
 	} {
 		t.Run("only "+one.flag, func(t *testing.T) {
@@ -95,11 +95,25 @@ func TestLauncherPassesTheOrganizationPositionAndParent(t *testing.T) {
 	}
 }
 
+// SR2-05: --position was removed. Among the leading flags, in any spelling and with or without a value, it stops
+// the launch with exit 2 and a short message; nothing runs and the server is asked nothing.
+func TestSR205LauncherRefusesPosition(t *testing.T) {
+	m := claudeLaunch(t)
+	m.serveSession(t, func(http.ResponseWriter, *http.Request) { t.Error("the launcher asked the server") })
+	for _, args := range [][]string{{"--position", "Worktrees"}, {"--position=Worktrees"}, {"--position"}, {"--org", "acme", "--position", "Lead"}} {
+		r := m.run(t, append([]string{"claude"}, args...)...)
+		require.Equal(t, 2, r.code, "%v", args)
+		require.False(t, r.execed, "%v", args)
+		require.Equal(t, "partyline claude: "+errPositionRemoved.Error()+"\n", r.stderr)
+		require.Contains(t, r.stderr, "--position was removed")
+	}
+}
+
 // A flag with no value stops the launch with exit 2, like --as does, and nothing runs. Placement flags that follow
 // the harness's own arguments belong to the harness.
 func TestLauncherPlacementFlagsNeedAValueAndOnlyCountWhenLeading(t *testing.T) {
 	m := claudeLaunch(t)
-	for _, flag := range []string{"--org", "--position", "--parent"} {
+	for _, flag := range []string{"--org", "--parent"} {
 		r := m.run(t, "claude", flag)
 		require.Equal(t, 2, r.code, flag)
 		require.False(t, r.execed, flag)
@@ -112,8 +126,8 @@ func TestLauncherPlacementFlagsNeedAValueAndOnlyCountWhenLeading(t *testing.T) {
 	requireNoPlacement(t, r.env)
 }
 
-// ORG-04: PARTYLINE_ORG, PARTYLINE_POSITION and PARTYLINE_PARENT stand in for a flag that is absent, one by
-// one; a flag wins over its variable (and an empty flag value is no flag).
+// ORG-04: PARTYLINE_ORG and PARTYLINE_PARENT stand in for a flag that is absent, one by one; a flag wins over
+// its variable (and an empty flag value is no flag). SR2-05: PARTYLINE_POSITION is never read.
 func TestLauncherFallsBackOnThePlacementVariablesAndTheFlagWins(t *testing.T) {
 	m := claudeLaunch(t)
 	m.getenv = map[string]string{"PARTYLINE_ORG": "acme", "PARTYLINE_POSITION": "Worktrees", "PARTYLINE_PARENT": "@lead"}
@@ -121,17 +135,17 @@ func TestLauncherFallsBackOnThePlacementVariablesAndTheFlagWins(t *testing.T) {
 
 	r := m.run(t, "claude")
 	require.Equal(t, 7, r.code, r.stderr)
-	require.Equal(t, m.launchedWith("PARTYLINE_LAUNCH_ORG=acme", "PARTYLINE_LAUNCH_POSITION=Worktrees", "PARTYLINE_LAUNCH_PARENT=@lead"), r.env,
-		"the variables stand in for the flags")
+	require.Equal(t, m.launchedWith("PARTYLINE_LAUNCH_ORG=acme", "PARTYLINE_LAUNCH_PARENT=@lead"), r.env,
+		"the variables stand in for the flags; the position variable is dropped")
 
-	r = m.run(t, "claude", "--org", "globex", "--parent=@sentinel")
+	r = m.run(t, "claude", "--org", "globex")
 	require.Equal(t, 7, r.code, r.stderr)
-	require.Equal(t, m.launchedWith("PARTYLINE_LAUNCH_ORG=globex", "PARTYLINE_LAUNCH_POSITION=Worktrees", "PARTYLINE_LAUNCH_PARENT=@sentinel"), r.env,
+	require.Equal(t, m.launchedWith("PARTYLINE_LAUNCH_ORG=globex", "PARTYLINE_LAUNCH_PARENT=@lead"), r.env,
 		"a flag wins over its variable, the others fall back")
 
-	r = m.run(t, "claude", "--org=", "--position", "   ")
+	r = m.run(t, "claude", "--org=", "--parent", "   ")
 	require.Equal(t, 7, r.code, r.stderr)
-	require.Equal(t, m.launchedWith("PARTYLINE_LAUNCH_ORG=acme", "PARTYLINE_LAUNCH_POSITION=Worktrees", "PARTYLINE_LAUNCH_PARENT=@lead"), r.env,
+	require.Equal(t, m.launchedWith("PARTYLINE_LAUNCH_ORG=acme", "PARTYLINE_LAUNCH_PARENT=@lead"), r.env,
 		"an empty flag value is no flag")
 
 	m.getenv = map[string]string{"PARTYLINE_ORG": "  acme  "}
@@ -151,7 +165,7 @@ func TestLauncherConsumesThePlacementVariables(t *testing.T) {
 			require.False(t, strings.HasPrefix(kv, name+"="), "%s is not passed on", name)
 		}
 	}
-	require.Contains(t, r.env, "PARTYLINE_LAUNCH_POSITION=Worktrees")
+	require.NotContains(t, r.env, "PARTYLINE_LAUNCH_POSITION=Worktrees", "SR2-05: no position is handed on")
 }
 
 // L-035: without a flag and without a variable no placement is handed on at all, whatever else is in the
@@ -165,9 +179,10 @@ func TestLauncherWithoutAPlacementHandsNothingOn(t *testing.T) {
 	requireNoPlacement(t, r.env)
 }
 
-// Design, Risks: a session that was launched with a position runs shells where PARTYLINE_LAUNCH_* are set. A
-// launch from there is another AI: it never reads those variables as input and replaces them in the harness it
-// starts, so it does not inherit its parent's position (or organization, or parent AI).
+// Design, Risks: a session that was launched with a placement runs shells where PARTYLINE_LAUNCH_* are set (an
+// older launcher also set PARTYLINE_LAUNCH_POSITION). A launch from there is another AI: it never reads those
+// variables as input and replaces them in the harness it starts, so it does not inherit its parent's organization
+// or parent AI.
 func TestANestedLaunchDoesNotInheritThePlacementOfItsParent(t *testing.T) {
 	parentSession := []string{"PARTYLINE_LAUNCH_ORG=acme", "PARTYLINE_LAUNCH_POSITION=Lead developer", "PARTYLINE_LAUNCH_PARENT=@boss"}
 	nested := func(t *testing.T) *launchMachine {
@@ -187,10 +202,10 @@ func TestANestedLaunchDoesNotInheritThePlacementOfItsParent(t *testing.T) {
 		require.Equal(t, 7, r.code, r.stderr)
 		require.Equal(t, m.launchBase(), r.env)
 	})
-	t.Run("a position of its own: only that", func(t *testing.T) {
+	t.Run("an organization of its own: only that", func(t *testing.T) {
 		m := nested(t)
-		r := m.run(t, "claude", "--position", "Worktrees")
-		require.Equal(t, m.launchedWith("PARTYLINE_LAUNCH_POSITION=Worktrees"), r.env, "not the parent's organization or parent AI")
+		r := m.run(t, "claude", "--org", "globex")
+		require.Equal(t, m.launchedWith("PARTYLINE_LAUNCH_ORG=globex"), r.env, "not the parent's parent AI")
 	})
 	t.Run("a parent of its own: only that", func(t *testing.T) {
 		m := nested(t)
@@ -199,9 +214,9 @@ func TestANestedLaunchDoesNotInheritThePlacementOfItsParent(t *testing.T) {
 	})
 	t.Run("the user-facing variables are the input, the launch ones are not", func(t *testing.T) {
 		m := nested(t)
-		m.getenv["PARTYLINE_POSITION"] = "Worktrees"
+		m.getenv["PARTYLINE_ORG"] = "globex"
 		r := m.run(t, "claude")
-		require.Equal(t, m.launchedWith("PARTYLINE_LAUNCH_POSITION=Worktrees"), r.env)
+		require.Equal(t, m.launchedWith("PARTYLINE_LAUNCH_ORG=globex"), r.env)
 	})
 	t.Run("the server is asked for what this launch asks, not for the inherited placement", func(t *testing.T) {
 		m := nested(t)
@@ -211,12 +226,12 @@ func TestANestedLaunchDoesNotInheritThePlacementOfItsParent(t *testing.T) {
 			seen.Store(&h)
 			require.NoError(t, json.NewEncoder(w).Encode(dto.SessionState{}))
 		})
-		r := m.run(t, "claude", "--position", "Worktrees")
+		r := m.run(t, "claude", "--org", "globex")
 		require.Equal(t, 7, r.code, r.stderr)
 		h := seen.Load()
 		require.NotNil(t, h, "a placement is checked with the server")
-		require.Equal(t, "Worktrees", h.Get(dto.HeaderPosition))
-		require.Empty(t, h.Values(dto.HeaderOrg), "the parent's organization is not asked for")
+		require.Equal(t, "globex", h.Get(dto.HeaderOrg))
+		require.Empty(t, h.Values("X-Partyline-Position"), "the parent's position is not sent")
 		require.Empty(t, h.Values(dto.HeaderParent), "nor its parent AI")
 	})
 }
@@ -251,9 +266,9 @@ func (m *launchMachine) refuseSession(t *testing.T, status int, code dto.ErrorCo
 	return &asked
 }
 
-// ORG-04, ORG-05, POS-07: with a placement the launcher asks the server before it starts the harness, with the
-// headers a session sends, and does so without a terminal too - it is not the takeover prompt. A start that is
-// accepted goes on. The position travels percent-encoded.
+// ORG-04, ORG-05: with a placement the launcher asks the server before it starts the harness, with the headers a
+// session sends, and does so without a terminal too - it is not the takeover prompt. A start that is accepted
+// goes on.
 func TestLauncherChecksThePlacementWithTheServerBeforeStarting(t *testing.T) {
 	m := claudeLaunch(t)
 	var header atomic.Pointer[http.Header]
@@ -263,15 +278,15 @@ func TestLauncherChecksThePlacementWithTheServerBeforeStarting(t *testing.T) {
 		require.NoError(t, json.NewEncoder(w).Encode(dto.SessionState{}))
 	})
 
-	r := m.run(t, "claude", "--org", "acme", "--position", "Lead developer · Café", "--parent", "@lead", "--as", "atlas-bot")
+	r := m.run(t, "claude", "--org", "acme", "--parent", "@lead", "--as", "atlas-bot")
 	require.Equal(t, 7, r.code, r.stderr)
 	require.Empty(t, r.stderr)
 	require.True(t, r.execed, "an accepted placement starts the harness")
 	h := header.Load()
 	require.NotNil(t, h, "the server was asked, though stdin and stderr are not terminals")
-	require.Equal(t, []string{"testbox", "%2Fwork%2Facme", "claude", "atlas-bot", "acme", "Lead%20developer%20%C2%B7%20Caf%C3%A9", "@lead"}, []string{
+	require.Equal(t, []string{"testbox", "%2Fwork%2Facme", "claude", "atlas-bot", "acme", "@lead"}, []string{
 		h.Get(dto.HeaderMachine), h.Get(dto.HeaderFolder), h.Get(dto.HeaderHarness), h.Get(dto.HeaderAdopt),
-		h.Get(dto.HeaderOrg), h.Get(dto.HeaderPosition), h.Get(dto.HeaderParent),
+		h.Get(dto.HeaderOrg), h.Get(dto.HeaderParent),
 	})
 
 	t.Run("nothing is asked without a placement and without a terminal", func(t *testing.T) {
@@ -282,8 +297,8 @@ func TestLauncherChecksThePlacementWithTheServerBeforeStarting(t *testing.T) {
 	})
 }
 
-// ORG-05, POS-07, ORG-04 (design "Error Handling Strategy"): when the server refuses the placement - a creator
-// who is not in the organization (403), an organization or position that does not exist (422), an organization
+// ORG-05, ORG-04 (design "Error Handling Strategy"): when the server refuses the placement - a creator who is
+// not in the organization (403), an organization that does not exist (422), an organization
 // other than the AI's home (409) - the launcher prints the server's message, exits 1 and starts nothing. This is
 // so for a harness with a live session and for a tools-only one, and the refusal comes before the "not
 // registered" warning, which says "Starting anyway".
@@ -295,9 +310,7 @@ func TestLauncherStopsWhenTheServerRefusesThePlacement(t *testing.T) {
 		message string
 	}{
 		{"a creator who is not in the organization", 403, dto.ErrorCodeForbidden, "you are not a member of that organization"},
-		{"a position the creator may not give", 403, dto.ErrorCodeForbidden, "that position is not below your own"},
 		{"an organization that does not exist", 422, dto.ErrorCodeOrganizationRequired, "no organization has that slug or id: partyline orgs lists yours"},
-		{"a position that does not exist", 422, dto.ErrorCodePositionUnknown, "the organization has no position with that name: partyline orgs <slug> lists them"},
 		{"an organization other than the AI's home", 409, dto.ErrorCodeOrganizationMismatch, "this AI belongs to Acme (acme): an AI does not move to another organization"},
 	}
 	for _, harness := range []string{"claude", "pi"} {
@@ -309,7 +322,7 @@ func TestLauncherStopsWhenTheServerRefusesThePlacement(t *testing.T) {
 				m.terminals = map[int]bool{0: true, 2: true}
 				m.input = "y\n"
 
-				r := m.run(t, harness, "--org", "acme", "--position", "Worktrees")
+				r := m.run(t, harness, "--org", "acme")
 				require.Equal(t, 1, r.code, r.stderr)
 				require.False(t, r.execed, "the harness is not started")
 				require.Equal(t, "partyline "+harness+": "+c.message+"\n", r.stderr, "the server's message, and nothing about starting anyway")
@@ -389,16 +402,16 @@ func TestLauncherChecksThePlacementOnceWithoutAskingAboutTheLiveSession(t *testi
 	require.EqualValues(t, 1, asked.Load(), "one lookup answers the placement")
 }
 
-// ORG-04: --help tells how to start an AI in an organization, with a position and under a parent AI, and that the
+// ORG-04, SR2-09: --help tells how to start an AI in an organization and under a parent AI, and that the
 // variables stand in for the flags (the words are the help's own, written out here).
 func TestHelpDocumentsThePlacementFlags(t *testing.T) {
 	var out, errOut bytes.Buffer
 	code := execute(context.Background(), []string{"partyline", "--help"}, stdio{stdout: &out, stderr: &errOut, getenv: func(string) string { return "" }})
 	require.Equal(t, 0, code)
 	require.Contains(t, out.String(), "A new AI joins your default organization. Put --org <slug> before the arguments to start it in\n"+
-		"another one, --position <name> to give it a position there and --parent <@handle> when one of your\n"+
-		"AIs starts it; PARTYLINE_ORG, PARTYLINE_POSITION and PARTYLINE_PARENT stand in for the flags. An AI\n"+
-		"keeps the organization it was created in. partyline orgs lists the organizations and their positions.\n")
+		"another one and --parent <@handle> when one of your AIs starts it: that AI may then instruct the new\n"+
+		"one (its messages are trusted, like yours). PARTYLINE_ORG and PARTYLINE_PARENT stand in for the flags.\n"+
+		"An AI keeps the organization it was created in. partyline orgs lists your organizations.\n")
 }
 
 // sessionCall makes one tool call of a tools-only channel with identity id against the server at url, which
@@ -412,7 +425,7 @@ func sessionCall(t *testing.T, url string, id channel.Identity) {
 	go func() {
 		done <- channel.Run(ctx, channel.Options{
 			URL: url, Token: "pl_agent_x", Machine: id.Machine, Folder: id.Folder, MainFolder: id.MainFolder, Home: id.Home, Harness: id.Harness,
-			Adopt: id.Adopt, Org: id.Org, Position: id.Position, Parent: id.Parent, ToolsOnly: true,
+			Adopt: id.Adopt, Org: id.Org, Parent: id.Parent, ToolsOnly: true,
 			Stdin: inR, Stdout: outW, Stderr: io.Discard, TempDir: t.TempDir(),
 		})
 	}()
@@ -448,9 +461,9 @@ func TestTheLauncherSendsTheHeadersTheSessionSends(t *testing.T) {
 		t.Cleanup(srv.Close)
 		return srv.URL, func() http.Header { return *got.Load() }
 	}
-	names := []string{dto.HeaderMachine, dto.HeaderFolder, dto.HeaderHome, dto.HeaderHarness, dto.HeaderAdopt, dto.HeaderOrg, dto.HeaderPosition, dto.HeaderParent}
+	names := []string{dto.HeaderMachine, dto.HeaderFolder, dto.HeaderHome, dto.HeaderHarness, dto.HeaderAdopt, dto.HeaderOrg, dto.HeaderParent}
 	for name, id := range map[string]channel.Identity{
-		"everything":  {Machine: "dev box", Folder: "/work/the lab/Café", Home: "/home/alice", Harness: "pi", Adopt: "old-helper", Org: "acme", Position: "Lead developer · Café", Parent: "@lead"},
+		"everything":  {Machine: "dev box", Folder: "/work/the lab/Café", Home: "/home/alice", Harness: "pi", Adopt: "old-helper", Org: "acme", Parent: "@lead"},
 		"the minimum": {Machine: "devbox", Folder: "/work/acme"},
 		"no machine":  {Folder: "/work/acme", Org: "acme"},
 	} {

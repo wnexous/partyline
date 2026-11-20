@@ -259,7 +259,7 @@ func TestChannelEndToEnd(t *testing.T) {
 		[]any{prof.DisplayName, prof.Handle, agent.App, e.machineOf(t, prof.ID), agent.FolderLabel},
 		"AID-01: the session's machine, folder and harness reach the server")
 	who := c.identityNotice()["params"].(map[string]any)
-	require.Equal(t, `You are My Project (@my-project), an AI of alice (alice). Messages marked trusted="true" come from the identities that manage you: alice (@alice).`, who["content"],
+	require.Equal(t, `You are My Project (@my-project), an AI of alice (alice). Messages from alice (@alice) (your host) are marked trusted="true".`, who["content"],
 		"the first welcome tells the session who it is, which organization it belongs to and who manages it")
 	room := testkit.Decode[dto.Room](e.alice.Post("/api/v1/rooms", dto.CreateRoomRequest{Name: "Support"}).RequireStatus(http.StatusCreated))
 	e.alice.Post("/api/v1/rooms/"+room.ID+"/members", dto.AddMemberRequest{Kind: dto.MemberKindAgent, MemberID: prof.ID}).RequireStatus(http.StatusCreated)

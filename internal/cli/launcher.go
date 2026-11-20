@@ -115,6 +115,9 @@ func launcherFlags(args []string) (launcherOptions, error) {
 		if !slices.Contains(launcherValueFlags, flag) {
 			break
 		}
+		if flag == "--position" {
+			return launcherOptions{}, errPositionRemoved
+		}
 		if !inline {
 			if len(args) < 2 {
 				return launcherOptions{}, fmt.Errorf("%s needs a value", flag)
@@ -127,8 +130,6 @@ func launcherFlags(args []string) (launcherOptions, error) {
 			opts.project = value
 		case "--org":
 			opts.org = value
-		case "--position":
-			return launcherOptions{}, errPositionRemoved
 		case "--parent":
 			opts.parent = value
 		default:
