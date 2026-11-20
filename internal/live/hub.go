@@ -645,7 +645,7 @@ func (c *conn) orgChanged(ctx context.Context, orgID string) ([]frame, error) {
 }
 
 // invitationReceived renders an invitation for the user who answers it: the invitee, or for an invited AI
-// whoever manages it in its home organization (OMEM-01). Everybody else, the inviter included, hears nothing.
+// whoever manages it (its host or a user instructor) (OMEM-01). Everybody else, the inviter included, hears nothing.
 func (c *conn) invitationReceived(ctx context.Context, invitationID string) ([]frame, error) {
 	if c.hub.d.Orgs == nil {
 		return nil, nil

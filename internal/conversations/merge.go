@@ -27,14 +27,14 @@ var ErrIdentityOnline = errors.New("the AI is online: end its session before mer
 func MergeNotice(handle string) string { return "History merged from @" + handle }
 
 // Merge merges the AI fromID into the AI intoID, which the caller manages and which share their home
-// organization: everything the first had becomes the second's and the first is deleted (MRG-01, POS-04,
+// organization: everything the first had becomes the second's and the first is deleted (MRG-01, SR2-13,
 // AD-016).
 //
 //   - Group memberships move; where both are members, the surviving AI's settings win.
 //   - Delivery cursors in groups become the larger of the two.
-//   - The organizations only the first belongs to become the second's, with the permission, position and
-//     inviter it had there; where both belong, the surviving AI's membership wins. Whoever the first
-//     created or invited is the second's.
+//   - The organizations only the first belongs to become the second's, with the permission it had there;
+//     where both belong, the surviving AI's membership wins. Whoever the first created is the second's, its
+//     instructors instruct the second, and the AIs it instructed are instructed by the second (SR2-06).
 //   - A DM of the first with someone the second has no DM with becomes the second's DM, kept as it
 //     is. Where the second has a DM with that someone too, the first's messages (with their files
 //     and deliveries) are appended to it after a system message naming the first, its chats join
@@ -46,14 +46,12 @@ func MergeNotice(handle string) string { return "History merged from @" + handle
 //     of those connectors (acknowledged items included) and the count of platform messages the
 //     first lost to the bound or to expiry, which the second is told about on its next
 //     connection (CID-05, CID-10).
-//   - The organizations only the first belongs to become the second's, with the permission, position
-//     and inviter it had there; where both belong, the second's membership stays. What the first
-//     created - AIs, groups - and the guests it invited are the second's. If the first created the
-//     second, the second's creator is the first's creator, so that it is not left as its own.
+//   - What the first created - AIs, groups - is the second's. If the first created the second, the second's
+//     creator is the first's creator, so that it is not left as its own.
 //
 // It is one write transaction and is audited as agent.merge. The first AI must be offline
 // (ErrIdentityOnline). An AI the caller cannot see is access.ErrNotFound; one they see and do not
-// manage - in its home organization, where management is decided - or an AI of another home
+// manage (its host or a user instructor, SR2-13) - or an AI of another home
 // organization than the first's is access.ErrForbidden; fromID and intoID must differ.
 func (s *Service) Merge(ctx context.Context, p authn.Principal, fromID, intoID string) error {
 	if p.Kind != authn.KindUser {

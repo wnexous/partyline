@@ -178,7 +178,7 @@ func (r *Registry) ReadSessionUnread(ctx context.Context, agentID, roomID string
 }
 
 // TrustedOnly reports whether the AI's delivery mode in the room is trusted (MEM-04): an untrusted message
-// is then no context and no unread message it may read either (SN-03, POS-10).
+// is then no context and no unread message it may read either (SN-03, SR2-07).
 func (r *Registry) TrustedOnly(ctx context.Context, agentID, roomID string) (bool, error) {
 	member, err := r.store.R().GetRoomMemberByMember(ctx, db.GetRoomMemberByMemberParams{
 		RoomID: roomID, Kind: string(dto.MemberKindAgent), MemberID: agentID,

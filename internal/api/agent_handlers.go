@@ -91,7 +91,7 @@ func agentToken(r *http.Request) (authn.Principal, error) {
 // changes nothing (SES-01, SESS-19). When the headers also name an organization, a
 // position or a parent (--org, --position, --parent), it answers with the refusal the session itself
 // would get for them - 403, 409 or 422, in the same words - so that the launcher can tell the person
-// before it starts the harness (ORG-05, POS-07); that check changes nothing either.
+// before it starts the harness (ORG-05); that check changes nothing either.
 func (s *server) agentSession(w http.ResponseWriter, r *http.Request) error {
 	p, err := agentToken(r)
 	if err != nil {
@@ -400,7 +400,7 @@ func (s *server) agentUnread(w http.ResponseWriter, r *http.Request, p authn.Pri
 			}
 		}
 		if trustedOnly && !trusted {
-			continue // SN-03, POS-10: in trusted mode an untrusted message is no context either
+			continue // SN-03, SR2-07: in trusted mode an untrusted message is no context either
 		}
 		out.Messages = append(out.Messages, agentMessage(room, m, trusted))
 	}
@@ -516,8 +516,8 @@ func (s *server) agentRoomInfo(w http.ResponseWriter, r *http.Request, p authn.P
 	if err != nil {
 		return err
 	}
-	// INS-04, INS-06, POS-10: the instructions, and the name and description, are trusted only when
-	// the identity that last wrote them manages the calling agent in its home organization.
+	// INS-04, INS-06, SR2-07: the instructions, and the name and description, are trusted only when
+	// the identity that last wrote them instructs the calling agent (its host or an instructor).
 	trust := s.Trust.Open()
 	instructionsTrusted, err := trust.Trusts(r.Context(), room.InstructionsBy, p.AgentID)
 	if err != nil {
@@ -616,7 +616,7 @@ func (s *server) agentHistory(w http.ResponseWriter, r *http.Request, p authn.Pr
 		return err
 	}
 	out := dto.Page[dto.AgentMessage]{Items: make([]dto.AgentMessage, len(list)), HasMore: more}
-	trust := s.Trust.Open() // one for the page: the AI's home chart is read once (POS-10)
+	trust := s.Trust.Open() // one for the page: the AI's links are read once (SR2-07)
 	for i, m := range list {
 		trusted, err := trust.Trusts(r.Context(), delivery.AuthorOf(m.MessageView), p.AgentID)
 		if err != nil {

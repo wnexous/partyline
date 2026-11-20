@@ -41,7 +41,7 @@ type pushSession struct {
 	copyOfSibling bool
 	// trustedOnly is set when the AI's delivery mode in the room is trusted (MEM-04): the catch-up gives
 	// the session no untrusted message as context either, because untrusted text is not a boundary the
-	// model may follow (SN-03, POS-10).
+	// model may follow (SN-03, SR2-07).
 	trustedOnly bool
 	// standIn says the session receives the message in place of the principal, which is not live (SN-10):
 	// a DM or a bare @handle that would notify it. The session's acknowledgement consumes the message for
@@ -366,7 +366,7 @@ func (g *Gateway) pushCatchUp(agentID string, t pushSession, m dto.AgentMessage)
 			}
 		}
 		if t.trustedOnly && !trusted {
-			continue // SN-03, POS-10: in trusted mode an untrusted message is not context either
+			continue // SN-03, SR2-07: in trusted mode an untrusted message is not context either
 		}
 		frame := dto.AgentMessage{Room: m.Room, Trusted: trusted, Context: true, Message: convert.Message(msg)}
 		if sent == 0 {
@@ -589,7 +589,7 @@ func (g *Gateway) standInRoom(ctx context.Context, c *conn, a db.Agent, st RoomS
 				}
 			}
 			if trustedOnly && !trusted {
-				continue // SN-03, POS-10: in trusted mode an untrusted message is not context either
+				continue // SN-03, SR2-07: in trusted mode an untrusted message is not context either
 			}
 			frame.Trusted = trusted
 		}

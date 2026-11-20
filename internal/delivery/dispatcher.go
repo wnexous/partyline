@@ -36,7 +36,7 @@ type DispatcherOptions struct {
 	Bus    *events.Bus
 	Agents AgentPusher
 	Load   MessageLoader
-	// Trust opens the trust of each dispatch (POS-10); without it no message is trusted.
+	// Trust opens the trust of each dispatch (SR2-07); without it no message is trusted.
 	Trust TrustSource
 	// Logger defaults to slog.Default().
 	Logger *slog.Logger
@@ -53,8 +53,8 @@ const DefaultTranscriptHold = 60 * time.Second
 
 // AgentDispatcher pushes every new room message to the online agents the delivery plan
 // targets (DLV-02) and whose delivery mode wants it (MEM-03, MEM-04), with a trusted flag
-// computed for each receiving agent: true when the author manages it in its home organization
-// (POS-10), decided when the message is dispatched, with one read of each organization's chart for
+// computed for each receiving agent: true when the author manages it (its host or a user instructor)
+// (SR2-07), decided when the message is dispatched, with one read of each organization's chart for
 // the whole dispatch. Rooms
 // whose agent delivery is paused by the loop guard get no pushes (DLV-08). Offline agents
 // receive the message from their backlog when they reconnect.

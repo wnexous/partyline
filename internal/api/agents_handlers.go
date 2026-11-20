@@ -90,7 +90,7 @@ func (s *server) updateAgent(w http.ResponseWriter, r *http.Request, p authn.Pri
 }
 
 // deleteAgent deletes the AI for good in its home organization, with its memberships and cursors;
-// whoever the organization lets delete it may (POS-05): an admin of it, or whoever manages a guest AI.
+// its host or an admin of its home organization may (SR2-12).
 func (s *server) deleteAgent(w http.ResponseWriter, r *http.Request, p authn.Principal) error {
 	if err := s.Agents.Delete(r.Context(), p, r.PathValue("id")); err != nil {
 		return err

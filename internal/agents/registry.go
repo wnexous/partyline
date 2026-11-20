@@ -165,7 +165,7 @@ type Agent struct {
 	// Home is the home folder of the host's machine the AI lives on, as the machine reported it; empty
 	// when unknown. It lets a folder read "~/x".
 	Home string
-	// Level is manage for whoever manages the agent in an organization they share with it, use for
+	// Level is manage for whoever manages the agent (its host or a user instructor), use for
 	// whoever only sees it.
 	Level access.Level
 	// Online tells whether the agent has a live connection.
@@ -376,14 +376,14 @@ func (r *Registry) membersChanged(roomIDs []string) {
 	}
 }
 
-// Delete deletes the AI for good in its home organization (POS-05, POS-06): the right is the organization's
+// Delete deletes the AI for good (SR2-12, POS-06): its host or an admin of its home organization may
 // (authorizeDelete), decided in the transaction that deletes. The AI goes with its memberships in every
 // organization and room, and its cursors. Its direct messages go with it (DM-08): the intelligence's
 // deletion cascades to every room that names it as a participant. The platform queue goes too (its rows cascade,
 // CID-24), and the connections the agent operated have no operator afterwards: the bus tells the connector
 // manager, which stops them and shows what to do (CID-02). The AI that is the only admin of an organization is
 // not deleted (orgs.ErrLastAdmin, OMEM-05). Afterwards its live session ends as that of a deleted AI and every
-// organization it belonged to is told its chart changed: the AIs and guests it created or invited lose that link.
+// organization it belonged to is told it changed.
 //
 // The commit is the end of everything that can fail: once the row is gone the delete has happened, and what
 // follows (afterDelete) is best effort that is logged and never returned, so a delete that took effect answers

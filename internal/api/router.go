@@ -82,7 +82,7 @@ type Deps struct {
 	// agent gateway. Without it no secret can be given (503).
 	Secrets SecretDeliverer
 	// Trust opens the trust of each request that tells an AI what it may trust: the history tool and the
-	// room's instructions (POS-10). Without it nothing is trusted.
+	// room's instructions (SR2-07). Without it nothing is trusted.
 	Trust delivery.TrustSource
 	// Push serves the Web Push routes: the key, the subscriptions and the test notification
 	// (PUSH-02, PUSH-03, PUSH-04, PUSH-05, PUSH-15).

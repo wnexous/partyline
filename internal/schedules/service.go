@@ -91,7 +91,7 @@ var (
 		"the routine changed meanwhile: read it again")
 	// ErrNoManager is a routine an AI would make active while nobody manages it: nobody can be told (HB-09).
 	ErrNoManager = httpx.NewError(http.StatusConflict, dto.ErrorCodeNoManager,
-		"nobody manages you in your organization, so a routine you set cannot be shown to a manager: ask someone who manages you to set it")
+		"nobody manages you, so a routine you set cannot be shown to a manager: ask someone who manages you to set it")
 	// ErrNoticeFailed is a routine an AI would make active whose manager notice could not be delivered (HB-09).
 	ErrNoticeFailed = httpx.NewError(http.StatusServiceUnavailable, dto.ErrorCodeUnavailable,
 		"your nearest manager could not be told about the routine, so nothing changed: try again later")
@@ -165,7 +165,7 @@ type role int
 
 const (
 	roleViewer  role = iota + 1 // sees the AI, does not manage it
-	roleManager                 // manages it (POS-04)
+	roleManager                 // manages it: its host or a user instructor (SR2-13)
 	roleSelf                    // the AI itself
 )
 

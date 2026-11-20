@@ -138,10 +138,10 @@ type App struct {
 	Bus         *events.Bus
 	Users       *users.Service
 	Access      *access.Authorizer
-	// Authz answers the organization questions: membership, the admin permission, who manages whom
-	// and who is trusted (AD-017). Every service that authorizes through organizations asks it.
+	// Authz answers the organization questions: membership, the admin permission, who instructs and
+	// manages an AI (AD-017, SR2-07). Every service that authorizes through organizations asks it.
 	Authz *orgs.Authz
-	// Orgs is the organization use cases: organizations, their org chart, members and invitations.
+	// Orgs is the organization use cases: organizations, members, invitations and instructors.
 	Orgs  *orgs.Service
 	Rooms *rooms.Service
 	// Settings holds the instance settings an admin changes, such as the attachment retention (RET-01).
@@ -174,8 +174,8 @@ type App struct {
 	Gateway *agents.Gateway
 	Live    *live.Hub
 
-	// trust opens the trust of one operation: a message is trusted by an AI when its author manages
-	// the AI in the AI's home organization (POS-10). Every operation reads each chart at most once.
+	// trust opens the trust of one operation: a message is trusted by an AI when its author is the AI's
+	// host or one of its instructors (SR2-07). Every operation reads each AI's links at most once.
 	trust delivery.TrustSource
 
 	handler http.Handler
