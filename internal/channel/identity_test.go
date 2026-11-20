@@ -96,24 +96,19 @@ func TestIdentityHeaders(t *testing.T) {
 	}
 }
 
-// ORG-04, POS-07, POS-08 (AD-020): a session that asks for an organization, a position or a parent says so in
-// X-Partyline-Org, X-Partyline-Position and X-Partyline-Parent. The position is percent-encoded like the folder,
-// so a name with spaces or accents travels in a header. Each header is sent only when its value is set (L-035).
+// ORG-04, POS-08, SR2-09 (AD-020): a session that asks for an organization or a parent says so in
+// X-Partyline-Org and X-Partyline-Parent, each only when its value is set (L-035). SR2-05: no position header is
+// ever sent.
 func TestIdentityHeadersCarryThePlacement(t *testing.T) {
-	id := Identity{Machine: "devbox", Folder: "/work/acme", Org: "acme", Position: "Lead developer · Café", Parent: "@lead"}
+	id := Identity{Machine: "devbox", Folder: "/work/acme", Org: "acme", Parent: "@lead"}
 	h := http.Header{}
 	id.setHeaders(h)
 	require.Equal(t, "acme", h.Get(dto.HeaderOrg))
 	require.Equal(t, "@lead", h.Get(dto.HeaderParent))
-	require.Equal(t, "Lead%20developer%20%C2%B7%20Caf%C3%A9", h.Get(dto.HeaderPosition), "the wire value of the position")
-	position, err := url.PathUnescape(h.Get(dto.HeaderPosition))
-	require.NoError(t, err)
-	require.Equal(t, id.Position, position)
+	require.NotContains(t, h, "X-Partyline-Position", "SR2-05: positions were removed")
 
-	placement := []string{dto.HeaderOrg, dto.HeaderPosition, dto.HeaderParent}
-	for set, only := range map[string]Identity{
-		dto.HeaderOrg: {Org: "acme"}, dto.HeaderPosition: {Position: "Worktrees"}, dto.HeaderParent: {Parent: "@lead"},
-	} {
+	placement := []string{dto.HeaderOrg, dto.HeaderParent}
+	for set, only := range map[string]Identity{dto.HeaderOrg: {Org: "acme"}, dto.HeaderParent: {Parent: "@lead"}} {
 		h := http.Header{}
 		only.setHeaders(h)
 		for _, name := range placement {
@@ -226,11 +221,9 @@ func requireIdentity(t *testing.T, r request, id Identity) {
 	require.Equal(t, id.Home, home, r.path)
 	require.Equal(t, id.Harness, r.header.Get(dto.HeaderHarness), r.path)
 	require.Equal(t, id.Adopt, r.header.Get(dto.HeaderAdopt), r.path)
-	// the placement headers are sent exactly when the identity asks for a placement (L-035)
-	position, err := url.PathUnescape(r.header.Get(dto.HeaderPosition))
-	require.NoError(t, err, r.path)
-	require.Equal(t, id.Position, position, r.path)
-	for _, h := range []struct{ name, want string }{{dto.HeaderOrg, id.Org}, {dto.HeaderPosition, id.Position}, {dto.HeaderParent, id.Parent}} {
+	// the placement headers are sent exactly when the identity asks for a placement (L-035); never a position
+	require.NotContains(t, r.header, "X-Partyline-Position", r.path)
+	for _, h := range []struct{ name, want string }{{dto.HeaderOrg, id.Org}, {dto.HeaderParent, id.Parent}} {
 		_, sent := r.header[http.CanonicalHeaderKey(h.name)]
 		require.Equal(t, h.want != "", sent, "%s: %s is sent only when set", r.path, h.name)
 	}
@@ -248,13 +241,13 @@ func TestEveryConnectionAndCallSendsTheIdentity(t *testing.T) {
 	everyConnectionSendsTheIdentity(t, Identity{Machine: "dev box", Folder: folder, Home: "/home/alice", Harness: "pi", Adopt: "old-helper"})
 }
 
-// ORG-04, POS-07, POS-08: a session that asked for an organization, a position and a parent says so on every
+// ORG-04, POS-08, SR2-09: a session that asked for an organization and a parent says so on every
 // dial and every call, on the live WebSocket, on the tools-only server, in listen and in the turn-end hook.
 func TestEveryConnectionAndCallSendsThePlacement(t *testing.T) {
 	folder := filepath.Join(t.TempDir(), "the lab", "Café")
 	everyConnectionSendsTheIdentity(t, Identity{
 		Machine: "dev box", Folder: folder, Home: "/home/alice", Harness: "pi", Adopt: "old-helper",
-		Org: "acme", Position: "Lead developer · Café", Parent: "@lead",
+		Org: "acme", Parent: "@lead",
 	})
 }
 
@@ -266,7 +259,7 @@ func everyConnectionSendsTheIdentity(t *testing.T, id Identity) {
 		url, reqs := recordingServer(t)
 		s := startSession(t, Options{
 			URL: url, Token: "pl_agent_x", Machine: id.Machine, Folder: id.Folder, Home: id.Home, Harness: id.Harness, Adopt: id.Adopt,
-			Org: id.Org, Position: id.Position, Parent: id.Parent, TempDir: t.TempDir(), timing: fastTiming,
+			Org: id.Org, Parent: id.Parent, TempDir: t.TempDir(), timing: fastTiming,
 		})
 		s.handshake()
 		first, second := nextRequest(t, reqs), nextRequest(t, reqs)
@@ -293,7 +286,7 @@ func everyConnectionSendsTheIdentity(t *testing.T, id Identity) {
 		url, reqs := recordingServer(t)
 		s := startSession(t, Options{
 			URL: url, Token: "pl_agent_x", Machine: id.Machine, Folder: id.Folder, Home: id.Home, Harness: id.Harness, Adopt: id.Adopt,
-			Org: id.Org, Position: id.Position, Parent: id.Parent, ToolsOnly: true, TempDir: t.TempDir(), timing: fastTiming,
+			Org: id.Org, Parent: id.Parent, ToolsOnly: true, TempDir: t.TempDir(), timing: fastTiming,
 		})
 		s.handshake()
 		s.send(map[string]any{"jsonrpc": "2.0", "id": 9, "method": "tools/call", "params": map[string]any{"name": "list_rooms", "arguments": map[string]any{}}})
@@ -314,7 +307,7 @@ func everyConnectionSendsTheIdentity(t *testing.T, id Identity) {
 		go func() {
 			done <- Listen(ctx, ListenOptions{
 				URL: url, Token: "pl_agent_x", Machine: id.Machine, Folder: id.Folder, Home: id.Home, Harness: id.Harness, Adopt: id.Adopt,
-				Org: id.Org, Position: id.Position, Parent: id.Parent, Stdout: &syncBuffer{}, Stderr: &syncBuffer{}, timing: fastTiming,
+				Org: id.Org, Parent: id.Parent, Stdout: &syncBuffer{}, Stderr: &syncBuffer{}, timing: fastTiming,
 			})
 		}()
 		first, second := nextRequest(t, reqs), nextRequest(t, reqs)

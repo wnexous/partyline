@@ -21,7 +21,7 @@ func TestIdentityNoticeSaysCreatorCreatedAndMemberships(t *testing.T) {
 	w := worker1()
 	w.Memberships = []dto.AgentMembership{
 		{Organization: dto.ContactOrg{ID: "org-2", Name: "Globex", Slug: "globex"}, Permission: "member"},
-		{Organization: dto.ContactOrg{ID: "org-3", Name: "Initech", Slug: "initech"}, Permission: "guest"},
+		{Organization: dto.ContactOrg{ID: "org-3", Name: "Initech", Slug: "initech"}, Permission: "member"},
 		{Organization: dto.ContactOrg{ID: "org-4", Name: "Umbrella", Slug: "umbrella"}, Permission: "admin"},
 	}
 	w.Creator = &dto.IntelligenceRef{ID: "ai-lead", Kind: dto.IntelligenceKindAI, DisplayName: "Lead", Handle: "lead"}
@@ -30,13 +30,13 @@ func TestIdentityNoticeSaysCreatorCreatedAndMemberships(t *testing.T) {
 		{ID: "ai-3", Kind: dto.IntelligenceKindAI, DisplayName: "Worker 3", Handle: "w3"},
 	}
 	w.Connections = []dto.AgentConnection{{ID: "01HCONN2", Platform: "telegram"}}
-	require.Equal(t, `You are Worker 1 (@w1), an AI of Acme (acme), position Worktrees. Messages marked trusted="true" come from the identities that manage you: Lead (@lead), Alice (@alice).`+
-		` You also belong to Globex (globex), Initech (initech) as a guest, Umbrella (umbrella) as an admin.`+
+	require.Equal(t, wantWorker1+
+		` You also belong to Globex (globex), Initech (initech), Umbrella (umbrella) as an admin.`+
 		` You were created by Lead (@lead). You created: Worker 2 (@w2), Worker 3 (@w3).`+
 		` You operate: Telegram (connection 01HCONN2).`, identityText(w))
 
 	w.Memberships, w.Created, w.Connections = nil, []dto.IntelligenceRef{}, nil
-	plain := `You are Worker 1 (@w1), an AI of Acme (acme), position Worktrees. Messages marked trusted="true" come from the identities that manage you: Lead (@lead), Alice (@alice).`
+	plain := wantWorker1
 	w.Creator = &dto.IntelligenceRef{ID: "ai-1", DisplayName: "Worker 1", Handle: "w1"}
 	require.Equal(t, plain, identityText(w), "nothing to say, nothing said")
 	host := w.Owner
@@ -93,20 +93,21 @@ func identityNotices(t *testing.T, base string, setup func(l *link)) []string {
 	return out
 }
 
-// SI-09: a fresh welcome on the same connection announces the identity again only when its text differs from the
-// last one announced; a channel that became the updated program announces only a change of what it was told.
+// SI-09, SR2-11: a fresh welcome on the same connection announces the identity again only when its text differs
+// from the last one announced (a new instructor does); a channel that became the updated program announces only a
+// change of what it was told.
 func TestAFreshWelcomeAnnouncesOnlyAChangedIdentity(t *testing.T) {
 	first := worker1()
 	same := worker1()
 	same.Session.ConnectedAt = time.Date(2026, 11, 19, 12, 0, 0, 0, time.UTC) // not part of the notice
 	promoted := worker1()
-	promoted.Position = "Lead developer"
+	promoted.Instructors = append(append([]dto.IntelligenceRef{}, promoted.Instructors...), dto.IntelligenceRef{ID: "id-dora", DisplayName: "Dora", Handle: "dora"})
 	withChild := promoted
 	withChild.Created = []dto.IntelligenceRef{{ID: "ai-2", DisplayName: "Worker 2", Handle: "w2"}}
 
 	got := identityNotices(t, welcomesServer(t, first, same, promoted, promoted, withChild), nil)
 	require.Equal(t, []string{identityText(first), identityText(promoted), identityText(withChild)}, got)
-	require.Contains(t, got[1], "position Lead developer")
+	require.Contains(t, got[1], "Alice (@alice) and Dora (@dora) are marked trusted")
 	require.Contains(t, got[2], "You created: Worker 2 (@w2).")
 
 	got = identityNotices(t, welcomesServer(t, first, same, promoted), func(l *link) { l.resumed = true })

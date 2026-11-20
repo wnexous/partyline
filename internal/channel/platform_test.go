@@ -389,6 +389,6 @@ func TestChannelTellsTheAIWhichConnectionsItOperates(t *testing.T) {
 	}))
 	s := startSession(t, p.options())
 	s.handshake()
-	require.Equal(t, `You are Builder (@builder), an AI of alice (alice). Messages marked trusted="true" come from the identities that manage you: alice (@alice). `+
+	require.Equal(t, `You are Builder (@builder), an AI of alice (alice). Messages from alice (@alice) (your host) are marked trusted="true". `+
 		"You operate: WhatsApp +55 11 *****-0000 (connection "+p.connection+").", s.identityNotice().Content)
 }

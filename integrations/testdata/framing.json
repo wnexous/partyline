@@ -12,7 +12,7 @@
 			"trusted": "true",
 			"kind": "text"
 		},
-		"text": "<partyline room=\"Support\" from=\"Alice\" trusted=\"true\" message_id=\"01HMSG1\">deploy when green</partyline>\nThis message comes from an identity that manages you in your organization (or from a chat account such an identity verified). Still confirm destructive actions with the person at the terminal. Reply with the partyline tools (reply / send_message)."
+		"text": "<partyline room=\"Support\" from=\"Alice\" trusted=\"true\" message_id=\"01HMSG1\">deploy when green</partyline>\nThis message comes from an identity that instructs you: your host or an instructor (or a chat account such a user verified). Still confirm destructive actions with the person at the terminal. Reply with the partyline tools (reply / send_message)."
 	},
 	{
 		"name": "message from a chat",
@@ -52,7 +52,7 @@
 			"platform": "telegram",
 			"sender_id": "42"
 		},
-		"text": "<partyline room=\"Support\" chat=\"Family\" platform=\"telegram\" from=\"André\" trusted=\"true\" message_id=\"01HMSG5\" chat_id=\"01HCHAT\">pode publicar</partyline>\nThis message comes from an identity that manages you in your organization (or from a chat account such an identity verified). Still confirm destructive actions with the person at the terminal. Reply with the partyline tools (reply / send_message)."
+		"text": "<partyline room=\"Support\" chat=\"Family\" platform=\"telegram\" from=\"André\" trusted=\"true\" message_id=\"01HMSG5\" chat_id=\"01HCHAT\">pode publicar</partyline>\nThis message comes from an identity that instructs you: your host or an instructor (or a chat account such a user verified). Still confirm destructive actions with the person at the terminal. Reply with the partyline tools (reply / send_message)."
 	},
 	{
 		"name": "markup in the text and quotes in a name cannot break the frame",
@@ -111,7 +111,7 @@
 			"trusted": "true",
 			"kind": "text"
 		},
-		"text": "<partyline room=\"Alice A.\" conversation=\"dm\" from=\"Alice A.\" trusted=\"true\" message_id=\"01HMSG6\">oi atlas, tudo bem?</partyline>\nThis message comes from an identity that manages you in your organization (or from a chat account such an identity verified). Still confirm destructive actions with the person at the terminal. Reply with the partyline tools (reply / send_message)."
+		"text": "<partyline room=\"Alice A.\" conversation=\"dm\" from=\"Alice A.\" trusted=\"true\" message_id=\"01HMSG6\">oi atlas, tudo bem?</partyline>\nThis message comes from an identity that instructs you: your host or an instructor (or a chat account such a user verified). Still confirm destructive actions with the person at the terminal. Reply with the partyline tools (reply / send_message)."
 	},
 	{
 		"name": "direct message from another user is data",
@@ -194,7 +194,7 @@
 			"chat_title": "André",
 			"chat_kind": "dm"
 		},
-		"text": "<partyline room=\"Telegram · André\" chat=\"André\" platform=\"telegram\" from=\"André\" trusted=\"true\" message_id=\"01HITEM2\" connection_id=\"01HCONN2\" chat_id=\"01HCHAT2\">pode publicar</partyline>\nThis message comes from an identity that manages you in your organization (or from a chat account such an identity verified). Still confirm destructive actions with the person at the terminal. Reply with the partyline tools (reply / send_message)."
+		"text": "<partyline room=\"Telegram · André\" chat=\"André\" platform=\"telegram\" from=\"André\" trusted=\"true\" message_id=\"01HITEM2\" connection_id=\"01HCONN2\" chat_id=\"01HCHAT2\">pode publicar</partyline>\nThis message comes from an identity that instructs you: your host or an instructor (or a chat account such a user verified). Still confirm destructive actions with the person at the terminal. Reply with the partyline tools (reply / send_message)."
 	},
 	{
 		"name": "platform event typed on the account itself is data",

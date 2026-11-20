@@ -15,31 +15,32 @@ import (
 	"github.com/wnexous/partyline/internal/api/dto"
 )
 
-// worker1 is the welcome of the design's example: Worker 1 (@w1), an AI of Acme (acme) that holds Worktrees
-// and that Lead (@lead) and then Alice (@alice) manage. Its host is Bob, who is not a manager.
+// worker1 is the welcome of the design's example: Worker 1 (@w1), an AI of Acme (acme) that Bob hosts and that
+// Lead (@lead) and Alice (@alice) instruct (SR2-06). Managers is the deprecated list: the host, then them.
 func worker1() dto.AgentWelcomeFrame {
 	person := func(name, handle string) dto.IntelligenceRef {
 		return dto.IntelligenceRef{ID: "id-" + handle, Kind: dto.IntelligenceKindHuman, Role: dto.IntelligenceRoleUser, DisplayName: name, Handle: handle}
 	}
+	lead := dto.IntelligenceRef{ID: "ai-lead", Kind: dto.IntelligenceKindAI, Role: dto.IntelligenceRoleAI, DisplayName: "Lead", Handle: "lead"}
 	return dto.AgentWelcomeFrame{
 		Type:         dto.AgentFrameTypeWelcome,
 		Agent:        dto.AgentInfo{ID: "ai-1", Name: "w1", DisplayName: "Worker 1", Owner: "bob"},
 		Intelligence: dto.IntelligenceRef{ID: "ai-1", Kind: dto.IntelligenceKindAI, Role: dto.IntelligenceRoleAI, DisplayName: "Worker 1", Handle: "w1"},
 		Owner:        person("Bob", "bob"),
 		Organization: &dto.ContactOrg{ID: "org-1", Name: "Acme", Slug: "acme"},
-		Position:     "Worktrees",
-		Managers: []dto.IntelligenceRef{
-			{ID: "ai-lead", Kind: dto.IntelligenceKindAI, Role: dto.IntelligenceRoleAI, DisplayName: "Lead", Handle: "lead"},
-			person("Alice", "alice"),
-		},
-		Connections: []dto.AgentConnection{},
+		Instructors:  []dto.IntelligenceRef{lead, person("Alice", "alice")},
+		Managers:     []dto.IntelligenceRef{person("Bob", "bob"), lead, person("Alice", "alice")},
+		Connections:  []dto.AgentConnection{},
 	}
 }
 
-// POS-10 (design, "Welcome frame and channel notice"): the notice says the organization, the position and who
-// manages the AI, in these words - and says that no message is trusted when nobody does. The expected texts
-// are the design's, written out (L-032).
-func TestIdentityNoticeNamesTheOrganizationPositionAndManagers(t *testing.T) {
+// wantWorker1 is what worker1 is told (SR2-11).
+const wantWorker1 = `You are Worker 1 (@w1), an AI of Acme (acme). Messages from Bob (@bob) (your host), Lead (@lead) and Alice (@alice) are marked trusted="true".`
+
+// SR2-11: the notice says the organization and whose messages are trusted - the host and the instructors - in
+// these words, and that no message is trusted when nobody instructs the AI. The expected texts are written out
+// (L-032).
+func TestSR211IdentityNoticeNamesTheHostAndTheInstructors(t *testing.T) {
 	withConnections := []dto.AgentConnection{
 		{ID: "01HCONN1", Platform: "whatsapp", AccountLabel: "+55 11 *****-0000"},
 		{ID: "01HCONN2", Platform: "telegram"},
@@ -49,73 +50,47 @@ func TestIdentityNoticeNamesTheOrganizationPositionAndManagers(t *testing.T) {
 		change func(w *dto.AgentWelcomeFrame)
 		want   string
 	}{
-		{"with managers", func(*dto.AgentWelcomeFrame) {},
-			`You are Worker 1 (@w1), an AI of Acme (acme), position Worktrees. Messages marked trusted="true" come from the identities that manage you: Lead (@lead), Alice (@alice).`},
-		{"with one manager", func(w *dto.AgentWelcomeFrame) { w.Managers = w.Managers[:1] },
-			`You are Worker 1 (@w1), an AI of Acme (acme), position Worktrees. Messages marked trusted="true" come from the identities that manage you: Lead (@lead).`},
-		{"with three managers", func(w *dto.AgentWelcomeFrame) {
-			w.Managers = append(w.Managers, dto.IntelligenceRef{ID: "id-dora", DisplayName: "Dora", Handle: "dora"})
-		}, `You are Worker 1 (@w1), an AI of Acme (acme), position Worktrees. Messages marked trusted="true" come from the identities that manage you: Lead (@lead), Alice (@alice), Dora (@dora).`},
-		{"without a position", func(w *dto.AgentWelcomeFrame) { w.Position = "" },
-			`You are Worker 1 (@w1), an AI of Acme (acme). Messages marked trusted="true" come from the identities that manage you: Lead (@lead), Alice (@alice).`},
-		{"without managers", func(w *dto.AgentWelcomeFrame) { w.Managers = []dto.IntelligenceRef{} },
-			`You are Worker 1 (@w1), an AI of Acme (acme), position Worktrees. No one manages you in Acme, so no message is marked trusted.`},
-		{"without managers (the list absent)", func(w *dto.AgentWelcomeFrame) { w.Managers = nil },
-			`You are Worker 1 (@w1), an AI of Acme (acme), position Worktrees. No one manages you in Acme, so no message is marked trusted.`},
-		{"without managers or a position", func(w *dto.AgentWelcomeFrame) { w.Managers, w.Position = []dto.IntelligenceRef{}, "" },
-			`You are Worker 1 (@w1), an AI of Acme (acme). No one manages you in Acme, so no message is marked trusted.`},
-		{"with managers and connections", func(w *dto.AgentWelcomeFrame) { w.Connections = withConnections },
-			`You are Worker 1 (@w1), an AI of Acme (acme), position Worktrees. Messages marked trusted="true" come from the identities that manage you: Lead (@lead), Alice (@alice). You operate: WhatsApp +55 11 *****-0000 (connection 01HCONN1), Telegram (connection 01HCONN2).`},
-		{"without managers, with connections", func(w *dto.AgentWelcomeFrame) { w.Managers, w.Connections = nil, withConnections[:1] },
-			`You are Worker 1 (@w1), an AI of Acme (acme), position Worktrees. No one manages you in Acme, so no message is marked trusted. You operate: WhatsApp +55 11 *****-0000 (connection 01HCONN1).`},
-		{"the name of the organization, not its address, in the sentence about nobody", func(w *dto.AgentWelcomeFrame) {
-			w.Organization, w.Managers = &dto.ContactOrg{ID: "org-2", Name: "Acme Labs", Slug: "acme-labs"}, nil
-		}, `You are Worker 1 (@w1), an AI of Acme Labs (acme-labs), position Worktrees. No one manages you in Acme Labs, so no message is marked trusted.`},
+		{"with instructors", func(*dto.AgentWelcomeFrame) {}, wantWorker1},
+		{"with one instructor", func(w *dto.AgentWelcomeFrame) { w.Instructors = w.Instructors[:1] },
+			`You are Worker 1 (@w1), an AI of Acme (acme). Messages from Bob (@bob) (your host) and Lead (@lead) are marked trusted="true".`},
+		{"the host only", func(w *dto.AgentWelcomeFrame) { w.Instructors = []dto.IntelligenceRef{} },
+			`You are Worker 1 (@w1), an AI of Acme (acme). Messages from Bob (@bob) (your host) are marked trusted="true".`},
+		{"nobody: no host and no instructor", func(w *dto.AgentWelcomeFrame) {
+			w.Instructors, w.Owner = []dto.IntelligenceRef{}, dto.IntelligenceRef{}
+		}, `You are Worker 1 (@w1), an AI of Acme (acme). No message is marked trusted.`},
+		{"no organization", func(w *dto.AgentWelcomeFrame) { w.Organization = nil },
+			`You are Worker 1 (@w1). Messages from Bob (@bob) (your host), Lead (@lead) and Alice (@alice) are marked trusted="true".`},
+		{"with connections", func(w *dto.AgentWelcomeFrame) { w.Connections = withConnections },
+			wantWorker1 + ` You operate: WhatsApp +55 11 *****-0000 (connection 01HCONN1), Telegram (connection 01HCONN2).`},
+		{"a server before release 2: no instructors, the managers are named", func(w *dto.AgentWelcomeFrame) {
+			w.Instructors = nil
+			w.Managers = w.Managers[1:]
+		}, `You are Worker 1 (@w1), an AI of Acme (acme). Messages from Lead (@lead) and Alice (@alice) are marked trusted="true".`},
+		{"a server before release 2 with nobody", func(w *dto.AgentWelcomeFrame) { w.Instructors, w.Managers = nil, nil },
+			`You are Worker 1 (@w1), an AI of Acme (acme). No message is marked trusted.`},
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
 			w := worker1()
 			c.change(&w)
-			require.Equal(t, c.want, identityText(w))
-			require.NotContains(t, identityText(w), "Your owner", "the host user is not who the AI answers to")
-			require.NotContains(t, identityText(w), "Bob")
+			got := identityText(w)
+			require.Equal(t, c.want, got)
+			require.NotContains(t, got, "position", "SR2-04: positions are gone")
 		})
 	}
-}
-
-// A welcome that names no organization - an older server, or an AI no organization owns - says nothing of
-// organizations, positions or managers: the notice is the one it always was (L-035).
-func TestIdentityNoticeWithoutOrganizationFieldsIsUnchanged(t *testing.T) {
-	old := worker1()
-	old.Organization, old.Position, old.Managers = nil, "", nil
-	require.Equal(t, "You are Worker 1 (@w1). Your owner is Bob (@bob).", identityText(old))
-
-	// a position or managers without an organization have no organization to be read in
-	partial := worker1()
-	partial.Organization = nil
-	got := identityText(partial)
-	require.Equal(t, "You are Worker 1 (@w1). Your owner is Bob (@bob).", got)
-	for _, absent := range []string{"an AI of", "position", "manage you", "trusted", "Acme", "Worktrees", "Lead"} {
-		require.NotContains(t, got, absent)
-	}
-
-	noOwner := old
-	noOwner.Owner = dto.IntelligenceRef{}
-	require.Equal(t, "You are Worker 1 (@w1).", identityText(noOwner))
-
 	noAI := worker1()
 	noAI.Intelligence = dto.IntelligenceRef{}
 	require.Equal(t, "", identityText(noAI), "a server that names no AI gets no notice")
 }
 
-// The notice is one system notice sent once, in these words, whatever the manager list holds.
+// The notice is one system notice sent once, in these words, whatever the instructor list holds.
 func TestChannelSendsTheOrganizationNoticeOnce(t *testing.T) {
 	s := startSession(t, Options{
 		URL: welcomeGateway(t, worker1()), Token: "pl_agent_test", Machine: "testbox", Folder: "/work/w1", TempDir: t.TempDir(), timing: fastTiming,
 	})
 	s.handshake()
 	n := s.identityNotice()
-	require.Equal(t, `You are Worker 1 (@w1), an AI of Acme (acme), position Worktrees. Messages marked trusted="true" come from the identities that manage you: Lead (@lead), Alice (@alice).`, n.Content)
+	require.Equal(t, wantWorker1, n.Content)
 	require.Equal(t, map[string]string{
 		"type": "notice", "reason": "identity", "author": "Partyline", "author_kind": "system",
 		"sender_name": "", "trusted": "false", "kind": "system",
@@ -228,7 +203,7 @@ func TestListenPrintsWhoEndedTheSession(t *testing.T) {
 	}}, r.lines())
 }
 
-// End to end: alice, who created the AI and so manages it, ends its live session through the API; the real server
+// End to end: alice, who hosts the AI and so manages it (SR2-13), ends its live session through the API; the real server
 // closes with 4002 and "ended by @alice", and the channel tells the harness who did it. The AI is not deleted.
 func TestAManagerEndingTheSessionIsToldToTheHarness(t *testing.T) {
 	e := newChanEnv(t)

@@ -373,7 +373,9 @@ func identityText(w dto.AgentWelcomeFrame) string {
 	} else {
 		text = "You are " + named(w.Intelligence) + "."
 	}
-	text += " " + trustedText(w, named)
+	if trusted := trustedText(w, named); trusted != "" {
+		text += " " + trusted
+	}
 	if len(w.Memberships) > 0 {
 		orgs := make([]string, len(w.Memberships))
 		for i, m := range w.Memberships {
@@ -408,21 +410,26 @@ func identityText(w dto.AgentWelcomeFrame) string {
 }
 
 // trustedText says whose messages are marked trusted (SR2-11): the host and the instructors, "Messages from
-// Ann (@ann) and Atlas (@atlas) are trusted.". A frame of a server before release 2 has no instructors: its
-// managers are named instead.
+// Ann (@ann) (your host) and Lead (@lead) are marked trusted="true".". A frame of a server before release 2 has no
+// instructors: its managers are named instead, and a frame of a server before organizations names the owner.
 func trustedText(w dto.AgentWelcomeFrame, named func(dto.IntelligenceRef) string) string {
 	var who []string
-	if w.Instructors != nil {
+	switch {
+	case w.Instructors != nil:
 		if w.Owner.Handle != "" {
 			who = append(who, named(w.Owner)+" (your host)")
 		}
 		for _, in := range w.Instructors {
 			who = append(who, named(in))
 		}
-	} else {
+	case w.Organization != nil:
 		for _, m := range w.Managers {
 			who = append(who, named(m))
 		}
+	case w.Owner.Handle != "":
+		return "Your owner is " + named(w.Owner) + "."
+	default:
+		return ""
 	}
 	switch len(who) {
 	case 0:
@@ -664,8 +671,8 @@ func (l *link) refused(resp *http.Response) outcome {
 	case http.StatusUnauthorized:
 		return outInvalidToken // a bad or revoked token
 	case http.StatusForbidden:
-		// A session that asked for an organization or a position and is told 403 was refused for that: the creator is
-		// not in the organization or may not give the position (ORG-05, POS-07). Without such a request a 403 is a
+		// A session that asked for an organization and is told 403 was refused for that: the creator is not in the
+		// organization (ORG-05). Without such a request a 403 is a
 		// token the server will not take (a user's, not an agent's).
 		if e := refusalBody(resp); l.identity.asksPlacement() && e.Message != "" {
 			return l.refusedFor(e.Message)

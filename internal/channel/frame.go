@@ -6,7 +6,7 @@ import (
 	"github.com/wnexous/partyline/internal/api/dto"
 )
 
-// The line after a framed message depends on its trusted flag (PUSH-06, POS-10): TrustedLine
+// The line after a framed message depends on its trusted flag (PUSH-06, SR2-07): TrustedLine
 // for trusted="true" (an identity that manages the recipient in its organization, or a chat
 // account such an identity verified), DataLine for everything else.
 const (
