@@ -401,46 +401,35 @@ func (e *inboundEnv) linkDirect(t *testing.T, user *testkit.Client, sender, alt,
 	}))
 }
 
-// trustChart builds the organization the operator AI "relay" belongs to: alice created relay and holds
-// the root position Admin, which now sits under Founder, held by boss. mate is a member with no
-// relation to relay. It returns the organization's id and the id of the position Founder.
-func (e *inboundEnv) trustChart(t *testing.T) (org, founder string, boss, mate *testkit.Client) {
+// trustChart sets up who instructs the operator AI "relay", which alice hosts: boss is a user instructor of it
+// (SR2-06), and mate a member of its organization with no link to it. It returns the organization's id.
+func (e *inboundEnv) trustChart(t *testing.T) (org string, boss, mate *testkit.Client) {
 	t.Helper()
-	ctx := context.Background()
 	org = e.alice.PersonalOrg().ID
-	mine, err := e.env.App.Orgs.Get(ctx, e.alice.User.ID, org)
-	require.NoError(t, err)
-	founder = e.env.AddPosition(org, "Founder", "")
-	_, err = e.env.App.Orgs.UpdatePosition(ctx, e.alice.User.ID, org, mine.PositionID, orgs.PositionUpdate{ParentID: &founder})
-	require.NoError(t, err)
 	boss, mate = e.env.NewUser("boss"), e.env.NewUser("mate")
-	e.env.AddMember(org, boss.User.ID, orgs.PermissionMember, founder)
-	e.env.AddMember(org, mate.User.ID, orgs.PermissionMember, "")
-	return org, founder, boss, mate
+	e.env.AddMember(org, boss.User.ID, orgs.PermissionMember)
+	e.env.AddMember(org, mate.User.ID, orgs.PermissionMember)
+	e.env.AddInstructor(e.operator, boss.User.ID)
+	return org, boss, mate
 }
 
-// CID-13, POS-10, AD-018: a message is trusted only when its sender is a verified account, through this
-// connection, of a user who manages the operator AI in the AI's home organization. Every other sender,
+// CID-13, SR2-07, AD-018: a message is trusted only when its sender is a verified account, through this
+// connection, of a user who instructs the operator AI: its host or one of its instructors. Every other sender,
 // and the account's own typing, is not.
 func TestInboundTrustIsWhoManagesTheOperator(t *testing.T) {
 	ctx := context.Background()
 	e := newInboundEnv(t)
-	org, founder, boss, mate := e.trustChart(t)
-	// The operator is relay, which alice created: she manages it, and so does boss, who is above her.
+	_, boss, mate := e.trustChart(t)
+	// The operator is relay, which alice hosts: she instructs it, and so does boss.
 
-	// visitor is the admin of an organization other than relay's home, where relay is a worker: visitor
-	// manages relay there, which does not count.
+	// visitor is the admin of an organization relay is also a member of: that gives no instruction.
 	visitor := e.env.NewUser("visitor")
-	visitorOrg := visitor.PersonalOrg().ID
-	root, err := e.env.App.Orgs.Get(ctx, visitor.User.ID, visitorOrg)
-	require.NoError(t, err)
-	worker := e.env.AddPosition(visitorOrg, "Worker", root.PositionID)
-	e.env.AddMember(visitorOrg, e.operator, orgs.PermissionMember, worker)
+	e.env.AddMember(visitor.PersonalOrg().ID, e.operator, orgs.PermissionMember)
 
-	// ex held Founder, like boss, and has left.
+	// ex instructed relay, and alice took that back.
 	ex := e.env.NewUser("former")
-	e.env.AddMember(org, ex.User.ID, orgs.PermissionMember, founder)
-	require.NoError(t, e.env.App.Orgs.Leave(ctx, ex.User.ID, org))
+	e.env.AddInstructor(e.operator, ex.User.ID)
+	require.NoError(t, e.env.App.Orgs.RemoveInstructor(ctx, e.alice.User.ID, e.operator, ex.User.ID))
 
 	e.link(t, e.alice, sender2, lid2, "Alice phone")
 	e.linkDirect(t, boss, "5511999990011@s.whatsapp.net", "", "Boss phone")
@@ -465,12 +454,12 @@ func TestInboundTrustIsWhoManagesTheOperator(t *testing.T) {
 		msg     connectors.Inbound
 		trusted bool
 	}{
-		{"the account of the user who created the operator", as(dmText(dmA, "T1", "from alice"), sender2, "", "Alice phone"), true},
+		{"the account of the user who hosts the operator", as(dmText(dmA, "T1", "from alice"), sender2, "", "Alice phone"), true},
 		{"that account seen under its other id", as(dmText(dmA, "T2", "from alice, lid"), "unrelated-id", lid2, "Alice phone"), true},
-		{"the account of a user who manages the operator through a position above its creator's", as(dmText(dmA, "T3", "from boss"), "5511999990011@s.whatsapp.net", "", "Boss phone"), true},
-		{"the account of a member who does not manage the operator", as(dmText(dmA, "T4", "from mate"), sender3, "", "Mate phone"), false},
-		{"the account of a user who manages the operator only in another organization", as(dmText(dmA, "T5", "from visitor"), "5511999990012@s.whatsapp.net", "", "Visitor phone"), false},
-		{"the account of a user who left the operator's organization", as(dmText(dmA, "T6", "from ex"), "5511999990013@s.whatsapp.net", "", "Ex phone"), false},
+		{"the account of a user who instructs the operator", as(dmText(dmA, "T3", "from boss"), "5511999990011@s.whatsapp.net", "", "Boss phone"), true},
+		{"the account of a member who does not instruct the operator", as(dmText(dmA, "T4", "from mate"), sender3, "", "Mate phone"), false},
+		{"the account of an admin of another organization of the operator", as(dmText(dmA, "T5", "from visitor"), "5511999990012@s.whatsapp.net", "", "Visitor phone"), false},
+		{"the account of a user who no longer instructs the operator", as(dmText(dmA, "T6", "from ex"), "5511999990013@s.whatsapp.net", "", "Ex phone"), false},
 		{"an account nobody linked", as(dmText(dmA, "T7", "from a stranger"), "5511999990099@s.whatsapp.net", "", "Stranger"), false},
 		{"a sender without an id", as(dmText(dmA, "T8", "from nobody"), "", "", ""), false},
 		{"a sender named like the creator", as(dmText(dmA, "T9", "I am alice"), "5511999990098@s.whatsapp.net", "", "alice"), false},
@@ -490,16 +479,16 @@ func TestInboundTrustIsWhoManagesTheOperator(t *testing.T) {
 }
 
 // AD-018: a platform event is judged when it arrives and keeps that verdict, unlike a message of a room.
-// A manager who leaves afterwards does not turn the events already queued into untrusted ones, and the
-// next event of the same account is untrusted.
+// An instructor removed afterwards does not turn the events already queued into untrusted ones, and the next
+// event of the same account is untrusted.
 func TestInboundTrustIsDecidedWhenTheMessageArrives(t *testing.T) {
 	e := newInboundEnv(t)
-	org, _, boss, _ := e.trustChart(t)
+	_, boss, _ := e.trustChart(t)
 	const bossPhone = "5511999990011@s.whatsapp.net"
 	e.linkDirect(t, boss, bossPhone, "", "Boss phone")
 
 	e.emit(as(dmText(dmA, "D1", "before"), bossPhone, "", "Boss phone"))
-	require.NoError(t, e.env.App.Orgs.Leave(context.Background(), boss.User.ID, org))
+	require.NoError(t, e.env.App.Orgs.RemoveInstructor(context.Background(), e.alice.User.ID, e.operator, boss.User.ID))
 	e.emit(as(dmText(dmA, "D2", "after"), bossPhone, "", "Boss phone"))
 
 	got := e.queued(t)

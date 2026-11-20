@@ -37,20 +37,16 @@ func (f *fixture) requirePersonalOrg(t *testing.T, u db.User, name, slug string)
 	require.Equal(t, name, org.Name)
 	require.Equal(t, slug, org.Slug)
 	require.Equal(t, u.ID, org.CreatedBy)
-	chart, err := orgs.Load(ctx, f.store.R(), org.ID)
+	roster, err := orgs.Load(ctx, f.store.R(), org.ID)
 	require.NoError(t, err)
-	require.Len(t, chart.Positions, 1)
-	require.Len(t, chart.Members, 1, "the account is alone in its personal organization")
-	m := chart.Members[u.ID]
-	require.Equal(t, orgs.PermissionAdmin, m.Permission)
-	require.Equal(t, "Admin", chart.Positions[m.PositionID].Name, "holding the root position Admin")
-	require.Empty(t, chart.Positions[m.PositionID].ParentID)
+	require.Len(t, roster.Members, 1, "the account is alone in its personal organization")
+	require.Equal(t, orgs.PermissionAdmin, roster.Members[u.ID].Permission)
 	return org
 }
 
 // ORG-04, AD-021: every way an account comes to exist - the first-run setup, an accepted invite and an
 // admin creating it - gives it a personal organization in the same transaction: named after it, with
-// the account as admin holding the root position Admin, and its default organization.
+// the account as its admin, and its default organization.
 func TestEveryNewAccountGetsAPersonalOrganization(t *testing.T) {
 	ctx := context.Background()
 	f := newFixture(t)

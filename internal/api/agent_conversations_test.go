@@ -141,9 +141,9 @@ func TestAIDMTargetsAreThoseItSees(t *testing.T) {
 
 	// Sage's organization takes atlas in: atlas sees sage, and sage atlas. Seeing the owner's AIs is no reach:
 	// alice being a member there would give atlas nothing.
-	f.env.AddMember(f.bob.PersonalOrg().ID, f.alice.User.ID, orgs.PermissionMember, "")
+	f.env.AddMember(f.bob.PersonalOrg().ID, f.alice.User.ID, orgs.PermissionMember)
 	sendDM(f.aliceAI, "@sage", "alice's reach is not atlas's").RequireError(http.StatusNotFound, dto.ErrorCodeContactNotFound)
-	f.env.AddMember(f.bob.PersonalOrg().ID, f.atlas, orgs.PermissionMember, "")
+	f.env.AddMember(f.bob.PersonalOrg().ID, f.atlas, orgs.PermissionMember)
 	sendDM(f.aliceAI, "@sage", "now visible").RequireStatus(http.StatusCreated)
 	sendDM(f.bobAI, "@atlas", "now it can").RequireStatus(http.StatusCreated)
 
@@ -197,7 +197,7 @@ func TestAIDMValidation(t *testing.T) {
 // untrusted when the two have different owners, and the answer goes back into the same DM.
 func TestAIDMReachesALiveAI(t *testing.T) {
 	f := newAIEnv(t)
-	f.env.AddMember(f.alice.PersonalOrg().ID, f.sage, orgs.PermissionMember, "") // sage shares an organization with atlas
+	f.env.AddMember(f.alice.PersonalOrg().ID, f.sage, orgs.PermissionMember) // sage shares an organization with atlas
 	conn, resp := f.aliceTok.DialAgent("atlas")
 	require.NotNil(t, conn, "upgrade refused: %d", resp.Status)
 	conn.Welcome(wsWait)
@@ -280,7 +280,7 @@ func TestAIGroupRefusesAndCreatesNothing(t *testing.T) {
 	// Once sage joins the organization of atlas the same request works for it; alice seeing sage is not enough.
 	shareAI(f.bob, f.sage, f.alice)
 	agentGroup(f.aliceAI, "Ops", "@alice", "@sage", f.orion).RequireError(http.StatusUnprocessableEntity, dto.ErrorCodeMembersRefused)
-	f.env.AddMember(f.alice.PersonalOrg().ID, f.sage, orgs.PermissionMember, "")
+	f.env.AddMember(f.alice.PersonalOrg().ID, f.sage, orgs.PermissionMember)
 	ok := agentGroup(f.aliceAI, "Ops", "@alice", "@sage", f.orion).RequireStatus(http.StatusCreated)
 	require.Equal(t, 4, testkit.Decode[dto.Room](f.alice.Get("/api/v1/rooms/"+testkit.Decode[dto.CreatedGroup](ok).Room).RequireStatus(http.StatusOK)).MemberCount)
 

@@ -50,7 +50,7 @@ func (e *schemaEnv) indexes(table string) map[string]bool {
 func TestOrganizationsSchemaHasEveryTableColumnAndIndex(t *testing.T) {
 	e := newSchemaEnv(t)
 	for table, cols := range map[string][]string{
-		"organizations":   {"id", "name", "slug", "avatar_sha256", "created_by", "created_at", "updated_at"},
+		"organizations":     {"id", "name", "slug", "avatar_sha256", "created_by", "created_at", "updated_at"},
 		"org_members":       {"org_id", "iid", "permission", "joined_at"},
 		"org_invitations":   {"id", "org_id", "invitee_iid", "permission", "invited_by", "created_at", "expires_at"},
 		"agent_instructors": {"agent_iid", "instructor_iid", "created_by", "created_at"},
@@ -68,13 +68,13 @@ func TestOrganizationsSchemaHasEveryTableColumnAndIndex(t *testing.T) {
 
 	// index name → unique, per table
 	for table, want := range map[string]map[string]bool{
-		"organizations":   {"organizations_slug": true},
+		"organizations":     {"organizations_slug": true},
 		"org_members":       {"org_members_iid": false},
 		"agent_instructors": {"agent_instructors_instructor": false},
-		"org_invitations": {"org_invitations_invitee": false},
-		"agents":          {"agents_org": false},
-		"rooms":           {"rooms_org": false},
-		"connectors":      {"connectors_org": false},
+		"org_invitations":   {"org_invitations_invitee": false},
+		"agents":            {"agents_org": false},
+		"rooms":             {"rooms_org": false},
+		"connectors":        {"connectors_org": false},
 	} {
 		got := e.indexes(table)
 		for name, unique := range want {

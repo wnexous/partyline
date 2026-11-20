@@ -13,7 +13,7 @@ import (
 )
 
 // chatRoomSetup returns the setup of the chat-member matrix: a fresh group of the organization with the
-// roles "target" and "guest" in it, and a chat of its creator's own connection that is not a member: a
+// roles "target" and "peer" in it, and a chat of its creator's own connection that is not a member: a
 // request to add it is valid in every way but its kind.
 func chatRoomSetup(env *testkit.Env, roles *testkit.OrgRoles) func(t *testing.T) map[string]string {
 	return func(t *testing.T) map[string]string {
@@ -21,7 +21,7 @@ func chatRoomSetup(env *testkit.Env, roles *testkit.OrgRoles) func(t *testing.T)
 		creator.T = t
 		r := groupIn(t, env, &creator, roles.Org.ID, "matrix")
 		addToRoom(t, env, &creator, r.ID, roles.Target)
-		addToRoom(t, env, &creator, r.ID, roles.Guest)
+		addToRoom(t, env, &creator, r.ID, roles.Peer)
 		_, chat := storeChat(t, env, creator.User.ID, "group")
 		return map[string]string{"room": r.ID, "chat": chat}
 	}
@@ -116,7 +116,7 @@ func TestNewGroupRefusesAChatAsAMember(t *testing.T) {
 	env := testkit.New(t)
 	alice, bob := env.NewUser("alice"), env.NewUser("bob")
 	_, chat := storeChat(t, env, alice.User.ID, "family")
-	env.AddMember(alice.PersonalOrg().ID, bob.User.ID, orgs.PermissionMember, "")
+	env.AddMember(alice.PersonalOrg().ID, bob.User.ID, orgs.PermissionMember)
 
 	e := createGroup(alice, "Launch", bob.User.ID, chat).RequireError(http.StatusUnprocessableEntity, dto.ErrorCodeMembersRefused)
 

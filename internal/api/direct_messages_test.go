@@ -282,7 +282,7 @@ func TestAIDMsReachUsersAndTheAIsOfItsOrganizations(t *testing.T) {
 	require.Equal(t, ghost, byID)
 
 	// Its owner reaching globex gives the AI no reach: it acts as itself.
-	env.AddMember(globex.Org.ID, acme.Manager.User.ID, orgs.PermissionMember, "")
+	env.AddMember(globex.Org.ID, acme.Manager.User.ID, orgs.PermissionMember)
 	sendDM(ai, foreign, "psst").RequireError(http.StatusNotFound, dto.ErrorCodeContactNotFound)
 	for _, c := range []*testkit.Client{acme.Manager, globex.Manager, globex.Admin} {
 		for _, r := range testkit.Decode[dto.List[dto.Room]](c.Get("/api/v1/rooms").RequireStatus(http.StatusOK)).Items {
@@ -291,7 +291,7 @@ func TestAIDMsReachUsersAndTheAIsOfItsOrganizations(t *testing.T) {
 	}
 
 	// Once the AI itself belongs to globex, the same call works.
-	env.AddMember(globex.Org.ID, acme.TargetAI, orgs.PermissionMember, "")
+	env.AddMember(globex.Org.ID, acme.TargetAI, orgs.PermissionMember)
 	sendDM(ai, foreign, "now we share globex").RequireStatus(http.StatusCreated)
 }
 

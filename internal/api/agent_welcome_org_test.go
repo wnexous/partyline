@@ -14,8 +14,8 @@ import (
 	"github.com/wnexous/partyline/internal/testkit"
 )
 
-// welcomeV05 is the welcome frame as a v0.5 CLI reads it: no organization, position or managers, and the
-// owner as the one who runs the AI.
+// welcomeV05 is the welcome frame as a v0.5 CLI reads it: no organization nor instructors, and the owner as
+// the one who runs the AI.
 type welcomeV05 struct {
 	Type         dto.AgentFrameType    `json:"type"`
 	Agent        dto.AgentInfo         `json:"agent"`
@@ -50,19 +50,20 @@ func handlesOf(refs []dto.IntelligenceRef) []string {
 	return out
 }
 
-// POS-10, ORG-04 (design, "Welcome frame and channel notice"): the welcome frame tells a session its home
-// organization, the position it holds and the identities that manage it, nearest first. The Worktrees
-// worker that the AI Lead started is managed by Lead, then by the Director above Lead, then by the Admin.
-// A v0.5 client, which reads none of that, still finds the host user as the owner.
-func TestWelcomeTellsTheOrganizationPositionAndManagers(t *testing.T) {
+// SR2-11, ORG-04: the welcome frame tells a session its home organization and who instructs it: its host
+// (owner) and its instructors besides the host (instructors, oldest first). The deprecated managers field is the
+// host followed by the instructors, for older CLIs. A worker the AI lead started with --parent is instructed by
+// lead. A v0.5 client, which reads none of that, still finds the host user as the owner.
+func TestSR211WelcomeTellsTheOrganizationAndTheInstructors(t *testing.T) {
 	w := newPlacementWorld(t)
 	f := placementFolder("worker-1")
-	f.Parent, f.Position = "@lead", "Worktrees"
+	f.Parent = "@lead"
 	welcome, raw := welcomeOf(t, w.agentToken(w.alice), f)
 
 	require.Equal(t, &dto.ContactOrg{ID: w.acme.ID, Name: "Acme", Slug: "acme"}, welcome.Organization)
-	require.Equal(t, "Worktrees", welcome.Position)
-	require.Equal(t, []string{"lead", "alice", "bob"}, handlesOf(welcome.Managers), "nearest first: Lead, then its creator Alice and the Director Bob one step further, by id")
+	require.Equal(t, "alice", welcome.Owner.Handle, "the host")
+	require.Equal(t, []string{"lead"}, handlesOf(welcome.Instructors), "the parent instructs it")
+	require.Equal(t, []string{"alice", "lead"}, handlesOf(welcome.Managers), "deprecated: the host, then the instructors")
 	kinds := func(refs []dto.IntelligenceRef) []string {
 		out := make([]string, len(refs))
 		for i, r := range refs {
@@ -70,8 +71,8 @@ func TestWelcomeTellsTheOrganizationPositionAndManagers(t *testing.T) {
 		}
 		return out
 	}
-	require.Equal(t, []string{"ai/ai", "human/user", "human/user"}, kinds(welcome.Managers), "a manager is an AI or a person, as its role says")
-	require.Equal(t, []string{w.lead, w.alice.User.ID, w.bob.User.ID}, []string{welcome.Managers[0].ID, welcome.Managers[1].ID, welcome.Managers[2].ID})
+	require.Equal(t, []string{"human/user", "ai/ai"}, kinds(welcome.Managers), "an identity is an AI or a person, as its role says")
+	require.NotContains(t, raw, `"position"`, "SR2-05: no position any more")
 
 	t.Run("a v0.5 client still reads the host user as the owner", func(t *testing.T) {
 		var old welcomeV05
@@ -79,7 +80,7 @@ func TestWelcomeTellsTheOrganizationPositionAndManagers(t *testing.T) {
 		require.Equal(t, dto.AgentFrameTypeWelcome, old.Type)
 		require.Equal(t, welcome.Agent.ID, old.Agent.ID)
 		require.Equal(t, "alice", old.Agent.Owner, "the host user's username")
-		require.Equal(t, "alice", old.Owner.Handle, "owner is the host user, not Lead, which started the AI")
+		require.Equal(t, "alice", old.Owner.Handle, "owner is the host user, not lead, which started the AI")
 		require.Equal(t, w.alice.User.ID, old.Owner.ID)
 		require.Equal(t, "worker-1", old.Intelligence.Handle)
 		require.Empty(t, old.Connections)
@@ -87,92 +88,36 @@ func TestWelcomeTellsTheOrganizationPositionAndManagers(t *testing.T) {
 	})
 }
 
-// POS-10: an AI's creator manages it even when it holds the root position, and the list is never null;
-// one that holds no position says so; and a creator is its manager, followed by whoever manages the
-// creator.
-func TestWelcomeOfAnAIWithoutManagersOrWithoutAPosition(t *testing.T) {
-	t.Run("the root position: its creator manages it, and nobody is above it", func(t *testing.T) {
-		w := newPlacementWorld(t)
-		f := placementFolder("root-holder")
-		f.Org, f.Position = "acme", "Admin" // alice is an admin of Acme, so she may place it anywhere
-		welcome, raw := welcomeOf(t, w.agentToken(w.alice), f)
-		require.Equal(t, "Admin", welcome.Position)
-		require.NotNil(t, welcome.Managers, "present")
-		require.Equal(t, []string{"alice"}, handlesOf(welcome.Managers), "AD-029: its creator manages it at its own level")
-		require.Contains(t, raw, `"managers":[{"id":"`+w.alice.User.ID+`"`)
-		require.Equal(t, w.acme.ID, welcome.Organization.ID)
-	})
-
-	t.Run("no position: the creator manages it, then whoever manages the creator", func(t *testing.T) {
-		w := newPlacementWorld(t)
-		f := placementFolder("no-position")
-		welcome, raw := welcomeOf(t, w.agentToken(w.bob), f)
-		require.Equal(t, "Acme", welcome.Organization.Name, "bob's default organization")
-		require.Equal(t, "", welcome.Position)
-		require.Contains(t, raw, `"position":""`, "always present")
-		require.Equal(t, []string{"bob", "alice"}, handlesOf(welcome.Managers), "bob created it; alice is the Admin above bob's Director")
-	})
+// SR2-11: an AI nobody but its host instructs has an empty list of instructors, never null, and its managers are
+// its host alone.
+func TestSR211WelcomeOfAnAIOnlyItsHostInstructs(t *testing.T) {
+	w := newPlacementWorld(t)
+	welcome, raw := welcomeOf(t, w.agentToken(w.bob), placementFolder("plain"))
+	require.Equal(t, "Acme", welcome.Organization.Name, "bob's default organization")
+	require.Contains(t, raw, `"instructors":[]`)
+	require.Equal(t, []string{"bob"}, handlesOf(welcome.Managers))
 }
 
-// POS-10: management never crosses organizations, so the managers are the ones of the AI's home
-// organization only, even when the AI belongs to a second one where somebody else is above it.
-func TestWelcomeManagersAreTheHomeOrganizationsOnly(t *testing.T) {
+// SR2-07, SR2-11: instructors cross organizations - a user outside the AI's organizations instructs it when
+// the host lists them - while an admin of another organization the AI belongs to instructs nothing. They are
+// listed oldest first.
+func TestSR211WelcomeListsInstructorsWhateverTheOrganizations(t *testing.T) {
 	w := newPlacementWorld(t)
-	ctx := context.Background()
 	f := placementFolder("worker-two-orgs")
-	f.Parent, f.Position = "@lead", "Worktrees"
+	f.Parent = "@lead"
 	first, _ := welcomeOf(t, w.agentToken(w.alice), f)
-	require.Equal(t, []string{"lead", "alice", "bob"}, handlesOf(first.Managers))
+	require.Equal(t, []string{"lead"}, handlesOf(first.Instructors))
 
-	// In Globex carol is a boss above the worker. She is nobody in Acme.
-	globex, err := w.env.App.Authz.Chart(ctx, w.globex.ID)
-	require.NoError(t, err)
-	boss := w.env.AddPosition(w.globex.ID, "Boss", globex.Members[w.alice.User.ID].PositionID)
-	staff := w.env.AddPosition(w.globex.ID, "Staff", boss)
-	w.env.AddMember(w.globex.ID, w.carol.User.ID, orgs.PermissionMember, boss)
-	w.env.AddMember(w.globex.ID, first.Agent.ID, orgs.PermissionMember, staff)
-	manages, err := w.env.App.Authz.Manages(ctx, w.carol.User.ID, first.Agent.ID, w.globex.ID)
-	require.NoError(t, err)
-	require.True(t, manages, "fixture sanity: carol manages the worker in Globex")
-
+	w.env.AddMember(w.globex.ID, first.Agent.ID, orgs.PermissionMember) // alice administers Globex
+	w.env.AddInstructor(first.Agent.ID, w.carol.User.ID)                // carol is in no organization of the AI
 	second, _ := welcomeOf(t, w.agentToken(w.alice), f)
 	require.Equal(t, w.acme.ID, second.Organization.ID, "the home organization stays Acme")
-	require.Equal(t, "Worktrees", second.Position, "and the position is the one held there")
-	require.Equal(t, []string{"lead", "alice", "bob"}, handlesOf(second.Managers), "carol manages it only in Globex")
+	require.Equal(t, []string{"lead", "carol"}, handlesOf(second.Instructors), "oldest first")
+	require.Equal(t, []string{"alice", "lead", "carol"}, handlesOf(second.Managers))
 }
 
-// The welcome lists at most ten managers, the nearest ten.
-func TestWelcomeListsAtMostTenManagersTheNearestOnes(t *testing.T) {
-	env := testkit.New(t)
-	ctx := context.Background()
-	admin := env.NewUser("boss")
-	created, err := env.App.Orgs.Create(ctx, admin.User.ID, "Deep")
-	require.NoError(t, err)
-	// Admin ── level1 ── level2 ── ... ── level11 ── Worker: 12 managers above the worker.
-	parent := created.PositionID
-	var chain []string // handles, nearest to the worker first
-	for i := 1; i <= 11; i++ {
-		name := fmt.Sprintf("level%d", i)
-		parent = env.AddPosition(created.ID, name, parent)
-		holder := env.NewUser(name)
-		env.AddMember(created.ID, holder.User.ID, orgs.PermissionMember, parent)
-		chain = append([]string{name}, chain...)
-	}
-	env.AddPosition(created.ID, "Workers", parent)
-	chain = append(chain, "boss") // the root holder is the 12th and farthest
-	require.Len(t, chain, 12)
-
-	// The admin starts the worker in Deep at the bottom of the chart; as its creator it is its nearest manager.
-	f := testkit.FolderOf("bottom")
-	f.Org, f.Position = "deep", "Workers"
-	welcome, _ := welcomeOf(t, admin.Token(dto.TokenKindAgent, "laptop"), f)
-	require.Equal(t, "Workers", welcome.Position)
-	near := append([]string{"boss"}, chain[:9]...)
-	require.Equal(t, near, handlesOf(welcome.Managers), "the ten nearest: its creator and the nine nearest positions; the farthest two are left out")
-}
-
-// An AI no upgrade placed (only a fixture is one) has no home organization: the frame names none and
-// lists no managers, and the other fields are still there.
+// An AI no upgrade placed (only a fixture is one) has no home organization: the frame names none, and its host
+// still instructs it.
 func TestWelcomeOfAnAIWithoutAHomeOrganization(t *testing.T) {
 	env := testkit.New(t)
 	alice := env.NewUser("alice")
@@ -183,15 +128,14 @@ func TestWelcomeOfAnAIWithoutAHomeOrganization(t *testing.T) {
 	require.Equal(t, "old", welcome.Intelligence.Handle, "fixture sanity: the legacy AI was adopted")
 	require.Nil(t, welcome.Organization)
 	require.NotContains(t, raw, `"organization"`, "absent, not null")
-	require.Equal(t, "", welcome.Position)
-	require.Contains(t, raw, `"managers":[]`)
+	require.Contains(t, raw, `"instructors":[]`)
+	require.Equal(t, []string{"alice"}, handlesOf(welcome.Managers))
 	require.Equal(t, "alice", welcome.Owner.Handle)
 }
 
-// GET /agent/whoami keeps answering who the token belongs to - the same fields at the top level - and
-// gains the same three facts about that user's default organization, the one a new AI of theirs joins:
-// the organization, the position they hold there and who manages them, nearest first.
-func TestWhoAmICarriesTheOrganizationPositionAndManagers(t *testing.T) {
+// GET /agent/whoami keeps answering who the token belongs to - the same fields at the top level - and the
+// user's default organization, the one a new AI of theirs joins. Positions and managers are gone (SR2-05).
+func TestWhoAmICarriesTheDefaultOrganization(t *testing.T) {
 	w := newPlacementWorld(t)
 	whoami := func(c *testkit.Client) (dto.AgentWhoAmI, string) {
 		t.Helper()
@@ -199,40 +143,24 @@ func TestWhoAmICarriesTheOrganizationPositionAndManagers(t *testing.T) {
 		return testkit.Decode[dto.AgentWhoAmI](resp), string(resp.Body)
 	}
 
-	t.Run("an admin who holds the root position", func(t *testing.T) {
+	t.Run("an admin", func(t *testing.T) {
 		me, raw := whoami(w.alice)
 		require.Equal(t, w.alice.User.ID, me.ID, "the token's user, as before")
 		require.Equal(t, "alice", me.Handle)
 		require.Equal(t, dto.IntelligenceRoleUser, me.Role)
 		require.Equal(t, w.alicePersonal, me.Organization.ID, "her default organization is her own")
-		require.Equal(t, "Admin", me.Position)
-		require.Empty(t, me.Managers)
-		require.Contains(t, raw, `"managers":[]`)
+		require.NotContains(t, raw, `"position"`)
+		require.NotContains(t, raw, `"managers"`)
 	})
-	t.Run("a director", func(t *testing.T) {
+	t.Run("a member", func(t *testing.T) {
 		me, _ := whoami(w.bob)
 		require.Equal(t, &dto.ContactOrg{ID: w.acme.ID, Name: "Acme", Slug: "acme"}, me.Organization, "Acme is bob's default")
-		require.Equal(t, "Director", me.Position)
-		require.Equal(t, []string{"alice"}, handlesOf(me.Managers))
-	})
-	t.Run("a member with no position and no creator", func(t *testing.T) {
-		me, _ := whoami(w.erin)
-		require.Equal(t, w.acme.ID, me.Organization.ID)
-		require.Equal(t, "", me.Position)
-		require.Empty(t, me.Managers, "nobody manages a positionless user")
-	})
-	t.Run("a guest is managed by its inviter", func(t *testing.T) {
-		me, _ := whoami(w.gus)
-		require.Equal(t, w.acme.ID, me.Organization.ID)
-		require.Equal(t, []string{"alice"}, handlesOf(me.Managers))
 	})
 	t.Run("the default organization is the one the user chose", func(t *testing.T) {
 		personal := w.bob.PersonalOrg().ID
 		require.NoError(t, w.env.App.Orgs.SetDefault(context.Background(), w.bob.User.ID, personal))
 		me, _ := whoami(w.bob)
 		require.Equal(t, personal, me.Organization.ID)
-		require.Equal(t, "Admin", me.Position, "the root position of his own organization")
-		require.Empty(t, me.Managers)
 	})
 	t.Run("a user in no organization", func(t *testing.T) {
 		dora := w.env.NewUser("dora")
@@ -241,12 +169,10 @@ func TestWhoAmICarriesTheOrganizationPositionAndManagers(t *testing.T) {
 		require.Equal(t, dora.User.ID, me.ID)
 		require.Nil(t, me.Organization)
 		require.NotContains(t, raw, `"organization"`)
-		require.Equal(t, "", me.Position)
-		require.Contains(t, raw, `"managers":[]`)
 	})
 	t.Run("a v0.5 client reads the same answer", func(t *testing.T) {
-		resp := w.agentToken(w.bob).Get("/api/v1/agent/whoami").RequireStatus(http.StatusOK)
+		resp := w.agentToken(w.erin).Get("/api/v1/agent/whoami").RequireStatus(http.StatusOK)
 		old := testkit.Decode[dto.IntelligenceRef](resp)
-		require.Equal(t, dto.IntelligenceRef{ID: w.bob.User.ID, Kind: dto.IntelligenceKindHuman, Role: dto.IntelligenceRoleUser, DisplayName: "bob", Handle: "bob"}, old)
+		require.Equal(t, dto.IntelligenceRef{ID: w.erin.User.ID, Kind: dto.IntelligenceKindHuman, Role: dto.IntelligenceRoleUser, DisplayName: "erin", Handle: "erin"}, old)
 	})
 }

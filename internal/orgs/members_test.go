@@ -309,14 +309,14 @@ func TestSR212RemoveIsForAdmins(t *testing.T) {
 		pick pick
 		want error // nil: removed
 	}{
-		"an admin removes a member":                       {func(_ *fixture, a acmeChart) (string, string) { return a.alice, a.bob }, nil},
-		"an admin removes another admin":                  {func(f *fixture, a acmeChart) (string, string) { return a.alice, f.adminOf(a.org) }, nil},
-		"a member cannot remove a member":                 {func(_ *fixture, a acmeChart) (string, string) { return a.dee, a.gus }, ErrForbidden},
-		"a member cannot remove an admin":                 {func(_ *fixture, a acmeChart) (string, string) { return a.bob, a.alice }, ErrForbidden},
-		"a host cannot remove a person":                   {func(_ *fixture, a acmeChart) (string, string) { return a.lee, a.bob }, ErrForbidden},
-		"an AI cannot remove anyone":                      {func(_ *fixture, a acmeChart) (string, string) { return a.notes, a.bob }, ErrForbidden},
-		"an outsider does not see the organization":       {func(f *fixture, a acmeChart) (string, string) { return f.user("out"), a.bob }, ErrNotFound},
-		"the target is not a member":                      {func(f *fixture, a acmeChart) (string, string) { return a.alice, f.user("out") }, ErrNotFound},
+		"an admin removes a member":                 {func(_ *fixture, a acmeChart) (string, string) { return a.alice, a.bob }, nil},
+		"an admin removes another admin":            {func(f *fixture, a acmeChart) (string, string) { return a.alice, f.adminOf(a.org) }, nil},
+		"a member cannot remove a member":           {func(_ *fixture, a acmeChart) (string, string) { return a.dee, a.gus }, ErrForbidden},
+		"a member cannot remove an admin":           {func(_ *fixture, a acmeChart) (string, string) { return a.bob, a.alice }, ErrForbidden},
+		"a host cannot remove a person":             {func(_ *fixture, a acmeChart) (string, string) { return a.lee, a.bob }, ErrForbidden},
+		"an AI cannot remove anyone":                {func(_ *fixture, a acmeChart) (string, string) { return a.notes, a.bob }, ErrForbidden},
+		"an outsider does not see the organization": {func(f *fixture, a acmeChart) (string, string) { return f.user("out"), a.bob }, ErrNotFound},
+		"the target is not a member":                {func(f *fixture, a acmeChart) (string, string) { return a.alice, f.user("out") }, ErrNotFound},
 	} {
 		t.Run(name, func(t *testing.T) {
 			f := newFixture(t)
@@ -440,6 +440,7 @@ func TestAFailedRemovalChangesNothing(t *testing.T) {
 	require.Equal(t, []string{"g1"}, f.roomsOf(a.notes), "its group membership stayed")
 	require.Empty(t, next())
 }
+
 // OMEM-03, SR2-12: the list names each member with its profile summary and permission, and what the viewer
 // may do: an admin deletes anyone else, the host deletes the AIs it hosts whose home is the organization; every
 // member sees it, and only this organization's members are in it.

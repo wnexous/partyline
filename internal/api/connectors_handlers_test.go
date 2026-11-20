@@ -215,11 +215,11 @@ func TestConnectorInboundURL(t *testing.T) {
 }
 
 // connectionWant is the expected status of a route on a connection of the organization by role: the admin
-// of the organization, the other members of it - a manager, workers, a plain member, an inviter and a guest
-// all use it - and everybody else, an outsider and an admin of the instance included.
+// of the organization, the other members of it - the host of an AI, its instructor, the other members - all
+// use it - and everybody else, an outsider and an admin of the instance included.
 func connectionWant(admin, member, hidden int) map[string]int {
 	return map[string]int{
-		"admin": admin, "manager": member, "target": member, "peer": member, "member": member, "inviter": member, "guest": member,
+		"admin": admin, "manager": member, "instructor": member, "target": member, "peer": member, "member": member,
 		"outsider": hidden, "instance_admin": hidden,
 	}
 }
@@ -282,7 +282,7 @@ func TestConnectorListFollowsMembership(t *testing.T) {
 	acme, globex := env.OrgRoles("acme"), env.OrgRoles("globex")
 	inAcme := createBotIn(acme.Admin, acme.Org.ID, "in-acme")
 	inGlobex := createBotIn(globex.Admin, globex.Org.ID, "in-globex")
-	env.AddMember(globex.Org.ID, acme.Member.User.ID, orgs.PermissionMember, "") // acme's Member works in globex too
+	env.AddMember(globex.Org.ID, acme.Member.User.ID, orgs.PermissionMember) // acme's Member works in globex too
 
 	levels := func(c *testkit.Client) map[string]dto.Level {
 		t.Helper()
@@ -294,7 +294,7 @@ func TestConnectorListFollowsMembership(t *testing.T) {
 	}
 	require.Equal(t, map[string]dto.Level{"in-acme": dto.LevelManage}, levels(acme.Admin))
 	require.Equal(t, map[string]dto.Level{"in-acme": dto.LevelUse}, levels(acme.Manager))
-	require.Equal(t, map[string]dto.Level{"in-acme": dto.LevelUse}, levels(acme.Guest), "a guest uses the connections of the organization too")
+	require.Equal(t, map[string]dto.Level{"in-acme": dto.LevelUse}, levels(acme.Peer), "any member uses the connections of the organization")
 	require.Equal(t, map[string]dto.Level{"in-acme": dto.LevelUse, "in-globex": dto.LevelUse}, levels(acme.Member), "an identity in two organizations sees both")
 	require.Equal(t, map[string]dto.Level{"in-globex": dto.LevelManage}, levels(globex.Admin))
 	require.Empty(t, levels(acme.Outsider))
@@ -305,7 +305,7 @@ func TestConnectorListFollowsMembership(t *testing.T) {
 
 // ORG-02, ORG-03: a connection belongs to the organization the creator names - by id or by slug, in any case - or,
 // when none is named, to the creator's default organization, and the creator must be an admin there. Anything else
-// is forbidden: a member who is not an admin, a guest, an organization the creator is not in and one that does not
+// is forbidden: a member who is not an admin, the host of an AI, an organization the creator is not in and one that does not
 // exist, all answered alike so that nothing is told about organizations the caller does not belong to.
 func TestCreateConnectorNamesItsOrganization(t *testing.T) {
 	env := connectorEnv(t)
@@ -328,7 +328,7 @@ func TestCreateConnectorNamesItsOrganization(t *testing.T) {
 	require.NoError(t, env.App.Orgs.SetDefault(context.Background(), roles.Member.User.ID, roles.Org.ID))
 	create(roles.Member, "").RequireError(http.StatusForbidden, dto.ErrorCodeForbidden)
 	create(roles.Member, roles.Org.ID).RequireError(http.StatusForbidden, dto.ErrorCodeForbidden)
-	create(roles.Guest, roles.Org.ID).RequireError(http.StatusForbidden, dto.ErrorCodeForbidden)
+	create(roles.Manager, roles.Org.ID).RequireError(http.StatusForbidden, dto.ErrorCodeForbidden)
 	denied := create(roles.Outsider, roles.Org.ID).RequireError(http.StatusForbidden, dto.ErrorCodeForbidden)
 	missing := create(roles.Outsider, "no-such-organization").RequireError(http.StatusForbidden, dto.ErrorCodeForbidden)
 	require.Equal(t, denied, missing, "an organization that does not exist answers like one the caller is not in")

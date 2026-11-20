@@ -154,10 +154,10 @@ func aiIDs(list []dto.AIContact) []string {
 func TestContactsListTheAIsOfTheCallersOrganizationsByOrganization(t *testing.T) {
 	env := testkit.New(t)
 	acme, globex := env.OrgRoles("acme"), env.OrgRoles("globex")
-	scout := env.NewAIIn(acme.Peer, acme.Org.ID, "scout")                        // acme's second AI, hosted by Peer
-	rover := env.NewAIIn(globex.Manager, globex.Org.ID, "rover")                 // globex's second AI
-	env.AddMember(globex.Org.ID, acme.Member.User.ID, orgs.PermissionMember, "") // Member works in both
-	env.AddMember(globex.Org.ID, scout, orgs.PermissionMember, "")               // and scout works in both too
+	scout := env.NewAIIn(acme.Peer, acme.Org.ID, "scout")                    // acme's second AI, hosted by Peer
+	rover := env.NewAIIn(globex.Manager, globex.Org.ID, "rover")             // globex's second AI
+	env.AddMember(globex.Org.ID, acme.Member.User.ID, orgs.PermissionMember) // Member works in both
+	env.AddMember(globex.Org.ID, scout, orgs.PermissionMember)               // and scout works in both too
 
 	member := contactsOf(t, acme.Member)
 	require.Equal(t, []string{"acme", "acme-member", "globex"}, orgNames(member),
@@ -235,7 +235,7 @@ func TestContactsFollowTheOrganizationsOfTheCaller(t *testing.T) {
 
 	inGroup, inHosted := listed(acme.Outsider, acme.TargetAI)
 	require.False(t, inGroup || inHosted, "not before joining its organization")
-	env.AddMember(acme.Org.ID, acme.Outsider.User.ID, orgs.PermissionMember, "")
+	env.AddMember(acme.Org.ID, acme.Outsider.User.ID, orgs.PermissionMember)
 	inGroup, inHosted = listed(acme.Outsider, acme.TargetAI)
 	require.True(t, inGroup, "after joining it")
 	require.False(t, inHosted, "somebody else's AI is not hosted by the outsider")
@@ -342,7 +342,7 @@ func TestContactsListHostedAIsByName(t *testing.T) {
 func TestAgentAgentsListsTheHostedAIsWithTheirOrganization(t *testing.T) {
 	f := newContactsFixture(t)
 	globex := f.env.OrgRoles("globex")
-	f.env.AddMember(globex.Org.ID, f.alice.User.ID, orgs.PermissionMember, "")
+	f.env.AddMember(globex.Org.ID, f.alice.User.ID, orgs.PermissionMember)
 	rover := aiAtIn(t, f.env, f.alice, globex.Org.ID, "Rover", "rover", "devbox", "/srv/rover", "/home/alice", "claude")
 	home := f.alice.PersonalOrg()
 	tok := f.alice.Token(dto.TokenKindAgent, "laptop")

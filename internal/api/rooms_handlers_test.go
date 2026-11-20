@@ -120,7 +120,7 @@ func postMultipartTo(c *testkit.Client, path string, msg dto.PostMessageRequest,
 }
 
 // roomSetup returns the setup of the group matrices: a fresh group of the organization created by its
-// creator (the role "member" of roles), with the roles "target" and "guest" in it as room members, a
+// creator (the role "member" of roles), with the roles "target" and "peer" in it as room members, a
 // chat member, an AI of the creator and a message carrying an attachment. It returns the ids the routes
 // use: "room", "chat" (the member row of the chat), "ai" and "user" (the member rows of the AI and of
 // the role "target") and "attachment".
@@ -130,7 +130,7 @@ func roomSetup(env *testkit.Env, roles *testkit.OrgRoles) func(t *testing.T) map
 		creator.T = t
 		r := groupIn(t, env, &creator, roles.Org.ID, "matrix")
 		target := addToRoom(t, env, &creator, r.ID, roles.Target)
-		addToRoom(t, env, &creator, r.ID, roles.Guest)
+		addToRoom(t, env, &creator, r.ID, roles.Peer)
 		_, chat := storeChat(t, env, creator.User.ID, "group")
 		member := creator.SeedChatMember(r.ID, chat)
 		ai := testkit.Decode[dto.RoomMember](creator.Post("/api/v1/rooms/"+r.ID+"/members",
@@ -143,7 +143,7 @@ func roomSetup(env *testkit.Env, roles *testkit.OrgRoles) func(t *testing.T) map
 
 // Auth matrix for every room route (ACL-01..04, ACL-07, ACL-08, ROOM-01) over the organization roles
 // (AD-016): the creator and the admins of the organization manage a group, the people in the room post, and
-// everybody else - a manager above the creator, a peer, an inviter, an outsider, an instance admin - gets 404.
+// everybody else - the host of an AI, its instructor, an outsider, an instance admin - gets 404.
 func TestRoomRoutesAuthMatrix(t *testing.T) {
 	env := testkit.New(t)
 	roles := env.OrgRoles("acme")
@@ -162,7 +162,7 @@ func TestRoomRoutesAuthMatrix(t *testing.T) {
 			return c.Get(room(res, "/members"))
 		}, groupWant(200, 200, 200, 404)},
 		{"add member", func(_ *testing.T, c *testkit.Client, res map[string]string) *testkit.Response {
-			return c.Post(room(res, "/members"), dto.AddMemberRequest{Kind: dto.MemberKindUser, MemberID: roles.Peer.User.ID})
+			return c.Post(room(res, "/members"), dto.AddMemberRequest{Kind: dto.MemberKindUser, MemberID: roles.Instructor.User.ID})
 		}, groupWant(201, 201, 403, 404)},
 		{"update member", func(_ *testing.T, c *testkit.Client, res map[string]string) *testkit.Response {
 			return c.Patch(room(res, "/members/"+res["ai"]), dto.UpdateMemberRequest{DisplayName: ptr("Builder bot")})
@@ -170,10 +170,10 @@ func TestRoomRoutesAuthMatrix(t *testing.T) {
 		{"remove member", func(_ *testing.T, c *testkit.Client, res map[string]string) *testkit.Response {
 			return c.Delete(room(res, "/members/"+res["user"]))
 		}, map[string]int{
-			// The row is the target's own: they leave it (204), while the guest is taking out
+			// The row is the target's own: they leave it (204), while the peer is taking out
 			// someone else's row and needs manage (403).
-			"member": 204, "admin": 204, "target": 204, "guest": 403,
-			"manager": 404, "peer": 404, "inviter": 404, "outsider": 404, "instance_admin": 404,
+			"member": 204, "admin": 204, "target": 204, "peer": 403,
+			"manager": 404, "instructor": 404, "outsider": 404, "instance_admin": 404,
 		}},
 		{"remove a chat member", func(_ *testing.T, c *testkit.Client, res map[string]string) *testkit.Response {
 			return c.Delete(room(res, "/members/"+res["chat"]))
@@ -207,7 +207,7 @@ func TestRoomRoutesAuthMatrix(t *testing.T) {
 		for _, r := range list.Items {
 			ids = append(ids, r.ID)
 		}
-		visible := role.Name == "member" || role.Name == "admin" || role.Name == "target" || role.Name == "guest"
+		visible := role.Name == "member" || role.Name == "admin" || role.Name == "target" || role.Name == "peer"
 		require.Equal(t, visible, contains(ids, res["room"]), role.Name)
 	}
 

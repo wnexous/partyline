@@ -148,8 +148,8 @@ func TestCanResumeAgreesWithTheResumeRoute(t *testing.T) {
 		// resumes lists the roles that resume; seeing is every role that can view the room.
 		resumes, seeing []string
 	}{
-		{"group", roomSetup(env, roles), []string{"member", "admin"}, []string{"member", "admin", "target", "guest"}},
-		{"dm", dmRoomSetup(env, roles), []string{"target", "manager", "admin"}, []string{"target", "manager", "admin"}},
+		{"group", roomSetup(env, roles), []string{"member", "admin"}, []string{"member", "admin", "target", "peer"}},
+		{"dm", dmRoomSetup(env, roles), []string{"target", "manager", "instructor"}, []string{"target", "manager", "instructor"}},
 	}
 	in := func(list []string, name string) bool {
 		for _, v := range list {

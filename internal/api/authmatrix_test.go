@@ -12,8 +12,8 @@ import (
 
 // The authorization matrix (design, "Authorization matrix per route group"; spec success criterion: every
 // route is tested with every role) is over the roles of testkit.OrgRoles, because an organization is the only
-// way to share anything (AD-016): the admin and the manager above the target, the target and its peer, a plain
-// member, an inviter and its guest, an outsider and the admin of the instance who is no member. A feature adds
+// way to share anything (AD-016): the admin, the host of an AI (manager) and its user instructor, the target and
+// its peer, a plain member, an outsider and the admin of the instance who is no member. A feature adds
 // its routes by building a []roleRoute and a setup that prepares a fresh resource per case, and states the
 // status each role gets with a want map (groupWant, dmWant, agentWant, connectionWant or everyRole).
 
@@ -29,7 +29,7 @@ type roleRoute struct {
 func everyRole(status int) map[string]int {
 	return map[string]int{
 		"admin": status, "manager": status, "target": status, "peer": status, "member": status,
-		"inviter": status, "guest": status, "outsider": status, "instance_admin": status,
+		"instructor": status, "outsider": status, "instance_admin": status,
 	}
 }
 

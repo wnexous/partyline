@@ -98,7 +98,7 @@ func TestSendToAChatAuthorizationMatrix(t *testing.T) {
 
 	f.sendToChat("Notes", f.conn.ID, f.group.ID, "x").RequireError(http.StatusForbidden, dto.ErrorCodeNotOperator)
 	asAI(bob).Post(path, body).RequireError(http.StatusNotFound, dto.ErrorCodeNotFound)
-	f.env.AddMember(f.alice.PersonalOrg().ID, f.env.NewAI(bob, "Atlas"), orgs.PermissionMember, "") // bob's AI joins it
+	f.env.AddMember(f.alice.PersonalOrg().ID, f.env.NewAI(bob, "Atlas"), orgs.PermissionMember) // bob's AI joins it
 	asAI(bob).Post(path, body).RequireError(http.StatusForbidden, dto.ErrorCodeNotOperator)
 	asAI(carol).Post(path, body).RequireError(http.StatusNotFound, dto.ErrorCodeNotFound)
 	asAI(root).Post(path, body).RequireError(http.StatusNotFound, dto.ErrorCodeNotFound)

@@ -19,10 +19,10 @@ func getMe(t *testing.T, c *testkit.Client) dto.Me {
 	return testkit.Decode[dto.Me](c.Get("/api/v1/me").RequireStatus(http.StatusOK))
 }
 
-// joinOrg makes the client a member of the organization through the API, as an invited member or guest.
+// joinOrg makes the client a member of the organization through the API, as an invited member or admin.
 func joinOrg(t *testing.T, admin, c *testkit.Client, org string, perm dto.Permission) {
 	t.Helper()
-	inv := invited(t, admin, org, c.User.Username, perm, "")
+	inv := invited(t, admin, org, c.User.Username, perm)
 	answerInvitation(c, inv.ID, "accept").RequireStatus(http.StatusOK)
 }
 
@@ -66,7 +66,7 @@ func TestUserChoosesTheOrganizationNewAIsJoin(t *testing.T) {
 	}
 }
 
-// ORG-04 (T17): the choice must be an organization the user belongs to - as a member or a guest - and every
+// ORG-04 (T17): the choice must be an organization the user belongs to - with any permission - and every
 // other value is 403, whether the organization exists or not, so a refusal tells nothing about the
 // organizations the user is not in. A pending invitation is not a membership. A refusal changes nothing.
 func TestTheDefaultOrganizationMustBeOneYouBelongTo(t *testing.T) {
@@ -74,7 +74,7 @@ func TestTheDefaultOrganizationMustBeOneYouBelongTo(t *testing.T) {
 	alice, bob := env.NewUser("alice"), env.NewUser("bob")
 	acme := testkit.Decode[dto.Organization](alice.Post("/api/v1/orgs", dto.CreateOrganizationRequest{Name: "acme"}).RequireStatus(http.StatusCreated))
 	personal := bob.PersonalOrg().ID
-	invited(t, alice, acme.ID, "bob", dto.PermissionMember, "") // waiting, not accepted
+	invited(t, alice, acme.ID, "bob", dto.PermissionMember) // waiting, not accepted
 
 	for name, org := range map[string]string{
 		"an organization he is not in": acme.ID, "alice's personal organization": alice.PersonalOrg().ID,
@@ -87,8 +87,8 @@ func TestTheDefaultOrganizationMustBeOneYouBelongTo(t *testing.T) {
 	require.Nil(t, refused)
 	requireHome(t, env, first, personal, bob.User.ID)
 
-	// A guest belongs to the organization too (the invitation is sent again as one for a guest).
-	joinOrg(t, alice, bob, acme.ID, dto.PermissionGuest)
+	// Once he accepts he belongs to it.
+	joinOrg(t, alice, bob, acme.ID, dto.PermissionMember)
 	me := testkit.Decode[dto.Me](bob.Put(defaultOrgPath, dto.SetDefaultOrgRequest{OrgID: acme.ID}).RequireStatus(http.StatusOK))
 	require.Equal(t, acme.ID, me.DefaultOrgID)
 }

@@ -124,7 +124,7 @@ func keysWithPrefix(keys []string, prefixes ...string) []string {
 	return out
 }
 
-// LIVE-04, CHART-02: an AI's presence reaches the members of its organization (guests too) and its host,
+// LIVE-04: an AI's presence reaches the members of its organization and its host,
 // not an outsider, not the instance admin, and not a user until they join; and it stops reaching a user
 // who is removed. A host who left still hears of the AI they run.
 func TestLiveAgentPresenceFollowsOrganizationMembership(t *testing.T) {
@@ -135,7 +135,7 @@ func TestLiveAgentPresenceFollowsOrganizationMembership(t *testing.T) {
 	presence := events.AgentPresence{AgentID: acme.TargetAI, OwnerID: acme.Manager.User.ID, Online: true}
 
 	seers := map[string]*testkit.LiveConn{}
-	for name, c := range map[string]*testkit.Client{"admin": acme.Admin, "host": acme.Manager, "member": acme.Member, "guest": acme.Guest} {
+	for name, c := range map[string]*testkit.Client{"admin": acme.Admin, "host": acme.Manager, "member": acme.Member, "instructor": acme.Instructor} {
 		seers[name] = dialLive(t, c)
 	}
 	strangers := map[string]*testkit.LiveConn{}
@@ -154,7 +154,7 @@ func TestLiveAgentPresenceFollowsOrganizationMembership(t *testing.T) {
 	}
 
 	// Joining starts the events, removal stops them.
-	w.env.AddMember(org, joiner.User.ID, orgs.PermissionMember, "")
+	w.env.AddMember(org, joiner.User.ID, orgs.PermissionMember)
 	w.env.App.Bus.Publish(presence)
 	var p dto.AgentPresence
 	strangers["joiner"].Expect(dto.LiveEventTypeAgentPresence, &p, liveWait)
@@ -190,13 +190,13 @@ func TestLiveAIConnectingIsHeardByItsOrganizationOnly(t *testing.T) {
 	outsider.ExpectNone(quiet)
 }
 
-// LIVE-04, CHART-02: a connection's status and its chats reach the members of its organization, and an
+// LIVE-04: a connection's status and its chats reach the members of its organization, and an
 // outsider or the instance admin receives none.
 func TestLiveConnectorEventsReachTheMembersOfItsOrganizationOnly(t *testing.T) {
 	w := newLiveWorld(t)
 	acme := w.acme
 	members := map[string]*testkit.LiveConn{}
-	for name, c := range map[string]*testkit.Client{"admin": acme.Admin, "member": acme.Member, "guest": acme.Guest} {
+	for name, c := range map[string]*testkit.Client{"admin": acme.Admin, "member": acme.Member, "peer": acme.Peer} {
 		members[name] = dialLive(t, c)
 	}
 	outsider, root := dialLive(t, acme.Outsider), dialLive(t, acme.InstanceAdmin)
@@ -285,7 +285,7 @@ func TestLiveMembershipChangesTellTheMemberItsAIsAndConnections(t *testing.T) {
 	orgChanged := "access:organization:" + org
 	resources := []string{"access:agent:" + acme.TargetAI, "access:connector:" + w.connector}
 
-	w.env.AddMember(org, joiner.User.ID, orgs.PermissionMember, "")
+	w.env.AddMember(org, joiner.User.ID, orgs.PermissionMember)
 	keys := keysUntil(t, joinerLive, append([]string{orgChanged}, resources...)...)
 	require.Subset(t, keys, resources)
 	// The member who was already there hears only that the organization changed.
@@ -323,7 +323,7 @@ func TestLiveOrganizationChangeAnnouncesGroupsTheUserCanNowView(t *testing.T) {
 			AddedBy: acme.Manager.User.ID, CreatedAt: 1,
 		})
 	}))
-	_, err := w.env.App.Orgs.SetPosition(ctx, acme.Admin.User.ID, org, acme.Peer.User.ID, w.acme.ManagerPosition)
+	_, err := w.env.App.Orgs.SetPermission(ctx, acme.Admin.User.ID, org, acme.Peer.User.ID, orgs.PermissionAdmin)
 	require.NoError(t, err)
 
 	keys := keysUntil(t, peerLive, "room.changed:"+ops.ID, "access:room:"+ops.ID)
@@ -345,7 +345,10 @@ func TestLiveOrganizationChangeKeepsADMTheUserOnlyViewsThroughAnAI(t *testing.T)
 	aliceLive.Expect(dto.LiveEventTypeRoomMessage, nil, liveWait) // alice views it: the socket knows the room now
 
 	org := alice.PersonalOrg().ID
-	_, err := env.App.Orgs.SetPosition(ctx, alice.User.ID, org, alice.User.ID, "")
+	_, err := env.App.Orgs.SetPermission(ctx, alice.User.ID, org, bob.User.ID, orgs.PermissionAdmin) // bob is a member through shareAI
+	require.NoError(t, err)
+	aliceLive.Drain(quiet)
+	_, err = env.App.Orgs.SetPermission(ctx, alice.User.ID, org, alice.User.ID, orgs.PermissionMember) // her own standing changes
 	require.NoError(t, err)
 	keys := keysUntil(t, aliceLive, "access:organization:"+org)
 	require.Empty(t, keysWithPrefix(keys, "room.deleted"), "the DM is still hers to view")

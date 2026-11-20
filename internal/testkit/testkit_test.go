@@ -45,9 +45,9 @@ func requireMember(t *testing.T, env *testkit.Env, org, iid string, want orgs.Me
 	require.Equal(t, want, got)
 }
 
-func manages(t *testing.T, env *testkit.Env, org, actor, target string) bool {
+func manages(t *testing.T, env *testkit.Env, actor, target string) bool {
 	t.Helper()
-	ok, err := env.App.Authz.Manages(context.Background(), actor, target, org)
+	ok, err := env.App.Authz.Manages(context.Background(), actor, target)
 	require.NoError(t, err)
 	return ok
 }
@@ -63,10 +63,9 @@ func TestPersonalOrgIsTheOrganizationOfTheAccount(t *testing.T) {
 
 	require.Equal(t, "alice", personal.Slug)
 	require.Equal(t, alice.User.ID, personal.CreatedBy)
-	c, err := env.App.Authz.Chart(ctx, personal.ID)
+	c, err := env.App.Authz.Roster(ctx, personal.ID)
 	require.NoError(t, err)
 	require.Equal(t, orgs.PermissionAdmin, c.Members[alice.User.ID].Permission)
-	require.Equal(t, "Admin", c.Positions[c.Members[alice.User.ID].PositionID].Name)
 
 	// The default can point elsewhere; the personal organization stays what it is.
 	team, err := env.App.Orgs.Create(ctx, alice.User.ID, "Team")
@@ -78,33 +77,21 @@ func TestPersonalOrgIsTheOrganizationOfTheAccount(t *testing.T) {
 }
 
 // T11: the store-level helpers set an organization up without going through the services' rules.
-func TestOrgHelpersBuildAChart(t *testing.T) {
-	ctx := context.Background()
+func TestOrgHelpersSetMembersAndInstructors(t *testing.T) {
 	env := testkit.New(t)
 	alice, bob := env.NewUser("alice"), env.NewUser("bob")
 	org := alice.PersonalOrg().ID
 
-	boss := env.AddPosition(org, "Boss", "")
-	crew := env.AddPosition(org, "Crew", boss)
-	env.AddMember(org, bob.User.ID, orgs.PermissionMember, crew)
-	requireMember(t, env, org, bob.User.ID, orgs.Member{IID: bob.User.ID, Permission: orgs.PermissionMember, PositionID: crew})
-	c, err := env.App.Authz.Chart(ctx, org)
-	require.NoError(t, err)
-	require.Equal(t, orgs.Position{ID: crew, Name: "Crew", ParentID: boss}, c.Positions[crew])
-	require.Equal(t, orgs.Position{ID: boss, Name: "Boss"}, c.Positions[boss])
+	env.AddMember(org, bob.User.ID, orgs.PermissionMember)
+	requireMember(t, env, org, bob.User.ID, orgs.Member{IID: bob.User.ID, Permission: orgs.PermissionMember})
 
-	// A guest has an inviter.
-	carol := env.NewUser("carol")
-	env.AddGuest(org, carol.User.ID, alice.User.ID, "")
-	requireMember(t, env, org, carol.User.ID, orgs.Member{IID: carol.User.ID, Permission: orgs.PermissionGuest, InviterIID: alice.User.ID})
-	require.True(t, manages(t, env, org, alice.User.ID, carol.User.ID), "the inviter manages its guest")
-
-	// SetCreator re-points the creator of an AI: the new creator manages it.
+	// The host manages its AI; AddInstructor makes a user manage it too (SR2-13), SetCreator gives nothing.
 	ai := env.NewAI(alice, "notes")
-	require.True(t, manages(t, env, org, alice.User.ID, ai))
+	require.True(t, manages(t, env, alice.User.ID, ai))
 	env.SetCreator(ai, bob.User.ID)
-	require.True(t, manages(t, env, org, bob.User.ID, ai), "bob is the creator now")
-	require.False(t, manages(t, env, org, alice.User.ID, ai), "alice created nothing")
+	require.False(t, manages(t, env, bob.User.ID, ai), "a creator is history only")
+	env.AddInstructor(ai, bob.User.ID)
+	require.True(t, manages(t, env, bob.User.ID, ai), "a user instructor manages it")
 }
 
 // T11: NewAIIn creates an AI whose home is the given organization and leaves the owner's default alone.
@@ -123,7 +110,7 @@ func TestNewAIInPlacesTheAIWhereAsked(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, team.ID, a.OrgID.String)
 	require.Equal(t, alice.User.ID, a.CreatorIid.String)
-	requireMember(t, env, team.ID, inTeam, orgs.Member{IID: inTeam, Permission: orgs.PermissionMember, CreatorIID: alice.User.ID})
+	requireMember(t, env, team.ID, inTeam, orgs.Member{IID: inTeam, Permission: orgs.PermissionMember})
 	b, err := env.App.Store.R().GetAgent(ctx, atHome)
 	require.NoError(t, err)
 	require.Equal(t, personal, b.OrgID.String, "NewAI still goes to the default")
@@ -132,9 +119,8 @@ func TestNewAIInPlacesTheAIWhereAsked(t *testing.T) {
 	require.Equal(t, personal, u.DefaultOrgID.String, "and the default is as it was")
 }
 
-// T11: OrgRoles builds one organization with an identity in every role of the authorization matrices.
-// The stated permissions and positions hold, and Manages(manager, target) is true where
-// Manages(peer, target) is not.
+// T11: OrgRoles builds one organization with an identity in every role of the authorization matrices: the
+// stated permissions hold, and the host and the user instructor manage TargetAI where nobody else does.
 func TestOrgRolesYieldsEveryRoleOfTheMatrices(t *testing.T) {
 	ctx := context.Background()
 	env := testkit.New(t)
@@ -142,24 +128,13 @@ func TestOrgRolesYieldsEveryRoleOfTheMatrices(t *testing.T) {
 
 	require.Equal(t, "acme", r.Org.Name, "named as asked")
 	require.Equal(t, "acme", r.Org.Slug)
-	c, err := env.App.Authz.Chart(ctx, r.Org.ID)
+	c, err := env.App.Authz.Roster(ctx, r.Org.ID)
 	require.NoError(t, err)
-	require.Len(t, c.Positions, 3, "Admin above Manager above Worker")
-	require.Len(t, c.Members, 8, "seven people and an AI")
-	of := func(cl *testkit.Client) orgs.Member { return c.Members[cl.User.ID] }
-	posName := func(m orgs.Member) string { return c.Positions[m.PositionID].Name }
-
-	require.Equal(t, orgs.PermissionAdmin, of(r.Admin).Permission)
-	require.Equal(t, "Admin", posName(of(r.Admin)), "the admin holds the root position")
-	require.Equal(t, orgs.PermissionMember, of(r.Manager).Permission)
-	require.Equal(t, "Manager", posName(of(r.Manager)))
-	require.Equal(t, orgs.PermissionMember, of(r.Target).Permission)
-	require.Equal(t, "Worker", posName(of(r.Target)))
-	require.Equal(t, orgs.PermissionMember, of(r.Peer).Permission)
-	require.Equal(t, of(r.Target).PositionID, of(r.Peer).PositionID, "the peer holds the target's own position")
-	require.Equal(t, orgs.Member{IID: r.Member.User.ID, Permission: orgs.PermissionMember}, of(r.Member), "a member with no position and no relation")
-	require.Equal(t, orgs.Member{IID: r.Inviter.User.ID, Permission: orgs.PermissionMember}, of(r.Inviter))
-	require.Equal(t, orgs.Member{IID: r.Guest.User.ID, Permission: orgs.PermissionGuest, InviterIID: r.Inviter.User.ID}, of(r.Guest), "the guest of the inviter")
+	require.Len(t, c.Members, 7, "six people and an AI")
+	require.Equal(t, orgs.PermissionAdmin, c.Members[r.Admin.User.ID].Permission)
+	for _, m := range []*testkit.Client{r.Manager, r.Instructor, r.Target, r.Peer, r.Member} {
+		require.Equal(t, orgs.PermissionMember, c.Members[m.User.ID].Permission, m.User.Username)
+	}
 	for _, outside := range []*testkit.Client{r.Outsider, r.InstanceAdmin} {
 		_, ok, err := env.App.Authz.Member(ctx, r.Org.ID, outside.User.ID)
 		require.NoError(t, err)
@@ -168,43 +143,33 @@ func TestOrgRolesYieldsEveryRoleOfTheMatrices(t *testing.T) {
 	require.EqualValues(t, "admin", r.InstanceAdmin.User.Role, "the instance admin is an admin of the instance, and of no organization")
 	require.EqualValues(t, "member", r.Outsider.User.Role)
 
-	// The AI of the organization: created by the manager, no position, member.
-	requireMember(t, env, r.Org.ID, r.TargetAI, orgs.Member{IID: r.TargetAI, Permission: orgs.PermissionMember, CreatorIID: r.Manager.User.ID})
+	requireMember(t, env, r.Org.ID, r.TargetAI, orgs.Member{IID: r.TargetAI, Permission: orgs.PermissionMember})
 	a, err := env.App.Store.R().GetAgent(ctx, r.TargetAI)
 	require.NoError(t, err)
 	require.Equal(t, r.Org.ID, a.OrgID.String, "its home")
+	require.Equal(t, r.Manager.User.ID, a.OwnerID, "the manager hosts it")
 
-	// Who manages whom: the point of the roles.
-	id := func(cl *testkit.Client) string { return cl.User.ID }
 	for name, tc := range map[string]struct {
-		actor  *testkit.Client
-		target string
-		want   bool
+		actor *testkit.Client
+		want  bool
 	}{
-		"the manager manages the target":                    {r.Manager, id(r.Target), true},
-		"the peer does not":                                 {r.Peer, id(r.Target), false},
-		"the admin does, through the root":                  {r.Admin, id(r.Target), true},
-		"a member of no relation does not":                  {r.Member, id(r.Target), false},
-		"the target does not manage upward":                 {r.Target, id(r.Manager), false},
-		"the peer does not manage the manager":              {r.Peer, id(r.Manager), false},
-		"the inviter manages its guest":                     {r.Inviter, id(r.Guest), true},
-		"a member of no relation does not manage the guest": {r.Member, id(r.Guest), false},
-		"the manager does not manage the guest":             {r.Manager, id(r.Guest), false},
-		"the manager manages the AI it created":             {r.Manager, r.TargetAI, true},
-		"the admin manages it through the creator":          {r.Admin, r.TargetAI, true},
-		"the peer does not manage the AI":                   {r.Peer, r.TargetAI, false},
-		"the target does not manage the AI":                 {r.Target, r.TargetAI, false},
-		"nobody manages the admin":                          {r.Manager, id(r.Admin), false},
+		"the host manages the AI":        {r.Manager, true},
+		"the user instructor manages it": {r.Instructor, true},
+		"the admin does not":             {r.Admin, false},
+		"a member does not":              {r.Member, false},
+		"the target does not":            {r.Target, false},
+		"an outsider does not":           {r.Outsider, false},
 	} {
-		require.Equal(t, tc.want, manages(t, env, r.Org.ID, id(tc.actor), tc.target), name)
+		require.Equal(t, tc.want, manages(t, env, tc.actor.User.ID, r.TargetAI), name)
 	}
-	del, err := env.App.Authz.CanDelete(ctx, id(r.Admin), id(r.Guest), r.Org.ID)
+	require.False(t, manages(t, env, r.Admin.User.ID, r.Target.User.ID), "nobody manages a user")
+	del, err := env.App.Authz.CanDeleteAI(ctx, r.Admin.User.ID, r.TargetAI)
 	require.NoError(t, err)
-	require.True(t, del, "an admin deletes anyone")
+	require.True(t, del, "an admin of its home deletes the AI")
 
 	// Every client is logged in as its own account.
 	all := r.All()
-	require.Len(t, all, 9)
+	require.Len(t, all, 8)
 	seen := map[string]bool{}
 	for _, rc := range all {
 		require.False(t, seen[rc.Name], "role %s once", rc.Name)
@@ -213,7 +178,7 @@ func TestOrgRolesYieldsEveryRoleOfTheMatrices(t *testing.T) {
 		rc.Client.Get("/api/v1/me").RequireStatus(http.StatusOK).Decode(&me)
 		require.Equal(t, rc.Client.User.ID, me.ID, rc.Name)
 	}
-	require.True(t, seen["admin"] && seen["manager"] && seen["target"] && seen["peer"] && seen["member"] && seen["inviter"] && seen["guest"] && seen["outsider"] && seen["instance_admin"])
+	require.True(t, seen["admin"] && seen["manager"] && seen["instructor"] && seen["target"] && seen["peer"] && seen["member"] && seen["outsider"] && seen["instance_admin"])
 
 	// Two organizations can live in one environment.
 	other := env.OrgRoles("globex")

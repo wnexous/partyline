@@ -122,7 +122,7 @@ func TestLiveStatusEventsReachUsersWithAccess(t *testing.T) {
 	agent := env.NewAI(alice, "builder") // in alice's personal organization
 	conn, _ := storeChat(t, env, alice.User.ID, "group")
 	setConnectorOrg(t, env, conn, alice.PersonalOrg().ID)
-	env.AddMember(alice.PersonalOrg().ID, bob.User.ID, orgs.PermissionMember, "")
+	env.AddMember(alice.PersonalOrg().ID, bob.User.ID, orgs.PermissionMember)
 
 	aliceLive, bobLive, carolLive := dialLive(t, alice), dialLive(t, bob), dialLive(t, carol)
 

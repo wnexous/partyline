@@ -31,7 +31,7 @@ func TestActivityFeed(t *testing.T) {
 	addToRoom(t, env, alice, shared.ID, bob)
 	own := createRoom(bob, "bob-own")
 	// carol makes a group in bob's organization, which bob administers without being in the group.
-	env.AddMember(bob.PersonalOrg().ID, carol.User.ID, orgs.PermissionMember, "")
+	env.AddMember(bob.PersonalOrg().ID, carol.User.ID, orgs.PermissionMember)
 	public := groupIn(t, env, carol, bob.PersonalOrg().ID, "town-square")
 
 	post := func(c *testkit.Client, room dto.Room, text string) dto.Message {

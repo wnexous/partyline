@@ -19,20 +19,19 @@ func registerAgent(t *testing.T, env *testkit.Env, owner *testkit.Client, name s
 }
 
 // agentWant is the expected status of a route on the AI that the role "manager" created and hosts, by role:
-// whoever manages it (its creator and the admin whose position is above the creator's), whoever only sees
-// it (the other people of the organization, guests included) and whoever cannot see it (an outsider and an
-// admin of the instance).
+// whoever manages it (its host and its user instructor, SR2-13), whoever only sees it (the other people of the
+// organization, its admin included) and whoever cannot see it (an outsider and an admin of the instance).
 func agentWant(manages, sees, hidden int) map[string]int {
 	return map[string]int{
-		"admin": manages, "manager": manages,
-		"target": sees, "peer": sees, "member": sees, "inviter": sees, "guest": sees,
+		"manager": manages, "instructor": manages,
+		"admin": sees, "target": sees, "peer": sees, "member": sees,
 		"outsider": hidden, "instance_admin": hidden,
 	}
 }
 
-// Auth matrix for the agent management routes (ACL-05, ACL-07, ACL-08, POS-04, POS-05) over the
-// organization roles (AD-016): an AI is seen by the people of the organizations it belongs to and managed
-// by the identities above it in the chart; the others get 404. (Deleting an AI is covered with the
+// Auth matrix for the agent management routes (ACL-05, ACL-07, ACL-08, SR2-13) over the organization roles
+// (AD-016): an AI is seen by the people of the organizations it belongs to and managed by its host and its user
+// instructors; the others get 404. (Deleting an AI is covered with the
 // deletion rule, in TestDeletingAnAIOfAnOrganization, merging with the merge tests.)
 func TestAgentRoutesAuthMatrix(t *testing.T) {
 	env := testkit.New(t)
@@ -60,7 +59,7 @@ func TestAgentRoutesAuthMatrix(t *testing.T) {
 			}
 		}
 		switch role.Name {
-		case "admin", "manager":
+		case "manager", "instructor":
 			require.Equal(t, []dto.Level{dto.LevelManage}, levels, role.Name)
 		case "outsider", "instance_admin":
 			require.Empty(t, levels, role.Name)
@@ -76,10 +75,10 @@ func TestAgentRoutesAuthMatrix(t *testing.T) {
 	env.Anon().Get("/api/v1/agents").RequireError(http.StatusUnauthorized, dto.ErrorCodeUnauthorized)
 }
 
-// POS-04: the AIs a user hosts stay in their list whatever the chart says, but hosting is no management:
-// a host who left the organization of the AI lists it with the level of someone who only sees it, and
-// cannot change it. Seeing an AI is hosting it or sharing an organization with it.
-func TestAgentListAndLevelFollowTheChartNotTheHost(t *testing.T) {
+// SR2-13: hosting is management, whatever the organizations say: a host who left the organization of the AI
+// still lists it at manage and changes it. A user instructor outside every organization of the AI sees it, lists
+// it at manage and changes it too (SR2-07: an instructor sees the AI it instructs).
+func TestSR213TheHostAndUserInstructorsManageWhateverTheOrganization(t *testing.T) {
 	ctx := context.Background()
 	env := testkit.New(t)
 	roles := env.OrgRoles("acme")
@@ -95,17 +94,23 @@ func TestAgentListAndLevelFollowTheChartNotTheHost(t *testing.T) {
 	}
 	level, listed := levelOf(host, roles.TargetAI)
 	require.True(t, listed)
-	require.Equal(t, dto.LevelManage, level, "the creator manages the AI it started")
+	require.Equal(t, dto.LevelManage, level, "the host manages the AI")
 
 	require.NoError(t, env.App.Orgs.Remove(ctx, roles.Admin.User.ID, roles.Org.ID, host.User.ID), "the host leaves the organization")
 	level, listed = levelOf(host, roles.TargetAI)
 	require.True(t, listed, "the AIs a user hosts stay in their list")
-	require.Equal(t, dto.LevelUse, level, "but hosting is no management")
-	desc := "no longer mine"
-	host.Patch("/api/v1/agents/"+roles.TargetAI, dto.UpdateAgentRequest{Description: &desc}).RequireError(http.StatusForbidden, dto.ErrorCodeForbidden)
-	host.Get("/api/v1/agents/" + roles.TargetAI).RequireStatus(http.StatusOK)
-	_, listed = levelOf(roles.Peer, roles.TargetAI)
-	require.True(t, listed, "and the AI stays in the organization")
+	require.Equal(t, dto.LevelManage, level, "and hosting is management")
+	desc := "still mine"
+	host.Patch("/api/v1/agents/"+roles.TargetAI, dto.UpdateAgentRequest{Description: &desc}).RequireStatus(http.StatusOK)
+
+	_, listed = levelOf(roles.Outsider, roles.TargetAI)
+	require.False(t, listed, "fixture: the outsider sees nothing of Acme")
+	env.AddInstructor(roles.TargetAI, roles.Outsider.User.ID)
+	level, listed = levelOf(roles.Outsider, roles.TargetAI)
+	require.True(t, listed, "an instructor sees the AI it instructs")
+	require.Equal(t, dto.LevelManage, level)
+	roles.Outsider.Patch("/api/v1/agents/"+roles.TargetAI, dto.UpdateAgentRequest{Description: &desc}).RequireStatus(http.StatusOK)
+	roles.Admin.Patch("/api/v1/agents/"+roles.TargetAI, dto.UpdateAgentRequest{Description: &desc}).RequireError(http.StatusForbidden, dto.ErrorCodeForbidden)
 }
 
 // GET /agents renders the agent; PATCH changes the description; DELETE removes it from rooms.

@@ -110,19 +110,12 @@ func (f *fixture) newOrg(t *testing.T, creator db.User, name string) string {
 	return m.ID
 }
 
-func (f *fixture) join(t *testing.T, org, iid string, perm orgs.Permission, position, inviter string) {
+func (f *fixture) join(t *testing.T, org, iid string, perm orgs.Permission) {
 	t.Helper()
 	ctx := context.Background()
 	require.NoError(t, f.store.WithTx(ctx, func(q *db.Queries) error {
-		return orgs.AddMember(ctx, q, orgs.AddMemberInput{OrgID: org, IID: iid, Permission: perm, PositionID: position, InviterIID: inviter, Now: f.clock.Now()})
+		return orgs.AddMember(ctx, q, orgs.AddMemberInput{OrgID: org, IID: iid, Permission: perm, Now: f.clock.Now()})
 	}))
-}
-
-func (f *fixture) position(t *testing.T, org, name string) string {
-	t.Helper()
-	id := store.NewID()
-	f.execArgs(t, `INSERT INTO positions (id, org_id, name, created_at) VALUES (?, ?, ?, 1)`, id, org, name)
-	return id
 }
 
 // ai hosts an AI of the user: folder AIs have their id as their v0.3 name.
@@ -132,7 +125,7 @@ func (f *fixture) ai(t *testing.T, host db.User, folder, handle, org string) str
 	f.execArgs(t, `INSERT INTO agents (id, owner_id, name, created_at, harness, machine, folder, org_id, creator_iid) VALUES (?, ?, ?, 1, 'claude', 'devbox', ?, ?, ?)`,
 		id, host.ID, id, folder, org, host.ID)
 	f.execArgs(t, `INSERT INTO intelligences (id, kind, display_name, handle, created_at, updated_at) VALUES (?, 'ai', ?, ?, 1, 1)`, id, handle, handle)
-	f.join(t, org, id, orgs.PermissionMember, "", "")
+	f.join(t, org, id, orgs.PermissionMember)
 	return id
 }
 
@@ -256,31 +249,24 @@ func TestTheHeirBecomesAdminOfEachOrganizationTheUserWasTheLastAdminOf(t *testin
 	}
 
 	personal := r.personal(t, bob)
-	solo := r.newOrg(t, bob, "Solo")                    // bob is its only admin; carol is a member
-	pair := r.newOrg(t, bob, "Pair")                    // bob and carol are admins
-	guestHeir := r.newOrg(t, bob, "Guest heir")         // the heir is a guest of it, invited by bob
-	keepsPosition := r.newOrg(t, bob, "Keeps position") // the heir is a member holding a position
-	notAdmin := r.newOrg(t, carol, "Carols")            // bob is only a member of it
-	r.join(t, solo, carol.ID, orgs.PermissionMember, "", "")
-	r.join(t, pair, carol.ID, orgs.PermissionAdmin, "", "")
-	r.join(t, guestHeir, heir.ID, orgs.PermissionGuest, "", bob.ID)
-	lead := r.position(t, keepsPosition, "Lead")
-	r.join(t, keepsPosition, heir.ID, orgs.PermissionMember, lead, "")
-	r.join(t, notAdmin, bob.ID, orgs.PermissionMember, "", "")
+	solo := r.newOrg(t, bob, "Solo")              // bob is its only admin; carol is a member
+	pair := r.newOrg(t, bob, "Pair")              // bob and carol are admins
+	memberHeir := r.newOrg(t, bob, "Member heir") // the heir is a member of it
+	notAdmin := r.newOrg(t, carol, "Carols")      // bob is only a member of it
+	r.join(t, solo, carol.ID, orgs.PermissionMember)
+	r.join(t, pair, carol.ID, orgs.PermissionAdmin)
+	r.join(t, memberHeir, heir.ID, orgs.PermissionMember)
+	r.join(t, notAdmin, bob.ID, orgs.PermissionMember)
 
 	require.NoError(t, r.svc.DeleteAccount(ctx, bob.ID, memberPassword))
 
 	for name, org := range map[string]string{"bob's personal organization": personal, "an organization he alone administered": solo} {
 		m, ok := r.memberOf(t, org, heir.ID)
 		require.True(t, ok, name)
-		require.Equal(t, orgs.Member{IID: heir.ID, Permission: orgs.PermissionAdmin}, m, "%s: the heir is an admin with no position", name)
+		require.Equal(t, orgs.Member{IID: heir.ID, Permission: orgs.PermissionAdmin}, m, "%s: the heir is an admin", name)
 	}
-	m, _ := r.memberOf(t, guestHeir, heir.ID)
-	require.Equal(t, orgs.PermissionAdmin, m.Permission, "a guest heir becomes an admin")
-	require.Empty(t, m.InviterIID, "and is nobody's guest any more")
-	m, _ = r.memberOf(t, keepsPosition, heir.ID)
-	require.Equal(t, orgs.PermissionAdmin, m.Permission)
-	require.Equal(t, lead, m.PositionID, "an heir who held a position keeps it")
+	m, _ := r.memberOf(t, memberHeir, heir.ID)
+	require.Equal(t, orgs.PermissionAdmin, m.Permission, "a member heir becomes an admin")
 
 	_, ok := r.memberOf(t, pair, heir.ID)
 	require.False(t, ok, "an organization with another admin gets no heir")
@@ -292,19 +278,19 @@ func TestTheHeirBecomesAdminOfEachOrganizationTheUserWasTheLastAdminOf(t *testin
 	}
 
 	inherited := r.auditActions(t)["org.admin_inherited"]
-	require.Len(t, inherited, 4, "one entry per organization that got an heir")
+	require.Len(t, inherited, 3, "one entry per organization that got an heir")
 	targets := []string{}
 	for _, e := range inherited {
 		require.Equal(t, bob.ID, e["_actor"], "the user who left")
 		require.Equal(t, heir.ID, e["heir"])
 		targets = append(targets, e["_target"].(string))
 	}
-	require.ElementsMatch(t, []string{personal, solo, guestHeir, keepsPosition}, targets)
+	require.ElementsMatch(t, []string{personal, solo, memberHeir}, targets)
 }
 
 // POS-06, AD-019: nothing an organization owns goes with the account. The groups and connections the user created
-// stay, owned by the heir; the AIs hosted on the user's computers stay in their organizations with their positions,
-// as unlinked identities owned by the heir, offline - and the heir's sessions never adopt them (MIG-02); what was
+// stay, owned by the heir; the AIs hosted on the user's computers stay in their organizations, as unlinked
+// identities owned by the heir (their new host, SR2-07), offline - and the heir's sessions never adopt them (MIG-02); what was
 // the user's alone goes: their group memberships and their DMs, with the rest of the account.
 func TestWhatTheUserOwnedForAnOrganizationStays(t *testing.T) {
 	ctx := context.Background()
@@ -312,13 +298,10 @@ func TestWhatTheUserOwnedForAnOrganizationStays(t *testing.T) {
 	bob := r.account(t, "bob", dto.RoleMember)
 	carol := r.account(t, "carol", dto.RoleMember)
 	team := r.newOrg(t, bob, "Team")
-	r.join(t, team, carol.ID, orgs.PermissionMember, "", "")
-	dev := r.position(t, team, "Dev")
+	r.join(t, team, carol.ID, orgs.PermissionMember)
 
 	atlas := r.ai(t, bob, "/work/atlas", "atlas", team)
 	notes := r.ai(t, bob, "/work/notes", "notes", team)
-	_, err := orgs.NewService(orgs.Deps{Store: r.store, Now: r.clock.Now}).SetPosition(ctx, bob.ID, team, notes, dev)
-	require.NoError(t, err)
 	support := r.group(t, bob, team, "Support", bob.ID, carol.ID, atlas)
 	other := r.group(t, carol, team, "Carols", carol.ID, bob.ID)
 	dm := r.dm(t, bob, carol)
@@ -344,18 +327,16 @@ func TestWhatTheUserOwnedForAnOrganizationStays(t *testing.T) {
 	require.Zero(t, r.count(t, `SELECT COUNT(*) FROM rooms WHERE id = ? AND creator_iid IS NOT NULL`, support), "nobody is its creator any more")
 	require.Equal(t, 1, r.count(t, `SELECT COUNT(*) FROM connectors WHERE id = ? AND org_id = ? AND owner_id = ? AND operator_iid = ?`, conn, team, r.root.ID, atlas), "the connection and its operator stay")
 
-	// the hosted AIs: owned by the heir, unlinked, still members of their organization with their position
+	// the hosted AIs: owned by the heir, unlinked, still members of their organization
 	for _, ai := range []string{atlas, notes} {
 		owner, folder, name := r.agentRow(t, ai)
 		require.Equal(t, r.root.ID, owner, "owned by the heir")
 		require.Empty(t, folder, "unlinked")
 		require.Equal(t, ai, name, "named by its id, which no one else uses")
-		m, ok := r.memberOf(t, team, ai)
+		_, ok := r.memberOf(t, team, ai)
 		require.True(t, ok, "still a member of its organization")
-		require.Empty(t, m.CreatorIID, "its creator is gone")
+		require.Zero(t, r.count(t, `SELECT COUNT(*) FROM agents WHERE id = ? AND creator_iid IS NOT NULL`, ai), "its creator is gone")
 	}
-	m, _ := r.memberOf(t, team, notes)
-	require.Equal(t, dev, m.PositionID, "with its position")
 	require.ElementsMatch(t, []string{atlas, notes}, r.kicked(), "their live sessions are ended")
 }
 
@@ -425,8 +406,8 @@ func TestDeletingAnAccountEndsItsCredentialsAndTellsEveryone(t *testing.T) {
 	carol := r.account(t, "carol", dto.RoleMember)
 	team := r.newOrg(t, bob, "Team")
 	shared := r.newOrg(t, carol, "Shared")
-	r.join(t, shared, bob.ID, orgs.PermissionMember, "", "")
-	r.join(t, team, carol.ID, orgs.PermissionMember, "", "")
+	r.join(t, shared, bob.ID, orgs.PermissionMember)
+	r.join(t, team, carol.ID, orgs.PermissionMember)
 	personal := r.personal(t, bob)
 	group := r.group(t, carol, shared, "Chat", carol.ID, bob.ID)
 	dm := r.dm(t, bob, carol)

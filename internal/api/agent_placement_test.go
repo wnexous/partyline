@@ -48,26 +48,19 @@ var startPaths = []startPath{
 	}},
 }
 
-// placementWorld is "Acme" from the spec's example chart:
+// placementWorld is "Acme":
 //
-//	Admin ── alice (admin; her default organization stays her own)
-//	 ├ Director ── bob (member; Acme is his default)
-//	 │   └ Lead developer ── the AI lead, hosted by alice
-//	 │       └ Worktrees
-//	 └ Sentinel ── the AI sentinel, hosted by alice
+//	alice (admin; her default organization stays her own), bob and erin (members; Acme is their default)
+//	lead and sentinel: AIs alice hosts, home Acme
 //
-// Erin is a member with no position and Gus a guest alice invited (both with Acme as their default);
 // Carol is not in Acme. Globex is a second organization alice administers and the AI lead is not in.
 type placementWorld struct {
-	env                    *testkit.Env
-	alice, bob, carol      *testkit.Client
-	erin, gus              *testkit.Client
-	acme, globex           db.Organization
-	director, leadDev      string // position ids
-	worktrees, sentinelPos string
-	rootPos                string
-	lead, sentinel         string // AI ids
-	alicePersonal          string
+	env               *testkit.Env
+	alice, bob, carol *testkit.Client
+	erin              *testkit.Client
+	acme, globex      db.Organization
+	lead, sentinel    string // AI ids
+	alicePersonal     string
 }
 
 func newPlacementWorld(t *testing.T) *placementWorld {
@@ -76,35 +69,38 @@ func newPlacementWorld(t *testing.T) *placementWorld {
 	env := testkit.New(t)
 	w := &placementWorld{
 		env: env, alice: env.NewUser("alice"), bob: env.NewUser("bob"), carol: env.NewUser("carol"),
-		erin: env.NewUser("erin"), gus: env.NewUser("gus"),
+		erin: env.NewUser("erin"),
 	}
 	w.alicePersonal = defaultOrgOf(t, env, w.alice)
 	acme, err := env.App.Orgs.Create(ctx, w.alice.User.ID, "Acme")
 	require.NoError(t, err)
-	w.acme, w.rootPos = acme.Organization, acme.PositionID
+	w.acme = acme.Organization
 	globex, err := env.App.Orgs.Create(ctx, w.alice.User.ID, "Globex")
 	require.NoError(t, err)
 	w.globex = globex.Organization
 
-	w.director = env.AddPosition(w.acme.ID, "Director", w.rootPos)
-	w.leadDev = env.AddPosition(w.acme.ID, "Lead developer", w.director)
-	w.worktrees = env.AddPosition(w.acme.ID, "Worktrees", w.leadDev)
-	w.sentinelPos = env.AddPosition(w.acme.ID, "Sentinel", w.rootPos)
-	env.AddMember(w.acme.ID, w.bob.User.ID, orgs.PermissionMember, w.director)
-	env.AddMember(w.acme.ID, w.erin.User.ID, orgs.PermissionMember, "")
-	env.AddGuest(w.acme.ID, w.gus.User.ID, w.alice.User.ID, "")
-	for _, u := range []*testkit.Client{w.bob, w.erin, w.gus} {
+	env.AddMember(w.acme.ID, w.bob.User.ID, orgs.PermissionMember)
+	env.AddMember(w.acme.ID, w.erin.User.ID, orgs.PermissionMember)
+	for _, u := range []*testkit.Client{w.bob, w.erin} {
 		require.NoError(t, env.App.Orgs.SetDefault(ctx, u.User.ID, w.acme.ID))
 	}
 
 	w.lead = env.NewAIIn(w.alice, w.acme.ID, "lead")
 	w.sentinel = env.NewAIIn(w.alice, w.acme.ID, "sentinel")
-	for ai, pos := range map[string]string{w.lead: w.leadDev, w.sentinel: w.sentinelPos} {
-		_, err := env.App.Orgs.SetPosition(ctx, w.alice.User.ID, w.acme.ID, ai, pos)
-		require.NoError(t, err)
-	}
 	require.Equal(t, w.alicePersonal, defaultOrgOf(t, env, w.alice), "fixture sanity: alice's default is her own")
 	return w
+}
+
+// instructorsOf lists the instructors of an AI besides its host, by id (SR2-06).
+func instructorsOf(t *testing.T, env *testkit.Env, agentID string) []string {
+	t.Helper()
+	rows, err := env.App.Store.R().ListAgentInstructors(context.Background(), agentID)
+	require.NoError(t, err)
+	out := []string{}
+	for _, r := range rows {
+		out = append(out, r.Intelligence.ID)
+	}
+	return out
 }
 
 func placementFolder(name string) testkit.Folder {
@@ -140,7 +136,7 @@ func (w *placementWorld) requireStartedAs(t *testing.T, id, org, creator string,
 	m, ok, err := w.env.App.Authz.Member(context.Background(), org, id)
 	require.NoError(t, err)
 	require.True(t, ok, "the AI is a member of its home organization")
-	want.IID, want.CreatorIID = id, creator
+	want.IID = id
 	require.Equal(t, want, m)
 	require.Equal(t, 1, memberships(t, w.env, id), "and of no other organization")
 }
@@ -168,7 +164,7 @@ func (w *placementWorld) agentToken(c *testkit.Client) *testkit.Client {
 }
 
 // ORG-04: --org puts a new AI in that organization, named by its slug (any case) or its id, whatever the
-// creator's default is; the AI joins as a member with no position, created by the creator.
+// creator's default is; the AI joins as a member, created by the creator.
 func TestStartWithAnOrganizationPlacesTheAIThere(t *testing.T) {
 	for _, path := range startPaths {
 		t.Run(path.name, func(t *testing.T) {
@@ -181,9 +177,9 @@ func TestStartWithAnOrganizationPlacesTheAIThere(t *testing.T) {
 					id, refused := path.start(t, tok, f)
 					require.Nil(t, refused)
 					w.requireStartedAs(t, id, w.acme.ID, w.alice.User.ID, orgs.Member{Permission: orgs.PermissionMember})
-					managed, err := w.env.App.Authz.Manages(context.Background(), w.alice.User.ID, id, w.acme.ID)
+					managed, err := w.env.App.Authz.Manages(context.Background(), w.alice.User.ID, id)
 					require.NoError(t, err)
-					require.True(t, managed, "the creator manages the AI it started (POS-03)")
+					require.True(t, managed, "the host manages the AI it started (SR2-13)")
 				})
 			}
 			require.Equal(t, w.alicePersonal, defaultOrgOf(t, w.env, w.alice), "starting an AI elsewhere leaves the default alone")
@@ -192,37 +188,44 @@ func TestStartWithAnOrganizationPlacesTheAIThere(t *testing.T) {
 	}
 }
 
-// ORG-04, POS-08: --parent naming an AI the token holder hosts makes that AI the creator, the AI joins the
-// parent's home organization (not the host's default) as a guest the parent invited, and it may hold a
-// position below the parent's.
-func TestStartWithAParentAIMakesTheParentTheCreator(t *testing.T) {
+// SR2-02, SR2-09, POS-08: --parent naming an AI the token holder hosts makes that AI the creator, the AI joins
+// the parent's home organization (not the host's default) as a member, and the parent becomes its instructor:
+// its messages are trusted, while it does not manage the new AI (it is no user) and a peer of the parent gets
+// nothing.
+func TestSR209StartWithAParentAIMakesTheParentAnInstructor(t *testing.T) {
 	for _, path := range startPaths {
 		t.Run(path.name, func(t *testing.T) {
 			w := newPlacementWorld(t)
 			tok := w.agentToken(w.alice)
 			for name, parent := range map[string]string{"by handle": "@lead", "by upper-case handle": "@LEAD", "by id": w.lead, "by handle without @": "lead"} {
 				t.Run(name, func(t *testing.T) {
+					ctx := context.Background()
 					f := placementFolder("worker-" + strings.ReplaceAll(name, " ", "-"))
-					f.Parent, f.Position = parent, "Worktrees"
+					f.Parent = parent
 					id, refused := path.start(t, tok, f)
 					require.Nil(t, refused)
 
-					w.requireStartedAs(t, id, w.acme.ID, w.lead, orgs.Member{
-						Permission: orgs.PermissionGuest, PositionID: w.worktrees, InviterIID: w.lead,
-					})
-					managed, err := w.env.App.Authz.Manages(context.Background(), w.lead, id, w.acme.ID)
+					w.requireStartedAs(t, id, w.acme.ID, w.lead, orgs.Member{Permission: orgs.PermissionMember})
+					require.Equal(t, []string{w.lead}, instructorsOf(t, w.env, id), "the parent instructs the new AI")
+					require.Equal(t, 1, countRows(t, w.env, `SELECT COUNT(*) FROM agent_instructors WHERE agent_iid = ? AND created_by = ?`, id, w.alice.User.ID),
+						"the token holder made the link")
+					trusted, err := w.env.App.Authz.Trusts(ctx, w.lead, id)
 					require.NoError(t, err)
-					require.True(t, managed, "the parent manages the worker it started")
-					sentinelManages, err := w.env.App.Authz.Manages(context.Background(), w.sentinel, id, w.acme.ID)
+					require.True(t, trusted, "the parent's messages are trusted")
+					managed, err := w.env.App.Authz.Manages(ctx, w.lead, id)
 					require.NoError(t, err)
-					require.False(t, sentinelManages, "a peer of the parent does not")
+					require.False(t, managed, "an AI instructor does not manage it (SR2-13)")
+					trusted, err = w.env.App.Authz.Trusts(ctx, w.sentinel, id)
+					require.NoError(t, err)
+					require.False(t, trusted, "a peer of the parent does not instruct it")
 
 					entries, details := w.joinEntries(t, id)
 					require.Len(t, entries, 1, "the join is audited once")
 					require.Equal(t, w.alice.User.ID, entries[0].ActorID, "the token holder started it")
 					require.Equal(t, w.acme.ID, entries[0].TargetID)
 					require.Equal(t, "start", details[0]["by"])
-					require.Equal(t, "guest", details[0]["permission"], "the entry says what the AI joined as")
+					require.Equal(t, "member", details[0]["permission"], "SR2-02: an AI started by an AI joins as a member")
+					require.Equal(t, w.lead, details[0]["instructor"])
 				})
 			}
 		})
@@ -254,6 +257,7 @@ func TestAParentTheHostCannotActForFallsBackToTheHost(t *testing.T) {
 					id, refused := path.start(t, w.agentToken(c.host), f)
 					require.Nil(t, refused, "no refusal for a parent that does not count")
 					w.requireStartedAs(t, id, c.org, c.host.User.ID, orgs.Member{Permission: orgs.PermissionMember})
+					require.Empty(t, instructorsOf(t, w.env, id), "a parent that does not count instructs nothing")
 				})
 			}
 		})
@@ -296,127 +300,53 @@ func TestStartInAnOrganizationTheCreatorIsNotInIsRefused(t *testing.T) {
 	}
 }
 
-// POS-07: --position names a position of the organization (any case). The creator may hold it only when its
-// own position is strictly above it, or when the creator is an admin there; otherwise 403 and nothing is
-// created. With a parent AI, the parent is the creator and its position is the one that counts.
-func TestStartWithAPositionFollowsTheCreatorsStanding(t *testing.T) {
+// ORG-04: an organization that does not exist is 422 organization_required on the field org, and nothing is
+// created.
+func TestAnUnknownOrganizationIsUnprocessable(t *testing.T) {
 	for _, path := range startPaths {
 		t.Run(path.name, func(t *testing.T) {
 			w := newPlacementWorld(t)
-			cases := []struct {
-				name     string
-				host     *testkit.Client
-				position string
-				parent   string
-				held     string // position id; "" means refused with 403
-				creator  string
-			}{
-				{"below the creator's position", w.bob, "Lead developer", "", w.leadDev, w.bob.User.ID},
-				{"two levels below", w.bob, "Worktrees", "", w.worktrees, w.bob.User.ID},
-				{"another letter case", w.bob, "lead DEVELOPER", "", w.leadDev, w.bob.User.ID},
-				{"the creator's own level", w.bob, "Director", "", "", ""},
-				{"above the creator", w.bob, "Admin", "", "", ""},
-				{"another branch of the chart", w.bob, "Sentinel", "", "", ""},
-				{"a creator without a position", w.erin, "Worktrees", "", "", ""},
-				{"a guest creator", w.gus, "Worktrees", "", "", ""},
-				{"an admin creator, at its own level", w.alice, "Admin", "", w.rootPos, w.alice.User.ID},
-				{"an admin creator, anywhere", w.alice, "Sentinel", "", w.sentinelPos, w.alice.User.ID},
-				{"the parent's position counts: below it", w.alice, "Worktrees", "@lead", w.worktrees, w.lead},
-				{"the parent's position counts: above it, though the host is an admin", w.alice, "Director", "@lead", "", ""},
-				{"the parent's position counts: its own level", w.alice, "Lead developer", "@lead", "", ""},
-				{"a parent without enough standing: a peer's branch", w.alice, "Worktrees", "@sentinel", "", ""},
-			}
-			for i, c := range cases {
-				t.Run(c.name, func(t *testing.T) {
-					before := w.census(t)
-					f := placementFolder(fmt.Sprintf("pos-%d", i))
-					f.Position, f.Parent = c.position, c.parent
-					if c.host == w.alice && c.parent == "" {
-						f.Org = "acme" // alice's default is her own organization
+			before := w.census(t)
+			f := placementFolder("no-org")
+			f.Org = "no-such-organization"
+			_, refused := path.start(t, w.agentToken(w.alice), f)
+			e := w.requireRefused(t, before, refused, http.StatusUnprocessableEntity, dto.ErrorCodeOrganizationRequired)
+			require.Contains(t, e.Fields, "org")
+		})
+	}
+}
+
+// SR2-05: positions were removed. The position header an older launcher still sends - a name, an unknown one
+// or one that is not even valid percent-encoding - is ignored: the AI starts as it would without it.
+func TestSR205APositionHeaderIsIgnored(t *testing.T) {
+	for _, path := range startPaths {
+		t.Run(path.name, func(t *testing.T) {
+			w := newPlacementWorld(t)
+			tok := w.agentToken(w.bob)
+			for i, value := range []string{"Worktrees", "Overlord", "100%zz"} {
+				t.Run(value, func(t *testing.T) {
+					folder := placementFolder(fmt.Sprintf("old-launcher-%d", i))
+					h := folder.Headers()
+					h.Set("X-Partyline-Position", value)
+					var id string
+					if path.name == "a live session" {
+						conn, resp := tok.DialAgentHeaders(h)
+						require.NotNil(t, conn, "refused: %d %s", resp.Status, resp.Body)
+						id = conn.Welcome(wsWait).Agent.ID
+						require.NoError(t, conn.Conn.CloseNow())
+					} else {
+						resp := tok.WithHeader("X-Partyline-Position", value).AsFolder(folder).Post("/api/v1/agent/register", nil).RequireStatus(http.StatusOK)
+						id = testkit.Decode[dto.AgentInfo](resp).ID
 					}
-					id, refused := path.start(t, w.agentToken(c.host), f)
-					if c.held == "" {
-						w.requireRefused(t, before, refused, http.StatusForbidden, dto.ErrorCodeForbidden)
-						return
-					}
-					require.Nil(t, refused)
-					m, ok, err := w.env.App.Authz.Member(context.Background(), w.acme.ID, id)
-					require.NoError(t, err)
-					require.True(t, ok)
-					require.Equal(t, c.held, m.PositionID, "the position the AI holds")
-					require.Equal(t, c.creator, m.CreatorIID)
+					w.requireStartedAs(t, id, w.acme.ID, w.bob.User.ID, orgs.Member{Permission: orgs.PermissionMember})
 				})
 			}
 		})
 	}
 }
 
-// POS-07, ORG-04: an organization or a position that does not exist is 422 with its own code and the
-// offending field (organization_required/org, position_unknown/position); a position that exists only in
-// another organization is unknown too; and nothing is created.
-func TestAnUnknownOrganizationOrPositionIsUnprocessable(t *testing.T) {
-	for _, path := range startPaths {
-		t.Run(path.name, func(t *testing.T) {
-			w := newPlacementWorld(t)
-			globexOnly := w.env.AddPosition(w.globex.ID, "Globex chief", "")
-			require.NotEmpty(t, globexOnly)
-			tok := w.agentToken(w.alice)
-
-			t.Run("an unknown organization", func(t *testing.T) {
-				before := w.census(t)
-				f := placementFolder("no-org")
-				f.Org = "no-such-organization"
-				_, refused := path.start(t, tok, f)
-				e := w.requireRefused(t, before, refused, http.StatusUnprocessableEntity, dto.ErrorCodeOrganizationRequired)
-				require.Contains(t, e.Fields, "org")
-			})
-			t.Run("an unknown position", func(t *testing.T) {
-				before := w.census(t)
-				f := placementFolder("no-position")
-				f.Org, f.Position = "acme", "Overlord"
-				_, refused := path.start(t, tok, f)
-				e := w.requireRefused(t, before, refused, http.StatusUnprocessableEntity, dto.ErrorCodePositionUnknown)
-				require.Contains(t, e.Fields, "position")
-			})
-			t.Run("a position of another organization", func(t *testing.T) {
-				before := w.census(t)
-				f := placementFolder("other-org-position")
-				f.Org, f.Position = "acme", "Globex chief"
-				_, refused := path.start(t, tok, f)
-				w.requireRefused(t, before, refused, http.StatusUnprocessableEntity, dto.ErrorCodePositionUnknown)
-			})
-			t.Run("a position that is not valid percent-encoding", func(t *testing.T) {
-				before := w.census(t)
-				h := placementFolder("bad-encoding").Headers()
-				h.Set(dto.HeaderOrg, "acme")
-				h.Set(dto.HeaderPosition, "100%zz")
-				var refused *testkit.Response
-				if path.name == "a live session" {
-					conn, resp := tok.DialAgentHeaders(h)
-					require.Nil(t, conn)
-					refused = resp
-				} else {
-					refused = tok.WithHeader(dto.HeaderOrg, "acme").WithHeader(dto.HeaderPosition, "100%zz").
-						AsFolder(placementFolder("bad-encoding")).Post("/api/v1/agent/register", nil)
-				}
-				w.requireRefused(t, before, refused, http.StatusUnprocessableEntity, dto.ErrorCodePositionUnknown)
-			})
-			t.Run("a position whose name has spaces and accents is sent percent-encoded", func(t *testing.T) {
-				pos := w.env.AddPosition(w.acme.ID, "Líder de equipe", w.rootPos)
-				f := placementFolder("accented")
-				f.Org, f.Position = "acme", "Líder de equipe"
-				id, refused := path.start(t, tok, f)
-				require.Nil(t, refused)
-				m, _, err := w.env.App.Authz.Member(context.Background(), w.acme.ID, id)
-				require.NoError(t, err)
-				require.Equal(t, pos, m.PositionID)
-			})
-		})
-	}
-}
-
 // v0.5 compatibility (AD-020): a session that sends none of the headers - or sends them empty - starts as
-// before: the host's default organization, the host as creator, a member with no position.
+// before: the host's default organization, the host as creator, a member.
 func TestSessionsWithoutPlacementHeadersKeepTheDefaults(t *testing.T) {
 	for _, path := range startPaths {
 		t.Run(path.name, func(t *testing.T) {

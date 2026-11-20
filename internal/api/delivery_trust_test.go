@@ -18,24 +18,27 @@ import (
 	"github.com/wnexous/partyline/internal/testkit"
 )
 
-// POS-10, AD-018: trusted=true on a message delivered to an AI means its author manages the AI in the
-// AI's home organization. These tests drive one set of authors through each way a message reaches an
-// AI (a live push, the backlog of a connection and the history tool, L-034), once in the delivery mode
-// "all" and once in "trusted", which delivers only what is trusted.
+// SR2-07, AD-018: trusted=true on a message delivered to an AI means its author is the AI's host or one of its
+// instructors, whatever organizations, permissions or creators say. These tests drive one set of authors through
+// each way a message reaches an AI (a live push, the backlog of a connection and the history tool, L-034), once
+// in the delivery mode "all" and once in "trusted", which delivers only what is trusted.
 
 // trustAI is the name of the folder of the AI that receives: testkit.OrgRoles calls it "<org>-ai".
 const trustAI = "acme-ai"
 
-// trustWorld is acme of testkit.OrgRoles plus the identities POS-10 tells apart. The recipient, ai, is
-// acme's AI, hosted and created by Manager (so Manager manages it) and below Admin, who holds the root
-// position above Manager's. Every author but the outsider posts in ops, a group Manager created.
+// trustWorld is acme of testkit.OrgRoles plus the identities SR2-07 tells apart. The recipient, ai, is acme's
+// AI, hosted by Manager and instructed by Instructor (a user), by lead (an AI of the same host) and by stranger,
+// a user in none of its organizations. Every author but the outsider and the stranger posts in ops, a group
+// Manager created.
 type trustWorld struct {
 	env  *testkit.Env
 	acme *testkit.OrgRoles
 	ai   string
-	// lead is an AI at the root position, above Manager: it manages ai through its creator. sibling is
-	// another AI of the same user. sub was created by ai, so ai manages it and not the other way round.
+	// lead is an AI instructor of ai. sibling is another AI of the same host that does not instruct it. sub was
+	// created by ai, which instructs sub and not the other way round.
 	lead, sibling, sub string
+	// stranger instructs ai and belongs to none of its organizations.
+	stranger *testkit.Client
 	// ops is the group the messages are posted in; aiMember is ai's membership of it.
 	ops      dto.Room
 	aiMember string
@@ -54,22 +57,22 @@ func newTrustWorld(t *testing.T) *trustWorld {
 	w.sibling = env.NewAIIn(acme.Manager, org, "sibling")
 	w.sub = env.NewAIIn(acme.Manager, org, "sub")
 	env.SetCreator(w.sub, w.ai)
-	_, err := env.App.Orgs.SetPosition(ctx, acme.Admin.User.ID, org, w.lead, acme.AdminPosition)
-	require.NoError(t, err)
+	env.AddInstructor(w.sub, w.ai)
+	env.AddInstructor(w.ai, w.lead)
+	w.stranger = env.NewUser("stranger")
+	env.AddInstructor(w.ai, w.stranger.User.ID)
 
-	// Member is the admin of globex, at its root position, and ai is a worker there: Member manages ai in
-	// globex, which is not ai's home.
+	// Member is the admin of globex, where ai is a member too: an admin of another organization of the AI.
 	globex, err := env.App.Orgs.Create(ctx, acme.Member.User.ID, "globex")
 	require.NoError(t, err)
-	worker := env.AddPosition(globex.ID, "Worker", globex.PositionID)
-	env.AddMember(globex.ID, w.ai, orgs.PermissionMember, worker)
+	env.AddMember(globex.ID, w.ai, orgs.PermissionMember)
 
 	w.ops = groupIn(t, env, acme.Manager, org, "ops")
 	add := func(kind dto.MemberKind, id string) dto.RoomMember {
 		return testkit.Decode[dto.RoomMember](acme.Manager.Post("/api/v1/rooms/"+w.ops.ID+"/members",
 			dto.AddMemberRequest{Kind: kind, MemberID: id}).RequireStatus(http.StatusCreated))
 	}
-	for _, u := range []*testkit.Client{acme.Admin, acme.Peer, acme.Member} {
+	for _, u := range []*testkit.Client{acme.Admin, acme.Instructor, acme.Peer, acme.Member} {
 		add(dto.MemberKindUser, u.User.ID)
 	}
 	for _, id := range []string{w.lead, w.sibling, w.sub} {
@@ -144,7 +147,7 @@ type trustAuthor struct {
 	post    func(t *testing.T, text string) string
 }
 
-// authors are the managers of ai, who are trusted, and the identities around it who are not.
+// authors are the identities that instruct ai, who are trusted, and the identities around it who are not.
 func (w *trustWorld) authors() []trustAuthor {
 	a := w.acme
 	user := func(c *testkit.Client) func(*testing.T, string) string {
@@ -153,15 +156,20 @@ func (w *trustWorld) authors() []trustAuthor {
 	ai := func(name string) func(*testing.T, string) string {
 		return func(t *testing.T, text string) string { return w.aiPost(t, name, text) }
 	}
+	planted := func(c *testkit.Client) func(*testing.T, string) string {
+		return func(t *testing.T, text string) string { return w.plant(t, c.User.ID, text) }
+	}
 	return []trustAuthor{
-		{"the creator of the AI", a.Manager.User.ID, true, user(a.Manager)},
-		{"a position above the creator's", a.Admin.User.ID, true, user(a.Admin)},
-		{"an AI at a position above the creator's", w.lead, true, ai("lead")},
-		{"a sibling AI of the same user", w.sibling, false, ai("sibling")},
+		{"the host of the AI", a.Manager.User.ID, true, user(a.Manager)},
+		{"a user instructor", a.Instructor.User.ID, true, user(a.Instructor)},
+		{"an AI instructor", w.lead, true, ai("lead")},
+		{"an instructor outside the AI's organizations", w.stranger.User.ID, true, planted(w.stranger)},
+		{"an admin of the AI's home organization", a.Admin.User.ID, false, user(a.Admin)},
+		{"a sibling AI of the same host", w.sibling, false, ai("sibling")},
 		{"a peer", a.Peer.User.ID, false, user(a.Peer)},
-		{"a subordinate", w.sub, false, ai("sub")},
-		{"an outsider", a.Outsider.User.ID, false, func(t *testing.T, text string) string { return w.plant(t, a.Outsider.User.ID, text) }},
-		{"a manager in a shared organization that is not the home", a.Member.User.ID, false, user(a.Member)},
+		{"an AI the recipient instructs", w.sub, false, ai("sub")},
+		{"an outsider", a.Outsider.User.ID, false, planted(a.Outsider)},
+		{"an admin of another organization of the AI", a.Member.User.ID, false, user(a.Member)},
 	}
 }
 
@@ -172,9 +180,9 @@ func delivered(mode dto.DeliveryMode, a trustAuthor) bool {
 
 var trustModes = []dto.DeliveryMode{dto.DeliveryModeAll, dto.DeliveryModeTrusted}
 
-// POS-10, live push: each message arrives with the trust of its author; in trusted mode only a
-// manager's does, and nothing else is pushed.
-func TestLivePushIsTrustedOnlyWhenTheAuthorManagesTheAI(t *testing.T) {
+// SR2-07, live push: each message arrives with the trust of its author; in trusted mode only an instructor's
+// does, and nothing else is pushed.
+func TestSR207LivePushIsTrustedOnlyFromTheHostAndInstructors(t *testing.T) {
 	for _, mode := range trustModes {
 		t.Run(string(mode), func(t *testing.T) {
 			w := newTrustWorld(t)
@@ -195,8 +203,8 @@ func TestLivePushIsTrustedOnlyWhenTheAuthorManagesTheAI(t *testing.T) {
 	}
 }
 
-// POS-10, backlog: the messages posted while the AI was away arrive with the same flags when it connects.
-func TestBacklogIsTrustedOnlyWhenTheAuthorManagesTheAI(t *testing.T) {
+// SR2-07, backlog: the messages posted while the AI was away arrive with the same flags when it connects.
+func TestSR207BacklogIsTrustedOnlyFromTheHostAndInstructors(t *testing.T) {
 	for _, mode := range trustModes {
 		t.Run(string(mode), func(t *testing.T) {
 			w := newTrustWorld(t)
@@ -224,8 +232,8 @@ func TestBacklogIsTrustedOnlyWhenTheAuthorManagesTheAI(t *testing.T) {
 	}
 }
 
-// POS-10, history: the history tool flags every message of the room, whatever the delivery mode.
-func TestHistoryIsTrustedOnlyWhenTheAuthorManagesTheAI(t *testing.T) {
+// SR2-07, history: the history tool flags every message of the room, whatever the delivery mode.
+func TestSR207HistoryIsTrustedOnlyFromTheHostAndInstructors(t *testing.T) {
 	w := newTrustWorld(t)
 	want := map[string]bool{}
 	for _, a := range w.authors() {
@@ -240,14 +248,13 @@ func TestHistoryIsTrustedOnlyWhenTheAuthorManagesTheAI(t *testing.T) {
 	}
 }
 
-// POS-10 is decided when the message is delivered, so a promotion or a demotion takes effect on the
-// next message: the peer is untrusted, then trusted once it holds a position above the AI's creator,
-// then untrusted again. The session is welcomed again when the change alters who manages its AI (SI-09), before or
-// after the message.
-func TestTrustFollowsThePositionsAtDeliveryTime(t *testing.T) {
-	ctx := context.Background()
+// SR2-07, SR2-10: trust is decided when the message is delivered, so adding or removing an instructor takes
+// effect on the next message: the peer is untrusted, trusted once the host adds it as an instructor, and
+// untrusted again once the host removes it. The session is welcomed again when the change alters who instructs
+// its AI (SR2-11), before or after the message.
+func TestSR207TrustFollowsTheInstructorsAtDeliveryTime(t *testing.T) {
 	w := newTrustWorld(t)
-	org, admin, peer := w.acme.Org.ID, w.acme.Admin.User.ID, w.acme.Peer
+	peer := w.acme.Peer
 	conn := w.dial(t)
 	conn.Welcome(wsWait)
 	next := func(text string) bool {
@@ -267,20 +274,18 @@ func TestTrustFollowsThePositionsAtDeliveryTime(t *testing.T) {
 	}
 
 	require.False(t, next("as a peer"))
-	_, err := w.env.App.Orgs.SetPosition(ctx, admin, org, peer.User.ID, w.acme.AdminPosition)
-	require.NoError(t, err)
-	require.True(t, next("after the promotion"), "the root position is above the creator's")
-	_, err = w.env.App.Orgs.SetPosition(ctx, admin, org, peer.User.ID, "")
-	require.NoError(t, err)
-	require.False(t, next("after the demotion"))
+	w.acme.Manager.Post(instructorsPath(w.ai), dto.AddInstructorRequest{Handle: "@" + peer.User.Username}).RequireStatus(http.StatusCreated)
+	require.True(t, next("after the host added it"))
+	w.acme.Manager.Delete(instructorsPath(w.ai) + "/" + peer.User.ID).RequireStatus(http.StatusNoContent)
+	require.False(t, next("after the host removed it"))
 }
 
-// POS-10: an author who has left the organization manages nothing there, so what it wrote earlier is
-// untrusted when it is read later, in the history and in the backlog alike.
-func TestAFormerManagerIsNotTrusted(t *testing.T) {
+// SR2-07: an instructor stays trusted whatever organizations it leaves - the link is not an organization's - and
+// is untrusted once the host removes it, also for what it wrote earlier, in the history and in the backlog alike.
+func TestSR207ARemovedInstructorIsNotTrusted(t *testing.T) {
 	ctx := context.Background()
 	w := newTrustWorld(t)
-	posted := w.userPost(t, w.acme.Manager, "before leaving")
+	posted := w.userPost(t, w.acme.Instructor, "before leaving")
 	read := func() dto.AgentMessage {
 		t.Helper()
 		items := testkit.Decode[dto.Page[dto.AgentMessage]](w.asAI(trustAI).Get(agentRoomPath(w.ops.ID, "/messages")).RequireStatus(http.StatusOK)).Items
@@ -288,10 +293,13 @@ func TestAFormerManagerIsNotTrusted(t *testing.T) {
 		require.Equal(t, posted, items[0].Message.ID)
 		return items[0]
 	}
-	require.True(t, read().Trusted, "Manager manages the AI while it is in acme")
+	require.True(t, read().Trusted, "an instructor")
 
-	require.NoError(t, w.env.App.Orgs.Leave(ctx, w.acme.Manager.User.ID, w.acme.Org.ID))
-	require.False(t, read().Trusted, "the same message, after its author left")
+	require.NoError(t, w.env.App.Orgs.Leave(ctx, w.acme.Instructor.User.ID, w.acme.Org.ID))
+	require.True(t, read().Trusted, "leaving the organization changes nothing")
+
+	w.acme.Manager.Delete(instructorsPath(w.ai) + "/" + w.acme.Instructor.User.ID).RequireStatus(http.StatusNoContent)
+	require.False(t, read().Trusted, "the same message, after the host removed its author")
 	conn := w.dial(t)
 	conn.Welcome(wsWait)
 	got := conn.Message(wsWait)
@@ -299,9 +307,9 @@ func TestAFormerManagerIsNotTrusted(t *testing.T) {
 	require.False(t, got.Trusted, "and in the backlog")
 }
 
-// POS-10 cost (AD-017): a message pushed to 20 AIs whose homes are three organizations reads three
-// charts, one per organization, not one per recipient.
-func TestADispatchLoadsEachHomeChartOnce(t *testing.T) {
+// SR2-07 cost (AD-017): a message pushed to 20 AIs reads the links of each recipient once per dispatch pass,
+// never once per question.
+func TestADispatchLoadsEachRecipientsLinksOnce(t *testing.T) {
 	ctx := context.Background()
 	env := testkit.New(t)
 	alice := env.NewUser("alice")
@@ -318,7 +326,7 @@ func TestADispatchLoadsEachHomeChartOnce(t *testing.T) {
 		name := fmt.Sprintf("bot%02d", i)
 		id := env.NewAIIn(alice, homes[i%len(homes)], name)
 		if home := homes[i%len(homes)]; home != homes[0] {
-			env.AddMember(homes[0], id, orgs.PermissionMember, "") // the group is alice's own, and its members belong to its organization
+			env.AddMember(homes[0], id, orgs.PermissionMember) // the group is alice's own, and its members belong to its organization
 		}
 		alice.Post("/api/v1/rooms/"+room.ID+"/members", dto.AddMemberRequest{Kind: dto.MemberKindAgent, MemberID: id}).RequireStatus(http.StatusCreated)
 		conn, resp := token.DialAgent(name)
@@ -334,12 +342,11 @@ func TestADispatchLoadsEachHomeChartOnce(t *testing.T) {
 	for i, conn := range conns {
 		got := conn.Message(wsWait)
 		require.Equal(t, id, got.Message.ID, "AI %d", i)
-		require.True(t, got.Trusted, "alice created AI %d, in an organization she belongs to", i)
+		require.True(t, got.Trusted, "alice hosts AI %d", i)
 	}
-	// One trust session per dispatch pass reads each home chart once. A recipient whose socket was still
-	// settling can be served by a second pass, which reads its chart once more; what AD-017 rules out is
-	// one read per recipient (20).
+	// One trust session per dispatch pass reads each recipient's links once. A recipient whose socket was still
+	// settling can be served by a second pass, which reads its links once more.
 	loads := env.App.Authz.Loads() - before
-	require.GreaterOrEqual(t, loads, int64(3), "each of the 3 home organizations is read")
-	require.LessOrEqual(t, loads, int64(6), "20 recipients, 3 home organizations: at most two passes, never one read per recipient")
+	require.GreaterOrEqual(t, loads, int64(20), "each recipient's links are read")
+	require.LessOrEqual(t, loads, int64(40), "at most two passes, never one read per question")
 }

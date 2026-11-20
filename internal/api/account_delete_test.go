@@ -76,7 +76,7 @@ func sortedKeys(m map[string]int) []string {
 
 // deletionWorld is a user with a life in several organizations:
 //
-//	Team  ── alice is its only admin; bob is a member; carol is alice's guest; notes holds "Dev"
+//	Team  ── alice is its only admin; bob is a member; carol is a member alice invited
 //	Pair  ── alice and bob are both admins
 //	Alice's own organization ── she is its only admin; her AI atlas lives there (and works in Team too)
 //
@@ -94,7 +94,6 @@ type deletionWorld struct {
 	conn                    dto.Connector
 	atlasSocket             *testkit.AgentConn
 	aliceLive               *testkit.LiveConn
-	devPosition             string
 }
 
 func newDeletionWorld(t *testing.T) *deletionWorld {
@@ -111,15 +110,12 @@ func newDeletionWorld(t *testing.T) *deletionWorld {
 	pair, err := env.App.Orgs.Create(ctx, w.alice.User.ID, "Pair")
 	require.NoError(t, err)
 	w.pair = pair.Organization
-	env.AddMember(w.team.ID, w.bob.User.ID, orgs.PermissionMember, "")
-	env.AddMember(w.pair.ID, w.bob.User.ID, orgs.PermissionAdmin, "")
-	env.AddGuest(w.team.ID, w.carol.User.ID, w.alice.User.ID, "")
-	w.devPosition = env.AddPosition(w.team.ID, "Dev", team.PositionID)
+	env.AddMember(w.team.ID, w.bob.User.ID, orgs.PermissionMember)
+	env.AddMember(w.pair.ID, w.bob.User.ID, orgs.PermissionAdmin)
+	env.AddMember(w.team.ID, w.carol.User.ID, orgs.PermissionMember)
 
 	w.atlas = env.NewAI(w.alice, "atlas")
 	w.notes = env.NewAIIn(w.alice, w.team.ID, "notes")
-	_, err = env.App.Orgs.SetPosition(ctx, w.alice.User.ID, w.team.ID, w.notes, w.devPosition)
-	require.NoError(t, err)
 
 	w.userToken = w.alice.Token(dto.TokenKindUser, "ci")
 	w.agentToken = w.alice.Token(dto.TokenKindAgent, "laptop")
@@ -132,7 +128,7 @@ func newDeletionWorld(t *testing.T) *deletionWorld {
 
 	w.support = createRoom(w.alice, "Support")
 	execSQL(t, env, `UPDATE rooms SET org_id = ?, creator_iid = ? WHERE id = ?`, w.team.ID, w.alice.User.ID, w.support.ID)
-	env.AddMember(w.team.ID, w.atlas, orgs.PermissionMember, "") // an AI joins a group of an organization it belongs to
+	env.AddMember(w.team.ID, w.atlas, orgs.PermissionMember) // an AI joins a group of an organization it belongs to
 	for _, m := range []dto.AddMemberRequest{
 		{Kind: dto.MemberKindUser, MemberID: w.bob.User.ID}, {Kind: dto.MemberKindAgent, MemberID: w.atlas},
 	} {
@@ -148,7 +144,7 @@ func newDeletionWorld(t *testing.T) *deletionWorld {
 
 	globex, err := env.App.Orgs.Create(ctx, w.root.User.ID, "Globex")
 	require.NoError(t, err)
-	_, err = env.App.Orgs.Invite(ctx, w.root.User.ID, globex.ID, "@alice", orgs.PermissionGuest, "")
+	_, err = env.App.Orgs.Invite(ctx, w.root.User.ID, globex.ID, "@alice", orgs.PermissionMember)
 	require.NoError(t, err)
 	return w
 }
@@ -247,12 +243,10 @@ func TestDeletingYourAccountLeavesTheOrganizationsTheirThings(t *testing.T) {
 
 	for _, c := range []struct {
 		name, id, org string
-		position      string
-	}{{"atlas", w.atlas, w.personal.ID, ""}, {"notes", w.notes, w.team.ID, w.devPosition}} {
-		m, ok := w.member(t, c.org, c.id)
+	}{{"atlas", w.atlas, w.personal.ID}, {"notes", w.notes, w.team.ID}} {
+		_, ok := w.member(t, c.org, c.id)
 		require.True(t, ok, "%s is still a member of its organization", c.name)
-		require.Equal(t, c.position, m.PositionID, "%s keeps its position", c.name)
-		require.Empty(t, m.CreatorIID, "%s: nobody created it any more", c.name)
+		require.Equal(t, 1, countRows(t, w.env, `SELECT COUNT(*) FROM agents WHERE id = ? AND creator_iid IS NULL`, c.id), "%s: nobody created it any more", c.name)
 		require.Equal(t, 1, countRows(t, w.env, `SELECT COUNT(*) FROM agents WHERE id = ? AND owner_id = ? AND folder = '' AND org_id = ?`, c.id, w.root.User.ID, c.org), "%s is unlinked and owned by the heir", c.name)
 		require.False(t, w.env.App.Agents.Online(c.id), "%s is offline", c.name)
 	}
@@ -262,16 +256,14 @@ func TestDeletingYourAccountLeavesTheOrganizationsTheirThings(t *testing.T) {
 		m, ok := w.member(t, org.ID, w.root.User.ID)
 		require.True(t, ok, "the heir joined %s", org.Name)
 		require.Equal(t, orgs.PermissionAdmin, m.Permission)
-		require.Empty(t, m.PositionID)
 	}
 	_, ok := w.member(t, w.pair.ID, w.root.User.ID)
 	require.False(t, ok, "Pair has another admin: it is unchanged")
 	m, _ := w.member(t, w.pair.ID, w.bob.User.ID)
 	require.Equal(t, orgs.PermissionAdmin, m.Permission)
 	m, ok = w.member(t, w.team.ID, w.carol.User.ID)
-	require.True(t, ok, "her guest stays")
-	require.Equal(t, orgs.PermissionGuest, m.Permission)
-	require.Empty(t, m.InviterIID, "but nobody is responsible for it")
+	require.True(t, ok, "the member she invited stays")
+	require.Equal(t, orgs.PermissionMember, m.Permission)
 	_, ok = w.member(t, w.team.ID, w.bob.User.ID)
 	require.True(t, ok)
 

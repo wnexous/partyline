@@ -17,14 +17,14 @@ import (
 func invitationsPath(org string) string { return "/api/v1/orgs/" + org + "/invitations" }
 
 // sendInvitation posts an invitation of the handle to the organization as c.
-func sendInvitation(c *testkit.Client, org, handle string, perm dto.Permission, position string) *testkit.Response {
-	return c.Post(invitationsPath(org), dto.CreateInvitationRequest{Handle: handle, Permission: perm, PositionID: position})
+func sendInvitation(c *testkit.Client, org, handle string, perm dto.Permission) *testkit.Response {
+	return c.Post(invitationsPath(org), dto.CreateInvitationRequest{Handle: handle, Permission: perm})
 }
 
 // invited sends an invitation that must succeed (201) and returns it.
-func invited(t *testing.T, c *testkit.Client, org, handle string, perm dto.Permission, position string) dto.Invitation {
+func invited(t *testing.T, c *testkit.Client, org, handle string, perm dto.Permission) dto.Invitation {
 	t.Helper()
-	return testkit.Decode[dto.Invitation](sendInvitation(bound(t, c), org, handle, perm, position).RequireStatus(http.StatusCreated))
+	return testkit.Decode[dto.Invitation](sendInvitation(bound(t, c), org, handle, perm).RequireStatus(http.StatusCreated))
 }
 
 // answerInvitation accepts or declines (verb "accept" or "decline") as c.
@@ -72,61 +72,48 @@ func roleClient(t *testing.T, r *testkit.OrgRoles, name string) *testkit.Client 
 	return nil
 }
 
-// OMEM-01, OMEM-04, the Invitations matrix: an admin invites with any permission and a position; every other
-// member and guest invites guests with no position - a member who asks for more is refused - and whoever is
-// not a member does not find the organization. Each refusal is the only thing wrong with its request.
-func TestInviteMatrix(t *testing.T) {
+// OMEM-01, OMEM-04, SR2-01, the Invitations matrix: only an admin invites, as a member or an admin; every other
+// member - the host of an AI and its instructor included - is refused, and whoever is not a member does not find
+// the organization. Each refusal is the only thing wrong with its request.
+func TestSR201InviteMatrix(t *testing.T) {
 	env := testkit.New(t)
 	r := env.OrgRoles("acme")
-	type send struct {
-		key      string // names the invitee
-		perm     dto.Permission
-		position string
-	}
-	sends := []send{
-		{"guest", dto.PermissionGuest, ""},                // a guest without a position
-		{"member", dto.PermissionMember, ""},              // a member
-		{"placed", dto.PermissionGuest, r.WorkerPosition}, // a guest in a position
-	}
+	perms := []dto.Permission{dto.PermissionMember, dto.PermissionAdmin}
 	for _, tc := range []struct {
 		role string
-		want [3]int // for each of sends
+		want int
 	}{
-		{"admin", [3]int{201, 201, 201}},
-		{"manager", [3]int{201, 403, 403}},
-		{"target", [3]int{201, 403, 403}},
-		{"peer", [3]int{201, 403, 403}},
-		{"member", [3]int{201, 403, 403}},
-		{"inviter", [3]int{201, 403, 403}},
-		{"guest", [3]int{201, 403, 403}},
-		{"outsider", [3]int{404, 404, 404}},
-		{"instance_admin", [3]int{404, 404, 404}},
+		{"admin", http.StatusCreated},
+		{"manager", http.StatusForbidden},
+		{"instructor", http.StatusForbidden},
+		{"target", http.StatusForbidden},
+		{"peer", http.StatusForbidden},
+		{"member", http.StatusForbidden},
+		{"outsider", http.StatusNotFound},
+		{"instance_admin", http.StatusNotFound},
 	} {
-		invitees := make([]*testkit.Client, len(sends))
-		for i, send := range sends {
-			invitees[i] = env.NewUser(strings.ReplaceAll(tc.role, "_", "") + "-" + send.key) // a new invitee for each request
+		invitees := make([]*testkit.Client, len(perms))
+		for i, perm := range perms {
+			invitees[i] = env.NewUser(strings.ReplaceAll(tc.role, "_", "") + "-" + string(perm)) // a new invitee for each request
 		}
 		t.Run(tc.role, func(t *testing.T) {
 			c := bound(t, roleClient(t, r, tc.role))
-			for i, send := range sends {
-				resp := sendInvitation(c, r.Org.ID, "@"+invitees[i].User.Username, send.perm, send.position)
-				switch tc.want[i] {
+			for i, perm := range perms {
+				resp := sendInvitation(c, r.Org.ID, "@"+invitees[i].User.Username, perm)
+				switch tc.want {
 				case http.StatusForbidden:
 					resp.RequireError(http.StatusForbidden, dto.ErrorCodeForbidden)
 				case http.StatusNotFound:
 					resp.RequireError(http.StatusNotFound, dto.ErrorCodeNotFound)
 				default:
 					inv := testkit.Decode[dto.Invitation](resp.RequireStatus(http.StatusCreated))
-					require.Equal(t, send.perm, inv.Permission, send.key)
-					require.Equal(t, send.position, inv.PositionID, send.key)
-					require.Equal(t, invitees[i].User.ID, inv.Invitee.ID, send.key)
-					require.Equal(t, c.User.ID, inv.InvitedBy.ID, "the inviter is recorded: %s", send.key)
+					require.Equal(t, perm, inv.Permission)
+					require.Equal(t, invitees[i].User.ID, inv.Invitee.ID)
+					require.Equal(t, c.User.ID, inv.InvitedBy.ID, "the inviter is recorded")
 					require.Equal(t, r.Org.ID, inv.OrgID)
 					require.Equal(t, "acme", inv.OrgSlug)
 					require.Equal(t, 14*24*time.Hour, inv.ExpiresAt.Sub(inv.CreatedAt), "OMEM-07: 14 days")
-					if send.position != "" {
-						require.Equal(t, "Worker", inv.PositionName)
-					}
+					require.NotContains(t, string(resp.Body), `"position`)
 				}
 			}
 		})
@@ -138,10 +125,10 @@ func TestInviteMatrix(t *testing.T) {
 func TestListAndRevokeInvitationsMatrix(t *testing.T) {
 	env := testkit.New(t)
 	r := env.OrgRoles("acme")
-	guest := env.NewUser("lena")
+	lena := env.NewUser("lena")
 	admin := env.NewUser("adam")
-	first := invited(t, r.Inviter, r.Org.ID, "lena", dto.PermissionGuest, "")
-	second := invited(t, r.Admin, r.Org.ID, "adam", dto.PermissionAdmin, r.AdminPosition)
+	first := invited(t, r.Admin, r.Org.ID, "lena", dto.PermissionMember)
+	second := invited(t, r.Admin, r.Org.ID, "adam", dto.PermissionAdmin)
 
 	for _, role := range r.All() {
 		t.Run(role.Name, func(t *testing.T) {
@@ -151,8 +138,8 @@ func TestListAndRevokeInvitationsMatrix(t *testing.T) {
 				items := testkit.Decode[dto.List[dto.Invitation]](list.RequireStatus(http.StatusOK)).Items
 				require.Equal(t, []string{second.ID, first.ID}, invitationIDs(items), "newest first")
 				require.Equal(t, dto.PermissionAdmin, items[0].Permission)
-				require.Equal(t, "Admin", items[0].PositionName)
-				require.Equal(t, r.Inviter.User.ID, items[1].InvitedBy.ID)
+				require.Equal(t, dto.PermissionMember, items[1].Permission)
+				require.Equal(t, r.Admin.User.ID, items[1].InvitedBy.ID)
 				return
 			}
 			revoke := c.Delete(invitationsPath(r.Org.ID) + "/" + second.ID)
@@ -175,14 +162,14 @@ func TestListAndRevokeInvitationsMatrix(t *testing.T) {
 
 	// An invitation of another organization is not found through this one, even by its admin (the only guard).
 	other := env.OrgRoles("globex")
-	foreign := invited(t, other.Admin, other.Org.ID, "lena", dto.PermissionGuest, "")
+	foreign := invited(t, other.Admin, other.Org.ID, "lena", dto.PermissionMember)
 	r.Admin.Delete(invitationsPath(r.Org.ID)+"/"+foreign.ID).RequireError(http.StatusNotFound, dto.ErrorCodeNotFound)
 	require.Equal(t, []string{foreign.ID}, invitationIDs(orgInvitations(t, other.Admin, other.Org.ID)))
-	require.Equal(t, []string{foreign.ID, first.ID}, invitationIDs(myInvitations(t, guest)), "the invitee has both, newest first")
+	require.Equal(t, []string{foreign.ID, first.ID}, invitationIDs(myInvitations(t, lena)), "the invitee has both, newest first")
 }
 
 // The spec's independent test (P1 Members and permissions): Alice, an admin, invites Bob as a member. Bob
-// accepts, creates a group in the organization, and is refused when he invites someone as a member.
+// accepts, creates a group in the organization, and is refused when he invites anyone (SR2-01: no guests).
 func TestAnInvitedMemberWorksInTheOrganizationButCannotInvite(t *testing.T) {
 	env := testkit.New(t)
 	alice := env.NewUser("alice")
@@ -190,7 +177,7 @@ func TestAnInvitedMemberWorksInTheOrganizationButCannotInvite(t *testing.T) {
 	env.NewUser("carol")
 	acme := testkit.Decode[dto.Organization](alice.Post("/api/v1/orgs", dto.CreateOrganizationRequest{Name: "acme"}).RequireStatus(http.StatusCreated))
 
-	inv := invited(t, alice, acme.ID, "bob", dto.PermissionMember, "")
+	inv := invited(t, alice, acme.ID, "bob", dto.PermissionMember)
 	require.Equal(t, "alice", inv.InvitedBy.Handle)
 	require.Equal(t, "bob", inv.Invitee.Handle)
 	require.Equal(t, acme.Name, inv.OrgName)
@@ -208,36 +195,30 @@ func TestAnInvitedMemberWorksInTheOrganizationButCannotInvite(t *testing.T) {
 	room := testkit.Decode[dto.Room](bob.Post("/api/v1/groups", dto.CreateGroupRequest{Name: "Launch", OrgID: acme.ID}).RequireStatus(http.StatusCreated))
 	require.Equal(t, acme.ID, room.OrgID)
 
-	sendInvitation(bob, acme.ID, "carol", dto.PermissionMember, "").RequireError(http.StatusForbidden, dto.ErrorCodeForbidden)
-	sendInvitation(bob, acme.ID, "carol", dto.PermissionGuest, "").RequireStatus(http.StatusCreated)
+	sendInvitation(bob, acme.ID, "carol", dto.PermissionMember).RequireError(http.StatusForbidden, dto.ErrorCodeForbidden)
+	sendInvitation(bob, acme.ID, "carol", dto.PermissionAdmin).RequireError(http.StatusForbidden, dto.ErrorCodeForbidden)
+	require.Empty(t, orgInvitations(t, alice, acme.ID))
 	require.Equal(t, dto.PermissionMember, listMembers(t, alice, acme.ID)[bob.User.ID].Permission)
 }
 
-// OMEM-02: accepting makes the invitee a member with the invitation's permission and position, and a guest
-// carries the identity that invited it.
-func TestAcceptingGivesThePermissionAndPositionOfTheInvitation(t *testing.T) {
+// OMEM-02: accepting makes the invitee a member with the invitation's permission.
+func TestAcceptingGivesThePermissionOfTheInvitation(t *testing.T) {
 	env := testkit.New(t)
 	r := env.OrgRoles("acme")
 	adam := env.NewUser("adam")
 	gina := env.NewUser("gina")
 
-	byAdmin := invited(t, r.Admin, r.Org.ID, "adam", dto.PermissionAdmin, r.ManagerPosition)
+	byAdmin := invited(t, r.Admin, r.Org.ID, "adam", dto.PermissionAdmin)
 	org := testkit.Decode[dto.Organization](answerInvitation(adam, byAdmin.ID, "accept").RequireStatus(http.StatusOK))
 	require.Equal(t, dto.PermissionAdmin, org.Permission)
-	require.Equal(t, r.ManagerPosition, org.PositionID)
-	member := listMembers(t, r.Admin, r.Org.ID)[adam.User.ID]
-	require.Equal(t, dto.PermissionAdmin, member.Permission)
-	require.Equal(t, "Manager", member.PositionName)
-	require.Nil(t, member.InvitedBy, "only a guest has an inviter")
+	require.Equal(t, dto.PermissionAdmin, listMembers(t, r.Admin, r.Org.ID)[adam.User.ID].Permission)
 
-	byMember := invited(t, r.Member, r.Org.ID, "gina", dto.PermissionGuest, "")
-	org = testkit.Decode[dto.Organization](answerInvitation(gina, byMember.ID, "accept").RequireStatus(http.StatusOK))
-	require.Equal(t, dto.PermissionGuest, org.Permission)
-	guest := listMembers(t, r.Admin, r.Org.ID)[gina.User.ID]
-	require.NotNil(t, guest.InvitedBy)
-	require.Equal(t, r.Member.User.ID, guest.InvitedBy.ID, "the guest is its inviter's responsibility")
+	asMember := invited(t, r.Admin, r.Org.ID, "gina", dto.PermissionMember)
+	org = testkit.Decode[dto.Organization](answerInvitation(gina, asMember.ID, "accept").RequireStatus(http.StatusOK))
+	require.Equal(t, dto.PermissionMember, org.Permission)
+	require.Equal(t, dto.PermissionMember, listMembers(t, r.Admin, r.Org.ID)[gina.User.ID].Permission)
 	// The new admin looks after the organization at once.
-	adam.Patch(memberPath(r.Org.ID, r.Peer.User.ID), toPermission(dto.PermissionGuest)).RequireStatus(http.StatusOK)
+	adam.Patch(memberPath(r.Org.ID, r.Peer.User.ID), toPermission(dto.PermissionAdmin)).RequireStatus(http.StatusOK)
 }
 
 // OMEM-01: only the invitee answers; the inviter, an admin of the organization, another member, an outsider
@@ -246,7 +227,7 @@ func TestOnlyTheInviteeAnswersAnInvitation(t *testing.T) {
 	env := testkit.New(t)
 	r := env.OrgRoles("acme")
 	bob := env.NewUser("bob")
-	inv := invited(t, r.Admin, r.Org.ID, "bob", dto.PermissionMember, "")
+	inv := invited(t, r.Admin, r.Org.ID, "bob", dto.PermissionMember)
 
 	for _, role := range r.All() {
 		for _, verb := range []string{"accept", "decline"} {
@@ -265,19 +246,20 @@ func TestOnlyTheInviteeAnswersAnInvitation(t *testing.T) {
 	bob.Get("/api/v1/orgs/"+r.Org.ID).RequireError(http.StatusNotFound, dto.ErrorCodeNotFound)
 
 	// Declining is not the end: the admin can invite again.
-	again := invited(t, r.Admin, r.Org.ID, "bob", dto.PermissionMember, "")
+	again := invited(t, r.Admin, r.Org.ID, "bob", dto.PermissionMember)
 	answerInvitation(bob, again.ID, "accept").RequireStatus(http.StatusOK)
 }
 
-// OMEM-01: an invited AI is answered by the identities that manage it in its home organization - its
-// creator and whoever is above - and by nobody else; the AI joins the inviting organization as invited.
-func TestAnInvitedAIIsAnsweredByItsManagers(t *testing.T) {
+// OMEM-01, SR2-13: an invited AI is answered by the identities that manage it - its host and its user
+// instructors - and by nobody else, an admin of its home organization included; the AI joins the inviting
+// organization as invited.
+func TestSR213AnInvitedAIIsAnsweredByItsHostAndUserInstructors(t *testing.T) {
 	env := testkit.New(t)
 	acme := env.OrgRoles("acme")
 	globex := env.OrgRoles("globex")
-	ai := globex.TargetAI // hosted and created by globex's Manager, held by no position
+	ai := globex.TargetAI // hosted by globex's Manager, instructed by globex's Instructor
 
-	inv := invited(t, acme.Inviter, acme.Org.ID, handleOfID(t, env, ai), dto.PermissionGuest, "")
+	inv := invited(t, acme.Admin, acme.Org.ID, handleOfID(t, env, ai), dto.PermissionMember)
 	require.Equal(t, ai, inv.Invitee.ID)
 	require.Equal(t, dto.IntelligenceKindAI, inv.Invitee.Kind)
 	require.Equal(t, dto.IntelligenceRoleAI, inv.Invitee.Role)
@@ -285,57 +267,53 @@ func TestAnInvitedAIIsAnsweredByItsManagers(t *testing.T) {
 	for _, role := range globex.All() {
 		got := invitationIDs(myInvitations(t, bound(t, role.Client)))
 		switch role.Name {
-		case "manager", "admin": // its creator, and the root position above the creator
+		case "manager", "instructor":
 			require.Equal(t, []string{inv.ID}, got, role.Name)
 		default:
 			require.Empty(t, got, role.Name)
 		}
 	}
-	require.Empty(t, myInvitations(t, acme.Inviter), "the inviter does not answer it")
-	require.Empty(t, myInvitations(t, acme.Admin))
+	require.Empty(t, myInvitations(t, acme.Admin), "the inviter does not answer it")
 	require.Equal(t, []string{inv.ID}, invitationIDs(orgInvitations(t, acme.Admin, acme.Org.ID)), "the admins of the inviting organization list it")
 
-	for _, name := range []string{"target", "peer", "member", "inviter", "guest", "outsider", "instance_admin"} {
+	for _, name := range []string{"admin", "target", "peer", "member", "outsider", "instance_admin"} {
 		for _, verb := range []string{"accept", "decline"} {
 			answerInvitation(bound(t, roleClient(t, globex, name)), inv.ID, verb).RequireError(http.StatusNotFound, dto.ErrorCodeNotFound)
 		}
 	}
-	// The AI is not a member of acme yet, and answering the invitation of acme's own people changes nothing.
 	require.NotContains(t, listMembers(t, acme.Admin, acme.Org.ID), ai)
 	answerInvitation(acme.Admin, inv.ID, "accept").RequireError(http.StatusNotFound, dto.ErrorCodeNotFound)
 
 	org := testkit.Decode[dto.Organization](answerInvitation(globex.Manager, inv.ID, "accept").RequireStatus(http.StatusOK))
 	require.Equal(t, acme.Org.ID, org.ID)
-	require.Equal(t, dto.PermissionGuest, org.Permission, "the AI's membership: a guest")
+	require.Equal(t, dto.PermissionMember, org.Permission, "the AI's membership")
 	joined := listMembers(t, acme.Admin, acme.Org.ID)[ai]
 	require.Equal(t, dto.IntelligenceKindAI, joined.Intelligence.Kind)
-	require.Equal(t, dto.PermissionGuest, joined.Permission)
-	require.NotNil(t, joined.InvitedBy)
-	require.Equal(t, acme.Inviter.User.ID, joined.InvitedBy.ID)
+	require.Equal(t, dto.PermissionMember, joined.Permission)
 	require.Empty(t, myInvitations(t, globex.Manager))
-	require.Empty(t, myInvitations(t, globex.Admin))
+	require.Empty(t, myInvitations(t, globex.Instructor))
 
-	// Its admin may decline for it as well.
+	// Its user instructor may decline for it as well.
 	other := env.OrgRoles("initech")
-	declined := invited(t, other.Admin, other.Org.ID, handleOfID(t, env, ai), dto.PermissionMember, "")
-	answerInvitation(globex.Admin, declined.ID, "decline").RequireStatus(http.StatusNoContent)
+	declined := invited(t, other.Admin, other.Org.ID, handleOfID(t, env, ai), dto.PermissionMember)
+	answerInvitation(globex.Instructor, declined.ID, "decline").RequireStatus(http.StatusNoContent)
 	require.Empty(t, myInvitations(t, globex.Manager))
 	require.NotContains(t, listMembers(t, other.Admin, other.Org.ID), ai)
 }
 
-// OMEM-01: inviting again updates the pending invitation instead of adding another - the permission, the
-// position and the inviter change, the id stays - and whoever may invite only guests cannot replace an
-// invitation for more.
+// OMEM-01: inviting again updates the pending invitation instead of adding another - the permission and the
+// inviter change, the id stays.
 func TestInvitingAgainUpdatesThePendingInvitation(t *testing.T) {
 	env := testkit.New(t)
 	r := env.OrgRoles("acme")
 	bob := env.NewUser("bob")
+	r.Admin.Patch(memberPath(r.Org.ID, r.Peer.User.ID), toPermission(dto.PermissionAdmin)).RequireStatus(http.StatusOK)
 
-	first := invited(t, r.Admin, r.Org.ID, "bob", dto.PermissionGuest, "")
-	second := invited(t, r.Admin, r.Org.ID, "bob", dto.PermissionAdmin, r.ManagerPosition)
+	first := invited(t, r.Admin, r.Org.ID, "bob", dto.PermissionMember)
+	second := invited(t, r.Peer, r.Org.ID, "bob", dto.PermissionAdmin)
 	require.Equal(t, first.ID, second.ID, "the same invitation")
 	require.Equal(t, dto.PermissionAdmin, second.Permission)
-	require.Equal(t, "Manager", second.PositionName)
+	require.Equal(t, r.Peer.User.ID, second.InvitedBy.ID, "the latest inviter")
 	items := orgInvitations(t, r.Admin, r.Org.ID)
 	require.Len(t, items, 1, "one pending invitation per invitee")
 	require.Equal(t, dto.PermissionAdmin, items[0].Permission)
@@ -343,118 +321,74 @@ func TestInvitingAgainUpdatesThePendingInvitation(t *testing.T) {
 	require.Len(t, mine, 1)
 	require.Equal(t, dto.PermissionAdmin, mine[0].Permission)
 
-	// A member cannot replace an invitation for an admin with one for a guest.
-	sendInvitation(r.Member, r.Org.ID, "bob", dto.PermissionGuest, "").RequireError(http.StatusForbidden, dto.ErrorCodeForbidden)
+	// A member cannot replace it.
+	sendInvitation(r.Member, r.Org.ID, "bob", dto.PermissionMember).RequireError(http.StatusForbidden, dto.ErrorCodeForbidden)
 	require.Equal(t, dto.PermissionAdmin, orgInvitations(t, r.Admin, r.Org.ID)[0].Permission)
 
 	org := testkit.Decode[dto.Organization](answerInvitation(bob, first.ID, "accept").RequireStatus(http.StatusOK))
 	require.Equal(t, dto.PermissionAdmin, org.Permission, "the updated terms")
-	require.Equal(t, r.ManagerPosition, org.PositionID)
-}
-
-// OMEM-01: a guest invitation can be sent again by someone else, and then the latest inviter is the guest's.
-// A member and a guest each invite a guest, and the chain of guests the design describes is recorded: every
-// guest answers to the one who invited it, and the first inviter manages the whole chain.
-func TestGuestsInviteGuestsInAChain(t *testing.T) {
-	env := testkit.New(t)
-	r := env.OrgRoles("acme")
-	g1 := env.NewUser("gabe")
-	g2 := env.NewUser("gail")
-	g3 := env.NewUser("gus")
-
-	for _, step := range []struct {
-		by, guest *testkit.Client
-	}{{r.Inviter, g1}, {g1, g2}, {g2, g3}} {
-		inv := invited(t, step.by, r.Org.ID, step.guest.User.Username, dto.PermissionGuest, "")
-		require.Equal(t, step.by.User.ID, inv.InvitedBy.ID)
-		org := testkit.Decode[dto.Organization](answerInvitation(step.guest, inv.ID, "accept").RequireStatus(http.StatusOK))
-		require.Equal(t, dto.PermissionGuest, org.Permission)
-	}
-	members := listMembers(t, r.Member, r.Org.ID)
-	require.Equal(t, r.Inviter.User.ID, members[g1.User.ID].InvitedBy.ID)
-	require.Equal(t, g1.User.ID, members[g2.User.ID].InvitedBy.ID)
-	require.Equal(t, g2.User.ID, members[g3.User.ID].InvitedBy.ID)
-	for _, manager := range []*testkit.Client{r.Inviter, g1, g2} {
-		ok, err := env.App.Authz.Manages(context.Background(), manager.User.ID, g3.User.ID, r.Org.ID)
-		require.NoError(t, err)
-		require.True(t, ok, "%s is up g3's inviter chain", manager.User.Username)
-	}
-	ok, err := env.App.Authz.Manages(context.Background(), r.Peer.User.ID, g3.User.ID, r.Org.ID)
-	require.NoError(t, err)
-	require.False(t, ok)
-
-	// Re-sending a pending guest invitation makes the new sender the guest's inviter.
-	late := env.NewUser("lara")
-	invited(t, r.Inviter, r.Org.ID, "lara", dto.PermissionGuest, "")
-	again := invited(t, r.Member, r.Org.ID, "lara", dto.PermissionGuest, "")
-	answerInvitation(late, again.ID, "accept").RequireStatus(http.StatusOK)
-	require.Equal(t, r.Member.User.ID, listMembers(t, r.Admin, r.Org.ID)[late.User.ID].InvitedBy.ID)
 }
 
 // OMEM-01 and its refusals, each observed at its status (L-017): an identity that already is a member (409
-// already_member, whoever invites), an unknown handle (404 contact_not_found), a permission or position
-// that does not exist (422), a body that is not JSON (400) and an unknown organization (404). The
-// authorization comes before the validation, and a refused request invites nobody.
+// already_member), an unknown handle (404 contact_not_found), a permission that does not exist - guest included,
+// SR2-01 - (422), a body that is not JSON (400) and an unknown organization (404). The authorization comes before
+// the validation, so a member is told 403 for each, and a refused request invites nobody.
 func TestInviteRefusals(t *testing.T) {
 	env := testkit.New(t)
 	r := env.OrgRoles("acme")
 	other := env.OrgRoles("globex")
 	env.NewUser("sam")
 
-	// Already a member, with any permission: a person in a position, a guest, an admin, the inviter, an AI.
+	// Already a member, with any permission: a person, an admin, an AI.
 	members := []string{
-		r.Peer.User.Username, r.Guest.User.Username, r.Admin.User.Username, r.Member.User.Username, handleOfID(t, env, r.TargetAI),
+		r.Peer.User.Username, r.Instructor.User.Username, r.Admin.User.Username, r.Member.User.Username, handleOfID(t, env, r.TargetAI),
 	}
 	for _, member := range members {
-		sendInvitation(r.Admin, r.Org.ID, member, dto.PermissionMember, "").RequireError(http.StatusConflict, dto.ErrorCodeAlreadyMember)
-		sendInvitation(r.Member, r.Org.ID, "@"+strings.ToUpper(member), dto.PermissionGuest, "").RequireError(http.StatusConflict, dto.ErrorCodeAlreadyMember)
+		sendInvitation(r.Admin, r.Org.ID, member, dto.PermissionMember).RequireError(http.StatusConflict, dto.ErrorCodeAlreadyMember)
+		sendInvitation(r.Admin, r.Org.ID, "@"+strings.ToUpper(member), dto.PermissionAdmin).RequireError(http.StatusConflict, dto.ErrorCodeAlreadyMember)
+		sendInvitation(r.Member, r.Org.ID, member, dto.PermissionMember).RequireError(http.StatusForbidden, dto.ErrorCodeForbidden)
 	}
 	// A member of another organization is not a member of this one.
-	invited(t, r.Admin, r.Org.ID, other.Peer.User.Username, dto.PermissionMember, "")
+	invited(t, r.Admin, r.Org.ID, other.Peer.User.Username, dto.PermissionMember)
 
 	for _, handle := range []string{"nobody-by-that-name", "", "  ", "@"} {
-		sendInvitation(r.Admin, r.Org.ID, handle, dto.PermissionMember, "").RequireError(http.StatusNotFound, dto.ErrorCodeContactNotFound)
-		sendInvitation(r.Member, r.Org.ID, handle, dto.PermissionGuest, "").RequireError(http.StatusNotFound, dto.ErrorCodeContactNotFound)
+		sendInvitation(r.Admin, r.Org.ID, handle, dto.PermissionMember).RequireError(http.StatusNotFound, dto.ErrorCodeContactNotFound)
+		sendInvitation(r.Member, r.Org.ID, handle, dto.PermissionMember).RequireError(http.StatusForbidden, dto.ErrorCodeForbidden)
 	}
 
-	for name, tc := range map[string]struct {
-		perm     dto.Permission
-		position string
-		field    string
-	}{
-		"a permission that does not exist": {dto.Permission("owner"), "", "permission"},
-		"no permission":                    {"", "", "permission"},
-		"a position that does not exist":   {dto.PermissionMember, "no-such-position", "position_id"},
-		"a position of another org":        {dto.PermissionMember, other.WorkerPosition, "position_id"},
+	for name, perm := range map[string]dto.Permission{
+		"a permission that does not exist": dto.Permission("owner"),
+		"no permission":                    "",
+		"SR2-01: guest is no permission":   dto.Permission("guest"),
 	} {
-		body := sendInvitation(r.Admin, r.Org.ID, "sam", tc.perm, tc.position).RequireError(http.StatusUnprocessableEntity, dto.ErrorCodeInvalid)
-		require.Contains(t, body.Fields, tc.field, name)
-		// A member is told 403 before anything is validated.
-		sendInvitation(r.Member, r.Org.ID, "sam", tc.perm, tc.position).RequireError(http.StatusForbidden, dto.ErrorCodeForbidden)
+		body := sendInvitation(r.Admin, r.Org.ID, "sam", perm).RequireError(http.StatusUnprocessableEntity, dto.ErrorCodeInvalid)
+		require.Contains(t, body.Fields, "permission", name)
+		sendInvitation(r.Member, r.Org.ID, "sam", perm).RequireError(http.StatusForbidden, dto.ErrorCodeForbidden)
 	}
 
 	r.Admin.DoRaw(http.MethodPost, invitationsPath(r.Org.ID), "application/json", strings.NewReader("{nope")).
 		RequireError(http.StatusBadRequest, dto.ErrorCodeInvalid)
-	sendInvitation(r.Admin, "no-such-org", "sam", dto.PermissionGuest, "").RequireError(http.StatusNotFound, dto.ErrorCodeNotFound)
-	sendInvitation(r.Admin, "ACME", "sam", dto.PermissionGuest, "").RequireStatus(http.StatusCreated) // {org} is an id or an address
+	sendInvitation(r.Admin, "no-such-org", "sam", dto.PermissionMember).RequireError(http.StatusNotFound, dto.ErrorCodeNotFound)
+	sendInvitation(r.Admin, "ACME", "sam", dto.PermissionMember).RequireStatus(http.StatusCreated) // {org} is an id or an address
 
 	require.Len(t, orgInvitations(t, r.Admin, r.Org.ID), 2, "only the two valid invitations were sent")
 }
 
 // OMEM-01, sweep (auth boundaries and rate limits): an organization sends at most 30 invitations per hour,
-// whoever sends them - the 31st is 429 rate_limited - and the limit is the organization's own.
+// whichever admin sends them - the 31st is 429 rate_limited - and the limit is the organization's own.
 func TestInvitationsAreRateLimitedPerOrganization(t *testing.T) {
 	env := testkit.New(t)
 	r := env.OrgRoles("acme")
 	other := env.OrgRoles("globex")
 	env.NewUser("sam")
 
+	r.Admin.Patch(memberPath(r.Org.ID, r.Peer.User.ID), toPermission(dto.PermissionAdmin)).RequireStatus(http.StatusOK)
 	for range 30 {
-		sendInvitation(r.Admin, r.Org.ID, "sam", dto.PermissionGuest, "").RequireStatus(http.StatusCreated) // a new send each time
+		sendInvitation(r.Admin, r.Org.ID, "sam", dto.PermissionMember).RequireStatus(http.StatusCreated) // a new send each time
 	}
-	sendInvitation(r.Admin, r.Org.ID, "sam", dto.PermissionGuest, "").RequireError(http.StatusTooManyRequests, dto.ErrorCodeRateLimited)
-	sendInvitation(r.Member, r.Org.ID, "sam", dto.PermissionGuest, "").RequireError(http.StatusTooManyRequests, dto.ErrorCodeRateLimited)
-	invited(t, other.Admin, other.Org.ID, "sam", dto.PermissionGuest, "")
+	sendInvitation(r.Admin, r.Org.ID, "sam", dto.PermissionMember).RequireError(http.StatusTooManyRequests, dto.ErrorCodeRateLimited)
+	sendInvitation(r.Peer, r.Org.ID, "sam", dto.PermissionMember).RequireError(http.StatusTooManyRequests, dto.ErrorCodeRateLimited)
+	invited(t, other.Admin, other.Org.ID, "sam", dto.PermissionMember)
 	require.Len(t, orgInvitations(t, r.Admin, r.Org.ID), 1, "the same invitee, one pending invitation")
 }
 
@@ -468,8 +402,8 @@ func TestInvitationsExpireAfterFourteenDays(t *testing.T) {
 	carol := env.NewUser("carol")
 	org := alice.PersonalOrg()
 
-	last := invited(t, alice, org.ID, "bob", dto.PermissionMember, "")
-	expiring := invited(t, alice, org.ID, "carol", dto.PermissionMember, "")
+	last := invited(t, alice, org.ID, "bob", dto.PermissionMember)
+	expiring := invited(t, alice, org.ID, "carol", dto.PermissionMember)
 	require.Equal(t, clock.Now().Add(14*24*time.Hour), expiring.ExpiresAt)
 
 	clock.Advance(14*24*time.Hour - time.Millisecond)
@@ -484,11 +418,11 @@ func TestInvitationsExpireAfterFourteenDays(t *testing.T) {
 	carol.Get("/api/v1/orgs/"+org.ID).RequireError(http.StatusNotFound, dto.ErrorCodeNotFound)
 
 	// Inviting again starts over, with the same invitation.
-	again := invited(t, alice, org.ID, "carol", dto.PermissionMember, "")
+	again := invited(t, alice, org.ID, "carol", dto.PermissionMember)
 	require.Equal(t, expiring.ID, again.ID)
 	require.Equal(t, clock.Now().Add(14*24*time.Hour), again.ExpiresAt)
 	clock.Advance(10 * 24 * time.Hour)
-	resent := invited(t, alice, org.ID, "carol", dto.PermissionMember, "")
+	resent := invited(t, alice, org.ID, "carol", dto.PermissionMember)
 	require.Equal(t, clock.Now().Add(14*24*time.Hour), resent.ExpiresAt, "sending it again restarts the 14 days")
 	answerInvitation(carol, resent.ID, "accept").RequireStatus(http.StatusOK)
 }
@@ -501,9 +435,9 @@ func TestMyInvitationsAreNewestFirst(t *testing.T) {
 	dave := env.NewUser("dave")
 	bob := env.NewUser("bob")
 
-	older := invited(t, alice, alice.PersonalOrg().ID, "bob", dto.PermissionMember, "")
+	older := invited(t, alice, alice.PersonalOrg().ID, "bob", dto.PermissionMember)
 	clock.Advance(time.Hour)
-	newer := invited(t, dave, dave.PersonalOrg().ID, "bob", dto.PermissionGuest, "")
+	newer := invited(t, dave, dave.PersonalOrg().ID, "bob", dto.PermissionAdmin)
 	require.Equal(t, []string{newer.ID, older.ID}, invitationIDs(myInvitations(t, bob)))
 	require.Equal(t, "dave", myInvitations(t, bob)[0].OrgSlug)
 	require.Equal(t, "alice", myInvitations(t, bob)[1].OrgSlug)
@@ -518,14 +452,14 @@ func TestAnInvitationOnlyHoldsWhileItsTermsDo(t *testing.T) {
 	bob := env.NewUser("bob")
 	zoe := env.NewUser("zoe")
 
-	inv := invited(t, r.Admin, r.Org.ID, "bob", dto.PermissionMember, "")
-	env.AddMember(r.Org.ID, bob.User.ID, orgs.PermissionGuest, "")
+	inv := invited(t, r.Admin, r.Org.ID, "bob", dto.PermissionMember)
+	env.AddMember(r.Org.ID, bob.User.ID, orgs.PermissionAdmin)
 	answerInvitation(bob, inv.ID, "accept").RequireError(http.StatusConflict, dto.ErrorCodeAlreadyMember)
 	require.Empty(t, myInvitations(t, bob), "the stale invitation went")
-	require.Equal(t, dto.PermissionGuest, listMembers(t, r.Admin, r.Org.ID)[bob.User.ID].Permission, "nothing else changed")
+	require.Equal(t, dto.PermissionAdmin, listMembers(t, r.Admin, r.Org.ID)[bob.User.ID].Permission, "nothing else changed")
 
 	// Another admin demotes the inviter before the invitee answers.
-	lapsing := invited(t, r.Admin, r.Org.ID, "zoe", dto.PermissionAdmin, "")
+	lapsing := invited(t, r.Admin, r.Org.ID, "zoe", dto.PermissionAdmin)
 	r.Manager.Patch(memberPath(r.Org.ID, r.Admin.User.ID), toPermission(dto.PermissionMember)).RequireError(http.StatusForbidden, dto.ErrorCodeForbidden)
 	r.Admin.Patch(memberPath(r.Org.ID, r.Manager.User.ID), toPermission(dto.PermissionAdmin)).RequireStatus(http.StatusOK)
 	r.Manager.Patch(memberPath(r.Org.ID, r.Admin.User.ID), toPermission(dto.PermissionMember)).RequireStatus(http.StatusOK)
@@ -534,8 +468,8 @@ func TestAnInvitationOnlyHoldsWhileItsTermsDo(t *testing.T) {
 	require.Empty(t, myInvitations(t, zoe))
 }
 
-// OMEM-01 (live): the invitee hears of an invitation, and for an invited AI so do the identities that
-// manage it; nobody else does. Inviting again sends it again, with the new terms.
+// OMEM-01 (live), SR2-13: the invitee hears of an invitation, and for an invited AI so do the identities that
+// manage it - its host and its user instructors; nobody else does, an admin of its home organization included. Inviting again sends it again, with the new terms.
 func TestInvitationReceivedReachesTheInviteeAndTheManagersOfAnInvitedAI(t *testing.T) {
 	env := testkit.New(t)
 	acme := env.OrgRoles("acme")
@@ -549,7 +483,7 @@ func TestInvitationReceivedReachesTheInviteeAndTheManagersOfAnInvitedAI(t *testi
 		return l
 	}
 	bobLive, carolLive := dial(bob), dial(carol)
-	managerLive, adminLive, memberLive := dial(globex.Manager), dial(globex.Admin), dial(globex.Member)
+	managerLive, instructorLive, adminLive, memberLive := dial(globex.Manager), dial(globex.Instructor), dial(globex.Admin), dial(globex.Member)
 	noInvitation := func(name string, l *testkit.LiveConn) {
 		t.Helper()
 		for _, f := range l.Drain(quiet) {
@@ -558,25 +492,26 @@ func TestInvitationReceivedReachesTheInviteeAndTheManagersOfAnInvitedAI(t *testi
 	}
 
 	var got dto.Invitation
-	inv := invited(t, acme.Admin, acme.Org.ID, "bob", dto.PermissionMember, "")
+	inv := invited(t, acme.Admin, acme.Org.ID, "bob", dto.PermissionMember)
 	bobLive.Expect(dto.LiveEventTypeInvitationReceived, &got, liveWait)
 	require.Equal(t, inv, got)
-	for name, l := range map[string]*testkit.LiveConn{"carol": carolLive, "manager": managerLive, "admin": adminLive, "member": memberLive} {
+	for name, l := range map[string]*testkit.LiveConn{"carol": carolLive, "manager": managerLive, "instructor": instructorLive, "admin": adminLive, "member": memberLive} {
 		noInvitation(name, l)
 	}
 
 	ai := globex.TargetAI
-	forAI := invited(t, acme.Admin, acme.Org.ID, handleOfID(t, env, ai), dto.PermissionGuest, "")
+	forAI := invited(t, acme.Admin, acme.Org.ID, handleOfID(t, env, ai), dto.PermissionMember)
 	managerLive.Expect(dto.LiveEventTypeInvitationReceived, &got, liveWait)
 	require.Equal(t, forAI, got)
 	got = dto.Invitation{}
-	adminLive.Expect(dto.LiveEventTypeInvitationReceived, &got, liveWait)
+	instructorLive.Expect(dto.LiveEventTypeInvitationReceived, &got, liveWait)
 	require.Equal(t, forAI, got, "whoever manages the AI hears of it")
+	noInvitation("admin", adminLive)
 	noInvitation("member", memberLive)
 	noInvitation("carol", carolLive)
 	noInvitation("bob", bobLive)
 
-	again := invited(t, acme.Admin, acme.Org.ID, "bob", dto.PermissionAdmin, "")
+	again := invited(t, acme.Admin, acme.Org.ID, "bob", dto.PermissionAdmin)
 	got = dto.Invitation{}
 	bobLive.Expect(dto.LiveEventTypeInvitationReceived, &got, liveWait)
 	require.Equal(t, again, got)
@@ -592,12 +527,12 @@ func TestAgentTokenCannotReachInvitationRoutes(t *testing.T) {
 	tok := r.Admin.Token(dto.TokenKindAgent, "t")
 	tok.Get("/api/v1/invitations").RequireError(http.StatusForbidden, dto.ErrorCodeForbidden)
 	tok.Get(invitationsPath(r.Org.ID)).RequireError(http.StatusForbidden, dto.ErrorCodeForbidden)
-	sendInvitation(tok, r.Org.ID, "sam", dto.PermissionGuest, "").RequireError(http.StatusForbidden, dto.ErrorCodeForbidden)
+	sendInvitation(tok, r.Org.ID, "sam", dto.PermissionMember).RequireError(http.StatusForbidden, dto.ErrorCodeForbidden)
 	answerInvitation(tok, "any", "accept").RequireError(http.StatusForbidden, dto.ErrorCodeForbidden)
 	require.Empty(t, orgInvitations(t, r.Admin, r.Org.ID))
 
 	anon := env.Anon()
 	anon.Get("/api/v1/invitations").RequireError(http.StatusUnauthorized, dto.ErrorCodeUnauthorized)
 	answerInvitation(anon, "any", "accept").RequireError(http.StatusUnauthorized, dto.ErrorCodeUnauthorized)
-	sendInvitation(anon, r.Org.ID, "sam", dto.PermissionGuest, "").RequireError(http.StatusUnauthorized, dto.ErrorCodeUnauthorized)
+	sendInvitation(anon, r.Org.ID, "sam", dto.PermissionMember).RequireError(http.StatusUnauthorized, dto.ErrorCodeUnauthorized)
 }

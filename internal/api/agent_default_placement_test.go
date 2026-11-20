@@ -36,8 +36,8 @@ func requireHome(t *testing.T, env *testkit.Env, agentID, org, creator string) {
 }
 
 // requirePlaced checks where an AI was put when it was created (ORG-02, ORG-04): the organization is
-// its home, the host its creator, and it is a member with no position and no inviter, whom the host
-// manages. It returns its membership.
+// its home, the host its creator, and it is a member, whom the host manages (SR2-13). It returns its
+// membership.
 func requirePlaced(t *testing.T, env *testkit.Env, agentID, org, creator string) orgs.Member {
 	t.Helper()
 	ctx := context.Background()
@@ -45,11 +45,10 @@ func requirePlaced(t *testing.T, env *testkit.Env, agentID, org, creator string)
 	m, ok, err := env.App.Authz.Member(ctx, org, agentID)
 	require.NoError(t, err)
 	require.True(t, ok, "the AI is a member of its home organization")
-	require.Equal(t, orgs.Member{IID: agentID, Permission: orgs.PermissionMember, CreatorIID: creator}, m,
-		"a member (the host started it) with no position and no inviter")
-	managed, err := env.App.Authz.Manages(ctx, creator, agentID, org)
+	require.Equal(t, orgs.Member{IID: agentID, Permission: orgs.PermissionMember}, m, "a member")
+	managed, err := env.App.Authz.Manages(ctx, creator, agentID)
 	require.NoError(t, err)
-	require.True(t, managed, "the host manages the AI it created (POS-03)")
+	require.True(t, managed, "the host manages the AI (SR2-13)")
 	return m
 }
 
@@ -169,33 +168,6 @@ func TestNewAIsFollowTheHostsDefaultOrganization(t *testing.T) {
 	third := register("/work/third")
 	requirePlaced(t, env, third, personal, alice.User.ID)
 	requireHome(t, env, second, team.ID, alice.User.ID) // it stays in Team, which alice left
-}
-
-// Guests assumption, POS-05: a host who is only a guest of their default organization starts AIs that
-// join it as guests the host invited - never as members, which only an admin could delete - so the
-// host manages and may delete them.
-func TestAGuestHostsNewAIJoinsAsTheirGuest(t *testing.T) {
-	ctx := context.Background()
-	env := testkit.New(t)
-	alice := env.NewUser("alice")
-	bob := env.NewUser("bob")
-	team, err := env.App.Orgs.Create(ctx, alice.User.ID, "Team")
-	require.NoError(t, err)
-	env.AddGuest(team.ID, bob.User.ID, alice.User.ID, "")
-	require.NoError(t, env.App.Orgs.SetDefault(ctx, bob.User.ID, team.ID))
-
-	tok := bob.Token(dto.TokenKindAgent, "laptop")
-	ai := testkit.Decode[dto.AgentInfo](tok.AsFolder(testkit.Folder{Machine: "devbox", Path: "/work/guest"}).Post("/api/v1/agent/register", nil).RequireStatus(http.StatusOK)).ID
-
-	requireHome(t, env, ai, team.ID, bob.User.ID)
-	m, ok, err := env.App.Authz.Member(ctx, team.ID, ai)
-	require.NoError(t, err)
-	require.True(t, ok)
-	require.Equal(t, orgs.PermissionGuest, m.Permission, "a guest's AI is a guest")
-	require.Equal(t, bob.User.ID, m.InviterIID, "invited by its host")
-	managed, err := env.App.Authz.Manages(ctx, bob.User.ID, ai, team.ID)
-	require.NoError(t, err)
-	require.True(t, managed, "the guest host manages the AI it started")
 }
 
 // ORG-04: a host that belongs to no organization cannot start an AI - a live session and a tools-only call

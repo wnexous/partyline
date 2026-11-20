@@ -138,7 +138,7 @@ func TestManagerEditsAIProfile(t *testing.T) {
 	env := testkit.New(t)
 	alice, bob, carol := env.NewUser("alice"), env.NewUser("bob"), env.NewUser("carol")
 	id := registerAgent(t, env, alice, "builder") // in alice's own organization, which she created: she manages it
-	env.AddMember(alice.PersonalOrg().ID, bob.User.ID, orgs.PermissionMember, "")
+	env.AddMember(alice.PersonalOrg().ID, bob.User.ID, orgs.PermissionMember)
 
 	before := profileOf(t, alice, id)
 	require.Equal(t, []any{dto.IntelligenceKindAI, dto.IntelligenceRoleAI, "builder", "builder", true},
@@ -259,10 +259,10 @@ func TestProfileEditErrors(t *testing.T) {
 	patchProfile(alice, store.NewID(), dto.UpdateProfileRequest{Bio: ptr("x")}).RequireError(http.StatusNotFound, dto.ErrorCodeNotFound)
 }
 
-// POS-04, CHART-02 (design, "Intelligences" matrix): the profile of an AI of the organization is read by its
-// members, guests included, and edited by whoever manages it - its creator, and the admin whose position is above
-// the creator's; an outsider and an admin of the instance find nothing (404).
-func TestAIProfileRoutesAuthMatrix(t *testing.T) {
+// SR2-13 (design, "Intelligences" matrix): the profile of an AI of the organization is read by its members and
+// edited by whoever manages it - its host and its user instructor, never the admin of its organization as such;
+// an outsider and an admin of the instance find nothing (404).
+func TestSR213AIProfileRoutesAuthMatrix(t *testing.T) {
 	env := testkit.New(t)
 	roles := env.OrgRoles("acme")
 	setup := func(*testing.T) map[string]string { return map[string]string{"ai": roles.TargetAI} }
@@ -276,26 +276,23 @@ func TestAIProfileRoutesAuthMatrix(t *testing.T) {
 	})
 }
 
-// POS-03, POS-04: every user reads every user's profile (the directory). A user edits their own, and so does
-// whoever manages them: the manager above Target and, through the root position, the admin; the inviter of a guest.
-// A peer, a plain member, the guest of someone else, an outsider and an admin of the instance are told forbidden
-// - they can see the user, so it is not a 404 - and an org admin does not manage a member with no position.
+// SR2-13: every user reads every user's profile (the directory), and a user edits only their own: nobody
+// manages a user - not an admin, not the host of an AI. Everybody else is told forbidden - they can see the user,
+// so it is not a 404.
 func TestUserProfileRoutesAuthMatrixOnOrganizations(t *testing.T) {
 	env := testkit.New(t)
 	roles := env.OrgRoles("acme")
-	read := map[string]int{"admin": 200, "manager": 200, "target": 200, "peer": 200, "member": 200, "inviter": 200, "guest": 200, "outsider": 200, "instance_admin": 200}
-	editTarget := map[string]int{"admin": 200, "manager": 200, "target": 200, "peer": 403, "member": 403, "inviter": 403, "guest": 403, "outsider": 403, "instance_admin": 403}
-	editGuest := map[string]int{"admin": 403, "manager": 403, "target": 403, "peer": 403, "member": 403, "inviter": 200, "guest": 200, "outsider": 403, "instance_admin": 403}
-	editManager := map[string]int{"admin": 200, "manager": 200, "target": 403, "peer": 403, "member": 403, "inviter": 403, "guest": 403, "outsider": 403, "instance_admin": 403}
+	read := everyRole(200)
 	for _, target := range []struct {
-		name string
-		id   string
-		edit map[string]int
+		name, role string
+		id         string
 	}{
-		{"a worker", roles.Target.User.ID, editTarget},
-		{"a guest", roles.Guest.User.ID, editGuest},
-		{"the manager", roles.Manager.User.ID, editManager},
+		{"a member", "target", roles.Target.User.ID},
+		{"an instructor", "instructor", roles.Instructor.User.ID},
+		{"the admin", "admin", roles.Admin.User.ID},
 	} {
+		edit := everyRole(403)
+		edit[target.role] = 200
 		setup := func(*testing.T) map[string]string { return map[string]string{"user": target.id} }
 		runRoleRoutes(t, roles, setup, []roleRoute{
 			{"get profile of " + target.name, func(_ *testing.T, c *testkit.Client, res map[string]string) *testkit.Response {
@@ -303,7 +300,7 @@ func TestUserProfileRoutesAuthMatrixOnOrganizations(t *testing.T) {
 			}, read},
 			{"edit profile of " + target.name, func(_ *testing.T, c *testkit.Client, res map[string]string) *testkit.Response {
 				return patchProfile(c, res["user"], dto.UpdateProfileRequest{Bio: ptr("Hello")})
-			}, target.edit},
+			}, edit},
 		})
 	}
 }
@@ -365,28 +362,26 @@ func TestLiveIntelligenceChangedFollowsVisibility(t *testing.T) {
 	}
 }
 
-// OMEM-03, POS-05, POS-06, CHART-02: the profile of a user or an AI lists the organizations the caller shares with
-// it - the identity's permission and position in each - and whether the caller may delete it there and what that
-// does: an AI is deleted for good in its home organization and only removed from another; a user is removed. An
-// identity in two organizations shows both to a caller who belongs to both, and only the shared one to the rest.
-func TestProfilesListTheirMemberships(t *testing.T) {
+// OMEM-03, SR2-12, POS-06: the profile of a user or an AI lists the organizations the caller shares with it -
+// the identity's permission in each - and whether the caller may delete it there and what that does: an AI is
+// deleted for good in its home organization, by an admin or its host, and only removed from another; a user is
+// removed, by an admin. An identity in two organizations shows both to a caller who belongs to both, and only
+// the shared one to the rest.
+func TestSR212ProfilesListTheirMemberships(t *testing.T) {
 	env := testkit.New(t)
 	acme, globex := env.OrgRoles("acme"), env.OrgRoles("globex")
-	env.AddGuest(globex.Org.ID, acme.Target.User.ID, globex.Inviter.User.ID, "")
-	env.AddMember(globex.Org.ID, acme.TargetAI, orgs.PermissionMember, globex.WorkerPosition)
-	env.AddMember(globex.Org.ID, acme.Member.User.ID, orgs.PermissionMember, "")
-	env.AddMember(acme.Org.ID, globex.Admin.User.ID, orgs.PermissionAdmin, "")
+	env.AddMember(globex.Org.ID, acme.Target.User.ID, orgs.PermissionMember)
+	env.AddMember(globex.Org.ID, acme.TargetAI, orgs.PermissionMember)
+	env.AddMember(globex.Org.ID, acme.Member.User.ID, orgs.PermissionMember)
+	env.AddMember(acme.Org.ID, globex.Admin.User.ID, orgs.PermissionAdmin)
 
-	in := func(o *testkit.OrgRoles, permission, position, positionName, effect string, canDelete bool) dto.ProfileMembership {
+	in := func(o *testkit.OrgRoles, effect string, canDelete bool) dto.ProfileMembership {
 		return dto.ProfileMembership{
-			OrgID: o.Org.ID, OrgName: o.Org.Name, OrgSlug: o.Org.Slug, Permission: permission,
-			PositionID: position, PositionName: positionName, CanDelete: canDelete, DeleteEffect: effect,
+			OrgID: o.Org.ID, OrgName: o.Org.Name, OrgSlug: o.Org.Slug, Permission: "member", CanDelete: canDelete, DeleteEffect: effect,
 		}
 	}
-	workerAtAcme := func(canDelete bool) dto.ProfileMembership {
-		return in(acme, "member", acme.WorkerPosition, "Worker", "remove", canDelete)
-	}
-	guestAtGlobex := func(canDelete bool) dto.ProfileMembership { return in(globex, "guest", "", "", "remove", canDelete) }
+	atAcme := func(canDelete bool) dto.ProfileMembership { return in(acme, "remove", canDelete) }
+	atGlobex := func(canDelete bool) dto.ProfileMembership { return in(globex, "remove", canDelete) }
 
 	user := acme.Target.User.ID
 	for _, c := range []struct {
@@ -394,17 +389,17 @@ func TestProfilesListTheirMemberships(t *testing.T) {
 		caller *testkit.Client
 		want   []dto.ProfileMembership
 	}{
-		{"an admin of acme", acme.Admin, []dto.ProfileMembership{workerAtAcme(true)}},
-		{"the inviter of the guest in globex", globex.Inviter, []dto.ProfileMembership{guestAtGlobex(true)}},
-		{"a peer", acme.Peer, []dto.ProfileMembership{workerAtAcme(false)}},
-		{"a member of both", acme.Member, []dto.ProfileMembership{workerAtAcme(false), guestAtGlobex(false)}},
-		{"an admin of both", globex.Admin, []dto.ProfileMembership{workerAtAcme(true), guestAtGlobex(true)}},
+		{"an admin of acme", acme.Admin, []dto.ProfileMembership{atAcme(true)}},
+		{"an admin of globex who is a member of acme", globex.Admin, []dto.ProfileMembership{atAcme(true), atGlobex(true)}},
+		{"a peer", acme.Peer, []dto.ProfileMembership{atAcme(false)}},
+		{"a member of both", acme.Member, []dto.ProfileMembership{atAcme(false), atGlobex(false)}},
 		{"an outsider", acme.Outsider, []dto.ProfileMembership{}},
 		{"an admin of the instance", acme.InstanceAdmin, []dto.ProfileMembership{}},
 	} {
 		got := profileOf(t, c.caller, user)
 		require.NotNil(t, got.Memberships, "%s: a list, not null", c.name)
 		require.Equal(t, c.want, got.Memberships, c.name)
+		require.NotContains(t, string(getProfile(c.caller, user).Body), `"position`)
 	}
 	own := profileOf(t, acme.Target, user).Memberships
 	require.Len(t, own, 3, "the identity sees its own: acme, its personal organization and globex")
@@ -413,27 +408,26 @@ func TestProfilesListTheirMemberships(t *testing.T) {
 	}
 
 	ai := acme.TargetAI
-	aiAtAcme := func(canDelete bool) dto.ProfileMembership { return in(acme, "member", "", "", "delete", canDelete) }
-	aiAtGlobex := func(canDelete bool) dto.ProfileMembership {
-		return in(globex, "member", globex.WorkerPosition, "Worker", "remove", canDelete)
-	}
+	aiAtAcme := func(canDelete bool) dto.ProfileMembership { return in(acme, "delete", canDelete) }
 	for _, c := range []struct {
 		name   string
 		caller *testkit.Client
 		want   []dto.ProfileMembership
 	}{
 		{"the admin of its home organization", acme.Admin, []dto.ProfileMembership{aiAtAcme(true)}},
-		{"a peer of its creator", acme.Peer, []dto.ProfileMembership{aiAtAcme(false)}},
-		{"a member of both", acme.Member, []dto.ProfileMembership{aiAtAcme(false), aiAtGlobex(false)}},
-		{"an admin of both", globex.Admin, []dto.ProfileMembership{aiAtAcme(true), aiAtGlobex(true)}},
+		{"its host", acme.Manager, []dto.ProfileMembership{aiAtAcme(true)}},
+		{"its user instructor", acme.Instructor, []dto.ProfileMembership{aiAtAcme(false)}},
+		{"a peer", acme.Peer, []dto.ProfileMembership{aiAtAcme(false)}},
+		{"a member of both", acme.Member, []dto.ProfileMembership{aiAtAcme(false), atGlobex(false)}},
+		{"an admin of both", globex.Admin, []dto.ProfileMembership{aiAtAcme(true), atGlobex(true)}},
 	} {
 		require.Equal(t, c.want, profileOf(t, c.caller, ai).Memberships, "the AI, as seen by "+c.name)
 	}
 	getProfile(acme.Outsider, ai).RequireError(http.StatusNotFound, dto.ErrorCodeNotFound)
 }
 
-// POS-04: an AI's profile says whether the caller may end its session, which is the right of those who manage it
-// (the creator and the admin above it); a user's profile never does.
+// SR2-13: an AI's profile says whether the caller may end its session, which is the right of those who manage it
+// (its host and its user instructor); a user's profile never does.
 func TestAIProfileTellsWhoMayEndItsSession(t *testing.T) {
 	env := testkit.New(t)
 	roles := env.OrgRoles("acme")
@@ -443,7 +437,7 @@ func TestAIProfileTellsWhoMayEndItsSession(t *testing.T) {
 			continue
 		}
 		got := profileOf(t, role.Client, roles.TargetAI)
-		require.Equal(t, role.Name == "admin" || role.Name == "manager", got.CanEndSession, role.Name)
+		require.Equal(t, role.Name == "instructor" || role.Name == "manager", got.CanEndSession, role.Name)
 		require.False(t, profileOf(t, role.Client, roles.Target.User.ID).CanEndSession, "%s: a user has no session", role.Name)
 	}
 }
