@@ -16,7 +16,7 @@ const ORGS = {
 /** The viewer's membership in Acme (o1), Globex (o2) or Initech (o3) with the permission given. */
 export function memberIn(
   org: keyof typeof ORGS,
-  permission: "admin" | "member" | "guest",
+  permission: "admin" | "member",
   over: Partial<ProfileMembership> = {},
 ): ProfileMembership {
   return makeMembership({ ...ORGS[org], permission, ...over });
@@ -29,7 +29,6 @@ function organizationOf(m: ProfileMembership): Organization {
     name: m.org_name,
     slug: m.org_slug,
     permission: m.permission as Permission,
-    ...(m.position_id ? { position_id: m.position_id } : {}),
   });
 }
 

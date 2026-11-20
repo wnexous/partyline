@@ -1,7 +1,7 @@
-import { screen, within } from "@testing-library/react";
+import { screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { json, mockApi } from "@/test/fetch";
+import { apiError, json, mockApi } from "@/test/fetch";
 import { makeAI, makeIntelligence, makeMe, makeMembership, makeProfile } from "@/test/fixtures";
 import { useLiveStore } from "@/test/live-store";
 import { renderRoute } from "@/test/render";
@@ -95,72 +95,147 @@ describe("an outdated principal session on the profile (SESS-63)", () => {
 });
 
 /*
- * Who can instruct an AI (ST-07): the identities whose messages it treats as trusted, as the
- * server lists them for whoever shares its organization; nobody, said in words; and nothing at all
- * for a viewer the server does not tell.
+ * Who can instruct an AI (SR2-07, SR2-10): its host, always first, and the instructors the host named.
+ * The host adds one by @handle and removes one; anyone else the server shows the list to only reads it,
+ * and a viewer the server does not tell sees no section at all.
  */
-describe("who can instruct the AI (ST-07)", () => {
+describe("SR2-10 who can instruct the AI", () => {
+  const hal = makeIntelligence({ id: "u8", display_name: "Hal Prado", handle: "hal" });
   const bob = makeIntelligence({ id: "u2", display_name: "Bob Lima", handle: "bob" });
   const lead = makeAI({ id: "a9", display_name: "Lead", handle: "lead" });
-  const withInstructors = (instructedBy: ReturnType<typeof makeIntelligence>[] | undefined) => {
+  const withInstructors = (
+    instructedBy: ReturnType<typeof makeIntelligence>[] | undefined,
+    host = hal,
+    canEdit = false,
+  ) => {
     const p = outdatedProfile();
     if (p.ai) {
       p.ai.sessions = [];
+      p.ai.owner = host;
       if (instructedBy) p.ai.instructed_by = instructedBy;
+      if (canEdit) p.ai.can_edit_instructors = true;
     }
     p.memberships = [makeMembership({ delete_effect: "delete" })];
     return p;
   };
+  const section = () => screen.findByRole("region", { name: "Can instruct this AI" });
 
-  it("lists them, says they manage it in its organization and links to Members", async () => {
-    stubProfile({
-      "GET /intelligences/a1": json(200, withInstructors([makeMe().intelligence, bob, lead])),
-    });
+  it("SR2-10 lists the host first, then the instructors, and says nothing else makes a message trusted", async () => {
+    stubProfile({ "GET /intelligences/a1": json(200, withInstructors([bob, lead])) });
     renderRoute("/contacts/a1");
-    const section = await screen.findByRole("region", { name: "Who can instruct this AI" });
-
+    const region = await section();
     expect(
-      within(section).getByText(
-        "Messages from these people and AIs reach Atlas as trusted: it may act on them as their requests. They are the ones who manage it in Acme.",
+      within(region).getByText(
+        "Messages from its host and from these people and AIs reach Atlas as trusted: it may act on them as their requests. Nothing else makes a message trusted.",
       ),
     ).toBeVisible();
-    const list = within(section).getByRole("list", { name: "Who can instruct this AI" });
-    expect(within(list).getAllByRole("listitem")).toHaveLength(3);
-    expect(within(list).getByText("Bob Lima")).toBeVisible();
-    expect(within(list).getByText("Lead")).toBeVisible();
-    expect(
-      within(section).getByRole("link", { name: "Change this on the Members page" }),
-    ).toHaveAttribute("href", "/orgs/o1/members");
+    const list = within(region).getByRole("list", { name: "Can instruct this AI" });
+    const items = within(list).getAllByRole("listitem");
+    expect(items).toHaveLength(3);
+    expect(items[0]).toHaveTextContent("Hal Prado");
+    expect(items[0]).toHaveTextContent("Host");
+    expect(items[1]).toHaveTextContent("Bob Lima");
+    expect(items[2]).toHaveTextContent("Lead");
+    // Not the host: nothing to change.
+    expect(within(region).queryByRole("button")).toBeNull();
   });
 
-  it("says that nobody can when the list is empty", async () => {
+  it("SR2-10 says only the host instructs it when the list is empty", async () => {
     stubProfile({ "GET /intelligences/a1": json(200, withInstructors([])) });
     renderRoute("/contacts/a1");
-    const section = await screen.findByRole("region", { name: "Who can instruct this AI" });
+    const region = await section();
     expect(
-      within(section).getByText(
-        "Nobody: Atlas treats every message as information, not as instructions.",
+      within(region).getByText(
+        "Only messages from its host reach Atlas as trusted: it treats every other message as information, not as instructions.",
       ),
     ).toBeVisible();
-    expect(within(section).queryByRole("list")).toBeNull();
+    expect(within(region).getAllByRole("listitem")).toHaveLength(1);
   });
 
-  it("is absent when the server does not tell the viewer", async () => {
+  it("SR2-10 is absent when the server does not tell the viewer", async () => {
     stubProfile({ "GET /intelligences/a1": json(200, withInstructors(undefined)) });
     renderRoute("/contacts/a1");
     await screen.findByRole("heading", { name: "Atlas", level: 1 });
-    expect(screen.queryByRole("region", { name: "Who can instruct this AI" })).toBeNull();
+    expect(screen.queryByRole("region", { name: "Can instruct this AI" })).toBeNull();
   });
 
-  it("reads in Portuguese", async () => {
+  it("SR2-10 lets the host add an instructor by @handle and reads the profile again", async () => {
+    const me = makeMe().intelligence;
+    let instructors = [bob];
+    const { calls } = stubProfile({
+      "GET /intelligences/a1": () => json(200, withInstructors(instructors, me, true)),
+      "POST /agents/a1/instructors": () => {
+        instructors = [bob, lead];
+        return json(201, { intelligence: lead, added_at: at });
+      },
+    });
+    const user = userEvent.setup();
+    renderRoute("/contacts/a1");
+    const region = await section();
+    await user.click(within(region).getByRole("button", { name: "Add instructor" }));
+    const d = await screen.findByRole("dialog", { name: "Who else can instruct Atlas?" });
+    await user.type(within(d).getByRole("textbox", { name: "Handle" }), "@Lead ");
+    await user.click(within(d).getByRole("button", { name: "Add" }));
+    expect(await screen.findByText("Lead can now instruct Atlas")).toBeInTheDocument();
+    expect(calls.find((c) => c.method === "POST")?.body).toEqual({ handle: "lead" });
+    await waitFor(() => expect(within(region).getAllByRole("listitem")).toHaveLength(3));
+  });
+
+  it("SR2-10 says no one has that handle under the field (404 contact_not_found) and keeps the dialog open", async () => {
+    const me = makeMe().intelligence;
+    stubProfile({
+      "GET /intelligences/a1": json(200, withInstructors([], me, true)),
+      "POST /agents/a1/instructors": apiError(404, "contact_not_found", "not found"),
+    });
+    const user = userEvent.setup();
+    renderRoute("/contacts/a1");
+    const region = await section();
+    await user.click(within(region).getByRole("button", { name: "Add instructor" }));
+    const d = await screen.findByRole("dialog", { name: "Who else can instruct Atlas?" });
+    await user.type(within(d).getByRole("textbox", { name: "Handle" }), "nobody");
+    await user.click(within(d).getByRole("button", { name: "Add" }));
+    expect(
+      await within(d).findByText("No person or AI you can see has that handle."),
+    ).toBeInTheDocument();
+    expect(screen.getByRole("dialog")).toBeInTheDocument();
+  });
+
+  it("SR2-10 lets the host remove an instructor after asking", async () => {
+    const me = makeMe().intelligence;
+    let instructors = [bob, lead];
+    const { calls } = stubProfile({
+      "GET /intelligences/a1": () => json(200, withInstructors(instructors, me, true)),
+      "DELETE /agents/a1/instructors/u2": () => {
+        instructors = [lead];
+        return new Response(null, { status: 204 });
+      },
+    });
+    const user = userEvent.setup();
+    renderRoute("/contacts/a1");
+    const region = await section();
+    await user.click(
+      within(region).getByRole("button", { name: "Remove Bob Lima as an instructor" }),
+    );
+    const d = await screen.findByRole("alertdialog", {
+      name: "Stop Bob Lima from instructing Atlas?",
+    });
+    await user.click(within(d).getByRole("button", { name: "Remove" }));
+    await waitFor(() =>
+      expect(calls.filter((c) => c.method === "DELETE").map((c) => c.path)).toEqual([
+        "/agents/a1/instructors/u2",
+      ]),
+    );
+    await waitFor(() => expect(within(region).queryByText("Bob Lima")).toBeNull());
+  });
+
+  it("SR2-10 reads in Portuguese", async () => {
     useLiveStore.setState({ locale: "pt-BR" });
     stubProfile({
       "GET /me": json(200, makeMe({ locale: "pt-BR" })),
       "GET /intelligences/a1": json(200, withInstructors([bob])),
     });
     renderRoute("/contacts/a1");
-    expect(
-      await screen.findByRole("region", { name: "Quem pode dar ordens a esta IA" }),
-    ).toBeVisible();
+    const region = await screen.findByRole("region", { name: "Pode dar instruções" });
+    expect(within(region).getByText("Anfitrião")).toBeVisible();
   });
 });

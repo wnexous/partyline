@@ -1,53 +1,87 @@
-import { Link } from "@tanstack/react-router";
+import { PlusIcon, UserMinusIcon } from "lucide-react";
+import { useState } from "react";
 import { IntelligenceRow } from "@/entities/intelligence";
-import { homeMembershipOf } from "@/entities/organization";
-import type { IntelligenceRef, ProfileMembership } from "@/shared/api/types.gen";
+import { AddInstructorDialog, RemoveInstructorDialog } from "@/features/manage-instructors";
+import type { IntelligenceRef } from "@/shared/api/types.gen";
 import { useT } from "@/shared/i18n";
 import { PageSection } from "@/shared/ui/molecules/page-section";
+import { Button } from "@/shared/ui/primitives/button";
 
 /**
- * Who can instruct an AI (ST-07): the identities whose messages it treats as trusted, its managers in
- * its home organization as the server computes them (POS-10). The server sends the list only to
- * whoever shares that organization with the AI; an empty list says that nobody can, and the link
- * leads to the Members page where positions are changed.
+ * Who can instruct an AI (SR2-07, SR2-10): its host, always, and the identities the host named as its
+ * instructors. Their messages are the AI's trusted ones; nothing else makes a message trusted. The
+ * host adds an instructor by @handle and removes one (`canEdit`); everyone else who is shown the list
+ * only reads it.
  */
 export function InstructedBySection({
-  name,
+  ai,
+  host,
   instructors,
-  memberships,
+  canEdit,
   viewerId,
 }: {
-  name: string;
+  ai: { id: string; name: string };
+  host: IntelligenceRef;
   instructors: readonly IntelligenceRef[];
-  memberships: readonly ProfileMembership[];
+  canEdit: boolean;
   viewerId: string | undefined;
 }) {
   const t = useT();
-  const home = homeMembershipOf(memberships);
+  const [adding, setAdding] = useState(false);
+  const [removing, setRemoving] = useState<IntelligenceRef | null>(null);
   return (
-    <PageSection layout="stacked" title={t("profile.instructedBy")}>
+    <PageSection
+      layout="stacked"
+      title={t("profile.instructedBy")}
+      actions={
+        canEdit ? (
+          <Button variant="outline" size="sm" onClick={() => setAdding(true)}>
+            <PlusIcon aria-hidden="true" />
+            {t("instructors.add")}
+          </Button>
+        ) : undefined
+      }
+    >
       <p className="max-w-[65ch] text-sm text-pretty text-muted-foreground [overflow-wrap:anywhere]">
         {instructors.length === 0
-          ? t("profile.instructedByNone", { name })
-          : home
-            ? t("profile.instructedByBody", { name, org: home.org_name })
-            : t("profile.instructedByBodyNoOrg", { name })}
+          ? t("profile.instructedByHostOnly", { name: ai.name })
+          : t("profile.instructedByBody", { name: ai.name })}
       </p>
-      {instructors.length > 0 ? (
-        <ul aria-label={t("profile.instructedBy")} className="divide-y rounded-lg border">
-          {instructors.map((who) => (
-            <IntelligenceRow key={who.id} intelligence={who} viewerId={viewerId} className="py-3" />
-          ))}
-        </ul>
-      ) : null}
-      {home ? (
-        <Link
-          to="/orgs/$orgId/members"
-          params={{ orgId: home.org_id }}
-          className="inline-flex min-h-6 items-center text-sm font-medium text-primary underline-offset-2 outline-none hover:underline focus-visible:ring-[3px] focus-visible:ring-ring/70 pointer-coarse:min-h-11"
-        >
-          {t("profile.instructedByManage")}
-        </Link>
+      <ul aria-label={t("profile.instructedBy")} className="divide-y rounded-lg border">
+        <IntelligenceRow
+          intelligence={host}
+          viewerId={viewerId}
+          className="py-3"
+          meta={t("profile.host")}
+        />
+        {instructors.map((who) => (
+          <IntelligenceRow
+            key={who.id}
+            intelligence={who}
+            viewerId={viewerId}
+            className="py-3"
+            actions={
+              canEdit ? (
+                <Button
+                  variant="ghost"
+                  size="icon-sm"
+                  className="text-muted-foreground hover:text-destructive pointer-coarse:size-11"
+                  aria-label={t("instructors.removeAction", { who: who.display_name })}
+                  title={t("instructors.remove")}
+                  onClick={() => setRemoving(who)}
+                >
+                  <UserMinusIcon aria-hidden="true" />
+                </Button>
+              ) : undefined
+            }
+          />
+        ))}
+      </ul>
+      {canEdit ? (
+        <>
+          <AddInstructorDialog ai={ai} open={adding} onOpenChange={setAdding} />
+          <RemoveInstructorDialog ai={ai} instructor={removing} onClose={() => setRemoving(null)} />
+        </>
       ) : null}
     </PageSection>
   );

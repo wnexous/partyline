@@ -1,28 +1,20 @@
-import type { Locator } from "@playwright/test";
 import type {
+  AgentInstructors,
   CreatedInvite,
-  CreatePositionRequest,
+  List,
   Me,
-  OrgChart,
-  Position,
+  OrgMember,
   SetupRequest,
 } from "../src/shared/api/types.gen";
 import { apiCall, test as base, type Credentials, expect } from "./fixtures";
-import {
-  connectAI,
-  expectNoSidewaysScroll,
-  loginAs,
-  MACHINE,
-  openSession,
-  trackLive,
-} from "./helpers";
+import { connectAI, expectNoSidewaysScroll, loginAs, MACHINE, trackLive } from "./helpers";
 import { type Instance, startInstance } from "./server";
 import { shoot } from "./shots";
 
-// The organization flow against the built binary (organizations T54: ORG-01, POS-01, POS-07, OMEM-01,
-// OMEM-02, CHART-01 to CHART-04). Alice creates acme, builds Director › Lead developer › Worktrees under her
-// root position, invites Bob (who accepts in a browser of his own) and reads the chart, which is a tree:
-// roles, levels, one tab stop with arrow keys, and no page that scrolls sideways at 1280 or 360 px.
+// The organization flow against the built binary (ORG-01, OMEM-01, OMEM-02, SR2-01, SR2-05, SR2-10,
+// SR2-12). Alice creates acme, invites Bob as a member (who accepts in a browser of his own), starts an AI in
+// acme and, as its host, lets Bob instruct it from the AI's profile. There is no org chart and no position:
+// an organization is its members, admins or members. No page scrolls sideways at 1280 or 360 px.
 //
 // The file has a server of its own: the first-run test of smoke.spec.ts needs an instance nobody has set up,
 // and two files of one project may share a worker, so they would share the worker's `instance` too.
@@ -53,14 +45,10 @@ const BOB: Credentials & { display_name: string } = {
   display_name: "Bob",
 };
 
-/** The positions Alice adds, each below the one before it, the first below her root "Admin". */
-const POSITIONS = ["Director", "Lead developer", "Worktrees"];
-
 /** The accounts as the server made them (their handles), set up before the first test. */
 let alice: Me;
 let bob: Me;
-/** The display name and id of the AI the chart test starts in Worktrees. */
-let atlas = "";
+/** The id of the AI Alice starts in acme. */
 let atlasId = "";
 
 test.beforeAll(async ({ browser, orgs }) => {
@@ -87,21 +75,7 @@ test.beforeAll(async ({ browser, orgs }) => {
   }
 });
 
-/** What a tree reads like: the level and the name of each item, in the order it is drawn. */
-function outline(tree: Locator) {
-  return tree.getByRole("treeitem").evaluateAll((items) =>
-    items.map((item) => {
-      const label = document.getElementById(item.getAttribute("aria-labelledby") ?? "");
-      return `${item.getAttribute("aria-level")} ${label?.textContent ?? ""}`;
-    }),
-  );
-}
-
-test("Alice creates acme and becomes its admin, holding the root position (ORG-01)", async ({
-  context,
-  page,
-  orgs,
-}) => {
+test("Alice creates acme and becomes its admin (ORG-01)", async ({ context, page, orgs }) => {
   await loginAs(context, orgs, ALICE);
 
   await page.goto("/orgs");
@@ -123,51 +97,33 @@ test("Alice creates acme and becomes its admin, holding the root position (ORG-0
   await expect(acme.getByText("Current", { exact: true })).toBeVisible();
   await expect(page.getByRole("button", { name: "Organization: Acme" })).toBeVisible();
 
-  // She holds a root position named "Admin" (ORG-01): the chart has that one position, and her in it.
-  const chart = await apiCall<OrgChart>(context.request, orgs, "GET", "/orgs/acme/chart");
-  expect(
-    chart.positions.map((p) => ({
-      name: p.name,
-      parent: p.parent_id ?? null,
-      holders: p.holders.map((h) => h.intelligence.handle),
-    })),
-  ).toEqual([{ name: "Admin", parent: null, holders: [alice.intelligence.handle] }]);
+  const members = await apiCall<List<OrgMember>>(
+    context.request,
+    orgs,
+    "GET",
+    "/orgs/acme/members",
+  );
+  expect(members.items.map((m) => [m.intelligence.handle, m.permission])).toEqual([
+    [alice.intelligence.handle, "admin"],
+  ]);
 });
 
-test("Alice adds the positions Director, Lead developer and Worktrees, each below the one before (POS-01)", async ({
+test("SR2-05: an organization opens on its members, with no org chart and no positions", async ({
   context,
   page,
   orgs,
 }) => {
   await loginAs(context, orgs, ALICE);
-
-  await page.goto("/orgs/acme/chart");
-  await page.getByRole("link", { name: "Edit positions" }).click();
-  await expect(page.getByRole("heading", { name: "Positions", level: 1 })).toBeVisible();
-
-  const positions = page.getByRole("list", { name: "Positions of Acme" });
-  let parent = "Admin";
-  for (const name of POSITIONS) {
-    await positions.getByRole("button", { name: `Add a position under ${parent}` }).click();
-    const field = page.getByRole("textbox", { name: "Name of the new position" });
-    await field.fill(name);
-    await field.press("Enter");
-    await expect(positions.getByRole("listitem", { name, exact: true })).toBeVisible();
-    parent = name;
-  }
-
-  // Admin › Director › Lead developer › Worktrees: each has the one before it as its parent.
-  const chart = await apiCall<OrgChart>(context.request, orgs, "GET", "/orgs/acme/chart");
-  expect(chart.positions.map((p) => p.name)).toEqual(["Admin", ...POSITIONS]);
-  let above = chart.positions[0];
-  expect(above?.parent_id).toBeUndefined();
-  for (const position of chart.positions.slice(1)) {
-    expect(position.parent_id, `${position.name} sits below ${above?.name}`).toBe(above?.id);
-    above = position;
-  }
+  await page.goto("/orgs/acme");
+  await expect(page.getByRole("heading", { name: "Members", level: 1 })).toBeVisible();
+  await expect(page).toHaveURL(/\/orgs\/[^/]+\/members$/);
+  const sections = page.getByRole("navigation", { name: "Sections of Acme" });
+  await expect(sections.getByRole("link", { name: "Members" })).toBeVisible();
+  await expect(sections.getByRole("link", { name: "Org chart" })).toHaveCount(0);
+  await expect(sections.getByRole("link", { name: "Positions" })).toHaveCount(0);
 });
 
-test("Bob accepts Alice's invitation in a browser of his own and her open chart shows him at once (OMEM-01, OMEM-02)", async ({
+test("SR2-01: Bob accepts Alice's invitation as a member, and her open members page shows him at once (OMEM-01, OMEM-02)", async ({
   browser,
   context,
   page,
@@ -175,32 +131,27 @@ test("Bob accepts Alice's invitation in a browser of his own and her open chart 
 }) => {
   await loginAs(context, orgs, ALICE);
 
-  // Alice keeps the chart open, its live socket subscribed, and invites from a second tab.
   const live = trackLive(page);
-  await page.goto("/orgs/acme/chart");
-  const tree = page.getByRole("tree", { name: "Org chart of Acme" });
-  await expect(tree).toBeVisible();
+  await page.goto("/orgs/acme/members");
   await expect.poll(() => live.ready).toBe(true);
-  await expect(tree.getByRole("treeitem", { name: "Bob", exact: true })).toHaveCount(0);
+  const table = page.getByRole("table", { name: "Members of Acme" });
+  await expect(table.getByRole("link", { name: "Bob" })).toHaveCount(0);
   // Marks this document: a reload would drop it.
   await page.evaluate(() => Object.assign(window, { e2eSameDocument: true }));
 
-  const members = await context.newPage();
-  const membersLive = trackLive(members);
-  await members.goto("/orgs/acme/members");
-  await expect.poll(() => membersLive.ready).toBe(true);
-  await members.getByRole("button", { name: "Invite", exact: true }).click();
-  const dialog = members.getByRole("dialog", { name: "Invite to Acme" });
+  await page.getByRole("button", { name: "Invite", exact: true }).click();
+  const dialog = page.getByRole("dialog", { name: "Invite to Acme" });
+  // An invitation is to be an admin or a member: no guest, no position.
+  const permission = dialog.getByLabel("Permission", { exact: true });
+  await expect(permission.locator("option")).toHaveText(["Admin", "Member"]);
+  await expect(dialog.getByLabel("Position", { exact: true })).toHaveCount(0);
   await dialog.getByLabel("Handle", { exact: true }).fill(`@${bob.intelligence.handle}`);
-  await dialog.getByLabel("Permission", { exact: true }).selectOption("member");
-  await dialog.getByLabel("Position", { exact: true }).selectOption({ label: "Lead developer" });
+  await permission.selectOption("member");
   await dialog.getByRole("button", { name: "Send invitation" }).click();
-  // Until Bob answers, the invitation is pending, and the chart has not changed.
-  const pending = members.getByRole("list", { name: "Pending invitations of Acme" });
+  const pending = page.getByRole("list", { name: "Pending invitations of Acme" });
   await expect(pending.getByRole("listitem", { name: "Bob" })).toBeVisible();
-  await expect(tree.getByRole("treeitem", { name: "Bob", exact: true })).toHaveCount(0);
 
-  // Bob answers in his own browser: the invitation says what it grants, and accepting joins him.
+  // Bob answers in his own browser: the invitation says who invited him and as what, and accepting joins him.
   const bobContext = await browser.newContext();
   try {
     await loginAs(bobContext, orgs, BOB);
@@ -209,10 +160,7 @@ test("Bob accepts Alice's invitation in a browser of his own and her open chart 
     const invitation = bobPage.getByRole("listitem", { name: "Invitation to Acme" });
     await expect(invitation).toBeVisible();
     await expect(invitation.getByText("Alice invited you to Acme as a member.")).toBeVisible();
-    await expect(invitation.getByText("Position: Lead developer")).toBeVisible();
-    await expect(
-      invitation.getByText("Identities above Lead developer will manage you."),
-    ).toBeVisible();
+    await expect(invitation.getByText(/will manage/)).toHaveCount(0);
     await invitation.getByRole("button", { name: "Accept" }).click();
     await expect(bobPage.getByRole("listitem", { name: "Invitation to Acme" })).toHaveCount(0);
     const yours = bobPage.getByRole("list", { name: "Your organizations" });
@@ -221,151 +169,65 @@ test("Bob accepts Alice's invitation in a browser of his own and her open chart 
     await bobContext.close();
   }
 
-  // The chart Alice had open follows without a reload: Bob holds Lead developer, level 4 of the tree.
-  const item = tree.getByRole("treeitem", { name: "Bob", exact: true });
-  await expect(item).toBeVisible();
-  await expect(item).toHaveAttribute("aria-level", "4");
+  // The members page Alice had open follows without a reload.
+  await expect(table.getByRole("link", { name: "Bob" })).toBeVisible();
   expect(await page.evaluate(() => "e2eSameDocument" in window)).toBe(true);
-  // The pending list lost his invitation, and he is a member with that permission and position.
   await expect(pending.getByRole("listitem", { name: "Bob" })).toHaveCount(0);
-  const chart = await apiCall<OrgChart>(context.request, orgs, "GET", "/orgs/acme/chart");
-  const lead = chart.positions.find((p) => p.name === "Lead developer");
-  expect(lead?.holders.map((h) => [h.intelligence.handle, h.permission])).toEqual([
-    [bob.intelligence.handle, "member"],
-  ]);
-});
-
-test("an AI started with --position Worktrees holds it, and the chart draws who it is and whether it is online (POS-07, CHART-01)", async ({
-  context,
-  page,
-  orgs,
-}) => {
-  await loginAs(context, orgs, ALICE);
-  const live = trackLive(page);
-  // What `partyline claude --org acme --position Worktrees` sends when the session starts.
-  const worker = await connectAI(context, orgs, "/work/atlas", MACHINE, {
-    org: "acme",
-    position: "Worktrees",
-  });
-  atlas = worker.ai.display_name;
-  atlasId = worker.ai.id;
-
-  await page.goto("/orgs");
-  await page.getByRole("link", { name: "Org chart of Acme" }).click();
-  await expect(page.getByRole("heading", { name: "Org chart", level: 1 })).toBeVisible();
-
-  // The structure: a tree of items with their levels. Each position lists its holders first, then the
-  // positions below it, and every identity shows once.
-  const tree = page.getByRole("tree", { name: "Org chart of Acme" });
-  const items = tree.getByRole("treeitem");
-  await expect(items).toHaveCount(7);
-  expect(await outline(tree)).toEqual([
-    "1 Admin",
-    "2 Alice",
-    "2 Director",
-    "3 Lead developer",
-    "4 Bob",
-    "4 Worktrees",
-    `5 ${atlas}`,
-  ]);
-  // Positions and members that hold others are open and say so; the ones that hold none do not.
-  const openness = await items.evaluateAll((all) =>
-    all.map((i) => i.getAttribute("aria-expanded")),
+  const members = await apiCall<List<OrgMember>>(
+    context.request,
+    orgs,
+    "GET",
+    "/orgs/acme/members",
   );
-  expect(openness).toEqual(["true", null, "true", "true", null, "true", null]);
-  // Position in the set: Alice is the first of the two things the Admin position holds, Director the second.
-  await expect(items.nth(1)).toHaveAttribute("aria-posinset", "1");
-  await expect(items.nth(1)).toHaveAttribute("aria-setsize", "2");
-  await expect(items.nth(2)).toHaveAttribute("aria-posinset", "2");
-
-  // What each holder is: name, @handle, the admin badge, and "You" on the viewer's own row. An AI and a person
-  // carry no mark of their kind (AD-024).
-  const alicesRow = items.nth(1).locator('[data-row=""]').first();
-  await expect(alicesRow.getByText("Alice", { exact: true })).toBeVisible();
-  await expect(alicesRow.getByText(`@${alice.intelligence.handle}`, { exact: true })).toBeVisible();
-  await expect(alicesRow.getByText("Person", { exact: true })).toHaveCount(0);
-  await expect(alicesRow.getByText("Admin", { exact: true })).toBeVisible();
-  await expect(alicesRow.getByText("You", { exact: true })).toBeVisible();
-  const bobsRow = items.nth(4).locator('[data-row=""]').first();
-  await expect(bobsRow.getByText(`@${bob.intelligence.handle}`, { exact: true })).toBeVisible();
-  await expect(bobsRow.getByText("Person", { exact: true })).toHaveCount(0);
-  // A member has no badge of its own.
-  await expect(bobsRow.getByText("Admin", { exact: true })).toHaveCount(0);
-  await expect(bobsRow.getByText("Guest", { exact: true })).toHaveCount(0);
-  const aiRow = items.nth(6).locator('[data-row=""]').first();
-  await expect(aiRow.getByText(atlas, { exact: true })).toBeVisible();
-  await expect(aiRow.getByText(`@${worker.ai.name}`, { exact: true })).toBeVisible();
-  await expect(aiRow.getByText("AI", { exact: true })).toHaveCount(0);
-
-  // Presence follows the AI's session as it opens and closes, without a reload. People show none.
-  await expect(aiRow).toContainText("Offline");
-  await expect(alicesRow).not.toContainText("Online");
-  await expect(alicesRow).not.toContainText("Offline");
-  await expect.poll(() => live.ready).toBe(true);
-  const session = await openSession(orgs, worker);
-  try {
-    await expect(aiRow).toContainText("Online");
-    await expect(aiRow).not.toContainText("Offline");
-  } finally {
-    session.close();
-  }
-  await expect(aiRow).toContainText("Offline");
+  expect(
+    members.items.find((m) => m.intelligence.handle === bob.intelligence.handle)?.permission,
+  ).toBe("member");
 });
 
-test("Alice walks the chart with the keyboard and the page never scrolls sideways (CHART-04)", async ({
+test("SR2-10: Alice, the host of an AI, lets Bob instruct it from its profile", async ({
   context,
   page,
   orgs,
-}) => {
+}, testInfo) => {
   await loginAs(context, orgs, ALICE);
-  await page.goto("/orgs/acme/chart");
-  const tree = page.getByRole("tree", { name: "Org chart of Acme" });
-  const items = tree.getByRole("treeitem");
-  await expect(items).toHaveCount(7);
+  // What `partyline claude --org acme` sends when the session starts: Alice hosts the new AI.
+  const atlas = await connectAI(context, orgs, "/work/atlas", MACHINE, { org: "acme" });
+  atlasId = atlas.ai.id;
 
-  // One item is the tab stop, and Tab from the page's own controls reaches it.
-  await expect(tree.locator('[role="treeitem"][tabindex="0"]')).toHaveCount(1);
-  await page.getByRole("link", { name: "Edit positions" }).focus();
-  await page.keyboard.press("Tab");
-  await expect(items.nth(0)).toBeFocused();
-  // Down and Up walk the items that show; End and Home jump to the ends.
-  await page.keyboard.press("ArrowDown");
-  await expect(items.nth(1)).toBeFocused();
-  await page.keyboard.press("ArrowDown");
-  await expect(items.nth(2)).toBeFocused();
-  await page.keyboard.press("ArrowUp");
-  await expect(items.nth(1)).toBeFocused();
-  await page.keyboard.press("End");
-  await expect(items.nth(6)).toBeFocused();
-  await page.keyboard.press("Home");
-  await expect(items.nth(0)).toBeFocused();
-  // Left closes an open item and keeps the focus on it; Right opens it again, and on an open one goes inside.
-  await page.keyboard.press("ArrowLeft");
-  await expect(items).toHaveCount(1);
-  await expect(items.nth(0)).toHaveAttribute("aria-expanded", "false");
-  await expect(items.nth(0)).toBeFocused();
-  await page.keyboard.press("ArrowRight");
-  await expect(items).toHaveCount(7);
-  await expect(items.nth(0)).toHaveAttribute("aria-expanded", "true");
-  await page.keyboard.press("ArrowRight");
-  await expect(items.nth(1)).toBeFocused();
-  // Left on an item that holds nothing goes to the one that holds it.
-  await page.keyboard.press("ArrowLeft");
-  await expect(items.nth(0)).toBeFocused();
-  // Enter closes and opens an item that holds others (Director holds Lead developer).
-  await page.keyboard.press("ArrowDown");
-  await page.keyboard.press("ArrowDown");
-  await expect(items.nth(2)).toBeFocused();
-  await page.keyboard.press("Enter");
-  await expect(items).toHaveCount(3);
-  await expect(items.nth(2)).toHaveAttribute("aria-expanded", "false");
-  await page.keyboard.press("Enter");
-  await expect(items).toHaveCount(7);
+  await page.goto(`/contacts/${atlasId}`);
+  const section = page.getByRole("region", { name: "Can instruct this AI" });
+  await expect(section).toBeVisible();
+  const who = section.getByRole("list", { name: "Can instruct this AI" });
+  // Before: only its host.
+  await expect(who.getByRole("listitem")).toHaveCount(1);
+  await expect(who.getByRole("listitem").first()).toContainText("Alice");
+  await expect(who.getByRole("listitem").first()).toContainText("Host");
 
-  await expectNoSidewaysScroll(page, "the org chart");
+  await section.getByRole("button", { name: "Add instructor" }).click();
+  const dialog = page.getByRole("dialog", {
+    name: `Who else can instruct ${atlas.ai.display_name}?`,
+  });
+  await dialog.getByLabel("Handle", { exact: true }).fill(`@${bob.intelligence.handle}`);
+  await dialog.getByRole("button", { name: "Add", exact: true }).click();
+  await expect(dialog).toHaveCount(0);
+  await expect(who.getByRole("listitem")).toHaveCount(2);
+  await expect(who.getByText("Bob", { exact: true })).toBeVisible();
+  await expectNoSidewaysScroll(page, "the full profile with who can instruct the AI");
+  await shoot(page, "instructors-profile", testInfo);
+
+  const instructors = await apiCall<AgentInstructors>(
+    context.request,
+    orgs,
+    "GET",
+    `/agents/${atlasId}/instructors`,
+  );
+  expect(instructors.host.handle).toBe(alice.intelligence.handle);
+  expect(instructors.instructors.map((i) => i.intelligence.handle)).toEqual([
+    bob.intelligence.handle,
+  ]);
 });
 
-test("Bob reads the same chart, and is offered only what his place in it allows (CHART-02, CHART-03)", async ({
+test("SR2-12, SR2-10: Bob, a member, invites and deletes nobody, and reads who instructs the AI without changing it", async ({
   browser,
   orgs,
 }) => {
@@ -373,67 +235,39 @@ test("Bob reads the same chart, and is offered only what his place in it allows 
   try {
     await loginAs(bobContext, orgs, BOB);
     const page = await bobContext.newPage();
-    await page.goto("/orgs");
-    await page.getByRole("link", { name: "Org chart of Acme" }).click();
+    await page.goto("/orgs/acme/members");
+    const table = page.getByRole("table", { name: "Members of Acme" });
+    await expect(table.getByRole("link", { name: "Alice" })).toBeVisible();
+    // Only an admin invites, and a member neither removes a person nor deletes an AI it does not host.
+    await expect(page.getByRole("button", { name: "Invite", exact: true })).toHaveCount(0);
+    await expect(table.getByRole("button", { name: /^(Delete|Remove from Acme)$/ })).toHaveCount(0);
+    await expectNoSidewaysScroll(page, "the members of a member");
 
-    // A member sees the whole chart, not only his branch.
-    const tree = page.getByRole("tree", { name: "Org chart of Acme" });
-    await expect(tree.getByRole("treeitem")).toHaveCount(7);
-    await expect(tree.getByRole("treeitem", { name: "Alice", exact: true })).toBeVisible();
-    const bobsRow = tree.getByRole("treeitem", { name: "Bob", exact: true });
-    await expect(bobsRow.getByText("You", { exact: true })).toBeVisible();
-
-    // Only admins edit positions: no link to the editor, no such section in the organization's bar.
-    await expect(page.getByRole("link", { name: "Edit positions" })).toHaveCount(0);
-    const sections = page.getByRole("navigation", { name: "Sections of Acme" });
-    await expect(sections.getByRole("link", { name: "Org chart" })).toBeVisible();
-    await expect(sections.getByRole("link", { name: "Members" })).toBeVisible();
-    await expect(sections.getByRole("link", { name: "Positions" })).toHaveCount(0);
-
-    // Bob holds Lead developer, above Worktrees: he manages the AI there and may move it, but a member
-    // cannot delete anyone, and he manages neither Alice nor himself.
-    const moves = page.getByRole("button", { name: /^Move / });
-    await expect(moves).toHaveCount(1);
-    await expect(moves).toHaveAccessibleName(`Move ${atlas}`);
-    await expect(page.getByRole("button", { name: /^Delete / })).toHaveCount(0);
-    await expect(page.getByRole("button", { name: /^Remove .* from Acme$/ })).toHaveCount(0);
-
-    await expectNoSidewaysScroll(page, "the org chart of a member");
+    await page.goto(`/contacts/${atlasId}`);
+    const section = page.getByRole("region", { name: "Can instruct this AI" });
+    await expect(section.getByRole("listitem")).toHaveCount(2);
+    await expect(section.getByRole("button", { name: "Add instructor" })).toHaveCount(0);
+    await expect(section.getByRole("button", { name: /as an instructor$/ })).toHaveCount(0);
   } finally {
     await bobContext.close();
   }
 });
 
-test("no page of an organization scrolls sideways, even with names that cannot break (CHART-04)", async ({
+test("no page of an organization scrolls sideways, even with names that cannot break (UI-24)", async ({
   context,
   page,
   orgs,
 }) => {
   await loginAs(context, orgs, ALICE);
-  // What widens a page is a name with no place to break: a position of 60 characters, one level deeper than
-  // the chart indents, and an AI whose folder is as long.
-  const chart = await apiCall<OrgChart>(context.request, orgs, "GET", "/orgs/acme/chart");
-  const worktrees = chart.positions.find((p) => p.name === "Worktrees");
-  const unbroken = "Principalstaffengineerofworktreeautomationandreleasetrains";
-  const created = await apiCall<Position>(context.request, orgs, "POST", "/orgs/acme/positions", {
-    name: unbroken,
-    parent_id: worktrees?.id,
-  } satisfies CreatePositionRequest);
+  // What widens a page is a name with no place to break: an AI whose folder is very long.
   await connectAI(context, orgs, `/work/${"averylongunbrokenfoldername".repeat(3)}`, MACHINE, {
     org: "acme",
-    position: created.name,
   });
 
   // Each page with the heading it opens on and a thing that only shows once its data has loaded.
-  const pages: [path: string, heading: string, loaded: Locator][] = [
+  const pages: [path: string, heading: string, loaded: ReturnType<typeof page.getByRole>][] = [
     ["/orgs", "Organizations", page.getByRole("listitem", { name: "Acme", exact: true })],
-    ["/orgs/acme/chart", "Org chart", page.getByRole("treeitem", { name: unbroken, exact: true })],
     ["/orgs/acme/members", "Members", page.getByRole("link", { name: "Bob" })],
-    [
-      "/orgs/acme/positions",
-      "Positions",
-      page.getByRole("listitem", { name: unbroken, exact: true }),
-    ],
     [
       "/orgs/acme/settings",
       "Organization settings",
@@ -446,51 +280,4 @@ test("no page of an organization scrolls sideways, even with names that cannot b
     await expect(loaded).toBeVisible();
     await expectNoSidewaysScroll(page, path);
   }
-});
-
-test("Alice gives Bob the same access as hers, and Atlas's profile says who can instruct it (ST-02, ST-03, ST-04, ST-07)", async ({
-  context,
-  page,
-  orgs,
-}, testInfo) => {
-  await loginAs(context, orgs, ALICE);
-
-  // Before: Atlas takes instructions from Alice (its creator, and Admin) and Bob (Lead developer, above it).
-  await page.goto(`/contacts/${atlasId}`);
-  const instructs = page.getByRole("region", { name: "Who can instruct this AI" });
-  await expect(instructs).toBeVisible();
-  const who = instructs.getByRole("list", { name: "Who can instruct this AI" });
-  await expect(who.getByRole("listitem")).toHaveCount(2);
-  await expect(who.getByText("Bob", { exact: true })).toBeVisible();
-  await expectNoSidewaysScroll(page, "the full profile with who can instruct the AI");
-  await shoot(page, "share-trust-profile", testInfo);
-
-  // Alice, an admin holding Admin, is offered it on Bob's row only (the only other person).
-  await page.goto("/orgs/acme/members");
-  const share = page.getByRole("button", { name: "Give the same access as me" });
-  await expect(share).toHaveCount(1);
-  await share.click();
-  const dialog = page.getByRole("alertdialog", { name: "Give Bob the same access as you?" });
-  await expect(dialog).toBeVisible();
-  await expect(
-    dialog.getByText(
-      "Bob will hold your position, Admin, in Acme. They will manage the people and AIs you manage through it, and those AIs will treat their messages as trusted: they may act on them as requests.",
-    ),
-  ).toBeVisible();
-  await expect(dialog.getByText(/^AIs that will take their instructions: /)).toContainText(atlas);
-  await expect(dialog.getByText("Alice will no longer manage Bob.")).toBeVisible();
-  await expectNoSidewaysScroll(page, "the share access dialog");
-  await shoot(page, "share-trust-dialog", testInfo);
-  await dialog.getByRole("button", { name: "Give the same access" }).click();
-  await expect(dialog).toHaveCount(0);
-  await expect(page.getByRole("button", { name: "Give the same access as me" })).toHaveCount(0);
-
-  // The chart and the profile follow: Bob holds Admin beside Alice, and still instructs Atlas.
-  const chart = await apiCall<OrgChart>(context.request, orgs, "GET", "/orgs/acme/chart");
-  const admin = chart.positions.find((p) => p.name === "Admin");
-  expect(admin?.holders.map((h) => h.intelligence.handle).sort()).toEqual(
-    [alice.intelligence.handle, bob.intelligence.handle].sort(),
-  );
-  await page.goto(`/contacts/${atlasId}`);
-  await expect(who.getByText("Bob", { exact: true })).toBeVisible();
 });

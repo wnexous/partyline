@@ -1,7 +1,7 @@
 import { getRouteApi, Link, Outlet, useRouter } from "@tanstack/react-router";
 import { ArrowLeftIcon } from "lucide-react";
 import { useEffect } from "react";
-import { isAdminOf, OrgAvatar, permissionLabel, useOrg } from "@/entities/organization";
+import { OrgAvatar, permissionLabel, useOrg } from "@/entities/organization";
 import { isApiError } from "@/shared/api/client";
 import type { Organization } from "@/shared/api/types.gen";
 import { useT } from "@/shared/i18n";
@@ -14,7 +14,7 @@ import { Skeleton } from "@/shared/ui/primitives/skeleton";
 const routeApi = getRouteApi("/_app/orgs/$orgId");
 
 /*
- * One organization's pages (CHART-02): the bar that names it and the sections of it, above the
+ * One organization's pages: the bar that names it and the sections of it, above the
  * page itself. Only its members see any of it: for anyone else the organization is not found,
  * whatever page of it they open. `{orgId}` may be the id or the address (slug); the pages work on
  * the id, so an address is replaced by it.
@@ -115,17 +115,9 @@ function OrgBar({ org }: { org: Organization }) {
         aria-label={t("orgs.sections", { org: org.name })}
         className={cn("-mx-1 mt-2 flex overflow-x-auto px-1")}
       >
-        <Link to="/orgs/$orgId/chart" params={{ orgId: org.id }} className={TAB}>
-          {t("orgs.tabChart")}
-        </Link>
         <Link to="/orgs/$orgId/members" params={{ orgId: org.id }} className={TAB}>
           {t("orgs.tabMembers")}
         </Link>
-        {isAdminOf(org) ? (
-          <Link to="/orgs/$orgId/positions" params={{ orgId: org.id }} className={TAB}>
-            {t("orgs.tabPositions")}
-          </Link>
-        ) : null}
         <Link to="/orgs/$orgId/connections" params={{ orgId: org.id }} className={TAB}>
           {t("orgs.tabConnectors")}
         </Link>

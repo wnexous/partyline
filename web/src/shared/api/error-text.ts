@@ -101,6 +101,17 @@ export const errorTextRules = {
     [{ status: 429 }, "routines.rateLimited"],
     [{ status: 422 }, "server"],
   ],
+  /**
+   * Adding or removing an instructor of an AI (SR2-10): a handle that names nobody the host sees, a
+   * caller who is not the host, an AI that is gone; a handle the server refuses says why (422).
+   */
+  instructor: [
+    [{ status: 0 }, "error.network"],
+    [{ code: ErrorCodeContactNotFound }, "instructors.unknown"],
+    [{ status: 403 }, "instructors.forbidden"],
+    [{ status: 404 }, "instructors.gone"],
+    [{ status: 422 }, "server"],
+  ],
   /** A session's notifications (SN-08): a setting is 422 and names the field. */
   notifications: [
     [{ status: 0 }, "error.network"],

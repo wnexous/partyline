@@ -5,7 +5,7 @@ import { axe } from "vitest-axe";
 import * as matchers from "vitest-axe/matchers";
 import type { Organization } from "@/shared/api/types.gen";
 import { apiError, json, mockApi } from "@/test/fetch";
-import { makeMe, makeOrg, makeOrgChart } from "@/test/fixtures";
+import { makeMe, makeOrg } from "@/test/fixtures";
 import { useLiveStore } from "@/test/live-store";
 import { renderRoute } from "@/test/render";
 
@@ -28,7 +28,6 @@ const AXE_OPTIONS = { rules: { "color-contrast": { enabled: false } } };
 
 const acme = makeOrg({ id: "o1", name: "Acme", slug: "acme", permission: "admin" });
 const asMember = makeOrg({ id: "o1", name: "Acme", slug: "acme", permission: "member" });
-const asGuest = makeOrg({ id: "o1", name: "Acme", slug: "acme", permission: "guest" });
 const globex = makeOrg({ id: "o2", name: "Globex", slug: "globex", permission: "member" });
 
 function api(org = acme, over: Parameters<typeof mockApi>[0] = {}) {
@@ -67,10 +66,7 @@ describe("who may change the organization (OMEM-04)", () => {
     expect(screen.getByRole("button", { name: "Delete organization" })).toBeInTheDocument();
   });
 
-  it.each([
-    ["member", asMember],
-    ["guest", asGuest],
-  ])(
+  it.each([["member", asMember]])(
     "shows a %s the same facts with nothing to edit: no field, no upload, no delete",
     async (_, org) => {
       api(org);
@@ -91,7 +87,7 @@ describe("who may change the organization (OMEM-04)", () => {
   );
 
   it("names the organization and the viewer's part in it above every page of it", async () => {
-    api(asGuest);
+    api(asMember);
     renderRoute("/orgs/o1/settings");
     await page();
     const bar = screen.getByRole("navigation", { name: "Sections of Acme" });
@@ -100,7 +96,7 @@ describe("who may change the organization (OMEM-04)", () => {
       "/orgs/o1/settings",
     );
     expect(screen.getByTestId("org-bar")).toHaveTextContent("Acme");
-    expect(screen.getByTestId("org-bar")).toHaveTextContent("Guest");
+    expect(screen.getByTestId("org-bar")).toHaveTextContent("Member");
   });
 });
 
@@ -305,7 +301,7 @@ describe("leaving (OMEM-05)", () => {
     const { dialog } = await open();
     expect(
       within(dialog).getByText(
-        "You leave the groups of Acme and lose your position there. Your account and your other organizations stay.",
+        "You leave the groups of Acme. Your account and your other organizations stay.",
       ),
     ).toBeInTheDocument();
   });
@@ -369,7 +365,7 @@ describe("deleting (ORG-06)", () => {
     const { dialog } = await open();
     expect(
       within(dialog).getByText(
-        "Acme is deleted for good, with its positions and pending invitations. It must not own any AI, connection or group: delete those first. This can’t be undone.",
+        "Acme is deleted for good, with its pending invitations. It must not own any AI, connection or group: delete those first. This can’t be undone.",
       ),
     ).toBeInTheDocument();
   });
@@ -518,11 +514,11 @@ describe("the organization's page for someone who cannot see it (CHART-02)", () 
     await waitFor(() => expect(router.state.location.pathname).toBe("/orgs/o1/settings"));
   });
 
-  it("opens /orgs/{id} on the org chart, the first page of an organization", async () => {
-    api(acme, { "GET /orgs/o1/chart": json(200, makeOrgChart()) });
+  it("SR2-05 opens /orgs/{id} on the members, the first page of an organization now that the chart is gone", async () => {
+    api(acme, { "GET /orgs/o1/members": json(200, { items: [] }) });
     const { router } = renderRoute("/orgs/o1");
-    await screen.findByRole("tree", { name: "Org chart of Acme" });
-    expect(router.state.location.pathname).toBe("/orgs/o1/chart");
+    await screen.findByRole("heading", { level: 1, name: "Members" });
+    expect(router.state.location.pathname).toBe("/orgs/o1/members");
   });
 });
 

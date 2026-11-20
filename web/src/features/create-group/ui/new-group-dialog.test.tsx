@@ -229,16 +229,12 @@ describe("creating the group (LAY-04)", () => {
 
 /*
  * A group belongs to an organization (ORG-02, ORG-03): the dialog asks for it among the ones the
- * viewer can create groups in (a guest cannot, OMEM-04) and offers that organization's AIs. The
+ * viewer can create groups in (OMEM-04) and offers that organization's AIs. The
  * server refuses a user who is not a member of it, and the dialog says so.
  */
 describe("the organization of the group (ORG-03, OMEM-04)", () => {
-  // Ana is a member of Acme, an admin of Globex and a guest of Initech.
-  const viewer = viewerIn(
-    memberIn("o1", "member"),
-    memberIn("o2", "admin"),
-    memberIn("o3", "guest"),
-  );
+  // Ana is a member of Acme and an admin of Globex.
+  const viewer = viewerIn(memberIn("o1", "member"), memberIn("o2", "admin"));
   const orgField = (dialog: HTMLElement) =>
     within(dialog).findByRole("combobox", { name: "Organization" });
   const optionsOf = (select: HTMLElement) =>
@@ -251,7 +247,7 @@ describe("the organization of the group (ORG-03, OMEM-04)", () => {
       .getAllByRole("checkbox")
       .map((c) => c.getAttribute("data-member"));
 
-  it("asks for the organization among those the viewer can create groups in, never one they are only a guest of", async () => {
+  it("SR2-01 asks for the organization among every one the viewer belongs to, as a member or an admin", async () => {
     const { dialog } = await open(viewer);
     expect(optionsOf(await orgField(dialog))).toEqual(["Acme", "Globex"]);
   });
@@ -261,12 +257,6 @@ describe("the organization of the group (ORG-03, OMEM-04)", () => {
     const { dialog } = await open(viewer, false);
     expect(await orgField(dialog)).toHaveValue("o2");
     expect(await within(dialog).findByRole("checkbox", { name: "Lab" })).toBeInTheDocument();
-  });
-
-  it("starts on the first organization they can create in when the current one is a guest one", async () => {
-    useLiveStore.setState({ currentOrgId: "o3" });
-    const { dialog } = await open(viewer);
-    expect(await orgField(dialog)).toHaveValue("o1");
   });
 
   it("offers the AIs that are members of the organization and the users of the instance, and no hosted AI of none", async () => {
@@ -519,27 +509,6 @@ describe("the organization of the group (ORG-03, OMEM-04)", () => {
     await user.click(create(dialog));
     await waitFor(() => expect(router.state.location.pathname).toBe("/rooms/g1"));
     expect(useLiveStore.getState().currentOrgId).toBeNull();
-  });
-
-  it("offers no group to a viewer who is a guest everywhere, and says why", async () => {
-    const { calls, dialog } = await open(
-      {
-        ...viewerIn(memberIn("o1", "guest"), memberIn("o3", "guest")),
-        "POST /groups": json(201, group()),
-      },
-      false,
-    );
-    expect(
-      await within(dialog).findByText(
-        "You’re a guest in every organization you belong to, and guests can’t create groups.",
-      ),
-    ).toBeInTheDocument();
-    // Nothing to fill in: no name, no organization, no one to pick.
-    expect(within(dialog).queryByRole("combobox", { name: "Organization" })).toBeNull();
-    expect(within(dialog).queryByRole("textbox", { name: "Name" })).toBeNull();
-    expect(within(dialog).queryByRole("checkbox")).toBeNull();
-    expect(create(dialog)).toBeDisabled();
-    expect(posted(calls)).toHaveLength(0);
   });
 
   it("shows the members only once the organizations are known, so the list does not jump", async () => {

@@ -1,8 +1,6 @@
 import type {
   Agent,
   AIContact,
-  ChartMember,
-  ChartPosition,
   Chat,
   Connector,
   ConnectorKind,
@@ -15,9 +13,7 @@ import type {
   Message,
   OrgAIs,
   Organization,
-  OrgChart,
   OrgMember,
-  Position,
   ProfileMembership,
   Room,
   RoomMember,
@@ -325,12 +321,7 @@ export function makeOrg(over: Partial<Organization> = {}): Organization {
   };
 }
 
-/** A position of the chart: "Admin", a root, unless overridden. */
-export function makePosition(over: Partial<Position> = {}): Position {
-  return { id: "pos1", name: "Admin", ...over };
-}
-
-/** One row of `GET /orgs/{org}/members`: Ana Souza, a `member` with no position and nothing the viewer may do about her, unless overridden. */
+/** One row of `GET /orgs/{org}/members`: Ana Souza, a `member` the viewer may do nothing about, unless overridden. */
 export function makeOrgMember(over: Partial<OrgMember> = {}): OrgMember {
   return {
     intelligence: makeIntelligence(),
@@ -338,8 +329,6 @@ export function makeOrgMember(over: Partial<OrgMember> = {}): OrgMember {
     joined_at: "2026-10-02T12:00:00Z",
     can_delete: false,
     delete_effect: "remove",
-    can_move: false,
-    can_share_access: false,
     ...over,
   };
 }
@@ -358,29 +347,6 @@ export function makeInvitation(over: Partial<Invitation> = {}): Invitation {
     expires_at: "2026-11-03T12:00:00Z",
     ...over,
   };
-}
-
-/** A member of the chart, offline, a `member` the viewer may do nothing about, unless overridden. */
-export function makeChartMember(over: Partial<ChartMember> = {}): ChartMember {
-  return {
-    intelligence: makeIntelligence(),
-    permission: "member",
-    online: false,
-    can_delete: false,
-    delete_effect: "remove",
-    can_move: false,
-    ...over,
-  };
-}
-
-/** A position of the chart with its holders: "Admin", a root with nobody, unless overridden. */
-export function makeChartPosition(over: Partial<ChartPosition> = {}): ChartPosition {
-  return { id: "pos1", name: "Admin", holders: [], ...over };
-}
-
-/** `GET /orgs/{org}/chart` for a viewer who is not an admin, with an empty chart, unless overridden. */
-export function makeOrgChart(over: Partial<OrgChart> = {}): OrgChart {
-  return { viewer: { admin: false }, positions: [], members: [], unassigned: [], ...over };
 }
 
 /**

@@ -13,9 +13,8 @@ import type { MessageKey, Translate } from "@/shared/i18n";
  * hooks/use-current-org.ts reads the data and keeps the choice.
  */
 
-/** The longest an organization's name may be (ORG-01) and a position's (POS-01), in characters. */
+/** The longest an organization's name may be (ORG-01), in characters. */
 export { MaxOrgNameLength } from "@/shared/lib/validation";
-export const MaxPositionNameLength = 60;
 /** The longest an organization's address (slug) may be, and its shape: groups of a-z0-9 joined by single hyphens. */
 export const MaxOrgSlugLength = 40;
 const ORG_SLUG = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
@@ -26,18 +25,16 @@ export const normalizeSlug = (text: string) => text.trim().toLowerCase();
 /** Whether a normalized address is one the server accepts (1 to 40 characters). */
 export const isOrgSlug = (slug: string) => slug.length <= MaxOrgSlugLength && ORG_SLUG.test(slug);
 
-/** The three permissions of a membership (OMEM-04). */
+/** The two permissions of a membership (OMEM-04, SR2-01). */
 export const PermissionAdmin = "admin";
 export const PermissionMember = "member";
-export const PermissionGuest = "guest";
 
 const PERMISSION_LABEL: Record<string, MessageKey> = {
   [PermissionAdmin]: "profile.permissionAdmin",
   [PermissionMember]: "profile.permissionMember",
-  [PermissionGuest]: "profile.permissionGuest",
 };
 
-/** What a permission is called (Admin, Member, Guest); one the app does not know is shown as it came. */
+/** What a permission is called (Admin, Member); one the app does not know is shown as it came. */
 export function permissionLabel(t: Translate, permission: string): string {
   const key = PERMISSION_LABEL[permission];
   return key ? t(key) : permission;
@@ -52,12 +49,10 @@ export interface MyOrg {
   name: string;
   /** What `--org` takes. */
   slug: string;
-  /** admin, member or guest. */
+  /** admin or member. */
   permission: string;
   /** The picture the organization's admins gave it; initials show without one. */
   avatarUrl?: string;
-  /** The position the viewer holds there; absent for none. */
-  positionId?: string;
 }
 
 /** The viewer's organizations from `GET /orgs`, in the server's order (by name). */
@@ -68,14 +63,13 @@ export function toMyOrgs(orgs: readonly Organization[]): MyOrg[] {
     slug: o.slug,
     permission: o.permission,
     ...(o.avatar_url ? { avatarUrl: o.avatar_url } : {}),
-    ...(o.position_id ? { positionId: o.position_id } : {}),
   }));
 }
 
 /** Admins look after the organization: its connections among other things (ORG-03, OMEM-04). */
 export const isAdminOf = (org: { permission: string }) => org.permission === PermissionAdmin;
 
-/** Members and admins create groups; a guest takes part in the ones it is added to (OMEM-04). */
+/** Members and admins create groups (OMEM-04); a permission the app does not know creates none. */
 export const canCreateGroupsIn = (org: MyOrg) =>
   org.permission === PermissionAdmin || org.permission === PermissionMember;
 

@@ -78,10 +78,10 @@ describe("agent membership settings (MEM-01..05)", () => {
     expect(patches()[0]?.body).toEqual({ display_name: "Bia" });
   });
 
-  it("says that only trusted delivers what identities that manage the agent wrote (MEM-04, POS-10)", async () => {
+  it("says that only trusted delivers what its host and its instructors wrote (MEM-04, SR2-07)", async () => {
     const { user } = setup();
     const dialog = await open(user);
-    const hint = "Only identities that manage it, or chat accounts they verified.";
+    const hint = "Only its host and its instructors, or chat accounts they verified.";
     expect(within(dialog).getByRole("radio", { name: /Only trusted/ })).toHaveAccessibleDescription(
       hint,
     );

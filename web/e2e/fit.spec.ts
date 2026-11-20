@@ -299,7 +299,8 @@ async function checkConversation(page: Page, where: string, font: Font) {
 
 /**
  * The full profile page of the seeded AI: its live sessions list the principal and the second
- * session, whose 40-character label must wrap inside its row (SESS-32, SESS-34).
+ * session, whose 40-character label must wrap inside its row (SESS-32, SESS-34), and who can
+ * instruct it (SR2-10).
  */
 async function checkFullProfile(page: Page, where: string, font: Font) {
   await page.goto(`/contacts/${agentId}`);
@@ -308,6 +309,10 @@ async function checkFullProfile(page: Page, where: string, font: Font) {
   const live = page.getByRole("region", { name: "Live sessions" });
   await expect(live).toBeVisible();
   await expect(live.getByTestId("session-label")).toHaveText(["principal", `:${SECOND_LABEL}`]);
+  // Who can instruct it (SR2-10): the viewer hosts it, so the section offers to add an instructor.
+  const instructs = page.getByRole("region", { name: "Can instruct this AI" });
+  await expect(instructs).toBeVisible();
+  await expect(instructs.getByRole("button", { name: "Add instructor" })).toBeVisible();
   await settled(page);
   await scrollThrough(page);
   await settled(page);
@@ -709,29 +714,6 @@ async function checkEveryPage(page: Page, where: string, font: Font) {
   );
   await checkPage(
     page,
-    `${where}: the org chart`,
-    `/orgs/${orgId}/chart`,
-    () => page.getByRole("tree", { name: /^Org chart of / }),
-    font,
-  );
-  if (font !== "100%") {
-    // The phone has a finger, not a mouse: each arrow that opens or closes a branch is 44 px.
-    const arrows = await page.getByRole("button", { name: /^(Collapse|Expand) / }).all();
-    expect(arrows.length, `${where}: the org chart has no arrow to check`).toBeGreaterThan(0);
-    for (const arrow of arrows) {
-      const box = await arrow.boundingBox();
-      expect(
-        box?.height ?? 0,
-        `${where}: an org chart arrow is shorter than 44 px`,
-      ).toBeGreaterThanOrEqual(44);
-      expect(
-        box?.width ?? 0,
-        `${where}: an org chart arrow is narrower than 44 px`,
-      ).toBeGreaterThanOrEqual(44);
-    }
-  }
-  await checkPage(
-    page,
     `${where}: Identities`,
     "/identities",
     () => page.getByRole("list", { name: "Your verified chat accounts" }),
@@ -826,7 +808,7 @@ test.beforeAll(async ({ browser, fit }) => {
     });
     expect(longName.name).toBe(ORG_NAME);
 
-    // An AI with a long name and a long bio: the panel and the chart must carry both.
+    // An AI with a long name and a long bio: the panel and the profile must carry both.
     const agent = await connectAI(context, fit, "/work/mobilefit", MACHINE);
     agentId = agent.ai.id;
     await apiCall(context.request, fit, "PATCH", `/intelligences/${agent.ai.id}`, {

@@ -846,13 +846,13 @@ const noContent = () => new Response(null, { status: 204 });
 const sectionOf = (title: string) => screen.getByRole("region", { name: title });
 
 describe("the organizations of an identity (OMEM-03)", () => {
-  it("lists each organization the viewer shares with it: the permission and the position", async () => {
+  it("SR2-04 lists each organization the viewer shares with it: the permission, and no position", async () => {
     api(
       makeProfile({
         ...bobRef,
         memberships: [
-          acme({ permission: "member", position_id: "p1", position_name: "Lead developer" }),
-          globex({ permission: "guest" }),
+          acme({ permission: "member" }),
+          globex({ permission: "member" }),
           makeMembership({
             org_id: "o3",
             org_name: "Initech",
@@ -868,10 +868,9 @@ describe("the organizations of an identity (OMEM-03)", () => {
     const rows = within(list).getAllByRole("listitem");
     expect(rows.map((r) => r.getAttribute("aria-label"))).toEqual(["acme", "Globex", "Initech"]);
     expect(rows[0]).toHaveTextContent("Member");
-    expect(rows[0]).toHaveTextContent("Lead developer");
-    expect(rows[1]).toHaveTextContent("Guest");
-    expect(rows[1]).not.toHaveTextContent("Lead developer");
+    expect(rows[1]).toHaveTextContent("Member");
     expect(rows[2]).toHaveTextContent("Admin");
+    expect(list).not.toHaveTextContent(/Guest|Position/);
   });
 
   it("marks the organization an AI belongs to as its home", async () => {
@@ -879,7 +878,7 @@ describe("the organizations of an identity (OMEM-03)", () => {
       ...atlas,
       memberships: [
         acme({ delete_effect: "delete" }),
-        globex({ permission: "guest", delete_effect: "remove" }),
+        globex({ permission: "member", delete_effect: "remove" }),
       ],
     });
     renderRoute("/contacts/a1");
@@ -918,8 +917,8 @@ describe("the organizations of an identity (OMEM-03)", () => {
       makeProfile({
         ...bobRef,
         memberships: [
-          acme({ permission: "guest", can_delete: true, delete_effect: "remove" }),
-          globex({ permission: "admin", position_name: "Diretoria" }),
+          acme({ permission: "member", can_delete: true, delete_effect: "remove" }),
+          globex({ permission: "admin" }),
         ],
       }),
       { "GET /me": json(200, makeMe({ locale: "pt-BR" })) },
@@ -927,12 +926,9 @@ describe("the organizations of an identity (OMEM-03)", () => {
     renderRoute("/contacts/u2");
     await name();
     const section = sectionOf("Organizações");
-    expect(within(section).getByRole("listitem", { name: "acme" })).toHaveTextContent("Convidado");
+    expect(within(section).getByRole("listitem", { name: "acme" })).toHaveTextContent("Membro");
     expect(within(section).getByRole("listitem", { name: "Globex" })).toHaveTextContent(
       "Administrador",
-    );
-    expect(within(section).getByRole("listitem", { name: "Globex" })).toHaveTextContent(
-      "Diretoria",
     );
     expect(within(section).getByRole("button", { name: "Remover de acme" })).toBeInTheDocument();
   });
@@ -963,7 +959,7 @@ describe("what the viewer may do, from the flags of the profile (POS-04, POS-05,
       ...atlas,
       memberships: [
         acme({ can_delete: true, delete_effect: "delete" }),
-        globex({ permission: "guest", can_delete: true, delete_effect: "remove" }),
+        globex({ permission: "member", can_delete: true, delete_effect: "remove" }),
       ],
     });
     renderRoute("/contacts/a1");
@@ -1265,7 +1261,7 @@ describe("removing an identity from an organization (POS-05, POS-06)", () => {
     const dialog = await screen.findByRole("alertdialog", { name: "Remove Bob Lima from acme?" });
     // Literal wording (L-011): the person leaves this organization and nothing else.
     expect(dialog).toHaveTextContent(
-      "Bob Lima leaves the groups of acme and loses their position there. Removing someone only takes them out of acme: their account and their other organizations stay.",
+      "Bob Lima leaves the groups of acme. Removing someone only takes them out of acme: their account and their other organizations stay.",
     );
     expect(calls.some((c) => c.method === "DELETE")).toBe(false);
   });
@@ -1320,7 +1316,7 @@ describe("removing an identity from an organization (POS-05, POS-06)", () => {
       ...atlas,
       memberships: [
         acme({ delete_effect: "delete" }),
-        globex({ permission: "guest", can_delete: true, delete_effect: "remove" }),
+        globex({ permission: "member", can_delete: true, delete_effect: "remove" }),
       ],
     });
     const user = userEvent.setup();
@@ -1328,7 +1324,7 @@ describe("removing an identity from an organization (POS-05, POS-06)", () => {
     await user.click(await screen.findByRole("button", { name: "Remove from Globex" }));
     const dialog = await screen.findByRole("alertdialog", { name: "Remove Atlas from Globex?" });
     expect(dialog).toHaveTextContent(
-      "Atlas leaves the groups of Globex and loses its position there. Removing an AI from an organization that is not its home only takes it out of Globex: the AI itself stays, in its home organization.",
+      "Atlas leaves the groups of Globex. Removing an AI from an organization that is not its home only takes it out of Globex: the AI itself stays, in its home organization.",
     );
   });
 
@@ -1393,7 +1389,7 @@ describe("removing an identity from an organization (POS-05, POS-06)", () => {
     await user.click(await screen.findByRole("button", { name: "Remover de acme" }));
     const dialog = await screen.findByRole("alertdialog", { name: "Remover Bob Lima de acme?" });
     expect(dialog).toHaveTextContent(
-      "Bob Lima sai dos grupos de acme e perde o cargo que tem lá. Remover alguém só tira essa pessoa de acme: a conta e as outras organizações dela continuam.",
+      "Bob Lima sai dos grupos de acme. Remover alguém só tira essa pessoa de acme: a conta e as outras organizações dela continuam.",
     );
   });
 });

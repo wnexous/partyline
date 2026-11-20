@@ -14,7 +14,7 @@ vi.mock("@/app/live", () => ({ startLive: vi.fn(() => () => {}) }));
 /*
  * The organization's entry (SET-09, SET-11): the gear beside the full switcher and the compact
  * switcher's own menu on a phone's top bar list the same pages of the organization the switcher
- * shows, and "All organizations". Positions is the admins' page in both.
+ * shows, and "All organizations". The org chart and positions are gone (SR2-05).
  */
 
 const acme = makeOrg({ id: "o1", name: "Acme", slug: "acme", permission: "admin" });
@@ -32,11 +32,9 @@ function api(over: Parameters<typeof mockApi>[0] = {}) {
   });
 }
 
-/** The five pages of Acme, in the design's order, with the address each one opens. */
+/** The three pages of Acme, in the design's order, with the address each one opens. */
 const PAGES = [
-  ["Org chart", "/orgs/o1/chart"],
   ["Members", "/orgs/o1/members"],
-  ["Positions", "/orgs/o1/positions"],
   ["Connectors", "/orgs/o1/connections"],
   ["Settings", "/orgs/o1/settings"],
 ] as const;
@@ -79,7 +77,7 @@ describe("the gear beside the switcher (SET-09)", () => {
     expect(within(menu).getByText("Admin")).toBeInTheDocument();
   });
 
-  it("hides positions from a member", async () => {
+  it("SR2-05 offers no org chart and no positions, to an admin or a member", async () => {
     api({
       "GET /orgs": json(200, { items: [{ ...acme, permission: "member" }, globex] }),
     });
@@ -89,6 +87,7 @@ describe("the gear beside the switcher (SET-09)", () => {
     const menu = await screen.findByRole("menu", { name: "Pages of Acme" });
     expect(within(menu).getByRole("menuitem", { name: "Members" })).toBeInTheDocument();
     expect(within(menu).queryByRole("menuitem", { name: "Positions" })).toBeNull();
+    expect(within(menu).queryByRole("menuitem", { name: "Org chart" })).toBeNull();
   });
 
   it("speaks Portuguese", async () => {
@@ -98,7 +97,7 @@ describe("the gear beside the switcher (SET-09)", () => {
     renderRoute("/");
     await user.click(await button("Páginas de Acme"));
     const menu = await screen.findByRole("menu", { name: "Páginas de Acme" });
-    for (const name of ["Organograma", "Membros", "Cargos", "Conectores", "Configurações"]) {
+    for (const name of ["Membros", "Conectores", "Configurações"]) {
       expect(within(menu).getByRole("menuitem", { name })).toBeInTheDocument();
     }
     expect(within(menu).getByRole("menuitem", { name: "Todas as organizações" })).toHaveAttribute(
@@ -128,14 +127,13 @@ describe("the phone's top bar (SET-09)", () => {
     await user.click(within(menu).getByRole("menuitemradio", { name: /^Globex/ }));
     await user.click(await button(/^Organization: Globex/));
     const next = await screen.findByRole("menu", { name: "Organizations" });
-    expect(within(next).getByRole("menuitem", { name: "Org chart" })).toHaveAttribute(
+    expect(within(next).getByRole("menuitem", { name: "Members" })).toHaveAttribute(
       "href",
-      "/orgs/o2/chart",
+      "/orgs/o2/members",
     );
     expect(within(next).getByRole("menuitem", { name: "Settings" })).toHaveAttribute(
       "href",
       "/orgs/o2/settings",
     );
-    expect(within(next).queryByRole("menuitem", { name: "Positions" })).toBeNull();
   });
 });

@@ -62,7 +62,7 @@ const aiProfile = makeProfile({
   ],
 });
 // The same AI as its manager sees it: in its home organization, where they may delete it, and as a
-// guest of another one, where they may remove it; and its session may be ended.
+// member of another one, where they may remove it; and its session may be ended.
 const managedAIProfile = makeProfile({
   ...aiProfile,
   can_end_session: true,
@@ -72,8 +72,7 @@ const managedAIProfile = makeProfile({
       org_id: "o2",
       org_name: "Globex",
       org_slug: "globex",
-      permission: "guest",
-      position_name: "Worktrees",
+      permission: "member",
       can_delete: true,
       delete_effect: "remove",
     }),
@@ -400,13 +399,10 @@ describe.each(["en", "pt-BR"] as const)("accessibility (%s)", (locale) => {
     expect(await axe(dialog, AXE_OPTIONS)).toHaveNoViolations();
   });
 
-  it("the contacts page, with its organizations, the AIs it hosts and a connector's people, has no axe violations", async () => {
+  it("the contacts page, with its organizations and the users of the instance, has no axe violations", async () => {
     appApi(locale);
-    const user = userEvent.setup();
     const { container } = renderRoute("/contacts");
     await screen.findByRole("region", { name: "Acme" });
-    await user.click(screen.getByRole("button", { name: /ops-line/ }));
-    await screen.findByTestId("contact-p1");
     expect(await axe(container, AXE_OPTIONS)).toHaveNoViolations();
   });
 
@@ -446,16 +442,31 @@ describe.each(["en", "pt-BR"] as const)("accessibility (%s)", (locale) => {
     expect(await axe(dialog, AXE_OPTIONS)).toHaveNoViolations();
   });
 
-  it("the merge dialog of a hosted AI has no axe violations", async () => {
+  it("the merge dialog of an AI, opened from its profile, has no axe violations", async () => {
     // The old helper's home is Acme, where the user hosts Atlas and Notes too: it can be merged into either.
     appApi(locale, {
       "GET /contacts": json(200, {
         ...sampleContacts,
         hosted: [makeAIContact({ intelligence: oldHelper, folder: "", folder_label: "" })],
       }),
+      "GET /intelligences/a4": json(
+        200,
+        makeProfile({
+          ...oldHelper,
+          ai: {
+            owner: makeMe().intelligence,
+            folder: "",
+            folder_label: "",
+            app: "claude",
+            online: false,
+            sessions: [],
+            my_level: "manage",
+          },
+        }),
+      ),
     });
     const user = userEvent.setup();
-    renderRoute("/contacts");
+    renderRoute("/contacts/a4");
     await user.click(
       await screen.findByRole("button", {
         name:

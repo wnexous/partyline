@@ -4,7 +4,7 @@ import { useT } from "@/shared/i18n";
 
 /**
  * What an identity is in one organization of its profile: the organization, tagged when it is the
- * AI's home, and its permission and position there (OMEM-03). The profile page and the profile
+ * AI's home, and its permission there (OMEM-03). The profile page and the profile
  * panel both show it; the ways to delete or remove the identity belong to the page alone.
  */
 export function MembershipSummary({ membership: m }: { membership: ProfileMembership }) {
@@ -21,7 +21,6 @@ export function MembershipSummary({ membership: m }: { membership: ProfileMember
       </p>
       <p className="text-xs text-muted-foreground [overflow-wrap:anywhere]">
         {permissionLabel(t, m.permission)}
-        {m.position_name ? ` · ${m.position_name}` : ""}
       </p>
     </div>
   );

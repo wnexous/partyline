@@ -6,7 +6,6 @@ import {
   inOrg,
   isAdminOf,
   MaxOrgNameLength,
-  MaxPositionNameLength,
   type MyOrg,
   resolveCurrentOrg,
   toMyOrgs,
@@ -28,7 +27,7 @@ const org = (id: string, permission: string, over: Partial<MyOrg> = {}): MyOrg =
 });
 
 describe("the viewer's organizations", () => {
-  it("come from GET /orgs, in the order the server listed them, with the picture and position they have", () => {
+  it("come from GET /orgs, in the order the server listed them, with the picture they have", () => {
     expect(
       toMyOrgs([
         makeOrg({
@@ -36,10 +35,9 @@ describe("the viewer's organizations", () => {
           name: "Acme",
           slug: "acme",
           permission: "admin",
-          position_id: "pos1",
           avatar_url: "/api/v1/orgs/o1/avatar?v=abc",
         }),
-        makeOrg({ id: "o2", name: "Globex", slug: "globex", permission: "guest" }),
+        makeOrg({ id: "o2", name: "Globex", slug: "globex", permission: "member" }),
       ]),
     ).toEqual([
       {
@@ -47,19 +45,17 @@ describe("the viewer's organizations", () => {
         name: "Acme",
         slug: "acme",
         permission: "admin",
-        positionId: "pos1",
         avatarUrl: "/api/v1/orgs/o1/avatar?v=abc",
       },
-      { id: "o2", name: "Globex", slug: "globex", permission: "guest" },
+      { id: "o2", name: "Globex", slug: "globex", permission: "member" },
     ]);
   });
 
-  it("keep the limits of the contract: 100 characters for an organization's name, 60 for a position's", () => {
+  it("keep the limit of the contract: 100 characters for an organization's name", () => {
     expect(MaxOrgNameLength).toBe(100);
-    expect(MaxPositionNameLength).toBe(60);
   });
 
-  it("let admins and members create groups, and only admins add connections; a guest does neither", () => {
+  it("SR2-01 let admins and members create groups, and only admins add connections; an unknown permission does neither", () => {
     expect([canCreateGroupsIn(org("a", "admin")), isAdminOf(org("a", "admin"))]).toEqual([
       true,
       true,
@@ -76,7 +72,7 @@ describe("the viewer's organizations", () => {
 });
 
 describe("the current organization", () => {
-  const orgs = [org("o1", "admin"), org("o2", "member"), org("o3", "guest")];
+  const orgs = [org("o1", "admin"), org("o2", "member"), org("o3", "member")];
 
   it("is the one the viewer picked", () => {
     expect(resolveCurrentOrg(orgs, "o2", "o3")?.id).toBe("o2");

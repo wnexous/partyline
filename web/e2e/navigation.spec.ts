@@ -260,9 +260,7 @@ test("a phone's menus reach the account and the organization's pages in finger-s
     await expect(switcher.getByRole("menuitem", { name: "Settings", exact: true })).toBeVisible();
     await settled(page);
     for (const [name, section] of [
-      ["Org chart", "chart"],
       ["Members", "members"],
-      ["Positions", "positions"],
       ["Connectors", "connections"],
       ["Settings", "settings"],
     ] as const) {
@@ -276,7 +274,7 @@ test("a phone's menus reach the account and the organization's pages in finger-s
     await expectFingerRows(
       page,
       switcher.getByRole("menuitem", {
-        name: /^(Org chart|Members|Positions|Connectors|Settings)$/,
+        name: /^(Members|Connectors|Settings)$/,
       }),
       "the organization's pages",
     );

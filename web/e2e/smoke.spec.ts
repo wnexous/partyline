@@ -624,7 +624,7 @@ test("a conversation whose pictures load late stays at its newest message (UI-26
   await expect.poll(() => distanceFromNewest(page)).toBeLessThanOrEqual(64);
 });
 
-test("the contacts page groups AIs by organization and names no machine (ORG-02, AD-022)", async ({
+test("the contacts page groups AIs by organization and names no machine (ORG-02, AD-022, SR2-14)", async ({
   context,
   page,
   instance,
@@ -646,6 +646,9 @@ test("the contacts page groups AIs by organization and names no machine (ORG-02,
   await expect(page.getByRole("region", { name: MACHINE })).toHaveCount(0);
   await expect(page.getByText(MACHINE)).toHaveCount(0);
   await expect(page.getByText("e2e-laptop")).toHaveCount(0);
+  // SR2-14: no section of pre-v0.5 platform people, and none of hosted AIs apart from the organizations.
+  await expect(page.getByRole("heading", { name: "People", exact: true })).toHaveCount(0);
+  await expect(page.getByRole("heading", { name: "Hosted by me", exact: true })).toHaveCount(0);
 });
 
 test("a profile photo is uploaded from the profile page and shows across the shell (PROF-03)", async ({

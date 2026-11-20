@@ -10,10 +10,8 @@ import {
 } from "@/entities/intelligence";
 import {
   PermissionAdmin,
-  PermissionGuest,
   PermissionMember,
   permissionLabel,
-  positionOptions,
   useInviteToOrg,
 } from "@/entities/organization";
 import { isApiError } from "@/shared/api/client";
@@ -22,7 +20,6 @@ import {
   ErrorCodeContactNotFound,
   type OrgMember,
   type Permission,
-  type Position,
 } from "@/shared/api/types.gen";
 import { useT } from "@/shared/i18n";
 import { applyFieldErrors } from "@/shared/lib/forms";
@@ -32,49 +29,32 @@ import { Form } from "@/shared/ui/primitives/form";
 import { type InviteFormValues, inviteSchema } from "../model/schema";
 
 /**
- * Invites someone to the organization by @handle (OMEM-01). An admin gives any permission and
- * a position; every other member, a guest included, invites guests and nothing more, so those are
- * the only things the dialog has to say and send (OMEM-04). What is typed suggests the users and
- * AIs of the instance that do not belong yet; the server says in the end whether the handle is a
- * user or an AI at all, and whether they already belong.
+ * Invites someone to the organization by @handle, as an admin or a member (OMEM-01, SR2-01). Only an
+ * admin invites (OMEM-04), so only an admin's page offers the dialog. What is typed suggests the
+ * users and AIs of the instance that do not belong yet; the server says in the end whether the handle
+ * is a user or an AI at all, and whether they already belong.
  */
 export function InviteDialog({
   org,
-  admin,
-  positions,
   members,
   open,
   onOpenChange,
 }: {
   org: { id: string; name: string };
-  admin: boolean;
-  positions: readonly Position[];
   members: readonly OrgMember[];
   open: boolean;
   onOpenChange: (open: boolean) => void;
 }) {
   // Mounted only while open: every opening starts with an empty form.
-  return open ? (
-    <InviteForm
-      org={org}
-      admin={admin}
-      positions={positions}
-      members={members}
-      onOpenChange={onOpenChange}
-    />
-  ) : null;
+  return open ? <InviteForm org={org} members={members} onOpenChange={onOpenChange} /> : null;
 }
 
 function InviteForm({
   org,
-  admin,
-  positions,
   members,
   onOpenChange,
 }: {
   org: { id: string; name: string };
-  admin: boolean;
-  positions: readonly Position[];
   members: readonly OrgMember[];
   onOpenChange: (open: boolean) => void;
 }) {
@@ -84,7 +64,7 @@ function InviteForm({
   const [error, setError] = useState<string | null>(null);
   const form = useForm<InviteFormValues>({
     resolver: zodResolver(inviteSchema),
-    defaultValues: { handle: "", permission: PermissionMember, position_id: "" },
+    defaultValues: { handle: "", permission: PermissionMember },
   });
   const typed = form.watch("handle");
   const memberIds = useMemo(() => new Set(members.map((m) => m.intelligence.id)), [members]);
@@ -92,20 +72,13 @@ function InviteForm({
     () => (contacts.data ? inviteCandidates(contacts.data, memberIds, typed) : []),
     [contacts.data, memberIds, typed],
   );
-  const tree = useMemo(() => positionOptions(positions), [positions]);
 
   const onSubmit = form.handleSubmit((values) => {
     if (invite.isPending) return;
     setError(null);
     const next = inviteSchema.parse(values);
     invite.mutate(
-      admin
-        ? {
-            handle: next.handle,
-            permission: next.permission,
-            ...(next.position_id ? { position_id: next.position_id } : {}),
-          }
-        : { handle: next.handle, permission: PermissionGuest },
+      { handle: next.handle, permission: next.permission },
       {
         onSuccess: (sent) => {
           toast.success(t("orgs.invited", { name: sent.invitee.display_name }));
@@ -123,9 +96,7 @@ function InviteForm({
             setError(t("orgs.inviteRate"));
           } else if (isApiError(err) && err.status === 403) {
             setError(t("orgs.inviteForbidden"));
-          } else if (
-            applyFieldErrors(err, form.setError, ["handle", "permission", "position_id"])
-          ) {
+          } else if (applyFieldErrors(err, form.setError, ["handle", "permission"])) {
             // Shown under the fields.
           } else {
             setError(isApiError(err) && err.status === 0 ? t("error.network") : t("error.generic"));
@@ -140,7 +111,7 @@ function InviteForm({
       open
       onOpenChange={onOpenChange}
       title={t("orgs.inviteTitle", { org: org.name })}
-      description={admin ? t("orgs.inviteBodyAdmin") : t("orgs.inviteBodyGuest", { org: org.name })}
+      description={t("orgs.inviteBodyAdmin")}
       onSubmit={onSubmit}
       contentClassName="max-h-[calc(100dvh-2rem)] overflow-y-auto"
       submitLabel={invite.isPending ? t("orgs.inviteSending") : t("orgs.inviteSend")}
@@ -176,33 +147,13 @@ function InviteForm({
             </ul>
           ) : null}
         </div>
-        {admin ? (
-          <>
-            <SelectField
-              control={form.control}
-              name="permission"
-              label={t("orgs.invitePermission")}
-            >
-              {([PermissionAdmin, PermissionMember, PermissionGuest] as Permission[]).map((p) => (
-                <option key={p} value={p}>
-                  {permissionLabel(t, p)}
-                </option>
-              ))}
-            </SelectField>
-            <SelectField
-              control={form.control}
-              name="position_id"
-              label={t("orgs.invitePositionLabel")}
-            >
-              <option value="">{t("orgs.noPosition")}</option>
-              {tree.map((p) => (
-                <option key={p.id} value={p.id}>
-                  {p.name}
-                </option>
-              ))}
-            </SelectField>
-          </>
-        ) : null}
+        <SelectField control={form.control} name="permission" label={t("orgs.invitePermission")}>
+          {([PermissionAdmin, PermissionMember] as Permission[]).map((p) => (
+            <option key={p} value={p}>
+              {permissionLabel(t, p)}
+            </option>
+          ))}
+        </SelectField>
       </Form>
     </FormDialog>
   );

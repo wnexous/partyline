@@ -298,6 +298,7 @@ describe("opening the panel from where an identity shows (PRF-01)", () => {
     await user.click(within(row).getByRole("link", { name: "Lia Costa" }));
     const panel = await panelOf("Lia Costa");
     expect(within(panel).queryByRole("button", { name: "Message" })).toBeNull();
+    expect(within(panel).queryByRole("link", { name: "Edit profile" })).toBeNull();
     expect(within(panel).getByRole("link", { name: "Open full profile" })).toHaveAttribute(
       "href",
       "/contacts/p1",
@@ -306,7 +307,6 @@ describe("opening the panel from where an identity shows (PRF-01)", () => {
 
   it.each([
     ["an AI of an organization", "a1", "Atlas"],
-    ["an AI hosted by the viewer that no organization lists", "a4", "Old helper"],
     ["an AI of an organization hosted by another user", "a5", "Sage"],
     ["a user", "u2", "Bob Lima"],
   ])("opens from %s on the contacts page, which stays where it is", async (_what, id, name) => {
@@ -323,23 +323,6 @@ describe("opening the panel from where an identity shows (PRF-01)", () => {
     await user.click(within(row).getByRole("link", { name: new RegExp(name) }));
     expect(await panelOf(name)).toBeInTheDocument();
     expect(router.state.location.pathname).toBe("/contacts");
-  });
-
-  it("opens from a person a connector has seen", async () => {
-    mockApi({
-      "GET /me": json(200, me),
-      "GET /conversations": json(200, { items: [] }),
-      "GET /contacts": json(200, sampleContacts),
-      "GET /contacts/people": json(200, { items: [lia], has_more: false }),
-      "GET /intelligences/p1": json(200, profiles.p1),
-    });
-    const user = userEvent.setup();
-    renderRoute("/contacts");
-    await user.click(await screen.findByRole("button", { name: /ops-line/ }));
-    const row = await screen.findByTestId("contact-p1");
-
-    await user.click(within(row).getByRole("link", { name: /Lia Costa/ }));
-    expect(await panelOf("Lia Costa")).toBeInTheDocument();
   });
 
   it("opens from an AI found in the command palette, and the palette closes", async () => {
@@ -792,15 +775,13 @@ describe("the organizations it shares with the viewer (OMEM-03)", () => {
     org_name: "Acme",
     org_slug: "acme",
     permission: "member",
-    position_id: "pos2",
-    position_name: "Lead developer",
     delete_effect: "delete",
   });
   const globex = makeMembership({
     org_id: "o2",
     org_name: "Globex",
     org_slug: "globex",
-    permission: "guest",
+    permission: "admin",
   });
   const atlasIn = (...memberships: ProfileMembership[]) => ({
     "GET /intelligences/a1": json(200, { ...profiles.a1, memberships }),
@@ -816,16 +797,17 @@ describe("the organizations it shares with the viewer (OMEM-03)", () => {
     return { user, panel: await panelOf("Atlas"), ...view };
   }
 
-  it("lists each one with its permission and position there, and tags the home of an AI", async () => {
+  it("lists each one with its permission there, and tags the home of an AI", async () => {
     const { panel } = await openAtlas(atlasIn(acme, globex));
 
     const orgs = within(panel).getByRole("region", { name: "Organizations" });
     expect(within(orgs).getAllByRole("listitem")).toHaveLength(2);
     const inAcme = within(orgs).getByRole("listitem", { name: "Acme" });
-    expect(inAcme).toHaveTextContent("Member · Lead developer");
+    expect(inAcme).toHaveTextContent("Member");
+    expect(inAcme).not.toHaveTextContent("·");
     expect(within(inAcme).getByText("Home organization")).toBeInTheDocument();
     const inGlobex = within(orgs).getByRole("listitem", { name: "Globex" });
-    expect(inGlobex).toHaveTextContent("Guest");
+    expect(inGlobex).toHaveTextContent("Admin");
     expect(within(inGlobex).queryByText("Home organization")).toBeNull();
   });
 
@@ -870,7 +852,7 @@ describe("the organizations it shares with the viewer (OMEM-03)", () => {
 
     const orgs = within(panel).getByRole("region", { name: "Organizações" });
     const inAcme = within(orgs).getByRole("listitem", { name: "Acme" });
-    expect(inAcme).toHaveTextContent("Administrador · Lead developer");
+    expect(inAcme).toHaveTextContent("Administrador");
     expect(within(inAcme).getByText("Organização principal")).toBeInTheDocument();
   });
 });
@@ -1025,30 +1007,6 @@ describe("the actions the viewer may use (PRF-04)", () => {
     const panel = await panelOf("Ana Souza");
     expect(within(panel).queryByRole("link", { name: "Edit profile" })).toBeNull();
     expect(within(panel).getByRole("link", { name: "Open full profile" })).toBeInTheDocument();
-  });
-
-  it("offers no Message for a person known through a chat platform", async () => {
-    mockApi({
-      "GET /me": json(200, me),
-      "GET /conversations": json(200, { items: [] }),
-      "GET /contacts": json(200, sampleContacts),
-      "GET /contacts/people": json(200, { items: [lia], has_more: false }),
-      "GET /intelligences/p1": json(200, profiles.p1),
-    });
-    const user = userEvent.setup();
-    renderRoute("/contacts");
-    await user.click(await screen.findByRole("button", { name: /ops-line/ }));
-    await user.click(
-      within(await screen.findByTestId("contact-p1")).getByRole("link", { name: /Lia Costa/ }),
-    );
-    const panel = await panelOf("Lia Costa");
-
-    expect(within(panel).queryByRole("button", { name: "Message" })).toBeNull();
-    expect(within(panel).queryByRole("link", { name: "Edit profile" })).toBeNull();
-    expect(within(panel).getByRole("link", { name: "Open full profile" })).toHaveAttribute(
-      "href",
-      "/contacts/p1",
-    );
   });
 
   it("says why when the DM cannot be opened, and keeps the panel", async () => {

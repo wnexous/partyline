@@ -18,11 +18,10 @@ const acme = makeOrg({
   name: "Acme",
   slug: "acme",
   permission: "admin",
-  position_id: "pos1",
   avatar_url: "/api/v1/orgs/o1/avatar?v=abc",
 });
 const globex = makeOrg({ id: "o2", name: "Globex", slug: "globex", permission: "member" });
-const initech = makeOrg({ id: "o3", name: "Initech", slug: "initech", permission: "guest" });
+const initech = makeOrg({ id: "o3", name: "Initech", slug: "initech", permission: "member" });
 
 let qc: QueryClient;
 const wrapper = ({ children }: { children: ReactNode }) => (
@@ -58,7 +57,7 @@ afterEach(() => {
 });
 
 describe("the viewer's organizations", () => {
-  it("are those GET /orgs lists, each with the permission, position and picture the viewer has", async () => {
+  it("are those GET /orgs lists, each with the permission and picture the viewer has", async () => {
     const { calls } = api();
     const { result } = await current();
     expect(result.current.orgs).toEqual([
@@ -67,11 +66,10 @@ describe("the viewer's organizations", () => {
         name: "Acme",
         slug: "acme",
         permission: "admin",
-        positionId: "pos1",
         avatarUrl: "/api/v1/orgs/o1/avatar?v=abc",
       },
       { id: "o2", name: "Globex", slug: "globex", permission: "member" },
-      { id: "o3", name: "Initech", slug: "initech", permission: "guest" },
+      { id: "o3", name: "Initech", slug: "initech", permission: "member" },
     ]);
     expect(calls.map((c) => `${c.method} ${c.path}`).sort()).toEqual(["GET /me", "GET /orgs"]);
   });

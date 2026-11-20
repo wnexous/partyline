@@ -7,29 +7,27 @@ import { handleLiveEvent } from "@/app/live/dispatch";
 import type { AIDetail, Contacts, SessionInfo } from "@/shared/api/types.gen";
 import { apiError, json, mockApi } from "@/test/fetch";
 import {
-  makeAgent,
   makeAI,
   makeAIContact,
   makeContacts,
   makeMe,
   makeOrgAIs,
-  makePerson,
   makeProfile,
   makeRoom,
 } from "@/test/fixtures";
 import { stubLayout } from "@/test/layout";
 import { useLiveStore } from "@/test/live-store";
 import { renderRoute } from "@/test/render";
-import { bob, lia, liam, oldHelper, sampleContacts } from "@/test/sample-contacts";
+import { bob, sampleContacts } from "@/test/sample-contacts";
 
 expect.extend(matchers);
 
 vi.mock("@/app/live", () => ({ startLive: vi.fn(() => () => {}) }));
 
 /*
- * The contacts page (CONT-01, AD-016, AD-022): the AIs of the user's organizations, group by
- * group, the AIs they host that no organization lists, the people their connections have seen and
- * the other users. No machine is shown anywhere.
+ * The contacts page (CONT-01, AD-016, AD-022, SR2-14): the AIs of the user's organizations, group by
+ * group, and the other users. The pre-v0.5 platform people and the AIs no organization of theirs
+ * lists are not shown (merging is on the AI's profile). No machine is shown anywhere.
  */
 
 stubLayout();
@@ -119,17 +117,20 @@ describe("the page", () => {
     expect(await screen.findByRole("heading", { name: "Contacts", level: 1 })).toBeInTheDocument();
   });
 
-  it("has its sections in order: the organizations, the hosted AIs, people, the rest of the instance", async () => {
-    api();
+  it("SR2-14 has the organizations and the rest of the instance, and no People or Hosted by me", async () => {
+    const { calls } = api();
     renderRoute("/contacts");
     await screen.findByRole("heading", { name: "Acme", level: 2 });
     expect(screen.getAllByRole("heading", { level: 2 }).map((h) => h.textContent)).toEqual([
       "Acme",
       "Globex",
-      "Hosted by me",
-      "People",
       "On this instance",
     ]);
+    // The AI only hosted (Old helper) and the people of the connections are not listed, nor asked for.
+    expect(screen.queryByTestId("contact-a4")).toBeNull();
+    expect(screen.queryByRole("button", { name: /ops-line/ })).toBeNull();
+    expect(screen.queryByRole("button", { name: /^Merge / })).toBeNull();
+    expect(calls.some((c) => c.path === "/contacts/people")).toBe(false);
   });
 });
 
@@ -289,7 +290,6 @@ describe("organizations and their AIs (CONT-01, AD-016)", () => {
 });
 
 describe("filtering (CONT-01)", () => {
-  // No connections here: a filter also searches the people of each one on the server.
   const noPeople = { ...sampleContacts, people: [] };
   const filter = () => screen.getByRole("searchbox", { name: "Filter contacts" });
   const handles = (region: HTMLElement) =>
@@ -349,7 +349,7 @@ describe("filtering (CONT-01)", () => {
     expect(await screen.findByText("Nothing matches “globex notes”.")).toBeInTheDocument();
   });
 
-  it("narrows the hosted and user sections too, and drops a section with no match", async () => {
+  it("narrows the user section too, and drops a section with no match", async () => {
     api(noPeople);
     const user = userEvent.setup();
     renderRoute("/contacts");
@@ -372,13 +372,6 @@ describe("filtering (CONT-01)", () => {
     expect(screen.queryByTestId("contact-a5")).toBeNull();
     expect(screen.getAllByRole("heading", { level: 2 }).map((h) => h.textContent)).toEqual([
       "On this instance",
-    ]);
-
-    await user.clear(filter());
-    await user.type(filter(), "old");
-    await waitFor(() => expect(screen.getByTestId("contact-a4")).toBeInTheDocument());
-    expect(screen.getAllByRole("heading", { level: 2 }).map((h) => h.textContent)).toEqual([
-      "Hosted by me",
     ]);
   });
 
@@ -425,201 +418,7 @@ describe("filtering (CONT-01)", () => {
   });
 });
 
-describe("hosted AIs", () => {
-  it("lists the AIs no organization lists, with their last seen time and a delete action", async () => {
-    api();
-    renderRoute("/contacts");
-    const heading = await screen.findByRole("heading", { name: "Hosted by me", level: 2 });
-    const section = heading.closest("section") as HTMLElement;
-    const old = within(within(section).getByTestId("contact-a4"));
-    expect(old.getByText("Old helper")).toBeInTheDocument();
-    expect(old.getByText("@old-helper")).toBeInTheDocument();
-    expect(old.getByText("Never connected")).toBeInTheDocument();
-    expect(old.getByRole("button", { name: "Delete Old helper" })).toBeInTheDocument();
-    // They live nowhere the page shows: no organization, no machine.
-    expect(old.queryByText("devbox")).toBeNull();
-  });
-
-  it("deletes one after confirmation, and it leaves the list", async () => {
-    let contacts = sampleContacts;
-    const { calls } = api(sampleContacts, {
-      "GET /contacts": () => json(200, contacts),
-      "DELETE /agents/a4": () => {
-        contacts = { ...contacts, hosted: [] };
-        return new Response(null, { status: 204 });
-      },
-    });
-    const user = userEvent.setup();
-    renderRoute("/contacts");
-    await user.click(await screen.findByRole("button", { name: "Delete Old helper" }));
-    // Destructive confirmations are alert dialogs, like every other one in the app.
-    const dialog = await screen.findByRole("alertdialog", { name: "Delete Old helper?" });
-    expect(calls.some((c) => c.method === "DELETE")).toBe(false);
-    await user.click(within(dialog).getByRole("button", { name: "Delete AI" }));
-    await waitFor(() => expect(screen.queryByTestId("contact-a4")).toBeNull());
-    expect(calls.filter((c) => c.method === "DELETE").map((c) => c.path)).toEqual(["/agents/a4"]);
-    expect(await screen.findByText("Old helper deleted")).toBeInTheDocument();
-  });
-
-  it("keeps it when the confirmation is cancelled", async () => {
-    const { calls } = api();
-    const user = userEvent.setup();
-    renderRoute("/contacts");
-    await user.click(await screen.findByRole("button", { name: "Delete Old helper" }));
-    const dialog = await screen.findByRole("alertdialog", { name: "Delete Old helper?" });
-    await user.click(within(dialog).getByRole("button", { name: "Cancel" }));
-    await waitFor(() => expect(screen.queryByRole("alertdialog")).toBeNull());
-    expect(screen.getByTestId("contact-a4")).toBeInTheDocument();
-    expect(calls.some((c) => c.method === "DELETE")).toBe(false);
-  });
-
-  it("says so and keeps the AI when the server refuses", async () => {
-    api(sampleContacts, { "DELETE /agents/a4": apiError(500, "internal", "boom") });
-    const user = userEvent.setup();
-    renderRoute("/contacts");
-    await user.click(await screen.findByRole("button", { name: "Delete Old helper" }));
-    const dialog = await screen.findByRole("alertdialog", { name: "Delete Old helper?" });
-    await user.click(within(dialog).getByRole("button", { name: "Delete AI" }));
-    expect(await screen.findByText("Couldn’t delete Old helper.")).toBeInTheDocument();
-    expect(screen.getByTestId("contact-a4")).toBeInTheDocument();
-  });
-
-  it("has no hosted section when every AI belongs to one of the user's organizations", async () => {
-    api(orgContacts);
-    renderRoute("/contacts");
-    await orgRegion("Acme");
-    expect(screen.queryByRole("heading", { name: "Hosted by me" })).toBeNull();
-  });
-});
-
-describe("merging a hosted AI (MRG-01, MRG-02)", () => {
-  // The user left Acme: Old helper, Atlas and Notes (home o1) are all hosted, and Lab (home o2).
-  const left = makeContacts({
-    hosted: [
-      makeAIContact({ intelligence: oldHelper, folder: "", folder_label: "" }),
-      makeAIContact({ intelligence: makeAI(), online: false }),
-      makeAIContact({ intelligence: makeAI({ id: "a2", display_name: "Notes", handle: "notes" }) }),
-      makeAIContact({
-        intelligence: makeAI({ id: "a3", display_name: "Lab", handle: "lab" }),
-        org_id: "o2",
-      }),
-    ],
-  });
-  const mergeButton = () =>
-    screen.findByRole("button", { name: "Merge Old helper into another AI" });
-
-  it("picks one of the user's AIs of the same organization, merges into it and refreshes the contacts", async () => {
-    let contacts = left;
-    const survivor = makeAgent({
-      id: "a1",
-      intelligence: makeAI({ id: "a1", handle: "atlas", display_name: "Atlas" }),
-    });
-    const { calls } = api(left, {
-      "GET /contacts": () => json(200, contacts),
-      "POST /agents/a4/merge": () => {
-        contacts = makeContacts({ hosted: left.hosted.filter((c) => c.intelligence.id !== "a4") });
-        return json(200, survivor);
-      },
-    });
-    const user = userEvent.setup();
-    renderRoute("/contacts");
-    await user.click(await mergeButton());
-    const dialog = await screen.findByRole("dialog", { name: "Merge Old helper into…" });
-    const picker = within(dialog).getByRole("combobox", { name: "AI" });
-    // The user's AIs of the same home organization only: never the one being merged away, never Lab's.
-    expect(
-      within(picker)
-        .getAllByRole("option")
-        .map((o) => o.textContent),
-    ).toEqual(["Pick an AI", "Atlas (@atlas)", "Notes (@notes)"]);
-    await user.selectOptions(picker, "a1");
-    await user.click(within(dialog).getByRole("button", { name: "Merge AI" }));
-    await waitFor(() => expect(calls.some((c) => c.method === "POST")).toBe(true));
-    expect(calls.find((c) => c.method === "POST")?.path).toBe("/agents/a4/merge");
-    expect(calls.find((c) => c.method === "POST")?.body).toEqual({ into: "a1" });
-    // The contacts are the server's to rebuild: the page asks for them again after the merge.
-    await waitFor(() =>
-      expect(calls.filter((c) => c.method === "GET" && c.path === "/contacts")).toHaveLength(2),
-    );
-    await waitFor(() => expect(screen.queryByTestId("contact-a4")).toBeNull());
-    expect(screen.queryByRole("dialog")).toBeNull();
-    expect(await screen.findByText("Old helper merged into Atlas")).toBeInTheDocument();
-  });
-
-  it("asks to end the session first when the AI is online (MRG-02)", async () => {
-    api(left, {
-      "POST /agents/a4/merge": apiError(409, "identity_online", "identity is online"),
-    });
-    const user = userEvent.setup();
-    renderRoute("/contacts");
-    await user.click(await mergeButton());
-    const dialog = await screen.findByRole("dialog", { name: "Merge Old helper into…" });
-    await user.selectOptions(within(dialog).getByRole("combobox", { name: "AI" }), "a1");
-    await user.click(within(dialog).getByRole("button", { name: "Merge AI" }));
-    expect(await within(dialog).findByRole("alert")).toHaveTextContent(
-      "End its session first: Old helper is online.",
-    );
-    // Nothing changed: the dialog stays open, so the merge can be retried once the session ends.
-    expect(screen.getByTestId("contact-a4")).toBeInTheDocument();
-    expect(screen.getByRole("dialog", { name: "Merge Old helper into…" })).toBeInTheDocument();
-  });
-
-  it("keeps the AI when the merge is cancelled", async () => {
-    const { calls } = api(left);
-    const user = userEvent.setup();
-    renderRoute("/contacts");
-    await user.click(await mergeButton());
-    const dialog = await screen.findByRole("dialog", { name: "Merge Old helper into…" });
-    await user.click(within(dialog).getByRole("button", { name: "Cancel" }));
-    await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
-    expect(calls.some((c) => c.method === "POST")).toBe(false);
-    expect(screen.getByTestId("contact-a4")).toBeInTheDocument();
-  });
-
-  it("offers it on the hosted AIs only, never on an organization's AIs or a user", async () => {
-    api(
-      makeContacts({
-        org_ais: [
-          makeOrgAIs({
-            ais: [
-              makeAIContact({
-                intelligence: makeAI({ id: "a9", display_name: "Sage", handle: "sage" }),
-              }),
-            ],
-          }),
-        ],
-        hosted: left.hosted,
-        users: [bob],
-      }),
-    );
-    renderRoute("/contacts");
-    expect(await mergeButton()).toBeInTheDocument();
-    for (const id of ["a9", "u2"]) {
-      expect(
-        within(screen.getByTestId(`contact-${id}`)).queryByRole("button", { name: /Merge/ }),
-      ).toBeNull();
-    }
-  });
-
-  it("offers no merge when the user hosts no other AI of the same organization", async () => {
-    api(
-      makeContacts({
-        hosted: [
-          makeAIContact({ intelligence: oldHelper, folder: "", folder_label: "" }),
-          makeAIContact({
-            intelligence: makeAI({ id: "a3", display_name: "Lab", handle: "lab" }),
-            org_id: "o2",
-          }),
-        ],
-      }),
-    );
-    renderRoute("/contacts");
-    await screen.findByTestId("contact-a4");
-    expect(screen.queryByRole("button", { name: /Merge/ })).toBeNull();
-  });
-});
-
-describe("users and people (CONT-01)", () => {
+describe("users (CONT-01)", () => {
   it("lists the other users of the instance, under a heading that names no kind", async () => {
     api();
     renderRoute("/contacts");
@@ -631,148 +430,11 @@ describe("users and people (CONT-01)", () => {
     expect(screen.queryByRole("heading", { name: "Users" })).toBeNull();
     expect(users.queryByTestId("kind-badge")).toBeNull();
   });
-
-  it("lists the people by connector, with how many each has seen, collapsed until asked", async () => {
-    const { calls } = api();
-    renderRoute("/contacts");
-    const heading = await screen.findByRole("heading", { name: "People", level: 2 });
-    const people = within(heading.closest("section") as HTMLElement);
-    const wa = people.getByRole("button", { name: /ops-line/ });
-    expect(wa).toHaveTextContent("WhatsApp");
-    expect(wa).toHaveTextContent("2 people");
-    expect(wa).toHaveAttribute("aria-expanded", "false");
-    expect(people.getByText("quiet-bot")).toBeInTheDocument();
-    expect(people.getByText("0 people")).toBeInTheDocument();
-    // Nothing is asked until a connector is opened.
-    expect(calls.some((c) => c.path === "/contacts/people")).toBe(false);
-  });
-
-  it("opens a connector to list its people, asked for that connector only", async () => {
-    const { calls } = api(sampleContacts, {
-      "GET /contacts/people": json(200, { items: [lia, liam], has_more: false }),
-    });
-    const user = userEvent.setup();
-    renderRoute("/contacts");
-    const wa = await screen.findByRole("button", { name: /ops-line/ });
-    await user.click(wa);
-    expect(wa).toHaveAttribute("aria-expanded", "true");
-    const lia_ = await screen.findByTestId("contact-p1");
-    expect(lia_).toHaveTextContent("Lia Costa");
-    expect(lia_).toHaveTextContent("@lia");
-    // The platform is the connector's, named once above its people, not a badge on each of them.
-    expect(lia_).not.toHaveTextContent("WhatsApp");
-    expect(within(lia_).queryByTestId("kind-badge")).toBeNull();
-    expect(screen.getByTestId("contact-p2")).toHaveTextContent("Liam Reis");
-    const asked = calls.filter((c) => c.path === "/contacts/people");
-    expect(asked).toHaveLength(1);
-    expect(asked[0]?.url.searchParams.get("connector_id")).toBe("k1");
-    expect(asked[0]?.url.searchParams.get("limit")).toBe("50");
-    expect(asked[0]?.url.searchParams.has("q")).toBe(false);
-
-    await user.click(wa);
-    expect(wa).toHaveAttribute("aria-expanded", "false");
-    expect(screen.queryByTestId("contact-p1")).toBeNull();
-  });
-
-  it("does not open a connector that has seen no one", async () => {
-    api();
-    renderRoute("/contacts");
-    await screen.findByRole("heading", { name: "People", level: 2 });
-    expect(screen.queryByRole("button", { name: /quiet-bot/ })).toBeNull();
-  });
-
-  it("pages through the people with the id of the last one on screen", async () => {
-    const first = Array.from({ length: 2 }, (_, i) =>
-      makePerson({
-        id: `p${10 + i}`,
-        display_name: `Person ${10 + i}`,
-        handle: `person-${10 + i}`,
-      }),
-    );
-    const second = [makePerson({ id: "p12", display_name: "Person 12", handle: "person-12" })];
-    const { calls } = api(sampleContacts, {
-      "GET /contacts/people": (url) =>
-        url.searchParams.get("after") === "p11"
-          ? json(200, { items: second, has_more: false })
-          : json(200, { items: first, has_more: true }),
-    });
-    const user = userEvent.setup();
-    renderRoute("/contacts");
-    await user.click(await screen.findByRole("button", { name: /ops-line/ }));
-    await screen.findByTestId("contact-p10");
-    expect(screen.queryByTestId("contact-p12")).toBeNull();
-
-    await user.click(screen.getByRole("button", { name: "Show more" }));
-    expect(await screen.findByTestId("contact-p12")).toBeInTheDocument();
-    // What was there stays, and there is nothing more to ask for.
-    expect(screen.getByTestId("contact-p10")).toBeInTheDocument();
-    expect(screen.queryByRole("button", { name: "Show more" })).toBeNull();
-    const asked = calls.filter((c) => c.path === "/contacts/people");
-    expect(asked.map((c) => c.url.searchParams.get("after"))).toEqual([null, "p11"]);
-  });
-
-  it("searches the people of each connector on the server once the filter settles", async () => {
-    const { calls } = api(sampleContacts, {
-      "GET /contacts/people": (url) => {
-        const q = (url.searchParams.get("q") ?? "").toLowerCase();
-        return json(200, {
-          items: [lia, liam].filter((p) => p.display_name.toLowerCase().includes(q)),
-          has_more: false,
-        });
-      },
-    });
-    const user = userEvent.setup();
-    renderRoute("/contacts");
-    await screen.findByRole("heading", { name: "People", level: 2 });
-    await user.type(screen.getByRole("searchbox", { name: "Filter contacts" }), "liam");
-    // The connector opens by itself to show what was found, and only the settled text was asked.
-    expect(await screen.findByTestId("contact-p2")).toHaveTextContent("Liam Reis");
-    expect(screen.queryByTestId("contact-p1")).toBeNull();
-    const asked = calls.filter((c) => c.path === "/contacts/people");
-    expect(asked.length).toBeGreaterThan(0);
-    expect(asked.at(-1)?.url.searchParams.get("q")).toBe("liam");
-    expect(asked.every((c) => c.url.searchParams.get("connector_id") === "k1")).toBe(true);
-  });
-
-  it("says so at a connector whose search finds no one, and has nothing to search at one that saw no one", async () => {
-    api(sampleContacts, {
-      "GET /contacts/people": json(200, { items: [], has_more: false }),
-    });
-    const user = userEvent.setup();
-    renderRoute("/contacts");
-    await screen.findByRole("heading", { name: "People", level: 2 });
-    await user.type(screen.getByRole("searchbox", { name: "Filter contacts" }), "zzzz");
-    expect(await screen.findByText("No one found.")).toBeInTheDocument();
-    // The connector that has seen no one is not searched, so it leaves the list.
-    expect(screen.queryByText("quiet-bot")).toBeNull();
-    // Something is still being searched, so the page does not say nothing matches.
-    expect(screen.queryByText("Nothing matches “zzzz”.")).toBeNull();
-  });
-
-  it("says when a connector's people did not load, and tries again on request", async () => {
-    let attempts = 0;
-    api(sampleContacts, {
-      "GET /contacts/people": () => {
-        attempts += 1;
-        return attempts === 1
-          ? apiError(500, "internal", "boom")
-          : json(200, { items: [lia], has_more: false });
-      },
-    });
-    const user = userEvent.setup();
-    renderRoute("/contacts");
-    await user.click(await screen.findByRole("button", { name: /ops-line/ }));
-    const alert = await screen.findByRole("alert");
-    expect(alert).toHaveTextContent("Couldn’t load the people of ops-line.");
-    await user.click(within(alert).getByRole("button", { name: "Try again" }));
-    expect(await screen.findByTestId("contact-p1")).toBeInTheDocument();
-  });
 });
 
 describe("opening a profile", () => {
   it.each([
     ["an AI of an organization", "a1", "Atlas"],
-    ["a hosted AI", "a4", "Old helper"],
     ["an AI somebody else hosts", "a5", "Sage"],
     ["a user", "u2", "Bob Lima"],
   ])("links the name of %s to its profile", async (_what, id, name) => {
@@ -790,15 +452,6 @@ describe("opening a profile", () => {
     await orgRegion("Acme");
     const link = within(row("a1")).getByRole("link");
     expect(link).toHaveAccessibleName("A @a");
-  });
-
-  it("links a person to their profile too", async () => {
-    api(sampleContacts, { "GET /contacts/people": json(200, { items: [lia], has_more: false }) });
-    const user = userEvent.setup();
-    renderRoute("/contacts");
-    await user.click(await screen.findByRole("button", { name: /ops-line/ }));
-    const link = await within(await screen.findByTestId("contact-p1")).findByRole("link");
-    expect(link).toHaveAttribute("href", "/contacts/p1");
   });
 
   it("opens the profile panel of the contact that was clicked, and the page from the panel (PRF-01, PRF-04)", async () => {
@@ -829,7 +482,6 @@ describe("messaging a contact (DM-01)", () => {
 
   it.each([
     ["an AI of an organization", "a1", "Atlas"],
-    ["a hosted AI", "a4", "Old helper"],
     ["an AI somebody else hosts", "a5", "Sage"],
     ["a user", "u2", "Bob Lima"],
   ])("opens the DM with %s", async (_what, id, name) => {
@@ -847,19 +499,6 @@ describe("messaging a contact (DM-01)", () => {
       path: "/conversations/dm",
       body: { with: id },
     });
-  });
-
-  it("lists people without a way to message them (CID-22)", async () => {
-    api(sampleContacts, {
-      "GET /contacts/people": json(200, { items: [lia], has_more: false }),
-    });
-    const user = userEvent.setup();
-    renderRoute("/contacts");
-    await user.click(await screen.findByRole("button", { name: /ops-line/ }));
-    const row = await screen.findByTestId("contact-p1");
-    expect(row).toHaveTextContent("Lia Costa");
-    // A person is history: they are answered on their platform, not in a DM (DM-05 retired).
-    expect(within(row).queryByRole("button", { name: /Message/ })).toBeNull();
   });
 
   it("says when the contact is gone, and stays on the page", async () => {

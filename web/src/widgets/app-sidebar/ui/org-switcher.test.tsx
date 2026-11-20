@@ -17,7 +17,7 @@ expect.extend(matchers);
 vi.mock("@/app/live", () => ({ startLive: vi.fn(() => () => {}) }));
 
 /*
- * The organization switcher (T39: ORG-01, ORG-02, CHART-02): the viewer's organizations with what
+ * The organization switcher (T39: ORG-01, ORG-02): the viewer's organizations with what
  * they are in each and what waits unread in each, the pick that the sidebar follows, and the way
  * to start a new organization. Read through the real shell, where the switcher lives.
  */
@@ -26,7 +26,7 @@ const AXE_OPTIONS = { rules: { "color-contrast": { enabled: false } } };
 
 const acme = makeOrg({ id: "o1", name: "Acme", slug: "acme", permission: "admin" });
 const globex = makeOrg({ id: "o2", name: "Globex", slug: "globex", permission: "member" });
-const initech = makeOrg({ id: "o3", name: "Initech", slug: "initech", permission: "guest" });
+const initech = makeOrg({ id: "o3", name: "Initech", slug: "initech", permission: "member" });
 
 // Acme holds 2 + 3 unread, Globex 5 + 3: the DM with Bob is filed under both.
 const conversations = [
@@ -75,7 +75,7 @@ describe("the organizations it lists", () => {
     expect(labels()).toEqual([
       "Acme, Admin, 5 unread messages",
       "Globex, Member, 8 unread messages",
-      "Initech, Guest",
+      "Initech, Member",
     ]);
   });
 
@@ -114,7 +114,7 @@ describe("the organizations it lists", () => {
     expect(labels()).toEqual([
       "Acme, Admin, 4 unread messages",
       "Globex, Member",
-      "Initech, Guest",
+      "Initech, Member",
     ]);
   });
 
@@ -143,7 +143,7 @@ describe("the organizations it lists", () => {
     expect(labels()).toEqual([
       "Acme, Administrador, 5 mensagens não lidas",
       "Globex, Membro, 8 mensagens não lidas",
-      "Initech, Convidado",
+      "Initech, Membro",
     ]);
     expect(screen.getByRole("menuitem", { name: "Nova organização" })).toBeInTheDocument();
   });
@@ -234,7 +234,7 @@ describe("beside the organization's own entry (SET-09, SET-10)", () => {
     );
     expect(within(menu).getByRole("menuitem", { name: "New organization" })).toBeInTheDocument();
     // The pages are the gear's beside the full switcher; they are not listed twice in one menu.
-    expect(within(menu).queryByRole("menuitem", { name: "Org chart" })).toBeNull();
+    expect(within(menu).queryByRole("menuitem", { name: "Members" })).toBeNull();
     expect(within(menu).queryByRole("menuitem", { name: "Settings" })).toBeNull();
   });
 
@@ -246,9 +246,7 @@ describe("beside the organization's own entry (SET-09, SET-10)", () => {
     await user.click(await trigger(/^Organization: Acme/));
     const menu = await screen.findByRole("menu", { name: "Organizations" });
     for (const [name, href] of [
-      ["Org chart", "/orgs/o1/chart"],
       ["Members", "/orgs/o1/members"],
-      ["Positions", "/orgs/o1/positions"],
       ["Connectors", "/orgs/o1/connections"],
       ["Settings", "/orgs/o1/settings"],
     ] as const) {
@@ -485,7 +483,7 @@ describe("on a phone", () => {
     expect(labels()).toEqual([
       "Acme, Admin, 5 unread messages",
       "Globex, Member, 8 unread messages",
-      "Initech, Guest",
+      "Initech, Member",
     ]);
     await user.click(screen.getByRole("menuitemradio", { name: /^Globex/ }));
     expect(await trigger(/^Organization: Globex/)).toBeInTheDocument();

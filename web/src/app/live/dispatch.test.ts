@@ -1,7 +1,7 @@
 import { QueryClient } from "@tanstack/react-query";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { ACTIVITY_PER_ROOM, ACTIVITY_SIZE } from "@/entities/account";
-import type { FilePages, MessagePages, PeoplePages } from "@/shared/api/cache-types";
+import type { FilePages, MessagePages } from "@/shared/api/cache-types";
 import { queryKeys } from "@/shared/api/query-keys";
 import type {
   ActivityItem,
@@ -34,9 +34,7 @@ import {
   makeMessage,
   makeOrg,
   makeOrgAIs,
-  makeOrgChart,
   makeOrgMember,
-  makePerson,
   makeProfile,
   makeRoom,
 } from "@/test/fixtures";
@@ -1216,23 +1214,6 @@ describe("live handlers", () => {
       expect(contacts()?.users[0]?.avatar_url).toBeUndefined();
     });
 
-    it("renames a person in the cached pages of its connector, and in no other person's row", () => {
-      const lia = makePerson();
-      const tom = makePerson({ id: "p2", display_name: "Tom Reis", handle: "tom" });
-      const pages = (): PeoplePages => ({
-        pages: [{ items: [lia, tom], has_more: false }],
-        pageParams: [undefined],
-      });
-      qc.setQueryData(queryKeys.people("k1", ""), pages());
-      qc.setQueryData(queryKeys.people("k1", "li"), pages());
-      change(makePerson({ display_name: "Lia C.", handle: "lia-c" }));
-      for (const key of [queryKeys.people("k1", ""), queryKeys.people("k1", "li")]) {
-        const items = qc.getQueryData<PeoplePages>(key)?.pages[0]?.items;
-        expect(items?.[0]).toMatchObject({ display_name: "Lia C.", handle: "lia-c" });
-        expect(items?.[1]).toEqual(tom);
-      }
-    });
-
     it("leaves the contacts alone when nobody in them changed, and creates none that was never loaded", () => {
       const seeded = makeContacts({ users: [makeIntelligence({ id: "u2", handle: "bob" })] });
       qc.setQueryData<Contacts>(queryKeys.contacts, seeded);
@@ -1295,19 +1276,14 @@ describe("live handlers", () => {
     });
 
     it.each(["agent", "connector"])(
-      "refreshes the contacts and their people lists when access to a %s changes",
+      "refreshes the contacts when access to a %s changes",
       (kind) => {
         qc.setQueryData<Contacts>(queryKeys.contacts, makeContacts());
-        qc.setQueryData<PeoplePages>(queryKeys.people("k1", ""), {
-          pages: [{ items: [], has_more: false }],
-          pageParams: [undefined],
-        });
         handleLiveEvent(qc, actions(), {
           type: "access.changed",
           data: { resource_kind: kind, resource_id: "x1" },
         });
         expect(stale(queryKeys.contacts)).toBe(true);
-        expect(stale(queryKeys.people("k1", ""))).toBe(true);
       },
     );
 
@@ -1340,7 +1316,7 @@ describe("live handlers", () => {
 
     it("replaces an invitation that was sent again, with its new terms, instead of listing it twice", () => {
       qc.setQueryData<Invitation[]>(queryKeys.invitations, [
-        makeInvitation({ id: "i1", permission: "guest" }),
+        makeInvitation({ id: "i1", permission: "admin" }),
         makeInvitation({ id: "i3" }),
       ]);
       received(makeInvitation({ id: "i1", permission: "member" }));
@@ -1408,7 +1384,6 @@ describe("live handlers", () => {
         for (const id of ["o1", "o2"]) {
           qc.setQueryData(queryKeys.org(id), makeOrg({ id }));
           qc.setQueryData(queryKeys.orgMembers(id), [makeOrgMember()]);
-          qc.setQueryData(queryKeys.orgChart(id), makeOrgChart());
           qc.setQueryData(queryKeys.orgInvitations(id), []);
         }
         qc.setQueryData(queryKeys.invitations, []);
@@ -1420,12 +1395,11 @@ describe("live handlers", () => {
         expect(stale(queryKeys.orgs)).toBe(true);
       });
 
-      it("refreshes the organization itself, its members, its chart and its pending invitations", () => {
+      it("refreshes the organization itself, its members and its pending invitations", () => {
         seedPages();
         changed();
         expect(stale(queryKeys.org("o1"))).toBe(true);
         expect(stale(queryKeys.orgMembers("o1"))).toBe(true);
-        expect(stale(queryKeys.orgChart("o1"))).toBe(true);
         expect(stale(queryKeys.orgInvitations("o1"))).toBe(true);
       });
 
@@ -1434,7 +1408,6 @@ describe("live handlers", () => {
         changed();
         expect(stale(queryKeys.org("o2"))).toBe(false);
         expect(stale(queryKeys.orgMembers("o2"))).toBe(false);
-        expect(stale(queryKeys.orgChart("o2"))).toBe(false);
         expect(stale(queryKeys.orgInvitations("o2"))).toBe(false);
       });
 
@@ -1451,7 +1424,7 @@ describe("live handlers", () => {
           data: { resource_kind: "room", resource_id: "r1" },
         });
         expect(stale(queryKeys.orgs)).toBe(false);
-        expect(stale(queryKeys.orgChart("o1"))).toBe(false);
+        expect(stale(queryKeys.orgMembers("o1"))).toBe(false);
       });
     });
   });
