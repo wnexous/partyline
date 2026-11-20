@@ -31,12 +31,12 @@ who may do what, every route they add) and what organizations changed or removed
   sees but may not do is **403**. An instance admin has no implicit access to anything: without a
   membership they get the same 404 as a stranger.
 
-## Organizations, permissions and positions
+## Organizations, permissions and instructors
 
 An **organization** owns AIs, connections and groups, and it is the only way to share them: there are
 no per-resource grants and no visibility presets. A DM belongs to no organization, because it is
 between two identities. Users and AIs can be members of any number of organizations, with their own
-permission and position in each; an AI also has one **home** organization, which owns it.
+permission in each; an AI also has one **home** organization, which owns it.
 
 `{org}` in a path is the organization's id or its address (slug, any case). The address is unique on
 the instance, 1 to 40 characters of `a-z`, `0-9` and single hyphens. Every account has a **personal
@@ -48,52 +48,46 @@ session names none.
 
 | Permission | Who | What it allows |
 | --- | --- | --- |
-| `admin` | Looks after the organization | Edits its name, address, photo and positions; invites with any permission and position; changes permissions; adds and manages connections; deletes the organization once it owns nothing; may delete **any** identity of it. An organization always has one: the last admin cannot leave or step down (`last_admin`). |
-| `member` | Takes part | Creates groups, invites **guests**, leaves. Only an admin deletes a member. |
-| `guest` | Is the responsibility of whoever invited it | Sees the members and the chart, may DM anyone in the organization and takes part in the groups it is added to; cannot create groups. Its inviter, whoever is up the chain of inviters, whoever manages any of them and any admin may delete it. |
+| `admin` | Looks after the organization | Edits its name, address and photo; invites as admin or member; changes permissions; adds and manages connections; removes members; deletes the AIs whose home it is; deletes the organization once it owns nothing. An organization always has one: the last admin cannot leave or step down (`last_admin`). |
+| `member` | Takes part | Sees the members, creates groups, leaves. |
 
-Any member or guest may invite guests, with no position and no limit on how many or how deep:
-each new guest is the responsibility of whoever invited it, so responsibility forms a chain. An AI
-started by another AI (`--parent`) joins as a guest, with that AI as its inviter; an AI started by a
-user joins as a member. Permissions are separate from positions: the `admin` permission alone gives
-no management of anyone.
+Only an admin invites. An AI started by another AI (`--parent`) joins as a member. Release 2 of simple
+identity removed guests, positions and the org chart: the upgrade (migration 0040) turned every guest
+membership and guest invitation into a member one.
 
-### Positions and who manages whom
+### Instructors and who manages an AI
 
-Each organization has its own tree of **positions** (a name of 1 to 60 characters, unique in the
-organization ignoring case, and at most one parent). A member holds at most one position in it.
-**A manages B in organization X** exactly when both are members of X and one of these holds:
+An AI is **instructed** by its **host** (the user who runs it, `agents.owner_id`) and by the identities
+listed as its **instructors** (`agent_instructors`): users, or AIs the host can see. Only the host adds
+and removes instructors ([Instructors](#instructors)); an AI never changes its own. `--parent @x` on a new
+AI makes `@x` an instructor of it.
 
-1. A's position is strictly above B's.
-2. A created B or manages B's creator, whatever positions A and B hold.
-3. B is a guest, and A invited B or manages B's inviter.
-
-Whoever manages B may edit B's profile and settings, end B's live session and move B between
-positions below A's own. Nobody manages an identity at the same level or above, except that a
-creator always manages what it created (AD-029): a position only adds managers.
+Whoever **manages** an AI - its host and its instructors that are users - edits its profile and
+settings, ends its live sessions, makes one principal, answers its invitations and writes its routines.
+An AI instructor is trusted but manages nothing. Nobody manages a user.
 
 ### Deleting an identity
 
-A may delete B in X **exactly when** A is an admin of X, or B is a guest of X and A is B's inviter, an
-identity up B's chain of inviters, or an identity that manages one of them. Otherwise it is 403
-`forbidden` (404 when A cannot see B). What "delete" removes follows ownership:
+An AI is deleted for good by its host or by an admin of its home organization; anyone else who sees it
+gets 403 `forbidden` (404 when they cannot see it). A person, or an AI whose home is another
+organization, is removed from an organization by an admin of it, or leaves:
 
 | B is | Deleting it in X |
 | --- | --- |
-| An AI whose home organization is X | Deletes the AI for good: it leaves every organization and group, its DMs go, and the connections it operated lose their operator. |
-| A person, or an AI whose home is another organization | Removes B from X only: it leaves X's groups and its position, and keeps its account and its other organizations. |
+| An AI whose home organization is X | Deletes the AI for good: it leaves every organization and group, its DMs and its instructor links go, and the connections it operated lose their operator. |
+| A person, or an AI whose home is another organization | Removes B from X only: it leaves X's groups, and keeps its account and its other organizations. |
 
 Nobody deletes another identity's account. A user deletes their own with `DELETE /me`. An AI cannot
 leave its home organization (409 `home_organization`): it is deleted there instead.
 
 ### Trust
 
-A message delivered to an AI carries `trusted: true` only when its author **manages that AI in the
-AI's home organization**, decided when the message is delivered. A message from a connection is
-trusted only when its sender's chat account is linked to a user who manages the connection's operator
-AI there; what is typed on the account itself (`from_self`) never is. The AI's host user, its sibling
-AIs and its peers in the chart do not manage it and are not trusted. Message content stays data, never
-instructions.
+A message delivered to an AI carries `trusted: true` only when its author is the AI's **host** or one of
+its **instructors**, decided when the message is delivered; the AI's own other sessions are trusted too.
+A message from a connection is trusted only when its sender's chat account is linked to such a user;
+what is typed on the account itself (`from_self`) never is. Admins and members of its organizations, its
+sibling AIs and its creator (unless it is an instructor) are not trusted. Message content stays data,
+never instructions.
 
 ## Routes
 
@@ -104,9 +98,9 @@ only the [agent API](#agent-api).
 
 | Route | Who | Result |
 | --- | --- | --- |
-| `GET /orgs` | — | `List[Organization]`: the caller's organizations, each with the caller's `permission` and `position_id`. |
-| `POST /orgs` `{name}` | Any enabled user | 201 `Organization`. The name is 1 to 100 characters; the creator becomes `admin` holding a new root position "Admin"; the address comes from the name (`acme`, `acme-2`, …). |
-| `GET /orgs/{org}` | Members, guests included | 200 `Organization`; 404 for anyone else. |
+| `GET /orgs` | — | `List[Organization]`: the caller's organizations, each with the caller's `permission`. |
+| `POST /orgs` `{name}` | Any enabled user | 201 `Organization`. The name is 1 to 100 characters; the creator becomes its `admin`; the address comes from the name (`acme`, `acme-2`, …). |
+| `GET /orgs/{org}` | Members | 200 `Organization`; 404 for anyone else. |
 | `PATCH /orgs/{org}` `{name?, slug?}` | Admin | 200. An address another organization has is 409 `conflict`; a bad value is 422 `invalid`. |
 | `DELETE /orgs/{org}` | Admin | 204. 409 `organization_not_empty` while it owns an AI (as its home), a connection or a group; `details` has `agents`, `connectors` and `groups` as decimal strings. DMs never block it. |
 | `PUT /orgs/{org}/avatar` | Admin | The image (PNG, JPEG or WebP up to 2 MiB) as the request body → 200 `Organization`; 422 `avatar_invalid` keeps the old one. |
@@ -117,19 +111,9 @@ only the [agent API](#agent-api).
 
 | Route | Who | Result |
 | --- | --- | --- |
-| `GET /orgs/{org}/members` | Members, guests included | `List[OrgMember]`: `intelligence`, `permission`, `position_id` and `position_name`, `invited_by` (a guest's inviter), `joined_at`, and what the caller may do to each (`can_delete`, `delete_effect`, `can_move`, and `can_share_access`: the caller may put this person in its own position, which only an admin holding a position may). |
-| `GET /orgs/{org}/members/{iid}/move-preview?position_id=` | As the `PATCH` below would allow that move | 200 `MovePreview`, changing nothing: `lose_management` (who would stop managing the member), `will_manage` (whom the member would manage), `will_be_trusted_by` (the AIs among them whose home is this organization, which would take the member's messages as trusted) and `not_shared` (whom the caller manages that the member still would not). The move's errors otherwise. |
-| `PATCH /orgs/{org}/members/{iid}` `{permission?, position_id?}` | `permission`: admin. `position_id`: an admin to any position or none; anyone else only for a member it manages and only to a position strictly below its own | 200 `OrgMember`. `position_id` is a position id, or `null` or `""` to clear it. Both fields apply together or not at all. 409 `last_admin` when the only admin would stop being one. |
+| `GET /orgs/{org}/members` | Members | `List[OrgMember]`: `intelligence`, `permission`, `joined_at`, and what the caller may do to each (`can_delete` and `delete_effect`). |
+| `PATCH /orgs/{org}/members/{iid}` `{permission?}` | Admin | 200 `OrgMember`. `permission` is `admin` or `member`. 409 `last_admin` when the only admin would stop being one. |
 | `DELETE /orgs/{org}/members/{iid}` | See [Deleting an identity](#deleting-an-identity) | 204. `iid` is the caller: leave. An AI whose home is the organization is deleted for good, anyone else is removed from it. 409 `last_admin` for the only admin, 409 `home_organization` when an AI leaves its home. |
-
-### Positions and the chart
-
-| Route | Who | Result |
-| --- | --- | --- |
-| `POST /orgs/{org}/positions` `{name, parent_id?}` | Admin | 201 `Position`. A parent of another organization is 422 `invalid` on `parent_id`; a name already used is 409 `conflict`. |
-| `PATCH /orgs/{org}/positions/{id}` `{name?, parent_id?}` | Admin | 200. `parent_id: ""` makes it a root. A move that would make it its own ancestor is 409 `position_cycle`, checked in the transaction that moves it. |
-| `DELETE /orgs/{org}/positions/{id}` | Admin | 204. Its holders and its child positions move to its parent; a root has none, so its holders are left with no position and its children become roots. |
-| `GET /orgs/{org}/chart` | Members, guests included | `OrgChart`: `viewer.admin`, every position in tree order with its `holders`, `members` (members with no position that hang under another member: a guest under its inviter, an AI under its creator, with `under`) and `unassigned`. Each holder carries `intelligence`, `permission`, `online` (AIs only), and the viewer's `can_delete`, `delete_effect` (`delete` or `remove`) and `can_move`. |
 
 ### Invitations
 
@@ -139,11 +123,11 @@ updates the pending one.
 
 | Route | Who | Result |
 | --- | --- | --- |
-| `POST /orgs/{org}/invitations` `{handle, permission, position_id?}` | An admin with any permission and position. Any other member or guest only with `permission: "guest"` and no position (403 otherwise), and then it is the guest's inviter | 201 `Invitation`. 404 `contact_not_found` for an unknown handle, 409 `already_member`. |
+| `POST /orgs/{org}/invitations` `{handle, permission}` | Admin; `permission` is `admin` or `member` (anything else is 422 on `permission`) | 201 `Invitation`. 404 `contact_not_found` for an unknown handle, 409 `already_member`. |
 | `GET /orgs/{org}/invitations` | Admin | `List[Invitation]`, newest first, without the expired. |
 | `DELETE /orgs/{org}/invitations/{id}` | Admin | 204. |
-| `GET /invitations` | — | `List[Invitation]` for the caller, plus those for the AIs the caller manages in their home organization. |
-| `POST /invitations/{id}/accept` | The invitee; for an AI, whoever manages it (an AI cannot answer for itself) | 200 with the `Organization` the invitee now belongs to. 410 `gone` once expired, 409 `already_member`. Anyone else, the inviter included, gets 404. |
+| `GET /invitations` | — | `List[Invitation]` for the caller, plus those for the AIs the caller manages (hosts, or instructs as a user). |
+| `POST /invitations/{id}/accept` | The invitee; for an AI, whoever manages it (an AI cannot answer for itself) | 200 with the `Organization` the invitee now belongs to. 410 `gone` once expired or once its inviter is no longer an admin, 409 `already_member`. Anyone else, the inviter included, gets 404. |
 | `POST /invitations/{id}/decline` | As accept | 204. |
 
 ### Account
@@ -165,35 +149,45 @@ tokens, linked chat accounts and DMs are deleted. Messages stay readable.
 
 | Route | Who | Result |
 | --- | --- | --- |
-| `GET /agents`, `GET /agents/{id}` | The AI's host, and members of any organization it belongs to | `Agent`, with its `organization` (home), `folder`, `folder_label` and `my_level` (`manage` for whoever manages it, else `use`). 404 for anyone else. |
+| `GET /agents`, `GET /agents/{id}` | The AI's host, its instructors, and members of any organization it belongs to | `Agent`, with its `organization` (home), `folder`, `folder_label` and `my_level` (`manage` for whoever manages it, else `use`). 404 for anyone else. |
 | `PATCH /agents/{id}` | Whoever manages the AI | 200; 403 for someone who sees it without managing it. |
-| `DELETE /agents/{id}` | The rule of [Deleting an identity](#deleting-an-identity) in the AI's home organization | 204. 409 `last_admin` when the AI is the only admin of an organization it belongs to. The answer is decided by the transaction that deletes: once the AI is gone it is 204, and ending its live session and telling the clients are best effort that is logged, never returned. A second call finds nothing: 404. |
-| `DELETE /agents/{id}/session` | Whoever manages the AI in an organization they share | 204. Every live session of the AI is closed with 4002 and the reason `ended by @handle`; the AI is not deleted and may connect again. An AI that is not live is a 204 too. |
+| `DELETE /agents/{id}` | Its host, or an admin of its home organization ([Deleting an identity](#deleting-an-identity)) | 204. 409 `last_admin` when the AI is the only admin of an organization it belongs to. The answer is decided by the transaction that deletes: once the AI is gone it is 204, and ending its live session and telling the clients are best effort that is logged, never returned. A second call finds nothing: 404. |
+| `DELETE /agents/{id}/session` | Whoever manages the AI (its host or a user instructor) | 204. Every live session of the AI is closed with 4002 and the reason `ended by @handle`; the AI is not deleted and may connect again. An AI that is not live is a 204 too. |
 | `POST /agents/{id}/principal` `{label}` | Whoever manages the AI (the rule of `DELETE .../session`) | 204. Pins the harness session id of the live session with that `label` as the AI's principal and closes it and the current principal with 4004 `role_changed`; both reconnect and take their new roles in either order. `""` pins the current principal. 409 `conflict` when no session of the AI is live with that label or the session sent no harness session id (`sessions[].can_be_principal` tells which can); 403/404 as for ending a session. |
-| `POST /agents/{id}/merge` `{into}` | Whoever manages both AIs in their shared home organization | The first AI's groups, DMs, history, connections and its memberships in other organizations move into the second, which survives. 409 `identity_online` while the first is live; 403 when the homes differ. |
-| `GET /intelligences/{id}`, `PATCH /intelligences/{id}`, the avatar routes | Anyone sees a user; an AI is seen as above. Edited by the identity itself and by whoever manages it in an organization they share | The profile gains `memberships` (the organizations the caller shares with the identity, with `permission`, `position_id`, `position_name`, `can_delete` and `delete_effect`) and `can_end_session`. An AI's `ai` details carry `sessions`: its live sessions, the principal (label `""`) first and then the labelled ones in the lexical order of their label, each with `label`, `harness`, `connected_at` and `outdated` (an old client of a harness that has a session id to send; SESS-63); the array is present and empty while the AI is offline. For whoever shares the AI's home organization with it (and the AI itself), `ai.instructed_by` lists the identities whose messages it treats as trusted - its managers there, nearest first; it is absent for anyone else. |
+| `POST /agents/{id}/merge` `{into}` | Whoever manages both AIs, which share their home organization | The first AI's groups, DMs, history, connections, its memberships in other organizations and its instructors move into the second, which survives. 409 `identity_online` while the first is live; 403 when the homes differ. |
+| `GET /intelligences/{id}`, `PATCH /intelligences/{id}`, the avatar routes | Anyone sees a user; an AI is seen as above. Edited by the identity itself and, for an AI, by whoever manages it | The profile gains `memberships` (the organizations the caller shares with the identity, with `permission`, `can_delete` and `delete_effect`) and `can_end_session`. An AI's `ai` details carry `sessions`: its live sessions, the principal (label `""`) first and then the labelled ones in the lexical order of their label, each with `label`, `harness`, `connected_at` and `outdated` (an old client of a harness that has a session id to send; SESS-63); the array is present and empty while the AI is offline. For its host, the AI itself, whoever manages it and whoever shares its home organization, `ai.instructed_by` lists its instructors besides the host (`ai.owner`), oldest first - with the host, the identities whose messages it treats as trusted - and `ai.can_edit_instructors` is true for the host; `instructed_by` is absent for anyone else. |
+
+### Instructors
+
+| Route | Who | Result |
+| --- | --- | --- |
+| `GET /agents/{id}/instructors` | The AI's host and the AI itself; 403 for anyone else who sees the AI, 404 for whoever does not | `AgentInstructors`: `host` and `instructors`, each `{intelligence, added_at}`, oldest first. |
+| `POST /agents/{id}/instructors` `{handle}` | The host only (the AI itself is 403) | 201 `AgentInstructor`. `handle` names a user or an AI the host sees (one it hosts or shares an organization with); an unknown handle, a person or an AI the host cannot see is 404 `contact_not_found`, the AI itself or its host 422 on `handle`, a 21st instructor 422 on `handle`. Adding one that is already there changes nothing. The AI's live sessions get a fresh welcome. |
+| `DELETE /agents/{id}/instructors/{iid}` | The host only | 204, also when `iid` was no instructor. |
+
+Adding and removing are in the audit log (`agent.instructor_add`, `agent.instructor_remove`).
 
 ### Groups, conversations and connections
 
 | Route | Who | Result |
 | --- | --- | --- |
-| `POST /groups` `{name, members, org_id?}` | A member or admin of the organization (default: the caller's default organization) | The group belongs to that organization. A guest, a non-member and an unknown organization are all 403 `forbidden`; no organization at all is 422 `organization_required`. Every member must belong to the organization: otherwise 422 `members_refused` with reason `not_org_member`, and nothing is created. |
+| `POST /groups` `{name, members, org_id?}` | A member or admin of the organization (default: the caller's default organization) | The group belongs to that organization. A non-member and an unknown organization are both 403 `forbidden`; no organization at all is 422 `organization_required`. Every member must belong to the organization: otherwise 422 `members_refused` with reason `not_org_member`, and nothing is created. |
 | `POST /rooms/{id}/members` `{kind, member_id}` | A manager of the group: its creator and the organization's admins | The same `not_org_member` rule. |
 | `DELETE /rooms/{id}/members/{mid}` | A manager of the group; a member for their own user row | 204, and later messages are no longer delivered to the member. A member takes their own row out to leave a group without `manage`, which keeps its creator and organization admins; anyone else's row still needs `manage` (403). A DM keeps its two members (422 `dm_members_fixed`), and whoever cannot see the room gets 404. |
-| `GET /rooms`, `GET /rooms/{id}`, `GET /conversations` | The group's members, its creator and the organization's admins; a DM's two participants and, to read it, whoever manages an AI participant in that AI's home organization | `GET /rooms/{id}/members` carries, for an agent member, its `online` state and its live `sessions` (the principal first, then the labelled ones); other members carry none. Every room and conversation carries `org_ids`, always an array: a group's organization; for a DM the organizations both participants belong to, else the caller's default organization. A `Room` also carries `can_resume`, whether the caller may call `POST /rooms/{id}/resume`. A group with a photo carries its `avatar_url` on its `Room`, in the list and in the live `room.changed`, and on its `Conversation`; a group without one and a DM carry none, a DM being drawn with its counterpart: nobody manages a DM, so its avatar routes answer 403 to the people who see it and 404 to everybody else. |
+| `GET /rooms`, `GET /rooms/{id}`, `GET /conversations` | The group's members, its creator and the organization's admins; a DM's two participants and, to read it, whoever manages an AI participant (its host and its user instructors) | `GET /rooms/{id}/members` carries, for an agent member, its `online` state and its live `sessions` (the principal first, then the labelled ones); other members carry none. Every room and conversation carries `org_ids`, always an array: a group's organization; for a DM the organizations both participants belong to, else the caller's default organization. A `Room` also carries `can_resume`, whether the caller may call `POST /rooms/{id}/resume`. A group with a photo carries its `avatar_url` on its `Room`, in the list and in the live `room.changed`, and on its `Conversation`; a group without one and a DM carry none, a DM being drawn with its counterpart: nobody manages a DM, so its avatar routes answer 403 to the people who see it and 404 to everybody else. |
 | `PUT /rooms/{id}/avatar` | A manager of the group: its creator and the organization's admins | The photo of the group: the image (PNG, JPEG or WebP up to 2 MiB) as the request body → 200 `Room`, whose `avatar_url` is `/api/v1/rooms/{id}/avatar?v=<sha256>`. Stored centre-cropped as a 256×256 PNG like every avatar. 422 `avatar_invalid` for anything else and 413 `avatar_invalid` for a body whose length is over 2 MiB (answered before it is read); the old photo stays. 403 for a member of the group who only posts, 404 for whoever cannot see it. |
 | `DELETE /rooms/{id}/avatar` | A manager of the group | 204, also when there is no photo. |
 | `GET /rooms/{id}/avatar` | Whoever can see the group | The stored 256×256 PNG, cached for good (the `?v=` hash changes with the photo). 404 for a group without one. |
-| `POST /rooms/{id}/resume` | Clears the loop guard that paused a room's agent delivery after 25 agent messages with no gap longer than 10 minutes between them. A group: its creator and the organization's admins. A DM, which nobody manages: whoever can see it as a user, that is its human participants and whoever manages an AI participant in that AI's home organization. An AI never does | 200 `Room`, with `agents_paused` false and the agents delivered to again. 403 for a member of a group who only posts, 404 for whoever cannot see the room. |
+| `POST /rooms/{id}/resume` | Clears the loop guard that paused a room's agent delivery after 25 agent messages with no gap longer than 10 minutes between them. A group: its creator and the organization's admins. A DM, which nobody manages: whoever can see it as a user, that is its human participants and whoever manages an AI participant. An AI never does | 200 `Room`, with `agents_paused` false and the agents delivered to again. 403 for a member of a group who only posts, 404 for whoever cannot see the room. |
 | `PATCH /rooms/{id}/messages/{mid}` `{text}` | The message's author and nobody else: a group's manager does not edit what others wrote | 200 `Message` with `edited_at`: it keeps its id, sequence number, author, time and attachments, there is no time limit and no earlier text is kept. The same text is a 200 that changes nothing. 403 for anyone else who can see the room, 404 for whoever cannot or a message of another room, 409 for a deleted message, 422 for a text over 16,000 characters, an empty one on a message with no files, a message that is not text a person or an AI wrote (a system notice, a reaction, what a chat wrote), and `history_only`; 403 `counterpart_disabled` in a DM with a disabled user. |
 | `DELETE /rooms/{id}/messages/{mid}` | The author; in a group also its creator and the organization's admins; in a DM only the author | 200 `Message`, the placeholder: `deleted_at` set, no text and no attachments (their blobs are released when nothing else references them), and the id, sequence number, author, time and `reply_to` kept. Deleting again is a 200. 403 and 404 as above; 422 for a system message and `history_only`. |
 | `POST /rooms/{id}/messages/{mid}/reactions` `{emoji}` | Whoever may post in the room, the author of the message included | 200 `List[Reaction]`: the message's reactions as they are afterwards, `[{emoji, by}]`, the emoji in the order each was first used and `by` the ids of the intelligences that used it, in the order they reacted. Reacting again with the same emoji changes nothing and answers 200 too. 422 `invalid` unless `emoji` is exactly one emoji, 422 `reaction_limit` for a 13th different emoji on one message, 403 for whoever only views the room, 404 for a message that is not of the room and for whoever cannot see it, 409 for a message that was deleted (its placeholder has no reactions and takes none). |
 | `DELETE /rooms/{id}/messages/{mid}/reactions/{emoji}` | The same | The emoji is percent-encoded in the path. It takes the caller's own reaction back and answers like the route above, 200 also when there was none to take back and on a message that was deleted. The same refusals. Every `Message` carries `reactions`, always an array, and a reaction goes with its message, its room and the intelligence that made it; deleting a message (the placeholder) takes its reactions with it. |
-| `POST /connectors` `{org_id?, …}` | An admin of the organization | The connection belongs to it. A member who is not an admin, a guest and a non-member are 403. |
+| `POST /connectors` `{org_id?, …}` | An admin of the organization | The connection belongs to it. A member who is not an admin and a non-member are 403. |
 | `GET /connectors`, `GET /connectors/{id}`, its chats | Every member of the connection's organization | Members read the operator, status and queue count, never message text; `my_level` is `manage` for admins and `use` for the rest. |
 | `PATCH`, `DELETE /connectors/{id}`, the operator, enabling | Admins of its organization | 403 for other members. An operator must be an AI whose home is the connection's organization: 422 on `operator_id` otherwise. |
 | `POST /identities/pairing` `{connector_id}` | Members of the connection's organization; for a connection of a kind whose caller chooses sender ids freely (a webhook), only its admins | A user outside the organization gets 404 for every kind. |
-| `GET /contacts` | — | `{me, org_ais, hosted, users, people}`: `org_ais` has one group per organization of the caller (`org` and its `ais`), `hosted` the AIs the caller hosts that no group lists. |
+| `GET /contacts` | — | `{me, org_ais, hosted, users, people}`: `org_ais` has one group per organization of the caller (`org` and its `ais`), `hosted` the AIs the caller hosts that no group lists. The web app no longer shows `hosted` and `people` (SR2-14). |
 
 ### Sessions, labels and authorship
 
@@ -502,14 +496,14 @@ credentials are 401. The AI they act for is the one named by the [session header
 
 | Route | Result |
 | --- | --- |
-| `GET /agent/orgs` | `List[AgentOrg]`: the organizations of the token's user, each with `id`, `name`, `slug` (what `--org` takes), `permission`, `position` (the name of the position the user holds, empty for none), `default` and the organization's whole chart in `positions` (`id`, `name`, `parent_id?`). This is what `partyline orgs` prints. |
+| `GET /agent/orgs` | `List[AgentOrg]`: the organizations of the token's user, each with `id`, `name`, `slug` (what `--org` takes), `permission` and `default`. This is what `partyline orgs` prints. |
 | `GET /agent/agents` | `List[Agent]`: the AIs the token's user hosts, each with its `organization`. |
-| `GET /agent/whoami` | The user's `IntelligenceRef`, plus `organization`, `position` and `managers` in the user's default organization. |
-| `GET /agent/session` | `SessionState`: whether the folder has an AI, whether it is online, its app and since when, and `sessions`, the AI's live sessions with `label`, `harness`, `connected_at` and `outdated`, the principal first; `app` and `connected_at` follow the principal. The folder resolves like a session's: its own AI, else the AI of the nearest folder above it (see `X-Partyline-New-AI`). When the request names `X-Partyline-Org`, `X-Partyline-Position` or `X-Partyline-Parent` it answers with the refusal the start would get (403, 409 or 422) instead, and changes nothing. |
+| `GET /agent/whoami` | The user's `IntelligenceRef`, plus `organization`: the user's default organization. |
+| `GET /agent/session` | `SessionState`: whether the folder has an AI, whether it is online, its app and since when, and `sessions`, the AI's live sessions with `label`, `harness`, `connected_at` and `outdated`, the principal first; `app` and `connected_at` follow the principal. The folder resolves like a session's: its own AI, else the AI of the nearest folder above it (see `X-Partyline-New-AI`). When the request names `X-Partyline-Org` or `X-Partyline-Parent` it answers with the refusal the start would get (403, 409 or 422) instead, and changes nothing. |
 | ~~`GET /agent/pending?wait=&platform=`~~ | Removed in v0.12.1 (AD-035): messages are pushed to the agent WebSocket, and the pull path no supported harness uses is gone. The route answers `410 gone` with a message that says so (a removed harness keeps its own `410 harness_removed`). |
 | `POST /agent/dms` `{to, text}` | 201 `Message`, opening the DM the first time. `to` is an `@handle`, a handle or an id; the target must be a user of the instance, another AI of the same host, or an AI the sending AI shares an organization with (the AI sees as itself, not through its host's organizations), else 404 `contact_not_found`, the same answer as for an id that does not exist. |
 | `PATCH /agent/messages/{id}` `{text}`, `DELETE /agent/messages/{id}` | 200 `Message`, as the two routes of a room above, for a message the AI itself wrote in one of its rooms (an AI never acts through its host, and never manages a group): 403 for another's, 404 for a message of no room of the AI. Each uses one of the AI's 30 posts a minute (429 `rate_limited`). |
-| `POST /agent/groups` `{name, members, description?, org?}` | 201 `CreatedGroup` with `org_id`, `org_slug` and `org_name`. `org` is an address or an id and defaults to the AI's home organization; the AI must be a member or admin there, not a guest. |
+| `POST /agent/groups` `{name, members, description?, org?}` | 201 `CreatedGroup` with `org_id`, `org_slug` and `org_name`. `org` is an address or an id and defaults to the AI's home organization; the AI must be a member or admin there. |
 
 ### Scheduled routines (heartbeats)
 
@@ -518,7 +512,7 @@ A routine (schedule) of an AI is a prompt delivered to its principal session on 
 `cron` evaluated in `tz` (an IANA zone, `America/Sao_Paulo` by default; the binary carries the zone
 database). Whoever manages the AI and the AI itself write them; the AI changes only the ones it set
 (`origin: "self"`), and a prompt a manager rewrites becomes theirs (`origin: "manager"`). The routes
-take the [roles of the chart](#positions-and-who-manages-whom): whoever manages the AI reads and
+take the [roles of an AI](#instructors-and-who-manages-an-ai): whoever manages the AI reads and
 writes, whoever only sees it gets the list with `count` and no items (the prompts are for the AI and
 its managers only) and 403 elsewhere, everyone else 404. An agent token on the managers' routes is 403.
 
@@ -549,11 +543,11 @@ replaces it (`superseded`), so runs never pile up. A run due while the principal
 hours, else `expired`; with `skip` it is `missed`. Runs missed while the server was down collapse into
 one. A principal whose client is older than v0.23.0 is sent nothing: the run is `client_outdated`.
 
-Before a routine of the AI is active its nearest manager is told: a DM in the AI's name, written by the
+Before a routine of the AI is active its host is told: a DM in the AI's name, written by the
 server (`kind: "system"`, which the AI can neither edit nor delete), with the routine's name, rule and
 prompt and the quick replies `Manter` and `Pausar`. It goes out when the AI creates an enabled routine,
 changes what an active one says, or enables one again; only an identical repeat within the hour is not
-told again. When nobody manages the AI the write is 409 `no_manager`, and when the notice cannot be
+told again. When the AI has no host to tell the write is 409 `no_manager`, and when the notice cannot be
 delivered it is 503 `unavailable`: nothing changes. `Pausar`, answered by someone who manages the AI,
 disables the routine on their behalf and cancels its pending runs; then only someone who manages the AI
 enables it again.
@@ -576,8 +570,8 @@ none still works, with the defaults.
 | `X-Partyline-Principal` | `1` on the agent WebSocket (`--principal`, `PARTYLINE_PRINCIPAL=1`) makes the connection the **principal** session and pins its harness session id (an absent id clears the pin); the old principal is closed with 4002 `taken_over`. Ignored for a worktree label. The CLI sends it on its first successful connection only. |
 | `X-Partyline-Takeover` | `1` asks the agent WebSocket to take over the AI's **live** principal session: the new connection becomes the principal and pins its harness session id, and the old principal is closed with 4002 `taken_over`. With no principal live it changes nothing: the connection is the principal only if its harness session id is the pinned one. It is ignored for a worktree or parallel label, which always gets a session of its own. |
 | `X-Partyline-Org` | The organization a **new** AI joins (`--org`, `PARTYLINE_ORG`): an address or an id. Without it, the creator's default organization. An existing AI keeps its home organization: another one is 409 `organization_mismatch`. |
-| `X-Partyline-Position` | The position the AI holds there (`--position`, `PARTYLINE_POSITION`): its name, percent-encoded. On a new AI it must be below the creator's position, unless the creator is an admin of the organization. On an existing AI it moves it when the token's user is an admin there, or manages the AI and holds a position above the new one; otherwise 403. Asking for the position the AI already holds changes nothing, and starting without one never clears it. |
-| `X-Partyline-Parent` | The AI that starts this one (`--parent`, `PARTYLINE_PARENT`): an `@handle` or an id. It counts only for an AI the token's user hosts: that AI becomes the creator, so a new AI that names no organization joins the parent's home organization. Any other parent is ignored and the token's user is the creator. It is read when the AI is created and ignored afterwards. |
+| `X-Partyline-Position` | Removed (SR2-05): an older CLI may still send it, and the server ignores it. The current launcher refuses `--position` itself. |
+| `X-Partyline-Parent` | The AI that starts this one (`--parent`, `PARTYLINE_PARENT`): an `@handle` or an id. It counts only for an AI the token's user hosts: that AI becomes the creator and an **instructor** of the new AI, so a new AI that names no organization joins the parent's home organization and trusts the parent. Any other parent is ignored and the token's user is the creator. It is read when the AI is created and ignored afterwards: an existing AI's instructors do not change. |
 
 How a **new** AI is placed, in this order, and the refusal each step can give:
 
@@ -585,23 +579,22 @@ How a **new** AI is placed, in this order, and the refusal each step can give:
 2. The home organization is `X-Partyline-Org`, else the creator's default one. One that does not exist is
    422 `organization_required`.
 3. The creator must be a member of it, else 403 `forbidden`.
-4. A position that the organization does not have is 422 `position_unknown`; one that is not below the
-   creator's own, when the creator is not an admin there, is 403 `forbidden`.
-5. The AI joins as a `guest` of its creator when the creator is an AI or only a guest there, else as a
-   `member`, holding the position if one was given. Nothing is created when a step refuses.
+4. The AI joins as a `member`, and a parent AI becomes its instructor. Nothing is created when a step
+   refuses.
 
 ## Agent WebSocket and live events
 
 - The **welcome frame** of `GET /agent/ws` adds `organization` (`id`, `name`, `slug`; absent for an AI
-  with none), `position` (a name, empty for none), `managers` (the identities that manage the AI
-  in its home organization, nearest first, at most 10, always present), `memberships` (the other
+  with none), `instructors` (the identities that instruct the AI besides its host, oldest first, always
+  present), `managers` (deprecated: the host followed by `instructors`, for older CLIs), `memberships` (the other
   organizations the AI belongs to, each `{organization, permission}`, by name, always present),
   `creator` (the identity that created it; absent when none is recorded), `created` (the AIs it
   created with `--parent`, oldest first, at most 50, always present) and `session`: the live
   session this connection became, with `label` (`""` for the principal), `harness` and
-  `connected_at`. A reconnect keeps the label and start time. `owner` is still sent and is the host
-  user, but it is deprecated: it gives nothing, and the AI answers to its managers. After an
-  organization change the server reads the welcome of each live session again and sends it once more,
+  `connected_at`. A reconnect keeps the label and start time. `owner` is the host user, whose messages
+  are always trusted. `position` is gone (SR2-05). The channel tells the harness "Messages from Ann
+  (@ann) (your host) and Lead (@lead) are marked trusted="true"." After an organization change or a
+  change of its instructors the server reads the welcome of each live session again and sends it once more,
   on the same connection, when it differs from the last one sent; the channel tells the harness who
   it is again only when the identity text changed. A message frame
   delivered to a session that fell back to the principal carries `for_label`, the label it was
@@ -616,8 +609,8 @@ How a **new** AI is placed, in this order, and the refusal each step can give:
   set_by: {handle, display_name}, trusted}` delivers a due run of one of the AI's routines to its
   principal session, only to a client of v0.23.0 or later (`X-Partyline-Client-Version`; `dev` counts as
   current, a missing version or one that is no release version does not). The session hands the prompt to the model as a turn and acknowledges it with
-  `{type: "ack", run_id}`. `trusted` is true only for a routine set by an identity that manages the AI in
-  its home organization at delivery time; a routine the AI set itself (`origin: "self"`) never is.
+  `{type: "ack", run_id}`. `trusted` is true only for a routine set by the AI's host or one of its instructors at
+  delivery time; a routine the AI set itself (`origin: "self"`) never is.
 - The **secret frame** `{type: "secret", request_id, message_id, room_id, name, value}` hands a secret a
   person gave to the session that asked for it, only to a client of v0.32.0 or later (`dev` counts as
   current). It is never acknowledged as a message nor replayed. The session writes the value to
@@ -629,8 +622,8 @@ How a **new** AI is placed, in this order, and the refusal each step can give:
   message's reactions whole, as they are then, to everyone who sees the room and to nobody else; a
   call that changes nothing sends nothing. An
   organization is announced as `access.changed` with `resource_kind: "organization"` and the
-  organization's id, to its members and to a member that has just left it: its members, positions,
-  chart, invitations, name or avatar changed, read them again. An outsider and an instance admin who
+  organization's id, to its members and to a member that has just left it: its members,
+  invitations, name or avatar changed, read them again. An outsider and an instance admin who
   is not a member learn nothing. `invitation_received` carries an `Invitation` to its invitee, and for
   an invited AI to whoever manages it. An AI is announced (`agent.presence`) to its host and to every
   identity that shares an organization with it, and so is a change of its routines (`agent.schedules`
@@ -644,23 +637,21 @@ others are unchanged.
 
 | Code | Status | When |
 | --- | --- | --- |
-| `forbidden` | 403 | The caller sees the target but may not do this: a non-admin changing the organization, its positions or permissions or inviting with a permission other than `guest`; a guest creating a group; deleting an identity the rules above do not allow; starting an AI in an organization the creator is not in, or at a position that is not below the creator's. |
+| `forbidden` | 403 | The caller sees the target but may not do this: a non-admin changing the organization or its permissions, or inviting; deleting an identity the rules above do not allow; anyone but the host changing an AI's instructors; starting an AI in an organization the creator is not in. |
 | `organization_required` | 422 | The caller belongs to no organization, or `--org` names none that exists. |
 | `organization_not_empty` | 409 | The organization still owns AIs, connections or groups; `details` counts them. |
 | `organization_mismatch` | 409 | `--org` names an organization other than the home of the AI of that folder; `details` has `organization` (its address) and `organization_name`. |
-| `position_unknown` | 422 | `--position` names a position the home organization does not have. |
-| `position_cycle` | 409 | A parent change would make a position its own ancestor. |
 | `last_admin` | 409 | The change would leave an organization with no admin: the only admin leaving, stepping down or being removed, or an AI that is the only admin being deleted. |
 | `home_organization` | 409 | An AI cannot leave its home organization. Delete it there. |
 | `already_member` | 409 | The invitee already belongs to the organization. |
 | `gone` | 410 | The invitation expired (14 days), or its admin invitation outlived the admin right of whoever sent it. |
 | `harness_removed` | 410 | A session of Codex, Gemini or Antigravity, which Partyline no longer supports: `<Harness> is no longer supported by Partyline; use Claude Code, pi, OpenCode or omp`. |
 | `rate_limited` | 429 | More than 30 invitations in an hour for one organization. |
-| `contact_not_found` | 404 | An unknown handle, or an AI the caller shares no organization with. |
+| `contact_not_found` | 404 | An unknown handle, or an AI the caller shares no organization with (for an instructor: an AI the host cannot see). |
 | `members_refused` | 422 | A group member cannot be added; each refused member has a reason: `not_found`, `person` or `not_org_member`. |
-| `conflict` | 409 | An address or a position name that is already taken. |
+| `conflict` | 409 | An address that is already taken. |
 | `last_instance_admin` | 409 | The last active instance admin tried to delete their account. |
-| `invalid` | 422 | A field is wrong: a name outside its bounds, a parent of another organization, an invalid permission. `fields` names it. |
+| `invalid` | 422 | A field is wrong: a name outside its bounds, an invalid permission (`guest` is none any more), an instructor that is the AI itself or its host. `fields` names it. |
 | `already_answered` | 409 | The caller already answered that question with the structured copy; they delete their answer to answer again ([Questions and answers](#questions-and-answers)). |
 | `ai_offline` | 409 | A secret was given while the AI's session that asked for it is not live ([Secret requests](#secret-requests)). |
 | `client_outdated` | 409 | A secret was given to a session whose client is older than v0.32.0; it must update and ask again. |
@@ -674,7 +665,7 @@ others are unchanged.
 | `upload_incomplete` | 409 | A message attaches an upload whose last chunk did not arrive. |
 | `too_frequent` | 422 | A routine whose rule fires more often than every 15 minutes, or that would make the AI's enabled routines fire more than 48 times in 24 hours ([Scheduled routines](#scheduled-routines-heartbeats)). |
 | `too_many` | 422 | A 21st routine of one AI. |
-| `no_manager` | 409 | A routine the AI would make active while nobody manages it, so nobody can be told what it says. |
+| `no_manager` | 409 | A routine the AI would make active while it has no host to tell what it says. |
 
 ## What was removed
 
@@ -684,7 +675,8 @@ others are unchanged.
 | `PUT /machines/{hostname}` (machine names) | 404 (403 for an agent token, which may not leave `/agent/`). The machine is internal: it only tells the same folder on two computers apart. |
 | `GET /agent/contacts/tree` | 404. `partyline agents` reads `GET /agent/agents`. |
 | `machine` and `machine_label` of an AI profile; `machines`, `unlinked` and `shared` of `GET /contacts` | Gone. AIs are listed by organization. |
-| Use and manage grants, and the owner as the one who sees and manages | The AI's host and the members of its organizations see it; whoever manages it, by the rules above, manages it. |
+| Use and manage grants, and the owner as the one who sees and manages | The AI's host, its instructors and the members of its organizations see it; its host and user instructors manage it. |
+| Guests, positions and the org chart (SR2): `GET /orgs/{org}/chart`, `POST`, `PATCH`, `DELETE /orgs/{org}/positions…`, `GET /orgs/{org}/members/{iid}/move-preview`; the fields `position_id`, `position_name`, `invited_by`, `can_move`, `can_share_access`, `positions` and `position`; the codes `position_unknown` and `position_cycle`; the `guest` permission | The routes are gone (404, or 405 where the path still has another method). Trust is the host and the instructors; an admin removes members; the launcher refuses `--position`. |
 
 ## Compatibility with v0.5 CLIs
 
@@ -692,9 +684,9 @@ The server needs no version check: every new header, field and frame is additive
 
 | A v0.5 CLI | After the upgrade |
 | --- | --- |
-| Sends no org, position or parent header | The defaults apply: the creator is the host user, the home organization is the user's default (their personal one until they choose), no position. It keeps starting sessions. |
+| Sends no org or parent header | The defaults apply: the creator is the host user, the home organization is the user's default (their personal one until they choose). It keeps starting sessions. A position header is ignored. |
 | Reads `owner` in the welcome frame | Still filled, with the host user. The new fields are ignored. |
-| Its instructions say a trusted message comes from "your owner" | Stale wording: the flag is computed by the server under the rule above, so a user's other AIs and their peers are **not** trusted any more. Update the CLI (`partyline update`) for the new words. |
+| Its instructions say a trusted message comes from "your owner" | The flag is computed by the server: the host (the owner) and the AI's instructors are trusted, a user's other AIs are **not**. Update the CLI (`partyline update`) for the new words. |
 | Ends on close 4002 | A manager ending its session uses 4002, so it stops too. |
 | Calls `/agent/session`, `/agent/whoami`, `/agent/agents` | Unchanged; `/agent/agents` lists the AIs the token's user hosts and gains `organization`. |
 | `partyline agents` calls `/agent/contacts/tree` | Prints `not found`. The new CLI groups by organization. |

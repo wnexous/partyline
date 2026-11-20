@@ -3,6 +3,11 @@
 Notes for servers still on v0.5 or older. Each of these releases changed the data model: back up the
 data directory first. Newer upgrades need nothing beyond the steps in the [README](../README.md#upgrading).
 
+Positions, guests and the org chart, which the notes below mention, were removed later (release 2 of
+simple identity): that upgrade turns every guest into a member, drops the positions and makes the
+creators of each AI its instructors, so trust is its host and its instructors. See
+[Organizations](../README.md#organizations).
+
 ## Upgrading from v0.5
 
 This release adds organizations and replaces per-resource sharing with them. It is a breaking
