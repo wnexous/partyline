@@ -22,9 +22,9 @@ type ListenOptions struct {
 	Home       string
 	Harness    string
 	Adopt      string
-	// Org, Position, Parent and NewAI mean what they mean for Run.
-	Org, Position, Parent string
-	NewAI                 bool
+	// Org, Parent and NewAI mean what they mean for Run.
+	Org, Parent string
+	NewAI       bool
 	// LiveID is the id this process connects with, shared with the tools-only process of the same pi or
 	// OpenCode session so its tool calls are this session's (SESS-45). Empty means a random one; a listen
 	// process restarted by the adapter with the same id keeps its label (SESS-14).
@@ -86,7 +86,7 @@ func Listen(ctx context.Context, o ListenOptions) error {
 
 	id := Identity{
 		Machine: o.Machine, Folder: o.Folder, MainFolder: o.MainFolder, Home: o.Home, Harness: o.Harness, Adopt: o.Adopt,
-		Org: o.Org, Position: o.Position, Parent: o.Parent, NewAI: o.NewAI, HarnessSession: o.HarnessSession,
+		Org: o.Org, Parent: o.Parent, NewAI: o.NewAI, HarnessSession: o.HarnessSession,
 		ClientVersion: o.Version,
 	}
 	out := &lineWriter{w: o.Stdout}

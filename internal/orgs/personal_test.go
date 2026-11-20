@@ -56,8 +56,8 @@ func TestCreatePersonalMakesTheAccountsOwnOrganization(t *testing.T) {
 	require.Equal(t, t0.UnixMilli(), m.CreatedAt)
 	c, err := Load(ctx, f.st.R(), m.ID)
 	require.NoError(t, err)
-	require.Equal(t, map[string]Position{m.PositionID: {ID: m.PositionID, Name: "Admin"}}, c.Positions, "one root position, Admin")
-	require.Equal(t, map[string]Member{alice: {IID: alice, Permission: PermissionAdmin, PositionID: m.PositionID}}, c.Members)
+	require.Equal(t, map[string]Member{alice: {IID: alice, Permission: PermissionAdmin}}, c.Members)
+	require.Zero(t, f.count(`SELECT COUNT(*) FROM sqlite_master WHERE name = 'positions'`), "SR2-04: no positions any more")
 	require.Equal(t, m.ID, f.str(`SELECT default_org_id FROM users WHERE id = ?`, alice), "and it is the default")
 	require.Equal(t, m.ID, f.defaultFor(alice))
 	require.Empty(t, f.audited(), "the caller audits (it knows the account)")
@@ -85,7 +85,7 @@ func TestDefaultForAUser(t *testing.T) {
 	f.joinAt(a, u, PermissionMember, 20) // the oldest member of the list... but not the oldest membership
 	f.joinAt(b, u, PermissionAdmin, 50)  // an admin, joined late
 	f.joinAt(c, u, PermissionAdmin, 30)  // an admin, joined earlier than b
-	f.joinAt(d, u, PermissionGuest, 10)  // the oldest membership of all
+	f.joinAt(d, u, PermissionMember, 10) // the oldest membership of all
 
 	require.Empty(t, f.defaultFor("u-nobody"), "an unknown identity")
 	f.exec(`UPDATE users SET default_org_id = ? WHERE id = ?`, b, u)
@@ -125,7 +125,7 @@ func TestDefaultForAnAIIsItsHome(t *testing.T) {
 	home, other := f.org("home"), f.org("other")
 	bot := f.ai("bot", owner)
 	f.joinAt(other, bot, PermissionAdmin, 1) // older, and an admin
-	f.home(bot, home, owner, PermissionMember, "")
+	f.home(bot, home, owner, PermissionMember)
 	require.Equal(t, home, f.defaultFor(bot))
 
 	homeless := f.ai("homeless", owner)
@@ -159,7 +159,7 @@ func TestSetDefaultRequiresMembership(t *testing.T) {
 	require.Empty(t, f.str(`SELECT default_org_id FROM users WHERE id = ?`, f.user("zed")))
 
 	// Changing it takes effect at once.
-	f.join(globex, a.bob, PermissionMember, "", "")
+	f.join(globex, a.bob, PermissionMember)
 	require.NoError(t, f.svc.SetDefault(ctx, a.bob, globex))
 	require.Equal(t, globex, f.defaultFor(a.bob))
 }

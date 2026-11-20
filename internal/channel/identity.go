@@ -81,19 +81,19 @@ type Identity struct {
 	// Adopt is the handle or v0.3 agent name of an unlinked AI to link to the folder when it has
 	// none yet (--as, PARTYLINE_AGENT) (MIG-02).
 	Adopt string
-	// Org, Position and Parent are what the session asked for when it started (--org, --position, --parent,
-	// handed on by the launcher as PARTYLINE_LAUNCH_ORG, PARTYLINE_LAUNCH_POSITION and
-	// PARTYLINE_LAUNCH_PARENT): the organization (a slug or an id), the name of the position and the @handle or
-	// id of the AI that starts this one. They place a new AI (ORG-04, POS-07, POS-08); each is sent only when
-	// set, so a session that asks for nothing sends nothing and gets the server's defaults (AD-020).
-	Org, Position, Parent string
+	// Org and Parent are what the session asked for when it started (--org, --parent, handed on by the
+	// launcher as PARTYLINE_LAUNCH_ORG and PARTYLINE_LAUNCH_PARENT): the organization (a slug or an id) and the
+	// @handle or id of the AI that starts this one, which becomes its instructor. They place a new AI (ORG-04,
+	// POS-08, SR2-09); each is sent only when set, so a session that asks for nothing sends nothing and gets the
+	// server's defaults (AD-020).
+	Org, Parent string
 	// NewAI is --new-ai (PARTYLINE_NEW_AI=1, handed on as PARTYLINE_LAUNCH_NEW_AI=1), sent as
 	// X-Partyline-New-AI: 1: the folder gets its own AI instead of joining the AI of a folder above it (SI-07).
 	NewAI bool
 }
 
-// setHeaders sets the identity headers. The folder, the main worktree folder, the home folder and
-// the position are percent-encoded (spaces, non-ASCII characters and separators), so a header
+// setHeaders sets the identity headers. The folder, the main worktree folder and the home folder are
+// percent-encoded (spaces, non-ASCII characters and separators), so a header
 // carries any path or name; the folder header is always sent, so a process that could not tell its
 // folder is refused with folder_required instead of being taken for a client from before folders.
 func (id Identity) setHeaders(h http.Header) {
@@ -107,7 +107,7 @@ func (id Identity) setHeaders(h http.Header) {
 		dto.HeaderHarness: id.Harness, dto.HeaderAdopt: id.Adopt, dto.HeaderLive: id.LiveID,
 		dto.HeaderHarnessSession: id.HarnessSession, dto.HeaderClientVersion: id.ClientVersion,
 		dto.HeaderMainFolder: escapeHeader(id.MainFolder),
-		dto.HeaderOrg:        id.Org, dto.HeaderPosition: escapeHeader(id.Position), dto.HeaderParent: id.Parent,
+		dto.HeaderOrg:        id.Org, dto.HeaderParent: id.Parent,
 	} {
 		if v != "" {
 			h.Set(k, v)
@@ -129,9 +129,9 @@ func escapeHeader(v string) string {
 	return url.PathEscape(v)
 }
 
-// asksPlacement is whether the session asked for an organization or a position, the two things the
-// server can refuse a start for (403 or 409); a parent it cannot refuse, it ignores one it will not take.
-func (id Identity) asksPlacement() bool { return id.Org != "" || id.Position != "" }
+// asksPlacement is whether the session asked for an organization, the thing the server can refuse a start
+// for (403 or 409); a parent it cannot refuse, it ignores one it will not take.
+func (id Identity) asksPlacement() bool { return id.Org != "" }
 
 // CanonicalFolder turns dir into the folder the server identifies an AI by (AID-07): absolute,
 // symlinks resolved, cleaned (no trailing separator, no "." or ".." segments; "/" stays "/"). A

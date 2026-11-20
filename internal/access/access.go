@@ -1,7 +1,7 @@
 // Package access resolves what a caller may do with rooms and who may see an AI or a connection. A room's
 // level comes from room membership and from organizations (AD-016): a group is posted to by its members and
 // managed by its creator and by the admins of its organization, and a direct message is posted to by its two
-// participants and viewed by the managers of an AI participant in that AI's home organization. An AI and a
+// participants and viewed by the managers of an AI participant (its host and its user instructors). An AI and a
 // connection are seen through membership of the organizations they belong to (CanSeeAI, CanSeeConnection).
 // Instance admins get no implicit access (ACL-08).
 package access
@@ -91,7 +91,8 @@ func (a *Authorizer) Authz() *orgs.Authz { return a.authz }
 
 // CanSeeAI reports whether the caller can see the AI (AD-016): a user sees the AIs hosted on their
 // computers and the AIs of the organizations they belong to; an AI sees itself, the AIs it shares an
-// organization with and the other AIs of its own host (SI-01), whatever organizations either belongs to.
+// organization with and the other AIs of its own host (SI-01), whatever organizations either belongs to; an
+// identity also sees the AIs it instructs (SR2-07).
 // It reaches no further through its host: the host's organizations and people give it nothing, because it
 // acts as itself. Seeing an AI never makes its messages trusted (SI-03), and adding it to a group still
 // needs membership of the group's organization (SI-02). A disabled user and an unknown AI see and are seen
@@ -124,12 +125,21 @@ func (a *Authorizer) CanSeeAI(ctx context.Context, p authn.Principal, aiID strin
 		case self.OwnerID == agent.OwnerID:
 			return true, nil // two AIs of the same host always see each other (SI-01)
 		}
-		return a.authz.SharesOrg(ctx, p.AgentID, aiID)
+		return a.seesThrough(ctx, p.AgentID, aiID)
 	}
 	if agent.OwnerID == p.UserID {
 		return true, nil
 	}
-	return a.authz.SharesOrg(ctx, p.UserID, aiID)
+	return a.seesThrough(ctx, p.UserID, aiID)
+}
+
+// seesThrough reports whether iid sees the AI through an organization they share or because it instructs
+// the AI (SR2-07): an instructor sees the AI it instructs.
+func (a *Authorizer) seesThrough(ctx context.Context, iid, aiID string) (bool, error) {
+	if ok, err := a.authz.SharesOrg(ctx, iid, aiID); err != nil || ok {
+		return ok, err
+	}
+	return a.authz.Trusts(ctx, iid, aiID)
 }
 
 // CanSeeConnection reports whether the caller can see the connection (AD-016): it is a member of the organization
@@ -170,12 +180,11 @@ func (a *Authorizer) RoomLevel(ctx context.Context, p authn.Principal, roomID st
 //
 // Group (AD-016): the highest of post, as a user member of the room, and manage, as the group's
 // creator or as an admin of the group's organization. The creator keeps managing only while still a
-// member of the organization, and not as a guest, who may take part in groups but not run them
-// (OMEM-04, OMEM-06). Neither a position, the owner column of the room row nor the instance admin
+// member of the organization (OMEM-06). Neither the owner column of the room row nor the instance admin
 // role gives anything.
 //
-// DM (AD-011, DM-08): post for a participant; view for whoever manages an AI participant in that AI's
-// home organization (POS-03); none otherwise, admins included. Nobody manages a DM, and still whoever
+// DM (AD-011, DM-08): post for a participant; view for whoever manages an AI participant - its host or a
+// user that instructs it (SR2-13); none otherwise, admins included. Nobody manages a DM, and still whoever
 // holds a level on one resumes it (CanResume).
 func (a *Authorizer) UserRoomLevel(ctx context.Context, userID, roomID string) (Level, error) {
 	room, err := a.store.R().GetRoom(ctx, roomID)
@@ -212,7 +221,7 @@ func (a *Authorizer) groupLevel(ctx context.Context, room db.Room, userID string
 	if err != nil || !member {
 		return level, err
 	}
-	creator := room.CreatorIid.Valid && room.CreatorIid.String == userID && m.Permission != orgs.PermissionGuest
+	creator := room.CreatorIid.Valid && room.CreatorIid.String == userID
 	if m.Permission == orgs.PermissionAdmin || creator {
 		return dto.LevelManage, nil
 	}
@@ -238,20 +247,13 @@ func (a *Authorizer) dmLevel(ctx context.Context, room db.Room, userID string) (
 	return None, nil
 }
 
-// managesAI reports whether the user manages the participant in its home organization. Only an AI
-// has one: a user, a person and an AI without a home organization are managed by nobody.
+// managesAI reports whether the user manages the participant (SR2-13). Only an AI is managed: a user and a
+// person are managed by nobody.
 func (a *Authorizer) managesAI(ctx context.Context, z *orgs.Session, userID, participantID string) (bool, error) {
 	if participantID == "" {
 		return false, nil
 	}
-	home, err := a.store.R().GetAgentOrg(ctx, participantID)
-	if errors.Is(err, sql.ErrNoRows) {
-		return false, nil // a user or a person
-	}
-	if err != nil || home == "" {
-		return false, err
-	}
-	return z.Manages(ctx, userID, participantID, home)
+	return z.Manages(ctx, userID, participantID)
 }
 
 // CanResume reports whether a caller holding level l on a room of the given kind (a dto.ConversationKind)

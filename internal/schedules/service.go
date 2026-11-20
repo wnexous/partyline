@@ -198,7 +198,7 @@ func (s *Service) roleOf(ctx context.Context, p authn.Principal, agentID string)
 	if !see {
 		return 0, access.ErrNotFound
 	}
-	managed, err := s.d.Authz.ManagesAnywhere(ctx, p.UserID, agentID)
+	managed, err := s.d.Authz.Manages(ctx, p.UserID, agentID)
 	if err != nil {
 		return 0, err
 	}

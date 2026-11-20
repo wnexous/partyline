@@ -94,9 +94,9 @@ func (s *Service) Merge(ctx context.Context, p authn.Principal, fromID, intoID s
 	return nil
 }
 
-// manages requires the user to manage the AI in its home organization (POS-03) and returns that
-// organization: an AI the user cannot see is access.ErrNotFound; one they see and do not manage, or one
-// that has no home organization and so no manager, access.ErrForbidden.
+// manages requires the user to manage the AI (its host or a user that instructs it, SR2-13) and returns its
+// home organization: an AI the user cannot see is access.ErrNotFound; one they see and do not manage, or one
+// that has no home organization, access.ErrForbidden.
 func (s *Service) manages(ctx context.Context, p authn.Principal, agentID string) (string, error) {
 	see, err := s.az.CanSeeAI(ctx, p, agentID)
 	if err != nil {
@@ -112,7 +112,7 @@ func (s *Service) manages(ctx context.Context, p authn.Principal, agentID string
 	if home == "" {
 		return "", access.ErrForbidden
 	}
-	ok, err := s.az.Authz().Manages(ctx, p.IID(), agentID, home)
+	ok, err := s.az.Authz().Manages(ctx, p.IID(), agentID)
 	if err != nil {
 		return "", err
 	}
@@ -259,10 +259,10 @@ func (s *Service) merge(ctx context.Context, q *db.Queries, actorID, fromID, int
 }
 
 // mergeOrganizations moves what the merged AI is in the organizations to the surviving one: its
-// memberships (the survivor's win), and who it created or invited.
+// memberships (the survivor's win), who it created and invited, and its instructors (SR2-06).
 func (s *Service) mergeOrganizations(ctx context.Context, q *db.Queries, from, into db.Agent, out *mergeOutcome) error {
-	// What the merged AI created and invited is the survivor's. This also makes the survivor its own
-	// creator or inviter when the merged AI had made it; those two are repaired below.
+	// What the merged AI created is the survivor's. This also makes the survivor its own creator when the
+	// merged AI had made it; that is repaired below.
 	if err := q.ReassignAgentCreator(ctx, db.ReassignAgentCreatorParams{FromID: sql.NullString{String: from.ID, Valid: true}, IntoID: sql.NullString{String: into.ID, Valid: true}}); err != nil {
 		return err
 	}
@@ -274,10 +274,12 @@ func (s *Service) mergeOrganizations(ctx context.Context, q *db.Queries, from, i
 	if err := q.ReassignRoomCreator(ctx, db.ReassignRoomCreatorParams{FromID: sql.NullString{String: from.ID, Valid: true}, IntoID: sql.NullString{String: into.ID, Valid: true}}); err != nil {
 		return err
 	}
-	if err := q.ReassignInviter(ctx, db.ReassignInviterParams{FromID: sql.NullString{String: from.ID, Valid: true}, IntoID: sql.NullString{String: into.ID, Valid: true}}); err != nil {
+	// Who instructed the merged AI instructs the survivor, and the AIs the merged one instructed are
+	// instructed by the survivor; the merged AI's rows go with it, and nothing instructs itself.
+	if err := q.MergeAgentInstructors(ctx, db.MergeAgentInstructorsParams{FromID: from.ID, IntoID: into.ID}); err != nil {
 		return err
 	}
-	if err := q.ClearSelfInviter(ctx, db.ClearSelfInviterParams{FromID: from.ID, IntoID: into.ID}); err != nil {
+	if err := q.ReassignInstructor(ctx, db.ReassignInstructorParams{FromID: from.ID, IntoID: into.ID}); err != nil {
 		return err
 	}
 	if err := q.ReassignInvitationInviter(ctx, db.ReassignInvitationInviterParams{FromID: from.ID, IntoID: into.ID}); err != nil {

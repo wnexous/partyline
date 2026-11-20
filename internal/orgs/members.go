@@ -4,7 +4,6 @@ import (
 	"context"
 	"database/sql"
 	"errors"
-	"sort"
 	"time"
 
 	"github.com/wnexous/partyline/internal/audit"
@@ -26,54 +25,44 @@ var (
 	ErrAlreadyMember = errors.New("already a member of the organization")
 )
 
-// MemberRow is a membership as the members list shows it: the identity with its profile summary,
-// its permission and position, the inviter of a guest (OMEM-01, OMEM-03) and what the viewer may do to it
-// (CHART-03).
+// MemberRow is a membership as the members list shows it: the identity with its profile summary and its
+// permission (OMEM-03), and what the viewer may do to it.
 type MemberRow struct {
-	IID, Permission                    string
-	PositionID, PositionName           string
-	Kind, DisplayName, Handle          string
-	AvatarSha256                       string
-	InviterIID                         string
-	InviterKind, InviterDisplayName    string
-	InviterHandle, InviterAvatarSha256 string
-	JoinedAt                           int64
-	// CanDelete says the viewer may delete the member in this organization (POS-05); DeletedForGood what that
-	// does: an AI whose home is the organization is deleted for good, anyone else is only removed (POS-06).
-	// CanMove says the viewer may move the member to another position (POS-04). CanShareAccess says the viewer
-	// may put this person in the position the viewer holds, so that they manage what it manages (ST-01).
-	CanDelete, DeletedForGood, CanMove, CanShareAccess bool
-	// Under is set by ChartView on a member with no position that hangs under another member.
-	Under string
+	IID, Permission           string
+	Kind, DisplayName, Handle string
+	AvatarSha256              string
+	JoinedAt                  int64
+	// CanDelete says the viewer may delete the member in this organization (SR2-12): an admin may take anyone
+	// else out, and the host of an AI whose home is the organization may delete it. DeletedForGood says what
+	// that does: an AI whose home is the organization is deleted for good, anyone else is only removed (POS-06).
+	CanDelete, DeletedForGood bool
 }
 
 func memberRow(r db.ListOrgMembersRow) MemberRow {
 	return MemberRow{
-		IID: r.Iid, Permission: r.Permission, PositionID: r.PositionID, PositionName: r.PositionName,
-		Kind: r.Kind, DisplayName: r.DisplayName, Handle: r.Handle, AvatarSha256: r.AvatarSha256,
-		InviterIID: r.InviterIid, InviterKind: r.InviterKind, InviterDisplayName: r.InviterDisplayName,
-		InviterHandle: r.InviterHandle, InviterAvatarSha256: r.InviterAvatarSha256, JoinedAt: r.JoinedAt,
+		IID: r.Iid, Permission: r.Permission, Kind: r.Kind, DisplayName: r.DisplayName, Handle: r.Handle,
+		AvatarSha256: r.AvatarSha256, JoinedAt: r.JoinedAt,
 	}
 }
 
-// orgSnapshot is one consistent read of an organization for a viewer: its chart, its members with their
-// profiles and the AIs whose home it is.
+// orgSnapshot is one consistent read of an organization for a viewer: its roster, its members with their
+// profiles and the AIs whose home it is, with their hosts.
 type orgSnapshot struct {
-	chart *Chart
-	rows  []db.ListOrgMembersRow
-	homes map[string]bool
+	roster *Roster
+	rows   []db.ListOrgMembersRow
+	hosts  map[string]string // AI whose home is the organization → its host
 }
 
-// snapshot reads the organization in one read transaction, so the rows and the chart agree. The viewer must
+// snapshot reads the organization in one read transaction, so the rows and the roster agree. The viewer must
 // be a member (ErrNotFound otherwise). With only set it reads that one member, ErrNotFound when it is none.
 func (s *Service) snapshot(ctx context.Context, viewerIID, orgID, only string) (orgSnapshot, error) {
-	snap := orgSnapshot{homes: map[string]bool{}}
+	snap := orgSnapshot{hosts: map[string]string{}}
 	err := s.store.ReadTx(ctx, func(q *db.Queries) error {
 		var err error
-		if snap.chart, err = Load(ctx, q, orgID); err != nil {
+		if snap.roster, err = Load(ctx, q, orgID); err != nil {
 			return err
 		}
-		if _, ok := snap.chart.Member(viewerIID); !ok {
+		if _, ok := snap.roster.Member(viewerIID); !ok {
 			return ErrNotFound
 		}
 		if only != "" {
@@ -85,19 +74,23 @@ func (s *Service) snapshot(ctx context.Context, viewerIID, orgID, only string) (
 				return err
 			}
 			snap.rows = []db.ListOrgMembersRow{db.ListOrgMembersRow(r)}
-			home, err := q.GetAgentOrg(ctx, only) // empty for a user
-			if err != nil && !errors.Is(err, sql.ErrNoRows) {
+			home, err := homeOf(ctx, q, only) // empty for a user
+			if err != nil {
 				return err
 			}
-			snap.homes[only] = home == orgID
+			if home == orgID {
+				if snap.hosts[only], err = q.GetAgentHost(ctx, only); err != nil {
+					return err
+				}
+			}
 			return nil
 		}
 		if snap.rows, err = q.ListOrgMembers(ctx, orgID); err != nil {
 			return err
 		}
-		homes, err := q.ListOrgHomeAgentIDs(ctx, nullable(orgID))
-		for _, id := range homes {
-			snap.homes[id] = true
+		homes, err := q.ListOrgHomeAgents(ctx, nullable(orgID))
+		for _, h := range homes {
+			snap.hosts[h.ID] = h.OwnerID
 		}
 		return err
 	})
@@ -106,18 +99,18 @@ func (s *Service) snapshot(ctx context.Context, viewerIID, orgID, only string) (
 
 // memberRows renders the snapshot's members for the viewer, in the order they were read.
 func (snap orgSnapshot) memberRows(viewerIID string) []MemberRow {
-	actions := newViewerActions(snap.chart, viewerIID)
 	out := make([]MemberRow, len(snap.rows))
 	for i, r := range snap.rows {
 		out[i] = memberRow(r)
-		actions.apply(&out[i], snap.homes)
+		host, home := snap.hosts[r.Iid]
+		out[i].DeletedForGood = home
+		out[i].CanDelete = snap.roster.CanRemove(viewerIID, r.Iid) || (home && host == viewerIID)
 	}
 	return out
 }
 
-// ListMembers lists the organization's members with their profile summary, permission, position and,
-// for a guest, its inviter, and what the viewer may do to each; every member, guests included, sees the
-// list (CHART-02).
+// ListMembers lists the organization's members with their profile summary and permission, and what the
+// viewer may do to each; every member sees the list.
 func (s *Service) ListMembers(ctx context.Context, actorIID, orgID string) ([]MemberRow, error) {
 	snap, err := s.snapshot(ctx, actorIID, orgID, "")
 	if err != nil {
@@ -140,22 +133,17 @@ func (s *Service) MemberView(ctx context.Context, actorIID, orgID, targetIID str
 type AddMemberInput struct {
 	OrgID, IID string
 	Permission Permission
-	// PositionID is a position of the organization, "" for none.
-	PositionID string
-	// InviterIID is a guest's inviter; it is ignored for any other permission.
-	InviterIID string
 	// Now is the join time.
 	Now time.Time
 }
 
 // AddMember makes an identity a member of an organization in the caller's transaction: invitations
 // accepted (OMEM-02) and AIs started (ORG-04) use it. It refuses an identity that already is a member
-// (ErrAlreadyMember), a permission that is not admin, member or guest and a position that is not the
-// organization's (validation errors). It writes no audit entry and announces nothing: the caller does,
-// after its commit.
+// (ErrAlreadyMember) and a permission that is not admin or member (a validation error). It writes no
+// audit entry and announces nothing: the caller does, after its commit.
 func AddMember(ctx context.Context, q *db.Queries, in AddMemberInput) error {
 	if !in.Permission.Valid() {
-		return &validation.Error{Fields: map[string]string{"permission": "must be admin, member or guest"}}
+		return &validation.Error{Fields: map[string]string{"permission": "must be admin or member"}}
 	}
 	if _, ok, err := memberOf(ctx, q, in.OrgID, in.IID); err != nil || ok {
 		if err == nil {
@@ -163,93 +151,55 @@ func AddMember(ctx context.Context, q *db.Queries, in AddMemberInput) error {
 		}
 		return err
 	}
-	if in.PositionID != "" {
-		if err := requirePositionIn(ctx, q, in.OrgID, in.PositionID, "position_id"); err != nil {
-			return err
-		}
-	}
-	inviter := in.InviterIID
-	if in.Permission != PermissionGuest {
-		inviter = ""
-	}
 	return q.CreateOrgMember(ctx, db.CreateOrgMemberParams{
-		OrgID: in.OrgID, Iid: in.IID, Permission: string(in.Permission), PositionID: nullable(in.PositionID),
-		InviterIid: nullable(inviter), JoinedAt: in.Now.UnixMilli(),
+		OrgID: in.OrgID, Iid: in.IID, Permission: string(in.Permission), JoinedAt: in.Now.UnixMilli(),
 	})
-}
-
-func countAdmins(c *Chart) int {
-	n := 0
-	for _, m := range c.Members {
-		if m.Permission == PermissionAdmin {
-			n++
-		}
-	}
-	return n
-}
-
-// MemberUpdate is a change to a member's permission and/or position; a nil field is left alone.
-type MemberUpdate struct {
-	Permission *Permission
-	// PositionID moves the member to that position of the organization; a pointer to "" clears it.
-	PositionID *string
 }
 
 // SetPermission gives a member of the organization another permission; only an admin does (OMEM-04).
 // A change that would leave no admin is ErrLastAdmin (OMEM-05), decided in the transaction that
-// changes it. A guest that becomes a member or admin is nobody's guest any more. The same permission
-// again is nothing. It returns the membership as it is afterwards.
+// changes it. The same permission again is nothing. It returns the membership as it is afterwards.
 func (s *Service) SetPermission(ctx context.Context, actorIID, orgID, targetIID string, perm Permission) (Member, error) {
-	return s.UpdateMember(ctx, actorIID, orgID, targetIID, MemberUpdate{Permission: &perm})
-}
-
-// SetPosition moves a member to another position of the organization (POS-04). An admin gives anyone
-// any position of the organization, or none (positionID ""); a position that is not the organization's
-// is a validation error on position_id. Anyone else must manage the member and move it to a position
-// strictly below its own: to its own level, above it, to none, or by someone who does not manage the
-// member, it is ErrForbidden. The same position again is nothing. It returns the membership
-// afterwards.
-func (s *Service) SetPosition(ctx context.Context, actorIID, orgID, targetIID, positionID string) (Member, error) {
-	return s.UpdateMember(ctx, actorIID, orgID, targetIID, MemberUpdate{PositionID: &positionID})
-}
-
-// UpdateMember changes a member's permission and/or position in one transaction, so either both
-// changes happen or neither does. The rules are those of SetPermission and SetPosition, and the actor's
-// rights are the ones it had when it asked: an admin that steps down and moves in the same request may
-// still make the move. A request that changes nothing is nothing; asking for nothing needs only that
-// the actor is a member. It returns the membership afterwards.
-func (s *Service) UpdateMember(ctx context.Context, actorIID, orgID, targetIID string, u MemberUpdate) (Member, error) {
-	if err := s.prepareUpdate(ctx, actorIID, orgID, u); err != nil {
+	if err := s.z.RequireAdmin(ctx, orgID, actorIID); err != nil {
 		return Member{}, err
+	}
+	if !perm.Valid() {
+		return Member{}, &validation.Error{Fields: map[string]string{"permission": "must be admin or member"}}
 	}
 	var out Member
 	var changed bool
 	err := s.store.WithTx(ctx, func(q *db.Queries) error {
 		out, changed = Member{}, false
-		chart, err := Load(ctx, q, orgID)
+		roster, err := Load(ctx, q, orgID)
 		if err != nil {
 			return err
 		}
-		cur, err := checkUpdate(chart, actorIID, targetIID, u)
-		if err != nil {
-			return err
+		actor, ok := roster.Member(actorIID)
+		if !ok {
+			return ErrNotFound
+		}
+		if actor.Permission != PermissionAdmin {
+			return ErrForbidden
+		}
+		cur, ok := roster.Member(targetIID)
+		if !ok {
+			return ErrNotFound
 		}
 		out = cur
-		if u.Permission != nil {
-			moved, err := s.writePermission(ctx, q, chart, actorIID, orgID, &out, *u.Permission)
-			if err != nil {
-				return err
-			}
-			changed = changed || moved
+		if cur.Permission == perm {
+			return nil
 		}
-		if u.PositionID != nil {
-			moved, err := s.writePosition(ctx, q, actorIID, orgID, &out, *u.PositionID)
-			if err != nil {
-				return err
-			}
-			changed = changed || moved
+		if cur.Permission == PermissionAdmin && roster.admins() <= 1 {
+			return ErrLastAdmin
 		}
-		return nil
+		if err := q.UpdateOrgMemberPermission(ctx, db.UpdateOrgMemberPermissionParams{
+			Permission: string(perm), OrgID: orgID, Iid: targetIID,
+		}); err != nil {
+			return err
+		}
+		out.Permission, changed = perm, true
+		return s.record(ctx, q, actorIID, audit.ActionOrgMemberPermission, orgID,
+			map[string]any{"iid": targetIID, "from": string(cur.Permission), "to": string(perm)})
 	})
 	if err != nil {
 		return Member{}, err
@@ -260,192 +210,10 @@ func (s *Service) UpdateMember(ctx context.Context, actorIID, orgID, targetIID s
 	return out, nil
 }
 
-// MovePreview lists the identities that manage target now but would not after moving it to positionID
-// (POS-04), in the order ManagersOf has them. It is PreviewMove's Lose.
-func (s *Service) MovePreview(ctx context.Context, actorIID, orgID, targetIID, positionID string) ([]string, error) {
-	e, err := s.PreviewMove(ctx, actorIID, orgID, targetIID, positionID)
-	return e.Lose, err
-}
-
-// MoveEffect is what moving a member to a position would change about management (POS-04, ST-05).
-type MoveEffect struct {
-	// Lose are the identities that manage the member now and would not after the move, nearest first.
-	Lose []string
-	// WillManage are the identities the member would manage after the move, by id.
-	WillManage []string
-	// WillBeTrustedBy are the AIs among WillManage whose home is the organization: they would take the
-	// member's messages as trusted (POS-10), by id.
-	WillBeTrustedBy []string
-	// NotShared are the identities the actor manages now that the member would still not manage after the
-	// move, the member itself left out, by id: what a co-holder of the actor's position does not get.
-	NotShared []string
-}
-
-// PreviewMove says what moving target to positionID would change (MoveEffect). It applies the same
-// authorization and validation as UpdateMember would to that move and changes nothing: a move the actor
-// may not make answers the move's error (ErrForbidden, ErrNotFound or a validation error on position_id).
-func (s *Service) PreviewMove(ctx context.Context, actorIID, orgID, targetIID, positionID string) (MoveEffect, error) {
-	u := MemberUpdate{PositionID: &positionID}
-	if err := s.prepareUpdate(ctx, actorIID, orgID, u); err != nil {
-		return MoveEffect{}, err
-	}
-	var out MoveEffect
-	err := s.store.ReadTx(ctx, func(q *db.Queries) error {
-		out = MoveEffect{}
-		chart, err := Load(ctx, q, orgID)
-		if err != nil {
-			return err
-		}
-		if _, err := checkUpdate(chart, actorIID, targetIID, u); err != nil {
-			return err
-		}
-		homes, err := q.ListOrgHomeAgentIDs(ctx, nullable(orgID))
-		if err != nil {
-			return err
-		}
-		out = moveEffect(chart, actorIID, targetIID, positionID, homes)
-		return nil
-	})
-	if err != nil {
-		return MoveEffect{}, err
-	}
-	return out, nil
-}
-
-// moveEffect computes MoveEffect on the chart; homes are the AIs whose home is the organization. Every list
-// is non-nil.
-func moveEffect(chart *Chart, actorIID, targetIID, positionID string, homes []string) MoveEffect {
-	after := chart.WithPosition(targetIID, positionID)
-	out := MoveEffect{Lose: []string{}, WillManage: []string{}, WillBeTrustedBy: []string{}, NotShared: []string{}}
-	still := map[string]bool{}
-	for _, iid := range after.ManagersOf(targetIID) {
-		still[iid] = true
-	}
-	for _, iid := range chart.ManagersOf(targetIID) {
-		if !still[iid] {
-			out.Lose = append(out.Lose, iid)
-		}
-	}
-	home := make(map[string]bool, len(homes))
-	for _, id := range homes {
-		home[id] = true
-	}
-	manages := after.ManagedBy(targetIID)
-	for iid := range manages {
-		out.WillManage = append(out.WillManage, iid)
-		if home[iid] {
-			out.WillBeTrustedBy = append(out.WillBeTrustedBy, iid)
-		}
-	}
-	for iid := range chart.ManagedBy(actorIID) {
-		if iid != targetIID && !manages[iid] {
-			out.NotShared = append(out.NotShared, iid)
-		}
-	}
-	sort.Strings(out.WillManage)
-	sort.Strings(out.WillBeTrustedBy)
-	sort.Strings(out.NotShared)
-	return out
-}
-
-// prepareUpdate runs the checks of an update that need no chart: a permission change is for an admin
-// and must name a permission; anything else needs only the actor to be a member. UpdateMember and
-// MovePreview ask the same questions.
-func (s *Service) prepareUpdate(ctx context.Context, actorIID, orgID string, u MemberUpdate) error {
-	if u.Permission != nil {
-		if err := s.z.RequireAdmin(ctx, orgID, actorIID); err != nil {
-			return err
-		}
-		if !u.Permission.Valid() {
-			return &validation.Error{Fields: map[string]string{"permission": "must be admin, member or guest"}}
-		}
-		return nil
-	}
-	return s.z.RequireMember(ctx, orgID, actorIID)
-}
-
-// checkUpdate applies the rules of the update to the chart: the actor must still be a member (and an
-// admin when it changes a permission), the target must be one, and a position must be one the actor may
-// give it (POS-04). It returns the target as it is now.
-func checkUpdate(chart *Chart, actorIID, targetIID string, u MemberUpdate) (Member, error) {
-	actor, ok := chart.Member(actorIID)
-	if !ok {
-		return Member{}, ErrNotFound
-	}
-	if u.Permission != nil && actor.Permission != PermissionAdmin {
-		return Member{}, ErrForbidden
-	}
-	cur, ok := chart.Member(targetIID)
-	if !ok {
-		return Member{}, ErrNotFound
-	}
-	if u.PositionID != nil {
-		if err := checkPosition(chart, actor, targetIID, *u.PositionID); err != nil {
-			return Member{}, err
-		}
-	}
-	return cur, nil
-}
-
-// checkPosition decides whether actor may put the target in the position (POS-04): an admin may use
-// any position of the organization or none, anyone else only a position strictly below its own for a
-// member it manages.
-func checkPosition(chart *Chart, actor Member, targetIID, positionID string) error {
-	if actor.Permission == PermissionAdmin {
-		if _, ok := chart.Positions[positionID]; positionID != "" && !ok {
-			return &validation.Error{Fields: map[string]string{"position_id": "must be a position of this organization"}}
-		}
-		return nil
-	}
-	if positionID == "" || !chart.Manages(actor.IID, targetIID) || !chart.Above(actor.PositionID, positionID) {
-		return ErrForbidden
-	}
-	return nil
-}
-
-// writePermission gives *m the permission and records it; m is the member as it is now, and is updated
-// to how it is afterwards. It reports whether anything changed.
-func (s *Service) writePermission(ctx context.Context, q *db.Queries, chart *Chart, actorIID, orgID string, m *Member, perm Permission) (bool, error) {
-	if m.Permission == perm {
-		return false, nil
-	}
-	if m.Permission == PermissionAdmin && countAdmins(chart) <= 1 {
-		return false, ErrLastAdmin
-	}
-	from := m.Permission
-	m.Permission = perm
-	if perm != PermissionGuest {
-		m.InviterIID = ""
-	}
-	if err := q.UpdateOrgMemberPermission(ctx, db.UpdateOrgMemberPermissionParams{
-		Permission: string(perm), InviterIid: nullable(m.InviterIID), OrgID: orgID, Iid: m.IID,
-	}); err != nil {
-		return false, err
-	}
-	return true, s.record(ctx, q, actorIID, audit.ActionOrgMemberPermission, orgID,
-		map[string]any{"iid": m.IID, "from": string(from), "to": string(perm)})
-}
-
-// writePosition moves *m to the position ("" for none) and records it; m is updated to how it is
-// afterwards. It reports whether anything changed.
-func (s *Service) writePosition(ctx context.Context, q *db.Queries, actorIID, orgID string, m *Member, positionID string) (bool, error) {
-	if m.PositionID == positionID {
-		return false, nil
-	}
-	from := m.PositionID
-	m.PositionID = positionID
-	if err := q.UpdateOrgMemberPosition(ctx, db.UpdateOrgMemberPositionParams{PositionID: nullable(positionID), OrgID: orgID, Iid: m.IID}); err != nil {
-		return false, err
-	}
-	return true, s.record(ctx, q, actorIID, audit.ActionOrgMemberPosition, orgID,
-		map[string]any{"iid": m.IID, "from": from, "to": positionID})
-}
-
-// Remove takes target out of the organization on behalf of actor (POS-05, OMEM-06): actor must be
-// allowed to delete target - an admin, or whoever manages a guest - else ErrForbidden; an outsider
-// actor or a target that is not a member is ErrNotFound. Removing yourself is Leave. What Remove does is
-// only the removal: the person or the AI of another organization is out of the organization's groups
-// and of its position, keeps its account and its other memberships, and the organization's AIs stay.
+// Remove takes target out of the organization on behalf of actor (SR2-12, OMEM-06): actor must be an admin,
+// else ErrForbidden; an outsider actor or a target that is not a member is ErrNotFound. Removing yourself is
+// Leave. What Remove does is only the removal: the person or the AI of another organization is out of the
+// organization's groups, keeps its account and its other memberships, and the organization's AIs stay.
 // An AI whose home is the organization is not removed but deleted (ErrHomeOrganization): the caller
 // does that.
 func (s *Service) Remove(ctx context.Context, actorIID, orgID, targetIID string) error {
@@ -462,28 +230,28 @@ func (s *Service) remove(ctx context.Context, actorIID, orgID, targetIID string)
 	var groups, orphaned []string
 	err := s.store.WithTx(ctx, func(q *db.Queries) error {
 		groups, orphaned = nil, nil
-		chart, err := Load(ctx, q, orgID)
+		roster, err := Load(ctx, q, orgID)
 		if err != nil {
 			return err
 		}
-		if _, ok := chart.Member(actorIID); !ok {
+		if _, ok := roster.Member(actorIID); !ok {
 			return ErrNotFound
 		}
-		target, ok := chart.Member(targetIID)
+		target, ok := roster.Member(targetIID)
 		if !ok {
 			return ErrNotFound
 		}
-		if actorIID != targetIID && !chart.CanDelete(actorIID, targetIID) {
+		if actorIID != targetIID && !roster.CanRemove(actorIID, targetIID) {
 			return ErrForbidden
 		}
-		home, err := q.GetAgentOrg(ctx, targetIID) // empty for a user
-		if err != nil && !errors.Is(err, sql.ErrNoRows) {
+		home, err := homeOf(ctx, q, targetIID) // empty for a user
+		if err != nil {
 			return err
 		}
 		if home == orgID {
 			return ErrHomeOrganization
 		}
-		if target.Permission == PermissionAdmin && countAdmins(chart) <= 1 {
+		if target.Permission == PermissionAdmin && roster.admins() <= 1 {
 			return ErrLastAdmin
 		}
 		if groups, err = q.DeleteOrgGroupMemberships(ctx, db.DeleteOrgGroupMembershipsParams{Iid: targetIID, OrgID: nullable(orgID)}); err != nil {

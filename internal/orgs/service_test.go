@@ -53,11 +53,8 @@ func TestCreateMakesTheCreatorAdminHoldingTheRootAdminPosition(t *testing.T) {
 
 	c, err := Load(ctx, f.st.R(), got.ID)
 	require.NoError(t, err)
-	require.Len(t, c.Positions, 1, "one position and no other")
-	root := c.Positions[got.PositionID]
-	require.Equal(t, Position{ID: got.PositionID, Name: "Admin"}, root, "the root position Admin")
-	require.Equal(t, map[string]Member{alice: {IID: alice, Permission: PermissionAdmin, PositionID: root.ID}}, c.Members,
-		"alice is the only member: admin holding Admin")
+	require.Equal(t, map[string]Member{alice: {IID: alice, Permission: PermissionAdmin}}, c.Members,
+		"alice is the only member, its admin")
 
 	require.Equal(t, []events.Event{events.OrgChanged{OrgID: got.ID}}, next(), "announced once, after the commit")
 	require.Equal(t, []string{"org.create " + got.ID}, f.audited())
@@ -99,7 +96,6 @@ func TestCreateNameBounds(t *testing.T) {
 	}
 	require.Equal(t, 5, accepted, "fixture sanity")
 	require.Equal(t, accepted, f.count(`SELECT COUNT(*) FROM organizations`), "a refused name creates nothing")
-	require.Equal(t, accepted, f.count(`SELECT COUNT(*) FROM positions`))
 	require.Equal(t, accepted, f.count(`SELECT COUNT(*) FROM org_members`))
 
 	got, err := f.svc.Create(ctx, alice, "  Ana\x00 Maria\n ")
@@ -143,7 +139,7 @@ func TestCreateGivesADuplicateSlugASuffix(t *testing.T) {
 	require.Equal(t, []string{"acme", "acme-2", "acme-3", "acme-4", "org"}, slugs)
 }
 
-// CHART-02: an organization is seen by its members, guests included, and by nobody else.
+// An organization is seen by its members and by nobody else.
 func TestGetIsForMembers(t *testing.T) {
 	ctx := context.Background()
 	f := newFixture(t)
@@ -151,17 +147,13 @@ func TestGetIsForMembers(t *testing.T) {
 	for _, tc := range []struct {
 		viewer string
 		want   Permission
-	}{{a.alice, PermissionAdmin}, {a.bob, PermissionMember}, {a.gus, PermissionGuest}, {a.notes, PermissionMember}} {
+	}{{a.alice, PermissionAdmin}, {a.bob, PermissionMember}, {a.gus, PermissionMember}, {a.notes, PermissionMember}} {
 		got, err := f.svc.Get(ctx, tc.viewer, a.org)
 		require.NoError(t, err, tc.viewer)
 		require.Equal(t, a.org, got.ID)
 		require.Equal(t, tc.want, got.Permission, tc.viewer)
 	}
-	got, err := f.svc.Get(ctx, a.walt, a.org)
-	require.NoError(t, err)
-	require.Equal(t, a.trees, got.PositionID, "the viewer's own position")
-
-	_, err = f.svc.Get(ctx, f.user("out"), a.org)
+	_, err := f.svc.Get(ctx, f.user("out"), a.org)
 	require.ErrorIs(t, err, ErrNotFound, "an outsider")
 	_, err = f.svc.Get(ctx, a.alice, "o-nothing")
 	require.ErrorIs(t, err, ErrNotFound, "no such organization")
@@ -197,24 +189,23 @@ func TestResolveTakesASlugOrAnID(t *testing.T) {
 	require.Equal(t, globex, got.ID, "the id wins")
 }
 
-// OMEM-03: an identity lists the organizations it belongs to with its own permission and position in
-// each, guests too, by name.
+// OMEM-03: an identity lists the organizations it belongs to with its own permission in each, by name.
 func TestListMine(t *testing.T) {
 	ctx := context.Background()
 	f := newFixture(t)
 	a := f.acme()
 	zeta := f.org("zeta")
 	beta := f.org("beta")
-	f.join(zeta, a.lee, PermissionAdmin, "", "")
-	f.join(beta, a.lee, PermissionGuest, "", a.bob)
+	f.join(zeta, a.lee, PermissionAdmin)
+	f.join(beta, a.lee, PermissionMember)
 
 	got, err := f.svc.ListMine(ctx, a.lee)
 	require.NoError(t, err)
 	var seen []string
 	for _, m := range got {
-		seen = append(seen, m.Slug+":"+string(m.Permission)+":"+m.PositionID)
+		seen = append(seen, m.Slug+":"+string(m.Permission))
 	}
-	require.Equal(t, []string{"acme:member:" + a.lead, "beta:guest:", "zeta:admin:"}, seen, "ordered by name; each with lee's own permission and position")
+	require.Equal(t, []string{"acme:member", "beta:member", "zeta:admin"}, seen, "ordered by name; each with lee's own permission")
 
 	none, err := f.svc.ListMine(ctx, f.user("out"))
 	require.NoError(t, err)
@@ -336,13 +327,13 @@ func TestDeleteRefusesWhileTheOrganizationOwnsSomething(t *testing.T) {
 	}{
 		{"an AI", func(f *fixture, a acmeChart) {
 			f.ai("owned", a.alice)
-			f.home("a-owned", a.org, a.alice, PermissionMember, "")
+			f.home("a-owned", a.org, a.alice, PermissionMember)
 		}, 1, 0, 0},
 		{"a connection", func(f *fixture, a acmeChart) { f.connector("k1", a.alice, a.org) }, 0, 1, 0},
 		{"a group", func(f *fixture, a acmeChart) { f.group("g1", a.alice, a.org) }, 0, 0, 1},
 		{"all of them", func(f *fixture, a acmeChart) {
 			f.ai("owned", a.alice)
-			f.home("a-owned", a.org, a.alice, PermissionMember, "")
+			f.home("a-owned", a.org, a.alice, PermissionMember)
 			f.connector("k1", a.alice, a.org)
 			f.connector("k2", a.alice, a.org)
 			f.group("g1", a.alice, a.org)
@@ -365,7 +356,6 @@ func TestDeleteRefusesWhileTheOrganizationOwnsSomething(t *testing.T) {
 			require.Equal(t, tc.connectors, blocked.Connectors, "connections")
 			require.Equal(t, tc.groups, blocked.Groups, "groups")
 			require.Equal(t, 1, f.count(`SELECT COUNT(*) FROM organizations WHERE id = ?`, a.org), "nothing was deleted")
-			require.Equal(t, 6, f.count(`SELECT COUNT(*) FROM positions WHERE org_id = ?`, a.org))
 			require.Equal(t, 8+int(tc.agents), f.count(`SELECT COUNT(*) FROM org_members WHERE org_id = ?`, a.org))
 			require.Empty(t, next())
 			require.Empty(t, f.audited())
@@ -373,15 +363,15 @@ func TestDeleteRefusesWhileTheOrganizationOwnsSomething(t *testing.T) {
 	}
 }
 
-func TestDeleteRemovesAnEmptyOrganizationWithItsChart(t *testing.T) {
+func TestDeleteRemovesAnEmptyOrganizationWithItsMembers(t *testing.T) {
 	ctx := context.Background()
 	f := newFixture(t)
 	a := f.bareOrg()
 	other := f.org("globex")
-	f.join(other, a.bob, PermissionMember, "", "")
+	f.join(other, a.bob, PermissionMember)
 	zed := f.user("zed")
 	f.exec(`UPDATE users SET default_org_id = ? WHERE id = ?`, a.org, a.bob)
-	f.exec(`INSERT INTO org_invitations (id, org_id, invitee_iid, permission, invited_by, created_at, expires_at) VALUES ('i1', ?, ?, 'guest', ?, 1, 2)`,
+	f.exec(`INSERT INTO org_invitations (id, org_id, invitee_iid, permission, invited_by, created_at, expires_at) VALUES ('i1', ?, ?, 'member', ?, 1, 2)`,
 		a.org, zed, a.bob)
 	people := f.count(`SELECT COUNT(*) FROM users`)
 	f.group("dm-like", a.alice, "") // a room with no organization, like a DM: it never blocks
@@ -390,7 +380,6 @@ func TestDeleteRemovesAnEmptyOrganizationWithItsChart(t *testing.T) {
 	require.NoError(t, f.svc.Delete(ctx, a.alice, a.org))
 
 	require.Zero(t, f.count(`SELECT COUNT(*) FROM organizations WHERE id = ?`, a.org))
-	require.Zero(t, f.count(`SELECT COUNT(*) FROM positions WHERE org_id = ?`, a.org))
 	require.Zero(t, f.count(`SELECT COUNT(*) FROM org_members WHERE org_id = ?`, a.org))
 	require.Zero(t, f.count(`SELECT COUNT(*) FROM org_invitations WHERE org_id = ?`, a.org))
 	require.Equal(t, 1, f.count(`SELECT COUNT(*) FROM org_members WHERE org_id = ?`, other), "another organization is untouched")

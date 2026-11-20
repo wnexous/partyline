@@ -11,24 +11,6 @@ import (
 	"strings"
 )
 
-const clearSelfInviter = `-- name: ClearSelfInviter :exec
-UPDATE org_members SET inviter_iid = (SELECT f.inviter_iid FROM org_members f
-                                      WHERE f.org_id = org_members.org_id AND f.iid = ?1)
-WHERE org_members.iid = ?2 AND org_members.inviter_iid = ?2
-`
-
-type ClearSelfInviterParams struct {
-	FromID string
-	IntoID string
-}
-
-// Merge: when the merged identity invited the survivor itself, the survivor answers to whoever invited the
-// merged one in that organization (nobody when it had no inviter), not to itself.
-func (q *Queries) ClearSelfInviter(ctx context.Context, arg ClearSelfInviterParams) error {
-	_, err := q.db.ExecContext(ctx, clearSelfInviter, arg.FromID, arg.IntoID)
-	return err
-}
-
 const countUnreadByRoom = `-- name: CountUnreadByRoom :many
 SELECT m.room_id, COUNT(*) AS unread
 FROM messages m
@@ -803,8 +785,8 @@ type MoveAgentOrgMembershipsParams struct {
 	FromID string
 }
 
-// Merge: the organizations only the merged AI belongs to become the surviving AI's, with the permission,
-// position and inviter it had there. Where both belong, the survivor's membership stays (it wins).
+// Merge: the organizations only the merged AI belongs to become the surviving AI's, with the permission it
+// had there. Where both belong, the survivor's membership stays (it wins).
 func (q *Queries) MoveAgentOrgMemberships(ctx context.Context, arg MoveAgentOrgMembershipsParams) ([]string, error) {
 	rows, err := q.db.QueryContext(ctx, moveAgentOrgMemberships, arg.IntoID, arg.FromID)
 	if err != nil {
@@ -947,21 +929,6 @@ type ReassignInvitationInviterParams struct {
 // Merge: a pending invitation the merged identity sent is the surviving one's.
 func (q *Queries) ReassignInvitationInviter(ctx context.Context, arg ReassignInvitationInviterParams) error {
 	_, err := q.db.ExecContext(ctx, reassignInvitationInviter, arg.IntoID, arg.FromID)
-	return err
-}
-
-const reassignInviter = `-- name: ReassignInviter :exec
-UPDATE org_members SET inviter_iid = ?1 WHERE inviter_iid = ?2
-`
-
-type ReassignInviterParams struct {
-	IntoID sql.NullString
-	FromID sql.NullString
-}
-
-// Merge: the guests the merged identity invited answer to the surviving one.
-func (q *Queries) ReassignInviter(ctx context.Context, arg ReassignInviterParams) error {
-	_, err := q.db.ExecContext(ctx, reassignInviter, arg.IntoID, arg.FromID)
 	return err
 }
 

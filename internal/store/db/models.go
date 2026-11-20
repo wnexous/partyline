@@ -32,6 +32,13 @@ type AgentCursor struct {
 	Seq     int64
 }
 
+type AgentInstructor struct {
+	AgentIid      string
+	InstructorIid string
+	CreatedBy     string
+	CreatedAt     int64
+}
+
 type AgentSchedule struct {
 	ID           string
 	AgentID      string
@@ -310,7 +317,6 @@ type OrgInvitation struct {
 	OrgID      string
 	InviteeIid string
 	Permission string
-	PositionID sql.NullString
 	InvitedBy  string
 	CreatedAt  int64
 	ExpiresAt  int64
@@ -320,8 +326,6 @@ type OrgMember struct {
 	OrgID      string
 	Iid        string
 	Permission string
-	PositionID sql.NullString
-	InviterIid sql.NullString
 	JoinedAt   int64
 }
 
@@ -405,14 +409,6 @@ type PlatformTranscription struct {
 	Attempts     int64
 	CreatedAt    int64
 	UpdatedAt    int64
-}
-
-type Position struct {
-	ID        string
-	OrgID     string
-	Name      string
-	ParentID  sql.NullString
-	CreatedAt int64
 }
 
 type Project struct {

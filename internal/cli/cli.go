@@ -42,7 +42,7 @@ Commands:
                          with --tools-only, --harness opencode|pi names the harness
   listen                 print incoming messages as JSON lines (used by the pi and OpenCode adapters)
   agents                 list the AIs you host, grouped by organization, with online markers
-  orgs [slug]            list your organizations and where you stand in them; with an address, its positions
+  orgs [slug]            list your organizations and your permission in each; with an address, only that one
   doctor                 check this machine: binary, config file, server, token, harnesses, versions
   update                 replace this binary with the latest release after verifying its checksum;
                          --check only prints the current and latest versions (exit 1 when newer)
@@ -63,9 +63,9 @@ Put --principal before the arguments to make this session the AI's principal one
 replace the live principal session with it, and --as <handle> to adopt an AI that has no folder yet
 (one from before folders).
 A new AI joins your default organization. Put --org <slug> before the arguments to start it in
-another one, --position <name> to give it a position there and --parent <@handle> when one of your
-AIs starts it; PARTYLINE_ORG, PARTYLINE_POSITION and PARTYLINE_PARENT stand in for the flags. An AI
-keeps the organization it was created in. partyline orgs lists the organizations and their positions.
+another one and --parent <@handle> when one of your AIs starts it: that AI may then instruct the new
+one (its messages are trusted, like yours). PARTYLINE_ORG and PARTYLINE_PARENT stand in for the flags.
+An AI keeps the organization it was created in. partyline orgs lists your organizations.
 `
 
 // removedHarnessMessage is what the launcher, channel and setup say when name is a harness Partyline no

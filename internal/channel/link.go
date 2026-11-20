@@ -353,18 +353,15 @@ func systemNotice(reason, text string) Notification {
 	}}
 }
 
-// identityText is what the first welcome tells the session, in the words of the design: "You are Worker 1
-// (@w1), an AI of Acme (acme), position Worktrees. Messages marked trusted="true" come from the identities that
-// manage you: Lead (@lead), Alice (@alice). You operate: <Platform> <account> (connection <id>), ...". The
-// position clause is left out of an AI that holds none, and an AI nobody manages is told "No one manages you
-// in Acme, so no message is marked trusted." (POS-10). A welcome that names no organization - an older
-// server - gets the sentences it always had: "You are <name> (@handle). Your owner is <name> (@handle)."
-// The text is empty when the server named no AI, and has no operate sentence when the AI operates no
-// connection (CID-06): the ids are what platform events name their connection by. It then says the other
-// organizations the AI belongs to ("You also belong to Globex (globex), Initech (initech) as a guest.", SI-09),
-// who created it when that is not its host ("You were created by Lead (@lead)."; the host starts most AIs and
-// saying so tells nothing) and the AIs it created ("You created: W1 (@w1).",
-// SI-10), each sentence only when there is something to say.
+// identityText is what the first welcome tells the session: "You are Worker 1 (@w1), an AI of Acme (acme).
+// Messages from Ann (@ann) (your host) and Lead (@lead) are marked trusted="true". You operate: <Platform>
+// <account> (connection <id>), ...". Whose messages are trusted names the host and the instructors (SR2-11);
+// an AI without an organization drops the "an AI of" clause. The text is empty when the server named no AI,
+// and has no operate sentence when the AI operates no connection (CID-06): the ids are what platform events
+// name their connection by. It then says the other organizations the AI belongs to ("You also belong to Globex
+// (globex), Initech (initech) as an admin.", SI-09), who created it when that is not its host ("You were
+// created by Lead (@lead)."; the host starts most AIs and saying so tells nothing) and the AIs it created ("You
+// created: W1 (@w1).", SI-10), each sentence only when there is something to say.
 func identityText(w dto.AgentWelcomeFrame) string {
 	named := func(r dto.IntelligenceRef) string { return r.DisplayName + " (@" + r.Handle + ")" }
 	if w.Intelligence.Handle == "" {
@@ -372,34 +369,16 @@ func identityText(w dto.AgentWelcomeFrame) string {
 	}
 	var text string
 	if org := w.Organization; org != nil {
-		text = "You are " + named(w.Intelligence) + ", an AI of " + orgLabel(*org)
-		if w.Position != "" {
-			text += ", position " + w.Position
-		}
-		text += "."
-		if len(w.Managers) == 0 {
-			text += " No one manages you in " + cmp.Or(org.Name, org.Slug) + ", so no message is marked trusted."
-		} else {
-			managers := make([]string, len(w.Managers))
-			for i, m := range w.Managers {
-				managers[i] = named(m)
-			}
-			text += ` Messages marked trusted="true" come from the identities that manage you: ` + strings.Join(managers, ", ") + "."
-		}
+		text = "You are " + named(w.Intelligence) + ", an AI of " + orgLabel(*org) + "."
 	} else {
 		text = "You are " + named(w.Intelligence) + "."
-		if w.Owner.Handle != "" {
-			text += " Your owner is " + named(w.Owner) + "."
-		}
 	}
+	text += " " + trustedText(w, named)
 	if len(w.Memberships) > 0 {
 		orgs := make([]string, len(w.Memberships))
 		for i, m := range w.Memberships {
 			orgs[i] = orgLabel(m.Organization)
-			switch m.Permission {
-			case "guest":
-				orgs[i] += " as a guest"
-			case "admin":
+			if m.Permission == "admin" {
 				orgs[i] += " as an admin"
 			}
 		}
@@ -426,6 +405,32 @@ func identityText(w dto.AgentWelcomeFrame) string {
 		text += " This session is :" + w.Session.Label + "."
 	}
 	return text
+}
+
+// trustedText says whose messages are marked trusted (SR2-11): the host and the instructors, "Messages from
+// Ann (@ann) and Atlas (@atlas) are trusted.". A frame of a server before release 2 has no instructors: its
+// managers are named instead.
+func trustedText(w dto.AgentWelcomeFrame, named func(dto.IntelligenceRef) string) string {
+	var who []string
+	if w.Instructors != nil {
+		if w.Owner.Handle != "" {
+			who = append(who, named(w.Owner)+" (your host)")
+		}
+		for _, in := range w.Instructors {
+			who = append(who, named(in))
+		}
+	} else {
+		for _, m := range w.Managers {
+			who = append(who, named(m))
+		}
+	}
+	switch len(who) {
+	case 0:
+		return "No message is marked trusted."
+	case 1:
+		return `Messages from ` + who[0] + ` are marked trusted="true".`
+	}
+	return `Messages from ` + strings.Join(who[:len(who)-1], ", ") + " and " + who[len(who)-1] + ` are marked trusted="true".`
 }
 
 // orgLabel is an organization as the notice names it: "Acme (acme)", its name and its address.

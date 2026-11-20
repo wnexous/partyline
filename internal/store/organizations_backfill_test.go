@@ -85,7 +85,7 @@ func (e *schemaEnv) memberships() []string {
 // and hold the root position "Admin", and moves everything they owned into it.
 func TestOrganizationsUpgradeCreatesAPersonalOrganizationPerUser(t *testing.T) {
 	e := orgFixture(t)
-	require.NoError(t, e.s.Migrate(context.Background()))
+	require.NoError(t, e.s.migrate(context.Background(), migrationsBefore("0040"), hooks))
 
 	type org struct{ Name, Slug, By string }
 	want := map[string]org{ // by owner
@@ -118,7 +118,7 @@ func TestOrganizationsUpgradeCreatesAPersonalOrganizationPerUser(t *testing.T) {
 // organization with no position, so its owner manages it as its creator (POS-03).
 func TestOrganizationsUpgradeMovesEveryResourceIntoTheOwnersOrganization(t *testing.T) {
 	e := orgFixture(t)
-	require.NoError(t, e.s.Migrate(context.Background()))
+	require.NoError(t, e.s.migrate(context.Background(), migrationsBefore("0040"), hooks))
 	org := func(user string) string {
 		id := e.str(`SELECT default_org_id FROM users WHERE id = ?`, user)
 		require.NotEmpty(t, id, "%s has a personal organization (a missing one would equal a missing org_id)", user)
@@ -224,7 +224,7 @@ func TestOrganizationsUpgradeKeepsHistoryAndEveryOtherRow(t *testing.T) {
 	require.Len(t, before["attachments"], 2, "fixture sanity")
 	require.Len(t, before["agent_cursors"], 5, "fixture sanity")
 
-	require.NoError(t, e.s.Migrate(context.Background()))
+	require.NoError(t, e.s.migrate(context.Background(), migrationsBefore("0040"), hooks))
 
 	for table, cols := range tables {
 		if table == "grants" || table == "room_members" {
@@ -244,16 +244,16 @@ func TestOrganizationsUpgradeKeepsHistoryAndEveryOtherRow(t *testing.T) {
 func TestOrganizationsUpgradeRunsOnce(t *testing.T) {
 	ctx := context.Background()
 	e := orgFixture(t)
-	require.NoError(t, e.s.Migrate(ctx))
+	require.NoError(t, e.s.migrate(ctx, migrationsBefore("0040"), hooks))
 	before := snapshot(t, e.s)
-	require.NoError(t, e.s.Migrate(ctx))
+	require.NoError(t, e.s.migrate(ctx, migrationsBefore("0040"), hooks))
 	require.Equal(t, before, snapshot(t, e.s))
 }
 
 // OUPG-01: a database with no user, such as a fresh install, gets no organization.
 func TestOrganizationsUpgradeOfAnEmptyDatabaseCreatesNothing(t *testing.T) {
 	e := newSchemaEnv(t)
-	for _, table := range []string{"organizations", "positions", "org_members", "org_invitations"} {
+	for _, table := range []string{"organizations", "org_members", "org_invitations", "agent_instructors"} {
 		require.Zero(t, e.count(`SELECT COUNT(*) FROM `+table), table)
 	}
 }
@@ -284,7 +284,7 @@ func TestOrganizationsUpgradeNamesAndAddressesPersonalOrganizations(t *testing.T
 	e.addUser("u-tie-b", "sam", "Sam B", 1790000000300)
 	e.addUser("u-tie-a", "Sam_", "Sam A", 1790000000300)
 
-	require.NoError(t, e.s.Migrate(context.Background()))
+	require.NoError(t, e.s.migrate(context.Background(), migrationsBefore("0040"), hooks))
 
 	type org struct{ name, slug string }
 	got := map[string]org{}
@@ -354,7 +354,7 @@ func TestOrganizationsUpgradeRollsBackOnHookFailure(t *testing.T) {
 	}
 	require.Equal(t, 14, e.count(`SELECT COUNT(*) FROM grants`), "the grants are back")
 
-	require.NoError(t, e.s.Migrate(ctx))
+	require.NoError(t, e.s.migrate(ctx, migrationsBefore("0040"), hooks))
 	require.Equal(t, 5, e.count(`SELECT COUNT(*) FROM organizations`))
 	require.Empty(t, e.grantObjects(), "and 0020 dropped the grants table after the hook consumed it")
 }

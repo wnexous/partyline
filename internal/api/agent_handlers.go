@@ -11,7 +11,6 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
-	"slices"
 	"strings"
 	"time"
 
@@ -143,83 +142,59 @@ func (s *server) agentSession(w http.ResponseWriter, r *http.Request) error {
 	return nil
 }
 
-// agentWhoAmI returns the intelligence of the token's owner, for `partyline login`, and where the owner
-// stands in their default organization: the organization, their position there and who manages them. It
-// needs no folder and no registered AI.
+// agentWhoAmI returns the intelligence of the token's owner, for `partyline login`, and their default
+// organization. It needs no folder and no registered AI.
 func (s *server) agentWhoAmI(w http.ResponseWriter, r *http.Request) error {
 	p, err := agentToken(r)
 	if err != nil {
 		return err
 	}
 	ctx := r.Context()
-	st, inOrg, err := s.Orgs.Authz().DefaultStandingOf(ctx, p.UserID, dto.MaxManagers)
+	st, inOrg, err := s.Orgs.Authz().DefaultStandingOf(ctx, p.UserID)
 	if err != nil {
 		return err
 	}
-	rows, err := s.Intelligences.Rows(ctx, append([]string{p.UserID}, st.Managers...))
+	rows, err := s.Intelligences.Rows(ctx, []string{p.UserID})
 	if err != nil {
 		return err
 	}
 	out := dto.AgentWhoAmI{
 		IntelligenceRef: dto.IntelligenceRef{ID: p.UserID, Kind: dto.IntelligenceKindHuman, Role: dto.IntelligenceRoleUser},
-		Managers:        []dto.IntelligenceRef{},
 	}
 	if row, ok := rows[p.UserID]; ok {
 		out.IntelligenceRef = convert.IntelligenceRef(row, dto.IntelligenceRoleUser, "")
 	}
 	if inOrg {
 		out.Organization = &dto.ContactOrg{ID: st.Org.ID, Name: st.Org.Name, Slug: st.Org.Slug}
-		out.Position = st.Position
-		out.Managers = convert.ManagerRefs(st.Managers, rows)
 	}
 	httpx.WriteJSON(w, http.StatusOK, out)
 	return nil
 }
 
 // agentOrgs lists the organizations the token's user belongs to, for `partyline orgs` and the line `partyline
-// login` prints (ORG-04): the user's permission and position in each, the one a new AI of theirs joins when
-// --org is not given, and each one's chart of positions, so that --org and --position can be told by name. It is
-// the user's own view, whatever AI the request acts as, and it needs no folder and no AI. A user is told the
-// chart of an organization they belong to with any permission, a guest included (CHART-02), and nothing of any
-// other. It reads the memberships when asked, so a change shows on the next request.
+// login` prints (ORG-04): the user's permission in each and the one a new AI of theirs joins when --org is not
+// given. It is the user's own view, whatever AI the request acts as, and it needs no folder and no AI. It reads
+// the memberships when asked, so a change shows on the next request.
 func (s *server) agentOrgs(w http.ResponseWriter, r *http.Request) error {
 	p, err := agentToken(r)
 	if err != nil {
 		return err
 	}
 	ctx := r.Context()
-	authz := s.Orgs.Authz()
 	mine, err := s.Orgs.ListMine(ctx, p.UserID)
 	if err != nil {
 		return err
 	}
-	home, hasHome, err := authz.DefaultStandingOf(ctx, p.UserID, 0)
+	home, hasHome, err := s.Orgs.Authz().DefaultStandingOf(ctx, p.UserID)
 	if err != nil {
 		return err
 	}
 	out := dto.List[dto.AgentOrg]{Items: make([]dto.AgentOrg, 0, len(mine))}
 	for _, m := range mine {
-		chart, err := authz.Chart(ctx, m.ID)
-		if err != nil {
-			return err
-		}
-		org := dto.AgentOrg{
+		out.Items = append(out.Items, dto.AgentOrg{
 			ID: m.ID, Name: m.Name, Slug: m.Slug, Permission: string(m.Permission),
-			Default: hasHome && home.Org.ID == m.ID, Positions: make([]dto.AgentOrgPosition, 0, len(chart.Positions)),
-		}
-		if pos, ok := chart.Positions[m.PositionID]; ok {
-			org.Position = pos.Name
-		}
-		for _, pos := range chart.Positions {
-			org.Positions = append(org.Positions, dto.AgentOrgPosition{ID: pos.ID, Name: pos.Name, ParentID: pos.ParentID})
-		}
-		slices.SortFunc(org.Positions, func(a, b dto.AgentOrgPosition) int {
-			if c := strings.Compare(strings.ToLower(a.Name), strings.ToLower(b.Name)); c != 0 {
-				return c
-			}
-			return strings.Compare(a.ID, b.ID)
+			Default: hasHome && home.Org.ID == m.ID,
 		})
-		out.Items = append(out.Items, org)
 	}
 	httpx.WriteJSON(w, http.StatusOK, out)
 	return nil

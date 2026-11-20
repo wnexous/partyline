@@ -81,13 +81,10 @@ const (
 	// it the AI joins its creator's default organization. An existing AI keeps its home organization
 	// and a different one is refused with organization_mismatch (ORG-04, AD-020).
 	HeaderOrg = "X-Partyline-Org"
-	// HeaderPosition names the position the AI holds in its organization (--position,
-	// PARTYLINE_POSITION): the position's name, percent-encoded with url.PathEscape like the folder.
-	// Without it a new AI holds none (POS-07, AD-020).
-	HeaderPosition = "X-Partyline-Position"
 	// HeaderParent names the AI that starts this one (--parent, PARTYLINE_PARENT): an @handle or an id.
-	// It counts when the token holder may act for that AI (their own, hosted on their machines);
-	// otherwise the token holder is the creator (POS-08, AD-020).
+	// It counts when the token holder may act for that AI (their own, hosted on their machines): that AI
+	// is the creator and becomes an instructor of a new AI (SR2-09); otherwise the token holder is the
+	// creator (POS-08, AD-020).
 	HeaderParent = "X-Partyline-Parent"
 	// HeaderNewAI set to "1" (--new-ai, PARTYLINE_NEW_AI=1) gives the session's folder an AI of its own: the
 	// server does not look for the AI of a folder above it (SI-07). X-Partyline-Parent does the same.
@@ -156,9 +153,6 @@ const (
 	// antigravity, from a CLI that still launches them): 410 on any agent route and on the WebSocket, with the
 	// message "<Harness> is no longer supported by Partyline; use Claude Code, pi, OpenCode or omp" (AD-035).
 	ErrorCodeHarnessRemoved ErrorCode = "harness_removed" // 410
-	// ErrorCodePositionUnknown is a start (--position) that names a position the organization does not
-	// have (422, field position, POS-07).
-	ErrorCodePositionUnknown ErrorCode = "position_unknown"
 	// ErrorCodeOrganizationMismatch is a start of an existing AI with --org naming an organization other
 	// than its home: AIs do not move (409, Details name the home organization, ORG-04).
 	ErrorCodeOrganizationMismatch ErrorCode = "organization_mismatch"
@@ -198,9 +192,6 @@ const (
 	// ErrorCodeOrganizationNotEmpty is the refusal to delete an organization that still owns AIs,
 	// connections or groups; Details counts them (409, ORG-06).
 	ErrorCodeOrganizationNotEmpty ErrorCode = "organization_not_empty"
-	// ErrorCodePositionCycle is a parent change that would make a position its own ancestor (409,
-	// POS-02).
-	ErrorCodePositionCycle ErrorCode = "position_cycle"
 	// ErrorCodeIdentityOnline is a merge of an AI that has a live session: it must be offline
 	// (409, MRG-02).
 	ErrorCodeIdentityOnline ErrorCode = "identity_online"

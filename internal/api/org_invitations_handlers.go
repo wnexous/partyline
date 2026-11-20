@@ -21,8 +21,8 @@ func (s *server) orgInvitationRoutes(mux *http.ServeMux) {
 }
 
 // createInvitation invites a user or an AI, by @handle, to the organization: 201 with the pending invitation,
-// which sending again updates in place. An admin gives any permission and position; every other member or
-// guest invites guests with no position only (403 otherwise, OMEM-04). An identity that already is a member
+// which sending again updates in place. Only an admin invites, as an admin or a member (403 otherwise, OMEM-04,
+// SR2-01). An identity that already is a member
 // is 409 already_member, an unknown handle 404 contact_not_found, and more than 30 invitations an hour from
 // the organization 429 rate_limited.
 func (s *server) createInvitation(w http.ResponseWriter, r *http.Request, p authn.Principal) error {
@@ -34,7 +34,7 @@ func (s *server) createInvitation(w http.ResponseWriter, r *http.Request, p auth
 	if err := httpx.DecodeJSON(w, r, &req); err != nil {
 		return err
 	}
-	inv, err := s.Orgs.Invite(r.Context(), p.IID(), org.ID, req.Handle, orgs.Permission(req.Permission), req.PositionID)
+	inv, err := s.Orgs.Invite(r.Context(), p.IID(), org.ID, req.Handle, orgs.Permission(req.Permission))
 	if err != nil {
 		return err
 	}

@@ -699,7 +699,7 @@ func (g *Gateway) watchBus(ctx context.Context, c *conn, p authn.Principal, sub 
 					c.beats.poke()
 				}
 			case events.OrgChanged:
-				c.pokeWelcome() // memberships, positions, managers or the AIs it created may have changed (SI-09)
+				c.pokeWelcome() // memberships, instructors or the AIs it created may have changed (SI-09, SR2-11)
 			case events.Lagged:
 				c.pokeWelcome()
 				if c.feed != nil {
@@ -825,39 +825,39 @@ func (g *Gateway) welcomeRefs(ctx context.Context, row db.GetAgentWithOwnerRow) 
 	return ai, owner, nil
 }
 
-// welcomePlacement is where the welcome frame says an AI stands (POS-10).
+// welcomePlacement is where the welcome frame says an AI stands and who instructs it (SR2-11).
 type welcomePlacement struct {
-	org      *dto.ContactOrg
-	position string
-	managers []dto.IntelligenceRef
+	org *dto.ContactOrg
+	// instructors are the AI's instructors besides its host; managers are the host and then them, for the
+	// deprecated Managers field.
+	instructors, managers []dto.IntelligenceRef
 }
 
-// placement reads the AI's home organization, the position it holds there and the identities that manage
-// it there, nearest first and at most dto.MaxManagers. An AI with no home organization, or one that is
-// no longer a member of it, stands nowhere and has no managers; the list is never nil.
-func (g *Gateway) placement(ctx context.Context, a db.Agent) (welcomePlacement, error) {
-	out := welcomePlacement{managers: []dto.IntelligenceRef{}}
+// placement reads the AI's home organization and who instructs it: its host and its instructors (SR2-07). An AI
+// with no home organization, or one that is no longer a member of it, has no organization; the lists are never
+// nil.
+func (g *Gateway) placement(ctx context.Context, a db.Agent, host dto.IntelligenceRef) (welcomePlacement, error) {
+	out := welcomePlacement{instructors: []dto.IntelligenceRef{}, managers: []dto.IntelligenceRef{}}
+	if host.ID != "" {
+		out.managers = append(out.managers, host)
+	}
+	list, err := orgs.ListInstructors(ctx, g.d.Store.R(), a.ID)
+	if err != nil {
+		return out, err
+	}
+	for _, in := range list {
+		ref := convert.ManagerRef(in.Intelligence)
+		out.instructors = append(out.instructors, ref)
+		out.managers = append(out.managers, ref)
+	}
 	if !a.OrgID.Valid {
 		return out, nil
 	}
-	st, ok, err := g.d.Authz.StandingOf(ctx, a.OrgID.String, a.ID, dto.MaxManagers)
+	st, ok, err := g.d.Authz.StandingOf(ctx, a.OrgID.String, a.ID)
 	if err != nil || !ok {
 		return out, err
 	}
 	out.org = &dto.ContactOrg{ID: st.Org.ID, Name: st.Org.Name, Slug: st.Org.Slug}
-	out.position = st.Position
-	if len(st.Managers) == 0 {
-		return out, nil
-	}
-	rows, err := g.d.Store.R().ListIntelligencesByIDs(ctx, st.Managers)
-	if err != nil {
-		return out, err
-	}
-	byID := make(map[string]db.Intelligence, len(rows))
-	for _, r := range rows {
-		byID[r.ID] = r
-	}
-	out.managers = convert.ManagerRefs(st.Managers, byID)
 	return out, nil
 }
 
@@ -1151,7 +1151,7 @@ func (g *Gateway) welcome(ctx context.Context, row db.GetAgentWithOwnerRow, live
 	if err != nil {
 		return dto.AgentWelcomeFrame{}, err
 	}
-	where, err := g.placement(ctx, a)
+	where, err := g.placement(ctx, a, owner)
 	if err != nil {
 		return dto.AgentWelcomeFrame{}, err
 	}
@@ -1171,7 +1171,7 @@ func (g *Gateway) welcome(ctx context.Context, row db.GetAgentWithOwnerRow, live
 		Type:         dto.AgentFrameTypeWelcome,
 		Agent:        dto.AgentInfo{ID: a.ID, Name: row.Handle, DisplayName: row.ProfileName, Owner: row.OwnerUsername},
 		Intelligence: ai, Owner: owner,
-		Organization: where.org, Position: where.position, Managers: where.managers,
+		Organization: where.org, Instructors: where.instructors, Managers: where.managers,
 		Memberships: memberships, Creator: creator, Created: created,
 		Connections: connections,
 		Session:     dto.SessionInfo{Label: live.Label, Harness: live.Harness, ConnectedAt: live.Since.UTC(), Outdated: live.Outdated},

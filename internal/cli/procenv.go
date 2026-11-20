@@ -21,19 +21,24 @@ const folderEnvVar = "PARTYLINE_FOLDER"
 // the repository (SESS-01, SESS-09). Empty outside a linked worktree and for a --parent or --new-ai launch.
 const mainFolderVar = "PARTYLINE_MAIN_FOLDER"
 
-// What a session asked for when it was launched (--org, --position, --parent; ORG-04, POS-07, POS-08). The
-// launcher reads PARTYLINE_ORG, PARTYLINE_POSITION and PARTYLINE_PARENT when the flag is absent, and hands the
-// values to the session's own processes as PARTYLINE_LAUNCH_ORG, PARTYLINE_LAUNCH_POSITION and
-// PARTYLINE_LAUNCH_PARENT. It consumes the first three and never reads the second three as input: a launch from
-// inside a launched session is another AI and does not inherit its placement (AD-020).
+// What a session asked for when it was launched (--org, --parent; ORG-04, POS-08, SR2-09). The launcher reads
+// PARTYLINE_ORG and PARTYLINE_PARENT when the flag is absent, and hands the values to the session's own processes
+// as PARTYLINE_LAUNCH_ORG and PARTYLINE_LAUNCH_PARENT. It consumes the first two and never reads the second two as
+// input: a launch from inside a launched session is another AI and does not inherit its placement (AD-020).
 const (
-	orgEnvVar      = "PARTYLINE_ORG"
-	positionEnvVar = "PARTYLINE_POSITION"
-	parentEnvVar   = "PARTYLINE_PARENT"
+	orgEnvVar    = "PARTYLINE_ORG"
+	parentEnvVar = "PARTYLINE_PARENT"
 
-	launchOrgVar      = "PARTYLINE_LAUNCH_ORG"
-	launchPositionVar = "PARTYLINE_LAUNCH_POSITION"
-	launchParentVar   = "PARTYLINE_LAUNCH_PARENT"
+	launchOrgVar    = "PARTYLINE_LAUNCH_ORG"
+	launchParentVar = "PARTYLINE_LAUNCH_PARENT"
+)
+
+// Positions were removed (SR2-05): the launcher never reads PARTYLINE_POSITION nor hands on
+// PARTYLINE_LAUNCH_POSITION, and only takes both out of the harness's environment, where an older launcher or
+// shell may have left them.
+const (
+	removedPositionVar       = "PARTYLINE_POSITION"
+	removedLaunchPositionVar = "PARTYLINE_LAUNCH_POSITION"
 )
 
 // --new-ai works like the placement flags (SI-07): the launcher reads PARTYLINE_NEW_AI=1 when the flag is absent,
@@ -125,7 +130,7 @@ func ownHarnessSessionID(io stdio) string {
 // session over; the PARTYLINE_LAUNCH_* ones carry what the session asked for.
 var launcherVars = []string{
 	folderEnvVar, mainFolderVar, "PARTYLINE_HARNESS", "PARTYLINE_TAKEOVER", principalEnvVar, "PARTYLINE_AGENT",
-	launchOrgVar, launchPositionVar, launchParentVar, launchNewAIVar, liveEnvVar, autoUpdateVar,
+	launchOrgVar, launchParentVar, launchNewAIVar, liveEnvVar, autoUpdateVar,
 }
 
 // maxAncestors is how many processes, starting at the parent, the lookup reads.

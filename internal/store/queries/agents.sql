@@ -26,7 +26,7 @@ WHERE a.id = ?;
 
 -- name: ListVisibleAgents :many
 -- The AIs a user sees (AD-016): those hosted on their computers and those of the organizations they
--- belong to, whatever their permission there.
+-- belong to, whatever their permission there, and those they instruct (SR2-07).
 SELECT sqlc.embed(a), u.username AS owner_username,
        CAST(COALESCE(ui.display_name, '') AS TEXT) AS owner_display_name,
        CAST(COALESCE(i.handle, '') AS TEXT) AS handle,
@@ -43,6 +43,7 @@ LEFT JOIN machines mc ON mc.owner_id = a.owner_id AND mc.hostname = a.machine
 WHERE a.owner_id = sqlc.arg(user_id)
    OR a.id IN (SELECT y.iid FROM org_members x JOIN org_members y ON y.org_id = x.org_id
                WHERE x.iid = sqlc.arg(user_id))
+   OR a.id IN (SELECT ai.agent_iid FROM agent_instructors ai WHERE ai.instructor_iid = sqlc.arg(user_id))
 ORDER BY a.name, u.username, a.id;
 
 -- name: ListOrgAIs :many

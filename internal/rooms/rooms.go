@@ -270,8 +270,8 @@ func creatorOrg(ctx context.Context, q *db.Queries, creator authn.Principal, req
 		}
 		orgID = o.ID
 	}
-	m, err := q.GetOrgMember(ctx, db.GetOrgMemberParams{OrgID: orgID, Iid: iid})
-	if errors.Is(err, sql.ErrNoRows) || (err == nil && m.Permission == string(orgs.PermissionGuest)) {
+	_, err := q.GetOrgMember(ctx, db.GetOrgMemberParams{OrgID: orgID, Iid: iid})
+	if errors.Is(err, sql.ErrNoRows) {
 		return "", access.ErrForbidden
 	}
 	return orgID, err

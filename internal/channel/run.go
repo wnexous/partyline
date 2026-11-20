@@ -36,9 +36,9 @@ type Options struct {
 	MainFolder string
 	Home       string
 	Adopt      string
-	// Org, Position and Parent are what the session asked for when it started (Identity): sent on every
+	// Org and Parent are what the session asked for when it started (Identity): sent on every
 	// connection and call, only when set.
-	Org, Position, Parent string
+	Org, Parent string
 	// NewAI is --new-ai (Identity): the folder gets its own AI, not the one of a folder above it (SI-07).
 	NewAI bool
 	// TempDir is where download_attachment saves files (<TempDir>/partyline/<folder name>/);
@@ -112,7 +112,7 @@ func Run(ctx context.Context, o Options) error {
 	}
 	id := Identity{
 		Machine: o.Machine, Folder: o.Folder, MainFolder: o.MainFolder, Home: o.Home, Harness: o.Harness, Adopt: o.Adopt,
-		Org: o.Org, Position: o.Position, Parent: o.Parent, NewAI: o.NewAI, HarnessSession: o.HarnessSession,
+		Org: o.Org, Parent: o.Parent, NewAI: o.NewAI, HarnessSession: o.HarnessSession,
 		ClientVersion: o.Version,
 	}
 	if id.Harness == "" && !o.ToolsOnly {

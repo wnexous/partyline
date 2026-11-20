@@ -14,37 +14,26 @@ func OrgAvatarURL(id, sha string) string {
 	return "/api/v1/orgs/" + id + "/avatar?v=" + sha
 }
 
-// Position renders one node of an organization's chart (POS-01).
-func Position(p orgs.Position) dto.Position {
-	return dto.Position{ID: p.ID, Name: p.Name, ParentID: p.ParentID}
-}
-
 // Organization renders an organization as one of its members sees it, with the viewer's own
-// permission and position.
+// permission.
 func Organization(m orgs.Membership) dto.Organization {
 	return dto.Organization{
 		ID: m.ID, Name: m.Name, Slug: m.Slug,
 		AvatarURL:  OrgAvatarURL(m.ID, m.AvatarSha256),
-		Permission: dto.Permission(m.Permission), PositionID: m.PositionID,
-		CreatedAt: Time(m.CreatedAt), UpdatedAt: Time(m.UpdatedAt),
+		Permission: dto.Permission(m.Permission),
+		CreatedAt:  Time(m.CreatedAt), UpdatedAt: Time(m.UpdatedAt),
 	}
 }
 
-// OrgMember renders one membership as the members list shows it: the identity, its permission and
-// position and, for a guest, the identity that invited it (OMEM-01, OMEM-03).
+// OrgMember renders one membership as the members list shows it: the identity and its permission
+// (OMEM-03), and what the viewer may do to it (SR2-12).
 func OrgMember(r orgs.MemberRow) dto.OrgMember {
-	m := dto.OrgMember{
+	return dto.OrgMember{
 		Intelligence: memberRef(r.IID, r.Kind, r.DisplayName, r.Handle, r.AvatarSha256),
 		Permission:   dto.Permission(r.Permission),
-		PositionID:   r.PositionID, PositionName: r.PositionName,
-		JoinedAt: Time(r.JoinedAt),
+		JoinedAt:     Time(r.JoinedAt),
+		CanDelete:    r.CanDelete, DeleteEffect: deleteEffect(r),
 	}
-	if r.Permission == string(orgs.PermissionGuest) && r.InviterIID != "" {
-		inviter := memberRef(r.InviterIID, r.InviterKind, r.InviterDisplayName, r.InviterHandle, r.InviterAvatarSha256)
-		m.InvitedBy = &inviter
-	}
-	m.CanDelete, m.DeleteEffect, m.CanMove, m.CanShareAccess = r.CanDelete, deleteEffect(r), r.CanMove, r.CanShareAccess
-	return m
 }
 
 // deleteEffect is what deleting the member does in the organization (POS-06).
@@ -53,33 +42,6 @@ func deleteEffect(r orgs.MemberRow) dto.DeleteEffect {
 		return dto.DeleteEffectDelete
 	}
 	return dto.DeleteEffectRemove
-}
-
-// OrgChart renders an organization's org chart; online tells whether an AI has a live session (CHART-01).
-func OrgChart(v orgs.ChartView, online func(agentID string) bool) dto.OrgChart {
-	member := func(r orgs.MemberRow) dto.ChartMember {
-		ref := memberRef(r.IID, r.Kind, r.DisplayName, r.Handle, r.AvatarSha256)
-		return dto.ChartMember{
-			Intelligence: ref, Permission: dto.Permission(r.Permission),
-			Online: ref.Kind == dto.IntelligenceKindAI && online(r.IID), Under: r.Under,
-			CanDelete: r.CanDelete, DeleteEffect: deleteEffect(r), CanMove: r.CanMove,
-		}
-	}
-	members := func(rows []orgs.MemberRow) []dto.ChartMember {
-		out := make([]dto.ChartMember, len(rows))
-		for i, r := range rows {
-			out[i] = member(r)
-		}
-		return out
-	}
-	out := dto.OrgChart{
-		Viewer: dto.ChartViewer{Admin: v.ViewerAdmin}, Positions: make([]dto.ChartPosition, len(v.Positions)),
-		Members: members(v.Members), Unassigned: members(v.Unassigned),
-	}
-	for i, p := range v.Positions {
-		out.Positions[i] = dto.ChartPosition{ID: p.ID, Name: p.Name, ParentID: p.ParentID, Holders: members(p.Holders)}
-	}
-	return out
 }
 
 // memberRef is the summary of an organization member, who is a user or an AI.
@@ -99,9 +61,9 @@ func Invitation(i orgs.Invitation) dto.Invitation {
 	return dto.Invitation{
 		ID: i.ID, OrgID: i.OrgID, OrgName: i.OrgName, OrgSlug: i.OrgSlug,
 		Invitee:    invitationRef(i.InviteeIID, i.InviteeKind, i.InviteeName, i.InviteeHandle, i.InviteeAvatarSha256),
-		Permission: dto.Permission(i.Permission), PositionID: i.PositionID, PositionName: i.PositionName,
-		InvitedBy: invitationRef(i.InvitedByIID, i.InvitedByKind, i.InvitedByName, i.InvitedByHandle, i.InvitedByAvatarSha256),
-		CreatedAt: i.CreatedAt, ExpiresAt: i.ExpiresAt,
+		Permission: dto.Permission(i.Permission),
+		InvitedBy:  invitationRef(i.InvitedByIID, i.InvitedByKind, i.InvitedByName, i.InvitedByHandle, i.InvitedByAvatarSha256),
+		CreatedAt:  i.CreatedAt, ExpiresAt: i.ExpiresAt,
 	}
 }
 
@@ -112,4 +74,12 @@ func invitationRef(id, role, displayName, handle, avatarSha string) dto.Intellig
 		kind = string(dto.IntelligenceKindAI)
 	}
 	return memberRef(id, kind, displayName, handle, avatarSha)
+}
+
+// AgentInstructor renders one instructor of an AI (SR2-10).
+func AgentInstructor(in orgs.Instructor) dto.AgentInstructor {
+	return dto.AgentInstructor{
+		Intelligence: memberRef(in.ID, in.Kind, in.DisplayName, in.Handle, in.AvatarSha256),
+		AddedAt:      in.CreatedAt,
+	}
 }

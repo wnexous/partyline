@@ -47,7 +47,7 @@ func TestMigrateCreatesEveryDesignTable(t *testing.T) {
 		"users", "sessions", "invites", "api_tokens", "agents", "connectors", "chats", "rooms",
 		"room_members", "messages", "attachments", "agent_cursors",
 		"identities", "pairing_codes", "audit_log", "platform_items", "platform_attachments", "platform_sends",
-		"organizations", "positions", "org_members", "org_invitations",
+		"organizations", "org_members", "org_invitations", "agent_instructors",
 	} {
 		var name string
 		err := s.write.QueryRow("SELECT name FROM sqlite_master WHERE type = 'table' AND name = ?", table).Scan(&name)

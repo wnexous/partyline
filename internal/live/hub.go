@@ -54,7 +54,7 @@ type PrincipalChecker interface {
 }
 
 // kindOrganization is the resource_kind of an access.changed about an organization (CHART-02): its
-// members, positions, chart or invitations changed, or the user joined or left it.
+// members or invitations changed, or the user joined or left it.
 const kindOrganization = "organization"
 
 // Deps are the services the hub reads from.
@@ -196,16 +196,15 @@ type conn struct {
 	// visible holds the rooms this connection knows the user can view, so losing access or a
 	// deletion can be announced to exactly those who knew the room.
 	visible map[string]bool
-	// standing is what the user was in each organization at the last look: their permission and position.
+	// standing is what the user was in each organization at the last look: their permission.
 	// A change of it, or a membership that began or ended, is what makes the connection look at the
 	// user's groups again (OMEM-06).
 	standing map[string]standing
 }
 
-// standing is a user's permission and position in an organization.
+// standing is a user's permission in an organization.
 type standing struct {
 	permission orgs.Permission
-	position   string
 }
 
 type frame struct {
@@ -578,7 +577,7 @@ func (c *conn) loadStanding(ctx context.Context) error {
 		return err
 	}
 	for _, m := range mine {
-		c.standing[m.Organization.ID] = standing{permission: orgs.Permission(m.Permission), position: m.PositionID}
+		c.standing[m.Organization.ID] = standing{permission: orgs.Permission(m.Permission)}
 	}
 	return nil
 }
@@ -588,12 +587,12 @@ func accessChanged(kind, id string) frame {
 	return frame{Type: dto.LiveEventTypeAccessChanged, Data: dto.AccessChangedData{ResourceKind: kind, ResourceID: id}}
 }
 
-// orgChanged renders a change of an organization for the connection's user (CHART-02, OMEM-06).
+// orgChanged renders a change of an organization for the connection's user (OMEM-06).
 //
 // A user who is not a member, and was not at the last look, hears nothing of it. A member, and one who
 // has just left, hears that the organization changed (access.changed, kind organization), and looks at
 // the organization again. When the user's own standing changed (they joined or left, or their permission
-// or position did), what they see through it may have changed as well: the connection reads the user's
+// did), what they see through it may have changed as well: the connection reads the user's
 // groups again, announcing those they lost (room.deleted) and those they can now view (room.changed),
 // each with an access.changed, and tells a member which AIs and connections of the organization to look
 // at again. A user who left is told no ids of what they can no longer see.
@@ -607,7 +606,7 @@ func (c *conn) orgChanged(ctx context.Context, orgID string) ([]frame, error) {
 		return nil, err
 	}
 	before, was := c.standing[orgID]
-	now := standing{permission: m.Permission, position: m.PositionID}
+	now := standing{permission: m.Permission}
 	if member {
 		c.standing[orgID] = now
 	} else {

@@ -272,21 +272,17 @@ export interface AgentConnection {
   account_label: string;
 }
 /**
- * MaxManagers is the most managers the welcome frame and GET /agent/whoami list: the nearest ones.
- */
-export const MaxManagers = 10;
-/**
  * MaxCreated is the most AIs the welcome frame lists as created by the AI: the oldest ones (SI-10).
  */
 export const MaxCreated = 50;
 /**
  * AgentMembership is an organization the AI belongs to besides its home one, as the welcome frame lists it
- * (SI-09): it shares that organization with the identities there, and is a member, an admin or a guest.
+ * (SI-09): it shares that organization with the identities there, and is a member or an admin.
  */
 export interface AgentMembership {
   organization: ContactOrg;
   /**
-   * Permission is the AI's in it: admin, member or guest.
+   * Permission is the AI's in it: admin or member.
    */
   permission: string;
 }
@@ -303,9 +299,8 @@ export interface AgentWelcomeFrame {
    */
   intelligence: IntelligenceRef;
   /**
-   * Owner is the user who hosts the AI, whose computer and token run it. It is deprecated since
-   * organizations: it gives nothing, and the identities an AI answers to are its
-   * Managers. It stays so that v0.5 CLIs, which print it, keep working.
+   * Owner is the user who hosts the AI, whose computer and token run it: its messages are always trusted
+   * (SR2-07).
    */
   owner: IntelligenceRef;
   /**
@@ -313,13 +308,13 @@ export interface AgentWelcomeFrame {
    */
   organization?: ContactOrg;
   /**
-   * Position is the name of the position the AI holds in its home organization; empty for none.
+   * Instructors are the identities that instruct the AI besides its host (SR2-06, SR2-11): with the host,
+   * the ones whose messages are marked trusted. Oldest link first, always present, empty when none.
    */
-  position: string;
+  instructors: IntelligenceRef[];
   /**
-   * Managers are the identities that manage the AI in its home organization, the ones whose
-   * messages are marked trusted (POS-10): nearest first, at most MaxManagers, always present and
-   * empty when nobody manages it.
+   * Managers is deprecated since release 2 of simple identity: the host followed by Instructors, the
+   * identities whose messages are marked trusted. It stays so that older CLIs, which print it, keep working.
    */
   managers: IntelligenceRef[];
   /**
@@ -350,29 +345,19 @@ export interface AgentWelcomeFrame {
 }
 /**
  * AgentWhoAmI is GET /agent/whoami: the intelligence of the user the agent token belongs to - the
- * fields of an IntelligenceRef, as before organizations - and the same three facts about the user
- * that the welcome frame tells an AI, read in the user's default organization (the one a new AI of
- * theirs joins when --org is not given): where they stand and who manages them there.
+ * fields of an IntelligenceRef, as before organizations - and the user's default organization (the one a new
+ * AI of theirs joins when --org is not given).
  */
 export interface AgentWhoAmI extends IntelligenceRef {
   /**
    * Organization is the user's default organization; absent when they belong to none.
    */
   organization?: ContactOrg;
-  /**
-   * Position is the name of the position the user holds there; empty for none.
-   */
-  position: string;
-  /**
-   * Managers are the identities that manage the user there, nearest first, at most MaxManagers;
-   * always present.
-   */
-  managers: IntelligenceRef[];
 }
 /**
  * AgentOrg is one organization of the token's user as GET /agent/orgs gives it, for `partyline orgs`
- * (ORG-04): where the user stands in it, whether a new AI of theirs joins it when --org is not given, and its
- * chart of positions, so that --org and --position can be told by name.
+ * (ORG-04): where the user stands in it and whether a new AI of theirs joins it when --org is not given, so
+ * that --org can be told by name.
  */
 export interface AgentOrg {
   id: string;
@@ -382,33 +367,14 @@ export interface AgentOrg {
    */
   slug: string;
   /**
-   * Permission is the user's in it: admin, member or guest.
+   * Permission is the user's in it: admin or member.
    */
   permission: string;
-  /**
-   * Position is the name of the position the user holds in it; empty for none.
-   */
-  position: string;
   /**
    * Default tells whether it is the organization a new AI of the user joins when --org is not given. Exactly
    * one organization is the default, unless the user belongs to none.
    */
   default: boolean;
-  /**
-   * Positions is the organization's chart, each position with the one above it, by name; always present.
-   */
-  positions: AgentOrgPosition[];
-}
-/**
- * AgentOrgPosition is one position of an organization's chart.
- */
-export interface AgentOrgPosition {
-  id: string;
-  name: string;
-  /**
-   * ParentID is the position above this one; absent for a root.
-   */
-  parent_id?: string;
 }
 /**
  * SessionInfo is one live session of an AI (SESS-15, SESS-32): its label, the app it runs in and
@@ -713,15 +679,10 @@ export const HeaderAdopt = "X-Partyline-Adopt";
  */
 export const HeaderOrg = "X-Partyline-Org";
 /**
- * HeaderPosition names the position the AI holds in its organization (--position,
- * PARTYLINE_POSITION): the position's name, percent-encoded with url.PathEscape like the folder.
- * Without it a new AI holds none (POS-07, AD-020).
- */
-export const HeaderPosition = "X-Partyline-Position";
-/**
  * HeaderParent names the AI that starts this one (--parent, PARTYLINE_PARENT): an @handle or an id.
- * It counts when the token holder may act for that AI (their own, hosted on their machines);
- * otherwise the token holder is the creator (POS-08, AD-020).
+ * It counts when the token holder may act for that AI (their own, hosted on their machines): that AI
+ * is the creator and becomes an instructor of a new AI (SR2-09); otherwise the token holder is the
+ * creator (POS-08, AD-020).
  */
 export const HeaderParent = "X-Partyline-Parent";
 /**
@@ -815,11 +776,6 @@ export const ErrorCodeFolderInvalid = "folder_invalid"; // 422
  */
 export const ErrorCodeHarnessRemoved = "harness_removed"; // 410
 /**
- * ErrorCodePositionUnknown is a start (--position) that names a position the organization does not
- * have (422, field position, POS-07).
- */
-export const ErrorCodePositionUnknown = "position_unknown";
-/**
  * ErrorCodeOrganizationMismatch is a start of an existing AI with --org naming an organization other
  * than its home: AIs do not move (409, Details name the home organization, ORG-04).
  */
@@ -884,11 +840,6 @@ export const ErrorCodeOrganizationRequired = "organization_required";
  * connections or groups; Details counts them (409, ORG-06).
  */
 export const ErrorCodeOrganizationNotEmpty = "organization_not_empty";
-/**
- * ErrorCodePositionCycle is a parent change that would make a position its own ancestor (409,
- * POS-02).
- */
-export const ErrorCodePositionCycle = "position_cycle";
 /**
  * ErrorCodeIdentityOnline is a merge of an AI that has a live session: it must be offline
  * (409, MRG-02).
@@ -960,7 +911,7 @@ export const ErrorCodeNoManager = "no_manager";
 /**
  * Error codes and the HTTP status they come with.
  */
-export type ErrorCode = typeof ErrorCodeInvalid | typeof ErrorCodeUnauthorized | typeof ErrorCodeForbidden | typeof ErrorCodeNotFound | typeof ErrorCodeConflict | typeof ErrorCodeGone | typeof ErrorCodeTooLarge | typeof ErrorCodeRateLimited | typeof ErrorCodeInternal | typeof ErrorCodeUnavailable | typeof ErrorCodeHandleTaken | typeof ErrorCodeAvatarInvalid | typeof ErrorCodeLastInstanceAdmin | typeof ErrorCodeLastAdmin | typeof ErrorCodeHomeOrganization | typeof ErrorCodeAlreadyMember | typeof ErrorCodeNotOperator | typeof ErrorCodeUnknownChat | typeof ErrorCodeUnsupported | typeof ErrorCodeFolderRequired | typeof ErrorCodeFolderInvalid | typeof ErrorCodeHarnessRemoved | typeof ErrorCodePositionUnknown | typeof ErrorCodeOrganizationMismatch | typeof ErrorCodeIdentityBusy | typeof ErrorCodeDMMembersFixed | typeof ErrorCodeReactionLimit | typeof ErrorCodeDMSelf | typeof ErrorCodeContactNotFound | typeof ErrorCodeNoRouteToPerson | typeof ErrorCodeHistoryOnly | typeof ErrorCodeCounterpartDisabled | typeof ErrorCodeChatsNotMembers | typeof ErrorCodeMembersRefused | typeof ErrorCodeOrganizationRequired | typeof ErrorCodeOrganizationNotEmpty | typeof ErrorCodePositionCycle | typeof ErrorCodeIdentityOnline | typeof ErrorCodeAlreadyAnswered | typeof ErrorCodeAIOffline | typeof ErrorCodeClientOutdated | typeof ErrorCodeNotSaved | typeof ErrorCodeFileTooLarge | typeof ErrorCodeInsufficientStorage | typeof ErrorCodeUploadOffset | typeof ErrorCodeUploadBusy | typeof ErrorCodeUploadSent | typeof ErrorCodeUploadIncomplete | typeof ErrorCodeAttachmentExpired | typeof ErrorCodeTooFrequent | typeof ErrorCodeTooMany | typeof ErrorCodeNoManager;
+export type ErrorCode = typeof ErrorCodeInvalid | typeof ErrorCodeUnauthorized | typeof ErrorCodeForbidden | typeof ErrorCodeNotFound | typeof ErrorCodeConflict | typeof ErrorCodeGone | typeof ErrorCodeTooLarge | typeof ErrorCodeRateLimited | typeof ErrorCodeInternal | typeof ErrorCodeUnavailable | typeof ErrorCodeHandleTaken | typeof ErrorCodeAvatarInvalid | typeof ErrorCodeLastInstanceAdmin | typeof ErrorCodeLastAdmin | typeof ErrorCodeHomeOrganization | typeof ErrorCodeAlreadyMember | typeof ErrorCodeNotOperator | typeof ErrorCodeUnknownChat | typeof ErrorCodeUnsupported | typeof ErrorCodeFolderRequired | typeof ErrorCodeFolderInvalid | typeof ErrorCodeHarnessRemoved | typeof ErrorCodeOrganizationMismatch | typeof ErrorCodeIdentityBusy | typeof ErrorCodeDMMembersFixed | typeof ErrorCodeReactionLimit | typeof ErrorCodeDMSelf | typeof ErrorCodeContactNotFound | typeof ErrorCodeNoRouteToPerson | typeof ErrorCodeHistoryOnly | typeof ErrorCodeCounterpartDisabled | typeof ErrorCodeChatsNotMembers | typeof ErrorCodeMembersRefused | typeof ErrorCodeOrganizationRequired | typeof ErrorCodeOrganizationNotEmpty | typeof ErrorCodeIdentityOnline | typeof ErrorCodeAlreadyAnswered | typeof ErrorCodeAIOffline | typeof ErrorCodeClientOutdated | typeof ErrorCodeNotSaved | typeof ErrorCodeFileTooLarge | typeof ErrorCodeInsufficientStorage | typeof ErrorCodeUploadOffset | typeof ErrorCodeUploadBusy | typeof ErrorCodeUploadSent | typeof ErrorCodeUploadIncomplete | typeof ErrorCodeAttachmentExpired | typeof ErrorCodeTooFrequent | typeof ErrorCodeTooMany | typeof ErrorCodeNoManager;
 /**
  * ErrorBody is the envelope of every error response.
  */
@@ -1832,13 +1783,13 @@ export interface IntelligenceProfile extends IntelligenceRef {
   conversations: RoomRef[];
   /**
    * Memberships lists, by organization name, the organizations the caller shares with a user or an AI
-   * (all of its own when the caller is the profile), with its permission and position in each and what
-   * the caller may do about it (OMEM-03, CHART-02). Empty for a person.
+   * (all of its own when the caller is the profile), with its permission in each and what the caller may
+   * do about it (OMEM-03). Empty for a person.
    */
   memberships: ProfileMembership[];
   /**
-   * CanEndSession tells whether the caller may end the AI's live session: it manages the AI in an
-   * organization they share (POS-04). Always false for users and people.
+   * CanEndSession tells whether the caller may end the AI's live session: it manages the AI - its host or
+   * a user that instructs it (SR2-13). Always false for users and people.
    */
   can_end_session: boolean;
 }
@@ -1850,16 +1801,11 @@ export interface ProfileMembership {
   org_name: string;
   org_slug: string;
   /**
-   * Permission is admin, member or guest.
+   * Permission is admin or member.
    */
   permission: string;
   /**
-   * PositionID and PositionName are absent for a member with no position.
-   */
-  position_id?: string;
-  position_name?: string;
-  /**
-   * CanDelete tells whether the caller may delete the intelligence in this organization (POS-05).
+   * CanDelete tells whether the caller may delete the intelligence in this organization (SR2-12).
    */
   can_delete: boolean;
   /**
@@ -1893,7 +1839,8 @@ export interface PersonDetail {
  */
 export interface AIDetail {
   /**
-   * Owner is the user who hosts the AI: whose computer and token run it. It gives nothing (AD-019).
+   * Owner is the user who hosts the AI: whose computer and token run it. The host instructs and manages it
+   * (SR2-07, SR2-13).
    */
   owner: IntelligenceRef;
   /**
@@ -1919,16 +1866,20 @@ export interface AIDetail {
    */
   principal_offline_since?: string /* RFC 3339 */;
   /**
-   * MyLevel is manage for whoever manages the AI in an organization they share with it (and the AI itself)
-   * and use for whoever only sees it.
+   * MyLevel is manage for whoever manages the AI - its host and its user instructors (SR2-13) - and the AI
+   * itself, and use for whoever only sees it.
    */
   my_level?: Level;
   /**
-   * InstructedBy are the identities whose messages the AI treats as trusted (POS-10, ST-06): its managers in
-   * its home organization, nearest first. Present only for whoever shares that organization with the AI (and
-   * the AI itself), who can see its chart anyway (CHART-02); an empty list means nobody.
+   * InstructedBy are the identities that instruct the AI besides its host (SR2-06, SR2-10), oldest first:
+   * with Owner, the ones whose messages it treats as trusted (SR2-07). Present for the host, the AI itself,
+   * whoever manages it and whoever shares its home organization; an empty list means only the host.
    */
   instructed_by?: IntelligenceRef[];
+  /**
+   * CanEditInstructors tells that the caller is the host, who adds and removes instructors (SR2-10).
+   */
+  can_edit_instructors?: boolean;
 }
 /**
  * App is one place an intelligence speaks from.
@@ -2196,19 +2147,18 @@ export interface LiveLagged {
 // source: orgs.go
 
 /**
- * Permission is what a membership allows in an organization itself, independent of the position
- * the identity holds there (OMEM-04).
+ * Permission is what a membership allows in an organization (OMEM-04, SR2-01): an admin looks after it,
+ * a member takes part.
  */
 export const PermissionAdmin = "admin";
 export const PermissionMember = "member";
-export const PermissionGuest = "guest";
 /**
  * Organization permissions.
  */
-export type Permission = typeof PermissionAdmin | typeof PermissionMember | typeof PermissionGuest;
+export type Permission = typeof PermissionAdmin | typeof PermissionMember;
 /**
  * Organization is an organization as one of its members sees it: its address, its avatar and the
- * viewer's own permission and position (ORG-01, OMEM-03).
+ * viewer's own permission (ORG-01, OMEM-03).
  */
 export interface Organization {
   id: string;
@@ -2219,16 +2169,14 @@ export interface Organization {
    */
   avatar_url?: string;
   /**
-   * Permission and PositionID are the viewer's membership ("" for no position).
+   * Permission is the viewer's.
    */
   permission: Permission;
-  position_id?: string;
   created_at: string /* RFC 3339 */;
   updated_at: string /* RFC 3339 */;
 }
 /**
- * CreateOrganizationRequest is the body of POST /orgs. The creator becomes its admin, holding the
- * root position (ORG-01).
+ * CreateOrganizationRequest is the body of POST /orgs. The creator becomes its admin (ORG-01).
  */
 export interface CreateOrganizationRequest {
   name: string;
@@ -2242,37 +2190,11 @@ export interface UpdateOrganizationRequest {
   slug?: string;
 }
 /**
- * Position is one node of an organization's chart (POS-01). ParentID is absent for a root.
- */
-export interface Position {
-  id: string;
-  name: string;
-  parent_id?: string;
-}
-/**
- * CreatePositionRequest is the body of POST /orgs/{org}/positions (POS-01); ParentID is empty for a
- * root position.
- */
-export interface CreatePositionRequest {
-  name: string;
-  parent_id?: string;
-}
-/**
- * UpdatePositionRequest is the body of PATCH /orgs/{org}/positions/{id}; absent fields are
- * unchanged, and an empty ParentID makes the position a root.
- */
-export interface UpdatePositionRequest {
-  name?: string;
-  parent_id?: string;
-}
-/**
- * UpdateOrgMemberRequest is the body of PATCH /orgs/{org}/members/{iid}. Permission changes the
- * member's permission (admin only); PositionID moves it to a position of the organization, or clears
- * it with null or "" (POS-04). A field that is absent is left alone.
+ * UpdateOrgMemberRequest is the body of PATCH /orgs/{org}/members/{iid}: Permission changes the member's
+ * permission (admin only). An absent field is left alone.
  */
 export interface UpdateOrgMemberRequest {
   permission?: Permission;
-  position_id?: string | null;
 }
 /**
  * DeleteEffect is what deleting a member of an organization does there (POS-06): an AI whose home is the
@@ -2286,137 +2208,27 @@ export const DeleteEffectRemove = "remove";
 export type DeleteEffect = typeof DeleteEffectDelete | typeof DeleteEffectRemove;
 /**
  * OrgMember is one membership of an organization as the members list shows it (OMEM-01, OMEM-03):
- * the identity, its permission and position, the inviter of a guest, and what the viewer may do to it.
+ * the identity, its permission, and what the viewer may do to it.
  */
 export interface OrgMember {
   intelligence: IntelligenceRef;
   permission: Permission;
-  /**
-   * PositionID and PositionName are absent when the member holds no position.
-   */
-  position_id?: string;
-  position_name?: string;
-  /**
-   * InvitedBy is the identity that invited a guest (POS-05); absent for other permissions.
-   */
-  invited_by?: IntelligenceRef;
   joined_at: string /* RFC 3339 */;
   /**
-   * CanDelete says whether the viewer may delete the member in this organization (POS-05), and DeleteEffect
-   * what that does (POS-06). CanMove says whether the viewer may move the member to another position
-   * (POS-04): an admin may move anyone; anyone else a member it manages, to a position below its own.
+   * CanDelete says whether the viewer may delete the member in this organization (SR2-12): an admin may
+   * take anyone else out, and the host of an AI whose home is the organization may delete it. DeleteEffect
+   * says what that does (POS-06).
    */
   can_delete: boolean;
   delete_effect: DeleteEffect;
-  can_move: boolean;
-  /**
-   * CanShareAccess says whether the viewer may give this person "the same access": put them in the
-   * position the viewer holds (ST-01). It follows the move rule (POS-04), so today only an admin who holds
-   * a position is offered it, for a user other than themselves who does not hold that position yet.
-   */
-  can_share_access: boolean;
 }
 /**
- * MovePreview is what moving a member to another position would change about management (POS-04, ST-05).
- * Every list is present; an empty one means nobody.
- */
-export interface MovePreview {
-  /**
-   * LoseManagement are the identities that manage the member now and would stop doing so.
-   */
-  lose_management: IntelligenceRef[];
-  /**
-   * WillManage are the identities the member would manage after the move, by name.
-   */
-  will_manage: IntelligenceRef[];
-  /**
-   * WillBeTrustedBy are the AIs among WillManage whose home is this organization: they would treat the
-   * member's messages as trusted (POS-10), by name.
-   */
-  will_be_trusted_by: IntelligenceRef[];
-  /**
-   * NotShared are the identities the viewer manages that the member would still not manage after the move
-   * (the viewer manages them because it created or invited them, or through a position the member would not
-   * hold), by name.
-   */
-  not_shared: IntelligenceRef[];
-}
-/**
- * OrgChart is an organization's org chart as one of its members, guests included, sees it (CHART-01..03).
- * Every member appears once: in the Holders of its position, in Members, or in Unassigned.
- */
-export interface OrgChart {
-  viewer: ChartViewer;
-  /**
-   * Positions is every position of the organization as a flat list in tree order - a parent before its
-   * children, siblings by name - which ParentID links into the tree.
-   */
-  positions: ChartPosition[];
-  /**
-   * Members are the members with no position that hang under another member: a guest under its inviter,
-   * an AI under its creator (Under names it). A member Under names may be a holder, or itself one of
-   * Members or Unassigned.
-   */
-  members: ChartMember[];
-  /**
-   * Unassigned are the members with no position and nobody to hang under.
-   */
-  unassigned: ChartMember[];
-}
-/**
- * ChartViewer is what the chart says about the person looking at it.
- */
-export interface ChartViewer {
-  /**
-   * Admin tells whether the viewer is an admin of the organization, who may edit its positions (CHART-03).
-   */
-  admin: boolean;
-}
-/**
- * ChartPosition is one position with the members that hold it, ordered by name.
- */
-export interface ChartPosition {
-  id: string;
-  name: string;
-  /**
-   * ParentID is absent for a root.
-   */
-  parent_id?: string;
-  holders: ChartMember[];
-}
-/**
- * ChartMember is a member as the chart draws it, with what the viewer may do to it (CHART-03).
- */
-export interface ChartMember {
-  intelligence: IntelligenceRef;
-  /**
-   * Permission carries the admin and guest badges.
-   */
-  permission: Permission;
-  /**
-   * Online is true for an AI that has a live session; people have no presence and are always false.
-   */
-  online: boolean;
-  /**
-   * Under is the id of the member this one hangs under; set only in Chart.Members.
-   */
-  under?: string;
-  /**
-   * CanDelete, DeleteEffect and CanMove are the viewer's rights over the member, as in OrgMember.
-   */
-  can_delete: boolean;
-  delete_effect: DeleteEffect;
-  can_move: boolean;
-}
-/**
- * CreateInvitationRequest is the body of POST /orgs/{org}/invitations (OMEM-01). Handle is the @handle of
- * a user or an AI. Permission is required: an admin gives any, and every other member or guest invites
- * guests with no position only. PositionID is a position of the organization.
+ * CreateInvitationRequest is the body of POST /orgs/{org}/invitations (OMEM-01), which only an admin sends.
+ * Handle is the @handle of a user or an AI; Permission is admin or member.
  */
 export interface CreateInvitationRequest {
   handle: string;
   permission: Permission;
-  position_id?: string;
 }
 /**
  * Invitation is a pending invitation to an organization (OMEM-01) as the invitee, whoever manages an
@@ -2436,18 +2248,40 @@ export interface Invitation {
    */
   invitee: IntelligenceRef;
   /**
-   * Permission and the position are what the invitee becomes on accepting; the position is absent when
-   * the invitation carries none.
+   * Permission is what the invitee becomes on accepting.
    */
   permission: Permission;
-  position_id?: string;
-  position_name?: string;
   /**
-   * InvitedBy is the identity that sent it; for a guest it becomes the guest's inviter (POS-05).
+   * InvitedBy is the admin that sent it.
    */
   invited_by: IntelligenceRef;
   created_at: string /* RFC 3339 */;
   expires_at: string /* RFC 3339 */;
+}
+/**
+ * AddInstructorRequest is the body of POST /agents/{id}/instructors (SR2-10): the @handle of a user or of an
+ * AI the host can see.
+ */
+export interface AddInstructorRequest {
+  handle: string;
+}
+/**
+ * AgentInstructor is one identity that instructs an AI besides its host (SR2-06).
+ */
+export interface AgentInstructor {
+  intelligence: IntelligenceRef;
+  /**
+   * AddedAt is when the link was made.
+   */
+  added_at: string /* RFC 3339 */;
+}
+/**
+ * AgentInstructors is GET /agents/{id}/instructors (SR2-10): who instructs the AI - its host and its
+ * instructors, whose messages it treats as trusted (SR2-07). Instructors is always present, oldest first.
+ */
+export interface AgentInstructors {
+  host: IntelligenceRef;
+  instructors: AgentInstructor[];
 }
 
 //////////

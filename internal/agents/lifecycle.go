@@ -11,7 +11,7 @@ import (
 	"github.com/wnexous/partyline/internal/store/db"
 )
 
-// ReasonEndedByPrefix starts the close reason of a session a manager ended: "ended by @handle" (POS-04).
+// ReasonEndedByPrefix starts the close reason of a session a manager ended: "ended by @handle" (SR2-13).
 const ReasonEndedByPrefix = "ended by @"
 
 // HomeOrganization returns the id of the organization the AI belongs to, or "" when it has none or the id names
@@ -24,11 +24,10 @@ func (r *Registry) HomeOrganization(ctx context.Context, id string) (string, err
 	return home, err
 }
 
-// authorizeDelete decides whether the principal may delete the AI in its home organization (POS-05): an admin
-// of it may, and so may whoever manages the AI when it is a guest (orgs.Chart.CanDelete). An AI is seen by its
-// host and by the members of the organizations it belongs to (AD-016): whoever sees it and may not delete it
-// gets access.ErrForbidden, anyone else access.ErrNotFound. It reads in q, so it decides on the chart of the
-// transaction that deletes.
+// authorizeDelete decides whether the principal may delete the AI (SR2-12): its host may, and so may an admin of
+// its home organization (orgs.CanDeleteAI). An AI is seen by its host, by its instructors and by the members of
+// the organizations it belongs to (AD-016): whoever sees it and may not delete it gets access.ErrForbidden,
+// anyone else access.ErrNotFound. It reads in q, so it decides on the state of the transaction that deletes.
 func authorizeDelete(ctx context.Context, q *db.Queries, p authn.Principal, agentID string) (db.Agent, error) {
 	actor := p.IID()
 	a, err := q.GetAgent(ctx, agentID)
@@ -38,29 +37,27 @@ func authorizeDelete(ctx context.Context, q *db.Queries, p authn.Principal, agen
 	if err != nil {
 		return db.Agent{}, err
 	}
-	home := a.OrgID.String
-	if home == "" {
-		// No organization owns it (only a fixture: the upgrade gives every AI a home), so there is no chart to
-		// ask and its host decides, as before organizations.
-		if actor != "" && a.OwnerID == actor {
-			return a, nil
-		}
-		return db.Agent{}, access.ErrNotFound
-	}
-	chart, err := orgs.Load(ctx, q, home)
+	ok, err := orgs.CanDeleteAI(ctx, q, actor, agentID)
 	if err != nil {
 		return db.Agent{}, err
 	}
-	if chart.CanDelete(actor, agentID) {
+	if ok {
 		return a, nil
 	}
-	seen := actor != "" && a.OwnerID == actor
-	if !seen && actor != "" {
+	seen := false
+	if actor != "" {
 		n, err := q.CountSharedOrgs(ctx, db.CountSharedOrgsParams{FirstIid: actor, SecondIid: agentID})
 		if err != nil {
 			return db.Agent{}, err
 		}
 		seen = n > 0
+		if !seen {
+			l, isAI, err := orgs.LoadLinks(ctx, q, agentID)
+			if err != nil {
+				return db.Agent{}, err
+			}
+			seen = isAI && l.Instructs(actor)
+		}
 	}
 	if !seen {
 		return db.Agent{}, access.ErrNotFound
@@ -68,7 +65,7 @@ func authorizeDelete(ctx context.Context, q *db.Queries, p authn.Principal, agen
 	return db.Agent{}, access.ErrForbidden
 }
 
-// EndSession ends the AI's live session on behalf of whoever manages it in an organization they share (POS-04):
+// EndSession ends the AI's live session on behalf of whoever manages it (SR2-13):
 // the connection is closed with CloseTakenOver, which the CLI obeys by stopping without reconnecting, and the
 // reason is "ended by @handle" with the handle of the one who did it. The AI is not deleted and may connect again.
 // An AI with no live session has nothing to end. Whoever cannot see the AI gets access.ErrNotFound, whoever sees it
@@ -85,32 +82,30 @@ func (r *Registry) EndSession(ctx context.Context, p authn.Principal, agentID st
 	return nil
 }
 
-// managedAgent loads the AI for a caller who must manage it in an organization they share (POS-04, SESS-59):
-// whoever cannot see the AI gets access.ErrNotFound, whoever sees it and does not manage it access.ErrForbidden.
+// managedAgent loads the AI for a caller who must manage it - its host or a user that instructs it (SR2-13,
+// SESS-59): whoever cannot see the AI gets access.ErrNotFound, whoever sees it and does not manage it
+// access.ErrForbidden.
 func (r *Registry) managedAgent(ctx context.Context, p authn.Principal, agentID string) (db.Agent, error) {
 	actor := p.IID()
-	q := r.store.R()
-	a, err := q.GetAgent(ctx, agentID)
+	a, err := r.store.R().GetAgent(ctx, agentID)
 	if errors.Is(err, sql.ErrNoRows) {
 		return db.Agent{}, access.ErrNotFound
 	}
 	if err != nil {
 		return db.Agent{}, err
 	}
-	shared, err := q.ListSharedOrgIDs(ctx, db.ListSharedOrgIDsParams{FirstIid: actor, SecondIid: agentID})
+	managed, err := r.az.Authz().Manages(ctx, actor, agentID)
 	if err != nil {
 		return db.Agent{}, err
 	}
-	for _, orgID := range shared {
-		chart, err := orgs.Load(ctx, q, orgID)
-		if err != nil {
-			return db.Agent{}, err
-		}
-		if chart.Manages(actor, agentID) {
-			return a, nil
-		}
+	if managed {
+		return a, nil
 	}
-	if len(shared) > 0 || (actor != "" && a.OwnerID == actor) {
+	see, err := r.az.CanSeeAI(ctx, p, agentID)
+	if err != nil {
+		return db.Agent{}, err
+	}
+	if see {
 		return db.Agent{}, access.ErrForbidden
 	}
 	return db.Agent{}, access.ErrNotFound

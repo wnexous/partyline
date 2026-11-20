@@ -76,8 +76,8 @@ func (s *server) toProfile(prof intelligences.Profile) dto.IntelligenceProfile {
 	for _, m := range prof.Memberships {
 		out.Memberships = append(out.Memberships, dto.ProfileMembership{
 			OrgID: m.Organization.ID, OrgName: m.Organization.Name, OrgSlug: m.Organization.Slug,
-			Permission: string(m.Permission), PositionID: m.PositionID, PositionName: m.PositionName,
-			CanDelete: m.CanDelete, DeleteEffect: string(m.DeleteEffect),
+			Permission: string(m.Permission),
+			CanDelete:  m.CanDelete, DeleteEffect: string(m.DeleteEffect),
 		})
 	}
 	switch prof.Role {
@@ -103,6 +103,7 @@ func (s *server) toProfile(prof intelligences.Profile) dto.IntelligenceProfile {
 				refs = append(refs, convert.ManagerRef(row))
 			}
 			out.AI.InstructedBy = &refs
+			out.AI.CanEditInstructors = a.CanEditInstructors
 		}
 		out.Apps = append(out.Apps, dto.App{Kind: a.Harness, Label: agents.HarnessLabel(a.Harness)})
 	case intelligences.RolePerson:
