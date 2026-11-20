@@ -1,5 +1,12 @@
 # Organizations and Positions Specification
 
+> **Superseded in part by simple identity, release 2** (`.specs/features/simple-identity/spec-release-2.md`, 2026-11-19):
+> - Guests are gone; a membership or invitation is `admin` or `member`, and only admins invite (SR2-01, SR2-02, SR2-03): ORG-04 (guest part), OMEM-01, OMEM-04 (guest part).
+> - Positions and the org chart are gone (SR2-04, SR2-05): POS-01, POS-02, POS-04, POS-07, POS-09, CHART-01..CHART-04, and the position parts of OMEM-02, OMEM-06, OUPG-01.
+> - Management and trust follow one explicit link instead of the chart: an AI is instructed by its host and its instructors (SR2-06, SR2-07), `--parent` adds an instructor (SR2-09), the host and user instructors manage it (SR2-13): POS-03, POS-08 (amended), POS-10.
+> - Deleting: an AI by its host or an admin of its home organization, a person removed by an admin (SR2-12): POS-05, POS-06 (who may; the effects stay).
+
+
 ## Problem Statement
 
 Every AI, connection and group in partyline belongs to one user, and sharing goes through per-resource `use` and `manage` grants. That fits neither a team nor an AI that starts other AIs. An orchestrator that starts a session in each worktree creates unrelated AIs owned by the user, and nothing ever cleans them up.
@@ -157,33 +164,33 @@ André wants partyline to mirror a company (2026-10-23, with a hand-drawn org ch
 | ORG-01 | P1: Organizations own resources | Execute | Verified |
 | ORG-02 | P1: Organizations own resources | Execute | Verified |
 | ORG-03 | P1: Organizations own resources | Execute | Verified |
-| ORG-04 | P1: Organizations own resources | Execute | Verified |
+| ORG-04 | P1: Organizations own resources | Execute | Superseded by SR2-02 (joins as member) |
 | ORG-05 | P1: Organizations own resources | Execute | Verified |
 | ORG-06 | P1: Organizations own resources | Execute | Verified |
 | ORG-07 | P1: Organizations own resources | Execute | Verified |
-| OMEM-01 | P1: Members and permissions | Execute | Verified |
-| OMEM-02 | P1: Members and permissions | Execute | Verified |
+| OMEM-01 | P1: Members and permissions | Execute | Superseded by SR2-01, SR2-03 |
+| OMEM-02 | P1: Members and permissions | Execute | Verified; position part superseded by SR2-04 |
 | OMEM-03 | P1: Members and permissions | Execute | Verified |
-| OMEM-04 | P1: Members and permissions | Execute | Verified |
+| OMEM-04 | P1: Members and permissions | Execute | Verified; guest part superseded by SR2-01 |
 | OMEM-05 | P1: Members and permissions | Execute | Verified |
-| OMEM-06 | P1: Members and permissions | Execute | Verified |
+| OMEM-06 | P1: Members and permissions | Execute | Verified; position part superseded by SR2-04 |
 | OMEM-07 | P1: Members and permissions | Execute | Verified |
 | OMEM-08 | Edge cases | Execute | Verified |
-| POS-01 | P1: Org chart of positions | Execute | Verified |
-| POS-02 | P1: Org chart of positions | Execute | Verified |
-| POS-03 | P1: Org chart of positions | Execute | Verified |
-| POS-04 | P1: Org chart of positions | Execute | Verified |
-| POS-05 | P1: Org chart of positions | Execute | Verified |
-| POS-06 | P1: Org chart of positions | Execute | Verified |
-| POS-07 | P1: Org chart of positions | Execute | Verified |
-| POS-08 | P1: Org chart of positions | Execute | Verified |
-| POS-09 | P1: Org chart of positions | Execute | Verified |
-| POS-10 | P1: Org chart of positions | Execute | Verified |
-| CHART-01 | P1: Org chart view | Execute | Verified |
-| CHART-02 | P1: Org chart view | Execute | Verified |
-| CHART-03 | P1: Org chart view | Execute | Verified |
-| CHART-04 | P1: Org chart view | Execute | Verified |
-| OUPG-01 | Edge cases | Execute | Verified |
+| POS-01 | P1: Org chart of positions | Execute | Superseded by SR2-04 |
+| POS-02 | P1: Org chart of positions | Execute | Superseded by SR2-04 |
+| POS-03 | P1: Org chart of positions | Execute | Superseded by SR2-07, SR2-13 |
+| POS-04 | P1: Org chart of positions | Execute | Superseded by SR2-04, SR2-13 |
+| POS-05 | P1: Org chart of positions | Execute | Superseded by SR2-12 |
+| POS-06 | P1: Org chart of positions | Execute | Amended by SR2-12 (who may delete) |
+| POS-07 | P1: Org chart of positions | Execute | Superseded by SR2-05 |
+| POS-08 | P1: Org chart of positions | Execute | Amended by SR2-09 (parent becomes an instructor) |
+| POS-09 | P1: Org chart of positions | Execute | Superseded by SR2-04 |
+| POS-10 | P1: Org chart of positions | Execute | Superseded by SR2-07 |
+| CHART-01 | P1: Org chart view | Execute | Superseded by SR2-05 |
+| CHART-02 | P1: Org chart view | Execute | Superseded by SR2-05 |
+| CHART-03 | P1: Org chart view | Execute | Superseded by SR2-05 |
+| CHART-04 | P1: Org chart view | Execute | Superseded by SR2-05 |
+| OUPG-01 | Edge cases | Execute | Verified; positions part superseded by SR2-04 |
 | OUPG-02 | Edge cases | Execute | Verified |
 
 **Coverage:** 31 total, 31 mapped to tasks (`tasks.md` T1-T58), all Verified (validation.md, 2026-10-24).
