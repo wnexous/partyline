@@ -75,7 +75,8 @@ func TestToolsList(t *testing.T) {
 		"list_rooms":          nil,
 		"read_unread":         {"room"},
 		"set_notifications":   {"room", "notify"},
-		"history":             {"room"},
+		"history":             nil, // room, or connection with chat (CH-05): the schema cannot say so
+		"fetch_history":       {"connection", "chat"},
 		"download_attachment": {"attachment_id"},
 		"send_file":           {"path"}, // room or connection with chat, exactly one: the schema cannot say so
 		"room_info":           {"room"},

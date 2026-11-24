@@ -32,6 +32,7 @@ const (
 // those of that connection.
 type connectionChan struct {
 	*chanEnv
+	fake  *connectortest.Fake
 	inst  *connectortest.Instance
 	conn  string
 	group db.Chat
@@ -60,7 +61,7 @@ func newConnectionChanOfKind(t *testing.T, tune func(*connectors.Kind), opts ...
 	conn = e.alice.OperateConnector(conn.ID, e.agentID)
 	inst := fake.Instance(t, conn.ID)
 	inst.WaitRun(t)
-	c := &connectionChan{chanEnv: e, inst: inst, conn: conn.ID}
+	c := &connectionChan{chanEnv: e, fake: fake, inst: inst, conn: conn.ID}
 	c.group = c.chat(groupChatExternal, "Team", "group")
 	c.dm = c.chat(dmChatExternal, "Pat", "dm")
 	return c
