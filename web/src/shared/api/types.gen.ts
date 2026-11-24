@@ -511,6 +511,23 @@ export interface PlatformEvent {
   kind: MessageKind;
   text: string;
   /**
+   * ReplyTo is the Partyline id of the message this one quotes, when Partyline knows it: the id of
+   * the AI's own send (what the send tool returned) or of an earlier event of the same chat (QC-01).
+   */
+  reply_to?: string;
+  /**
+   * Quoted is a short preview of the quoted message, at most MaxQuotedPreview characters, taken from
+   * the platform event: its text, or a bracketed kind for media ("[image]") followed by its caption
+   * (QC-02). It is platform content, data like Text, and goes with Text when the event is
+   * acknowledged (QC-05).
+   */
+  quoted?: string;
+  /**
+   * QuotedFromSelf is true when the quoted message is one the connection's own account wrote,
+   * whether or not Partyline sent it (QC-03).
+   */
+  quoted_from_self?: boolean;
+  /**
    * Attachments are downloadable until 24 hours after the session acknowledged the event.
    */
   attachments: Attachment[];
@@ -591,6 +608,10 @@ export const PasswordMinLength = 10;
  * MaxTextLength is the maximum message text length in characters (MSG-02).
  */
 export const MaxTextLength = 16000;
+/**
+ * MaxQuotedPreview is the longest preview of a quoted platform message, in characters (QC-02).
+ */
+export const MaxQuotedPreview = 200;
 /**
  * DefaultPageSize is the page size of paginated lists when no limit is given.
  */

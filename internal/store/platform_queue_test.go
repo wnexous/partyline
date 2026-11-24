@@ -37,8 +37,8 @@ func TestPlatformQueueTablesAndColumnsExist(t *testing.T) {
 
 	require.Equal(t, []string{
 		"seq", "id", "agent_id", "connector_id", "chat_id", "external_id", "sender_id", "sender_name",
-		"trusted", "from_self", "kind", "text", "received_at", "acked_at",
-	}, e.columnsOf("platform_items"))
+		"trusted", "from_self", "kind", "text", "received_at", "acked_at", "reply_to", "quoted", "quoted_from_self",
+	}, e.columnsOf("platform_items"), "0041 adds the quote columns (QC-01..QC-03)")
 	require.Equal(t, []string{"id", "item_id", "sha256", "name", "mime", "size", "status"}, e.columnsOf("platform_attachments"))
 	require.Equal(t, []string{
 		"id", "connector_id", "chat_id", "agent_id", "text", "reply_to_external_id", "status", "attempts",

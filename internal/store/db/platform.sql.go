@@ -12,7 +12,7 @@ import (
 )
 
 const ackPlatformItem = `-- name: AckPlatformItem :execrows
-UPDATE platform_items SET acked_at = ?1, text = ''
+UPDATE platform_items SET acked_at = ?1, text = '', quoted = ''
 WHERE id = ?2 AND agent_id = ?3 AND acked_at IS NULL
 `
 
@@ -22,8 +22,8 @@ type AckPlatformItemParams struct {
 	AgentID string
 }
 
-// CID-09: the text goes at once; the row and its files stay until the purge. Only the item's own
-// AI acknowledges it, and only once.
+// CID-09: the text goes at once, and with it the preview of the message it quotes (QC-05); the row
+// and its files stay until the purge. Only the item's own AI acknowledges it, and only once.
 func (q *Queries) AckPlatformItem(ctx context.Context, arg AckPlatformItemParams) (int64, error) {
 	result, err := q.db.ExecContext(ctx, ackPlatformItem, arg.AckedAt, arg.ID, arg.AgentID)
 	if err != nil {
@@ -161,6 +161,31 @@ func (q *Queries) DeleteUnackedPlatformItemsOverCap(ctx context.Context, arg Del
 	return result.RowsAffected()
 }
 
+const findChatPlatformItemByExternalID = `-- name: FindChatPlatformItemByExternalID :one
+SELECT id, from_self FROM platform_items
+WHERE connector_id = ? AND chat_id = ? AND external_id = ? AND external_id <> ''
+`
+
+type FindChatPlatformItemByExternalIDParams struct {
+	ConnectorID string
+	ChatID      string
+	ExternalID  string
+}
+
+type FindChatPlatformItemByExternalIDRow struct {
+	ID       string
+	FromSelf bool
+}
+
+// QC-01, QC-03: the item of the chat of the connection that the platform knows by this id, queued or
+// acknowledged and not yet purged; a message without a platform id is never one.
+func (q *Queries) FindChatPlatformItemByExternalID(ctx context.Context, arg FindChatPlatformItemByExternalIDParams) (FindChatPlatformItemByExternalIDRow, error) {
+	row := q.db.QueryRowContext(ctx, findChatPlatformItemByExternalID, arg.ConnectorID, arg.ChatID, arg.ExternalID)
+	var i FindChatPlatformItemByExternalIDRow
+	err := row.Scan(&i.ID, &i.FromSelf)
+	return i, err
+}
+
 const getPlatformAttachmentForAgent = `-- name: GetPlatformAttachmentForAgent :one
 SELECT a.id, a.item_id, a.sha256, a.name, a.mime, a.size, a.status FROM platform_attachments a
 JOIN platform_items i ON i.id = a.item_id
@@ -201,7 +226,7 @@ func (q *Queries) GetPlatformDropped(ctx context.Context, id string) (int64, err
 }
 
 const getPlatformItemForAgent = `-- name: GetPlatformItemForAgent :one
-SELECT i.seq, i.id, i.agent_id, i.connector_id, i.chat_id, i.external_id, i.sender_id, i.sender_name, i.trusted, i.from_self, i.kind, i.text, i.received_at, i.acked_at, c.title AS chat_title, c.kind AS chat_kind, k.kind AS platform
+SELECT i.seq, i.id, i.agent_id, i.connector_id, i.chat_id, i.external_id, i.sender_id, i.sender_name, i.trusted, i.from_self, i.kind, i.text, i.received_at, i.acked_at, i.reply_to, i.quoted, i.quoted_from_self, c.title AS chat_title, c.kind AS chat_kind, k.kind AS platform
 FROM platform_items i
 JOIN chats c ON c.id = i.chat_id
 JOIN connectors k ON k.id = i.connector_id
@@ -239,6 +264,9 @@ func (q *Queries) GetPlatformItemForAgent(ctx context.Context, arg GetPlatformIt
 		&i.PlatformItem.Text,
 		&i.PlatformItem.ReceivedAt,
 		&i.PlatformItem.AckedAt,
+		&i.PlatformItem.ReplyTo,
+		&i.PlatformItem.Quoted,
+		&i.PlatformItem.QuotedFromSelf,
 		&i.ChatTitle,
 		&i.ChatKind,
 		&i.Platform,
@@ -276,29 +304,33 @@ func (q *Queries) InsertPlatformAttachment(ctx context.Context, arg InsertPlatfo
 
 const insertPlatformItem = `-- name: InsertPlatformItem :one
 INSERT INTO platform_items (id, agent_id, connector_id, chat_id, external_id, sender_id, sender_name,
-                            trusted, from_self, kind, text, received_at)
-VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                            trusted, from_self, kind, text, received_at, reply_to, quoted, quoted_from_self)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 ON CONFLICT (connector_id, chat_id, external_id) WHERE external_id <> '' DO NOTHING
 RETURNING seq
 `
 
 type InsertPlatformItemParams struct {
-	ID          string
-	AgentID     string
-	ConnectorID string
-	ChatID      string
-	ExternalID  string
-	SenderID    string
-	SenderName  string
-	Trusted     bool
-	FromSelf    bool
-	Kind        string
-	Text        string
-	ReceivedAt  int64
+	ID             string
+	AgentID        string
+	ConnectorID    string
+	ChatID         string
+	ExternalID     string
+	SenderID       string
+	SenderName     string
+	Trusted        bool
+	FromSelf       bool
+	Kind           string
+	Text           string
+	ReceivedAt     int64
+	ReplyTo        string
+	Quoted         string
+	QuotedFromSelf bool
 }
 
 // CID-26: a platform message of one chat of one connection queues once; a repeat conflicts with
-// the dedupe index and returns no row. A message without a platform id never conflicts.
+// the dedupe index and returns no row. A message without a platform id never conflicts. reply_to,
+// quoted and quoted_from_self tell the message it quotes (QC-01..QC-03).
 func (q *Queries) InsertPlatformItem(ctx context.Context, arg InsertPlatformItemParams) (int64, error) {
 	row := q.db.QueryRowContext(ctx, insertPlatformItem,
 		arg.ID,
@@ -313,6 +345,9 @@ func (q *Queries) InsertPlatformItem(ctx context.Context, arg InsertPlatformItem
 		arg.Kind,
 		arg.Text,
 		arg.ReceivedAt,
+		arg.ReplyTo,
+		arg.Quoted,
+		arg.QuotedFromSelf,
 	)
 	var seq int64
 	err := row.Scan(&seq)
@@ -480,7 +515,7 @@ func (q *Queries) ListPlatformAttachmentsForItems(ctx context.Context, itemIds [
 }
 
 const listUnackedPlatformItems = `-- name: ListUnackedPlatformItems :many
-SELECT i.seq, i.id, i.agent_id, i.connector_id, i.chat_id, i.external_id, i.sender_id, i.sender_name, i.trusted, i.from_self, i.kind, i.text, i.received_at, i.acked_at, c.title AS chat_title, c.kind AS chat_kind, k.kind AS platform
+SELECT i.seq, i.id, i.agent_id, i.connector_id, i.chat_id, i.external_id, i.sender_id, i.sender_name, i.trusted, i.from_self, i.kind, i.text, i.received_at, i.acked_at, i.reply_to, i.quoted, i.quoted_from_self, c.title AS chat_title, c.kind AS chat_kind, k.kind AS platform
 FROM platform_items i
 JOIN chats c ON c.id = i.chat_id
 JOIN connectors k ON k.id = i.connector_id
@@ -528,6 +563,9 @@ func (q *Queries) ListUnackedPlatformItems(ctx context.Context, arg ListUnackedP
 			&i.PlatformItem.Text,
 			&i.PlatformItem.ReceivedAt,
 			&i.PlatformItem.AckedAt,
+			&i.PlatformItem.ReplyTo,
+			&i.PlatformItem.Quoted,
+			&i.PlatformItem.QuotedFromSelf,
 			&i.ChatTitle,
 			&i.ChatKind,
 			&i.Platform,

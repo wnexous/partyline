@@ -582,7 +582,23 @@ func (s *Sends) attempt(ctx context.Context, id string, d delivery) (dto.Platfor
 	if err == nil {
 		s.d.Sent.Add(send.ChatID, platformID)
 		err = s.d.Store.WithTx(rec, func(q *db.Queries) error {
-			return q.MarkPlatformSendSent(rec, db.MarkPlatformSendSentParams{ExternalID: platformID, UpdatedAt: s.d.Now().UnixMilli(), ID: id})
+			if err := q.MarkPlatformSendSent(rec, db.MarkPlatformSendSentParams{ExternalID: platformID, UpdatedAt: s.d.Now().UnixMilli(), ID: id}); err != nil {
+				return err
+			}
+			if d.react != nil { // a reaction is no message anyone quotes
+				return nil
+			}
+			// The later messages of the send (a file after its caption, the parts of a long text), which
+			// a quote may name too (QC-01).
+			for _, part := range created.all() {
+				if part == platformID || part == "" {
+					continue
+				}
+				if err := q.InsertPlatformSendPart(rec, db.InsertPlatformSendPartParams{SendID: id, ChatID: send.ChatID, ExternalID: part}); err != nil {
+					return err
+				}
+			}
+			return nil
 		})
 		return dto.PlatformSendResult{ID: id, Status: dto.PlatformSendStatusSent}, err
 	}
@@ -616,6 +632,13 @@ func (c *createdIDs) count() int {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	return len(c.ids)
+}
+
+// all is the ids of the messages created, in the order they were reported.
+func (c *createdIDs) all() []string {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return append([]string(nil), c.ids...)
 }
 
 // first is the id of the first message created, "" when none was reported.

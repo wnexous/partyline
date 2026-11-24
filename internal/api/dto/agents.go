@@ -391,6 +391,17 @@ type PlatformEvent struct {
 	FromSelf bool        `json:"from_self"`
 	Kind     MessageKind `json:"kind"`
 	Text     string      `json:"text"`
+	// ReplyTo is the Partyline id of the message this one quotes, when Partyline knows it: the id of
+	// the AI's own send (what the send tool returned) or of an earlier event of the same chat (QC-01).
+	ReplyTo string `json:"reply_to,omitempty"`
+	// Quoted is a short preview of the quoted message, at most MaxQuotedPreview characters, taken from
+	// the platform event: its text, or a bracketed kind for media ("[image]") followed by its caption
+	// (QC-02). It is platform content, data like Text, and goes with Text when the event is
+	// acknowledged (QC-05).
+	Quoted string `json:"quoted,omitempty"`
+	// QuotedFromSelf is true when the quoted message is one the connection's own account wrote,
+	// whether or not Partyline sent it (QC-03).
+	QuotedFromSelf bool `json:"quoted_from_self,omitempty"`
 	// Attachments are downloadable until 24 hours after the session acknowledged the event.
 	Attachments []Attachment `json:"attachments"`
 	ReceivedAt  time.Time    `json:"received_at"`

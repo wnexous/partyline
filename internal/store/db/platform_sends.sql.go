@@ -27,24 +27,6 @@ func (q *Queries) ClaimPlatformSend(ctx context.Context, arg ClaimPlatformSendPa
 	return result.RowsAffected()
 }
 
-const countChatPlatformSendExternalID = `-- name: CountChatPlatformSendExternalID :one
-SELECT COUNT(*) FROM platform_sends WHERE chat_id = ? AND external_id <> '' AND external_id = ?
-`
-
-type CountChatPlatformSendExternalIDParams struct {
-	ChatID     string
-	ExternalID string
-}
-
-// Messages an AI sent through the connection to the chat that the platform knows by this id
-// (CID-14, CID-12). A send that is not over has no id yet.
-func (q *Queries) CountChatPlatformSendExternalID(ctx context.Context, arg CountChatPlatformSendExternalIDParams) (int64, error) {
-	row := q.db.QueryRowContext(ctx, countChatPlatformSendExternalID, arg.ChatID, arg.ExternalID)
-	var count int64
-	err := row.Scan(&count)
-	return count, err
-}
-
 const countSendingPlatformSendsForChat = `-- name: CountSendingPlatformSendsForChat :one
 SELECT COUNT(*) FROM platform_sends WHERE chat_id = ? AND status = 'sending'
 `
@@ -116,6 +98,30 @@ func (q *Queries) FailSendingOncePlatformSends(ctx context.Context, arg FailSend
 		return nil, err
 	}
 	return items, nil
+}
+
+const findChatPlatformSendByExternalID = `-- name: FindChatPlatformSendByExternalID :one
+SELECT s.id FROM platform_sends s
+WHERE s.chat_id = ?1 AND s.external_id <> '' AND s.external_id = ?2
+UNION ALL
+SELECT p.send_id FROM platform_send_parts p
+WHERE p.chat_id = ?1 AND p.external_id = ?2
+LIMIT 1
+`
+
+type FindChatPlatformSendByExternalIDParams struct {
+	ChatID     string
+	ExternalID string
+}
+
+// The send an AI made through the connection to the chat that created the message the platform
+// knows by this id: its first message (external_id) or a later one (platform_send_parts) (CID-14,
+// CID-12, QC-01). A send that is not over has no id yet.
+func (q *Queries) FindChatPlatformSendByExternalID(ctx context.Context, arg FindChatPlatformSendByExternalIDParams) (string, error) {
+	row := q.db.QueryRowContext(ctx, findChatPlatformSendByExternalID, arg.ChatID, arg.ExternalID)
+	var id string
+	err := row.Scan(&id)
+	return id, err
 }
 
 const getPlatformSend = `-- name: GetPlatformSend :one
@@ -230,6 +236,23 @@ func (q *Queries) InsertPlatformSend(ctx context.Context, arg InsertPlatformSend
 		arg.CreatedAt,
 		arg.UpdatedAt,
 	)
+	return err
+}
+
+const insertPlatformSendPart = `-- name: InsertPlatformSendPart :exec
+INSERT INTO platform_send_parts (send_id, chat_id, external_id) VALUES (?, ?, ?)
+ON CONFLICT (send_id, external_id) DO NOTHING
+`
+
+type InsertPlatformSendPartParams struct {
+	SendID     string
+	ChatID     string
+	ExternalID string
+}
+
+// QC-01: the platform id of a message a send created after its first one.
+func (q *Queries) InsertPlatformSendPart(ctx context.Context, arg InsertPlatformSendPartParams) error {
+	_, err := q.db.ExecContext(ctx, insertPlatformSendPart, arg.SendID, arg.ChatID, arg.ExternalID)
 	return err
 }
 

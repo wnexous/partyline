@@ -85,6 +85,12 @@ type Item struct {
 	// ReceivedAt defaults to now.
 	ReceivedAt  time.Time
 	Attachments []Attachment
+	// ReplyTo, Quoted and QuotedFromSelf tell the message this one quotes: the Partyline id of the
+	// quoted message when it is known, its preview and whether the account wrote it (QC-01..QC-03).
+	// Quoted is platform text: it goes on ack with Text (QC-05).
+	ReplyTo        string
+	Quoted         string
+	QuotedFromSelf bool
 }
 
 // Event is a queued item as the AI's session receives it.
@@ -110,6 +116,11 @@ type Event struct {
 	ReceivedAt  time.Time
 	// AckedAt is zero while the session has not acknowledged the item.
 	AckedAt time.Time
+	// ReplyTo, Quoted and QuotedFromSelf tell the message this one quotes, as Item has them; an
+	// acknowledged item has no Quoted (QC-05).
+	ReplyTo        string
+	Quoted         string
+	QuotedFromSelf bool
 }
 
 // Enqueue queues the item and wakes the live session of the AI that holds it. The AI is the one
@@ -144,6 +155,7 @@ func (q *Queue) Enqueue(ctx context.Context, it Item) (id string, queued bool, e
 			ID: id, AgentID: agent, ConnectorID: it.ConnectorID, ChatID: it.ChatID, ExternalID: it.ExternalID,
 			SenderID: it.SenderID, SenderName: it.SenderName, Trusted: it.Trusted, FromSelf: it.FromSelf,
 			Kind: string(kind), Text: it.Text, ReceivedAt: received.UnixMilli(),
+			ReplyTo: it.ReplyTo, Quoted: it.Quoted, QuotedFromSelf: it.QuotedFromSelf,
 		})
 		if errors.Is(err, sql.ErrNoRows) {
 			return nil // already queued
@@ -358,7 +370,7 @@ func event(it db.PlatformItem, chatTitle, chatKind, platform string) Event {
 		ChatTitle: chatTitle, ChatKind: dto.ChatKind(chatKind), ExternalID: it.ExternalID,
 		SenderName: it.SenderName, SenderID: it.SenderID, Trusted: it.Trusted, FromSelf: it.FromSelf,
 		Kind: dto.MessageKind(it.Kind), Text: it.Text, ReceivedAt: time.UnixMilli(it.ReceivedAt).UTC(),
-		Attachments: []Attachment{},
+		Attachments: []Attachment{}, ReplyTo: it.ReplyTo, Quoted: it.Quoted, QuotedFromSelf: it.QuotedFromSelf,
 	}
 	if it.AckedAt.Valid {
 		e.AckedAt = time.UnixMilli(it.AckedAt.Int64).UTC()

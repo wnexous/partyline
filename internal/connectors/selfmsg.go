@@ -2,6 +2,8 @@ package connectors
 
 import (
 	"context"
+	"database/sql"
+	"errors"
 	"time"
 
 	"github.com/wnexous/partyline/internal/store/db"
@@ -42,7 +44,7 @@ func (p *Pipeline) sendInFlight(ctx context.Context, chatID string) (bool, error
 
 // sentByPartyline tells whether Partyline sent the message with this platform id to the chat: it
 // remembers the ids of the last minutes, and the record of the sends an AI made through the
-// connection holds the id of the first message of each send (CID-14). A message without an id is
+// connection holds the ids of the messages each send created (CID-14). A message without an id is
 // never one of them.
 func (p *Pipeline) sentByPartyline(ctx context.Context, chatID, platformID string) (bool, error) {
 	if platformID == "" {
@@ -51,6 +53,16 @@ func (p *Pipeline) sentByPartyline(ctx context.Context, chatID, platformID strin
 	if p.d.Sent.Has(chatID, platformID) {
 		return true, nil
 	}
-	n, err := p.d.Store.R().CountChatPlatformSendExternalID(ctx, db.CountChatPlatformSendExternalIDParams{ChatID: chatID, ExternalID: platformID})
-	return n > 0, err
+	id, err := p.sendOf(ctx, chatID, platformID)
+	return id != "", err
+}
+
+// sendOf is the id of the send an AI made through the connection to the chat that created the
+// message with this platform id, "" when the record of the sends has none.
+func (p *Pipeline) sendOf(ctx context.Context, chatID, platformID string) (string, error) {
+	id, err := p.d.Store.R().FindChatPlatformSendByExternalID(ctx, db.FindChatPlatformSendByExternalIDParams{ChatID: chatID, ExternalID: platformID})
+	if errors.Is(err, sql.ErrNoRows) {
+		return "", nil
+	}
+	return id, err
 }

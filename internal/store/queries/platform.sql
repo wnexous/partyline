@@ -1,9 +1,10 @@
 -- name: InsertPlatformItem :one
 -- CID-26: a platform message of one chat of one connection queues once; a repeat conflicts with
--- the dedupe index and returns no row. A message without a platform id never conflicts.
+-- the dedupe index and returns no row. A message without a platform id never conflicts. reply_to,
+-- quoted and quoted_from_self tell the message it quotes (QC-01..QC-03).
 INSERT INTO platform_items (id, agent_id, connector_id, chat_id, external_id, sender_id, sender_name,
-                            trusted, from_self, kind, text, received_at)
-VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                            trusted, from_self, kind, text, received_at, reply_to, quoted, quoted_from_self)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 ON CONFLICT (connector_id, chat_id, external_id) WHERE external_id <> '' DO NOTHING
 RETURNING seq;
 
@@ -64,9 +65,9 @@ WHERE a.id = sqlc.arg(id) AND i.agent_id = sqlc.arg(agent_id);
 SELECT * FROM platform_attachments WHERE item_id IN (sqlc.slice(item_ids)) ORDER BY item_id, id;
 
 -- name: AckPlatformItem :execrows
--- CID-09: the text goes at once; the row and its files stay until the purge. Only the item's own
--- AI acknowledges it, and only once.
-UPDATE platform_items SET acked_at = sqlc.arg(acked_at), text = ''
+-- CID-09: the text goes at once, and with it the preview of the message it quotes (QC-05); the row
+-- and its files stay until the purge. Only the item's own AI acknowledges it, and only once.
+UPDATE platform_items SET acked_at = sqlc.arg(acked_at), text = '', quoted = ''
 WHERE id = sqlc.arg(id) AND agent_id = sqlc.arg(agent_id) AND acked_at IS NULL;
 
 -- name: MovePlatformItems :execrows
@@ -112,3 +113,9 @@ SELECT EXISTS (
     SELECT 1 FROM platform_items
     WHERE connector_id = ? AND chat_id = ? AND external_id = ? AND external_id <> ''
 );
+
+-- name: FindChatPlatformItemByExternalID :one
+-- QC-01, QC-03: the item of the chat of the connection that the platform knows by this id, queued or
+-- acknowledged and not yet purged; a message without a platform id is never one.
+SELECT id, from_self FROM platform_items
+WHERE connector_id = ? AND chat_id = ? AND external_id = ? AND external_id <> '';

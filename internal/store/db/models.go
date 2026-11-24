@@ -368,20 +368,23 @@ type PlatformAttachment struct {
 }
 
 type PlatformItem struct {
-	Seq         int64
-	ID          string
-	AgentID     string
-	ConnectorID string
-	ChatID      string
-	ExternalID  string
-	SenderID    string
-	SenderName  string
-	Trusted     bool
-	FromSelf    bool
-	Kind        string
-	Text        string
-	ReceivedAt  int64
-	AckedAt     sql.NullInt64
+	Seq            int64
+	ID             string
+	AgentID        string
+	ConnectorID    string
+	ChatID         string
+	ExternalID     string
+	SenderID       string
+	SenderName     string
+	Trusted        bool
+	FromSelf       bool
+	Kind           string
+	Text           string
+	ReceivedAt     int64
+	AckedAt        sql.NullInt64
+	ReplyTo        string
+	Quoted         string
+	QuotedFromSelf bool
 }
 
 type PlatformSend struct {
@@ -399,6 +402,12 @@ type PlatformSend struct {
 	CreatedAt         int64
 	UpdatedAt         int64
 	Once              bool
+}
+
+type PlatformSendPart struct {
+	SendID     string
+	ChatID     string
+	ExternalID string
 }
 
 type PlatformTranscription struct {
