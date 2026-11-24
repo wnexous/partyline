@@ -609,13 +609,11 @@ describe("connection page as an AI's app (CID-22, CID-23, CID-27)", () => {
     renderRoute("/orgs/o1/connections/k1");
     const history = await screen.findByRole("combobox", { name: "Keep chat history" });
     expect(history).toHaveValue("0");
-    expect(within(history).getAllByRole("option").map((o) => o.textContent)).toEqual([
-      "Off",
-      "7 days",
-      "30 days",
-      "90 days",
-      "Forever",
-    ]);
+    expect(
+      within(history)
+        .getAllByRole("option")
+        .map((o) => o.textContent),
+    ).toEqual(["Off", "7 days", "30 days", "90 days", "Forever"]);
     await user.selectOptions(history, "Forever");
     await user.click(screen.getByRole("button", { name: "Save delivery" }));
     await waitFor(() => expect(patches(calls)).toHaveLength(1));
@@ -628,14 +626,11 @@ describe("connection page as an AI's app (CID-22, CID-23, CID-27)", () => {
     renderRoute("/orgs/o1/connections/k1");
     const history = await screen.findByRole("combobox", { name: "Keep chat history" });
     expect(history).toHaveValue("14");
-    expect(within(history).getAllByRole("option").map((o) => o.textContent)).toEqual([
-      "Off",
-      "7 days",
-      "14 days",
-      "30 days",
-      "90 days",
-      "Forever",
-    ]);
+    expect(
+      within(history)
+        .getAllByRole("option")
+        .map((o) => o.textContent),
+    ).toEqual(["Off", "7 days", "14 days", "30 days", "90 days", "Forever"]);
   });
 
   it("CH-03: turning the history off asks first, and saves only once confirmed", async () => {
