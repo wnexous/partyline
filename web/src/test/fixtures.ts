@@ -203,6 +203,7 @@ export function makeConnector(over: Partial<Connector> = {}): Connector {
     status: "connected",
     deliver: "all",
     groups_mentions_only: true,
+    history_days: 0,
     queued: 0,
     config: {},
     created_at: "2026-10-01T12:00:00Z",

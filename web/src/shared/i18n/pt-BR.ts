@@ -910,6 +910,16 @@ export const ptBR: Dictionary = {
   "connector.mentionsOnly": "Grupos: só quando mencionarem",
   "connector.mentionsOnlyHint":
     "Em um grupo, entregue uma mensagem só quando ela mencionar a conta ou responder a uma mensagem dela.",
+  "connector.history": "Guardar histórico dos chats",
+  "connector.historyHint":
+    "Guarda as mensagens dos chats que o operador recebe, e o que ele envia, para ele reler a conversa depois. Um prazo menor apaga o que for mais antigo.",
+  "connector.history.off": "Desligado",
+  "connector.history.days": "{count} dias",
+  "connector.history.forever": "Para sempre",
+  "connector.historyOffTitle": "Desligar o histórico dos chats?",
+  "connector.historyOffBody":
+    "O histórico que esta conexão guarda é apagado agora e não pode ser recuperado. Nada mais é guardado a partir daí.",
+  "connector.historyOffConfirm": "Desligar e apagar",
   "connector.saveDelivery": "Salvar entrega",
   "connector.deliverySaved": "Configurações de entrega salvas",
   "connector.deliveryFailed": "Não foi possível salvar as configurações de entrega.",
