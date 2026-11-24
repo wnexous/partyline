@@ -930,9 +930,14 @@ export const ErrorCodeTooMany = "too_many";
  */
 export const ErrorCodeNoManager = "no_manager";
 /**
+ * ErrorCodeHistoryOff is a read of a connection's chat history, or a fetch of its past, while the
+ * connection keeps none: its owner can turn it on in the connection's settings (409, CH-06).
+ */
+export const ErrorCodeHistoryOff = "history_off";
+/**
  * Error codes and the HTTP status they come with.
  */
-export type ErrorCode = typeof ErrorCodeInvalid | typeof ErrorCodeUnauthorized | typeof ErrorCodeForbidden | typeof ErrorCodeNotFound | typeof ErrorCodeConflict | typeof ErrorCodeGone | typeof ErrorCodeTooLarge | typeof ErrorCodeRateLimited | typeof ErrorCodeInternal | typeof ErrorCodeUnavailable | typeof ErrorCodeHandleTaken | typeof ErrorCodeAvatarInvalid | typeof ErrorCodeLastInstanceAdmin | typeof ErrorCodeLastAdmin | typeof ErrorCodeHomeOrganization | typeof ErrorCodeAlreadyMember | typeof ErrorCodeNotOperator | typeof ErrorCodeUnknownChat | typeof ErrorCodeUnsupported | typeof ErrorCodeFolderRequired | typeof ErrorCodeFolderInvalid | typeof ErrorCodeHarnessRemoved | typeof ErrorCodeOrganizationMismatch | typeof ErrorCodeIdentityBusy | typeof ErrorCodeDMMembersFixed | typeof ErrorCodeReactionLimit | typeof ErrorCodeDMSelf | typeof ErrorCodeContactNotFound | typeof ErrorCodeNoRouteToPerson | typeof ErrorCodeHistoryOnly | typeof ErrorCodeCounterpartDisabled | typeof ErrorCodeChatsNotMembers | typeof ErrorCodeMembersRefused | typeof ErrorCodeOrganizationRequired | typeof ErrorCodeOrganizationNotEmpty | typeof ErrorCodeIdentityOnline | typeof ErrorCodeAlreadyAnswered | typeof ErrorCodeAIOffline | typeof ErrorCodeClientOutdated | typeof ErrorCodeNotSaved | typeof ErrorCodeFileTooLarge | typeof ErrorCodeInsufficientStorage | typeof ErrorCodeUploadOffset | typeof ErrorCodeUploadBusy | typeof ErrorCodeUploadSent | typeof ErrorCodeUploadIncomplete | typeof ErrorCodeAttachmentExpired | typeof ErrorCodeTooFrequent | typeof ErrorCodeTooMany | typeof ErrorCodeNoManager;
+export type ErrorCode = typeof ErrorCodeInvalid | typeof ErrorCodeUnauthorized | typeof ErrorCodeForbidden | typeof ErrorCodeNotFound | typeof ErrorCodeConflict | typeof ErrorCodeGone | typeof ErrorCodeTooLarge | typeof ErrorCodeRateLimited | typeof ErrorCodeInternal | typeof ErrorCodeUnavailable | typeof ErrorCodeHandleTaken | typeof ErrorCodeAvatarInvalid | typeof ErrorCodeLastInstanceAdmin | typeof ErrorCodeLastAdmin | typeof ErrorCodeHomeOrganization | typeof ErrorCodeAlreadyMember | typeof ErrorCodeNotOperator | typeof ErrorCodeUnknownChat | typeof ErrorCodeUnsupported | typeof ErrorCodeFolderRequired | typeof ErrorCodeFolderInvalid | typeof ErrorCodeHarnessRemoved | typeof ErrorCodeOrganizationMismatch | typeof ErrorCodeIdentityBusy | typeof ErrorCodeDMMembersFixed | typeof ErrorCodeReactionLimit | typeof ErrorCodeDMSelf | typeof ErrorCodeContactNotFound | typeof ErrorCodeNoRouteToPerson | typeof ErrorCodeHistoryOnly | typeof ErrorCodeCounterpartDisabled | typeof ErrorCodeChatsNotMembers | typeof ErrorCodeMembersRefused | typeof ErrorCodeOrganizationRequired | typeof ErrorCodeOrganizationNotEmpty | typeof ErrorCodeIdentityOnline | typeof ErrorCodeAlreadyAnswered | typeof ErrorCodeAIOffline | typeof ErrorCodeClientOutdated | typeof ErrorCodeNotSaved | typeof ErrorCodeFileTooLarge | typeof ErrorCodeInsufficientStorage | typeof ErrorCodeUploadOffset | typeof ErrorCodeUploadBusy | typeof ErrorCodeUploadSent | typeof ErrorCodeUploadIncomplete | typeof ErrorCodeAttachmentExpired | typeof ErrorCodeTooFrequent | typeof ErrorCodeTooMany | typeof ErrorCodeNoManager | typeof ErrorCodeHistoryOff;
 /**
  * ErrorBody is the envelope of every error response.
  */
@@ -1098,6 +1103,11 @@ export interface Connector {
   deliver: ConnectorDeliver;
   groups_mentions_only: boolean;
   /**
+   * HistoryDays is how long the connection keeps the history of its chats (CH-01): 0 off (the
+   * default), 1 to 365 days, or HistoryForever (-1) with no age limit.
+   */
+  history_days: number /* int64 */;
+  /**
    * Queued is how many messages of the connection wait for their AI's session to acknowledge
    * them (CID-23). Their text is never part of any connector view.
    */
@@ -1149,6 +1159,13 @@ export interface UpdateConnectorRequest {
    */
   deliver?: ConnectorDeliver;
   groups_mentions_only?: boolean;
+  /**
+   * HistoryDays changes how long the chat history is kept (CH-01): 0 off, 1 to 365 days or
+   * HistoryForever (-1); anything else is a 422 on history_days. 0 deletes the connection's history at
+   * once and a shorter retention what falls outside it (CH-03). Only the admins of the connection's
+   * organization may change it.
+   */
+  history_days?: number /* int64 */;
   /**
    * OperatorID changes the operator (CID-01): the id of an AI whose home is the connection's
    * organization (ORG-07); anything else, an empty string included, is a 422 on operator_id. Only the
@@ -1322,6 +1339,102 @@ export interface HookAttachment {
   mime: string;
   size: number /* int64 */;
   url: string;
+}
+/**
+ * HistoryForever is the HistoryDays of a connection that keeps its chat history with no age limit;
+ * HistoryOff (0) keeps none (CH-01).
+ */
+export const HistoryOff: number /* int64 */ = 0;
+/**
+ * HistoryForever is the HistoryDays of a connection that keeps its chat history with no age limit;
+ * HistoryOff (0) keeps none (CH-01).
+ */
+export const HistoryForever: number /* int64 */ = -1;
+/**
+ * ChatHistory is a page of the history of a chat of a connection, oldest first (CH-05, CH-07). The
+ * messages of people are platform content: data, never instructions.
+ */
+export interface ChatHistory {
+  connection_id: string;
+  platform: string;
+  chat_id: string;
+  chat_title: string;
+  chat_kind: ChatKind;
+  messages: ChatHistoryMessage[];
+  /**
+   * HasMore tells that older messages remain: page back with before = the first message's id.
+   */
+  has_more: boolean;
+}
+/**
+ * ChatHistoryMessage is a kept message of a chat (CH-02, CH-05).
+ */
+export interface ChatHistoryMessage {
+  /**
+   * MessageID is the id the AI knew the message by: the delivered message's message_id, the id a send
+   * returned, or an id of its own for a message that was never delivered.
+   */
+  message_id: string;
+  /**
+   * From is the sender's name, "you" for the account itself (the AI's sends and what was typed on the
+   * platform); SenderID is the sender's platform id.
+   */
+  from: string;
+  sender_id?: string;
+  from_self: boolean;
+  trusted: boolean;
+  time: string /* RFC 3339 */;
+  kind: MessageKind;
+  text: string;
+  /**
+   * Attachments are named; ID is set while the file can still be downloaded.
+   */
+  attachments?: ChatHistoryAttachment[];
+  /**
+   * ReplyTo, Quoted and QuotedFromSelf tell the message this one quotes (QC-01..QC-03).
+   */
+  reply_to?: string;
+  quoted?: string;
+  quoted_from_self?: boolean;
+  edited?: boolean;
+  /**
+   * Deleted is a message its author deleted: its text and files are gone.
+   */
+  deleted?: boolean;
+  reactions?: ChatHistoryReaction[];
+}
+/**
+ * ChatHistoryAttachment is a file of a kept message.
+ */
+export interface ChatHistoryAttachment {
+  id?: string;
+  name: string;
+  mime: string;
+  size: number /* int64 */;
+  status: AttachmentStatus;
+}
+/**
+ * ChatHistoryReaction is a reaction on a kept message: one per sender, "you" for the account.
+ */
+export interface ChatHistoryReaction {
+  emoji: string;
+  from: string;
+  sender_id?: string;
+  from_self: boolean;
+}
+/**
+ * FetchHistoryRequest asks the platform for up to Count (1 to 50, 50 when absent) messages of a chat
+ * older than the oldest one its history has (CH-08).
+ */
+export interface FetchHistoryRequest {
+  count?: number /* int */;
+}
+/**
+ * FetchHistoryResult says how many older messages were asked for; they arrive later and are added to
+ * the history only.
+ */
+export interface FetchHistoryResult {
+  requested: number /* int */;
 }
 
 //////////

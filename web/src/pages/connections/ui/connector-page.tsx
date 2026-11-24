@@ -11,6 +11,9 @@ import { useEffect, useId, useState } from "react";
 import { toast } from "sonner";
 import {
   ConnectorStatusBadge,
+  historyChoices,
+  historyLabel,
+  historyTurnsOff,
   useConnector,
   useConnectorChats,
   useConnectorKinds,
@@ -417,7 +420,11 @@ function DeliverySection({
   );
 }
 
-/** The admin's form: the operator (an AI of the connection's organization) and the delivery filters (CID-27). */
+/**
+ * The admin's form: the operator (an AI of the connection's organization), the delivery filters
+ * (CID-27) and how long the chat history is kept (CH-01). Turning the history off deletes it, so the
+ * form asks first (CH-03).
+ */
 function DeliveryForm({ connector: c }: { connector: Connector }) {
   const t = useT();
   const update = useUpdateConnector(c.id);
@@ -427,6 +434,9 @@ function DeliveryForm({ connector: c }: { connector: Connector }) {
   const [operatorId, setOperatorId] = useState(current);
   const [deliver, setDeliver] = useState<ConnectorDeliver>(c.deliver);
   const [mentionsOnly, setMentionsOnly] = useState(c.groups_mentions_only);
+  const [historyDays, setHistoryDays] = useState(c.history_days);
+  const [confirmOff, setConfirmOff] = useState(false);
+  const [historyError, setHistoryError] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [operatorError, setOperatorError] = useState<string | null>(null);
   const [deliverError, setDeliverError] = useState<string | null>(null);
@@ -436,25 +446,47 @@ function DeliveryForm({ connector: c }: { connector: Connector }) {
     : [];
   const missing = current !== "" && !candidates.some((a) => a.intelligence.id === current);
   const dirty =
-    operatorId !== current || deliver !== c.deliver || mentionsOnly !== c.groups_mentions_only;
+    operatorId !== current ||
+    deliver !== c.deliver ||
+    mentionsOnly !== c.groups_mentions_only ||
+    historyDays !== c.history_days;
   const operatorField = `${id}-operator`;
   const deliverField = `${id}-deliver`;
   const mentionsField = `${id}-mentions`;
+  const historyField = `${id}-history`;
 
   const save = () => {
     if (!dirty || update.isPending) return;
+    if (historyTurnsOff(c.history_days, historyDays)) {
+      setConfirmOff(true);
+      return;
+    }
+    send();
+  };
+
+  const send = () => {
     setError(null);
     setOperatorError(null);
     setDeliverError(null);
+    setHistoryError(null);
     // Only the changed fields go: the server leaves an absent one alone.
     const req: UpdateConnectorRequest = {};
     if (operatorId !== current) req.operator_id = operatorId;
     if (deliver !== c.deliver) req.deliver = deliver;
     if (mentionsOnly !== c.groups_mentions_only) req.groups_mentions_only = mentionsOnly;
+    if (historyDays !== c.history_days) req.history_days = historyDays;
     update.mutate(req, {
-      onSuccess: () => toast.success(t("connector.deliverySaved")),
+      onSuccess: () => {
+        setConfirmOff(false);
+        toast.success(t("connector.deliverySaved"));
+      },
       onError: (err) => {
+        setConfirmOff(false);
         if (isApiError(err) && err.status === 422) {
+          if (err.fields.history_days) {
+            setHistoryError(err.fields.history_days);
+            return;
+          }
           if (err.fields.operator_id) {
             setOperatorError(err.fields.operator_id);
             return;
@@ -553,11 +585,37 @@ function DeliveryForm({ connector: c }: { connector: Connector }) {
           disabled={update.isPending}
         />
       </div>
+      <SelectControl
+        id={historyField}
+        label={t("connector.history")}
+        description={historyError ? undefined : t("connector.historyHint")}
+        error={historyError}
+        value={String(historyDays)}
+        onChange={(e) => {
+          setHistoryDays(Number(e.target.value));
+          setHistoryError(null);
+        }}
+      >
+        {historyChoices(c.history_days).map((days) => (
+          <option key={days} value={String(days)}>
+            {historyLabel(t, days)}
+          </option>
+        ))}
+      </SelectControl>
       <div className="flex justify-end">
         <Button size="sm" disabled={!dirty || update.isPending} onClick={save}>
           {t("connector.saveDelivery")}
         </Button>
       </div>
+      <ConfirmDialog
+        open={confirmOff}
+        onClose={() => setConfirmOff(false)}
+        title={t("connector.historyOffTitle")}
+        body={t("connector.historyOffBody")}
+        confirmLabel={t("connector.historyOffConfirm")}
+        pending={update.isPending}
+        onConfirm={send}
+      />
     </div>
   );
 }
@@ -604,6 +662,10 @@ function DeliverySummary({ connector: c }: { connector: Connector }) {
             {t("connector.mentionsOnly")}
           </dt>
           <dd>{c.groups_mentions_only ? t("common.yes") : t("common.no")}</dd>
+        </div>
+        <div className="space-y-0.5">
+          <dt className="text-xs font-medium text-muted-foreground">{t("connector.history")}</dt>
+          <dd>{historyLabel(t, c.history_days)}</dd>
         </div>
       </dl>
     </div>

@@ -9,6 +9,7 @@ import (
 	"github.com/wnexous/partyline/internal/api/httpx"
 	"github.com/wnexous/partyline/internal/authn"
 	"github.com/wnexous/partyline/internal/connectors"
+	"github.com/wnexous/partyline/internal/platform"
 )
 
 // connectorRoutes are the connector management endpoints (CON-01..05).
@@ -19,6 +20,7 @@ func (s *server) connectorRoutes(mux *http.ServeMux) {
 	s.handle(mux, "GET /api/v1/connectors/{id}", authed(s.getConnector))
 	s.handle(mux, "PATCH /api/v1/connectors/{id}", authed(s.updateConnector))
 	s.handle(mux, "DELETE /api/v1/connectors/{id}", authed(s.deleteConnector))
+	s.handle(mux, "GET /api/v1/connectors/{id}/chats/{chat}/history", authed(s.chatHistory))
 }
 
 func toConnectorKind(k connectors.Kind) dto.ConnectorKind {
@@ -37,8 +39,9 @@ func (s *server) toConnector(v connectors.View) dto.Connector {
 		Owner:   dto.User{ID: v.OwnerID, Username: v.OwnerUsername, DisplayName: v.OwnerDisplayName},
 		MyLevel: v.Level, Enabled: v.Enabled, Status: dto.ConnectorStatus(v.Status), LastError: v.LastError,
 		AccountLabel: v.AccountLabel, Deliver: dto.ConnectorDeliver(v.Deliver), GroupsMentionsOnly: v.GroupsMentionsOnly, Queued: v.Queued,
-		Config:    v.Config,
-		CreatedAt: convert.Time(v.CreatedAt), UpdatedAt: convert.Time(v.UpdatedAt),
+		HistoryDays: v.HistoryDays,
+		Config:      v.Config,
+		CreatedAt:   convert.Time(v.CreatedAt), UpdatedAt: convert.Time(v.UpdatedAt),
 	}
 	if v.HasOperator {
 		operator := convert.IntelligenceRef(v.Operator, dto.IntelligenceRoleAI, "")
@@ -107,7 +110,7 @@ func (s *server) updateConnector(w http.ResponseWriter, r *http.Request, p authn
 	}
 	v, err := s.Connectors.Update(r.Context(), p, r.PathValue("id"), connectors.UpdateInput{
 		Name: req.Name, Config: req.Config, Enabled: req.Enabled, OperatorID: req.OperatorID,
-		Deliver: req.Deliver, GroupsMentionsOnly: req.GroupsMentionsOnly,
+		Deliver: req.Deliver, GroupsMentionsOnly: req.GroupsMentionsOnly, HistoryDays: req.HistoryDays,
 	})
 	if err != nil {
 		return err
@@ -122,4 +125,81 @@ func (s *server) deleteConnector(w http.ResponseWriter, r *http.Request, p authn
 	}
 	w.WriteHeader(http.StatusNoContent)
 	return nil
+}
+
+// chatHistory serves a page of the history of a chat of a connection (CH-05, CH-07): to the AI that
+// operates it (the agent route) and to the users who manage it; anyone else gets 404 (CH-06).
+func (s *server) chatHistory(w http.ResponseWriter, r *http.Request, p authn.Principal) error {
+	pg, err := httpx.ParsePage(r, platform.HistoryPageDefault, platform.HistoryPageMax)
+	if err != nil {
+		return err
+	}
+	page, err := s.Connectors.ChatHistory(r.Context(), p, r.PathValue("id"), r.PathValue("chat"), pg.Before, pg.Limit)
+	if err != nil {
+		return err
+	}
+	httpx.WriteJSON(w, http.StatusOK, toChatHistory(page))
+	return nil
+}
+
+// fetchChatHistory asks the platform for older messages of a chat (CH-08); agent route only.
+func (s *server) fetchChatHistory(w http.ResponseWriter, r *http.Request, p authn.Principal) error {
+	var req dto.FetchHistoryRequest
+	if err := httpx.DecodeJSON(w, r, &req); err != nil {
+		return err
+	}
+	n, err := s.Connectors.FetchHistory(r.Context(), p, r.PathValue("id"), r.PathValue("chat"), req.Count)
+	if err != nil {
+		return err
+	}
+	httpx.WriteJSON(w, http.StatusAccepted, dto.FetchHistoryResult{Requested: n})
+	return nil
+}
+
+// historyYou is how the account itself is named in a chat's history.
+const historyYou = "you"
+
+func toChatHistory(page connectors.HistoryPage) dto.ChatHistory {
+	out := dto.ChatHistory{
+		ConnectionID: page.Connector.ID, Platform: page.Connector.Kind, ChatID: page.Chat.ID,
+		ChatTitle: page.Chat.Title, ChatKind: dto.ChatKind(page.Chat.Kind),
+		Messages: make([]dto.ChatHistoryMessage, len(page.Messages)), HasMore: page.HasMore,
+	}
+	for i, m := range page.Messages {
+		msg := dto.ChatHistoryMessage{
+			MessageID: m.ID, From: historyFrom(m.FromSelf, m.SenderName, m.SenderID), FromSelf: m.FromSelf,
+			Trusted: m.Trusted && !m.FromSelf, Time: m.At, Kind: m.Kind, Text: m.Text,
+			ReplyTo: m.ReplyTo, Quoted: m.Quoted, QuotedFromSelf: m.QuotedFromSelf, Edited: m.Edited, Deleted: m.Deleted,
+		}
+		if !m.FromSelf {
+			msg.SenderID = m.SenderID
+		}
+		for _, a := range m.Attachments {
+			att := dto.ChatHistoryAttachment{Name: a.Name, Mime: a.Mime, Size: a.Size, Status: a.Status}
+			if a.Kept {
+				att.ID = a.ID
+			}
+			msg.Attachments = append(msg.Attachments, att)
+		}
+		for _, r := range m.Reactions {
+			re := dto.ChatHistoryReaction{Emoji: r.Emoji, From: historyFrom(r.FromSelf, r.SenderName, r.SenderID), FromSelf: r.FromSelf}
+			if !r.FromSelf {
+				re.SenderID = r.SenderID
+			}
+			msg.Reactions = append(msg.Reactions, re)
+		}
+		out.Messages[i] = msg
+	}
+	return out
+}
+
+// historyFrom names the sender of a kept message: "you" for the account, else its name, else its id.
+func historyFrom(self bool, name, id string) string {
+	switch {
+	case self:
+		return historyYou
+	case name != "":
+		return name
+	}
+	return id
 }

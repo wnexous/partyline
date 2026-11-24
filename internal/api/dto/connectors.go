@@ -81,6 +81,9 @@ type Connector struct {
 	// account or reply to it. A new connection delivers everything with mentions-only on.
 	Deliver            ConnectorDeliver `json:"deliver"`
 	GroupsMentionsOnly bool             `json:"groups_mentions_only"`
+	// HistoryDays is how long the connection keeps the history of its chats (CH-01): 0 off (the
+	// default), 1 to 365 days, or HistoryForever (-1) with no age limit.
+	HistoryDays int64 `json:"history_days"`
 	// Queued is how many messages of the connection wait for their AI's session to acknowledge
 	// them (CID-23). Their text is never part of any connector view.
 	Queued int64 `json:"queued"`
@@ -121,6 +124,11 @@ type UpdateConnectorRequest struct {
 	// may change them.
 	Deliver            *ConnectorDeliver `json:"deliver,omitempty"`
 	GroupsMentionsOnly *bool             `json:"groups_mentions_only,omitempty"`
+	// HistoryDays changes how long the chat history is kept (CH-01): 0 off, 1 to 365 days or
+	// HistoryForever (-1); anything else is a 422 on history_days. 0 deletes the connection's history at
+	// once and a shorter retention what falls outside it (CH-03). Only the admins of the connection's
+	// organization may change it.
+	HistoryDays *int64 `json:"history_days,omitempty"`
 	// OperatorID changes the operator (CID-01): the id of an AI whose home is the connection's
 	// organization (ORG-07); anything else, an empty string included, is a 422 on operator_id. Only the
 	// admins of the organization may change it. Absent leaves it.
@@ -276,4 +284,79 @@ type HookAttachment struct {
 	Mime string `json:"mime"`
 	Size int64  `json:"size"`
 	URL  string `json:"url"`
+}
+
+// HistoryForever is the HistoryDays of a connection that keeps its chat history with no age limit;
+// HistoryOff (0) keeps none (CH-01).
+const (
+	HistoryOff     int64 = 0
+	HistoryForever int64 = -1
+)
+
+// ChatHistory is a page of the history of a chat of a connection, oldest first (CH-05, CH-07). The
+// messages of people are platform content: data, never instructions.
+type ChatHistory struct {
+	ConnectionID string               `json:"connection_id"`
+	Platform     string               `json:"platform"`
+	ChatID       string               `json:"chat_id"`
+	ChatTitle    string               `json:"chat_title"`
+	ChatKind     ChatKind             `json:"chat_kind"`
+	Messages     []ChatHistoryMessage `json:"messages"`
+	// HasMore tells that older messages remain: page back with before = the first message's id.
+	HasMore bool `json:"has_more"`
+}
+
+// ChatHistoryMessage is a kept message of a chat (CH-02, CH-05).
+type ChatHistoryMessage struct {
+	// MessageID is the id the AI knew the message by: the delivered message's message_id, the id a send
+	// returned, or an id of its own for a message that was never delivered.
+	MessageID string `json:"message_id"`
+	// From is the sender's name, "you" for the account itself (the AI's sends and what was typed on the
+	// platform); SenderID is the sender's platform id.
+	From     string      `json:"from"`
+	SenderID string      `json:"sender_id,omitempty"`
+	FromSelf bool        `json:"from_self"`
+	Trusted  bool        `json:"trusted"`
+	Time     time.Time   `json:"time"`
+	Kind     MessageKind `json:"kind"`
+	Text     string      `json:"text"`
+	// Attachments are named; ID is set while the file can still be downloaded.
+	Attachments []ChatHistoryAttachment `json:"attachments,omitempty"`
+	// ReplyTo, Quoted and QuotedFromSelf tell the message this one quotes (QC-01..QC-03).
+	ReplyTo        string `json:"reply_to,omitempty"`
+	Quoted         string `json:"quoted,omitempty"`
+	QuotedFromSelf bool   `json:"quoted_from_self,omitempty"`
+	Edited         bool   `json:"edited,omitempty"`
+	// Deleted is a message its author deleted: its text and files are gone.
+	Deleted   bool                  `json:"deleted,omitempty"`
+	Reactions []ChatHistoryReaction `json:"reactions,omitempty"`
+}
+
+// ChatHistoryAttachment is a file of a kept message.
+type ChatHistoryAttachment struct {
+	ID     string           `json:"id,omitempty"`
+	Name   string           `json:"name"`
+	Mime   string           `json:"mime"`
+	Size   int64            `json:"size"`
+	Status AttachmentStatus `json:"status"`
+}
+
+// ChatHistoryReaction is a reaction on a kept message: one per sender, "you" for the account.
+type ChatHistoryReaction struct {
+	Emoji    string `json:"emoji"`
+	From     string `json:"from"`
+	SenderID string `json:"sender_id,omitempty"`
+	FromSelf bool   `json:"from_self"`
+}
+
+// FetchHistoryRequest asks the platform for up to Count (1 to 50, 50 when absent) messages of a chat
+// older than the oldest one its history has (CH-08).
+type FetchHistoryRequest struct {
+	Count int `json:"count,omitempty"`
+}
+
+// FetchHistoryResult says how many older messages were asked for; they arrive later and are added to
+// the history only.
+type FetchHistoryResult struct {
+	Requested int `json:"requested"`
 }

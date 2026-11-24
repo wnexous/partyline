@@ -603,6 +603,81 @@ describe("connection page as an AI's app (CID-22, CID-23, CID-27)", () => {
     expect(screen.queryByRole("button", { name: "Save delivery" })).toBeNull();
   });
 
+  it("CH-01: offers Off, 7, 30, 90 days and Forever, and saves history_days", async () => {
+    const { calls } = api();
+    const user = userEvent.setup();
+    renderRoute("/orgs/o1/connections/k1");
+    const history = await screen.findByRole("combobox", { name: "Keep chat history" });
+    expect(history).toHaveValue("0");
+    expect(
+      within(history)
+        .getAllByRole("option")
+        .map((o) => o.textContent),
+    ).toEqual(["Off", "7 days", "30 days", "90 days", "Forever"]);
+    await user.selectOptions(history, "Forever");
+    await user.click(screen.getByRole("button", { name: "Save delivery" }));
+    await waitFor(() => expect(patches(calls)).toHaveLength(1));
+    expect(patches(calls)[0]?.body).toEqual({ history_days: -1 });
+    expect(screen.queryByRole("alertdialog")).toBeNull();
+  });
+
+  it("CH-01: keeps a retention the API set outside the usual choices", async () => {
+    api({ history_days: 14 });
+    renderRoute("/orgs/o1/connections/k1");
+    const history = await screen.findByRole("combobox", { name: "Keep chat history" });
+    expect(history).toHaveValue("14");
+    expect(
+      within(history)
+        .getAllByRole("option")
+        .map((o) => o.textContent),
+    ).toEqual(["Off", "7 days", "14 days", "30 days", "90 days", "Forever"]);
+  });
+
+  it("CH-03: turning the history off asks first, and saves only once confirmed", async () => {
+    const { calls } = api({ history_days: 30 });
+    const user = userEvent.setup();
+    renderRoute("/orgs/o1/connections/k1");
+    const history = await screen.findByRole("combobox", { name: "Keep chat history" });
+    await user.selectOptions(history, "Off");
+    await user.click(screen.getByRole("button", { name: "Save delivery" }));
+    const ask = await screen.findByRole("alertdialog", { name: "Turn off the chat history?" });
+    expect(ask).toHaveTextContent("deleted now and cannot be brought back");
+    await user.click(within(ask).getByRole("button", { name: "Cancel" }));
+    expect(patches(calls)).toHaveLength(0);
+
+    await user.click(screen.getByRole("button", { name: "Save delivery" }));
+    await user.click(
+      within(await screen.findByRole("alertdialog")).getByRole("button", {
+        name: "Turn off and delete",
+      }),
+    );
+    await waitFor(() => expect(patches(calls)).toHaveLength(1));
+    expect(patches(calls)[0]?.body).toEqual({ history_days: 0 });
+    await waitFor(() => expect(screen.queryByRole("alertdialog")).toBeNull());
+  });
+
+  it("CH-03: a shorter retention saves without asking", async () => {
+    const { calls } = api({ history_days: 90 });
+    const user = userEvent.setup();
+    renderRoute("/orgs/o1/connections/k1");
+    await user.selectOptions(
+      await screen.findByRole("combobox", { name: "Keep chat history" }),
+      "7 days",
+    );
+    await user.click(screen.getByRole("button", { name: "Save delivery" }));
+    await waitFor(() => expect(patches(calls)).toHaveLength(1));
+    expect(patches(calls)[0]?.body).toEqual({ history_days: 7 });
+    expect(screen.queryByRole("alertdialog")).toBeNull();
+  });
+
+  it("CH-01: a member reads the retention without controls", async () => {
+    api({ my_level: "use", history_days: -1 });
+    renderRoute("/orgs/o1/connections/k1");
+    expect(await screen.findByText("Keep chat history")).toBeInTheDocument();
+    expect(screen.getByText("Forever")).toBeInTheDocument();
+    expect(screen.queryByRole("combobox", { name: "Keep chat history" })).toBeNull();
+  });
+
   it("says who chooses an operator that does not exist yet to a member who is not an admin", async () => {
     api({ my_level: "use", operator: undefined });
     renderRoute("/orgs/o1/connections/k1");

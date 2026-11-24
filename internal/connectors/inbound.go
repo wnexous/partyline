@@ -45,6 +45,9 @@ type PipelineDeps struct {
 	// Queue takes the messages that pass the connection's filters, for the AI that operates it
 	// (AD-015).
 	Queue *platform.Queue
+	// History keeps the messages of the chats of a connection whose retention is on (CH-02); nil keeps
+	// nothing.
+	History *platform.History
 	// Sent remembers what Partyline sent, to tell its echoes from what was typed on the account
 	// (CID-14); nil remembers nothing, and only the recorded ids of the sends then tell them apart.
 	Sent *SentIDs
@@ -99,6 +102,12 @@ func NewPipeline(d PipelineDeps) *Pipeline {
 //  7. the sender is resolved to a user who manages the operator or not (CID-13, SR2-07), the media
 //     are stored as blobs and the message is queued for the operator, once (CID-26).
 //
+// WHILE the connection keeps its chat history, a message of a chat the deliver setting takes is also
+// kept there, delivered or not (mentions-only decides what wakes the AI, not what the chat said), and
+// an edit, a delete or a reaction changes the message it targets (CH-02). The history never changes
+// what is delivered (CH-04), and a message of the chat's past the AI asked for (Backfill) is kept only
+// (CH-08).
+//
 // Nothing becomes a message of a conversation, a person or a DM (CID-07). Failures are logged
 // without message content.
 func (p *Pipeline) Handle(ctx context.Context, src Source, m Inbound) {
@@ -112,10 +121,13 @@ func (p *Pipeline) handle(ctx context.Context, src Source, m Inbound) error {
 		return nil
 	}
 	if match := pairingCommand.FindStringSubmatch(m.Text); match != nil {
-		if m.FromSelf { // the account's own message is no pairing command
+		if m.FromSelf || m.Backfill { // the account's own message, or one of the past, is no pairing command
 			return nil
 		}
 		return p.pair(ctx, src, m, match[1])
+	}
+	if m.Backfill {
+		return p.backfill(ctx, src, m)
 	}
 	at := m.At
 	if at.IsZero() {
@@ -137,12 +149,29 @@ func (p *Pipeline) handle(ctx context.Context, src Source, m Inbound) error {
 	if !delivers(dto.ConnectorDeliver(conn.Deliver), chat.Kind) {
 		return nil
 	}
+	keep := p.keeps(conn)
+	if keep && folds(m.Kind) {
+		p.fold(ctx, src, chat, m) // CH-02: the target changes; the event is still delivered as before
+		keep = false
+	}
 	if conn.GroupsMentionsOnly && isGroup(chat.Kind) && !m.MentionsAccount {
-		if replies, err := p.repliesToAccount(ctx, chat.ID, m.ReplyToID); err != nil || !replies {
+		replies, err := p.repliesToAccount(ctx, chat.ID, m.ReplyToID)
+		if err != nil {
 			return err
 		}
+		if !replies {
+			if keep { // not for the AI now, but part of the chat it may read later (CH-02)
+				p.keep(ctx, src, conn, chat, m, "", nil)
+			}
+			return nil
+		}
 	}
-	return p.enqueue(ctx, src, conn, chat, m)
+	item, d, err := p.enqueue(ctx, src, conn, chat, m)
+	if err != nil || item == "" || !keep {
+		return err
+	}
+	p.keep(ctx, src, conn, chat, m, item, d)
+	return nil
 }
 
 // pair links the sender to the user whose pairing code the message carries (IDN-02, IDN-03). Through a
@@ -194,38 +223,57 @@ func (p *Pipeline) repliesToAccount(ctx context.Context, chatID, replyToID strin
 // (CID-26): a repeat downloads nothing and queues nothing. The sender is trusted only when it is a
 // verified account, on this connector, of a user who instructs the operator (its host or an instructor),
 // never the account's own typing (CID-13, CID-14, SR2-07). That is decided now and stored with the
-// event: a later change of the chart does not change the events already queued (AD-018).
-func (p *Pipeline) enqueue(ctx context.Context, src Source, conn db.Connector, chat db.Chat, m Inbound) error {
+// event: a later change of the chart does not change the events already queued (AD-018). It returns the
+// queued item's id with what it decided, empty when nothing was queued.
+func (p *Pipeline) enqueue(ctx context.Context, src Source, conn db.Connector, chat db.Chat, m Inbound) (string, *decided, error) {
 	operator, err := p.d.Store.R().GetAgent(ctx, conn.OperatorIid.String)
 	if errors.Is(err, sql.ErrNoRows) { // the operator was deleted meanwhile: nobody to deliver to
-		return nil
+		return "", nil, nil
 	}
 	if err != nil {
-		return err
+		return "", nil, err
 	}
 	if repeat, err := p.d.Queue.Has(ctx, src.ConnectorID, chat.ID, m.MessageID); err != nil || repeat {
-		return err
+		return "", nil, err
 	}
-	trusted := false
-	if !m.FromSelf {
-		if trusted, err = p.trusted(ctx, src, operator.ID, m); err != nil {
-			return err
-		}
+	d, err := p.decide(ctx, src, operator.ID, chat, m)
+	if err != nil {
+		return "", nil, err
 	}
-	kind := dto.MessageKind(m.Kind)
-	if kind == "" {
-		kind = dto.MessageKindText
-	}
-	q := p.quote(ctx, src, chat, m.Quote)
+	files := p.saveMedia(ctx, src, m.Media)
 	// ReceivedAt is when partyline got the message, not the platform's timestamp: a message
 	// synced late with an old timestamp still waits 7 days for its AI (CID-10).
-	_, _, err = p.d.Queue.Enqueue(ctx, platform.Item{
+	id, _, err := p.d.Queue.Enqueue(ctx, platform.Item{
 		AgentID: conn.OperatorIid.String, ConnectorID: src.ConnectorID, ChatID: chat.ID, ExternalID: m.MessageID,
-		SenderID: m.SenderID, SenderName: m.SenderName, Trusted: trusted, FromSelf: m.FromSelf,
-		Kind: kind, Text: truncate(m.Text), ReceivedAt: p.d.Now(), Attachments: p.saveMedia(ctx, src, m.Media),
-		ReplyTo: q.replyTo, Quoted: q.preview, QuotedFromSelf: q.fromSelf,
+		SenderID: m.SenderID, SenderName: m.SenderName, Trusted: d.trusted, FromSelf: m.FromSelf,
+		Kind: d.kind, Text: truncate(m.Text), ReceivedAt: p.d.Now(), Attachments: files,
+		ReplyTo: d.q.replyTo, Quoted: d.q.preview, QuotedFromSelf: d.q.fromSelf,
 	})
-	return err
+	return id, &d, err
+}
+
+// decided is what the pipeline tells of a message besides what the platform said: whether its sender
+// is trusted, its kind and the message it quotes.
+type decided struct {
+	trusted bool
+	kind    dto.MessageKind
+	q       quoted
+}
+
+// decide resolves the trust of the sender for the operator (CID-13), the kind and the quote (QC-01).
+func (p *Pipeline) decide(ctx context.Context, src Source, operatorID string, chat db.Chat, m Inbound) (decided, error) {
+	d := decided{kind: dto.MessageKind(m.Kind)}
+	if d.kind == "" {
+		d.kind = dto.MessageKindText
+	}
+	if !m.FromSelf {
+		var err error
+		if d.trusted, err = p.trusted(ctx, src, operatorID, m); err != nil {
+			return d, err
+		}
+	}
+	d.q = p.quote(ctx, src, chat, m.Quote)
+	return d, nil
 }
 
 // quoted is what the AI is told of the message an inbound message quotes.
@@ -269,6 +317,16 @@ func (p *Pipeline) quote(ctx context.Context, src Source, chat db.Chat, q *Quote
 		p.d.Logger.Warn("connectors: quoted message lookup failed", "connector_id", src.ConnectorID, "err", err)
 	default:
 		out.replyTo, out.fromSelf = item.ID, out.fromSelf || item.FromSelf
+		return out
+	}
+	if p.d.History == nil {
+		return out
+	}
+	// The chat's history knows messages the queue let go, and those never delivered (CH-02).
+	if id, _, found, err := p.d.History.Find(ctx, src.ConnectorID, chat.ID, q.ID); err != nil {
+		p.d.Logger.Warn("connectors: quoted message lookup failed", "connector_id", src.ConnectorID, "err", err)
+	} else if found {
+		out.replyTo = id
 	}
 	return out
 }

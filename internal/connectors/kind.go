@@ -59,6 +59,9 @@ type Kind struct {
 	Fields []Field
 	// CanListChats tells whether its connectors implement ChatLister (CON-09).
 	CanListChats bool
+	// CanFetchHistory tells whether an AI may ask the platform for the past of a chat of a connection of
+	// the kind (CH-08): its connectors implement HistoryFetcher.
+	CanFetchHistory bool
 	// CanReact tells whether an AI may react to a message that arrived on a connection of the kind:
 	// its platform has reactions (CID-33). The webhook's connector can post a reaction to its
 	// outbound URL, but a webhook has no message to react to.

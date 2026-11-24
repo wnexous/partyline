@@ -155,6 +155,8 @@ type App struct {
 	Uploads *uploads.Service
 	// Platform is the delivery queue of the messages that arrive on connections (AD-015).
 	Platform *platform.Queue
+	// History is the chat history of the connections that keep one (CH-01..CH-10).
+	History *platform.History
 	// Presence tracks connected agents; Agents is the agent registry.
 	Presence *agents.Presence
 	Agents   *agents.Registry
@@ -318,8 +320,9 @@ func New(cfg *config.Config, opts Options) (*App, error) {
 	if freeSpace == nil {
 		freeSpace = diskspace.Free
 	}
+	a.History = platform.NewHistory(platform.HistoryDeps{Store: st, Now: opts.Now})
 	pipeline := connectors.NewPipeline(connectors.PipelineDeps{
-		Store: st, Bus: bus, Blobs: blobs, Identities: a.Identities, Trust: authz, Queue: a.Platform,
+		Store: st, Bus: bus, Blobs: blobs, Identities: a.Identities, Trust: authz, Queue: a.Platform, History: a.History,
 		Sent: sentIDs, Wait: opts.InboundWait, MaxFileBytes: cfg.MaxFileBytes, Logger: opts.Logger, Now: opts.Now,
 		FreeSpace: func() (int64, bool) { return freeSpace(filepath.Join(cfg.DataDir, BlobsDir)) }, ReserveBytes: cfg.DiskReserveBytes,
 	})
@@ -332,12 +335,12 @@ func New(cfg *config.Config, opts Options) (*App, error) {
 		Inbound: pipeline.Handle, MigrateChat: pipeline.MigrateChat, Wait: opts.ConnectorWait,
 	})
 	a.Sends = connectors.NewSends(connectors.SendsDeps{
-		Store: st, Transport: a.ConnectorManager, Sent: sentIDs, Now: opts.Now, Logger: opts.Logger,
+		Store: st, Transport: a.ConnectorManager, Sent: sentIDs, Now: opts.Now, Logger: opts.Logger, History: a.History,
 		Kinds: registry, Bus: bus, AllowNewChat: a.Agents.AllowNewChat,
 	})
 	a.sendWorker = !opts.DisableOutbox
 	a.Connectors = connectors.NewService(connectors.ServiceDeps{
-		Store: st, Access: az, Bus: bus, Box: box, Kinds: registry, Queue: a.Platform, Runner: a.ConnectorManager, Now: opts.Now,
+		Store: st, Access: az, Bus: bus, Box: box, Kinds: registry, Queue: a.Platform, History: a.History, Runner: a.ConnectorManager, Now: opts.Now,
 	})
 	a.Live = live.New(live.Deps{
 		Bus: bus, Access: az, Authz: authz, Rooms: a.Rooms, Intelligences: a.Intelligences, Orgs: a.Orgs, Store: st, PublicURL: cfg.PublicURL, Logger: opts.Logger, Now: opts.Now,
@@ -484,6 +487,9 @@ func (a *App) Start(ctx context.Context) error {
 	a.ConnectorManager.Start(bg)
 	a.background(bg, "platform-purge", func(ctx context.Context) error {
 		return a.Platform.Run(ctx, platform.PurgeInterval, a.Rooms.ReleaseBlobs, a.Logger)
+	})
+	a.background(bg, "chat-history-purge", func(ctx context.Context) error {
+		return a.History.Run(ctx, platform.PurgeInterval, a.Logger)
 	})
 	a.background(bg, "schedules", a.Schedules.Run)
 	a.background(bg, "uploads", func(ctx context.Context) error {

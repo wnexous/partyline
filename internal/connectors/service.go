@@ -54,6 +54,9 @@ type ServiceDeps struct {
 	Kinds  *Registry
 	// Queue hands the items of a connection to its new operator (CID-05).
 	Queue *platform.Queue
+	// History is the chat history of the connections (CH-01..CH-08); nil keeps none, and reading it
+	// answers ErrHistoryOff.
+	History *platform.History
 	// Runner is told about created, changed and deleted connectors; nil runs nothing.
 	Runner Runner
 	// Now returns the current time; defaults to time.Now.
@@ -131,6 +134,10 @@ type UpdateInput struct {
 	// (CID-12); any other Deliver is a validation error on deliver.
 	Deliver            *dto.ConnectorDeliver
 	GroupsMentionsOnly *bool
+	// HistoryDays changes how long the chat history is kept (CH-01): 0 off, 1 to 365 days, -1 forever;
+	// anything else is a validation error on history_days. Turning it off deletes the connection's
+	// history and a shorter one what falls outside it (CH-03).
+	HistoryDays *int64
 }
 
 // authorize requires the user to hold want on the connection (AD-016): the admins of its organization
@@ -530,6 +537,10 @@ func (s *Service) Update(ctx context.Context, p authn.Principal, id string, in U
 	if err != nil {
 		return View{}, err
 	}
+	days, err := historyDays(c, in.HistoryDays)
+	if err != nil {
+		return View{}, err
+	}
 	operatorChanged := operator != c.OperatorIid
 	gainedOperator := operatorChanged && !c.OperatorIid.Valid // it was idle until now: start it
 	var moved int64                                           // the queue items handed to the new operator
@@ -539,6 +550,11 @@ func (s *Service) Update(ctx context.Context, p authn.Principal, id string, in U
 	if mentionsOnly != c.GroupsMentionsOnly {
 		changed = append(changed, "groups_mentions_only")
 	}
+	if days != c.HistoryDays {
+		changed = append(changed, "history_days")
+	}
+	// The platform is told whether to send the chats' past by a restart of the connection (CH-10).
+	historyToggled := (days == platform.HistoryOff) != (c.HistoryDays == platform.HistoryOff)
 	toggled := enabled != c.Enabled
 	err = s.d.Store.WithTx(ctx, func(q *db.Queries) error {
 		moved = 0
@@ -550,6 +566,13 @@ func (s *Service) Update(ctx context.Context, p authn.Principal, id string, in U
 		if deliver != dto.ConnectorDeliver(c.Deliver) || mentionsOnly != c.GroupsMentionsOnly {
 			if err := q.UpdateConnectorDelivery(ctx, db.UpdateConnectorDeliveryParams{
 				Deliver: string(deliver), GroupsMentionsOnly: mentionsOnly, UpdatedAt: s.d.Now().UnixMilli(), ID: id,
+			}); err != nil {
+				return err
+			}
+		}
+		if days != c.HistoryDays {
+			if err := q.SetConnectorHistoryDays(ctx, db.SetConnectorHistoryDaysParams{
+				HistoryDays: days, UpdatedAt: s.d.Now().UnixMilli(), ID: id,
 			}); err != nil {
 				return err
 			}
@@ -611,11 +634,14 @@ func (s *Service) Update(ctx context.Context, p authn.Principal, id string, in U
 	if moved > 0 { // the new operator's live session reads the items it was just handed (CID-05)
 		s.d.Bus.Publish(events.PlatformQueued{AgentID: operator.String})
 	}
+	if err := s.applyHistoryDays(ctx, id, c.HistoryDays, days); err != nil {
+		return View{}, err
+	}
 	if s.d.Runner != nil {
 		switch {
 		case !enabled && toggled:
 			s.d.Runner.Stop(id)
-		case enabled && (toggled || in.Config != nil || gainedOperator): // a connection runs once an AI operates it (CID-02)
+		case enabled && (toggled || in.Config != nil || gainedOperator || historyToggled): // a connection runs once an AI operates it (CID-02)
 			s.d.Runner.Apply(id)
 		}
 	}

@@ -908,6 +908,16 @@ export const en = {
   "connector.mentionsOnly": "Groups: only when mentioned",
   "connector.mentionsOnlyHint":
     "In a group, deliver a message only when it mentions the account or answers one of its messages.",
+  "connector.history": "Keep chat history",
+  "connector.historyHint":
+    "Keeps the messages of the chats the operator receives, and what it sends, so it can read the conversation again later. A shorter time deletes what is older.",
+  "connector.history.off": "Off",
+  "connector.history.days": "{count} days",
+  "connector.history.forever": "Forever",
+  "connector.historyOffTitle": "Turn off the chat history?",
+  "connector.historyOffBody":
+    "The chat history this connection keeps is deleted now and cannot be brought back. Nothing is kept from then on.",
+  "connector.historyOffConfirm": "Turn off and delete",
   "connector.saveDelivery": "Save delivery",
   "connector.deliverySaved": "Delivery settings saved",
   "connector.deliveryFailed": "Couldn’t save the delivery settings.",

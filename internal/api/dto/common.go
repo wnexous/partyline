@@ -236,6 +236,9 @@ const (
 	// ErrorCodeNoManager is a routine an AI would make active while nobody manages it, so nobody can be told
 	// about it (409, HB-09).
 	ErrorCodeNoManager ErrorCode = "no_manager"
+	// ErrorCodeHistoryOff is a read of a connection's chat history, or a fetch of its past, while the
+	// connection keeps none: its owner can turn it on in the connection's settings (409, CH-06).
+	ErrorCodeHistoryOff ErrorCode = "history_off"
 )
 
 // ErrorBody is the envelope of every error response.

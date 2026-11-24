@@ -62,6 +62,8 @@ func (s *server) agentAPIRoutes(mux *http.ServeMux) {
 	s.handle(mux, "PATCH /api/v1/agent/messages/{id}", s.agentOnly(s.agentEdit))
 	s.handle(mux, "DELETE /api/v1/agent/messages/{id}", s.agentOnly(s.agentDelete))
 	s.handle(mux, "POST /api/v1/agent/connections/{id}/chats/{chat}/messages", s.agentOnly(s.agentConnectionSend))
+	s.handle(mux, "GET /api/v1/agent/connections/{id}/chats/{chat}/history", s.agentOnly(s.chatHistory))
+	s.handle(mux, "POST /api/v1/agent/connections/{id}/chats/{chat}/history/fetch", s.agentOnly(s.fetchChatHistory))
 	s.handle(mux, "POST /api/v1/agent/messages/{id}/react", s.agentOnly(s.agentReact))
 	s.handle(mux, "GET /api/v1/agent/attachments/{id}", s.agentOnly(s.agentAttachment))
 	s.handle(mux, "POST /api/v1/agent/register", s.agentRegister)

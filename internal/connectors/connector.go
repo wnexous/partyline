@@ -56,6 +56,29 @@ type Reaction struct {
 	CreatedAt  time.Time
 }
 
+// HistoryFetcher is implemented by connectors whose platform sends the past of a chat when asked
+// (CH-08): the messages come back later through Handler.Inbound, marked Backfill.
+type HistoryFetcher interface {
+	FetchHistory(ctx context.Context, r HistoryRequest) error
+}
+
+// HistoryRequest asks the platform for up to Count messages of a chat older than Anchor.
+type HistoryRequest struct {
+	// ChatID is the platform chat id.
+	ChatID string
+	// Anchor is the oldest message of the chat Partyline knows: its platform id, whether the account
+	// wrote it and when.
+	AnchorID       string
+	AnchorFromSelf bool
+	AnchorAt       time.Time
+	Count          int
+}
+
+// UnsupportedError is a request the platform of a connection cannot serve, with why.
+type UnsupportedError struct{ Reason string }
+
+func (e *UnsupportedError) Error() string { return e.Reason }
+
 // ChatLister is implemented by connectors whose platform can list chats (CON-09).
 type ChatLister interface {
 	ListChats(ctx context.Context) ([]ChatInfo, error)
@@ -118,7 +141,14 @@ type Inbound struct {
 	Quote *Quote
 	Media []Media
 	At    time.Time
+	// Backfill marks a message of the chat's past that the platform sent because the AI asked for it
+	// (CH-08): it is added to the chat's history only, never delivered as a new message, and its media
+	// are not downloaded.
+	Backfill bool
 }
+
+// ReactionRemoved is the text of a reaction event that takes the sender's reaction away.
+const ReactionRemoved = "(reaction removed)"
 
 // Quote is the message an inbound message quotes, as the platform event tells it.
 type Quote struct {
@@ -222,6 +252,15 @@ type Deps struct {
 	// Replays remembers accepted hook signatures across restarts (HOOK-05); nil for kinds
 	// without InboundHook or in tests.
 	Replays Replays
+	// KeepsHistory tells whether the connection keeps its chat history now (CH-01): a connector whose
+	// platform can send a chat's past subscribes to it only then (CH-10). Nil keeps none. The connector
+	// is restarted when the retention is turned on or off.
+	KeepsHistory func(ctx context.Context) bool
+}
+
+// Keeps calls d.KeepsHistory; false when it is nil.
+func (d Deps) Keeps(ctx context.Context) bool {
+	return d.KeepsHistory != nil && d.KeepsHistory(ctx)
 }
 
 // Response caps (CON-13, S8).
