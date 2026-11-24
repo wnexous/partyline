@@ -229,6 +229,7 @@ func mapError(err error) error {
 	var refused *conversations.MembersRefusedError
 	var notEmpty *orgs.NotEmptyError
 	var notSaved *agents.SecretNotSavedError
+	var unsupported *connectors.UnsupportedError
 	switch {
 	case errors.As(err, &verr):
 		return httpx.Invalid(verr.Fields)
@@ -334,6 +335,14 @@ func mapError(err error) error {
 		return httpx.NewError(http.StatusBadGateway, dto.ErrorCodeUnavailable, "the platform did not answer the request")
 	case errors.Is(err, connectors.ErrNotOperator):
 		return httpx.NewError(http.StatusForbidden, dto.ErrorCodeNotOperator, "only the AI that operates the connection can send through it")
+	case errors.Is(err, connectors.ErrHistoryOff):
+		return httpx.NewError(http.StatusConflict, dto.ErrorCodeHistoryOff,
+			"chat history is off for this connection: an admin of its organization can turn it on in the connection's settings (Keep chat history)")
+	case errors.Is(err, connectors.ErrNoHistoryAnchor):
+		return httpx.NewError(http.StatusConflict, dto.ErrorCodeConflict,
+			"no message of this chat with a platform id is known yet: the platform needs one to know where its past begins")
+	case errors.As(err, &unsupported):
+		return httpx.NewError(http.StatusUnprocessableEntity, dto.ErrorCodeUnsupported, unsupported.Reason)
 	case errors.Is(err, connectors.ErrUnknownChat):
 		return httpx.NewError(http.StatusNotFound, dto.ErrorCodeUnknownChat, "the chat does not belong to this connection")
 	case errors.Is(err, connectors.ErrReactionsUnsupported):
