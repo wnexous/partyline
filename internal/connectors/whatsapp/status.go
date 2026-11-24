@@ -69,6 +69,7 @@ func (c *Connector) watch(ctx context.Context, h connectors.Handler, last report
 		if err != nil {
 			return err
 		}
+		c.ensureEvents(ctx, insts) // a number paired again comes back with its WebSocket off (CH-10)
 		if next := c.state(insts); next != last {
 			c.log.Info("whatsapp: instance status changed", "instance", c.instance, "status", string(next.status))
 			h.Status(next.status, next.detail)

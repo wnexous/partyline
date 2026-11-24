@@ -100,6 +100,28 @@ func newFakeEvolution(t *testing.T) *fakeEvolution {
 	mux.HandleFunc("POST /message/react", f.rest("", func(request) any {
 		return json.RawMessage(`{"data":{"Info":{"ID":"SENT-REACTION"}},"message":"success"}`)
 	}))
+	// POST /instance/connect sets the instance's outputs and events, as evolution-go does for a running
+	// instance (CH-10); POST /chat/history-sync asks the phone for a chat's past (CH-08).
+	mux.HandleFunc("POST /instance/connect", f.rest("", func(r request) any {
+		f.mu.Lock()
+		defer f.mu.Unlock()
+		for _, inst := range f.instances {
+			if inst["token"] != r.APIKey {
+				continue
+			}
+			var events []string
+			for _, e := range r.Body["subscribe"].([]any) {
+				events = append(events, e.(string))
+			}
+			inst["events"] = strings.Join(events, ",")
+			inst["websocketEnable"] = r.Body["websocketEnable"]
+			inst["webhook"], inst["rabbitmqEnable"], inst["natsEnable"] = r.Body["webhookUrl"], r.Body["rabbitmqEnable"], r.Body["natsEnable"]
+		}
+		return map[string]any{"message": "success"}
+	}))
+	mux.HandleFunc("POST /chat/history-sync", f.rest("", func(request) any {
+		return map[string]any{"message": "success", "data": map[string]any{"ID": "SENT-HISTORY-REQUEST"}}
+	}))
 	mux.HandleFunc("POST /message/downloadmedia", f.rest("", func(r request) any {
 		if _, ok := r.Body["message"].(map[string]any)["audioMessage"]; ok {
 			return map[string]any{"data": base64.StdEncoding.EncodeToString([]byte("voice-bytes"))}
@@ -755,10 +777,11 @@ func TestResponseCaps(t *testing.T) {
 	_, err = download()
 	require.ErrorIs(t, err, errEnvelope)
 
-	require.Equal(t, int64(envelope), c.maxFrame, "WebSocket frames share the media envelope")
+	// CH-09: a chunk of WhatsApp's history sync is one frame of tens of MB, whatever the upload limit.
+	require.Equal(t, int64(max(envelope, minHistoryFrame)), c.maxFrame, "WebSocket frames share the media envelope, at least the history floor")
 }
 
-// S8: a WebSocket frame over the media envelope ends Run; one at the envelope does not.
+// S8: a WebSocket frame over the cap ends Run; one at the cap does not.
 func TestWebSocketFrameCap(t *testing.T) {
 	const limit = 1000
 	envelope := (limit+2)/3*4 + connectors.MaxJSONResponse
@@ -766,6 +789,7 @@ func TestWebSocketFrameCap(t *testing.T) {
 	c, err := New(connectors.Config{"base_url": f.srv.URL, "api_key": globalKey, "instances": []string{"acme"}},
 		connectors.Deps{AllowPrivateNetworks: true, MaxMediaBytes: limit, UserAgent: userAgent})
 	require.NoError(t, err)
+	c.maxFrame = int64(envelope) // the history floor (CH-09) is too large to send in a test
 	rec := connectortest.NewRecorder()
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()

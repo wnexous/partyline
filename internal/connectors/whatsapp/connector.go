@@ -73,7 +73,8 @@ func KindWithLimit(limit int64) connectors.Kind {
 	limit = fileLimit(limit)
 	return connectors.Kind{
 		Name: KindName, Label: "WhatsApp (evolution-go)", CanListChats: true, CanReact: true, CanSendFiles: true,
-		MaxFileBytes: limit,
+		CanFetchHistory: true,
+		MaxFileBytes:    limit,
 		Fields: []connectors.Field{
 			{Name: "base_url", Label: "evolution-go URL", Type: dto.FieldTypeURL, Required: true, Endpoint: true,
 				Help: "e.g. https://evolution.example.com"},
@@ -104,10 +105,16 @@ type Connector struct {
 	now       func() time.Time
 	wait      func(ctx context.Context, d time.Duration) error // the pause between two checks of the instance; tests replace it
 
+	// keepsHistory tells whether the connection keeps its chat history now (CH-09, CH-10).
+	keepsHistory func(ctx context.Context) bool
+
 	mu        sync.Mutex
 	instances map[string]instance
 	fetchedAt time.Time
 	titles    map[string]groupTitle // by chat id (instance|jid)
+	// subscribed is the last subscription asked of evolution-go and subscribedAt when (CH-10).
+	subscribed   string
+	subscribedAt time.Time
 }
 
 // groupTitle is a cached group subject.
@@ -130,6 +137,12 @@ type instance struct {
 	// JID is the WhatsApp account of a connected instance, "<number>:<device>@s.whatsapp.net";
 	// empty for an instance that is not connected and for versions that do not report it.
 	JID string `json:"jid"`
+	// Events is the comma-separated list of the events the instance sends (CH-10); Webhook,
+	// RabbitmqEnable and NatsEnable are its other outputs, which a change of the subscription keeps.
+	Events         string  `json:"events"`
+	Webhook        string  `json:"webhook"`
+	RabbitmqEnable setting `json:"rabbitmqEnable"`
+	NatsEnable     setting `json:"natsEnable"`
 }
 
 // flag reads an evolution-go switch. evolution-go 0.7.2 sends websocketEnable as a string
@@ -160,8 +173,9 @@ func (r *reason) UnmarshalJSON(b []byte) error {
 }
 
 var (
-	_ connectors.Connector  = (*Connector)(nil)
-	_ connectors.ChatLister = (*Connector)(nil)
+	_ connectors.Connector      = (*Connector)(nil)
+	_ connectors.ChatLister     = (*Connector)(nil)
+	_ connectors.HistoryFetcher = (*Connector)(nil)
 )
 
 // New returns a connector for a validated config, with the default media limit.
@@ -193,7 +207,8 @@ func build(cfg connectors.Config, d connectors.Deps, maxFile int64) (*Connector,
 		// not a client timeout, which would cut a large file that is still arriving (LF-04).
 		client: d.JSONClient(requestTimeout), downloads: d.HTTPClient(0, mediaEnvelope(min(d.FileLimit(), maxFile))),
 		uploads: d.HTTPClient(0, connectors.MaxJSONResponse),
-		stream:  d.StreamClient(), maxFrame: mediaEnvelope(d.MediaLimit()), maxFile: maxFile, now: time.Now, wait: sleep,
+		stream:  d.StreamClient(), maxFrame: max(mediaEnvelope(d.MediaLimit()), minHistoryFrame), maxFile: maxFile, now: time.Now, wait: sleep,
+		keepsHistory: d.Keeps,
 	}, nil
 }
 
@@ -213,6 +228,7 @@ func (c *Connector) Run(ctx context.Context, h connectors.Handler) error {
 	if err != nil {
 		return err
 	}
+	c.ensureEvents(ctx, insts)
 	conn, resp, err := websocket.Dial(ctx, c.wsURL(), &websocket.DialOptions{
 		HTTPClient: c.stream, HTTPHeader: http.Header{"User-Agent": {c.userAgent}},
 	})
@@ -245,7 +261,25 @@ func (c *Connector) Run(ctx context.Context, h connectors.Handler) error {
 	// the frames already read are handled at once, under the connector's own context, so that Run
 	// returns promptly and the next connection reads what comes next, after them.
 	frames := newInbox(maxInboxBytes)
+	// A chunk of the chats' past is handled apart (CH-09): thousands of messages must not hold up the
+	// live ones that arrive meanwhile.
+	histories := newInbox(maxHistoryInbox)
 	var handling sync.WaitGroup
+	handling.Go(func() {
+		err := connectors.Guard(c.log, "history", func() error {
+			for {
+				data, ok := histories.take(parent)
+				if !ok {
+					return nil
+				}
+				c.handleHistory(parent, ctx, h, data)
+				histories.done(data)
+			}
+		})
+		if err != nil {
+			cancel(err)
+		}
+	})
 	handling.Go(func() {
 		err := connectors.Guard(c.log, "inbound", func() error {
 			for {
@@ -272,15 +306,18 @@ func (c *Connector) Run(ctx context.Context, h connectors.Handler) error {
 			cancel(err)
 		}
 	})
-	err = c.read(ctx, conn, frames)
+	err = c.read(ctx, conn, frames, histories)
 	cancel(err) // the socket is over: so are its downloads
 	frames.close()
+	histories.close()
 	handling.Wait()
 	return err
 }
 
-// read hands the socket's frames to the inbox until the socket or ctx ends.
-func (c *Connector) read(ctx context.Context, conn *websocket.Conn, frames *inbox) error {
+// read hands the socket's frames to the inbox until the socket or ctx ends: a history sync to the
+// histories, where it waits at most historyPutWait for room and is dropped after (CH-09), so the live
+// frames behind it are never held up for long.
+func (c *Connector) read(ctx context.Context, conn *websocket.Conn, frames, histories *inbox) error {
 	for {
 		_, data, err := conn.Read(ctx)
 		if err != nil {
@@ -288,6 +325,15 @@ func (c *Connector) read(ctx context.Context, conn *websocket.Conn, frames *inbo
 				return context.Cause(ctx)
 			}
 			return fmt.Errorf("websocket: %w", plainError(err))
+		}
+		if isHistoryFrame(data) {
+			wait, stop := context.WithTimeout(ctx, historyPutWait)
+			err := histories.put(wait, data)
+			stop()
+			if err != nil && ctx.Err() == nil {
+				c.log.Warn("whatsapp: history sync dropped: too much history waiting", "instance", c.instance, "bytes", len(data))
+			}
+			continue
 		}
 		if err := frames.put(ctx, data); err != nil {
 			return context.Cause(ctx)
