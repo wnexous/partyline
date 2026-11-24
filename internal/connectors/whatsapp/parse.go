@@ -126,6 +126,9 @@ type Parsed struct {
 	// content that hold an object, sorted and at most maxUnknownKeys. They are type names, never
 	// the content of the message.
 	UnknownKeys []string
+	// QuotedParticipant is the jid of whoever wrote the message this one quotes, as the platform
+	// sent it (contextInfo.participant); the connector matches it against its own jid (QC-03).
+	QuotedParticipant string
 }
 
 // ErrNotMessage means the event is not a chat message Partyline handles.
@@ -174,8 +177,14 @@ func Parse(ev Event) (Parsed, error) {
 	if !content(&out, root) {
 		return Parsed{}, ErrNotMessage
 	}
+	if slices.Contains(notQuotes, dto.MessageKind(out.Inbound.Kind)) {
+		out.Inbound.Quote, out.QuotedParticipant = nil, "" // ReplyToID is what it acts on (QC-01)
+	}
 	return out, nil
 }
+
+// notQuotes are the kinds whose ReplyToID names the message they act on, not one they quote.
+var notQuotes = []dto.MessageKind{dto.MessageKindReaction, dto.MessageKindEdit, dto.MessageKindRevoke}
 
 // content fills kind, text, reply and media from the (possibly wrapped) message; it
 // reports false for protocol messages other than edits and revokes (key shares, history
@@ -191,6 +200,9 @@ func content(p *Parsed, root map[string]json.RawMessage) bool {
 	}
 	in.ReplyToID = quotedID(msg)
 	p.MentionedJIDs = mentionedJIDs(msg)
+	if in.ReplyToID != "" {
+		in.Quote, p.QuotedParticipant = quoteOf(msg, in.ReplyToID)
+	}
 	if s := str(msg["conversation"]); s != "" {
 		in.Kind, in.Text = string(dto.MessageKindText), s
 		return true
@@ -399,6 +411,13 @@ func editedText(edited map[string]json.RawMessage) string {
 
 // quotedID returns the quoted message id from the contextInfo of any content node.
 func quotedID(msg map[string]json.RawMessage) string {
+	_, id := quoteContext(msg)
+	return id
+}
+
+// quoteContext returns the contextInfo of the content node that quotes a message, and the quoted
+// message's id; nil and "" when no node quotes one.
+func quoteContext(msg map[string]json.RawMessage) (map[string]json.RawMessage, string) {
 	for _, raw := range msg {
 		node := obj(raw)
 		if node == nil {
@@ -410,11 +429,55 @@ func quotedID(msg map[string]json.RawMessage) string {
 		}
 		for _, k := range []string{"stanzaID", "stanzaId"} {
 			if id := str(ci[k]); id != "" {
-				return id
+				return ci, id
 			}
 		}
 	}
-	return ""
+	return nil, ""
+}
+
+// quoteOf is the message with this id that msg quotes (QC-01, QC-02): the preview of the copy the
+// event carries in contextInfo.quotedMessage, and the jid of its author (contextInfo.participant).
+func quoteOf(msg map[string]json.RawMessage, id string) (*connectors.Quote, string) {
+	ci, _ := quoteContext(msg)
+	q := &connectors.Quote{ID: id}
+	if quoted := obj(ci["quotedMessage"]); quoted != nil {
+		quoted, _ = unwrap(quoted)
+		kind, text, name := quotedContent(quoted)
+		q.Preview = connectors.QuotePreview(kind, text, name)
+	}
+	return q, str(ci["participant"])
+}
+
+// quotedContent is the kind, the text (or caption) and the file name of a quoted message; a kind
+// Partyline does not know is empty.
+func quotedContent(msg map[string]json.RawMessage) (dto.MessageKind, string, string) {
+	if s := str(msg["conversation"]); s != "" {
+		return dto.MessageKindText, s, ""
+	}
+	if node := obj(msg["extendedTextMessage"]); node != nil {
+		return dto.MessageKindText, str(node["text"]), ""
+	}
+	for _, mk := range mediaKinds {
+		if node := obj(msg[mk.node]); node != nil {
+			return mk.kind, str(node["caption"]), str(node["fileName"])
+		}
+	}
+	if node := obj(msg["contactMessage"]); node != nil {
+		return dto.MessageKindContact, str(node["displayName"]), ""
+	}
+	if node := obj(msg["contactsArrayMessage"]); node != nil {
+		return dto.MessageKindContact, str(node["displayName"]), ""
+	}
+	if node := obj(msg["locationMessage"]); node != nil {
+		return dto.MessageKindLocation, str(node["name"]), ""
+	}
+	for _, key := range []string{"pollCreationMessage", "pollCreationMessageV3"} {
+		if node := obj(msg[key]); node != nil {
+			return dto.MessageKindPoll, str(node["name"]), ""
+		}
+	}
+	return "", "", ""
 }
 
 // mentionedJIDs returns the jids the message mentions, from the contextInfo of its content

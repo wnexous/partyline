@@ -110,10 +110,26 @@ type Inbound struct {
 	// Kind is a dto.MessageKind value (text, image, ...); empty means text.
 	Kind string
 	Text string
-	// ReplyToID is the platform id of the message this one replies to.
+	// ReplyToID is the platform id of the message this one replies to: the quoted message, or the
+	// target of a reaction, an edit or a delete.
 	ReplyToID string
-	Media     []Media
-	At        time.Time
+	// Quote is the message this one quotes, nil when it quotes none (QC-01..QC-03). A reaction, an
+	// edit or a delete names its target in ReplyToID and quotes nothing.
+	Quote *Quote
+	Media []Media
+	At    time.Time
+}
+
+// Quote is the message an inbound message quotes, as the platform event tells it.
+type Quote struct {
+	// ID is the platform id of the quoted message.
+	ID string
+	// Preview is the short preview QuotePreview makes of it, empty when the event does not carry
+	// the quoted message (QC-02).
+	Preview string
+	// FromSelf tells that the connector's own account wrote the quoted message, as far as the
+	// platform event tells; the pipeline also knows the account's messages it has seen (QC-03).
+	FromSelf bool
 }
 
 // Media is an inbound file. Open is called at most once, by the inbound pipeline, and only

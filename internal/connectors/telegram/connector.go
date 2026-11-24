@@ -164,10 +164,13 @@ type (
 		Poll *struct {
 			Question string `json:"question"`
 		} `json:"poll"`
-		Entities          []entity `json:"entities"`
-		CaptionEntities   []entity `json:"caption_entities"`
-		MigrateToChatID   int64    `json:"migrate_to_chat_id"`
-		MigrateFromChatID int64    `json:"migrate_from_chat_id"`
+		// ForumTopicCreated marks the service message that opened a forum topic, which every message
+		// of the topic names as reply_to_message without quoting it.
+		ForumTopicCreated *struct{} `json:"forum_topic_created"`
+		Entities          []entity  `json:"entities"`
+		CaptionEntities   []entity  `json:"caption_entities"`
+		MigrateToChatID   int64     `json:"migrate_to_chat_id"`
+		MigrateFromChatID int64     `json:"migrate_from_chat_id"`
 	}
 	update struct {
 		UpdateID    int64    `json:"update_id"`
@@ -254,16 +257,52 @@ func (c *Connector) handle(ctx context.Context, h connectors.Handler, m *message
 	default:
 		in.SenderID, in.SenderName = chatID, in.ChatTitle
 	}
-	if m.ReplyToMessage != nil {
-		in.ReplyToID = strconv.FormatInt(m.ReplyToMessage.MessageID, 10)
-	}
 	c.mu.Lock()
 	selfID, selfUsername := c.selfID, c.selfUsername
 	c.mu.Unlock()
+	if r := m.ReplyToMessage; r != nil {
+		in.ReplyToID = strconv.FormatInt(r.MessageID, 10)
+		if r.ForumTopicCreated == nil {
+			in.Quote = quoteOf(r, selfID)
+		}
+	}
 	in.MentionsAccount = mentions(m.Text, m.Entities, selfID, selfUsername) ||
 		mentions(m.Caption, m.CaptionEntities, selfID, selfUsername)
 	c.content(&in, m)
 	h.Inbound(ctx, in)
+}
+
+// quoteOf is the message a reply quotes (QC-01..QC-03): its id, the preview of the copy the update
+// carries in reply_to_message, and whether the bot wrote it.
+func quoteOf(r *message, selfID int64) *connectors.Quote {
+	kind, name := dto.MessageKindText, ""
+	text := r.Text
+	if text == "" {
+		text = r.Caption
+	}
+	switch {
+	case len(r.Photo) > 0:
+		kind = dto.MessageKindImage
+	case r.Video != nil:
+		kind = dto.MessageKindVideo
+	case r.Audio != nil, r.Voice != nil:
+		kind = dto.MessageKindAudio
+	case r.Document != nil:
+		kind, name = dto.MessageKindDocument, r.Document.FileName
+	case r.Sticker != nil:
+		kind = dto.MessageKindSticker
+	case r.Location != nil:
+		kind = dto.MessageKindLocation
+	case r.Contact != nil:
+		kind, text = dto.MessageKindContact, strings.TrimSpace(r.Contact.FirstName+" "+r.Contact.LastName)
+	case r.Poll != nil:
+		kind, text = dto.MessageKindPoll, r.Poll.Question
+	}
+	return &connectors.Quote{
+		ID:       strconv.FormatInt(r.MessageID, 10),
+		Preview:  connectors.QuotePreview(kind, text, name),
+		FromSelf: selfID != 0 && r.From != nil && r.From.ID == selfID,
+	}
 }
 
 // mentions tells whether the entities mention the bot (CID-12): a "mention" of its @username
