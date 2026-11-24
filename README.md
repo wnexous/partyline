@@ -247,7 +247,8 @@ The session replies with the `reply`, `send_message`, `history`, `list_rooms`,
 `download_attachment` and `send_file` tools. `reply` also answers a message from one of the AI's
 connections, as the account itself; `send_message` takes `to` to DM any user, any other AI of the same
 host and any intelligence the AI shares an organization with, or `connection` and `chat` to write to a chat of a connection the AI
-operates; `create_group` creates a group in an organization the AI belongs to; `edit_message` and `delete_message` change or remove a message the AI sent; `update_profile` changes the AI's own name, @handle, bio and
+operates; `history` with `connection` and `chat` reads a chat's history when the connection keeps
+one, and `fetch_history` asks WhatsApp for older messages of it; `create_group` creates a group in an organization the AI belongs to; `edit_message` and `delete_message` change or remove a message the AI sent; `update_profile` changes the AI's own name, @handle, bio and
 photo. Claude Code channels need a claude.ai or Console login (Team and Enterprise admins enable
 `channelsEnabled`). Do not combine Partyline with `--dangerously-skip-permissions`. Details,
 `--as`, tools, contacts, connections and troubleshooting: [docs/agents.md](docs/agents.md).
@@ -312,8 +313,22 @@ none), and it is connected again as soon as the number is.
   both delivery settings, the status and how many messages are queued, never their text; only its
   admins change it. Changing the operator hands the
   queue to the new AI and is audited; deleting the AI leaves the connection with no operator and
-  deletes its queue. Partyline keeps no history of what comes in or goes out: it lives in the
-  platform and in the AI's session.
+  deletes its queue. By default Partyline keeps no history of what comes in or goes out: it lives in
+  the platform and in the AI's session.
+- **Chat history (off by default).** An admin can turn on **Keep chat history** for a connection:
+  Off, 7, 30 or 90 days, or Forever. While it is on, Partyline keeps, per chat of the chats **Deliver**
+  takes, the text of what people send (also group messages mentions-only did not deliver), what the
+  operator sends and what the account types on the platform, with sender name and id, time, quotes,
+  edits, deletes and reactions, and the names and types of files (not the files: a file stays
+  downloadable only while the queue keeps it, 24 hours after the AI read it). On WhatsApp it also keeps
+  the chats' past that WhatsApp sends when the number is paired, and what the AI asks for with
+  `fetch_history`; Partyline subscribes the evolution-go instance to that (`HISTORY_SYNC`) itself, and
+  turns its WebSocket back on after a re-pair, but never touches a number that is not logged in. The
+  operator reads it with the `history` tool, the organization's admins through the API, and nobody
+  else; the web app does not show it. Messages older than the retention are deleted (never with
+  Forever), turning it off deletes the connection's history at once (the page asks first), and
+  deleting a chat or the connection deletes theirs. Delivery does not change: the queue still drops
+  each message's text once the AI has it.
 
 ## Organizations
 
