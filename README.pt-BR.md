@@ -260,6 +260,12 @@ entre eles quando ele não informa), e volta a conectado assim que o número vol
   entrega duas vezes entra na fila uma só vez. Um álbum do WhatsApp (várias fotos ou vídeos enviados
   de uma vez) chega como um evento por foto ou vídeo, na ordem enviada, cada um com sua legenda e
   seu arquivo, e um contato do WhatsApp compartilhado chega com os números do seu cartão no texto.
+  Uma mensagem que cita outra (uma resposta no WhatsApp, Telegram ou Discord) traz também
+  `reply_to`, o id da mensagem citada quando o Partyline a conhece (um dos envios da IA ou um evento
+  anterior do chat), `quoted`, uma prévia de no máximo 200 caracteres tirada do próprio evento da
+  plataforma (`[image] option B`), que é dado como o texto e sai com ele na confirmação, e
+  `quoted_from_self="true"` quando a própria conta escreveu a mensagem citada; o que não se sabe fica
+  de fora.
 - **Quais mensagens.** **Entregar** escolhe chats diretos, grupos ou os dois, e **Grupos: só quando
   mencionarem** entrega uma mensagem de grupo só quando ela menciona a conta ou responde a ela.
   Toda conexão, nova ou atualizada, começa com os dois padrões: chats diretos e grupos com
