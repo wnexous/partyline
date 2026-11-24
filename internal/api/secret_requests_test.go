@@ -3,6 +3,7 @@ package api_test
 import (
 	"bytes"
 	"database/sql"
+	"encoding/json"
 	"fmt"
 	"io"
 	"log/slog"
@@ -202,7 +203,19 @@ func TestOnlyAManagerGivesASecret(t *testing.T) {
 	conn := f.dial(t, "dev")
 	request := f.ask(t, "EXAMPLE_API_KEY")
 	plain := testkit.Decode[dto.Message](f.alice.Post("/api/v1/rooms/"+f.room.ID+"/messages", dto.PostMessageRequest{Text: "hi"}).RequireStatus(http.StatusCreated))
-	conn.Drain(100 * time.Millisecond)
+	// Wait for the plain message itself, not a fixed time: on a slow runner its delivery came after a
+	// 100 ms drain and broke the ExpectNone below.
+	for {
+		fr := conn.Next(testkit.IOTimeout)
+		if fr.Type != dto.AgentFrameTypeMessage {
+			continue
+		}
+		var m dto.AgentMessageFrame
+		require.NoError(t, json.Unmarshal(fr.Raw, &m))
+		if m.Message.ID == plain.ID {
+			break
+		}
+	}
 
 	require.Equal(t, dto.ErrorCodeForbidden, errorCode(t, f.bob.Post(f.secretPath(request.ID), dto.GiveSecretRequest{Value: secretValue}), http.StatusForbidden).Code)
 	ai := f.token.AsFolder(f.folder("dev"))
