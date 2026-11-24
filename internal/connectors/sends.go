@@ -18,6 +18,7 @@ import (
 	"github.com/wnexous/partyline/internal/access"
 	"github.com/wnexous/partyline/internal/api/dto"
 	"github.com/wnexous/partyline/internal/events"
+	"github.com/wnexous/partyline/internal/platform"
 	"github.com/wnexous/partyline/internal/store"
 	"github.com/wnexous/partyline/internal/store/db"
 	"github.com/wnexous/partyline/internal/validation"
@@ -91,6 +92,9 @@ type SendsDeps struct {
 	// echo of a send from something typed on the account (CID-14); nil remembers nothing, and
 	// only the record of the sends then tells them apart.
 	Sent *SentIDs
+	// History keeps what is sent in the chat's history when the connection keeps one (CH-02); nil keeps
+	// nothing.
+	History *platform.History
 	// Kinds are the connector kinds: the Address of a connection's kind says which names it takes as a
 	// chat it has not heard from yet (CID-31). Without it a send goes only to chats the connection has.
 	Kinds *Registry
@@ -333,13 +337,18 @@ func (s *Sends) destination(ctx context.Context, conn db.Connector, ref string) 
 	return sendPlan{create: &info}, nil
 }
 
-// address asks the connection's kind whether ref is an address it can start a chat at (CID-31). The
-// kind sees the public fields of the connection's config only.
+// address asks the connection's kind whether ref is an address it can start a chat at (CID-31).
 func (s *Sends) address(conn db.Connector, ref string) (ChatInfo, bool) {
-	if s.d.Kinds == nil {
+	return kindAddress(s.d.Kinds, conn, ref)
+}
+
+// kindAddress asks the connection's kind whether ref is an address of a chat on its platform (CID-31).
+// The kind sees the public fields of the connection's config only.
+func kindAddress(kinds *Registry, conn db.Connector, ref string) (ChatInfo, bool) {
+	if kinds == nil {
 		return ChatInfo{}, false
 	}
-	kind, ok := s.d.Kinds.Lookup(conn.Kind)
+	kind, ok := kinds.Lookup(conn.Kind)
 	if !ok || kind.Address == nil {
 		return ChatInfo{}, false
 	}
@@ -600,6 +609,9 @@ func (s *Sends) attempt(ctx context.Context, id string, d delivery) (dto.Platfor
 			}
 			return nil
 		})
+		if err == nil {
+			s.keep(rec, send, platformID, d)
+		}
 		return dto.PlatformSendResult{ID: id, Status: dto.PlatformSendStatusSent}, err
 	}
 	reason := err.Error()

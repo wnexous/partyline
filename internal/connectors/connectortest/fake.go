@@ -69,7 +69,7 @@ func New() *Fake {
 // Kind returns the fake kind: a required secret "token", an optional "label" and chat listing.
 func (f *Fake) Kind() connectors.Kind {
 	return connectors.Kind{
-		Name: KindName, Label: "Fake", CanListChats: true, CanReact: true, CanSendFiles: true, Address: Address,
+		Name: KindName, Label: "Fake", CanListChats: true, CanReact: true, CanSendFiles: true, CanFetchHistory: true, Address: Address,
 		Fields: []connectors.Field{
 			{Name: "token", Label: "Token", Type: dto.FieldTypeSecret, Required: true},
 			{Name: "label", Label: "Label", Type: dto.FieldTypeString},
@@ -165,6 +165,9 @@ type Instance struct {
 	reacted   []connectors.Reaction
 	// sendPanic, reactPanic and listPanic make the call panic with them (SetSendPanic and the like).
 	sendPanic, reactPanic, listPanic *panicValue
+	// fetches are the history requests made (FetchHistory) and fetchErr fails them (SetFetchError).
+	fetches  []connectors.HistoryRequest
+	fetchErr error
 
 	runs    chan struct{}
 	stops   chan struct{}
@@ -339,6 +342,32 @@ func (i *Instance) React(ctx context.Context, r connectors.Reaction) error {
 	i.mu.Unlock()
 	i.reacts <- r
 	return nil
+}
+
+// FetchHistory implements connectors.HistoryFetcher: it records the request, or fails with the error
+// given to SetFetchError. The test answers with Emit and Backfill messages, as a platform would later.
+func (i *Instance) FetchHistory(_ context.Context, r connectors.HistoryRequest) error {
+	i.mu.Lock()
+	defer i.mu.Unlock()
+	if i.fetchErr != nil {
+		return i.fetchErr
+	}
+	i.fetches = append(i.fetches, r)
+	return nil
+}
+
+// Fetches returns the history requests made so far.
+func (i *Instance) Fetches() []connectors.HistoryRequest {
+	i.mu.Lock()
+	defer i.mu.Unlock()
+	return append([]connectors.HistoryRequest(nil), i.fetches...)
+}
+
+// SetFetchError makes later history requests fail with err (nil restores success).
+func (i *Instance) SetFetchError(err error) {
+	i.mu.Lock()
+	i.fetchErr = err
+	i.mu.Unlock()
 }
 
 // Reactions returns every reaction that went out so far.

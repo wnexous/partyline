@@ -363,6 +363,10 @@ func (m *Manager) Apply(id string) {
 			ID: id, Logger: log, UserAgent: m.d.UserAgent, FileURL: m.d.FileURL,
 			AllowPrivateNetworks: m.d.AllowPrivateNetworks, PrivateAllowlist: m.d.PrivateAllowlist,
 			MaxMediaBytes: m.d.MaxMediaBytes, MaxFileBytes: m.d.MaxFileBytes, Replays: m.d.Replays,
+			KeepsHistory: func(ctx context.Context) bool {
+				days, err := m.d.Store.R().GetConnectorHistoryDays(ctx, id)
+				return err == nil && days != 0
+			},
 		})
 		return err
 	})
@@ -462,6 +466,31 @@ type guardedHook struct {
 
 func (g guardedHook) ReceiveHook(ctx context.Context, req HookRequest) error {
 	return Guard(g.log, "hook", func() error { return g.r.ReceiveHook(ctx, req) })
+}
+
+// FetchHistory asks the running connector's platform for the past of a chat (CH-08): ErrNotRunning when
+// it is not running, an *UnsupportedError when its platform cannot, and a platform failure wrapping
+// ErrPlatform, its secrets redacted.
+func (m *Manager) FetchHistory(ctx context.Context, connectorID string, r HistoryRequest) error {
+	s := m.current(connectorID)
+	if s == nil {
+		return ErrNotRunning
+	}
+	f, ok := s.conn.(HistoryFetcher)
+	if !ok {
+		return &UnsupportedError{Reason: "the platform of this connection cannot send the past of a chat"}
+	}
+	err := Guard(s.log, "fetch history", func() error { return f.FetchHistory(ctx, r) })
+	var unsupported *UnsupportedError
+	switch {
+	case err == nil, errors.Is(err, ErrPanic):
+		return err
+	case errors.As(err, &unsupported):
+		return &UnsupportedError{Reason: Redact(unsupported.Reason, s.secrets)}
+	}
+	detail := Redact(err.Error(), s.secrets)
+	m.d.Logger.Warn("connectors: fetch history failed", "connector_id", connectorID, "err", detail)
+	return fmt.Errorf("%w: %s", ErrPlatform, detail)
 }
 
 // ListChats lists the chats of the running connector (CON-09). A platform failure is

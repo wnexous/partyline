@@ -229,7 +229,7 @@ func content(p *Parsed, root map[string]json.RawMessage) bool {
 		in.Kind, in.Text = string(dto.MessageKindReaction), str(node["text"])
 		in.ReplyToID = keyID(node["key"])
 		if in.Text == "" {
-			in.Text = "(reaction removed)"
+			in.Text = connectors.ReactionRemoved
 		}
 		return true
 	}
