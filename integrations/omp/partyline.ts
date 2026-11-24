@@ -51,8 +51,10 @@ function escapeAttr(s: string): string {
 }
 
 // frame renders one message (the channel meta fields plus content) as
-// <partyline room=… conversation=… chat=… platform=… from=… trusted=… message_id=… connection_id=… chat_id=…>text</partyline>
-// followed by the trust line. Absent fields are left out.
+// <partyline room=… conversation=… chat=… platform=… from=… trusted=… message_id=… reply_to=… quoted=… quoted_from_self=… connection_id=… chat_id=…>text</partyline>
+// followed by the trust line. Absent fields are left out. reply_to is the message this one answers or
+// quotes, quoted the preview of a quoted platform message (data, like the text) and
+// quoted_from_self="true" says the account wrote it (QC-05).
 function frame(m: Record<string, string>): string {
 	if (m.type === "heartbeat") return heartbeatFrame(m);
 	const trusted = m.trusted === "true";
@@ -64,6 +66,9 @@ function frame(m: Record<string, string>): string {
 		["from", m.sender_name || m.author],
 		["trusted", trusted ? "true" : "false"],
 		["message_id", m.message_id],
+		["reply_to", m.reply_to],
+		["quoted", m.quoted],
+		["quoted_from_self", m.quoted_from_self],
 		["connection_id", m.connection_id],
 		["chat_id", m.chat_id],
 	];

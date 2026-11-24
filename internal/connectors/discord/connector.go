@@ -202,6 +202,9 @@ func (c *Connector) onMessage(_ *discordgo.Session, m *discordgo.MessageCreate) 
 	}
 	if m.MessageReference != nil {
 		in.ReplyToID = m.MessageReference.MessageID
+		if m.Type == discordgo.MessageTypeReply && m.MessageReference.Type == discordgo.MessageReferenceTypeDefault {
+			in.Quote = quoteOf(m.MessageReference.MessageID, m.ReferencedMessage, self)
+		}
 	}
 	for i, a := range m.Attachments {
 		if i == 0 {
@@ -212,6 +215,29 @@ func (c *Connector) onMessage(_ *discordgo.Session, m *discordgo.MessageCreate) 
 		})
 	}
 	run.h.Inbound(run.ctx, in)
+}
+
+// quoteOf is the message a reply quotes (QC-01..QC-03): its id and, when the gateway sent the
+// referenced message along (it does not for one that was deleted), its preview and whether the bot
+// wrote it. A forward, a pin notice or a thread starter references a message without quoting it.
+func quoteOf(id string, ref *discordgo.Message, self string) *connectors.Quote {
+	q := &connectors.Quote{ID: id}
+	if ref == nil {
+		return q
+	}
+	kind, name := dto.MessageKindText, ""
+	switch {
+	case len(ref.Attachments) > 0 && ref.Attachments[0] != nil:
+		kind = kindOf(ref.Attachments[0].ContentType)
+		if kind == dto.MessageKindDocument {
+			name = ref.Attachments[0].Filename
+		}
+	case len(ref.StickerItems) > 0:
+		kind = dto.MessageKindSticker
+	}
+	q.Preview = connectors.QuotePreview(kind, ref.Content, name)
+	q.FromSelf = self != "" && ref.Author != nil && ref.Author.ID == self
+	return q
 }
 
 // mentions tells whether the message mentions the bot (CID-12): its user id is in mentions.

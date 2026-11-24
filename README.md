@@ -276,7 +276,12 @@ none), and it is connected again as soon as the number is.
   The AI is told how many were dropped the next time it connects or polls. A message the platform
   delivers twice is queued once. A WhatsApp album (several photos or videos sent at once) arrives as
   one event per photo or video, in the order sent, each with its caption and its file, and a shared
-  WhatsApp contact arrives with the numbers of its card in the text.
+  WhatsApp contact arrives with the numbers of its card in the text. A message that quotes another
+  (a WhatsApp, Telegram or Discord reply) also carries `reply_to`, the id of the quoted message when
+  Partyline knows it (one of the AI's sends or an earlier event of the chat), `quoted`, a preview of
+  at most 200 characters taken from the platform event (`[image] option B`), which is data like the
+  text and goes with it on acknowledgement, and `quoted_from_self="true"` when the account wrote the
+  quoted message; what is not known is left out.
 - **Which messages.** **Deliver** chooses direct chats, groups or both, and **Groups: only when
   mentioned** delivers a group message only when it mentions the account or replies to it. Every
   connection, new or upgraded, starts with both defaults: direct chats, and groups on a mention. A

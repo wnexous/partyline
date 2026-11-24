@@ -386,6 +386,9 @@ func (c *Connector) handle(ctx, life context.Context, h connectors.Handler, data
 	if len(p.MentionedJIDs) > 0 {
 		p.Inbound.MentionsAccount = c.mentions(p.MentionedJIDs)
 	}
+	if q := p.Inbound.Quote; q != nil && p.QuotedParticipant != "" {
+		q.FromSelf = c.mentions([]string{p.QuotedParticipant}) // QC-03: the account wrote the quoted message
+	}
 	if p.Media != nil {
 		p.Inbound.Media = []connectors.Media{c.media(life, p.Instance, *p.Media)}
 	}
@@ -395,7 +398,8 @@ func (c *Connector) handle(ctx, life context.Context, h connectors.Handler, data
 	h.Inbound(ctx, p.Inbound)
 }
 
-// mentions reports whether a mentioned jid is the connection's own account (CID-12). WhatsApp
+// mentions reports whether a mentioned jid is the connection's own account (CID-12), and so whether
+// the author of a quoted message is (QC-03). WhatsApp
 // mentions carry the account's jid without the device suffix; evolution-go may report the
 // instance jid as a phone jid or, for a newer account, as its LID, so both sides are compared
 // as bare jids.

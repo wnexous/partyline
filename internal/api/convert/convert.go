@@ -95,6 +95,7 @@ func PlatformEvent(e platform.Event) dto.PlatformEvent {
 		ID: e.ID, Platform: e.Platform, ConnectionID: e.ConnectionID, ChatID: e.ChatID, ChatTitle: e.ChatTitle, ChatKind: e.ChatKind,
 		SenderName: e.SenderName, SenderID: e.SenderID, Trusted: e.Trusted, FromSelf: e.FromSelf, Kind: e.Kind, Text: e.Text,
 		Attachments: make([]dto.Attachment, len(e.Attachments)), ReceivedAt: e.ReceivedAt,
+		ReplyTo: e.ReplyTo, Quoted: e.Quoted, QuotedFromSelf: e.QuotedFromSelf,
 	}
 	for i, a := range e.Attachments {
 		out.Attachments[i] = dto.Attachment{ID: a.ID, Name: a.Name, Mime: a.Mime, Size: a.Size, Status: a.Status, TranscriptState: a.TranscriptState}

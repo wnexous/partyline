@@ -194,13 +194,16 @@ const (
 // frames it like one: the sender is the author, the room is "<Platform> · <chat title>", and
 // message_id is the id reply answers; the chat, the connection and the flags follow as chat_id,
 // chat_title, chat_kind, platform, connection_id, trusted and from_self (true for what was typed
-// on the account itself). Attachments are listed in the content like those of a message.
+// on the account itself). Attachments are listed in the content like those of a message. A message
+// that quotes another also carries reply_to (the Partyline id of the quoted message, when known),
+// quoted (its preview, platform content) and quoted_from_self="true" when the account wrote it; each
+// is left out when unknown (QC-01..QC-05).
 func FormatPlatform(e dto.PlatformEvent) Notification {
 	room := platformLabel(e.Platform)
 	if e.ChatTitle != "" {
 		room += " · " + e.ChatTitle
 	}
-	return Notification{Content: contentOf(e.Text, e.Attachments), Meta: map[string]string{
+	n := Notification{Content: contentOf(e.Text, e.Attachments), Meta: map[string]string{
 		"type":          PlatformType,
 		"room_name":     room,
 		"message_id":    e.ID,
@@ -217,6 +220,16 @@ func FormatPlatform(e dto.PlatformEvent) Notification {
 		"chat_title":    e.ChatTitle,
 		"chat_kind":     string(e.ChatKind),
 	}}
+	if e.ReplyTo != "" {
+		n.Meta["reply_to"] = e.ReplyTo
+	}
+	if e.Quoted != "" {
+		n.Meta["quoted"] = e.Quoted
+	}
+	if e.QuotedFromSelf {
+		n.Meta["quoted_from_self"] = "true"
+	}
+	return n
 }
 
 // platformLabel names a connector kind the way people write it; other kinds are capitalized.

@@ -216,14 +216,61 @@ func (p *Pipeline) enqueue(ctx context.Context, src Source, conn db.Connector, c
 	if kind == "" {
 		kind = dto.MessageKindText
 	}
+	q := p.quote(ctx, src, chat, m.Quote)
 	// ReceivedAt is when partyline got the message, not the platform's timestamp: a message
 	// synced late with an old timestamp still waits 7 days for its AI (CID-10).
 	_, _, err = p.d.Queue.Enqueue(ctx, platform.Item{
 		AgentID: conn.OperatorIid.String, ConnectorID: src.ConnectorID, ChatID: chat.ID, ExternalID: m.MessageID,
 		SenderID: m.SenderID, SenderName: m.SenderName, Trusted: trusted, FromSelf: m.FromSelf,
 		Kind: kind, Text: truncate(m.Text), ReceivedAt: p.d.Now(), Attachments: p.saveMedia(ctx, src, m.Media),
+		ReplyTo: q.replyTo, Quoted: q.preview, QuotedFromSelf: q.fromSelf,
 	})
 	return err
+}
+
+// quoted is what the AI is told of the message an inbound message quotes.
+type quoted struct {
+	replyTo  string
+	preview  string
+	fromSelf bool
+}
+
+// quote tells what Partyline knows of the quoted message (QC-01..QC-04): reply_to is the id of the
+// AI's send that created it or of the earlier item of the chat that the platform knows by its id,
+// the preview comes from the platform event, and it is the account's own when the platform says so,
+// when Partyline sent it, or when it was an item of the account itself. A lookup that fails is
+// logged and leaves reply_to out: a quote never stops nor delays the delivery.
+func (p *Pipeline) quote(ctx context.Context, src Source, chat db.Chat, q *Quote) quoted {
+	if q == nil {
+		return quoted{}
+	}
+	out := quoted{preview: q.Preview, fromSelf: q.FromSelf}
+	if q.ID == "" {
+		return out
+	}
+	if p.d.Sent.Has(chat.ID, q.ID) {
+		out.fromSelf = true
+	}
+	send, err := p.sendOf(ctx, chat.ID, q.ID)
+	if err != nil {
+		p.d.Logger.Warn("connectors: quoted message lookup failed", "connector_id", src.ConnectorID, "err", err)
+		return out
+	}
+	if send != "" {
+		out.replyTo, out.fromSelf = send, true
+		return out
+	}
+	item, err := p.d.Store.R().FindChatPlatformItemByExternalID(ctx, db.FindChatPlatformItemByExternalIDParams{
+		ConnectorID: src.ConnectorID, ChatID: chat.ID, ExternalID: q.ID,
+	})
+	switch {
+	case errors.Is(err, sql.ErrNoRows):
+	case err != nil:
+		p.d.Logger.Warn("connectors: quoted message lookup failed", "connector_id", src.ConnectorID, "err", err)
+	default:
+		out.replyTo, out.fromSelf = item.ID, out.fromSelf || item.FromSelf
+	}
+	return out
 }
 
 // trusted tells whether the sender resolves, through this connector (AD-008), to a user who instructs

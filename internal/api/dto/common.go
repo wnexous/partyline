@@ -21,6 +21,8 @@ const (
 	PasswordMinLength = 10
 	// MaxTextLength is the maximum message text length in characters (MSG-02).
 	MaxTextLength = 16000
+	// MaxQuotedPreview is the longest preview of a quoted platform message, in characters (QC-02).
+	MaxQuotedPreview = 200
 	// DefaultPageSize is the page size of paginated lists when no limit is given.
 	DefaultPageSize = 50
 	// MaxPageSize is the largest accepted limit for paginated lists.

@@ -71,10 +71,21 @@ RETURNING id;
 -- row is marked sent (CID-14).
 SELECT COUNT(*) FROM platform_sends WHERE chat_id = ? AND status = 'sending';
 
--- name: CountChatPlatformSendExternalID :one
--- Messages an AI sent through the connection to the chat that the platform knows by this id
--- (CID-14, CID-12). A send that is not over has no id yet.
-SELECT COUNT(*) FROM platform_sends WHERE chat_id = ? AND external_id <> '' AND external_id = ?;
+-- name: FindChatPlatformSendByExternalID :one
+-- The send an AI made through the connection to the chat that created the message the platform
+-- knows by this id: its first message (external_id) or a later one (platform_send_parts) (CID-14,
+-- CID-12, QC-01). A send that is not over has no id yet.
+SELECT s.id FROM platform_sends s
+WHERE s.chat_id = sqlc.arg(chat_id) AND s.external_id <> '' AND s.external_id = sqlc.arg(external_id)
+UNION ALL
+SELECT p.send_id FROM platform_send_parts p
+WHERE p.chat_id = sqlc.arg(chat_id) AND p.external_id = sqlc.arg(external_id)
+LIMIT 1;
+
+-- name: InsertPlatformSendPart :exec
+-- QC-01: the platform id of a message a send created after its first one.
+INSERT INTO platform_send_parts (send_id, chat_id, external_id) VALUES (?, ?, ?)
+ON CONFLICT (send_id, external_id) DO NOTHING;
 
 -- name: DeleteFinishedPlatformSends :execrows
 -- A finished send keeps its row (without text) for the retention period, then goes: at most limit
