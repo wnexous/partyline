@@ -153,6 +153,44 @@ type Chat struct {
 	PersonID    sql.NullString
 }
 
+type ChatHistory struct {
+	Seq            int64
+	ID             string
+	ConnectorID    string
+	ChatID         string
+	ExternalID     string
+	SenderID       string
+	SenderName     string
+	FromSelf       bool
+	Trusted        bool
+	Kind           string
+	Text           string
+	ReplyTo        string
+	Quoted         string
+	QuotedFromSelf bool
+	Edited         bool
+	Deleted        bool
+	At             int64
+}
+
+type ChatHistoryAttachment struct {
+	ID        string
+	MessageID string
+	Name      string
+	Mime      string
+	Size      int64
+	Status    string
+}
+
+type ChatHistoryReaction struct {
+	MessageID  string
+	SenderID   string
+	SenderName string
+	FromSelf   bool
+	Emoji      string
+	At         int64
+}
+
 type ChatPerson struct {
 	ChatID     string
 	PersonID   string
@@ -177,6 +215,7 @@ type Connector struct {
 	Deliver            string
 	GroupsMentionsOnly bool
 	OrgID              sql.NullString
+	HistoryDays        int64
 }
 
 type DeviceCodeAttempt struct {
