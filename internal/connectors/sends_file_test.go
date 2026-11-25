@@ -65,6 +65,24 @@ func TestAFileGoesOutThroughTheConnectionOnce(t *testing.T) {
 	require.True(t, f.sent.Has(f.chat.ID, "ext-1"))
 }
 
+// AD-01: a file the AI sends as a document reaches the connector marked so; one sent without the flag
+// is not.
+func TestSendFileAsDocument(t *testing.T) {
+	f := newSendsFixture(t)
+	photo := connectors.BytesFile("photo.jpg", "image/jpeg", []byte("synthetic photo"))
+	photo.AsDocument = true
+	_, err := f.sends.Send(context.Background(), f.fileInput("", photo))
+	require.NoError(t, err)
+	_, err = f.sends.Send(context.Background(), f.fileInput("", connectors.BytesFile("photo.jpg", "image/jpeg", []byte("synthetic photo"))))
+	require.NoError(t, err)
+
+	sent := f.inst.Sent()
+	require.Len(t, sent, 2)
+	require.True(t, sent[0].Files[0].AsDocument)
+	require.Equal(t, "image/jpeg", sent[0].Files[0].Mime, "the type stays what it is")
+	require.False(t, sent[1].Files[0].AsDocument)
+}
+
 // CID-32: a file needs no caption, and an ordinary send is not marked as attempted once.
 func TestAFileNeedsNoCaptionAndATextSendIsRetriable(t *testing.T) {
 	f := newSendsFixture(t)

@@ -93,6 +93,7 @@ const (
 	msgFileSeveralTargets = "give either room, or connection with chat, not both: room uploads the file to a room or DM you belong to, connection with chat sends it to a chat of a connection you operate"
 	msgFileNoTarget       = "room, or connection with chat, is required: name the room to upload the file to, or the connection and the chat to send it to"
 	msgFileQuote          = "reply_to applies to rooms: a file sent through a connection is not a quote; to answer a message from a connection with a file, give its connection and chat"
+	msgFileDocumentRoom   = "as_document applies to a connection: a room keeps every file as it is, so send it to the room without as_document, or give connection and chat to send it to a chat as a document"
 )
 
 // sendFile uploads a local file to a room, or sends it to a chat of a connection the AI operates
@@ -106,6 +107,7 @@ func (t *tools) sendFile(ctx context.Context, args json.RawMessage) (string, err
 		Path       string `json:"path"`
 		Caption    string `json:"caption"`
 		ReplyTo    string `json:"reply_to"`
+		AsDocument bool   `json:"as_document"`
 	}
 	if err := decode(args, &a); err != nil {
 		return "", err
@@ -126,13 +128,17 @@ func (t *tools) sendFile(ctx context.Context, args json.RawMessage) (string, err
 	if hasConnection && strings.TrimSpace(a.ReplyTo) != "" {
 		return "", errors.New(msgFileQuote)
 	}
+	if hasRoom && a.AsDocument {
+		return "", errors.New(msgFileDocumentRoom) // AD-02: nothing is read or uploaded
+	}
 	f, err := openFile(a.Path)
 	if err != nil {
 		return "", err
 	}
 	defer func() { _ = f.f.Close() }()
 	if hasConnection {
-		return t.sendFileToChat(ctx, f, strings.TrimSpace(a.Connection), strings.TrimSpace(a.Chat), a.Caption)
+		msg := dto.SendToChatRequest{Text: a.Caption, AsDocument: a.AsDocument}
+		return t.sendFileToChat(ctx, f, strings.TrimSpace(a.Connection), strings.TrimSpace(a.Chat), msg)
 	}
 	return t.sendFileToRoom(ctx, f, a.Room, dto.PostMessageRequest{Text: a.Caption, ReplyTo: a.ReplyTo})
 }
@@ -207,12 +213,12 @@ func (t *tools) dropUpload(ctx context.Context, id string) {
 	}
 }
 
-// sendFileToChat sends f to a chat of a connection: in one multipart request when it is small, else
-// through an upload session created for the connection, which the server refuses before any chunk is
-// sent when the platform could not take the file (LF-05), and whose id the send then attaches (LF-04).
-func (t *tools) sendFileToChat(ctx context.Context, f localFile, connection, chat, caption string) (string, error) {
+// sendFileToChat sends f to a chat of a connection, with the caption and as_document of msg: in one
+// multipart request when it is small, else through an upload session created for the connection, which
+// the server refuses before any chunk is sent when the platform could not take the file (LF-05), and
+// whose id the send then attaches (LF-04).
+func (t *tools) sendFileToChat(ctx context.Context, f localFile, connection, chat string, msg dto.SendToChatRequest) (string, error) {
 	path := "agent/connections/" + url.PathEscape(connection) + "/chats/" + url.PathEscape(chat) + "/messages"
-	msg := dto.SendToChatRequest{Text: caption}
 	if f.size > multipartMaxBytes {
 		id, err := t.uploadFile(ctx, f, connection)
 		switch {
@@ -300,7 +306,7 @@ func (t *tools) postChatUpload(ctx context.Context, path string, msg dto.SendToC
 		if f.size > legacyRequestBytes {
 			return "", connectionTooLarge(f, legacyRequestBytes)
 		}
-		resp, err := t.postMultipart(ctx, path, dto.SendToChatRequest{Text: msg.Text}, f)
+		resp, err := t.postMultipart(ctx, path, dto.SendToChatRequest{Text: msg.Text, AsDocument: msg.AsDocument}, f)
 		if err != nil {
 			return "", fileError(err, f)
 		}

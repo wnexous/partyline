@@ -306,7 +306,10 @@ none), and it is connected again as soon as the number is.
   platform that refuses it fails the tool with its reason and nothing sends it again. A large file is
   streamed, never held in memory, up to the platform's own limit (WhatsApp 512 MB unless
   `PARTYLINE_WHATSAPP_MAX_FILE_MB` says otherwise, at most 2 GB, Telegram bots 50 MB,
-  Discord 25 MB); a larger one is refused before it is uploaded. `react` with the
+  Discord 25 MB); a larger one is refused before it is uploaded. With `as_document: true` a photo or
+  video goes as a document, kept in its original quality instead of recompressed by WhatsApp or
+  Telegram, for a person who asked for the file "as a document" (connections only: a room keeps
+  every file as it is and the tool refuses the flag there). `react` with the
   id of a platform event puts the emoji on that message on WhatsApp, Telegram or Discord (once; a
   webhook connection answers `unsupported`).
 - **What the members see.** Every member of the organization sees the connection page: the operator,

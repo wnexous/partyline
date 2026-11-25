@@ -580,6 +580,31 @@ func TestSendMediaTypes(t *testing.T) {
 	}
 }
 
+// AD-01: a file sent as a document goes to /send/media as type "document" with its name, whatever its
+// MIME type, where without the flag a video and an image take the type of their MIME type.
+func TestSendMediaAsDocument(t *testing.T) {
+	f := newFakeEvolution(t)
+	c := newConnector(t, f)
+	file := func(name, mime string, asDocument bool) connectors.OutFile {
+		return connectors.OutFile{Name: name, Mime: mime, Size: 5, AsDocument: asDocument, Open: func() (io.ReadCloser, error) {
+			return io.NopCloser(strings.NewReader("bytes")), nil
+		}}
+	}
+	_, err := c.Send(context.Background(), connectors.Outbound{ChatID: ChatID(testInstance, groupJID), Files: []connectors.OutFile{
+		file("clip.mp4", "video/mp4", true), file("photo.jpg", "image/jpeg", true),
+		file("clip.mp4", "video/mp4", false), file("photo.jpg", "image/jpeg", false),
+	}})
+	require.NoError(t, err)
+	for _, want := range []struct{ typ, name string }{
+		{"document", "clip.mp4"}, {"document", "photo.jpg"}, {"video", "clip.mp4"}, {"image", "photo.jpg"},
+	} {
+		req := f.next("/send/media")
+		require.Equal(t, want.typ, req.Body["type"], want.name)
+		require.Equal(t, want.name, req.Body["filename"])
+		require.Equal(t, base64.StdEncoding.EncodeToString([]byte("bytes")), req.Body["url"])
+	}
+}
+
 // ACC-05: a send reports the id of every message it created, the text and each file, as the
 // platform reports each as a message of the account; a send that fails midway reports what exists.
 func TestSendReportsEveryCreatedMessage(t *testing.T) {

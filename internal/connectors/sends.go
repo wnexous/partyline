@@ -178,6 +178,9 @@ type SendFile struct {
 	// request is sent again, and the caller closes every reader it gets. What it reads from (a blob,
 	// a temporary file) stays until Send returns.
 	Open func() (io.ReadCloser, error)
+	// AsDocument asks the platform to take the file as a document, kept as it is, whatever its MIME
+	// type (AD-01).
+	AsDocument bool
 }
 
 // BytesFile is a SendFile whose content is data, for small files built in memory.
@@ -670,7 +673,7 @@ func outFile(f *SendFile) OutFile {
 	if mime == "" {
 		mime = "application/octet-stream"
 	}
-	return OutFile{Name: f.Name, Mime: mime, Size: f.Size, Open: f.Open}
+	return OutFile{Name: f.Name, Mime: mime, Size: f.Size, Open: f.Open, AsDocument: f.AsDocument}
 }
 
 // fail records that attempt number n did not send the message: the send waits for the next attempt

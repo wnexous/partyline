@@ -290,7 +290,10 @@ entre eles quando ele não informa), e volta a conectado assim que o número vol
   ferramenta falha com o motivo e nada envia de novo. Um arquivo grande vai em fluxo, nunca inteiro na
   memória, até o limite da própria plataforma (WhatsApp 512 MB, ou o que
   `PARTYLINE_WHATSAPP_MAX_FILE_MB` disser, no máximo 2 GB; bots do Telegram 50 MB, Discord 25 MB);
-  um maior é recusado antes de ser enviado. `react` com o id de um evento de plataforma põe
+  um maior é recusado antes de ser enviado. Com `as_document: true` uma foto ou um vídeo vai como
+  documento, na qualidade original em vez de recomprimido pelo WhatsApp ou pelo Telegram, para quem
+  pediu o arquivo "como documento" (só por conexão: uma sala guarda todo arquivo como ele é e a
+  ferramenta recusa a opção ali). `react` com o id de um evento de plataforma põe
   o emoji naquela mensagem no WhatsApp, no Telegram ou no Discord (uma única vez; uma conexão de
   webhook responde `unsupported`).
 - **O que os membros veem.** Todo membro da organização vê a página da conexão: o operador, as duas

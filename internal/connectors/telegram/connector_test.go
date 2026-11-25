@@ -439,6 +439,33 @@ func TestSendFiles(t *testing.T) {
 	require.Equal(t, "huge.png", f.next("sendDocument").FileName, "photos over 10 MiB go as documents")
 }
 
+// AD-01: a file sent as a document goes with sendDocument, a small JPEG and a video included, and asks
+// the Bot API not to detect its type; without the flag the JPEG goes with sendPhoto.
+func TestSendFilesAsDocument(t *testing.T) {
+	f := newFakeBotAPI(t)
+	c := newConnector(t, f)
+	file := func(name, mime string, asDocument bool) connectors.OutFile {
+		return connectors.OutFile{Name: name, Mime: mime, Size: 5, AsDocument: asDocument, Open: func() (io.ReadCloser, error) {
+			return io.NopCloser(strings.NewReader("bytes")), nil
+		}}
+	}
+	_, err := c.Send(context.Background(), connectors.Outbound{ChatID: strconv.Itoa(groupChat), Files: []connectors.OutFile{
+		file("photo.jpg", "image/jpeg", true), file("clip.mp4", "video/mp4", true), file("photo.jpg", "image/jpeg", false),
+	}})
+	require.NoError(t, err)
+
+	for _, name := range []string{"photo.jpg", "clip.mp4"} {
+		doc := f.next("sendDocument")
+		require.Equal(t, "document", doc.FileField)
+		require.Equal(t, name, doc.FileName)
+		require.Equal(t, "bytes", doc.FileBody)
+		require.Equal(t, "true", doc.Form["disable_content_type_detection"])
+	}
+	photo := f.next("sendPhoto")
+	require.Equal(t, "photo.jpg", photo.FileName)
+	require.NotContains(t, photo.Form, "disable_content_type_detection")
+}
+
 // Edge case: a send to a missing chat fails; the token never appears in errors.
 func TestErrorsNeverContainTheToken(t *testing.T) {
 	f := newFakeBotAPI(t)
