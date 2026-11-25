@@ -835,7 +835,8 @@ func (s *server) reactOnConnection(w http.ResponseWriter, r *http.Request, p aut
 // are Partyline's ids, as a platform event carries them (CID-16), or the address of a chat the connection
 // has not heard from (CID-31). The body is JSON with the text, or multipart with a caption and one file
 // (CID-32); either may attach one finished upload session of the AI instead (upload_ids, LF-04), for a
-// file larger than one request. A JSON body may ask a question: its quick replies are validated like a
+// file larger than one request; as_document sends that file as a document, kept as it is, and is 422
+// without a file (AD-01). A JSON body may ask a question: its quick replies are validated like a
 // room's, and the text that goes out is the text with the options numbered after it (QR-20), because a
 // chat renders no buttons. An AI that is a member of the
 // connection's organization and is not its operator is refused with 403 not_operator (CID-03); an AI that
@@ -864,7 +865,7 @@ func (s *server) agentConnectionSend(w http.ResponseWriter, r *http.Request, p a
 	}
 	in := connectors.SendInput{AgentID: p.AgentID, ConnectorID: connectionID, ChatID: r.PathValue("chat"),
 		Text: rooms.NumberedOptions(req.Text, req.QuickReplies)}
-	uploadIDs := req.UploadIDs
+	uploadIDs, asDocument := req.UploadIDs, req.AsDocument
 	if upload {
 		// A caption and a file, read after the AI is known to belong to the connection's organization (CID-32).
 		form, err := s.readConnectionUpload(r, connectionID)
@@ -872,9 +873,15 @@ func (s *server) agentConnectionSend(w http.ResponseWriter, r *http.Request, p a
 		if err != nil {
 			return err
 		}
-		in.Text, in.File, uploadIDs = form.text, form.file, form.uploadIDs
+		in.Text, in.File, uploadIDs, asDocument = form.text, form.file, form.uploadIDs, form.asDocument
+	}
+	if asDocument && in.File == nil && len(uploadIDs) == 0 {
+		return errDocumentNoFile
 	}
 	if len(uploadIDs) == 0 {
+		if in.File != nil {
+			in.File.AsDocument = asDocument
+		}
 		return s.sendOnConnection(w, r, p, in)
 	}
 	if in.File != nil || len(uploadIDs) > 1 {
@@ -892,6 +899,7 @@ func (s *server) agentConnectionSend(w http.ResponseWriter, r *http.Request, p a
 	if err != nil {
 		return err
 	}
+	file.AsDocument = asDocument
 	in.File = file
 	attempted, err = s.sendUpload(w, r, p, in, uploadIDs[0])
 	return err
@@ -899,6 +907,9 @@ func (s *server) agentConnectionSend(w http.ResponseWriter, r *http.Request, p a
 
 // errOneFile refuses a send through a connection that carries more than one file.
 var errOneFile = httpx.Invalid(map[string]string{"file": "send one file at a time"})
+
+// errDocumentNoFile refuses as_document on a send through a connection that carries no file (AD-01).
+var errDocumentNoFile = httpx.Invalid(map[string]string{"as_document": "applies to a file: send one with it, or leave as_document out"})
 
 // uploadedFile is the file of a finished upload session of p, read from the blob store as a stream by
 // the connector (LF-04).
@@ -925,10 +936,11 @@ func isMultipart(r *http.Request) bool {
 // connectionForm is the multipart body of a send through a connection. cleanup removes the temporary
 // file that holds the file part; it is safe to call whatever happened.
 type connectionForm struct {
-	text      string
-	file      *connectors.SendFile
-	uploadIDs []string
-	temp      string
+	text       string
+	file       *connectors.SendFile
+	uploadIDs  []string
+	asDocument bool
+	temp       string
 }
 
 func (f connectionForm) cleanup() {
@@ -976,7 +988,7 @@ func (s *server) readConnectionUpload(r *http.Request, connectionID string) (for
 			if err := json.Unmarshal(data, &req); err != nil {
 				return form, httpx.NewError(http.StatusBadRequest, dto.ErrorCodeInvalid, "malformed message part")
 			}
-			form.text, form.uploadIDs = req.Text, req.UploadIDs
+			form.text, form.uploadIDs, form.asDocument = req.Text, req.UploadIDs, req.AsDocument
 		case dto.MultipartFileField:
 			if form.file != nil {
 				return form, errOneFile

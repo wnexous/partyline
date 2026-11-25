@@ -174,6 +174,10 @@ type SendToChatRequest struct {
 	// caption (LF-04): for a file larger than one request. The upload is used up by the send, whether
 	// the platform takes the file or not, since a file sent through a connection is sent once (CID-32).
 	UploadIDs []string `json:"upload_ids,omitempty"`
+	// AsDocument sends the file of the send as a document, kept byte for byte with its name, whatever its
+	// MIME type, where the platform would recompress a photo, a video or an audio (AD-01). It needs a
+	// file: a send without one is 422.
+	AsDocument bool `json:"as_document,omitempty"`
 }
 
 // PlatformSendResult is what an AI is told about an answer it sent through its connection (CID-15,
