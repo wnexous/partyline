@@ -545,7 +545,7 @@ func TestToolSendFileSchemaHasConnectionAndChat(t *testing.T) {
 		for name := range props {
 			names = append(names, name)
 		}
-		require.ElementsMatch(t, []string{"room", "connection", "chat", "path", "caption", "reply_to"}, names)
+		require.ElementsMatch(t, []string{"room", "connection", "chat", "path", "caption", "reply_to", "as_document"}, names)
 		require.Equal(t, []any{"path"}, schema["required"])
 		require.Contains(t, props["connection"].(map[string]any)["description"], "connection_id")
 		require.Contains(t, props["chat"].(map[string]any)["description"], "address")
