@@ -65,6 +65,6 @@ JSON body with `upload_ids` or in the `message` part of a multipart send).
 
 | Requirement | Code | Tests |
 | --- | --- | --- |
-| AD-01 | `internal/channel/tools.go`, `internal/channel/sendfile.go`, `internal/api/dto/connectors.go`, `internal/api/agent_handlers.go`, `internal/connectors/sends.go`, `internal/connectors/connector.go`, `internal/connectors/whatsapp/connector.go`, `internal/connectors/telegram/connector.go` | `TestSendMediaAsDocument` (whatsapp), `TestSendFilesAsDocument` (telegram), `TestSendFileAsDocument*` (channel), `TestAgentConnectionFileAsDocument*` (api), `TestSendFileAsDocument` (connectors) |
+| AD-01 | `internal/channel/tools.go`, `internal/channel/sendfile.go`, `internal/api/dto/connectors.go`, `internal/api/agent_handlers.go`, `internal/connectors/sends.go`, `internal/connectors/connector.go`, `internal/connectors/whatsapp/connector.go`, `internal/connectors/telegram/connector.go` | `TestSendMediaAsDocument` (whatsapp), `TestSendFilesAsDocument` (telegram), `TestSendFileAsDocument` (connectors), `TestAgentConnectionFileAsDocument`, `TestAgentConnectionFileAsDocumentNeedsAFile` (api), `TestSendFileAsDocumentThroughAConnection` (channel) |
 | AD-02 | `internal/channel/sendfile.go` | `TestSendFileAsDocumentRoomRefused` (channel) |
-| AD-03 | `internal/channel/tools.go`, docs | `TestSendFileToolSchemaAsDocument` (channel) |
+| AD-03 | `internal/channel/tools.go`, `internal/channel/instructions.go`, `docs/agents.md`, `docs/api.md`, `README.md`, `README.pt-BR.md` | `TestSendFileToolSchemaAsDocument`, `TestToolSendFileSchemaHasConnectionAndChat`, `TestOmpInstructions` (channel) |
