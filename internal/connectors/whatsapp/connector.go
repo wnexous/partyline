@@ -687,7 +687,11 @@ func (c *Connector) sendMedia(ctx context.Context, inst, jid string, f connector
 		return "", err
 	}
 	// The fields but the content, whose keys json sorts: "url" goes last, after them.
-	head, err := json.Marshal(map[string]any{"number": jid, "type": mediaType(f.Mime), "filename": f.Name, "caption": ""})
+	typ := mediaType(f.Mime)
+	if f.AsDocument {
+		typ = "document" // kept byte for byte, where an image, a video or an audio is recompressed (AD-01)
+	}
+	head, err := json.Marshal(map[string]any{"number": jid, "type": typ, "filename": f.Name, "caption": ""})
 	if err != nil {
 		return "", err
 	}

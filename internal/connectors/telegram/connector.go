@@ -431,7 +431,8 @@ func chatKind(t string) string {
 
 // Send sends the text with sendMessage in parts of at most 4,096 characters, the first
 // replying to ReplyToID (TG-02), then each file with sendPhoto (JPEG, PNG or WebP up to
-// 10 MiB) or sendDocument (TG-03). It returns the id of the first sent message.
+// 10 MiB) or sendDocument (TG-03); a file sent as a document always goes with sendDocument (AD-01).
+// It returns the id of the first sent message.
 func (c *Connector) Send(ctx context.Context, m connectors.Outbound) (string, error) {
 	var reply map[string]any
 	if id, err := strconv.ParseInt(m.ReplyToID, 10, 64); err == nil {
@@ -466,8 +467,11 @@ func (c *Connector) Send(ctx context.Context, m connectors.Outbound) (string, er
 	return first, nil
 }
 
-// isPhoto reports whether the file goes with sendPhoto.
+// isPhoto reports whether the file goes with sendPhoto: never one sent as a document (AD-01).
 func isPhoto(f connectors.OutFile) bool {
+	if f.AsDocument {
+		return false
+	}
 	switch f.Mime {
 	case "image/jpeg", "image/png", "image/webp":
 		return f.Size <= MaxPhoto
@@ -490,6 +494,10 @@ func (c *Connector) sendFile(ctx context.Context, chatID string, f connectors.Ou
 	if reply != nil {
 		data, _ := json.Marshal(reply)
 		_ = w.WriteField("reply_parameters", string(data))
+	}
+	if f.AsDocument {
+		// The Bot API would otherwise make a video or an animation of a document it recognizes (AD-01).
+		_ = w.WriteField("disable_content_type_detection", "true")
 	}
 	if _, err := w.CreateFormFile(field, f.Name); err != nil {
 		return message{}, err

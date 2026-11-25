@@ -217,6 +217,10 @@ type OutFile struct {
 	Mime string
 	Size int64
 	Open func() (io.ReadCloser, error)
+	// AsDocument sends the file as a document (a file kept byte for byte, with its name) whatever its
+	// MIME type, where the platform would otherwise send a photo, a video or an audio it recompresses
+	// (AD-01). A platform whose files are always documents ignores it.
+	AsDocument bool
 }
 
 // ChatInfo is a chat listed by a ChatLister.
