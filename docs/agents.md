@@ -648,6 +648,10 @@ Each is left out when it is not known (a quote of a message from before the conn
 does not carry the quoted message, or a Discord message that was deleted), and a quote never holds
 a message back. A reaction, an edit or a delete is not a quote and carries none of them.
 
+When someone sends a photo or video in HD, WhatsApp delivers a compressed copy first and then the
+original-quality copy; Partyline delivers that second one too, as its own event with its file, its text
+starting "(original-quality copy of an earlier message)" and `reply_to` naming the first copy.
+
 A WhatsApp album (several photos or videos sent at once) arrives as one platform event per photo or
 video, in the order WhatsApp sent them, each with its own `message_id` (so `reply` quotes that
 photo), its caption (usually only the first one has it) and its file as an attachment. The album's

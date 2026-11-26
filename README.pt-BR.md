@@ -260,7 +260,8 @@ entre eles quando ele não informa), e volta a conectado assim que o número vol
   quantas foram descartadas na próxima vez que conectar ou consultar. Uma mensagem que a plataforma
   entrega duas vezes entra na fila uma só vez. Um álbum do WhatsApp (várias fotos ou vídeos enviados
   de uma vez) chega como um evento por foto ou vídeo, na ordem enviada, cada um com sua legenda e
-  seu arquivo, e um contato do WhatsApp compartilhado chega com os números do seu cartão no texto.
+  seu arquivo; a cópia em HD de uma foto ou vídeo chega como um evento próprio com o arquivo na
+  qualidade original; e um contato do WhatsApp compartilhado chega com os números do seu cartão no texto.
   Uma mensagem que cita outra (uma resposta no WhatsApp, Telegram ou Discord) traz também
   `reply_to`, o id da mensagem citada quando o Partyline a conhece (um dos envios da IA ou um evento
   anterior do chat), `quoted`, uma prévia de no máximo 200 caracteres tirada do próprio evento da

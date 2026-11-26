@@ -194,8 +194,16 @@ func content(p *Parsed, root map[string]json.RawMessage) bool {
 	inline := stripDataURL(str(root["base64"]))
 	msg, wrap := unwrap(root)
 	if wrap.child && wrap.assoc != associationNone && wrap.assoc != associationUnknown && wrap.assoc != associationMediaAlbum {
-		// The better copy of a photo or video already delivered, not a message of its own (CID-29).
-		in.Kind, in.Text = string(dto.MessageKindUnknown), "(unsupported message)"
+		// The better copy of a photo or video already delivered (the HD upload): delivered with its
+		// file, which is the original quality, and named as the copy of the earlier message (HD-01).
+		if !media(p, msg, inline) {
+			in.Kind, in.Text = string(dto.MessageKindUnknown), "(unsupported message)"
+			return true
+		}
+		in.Text = strings.TrimSpace(hdCopyNote + " " + in.Text)
+		if in.ReplyToID == "" {
+			in.ReplyToID = wrap.parent
+		}
 		return true
 	}
 	in.ReplyToID = quotedID(msg)
@@ -211,18 +219,7 @@ func content(p *Parsed, root map[string]json.RawMessage) bool {
 		in.Kind, in.Text = string(dto.MessageKindText), str(node["text"])
 		return true
 	}
-	for _, mk := range mediaKinds {
-		node := obj(msg[mk.node])
-		if node == nil {
-			continue
-		}
-		in.Kind, in.Text = string(mk.kind), str(node["caption"])
-		ref := &MediaRef{Name: str(node["fileName"]), Mime: str(node["mimetype"]), Size: num(node["fileLength"]), Inline: inline}
-		if ref.Name == "" {
-			ref.Name = string(mk.kind) + extension(ref.Mime)
-		}
-		ref.Message, _ = json.Marshal(map[string]json.RawMessage{mk.node: msg[mk.node]})
-		p.Media = ref
+	if media(p, msg, inline) {
 		return true
 	}
 	if node := obj(msg["reactionMessage"]); node != nil {
@@ -305,6 +302,8 @@ type wrapping struct {
 	// assoc is the type of association the message or an envelope around its content states (the
 	// outermost one that states any), or associationNone.
 	assoc int
+	// parent is the platform id of the message the association attaches this one to, when it says.
+	parent string
 }
 
 // contactsText is the text of a message that shares contacts (CID-30): who they are and the numbers
@@ -371,10 +370,12 @@ func (w *wrapping) state(msg map[string]json.RawMessage) {
 	if w.assoc != associationNone {
 		return
 	}
-	raw := obj(obj(msg["messageContextInfo"])["messageAssociation"])["associationType"]
+	assoc := obj(obj(msg["messageContextInfo"])["messageAssociation"])
+	raw := assoc["associationType"]
 	if len(raw) == 0 {
 		return
 	}
+	w.parent = keyID(assoc["parentMessageKey"])
 	var n int
 	if json.Unmarshal(raw, &n) == nil {
 		w.assoc = n
@@ -617,4 +618,28 @@ func num(raw json.RawMessage) int64 {
 	}
 	n, _ = strconv.ParseInt(str(raw), 10, 64)
 	return n
+}
+
+// hdCopyNote starts the text of the better copy of a photo or video already delivered (HD-01).
+const hdCopyNote = "(original-quality copy of an earlier message)"
+
+// media fills kind, caption and the file of a photo, video, audio, document or sticker message; it reports
+// false when msg holds none.
+func media(p *Parsed, msg map[string]json.RawMessage, inline string) bool {
+	in := &p.Inbound
+	for _, mk := range mediaKinds {
+		node := obj(msg[mk.node])
+		if node == nil {
+			continue
+		}
+		in.Kind, in.Text = string(mk.kind), str(node["caption"])
+		ref := &MediaRef{Name: str(node["fileName"]), Mime: str(node["mimetype"]), Size: num(node["fileLength"]), Inline: inline}
+		if ref.Name == "" {
+			ref.Name = string(mk.kind) + extension(ref.Mime)
+		}
+		ref.Message, _ = json.Marshal(map[string]json.RawMessage{mk.node: msg[mk.node]})
+		p.Media = ref
+		return true
+	}
+	return false
 }

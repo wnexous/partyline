@@ -276,7 +276,8 @@ none), and it is connected again as soon as the number is.
   nobody acknowledged is deleted after 7 days, and an AI keeps at most 5,000: the oldest go first.
   The AI is told how many were dropped the next time it connects or polls. A message the platform
   delivers twice is queued once. A WhatsApp album (several photos or videos sent at once) arrives as
-  one event per photo or video, in the order sent, each with its caption and its file, and a shared
+  one event per photo or video, in the order sent, each with its caption and its file; the HD copy
+  of a photo or video arrives as an event of its own with the original-quality file; and a shared
   WhatsApp contact arrives with the numbers of its card in the text. A message that quotes another
   (a WhatsApp, Telegram or Discord reply) also carries `reply_to`, the id of the quoted message when
   Partyline knows it (one of the AI's sends or an earlier event of the chat), `quoted`, a preview of
