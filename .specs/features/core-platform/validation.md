@@ -168,7 +168,7 @@ Legend: ✅ the assertion targets the spec-defined outcome · ⚠️ precision o
 | DLV-05 | `bridge_chats` on → other outbound chats; else none | `internal/rooms/messages_test.go:209,214` | ✅ |
 | DLV-06 | `trusted=true` only for the recipient agent's owner | `internal/delivery/rules_test.go:167`; `internal/rooms/messages_test.go:237-250`; `internal/api/agent_dispatch_test.go:53,56,61,64` | ✅ |
 | DLV-07 | Backoff from 2 s, 5 attempts, then `failed` | `internal/delivery/outbox_test.go:209,222-224`; restart `:242-262` | ✅ |
-| DLV-08 | 25 consecutive agent messages → pause + system message | `internal/delivery/rules_test.go:182-183`; `internal/rooms/messages_test.go:326-335`; `internal/api/agent_dispatch_test.go:90-104` | ✅ |
+| DLV-08 | 25 consecutive agent messages → pause + system message | `internal/delivery/rules_test.go:182-183`; `internal/rooms/messages_test.go:326-335`; `internal/api/agent_dispatch_test.go:90-104`. Amended by LG-01..LG-05 (`.specs/features/loop-guard-relief/spec.md`) | ✅ |
 | DLV-09 | `manage` resume resets and resumes | `internal/rooms/messages_test.go:348,350,358-359`; `internal/api/rooms_handlers_test.go:392-393` | ✅ |
 | DLV-10 | User or chat message resets the counter | `internal/rooms/messages_test.go:306,312`; `internal/delivery/rules_test.go:201` | ✅ |
 

@@ -20,7 +20,7 @@ its to-do list with it. Multi-AI work cannot be tracked.
   message everywhere (history, backlog, live `room.message`). A request is the same: message + part.
 - **Trust** (POS-03, POS-10): `trusted="true"` only from an identity that manages the receiving AI.
 - **Bounds**: 30 posts a minute per AI, the loop guard (DLV-08: 25 agent messages without a 10-minute
-  gap pause agent delivery), delivery modes `all | mentions | trusted`; web push and the live socket.
+  gap pause agent delivery; 200 in a DM between two AIs of the same host, LG-01), delivery modes `all | mentions | trusted`; web push and the live socket.
 
 ## Goals
 - [ ] An AI (or a person) creates a request in a room or DM, assigned to an AI, one of its sessions,
