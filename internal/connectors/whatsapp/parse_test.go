@@ -385,10 +385,11 @@ func TestParseAssociatedChildMessagesThatAreNotAlbumItems(t *testing.T) {
 		`10`, `"HD_IMAGE_DUAL_UPLOAD"`, `5`, `"HD_VIDEO_DUAL_UPLOAD"`, `12`, `"MOTION_PHOTO"`, `19`, `21`, `22`, `99`, `"SOMETHING_NEW"`,
 	} {
 		for name, build := range map[string]func(node, typ string) string{"beside": wrappedItem, "inside": wrappedItemInside} {
+			// HD-01: the better copy is delivered with its file (the original quality), named as such.
 			p := parse(t, frame(t, testInstance, groupInfo("HD1"), build(node, typ)))
-			require.Equal(t, string(dto.MessageKindUnknown), p.Inbound.Kind, "%s/%s", name, typ)
-			require.Equal(t, "(unsupported message)", p.Inbound.Text)
-			require.Nil(t, p.Media, "no file is fetched for it")
+			require.Equal(t, string(dto.MessageKindImage), p.Inbound.Kind, "%s/%s", name, typ)
+			require.True(t, strings.HasPrefix(p.Inbound.Text, hdCopyNote), "%s/%s: %q", name, typ, p.Inbound.Text)
+			require.NotNil(t, p.Media, "its file is fetched")
 		}
 	}
 
@@ -456,4 +457,22 @@ func TestParseManyContactsIsBounded(t *testing.T) {
 	p := parse(t, frame(t, testInstance, dmInfo("MANY"), `{"contactsArrayMessage":{"contacts":[`+strings.Join(contacts, ",")+`]}}`))
 	require.Equal(t, maxContacts, strings.Count(p.Inbound.Text, "Person "))
 	require.True(t, strings.HasSuffix(p.Inbound.Text, "; and 7 more"), p.Inbound.Text[len(p.Inbound.Text)-30:])
+}
+
+// HD-01: the original-quality copy of a video names the message it copies (reply_to) and keeps its
+// caption after the note; a wrapped child that holds no media stays unsupported.
+func TestHDCopyIsDeliveredWithItsFile(t *testing.T) {
+	video := `"videoMessage":{"mimetype":"video/mp4","fileLength":123456,"caption":"party"}`
+	assoc := `"messageContextInfo":{"messageAssociation":{"associationType":"HD_VIDEO_DUAL_UPLOAD","parentMessageKey":{"ID":"PARENT1"}}}`
+	p := parse(t, frame(t, testInstance, groupInfo("HD2"), `{"associatedChildMessage":{"message":{`+video+`}},`+assoc+`}`))
+	require.Equal(t, string(dto.MessageKindVideo), p.Inbound.Kind)
+	require.Equal(t, hdCopyNote+" party", p.Inbound.Text)
+	require.Equal(t, "PARENT1", p.Inbound.ReplyToID)
+	require.NotNil(t, p.Media)
+	require.Equal(t, "video/mp4", p.Media.Mime)
+
+	p = parse(t, frame(t, testInstance, groupInfo("HD3"), `{"associatedChildMessage":{"message":{"someNewMessage":{"x":1}}},`+assoc+`}`))
+	require.Equal(t, string(dto.MessageKindUnknown), p.Inbound.Kind)
+	require.Equal(t, "(unsupported message)", p.Inbound.Text)
+	require.Nil(t, p.Media)
 }
