@@ -74,7 +74,12 @@ func newFakeEvolution(t *testing.T) *fakeEvolution {
 	mux.HandleFunc("GET /instance/all", f.rest(globalKey, func(request) any {
 		f.mu.Lock()
 		defer f.mu.Unlock()
-		return map[string]any{"data": f.instances}
+		// A copy: the answer is encoded after the lock is released, while setInstance may change the maps.
+		list := make([]map[string]any, len(f.instances))
+		for i, inst := range f.instances {
+			list[i] = maps.Clone(inst)
+		}
+		return map[string]any{"data": list}
 	}))
 	mux.HandleFunc("GET /group/list", f.rest("", func(r request) any {
 		name := map[string]string{acmeToken: "Acme Team", otherToken: "Other Team"}[r.APIKey]
