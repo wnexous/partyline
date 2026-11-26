@@ -536,6 +536,21 @@ func (g *Gateway) pushUpdateToSelfSessions(agentID string, targets []string, t d
 // Online reports whether the agent is connected.
 func (g *Gateway) Online(agentID string) bool { return g.d.Presence.Online(agentID) }
 
+// Notice queues, without blocking, a notice about a room for every live session of the AI, the principal and each
+// labelled one (LG-03): the loop guard paused the room, and any of them may be waiting for an answer there. A
+// notice is no message: it is not stored, never acknowledged and never replayed. It reports whether a session
+// received it.
+func (g *Gateway) Notice(agentID string, room dto.RoomRef, text string) bool {
+	frame := dto.AgentNoticeFrame{Type: dto.AgentFrameTypeNotice, Room: room, Text: text}
+	delivered := false
+	for _, l := range g.d.Presence.Sessions(agentID) {
+		if c := g.labelConn(agentID, l.Label); c != nil && c.enqueue(outbound{typ: dto.AgentFrameTypeNotice, notice: frame}) {
+			delivered = true
+		}
+	}
+	return delivered
+}
+
 // ServeHTTP upgrades a request authenticated by an agent token.
 func (g *Gateway) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	p, ok := authn.PrincipalFrom(r.Context())
@@ -868,6 +883,8 @@ type outbound struct {
 	typ  dto.AgentFrameType
 	msg  dto.AgentMessage
 	copy bool
+	// notice is the frame of a live notice (typ AgentFrameTypeNotice, LG-03); msg is empty then.
+	notice dto.AgentNoticeFrame
 }
 
 // conn is one agent connection; it is the agent's Session in Presence.
@@ -1013,6 +1030,8 @@ func framed(o outbound) any {
 		return dto.AgentMessageEditedFrame{Type: o.typ, AgentMessage: o.msg}
 	case dto.AgentFrameTypeMessageDeleted:
 		return dto.AgentMessageDeletedFrame{Type: o.typ, AgentMessage: o.msg}
+	case dto.AgentFrameTypeNotice:
+		return o.notice
 	}
 	return dto.AgentMessageFrame{Type: dto.AgentFrameTypeMessage, AgentMessage: o.msg}
 }

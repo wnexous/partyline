@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"errors"
+	"fmt"
 	"log/slog"
 	"time"
 
@@ -25,6 +26,9 @@ type AgentPusher interface {
 	// session labels the text addressed before and after the change, "" for the principal: the gateway also
 	// follows every delivery row the message has (SN-09).
 	PushUpdate(agentID string, targets []string, t dto.AgentFrameType, m dto.AgentMessage) bool
+	// Notice queues, without blocking, a notice about a room for every live session of the agent (LG-03). It is
+	// no message: it is not stored, acknowledged nor replayed.
+	Notice(agentID string, room dto.RoomRef, text string) bool
 }
 
 // MessageLoader renders a stored message as agents receive it.
@@ -56,7 +60,8 @@ const DefaultTranscriptHold = 60 * time.Second
 // computed for each receiving agent: true when the author manages it (its host or a user instructor)
 // (SR2-07), decided when the message is dispatched, with one read of each organization's chart for
 // the whole dispatch. Rooms
-// whose agent delivery is paused by the loop guard get no pushes (DLV-08). Offline agents
+// whose agent delivery is paused by the loop guard get no pushes (DLV-08), except the agent message that reached
+// the limit (LG-05); their AI members with a live session get a notice instead (LG-03). Offline agents
 // receive the message from their backlog when they reconnect.
 //
 // It also tells the same agents that a message was edited or deleted (EDT-07, DLT-07): the agents whose
@@ -161,6 +166,11 @@ func (d *AgentDispatcher) handle(ctx context.Context, e events.Event, now time.T
 		if h := d.holds[e.RoomID]; h != nil && h.created.MessageID == e.MessageID && !d.pending(ctx, e.MessageID) {
 			d.release(ctx, e.RoomID)
 		}
+	case events.AgentsPaused:
+		// A notice, not a message: it neither waits behind a held message nor needs the room's order.
+		if err := d.notifyPaused(ctx, e); err != nil && ctx.Err() == nil {
+			d.o.Logger.Error("agent pause notice failed", "room_id", e.RoomID, "err", err)
+		}
 	case events.Lagged:
 		d.o.Logger.Warn("agent dispatcher lagged; agents recover missed messages on reconnect")
 		// A transcript event may be among the missed ones: the rows tell.
@@ -250,7 +260,8 @@ type selfTarget struct {
 // audienceOf finds the sessions a message of the room is dispatched to. prevText is the text of an
 // edit or a delete before the change, which may address a sibling the message no longer names
 // (SESS-39), and is empty for a new message. ok is false when there is nobody to tell: the room or the
-// message is gone, the loop guard paused the room (DLV-08), or neither another AI member nor a session
+// message is gone, the loop guard paused the room (DLV-08) and the message is not the one that reached the limit
+// (LG-05), or neither another AI member nor a session
 // of the author AI is a target.
 func (d *AgentDispatcher) audienceOf(ctx context.Context, roomID, messageID, prevText string, update bool) (a audience, ok bool, err error) {
 	q := d.o.Store.R()
@@ -258,7 +269,7 @@ func (d *AgentDispatcher) audienceOf(ctx context.Context, roomID, messageID, pre
 	if errors.Is(err, sql.ErrNoRows) {
 		return a, false, nil // deleted meanwhile
 	}
-	if err != nil || a.room.AgentsPaused {
+	if err != nil || (a.room.AgentsPaused && update) {
 		return a, false, err
 	}
 	a.view, err = q.GetMessageView(ctx, messageID)
@@ -267,6 +278,9 @@ func (d *AgentDispatcher) audienceOf(ctx context.Context, roomID, messageID, pre
 	}
 	if err != nil {
 		return a, false, err
+	}
+	if a.room.AgentsPaused && !delivered(a.view) {
+		return a, false, nil
 	}
 	rows, err := q.ListRoomMembers(ctx, roomID)
 	if err != nil {
@@ -293,6 +307,13 @@ func (d *AgentDispatcher) audienceOf(ctx context.Context, roomID, messageID, pre
 	// text addresses no sibling (SN-09); the gateway finds those rows.
 	selfAuthored := a.view.AuthorKind == string(dto.AuthorKindAgent) && a.view.AuthorID != ""
 	return a, len(a.pushes) > 0 || len(a.self) > 0 || (update && selfAuthored), nil
+}
+
+// delivered reports whether a new message of a room whose agent delivery the loop guard holds is still pushed:
+// only an agent message written before the pause, which is the one that reached the limit (LG-05). Every message
+// written during the pause is held (DLV-08), and so is any message of another author.
+func delivered(view db.MessageView) bool {
+	return view.AuthorKind == string(dto.AuthorKindAgent) && view.DuringPause == 0
 }
 
 // selfTargets returns the sessions of the AI that wrote a message that its text addresses
@@ -380,6 +401,46 @@ func (d *AgentDispatcher) dispatch(ctx context.Context, e events.MessageCreated)
 		}
 		author := a.self[0].agentID
 		d.o.Agents.Push(author, targets, dto.AgentMessage{Room: refs.of(author), Trusted: true, Message: msg})
+	}
+	return nil
+}
+
+// PausedNotice is the notice every AI member of a room with a live session gets when the loop guard pauses the
+// room's agent delivery after limit agent messages in a row (LG-03).
+func PausedNotice(limit int) string {
+	return fmt.Sprintf("Agent delivery in this room is paused: the AIs posted %d messages in a row without a person "+
+		"writing and without a 10-minute pause. Messages posted here from now on are stored and shown to people, but "+
+		"NOT delivered to the other AIs. A person who can see the room must resume it (Resume in the app); until then "+
+		"do not wait for answers from the other AIs here.", limit)
+}
+
+// notifyPaused tells every AI member of the room that has a live session that the loop guard paused the room
+// (LG-03), whatever its delivery mode: it is about every message the AI would send or wait for there. An AI
+// offline then gets nothing extra; its own post answers say the room is paused (LG-02).
+func (d *AgentDispatcher) notifyPaused(ctx context.Context, e events.AgentsPaused) error {
+	q := d.o.Store.R()
+	room, err := q.GetRoom(ctx, e.RoomID)
+	if errors.Is(err, sql.ErrNoRows) {
+		return nil // deleted meanwhile
+	}
+	if err != nil || !room.AgentsPaused {
+		return err // resumed meanwhile: nothing to tell
+	}
+	rows, err := q.ListRoomMembers(ctx, e.RoomID)
+	if err != nil {
+		return err
+	}
+	refs, err := roomRefs(ctx, q, room)
+	if err != nil {
+		return err
+	}
+	text := PausedNotice(e.Limit)
+	for _, r := range rows {
+		id := r.RoomMember.MemberID
+		if r.RoomMember.Kind != string(dto.MemberKindAgent) || !d.o.Agents.Online(id) {
+			continue
+		}
+		d.o.Agents.Notice(id, refs.of(id), text)
 	}
 	return nil
 }

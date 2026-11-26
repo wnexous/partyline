@@ -50,6 +50,14 @@ type recordingPusher struct {
 	live    func(agentID, label string) bool
 	pushes  []pushCall
 	updates []updateCall
+	notices []noticeCall
+}
+
+// noticeCall is one notice the recording pusher received (LG-03).
+type noticeCall struct {
+	agentID string
+	room    dto.RoomRef
+	text    string
 }
 
 func newRecordingPusher(online ...string) *recordingPusher {
@@ -93,6 +101,19 @@ func (r *recordingPusher) PushUpdate(agentID string, targets []string, t dto.Age
 		r.updates = append(r.updates, updateCall{agentID: agentID, target: target, typ: t, message: m})
 	}
 	return true
+}
+
+func (r *recordingPusher) Notice(agentID string, room dto.RoomRef, text string) bool {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.notices = append(r.notices, noticeCall{agentID: agentID, room: room, text: text})
+	return true
+}
+
+func (r *recordingPusher) noticeCalls() []noticeCall {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	return append([]noticeCall(nil), r.notices...)
 }
 
 func (r *recordingPusher) calls() []pushCall {
@@ -340,4 +361,42 @@ func TestDispatchSkipsASelfTargetInAPausedRoom(t *testing.T) {
 	}))
 	f.postAs(t, "atlas", "@atlas:wt do X")
 	f.rec.expectNone(t)
+}
+
+// LG-05: the agent message that reaches the limit is still delivered to the other AI; the pause holds the
+// messages after it. LG-03: every AI member with a live session is told the room was paused, once, by a notice
+// that names the room; an offline AI member gets none.
+func TestDispatchDeliversTheMessageThatPausesAndNoticesLiveAIs(t *testing.T) {
+	f := newDispatcherFixture(t, "atlas", "builder", "scout")
+	f.rec.mu.Lock()
+	delete(f.rec.online, f.ids["scout"]) // a member that is offline when the room pauses
+	f.rec.mu.Unlock()
+	names := []string{"atlas", "builder"}
+	var last dto.Message
+	for i := 0; i < delivery.DefaultLoopLimit; i++ {
+		last = f.postAs(t, names[i%2], "ping")
+	}
+	want := make([]pushCall, delivery.DefaultLoopLimit)
+	for i := range want {
+		want[i] = pushCall{agentID: f.ids[names[(i+1)%2]]}
+	}
+	got := f.rec.expect(t, want)
+	require.Equal(t, last.ID, got[len(got)-1].message.Message.ID, "the 25th message reached the other AI")
+
+	require.Eventually(t, func() bool { return len(f.rec.noticeCalls()) == 2 }, 5*time.Second, 5*time.Millisecond)
+	notices := f.rec.noticeCalls()
+	var told []string
+	for _, n := range notices {
+		told = append(told, n.agentID)
+		require.Equal(t, f.room.ID, n.room.ID)
+		require.Equal(t, delivery.PausedNotice(delivery.DefaultLoopLimit), n.text)
+		require.Contains(t, n.text, "paused")
+		require.Contains(t, n.text, "25 messages in a row")
+	}
+	require.ElementsMatch(t, []string{f.ids["atlas"], f.ids["builder"]}, told, "the live AIs, not the offline one")
+
+	f.postAs(t, "builder", "the 26th") // held: the room is paused
+	f.post(t, "a person writes")       // held too, until someone resumes
+	f.rec.expectNoMore(t, delivery.DefaultLoopLimit)
+	require.Len(t, f.rec.noticeCalls(), 2, "the notice is told once")
 }
