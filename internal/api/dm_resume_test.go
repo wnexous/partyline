@@ -2,6 +2,7 @@ package api_test
 
 import (
 	"context"
+	"encoding/json"
 	"net/http"
 	"testing"
 	"time"
@@ -64,10 +65,12 @@ func TestTheCreatorOfTwoAIsResumesTheirPausedDM(t *testing.T) {
 		{Kind: authn.KindAgent, UserID: alice.User.ID, AgentID: orion},
 		{Kind: authn.KindAgent, UserID: alice.User.ID, AgentID: atlas},
 	}
+	var pausing string // the 200th message, which paused the DM and is still delivered (LG-05)
 	for i := 1; i < delivery.SameHostLoopLimit; i++ {
 		m, err := env.App.Rooms.Post(context.Background(), ais[i%2], room, rooms.PostInput{Text: "ping"})
 		require.NoError(t, err)
 		require.Equal(t, i == delivery.SameHostLoopLimit-1, m.DeliveryPaused, "message %d", i+1)
+		pausing = m.ID
 	}
 	path := "/api/v1/rooms/" + room
 	got := roomOf(t, alice, room)
@@ -78,13 +81,19 @@ func TestTheCreatorOfTwoAIsResumesTheirPausedDM(t *testing.T) {
 	last := testkit.Decode[dto.Page[dto.Message]](alice.Get(path + "/messages?limit=1").RequireStatus(http.StatusOK))
 	require.Equal(t, dto.AuthorKindSystem, last.Items[0].AuthorKind, "the pause notice")
 
-	// Orion connects while the room is paused and gets no message, and what atlas says meanwhile is not pushed.
-	// The dispatcher tells the live AIs of the pause on its own goroutine (LG-03): when orion is already live by
-	// then it gets that notice, which is no message.
+	// Orion connects while the room is paused, and what atlas says meanwhile is not pushed. The dispatcher works
+	// on its own goroutine: when orion is live before it catches up, orion gets the 200th message, the one that
+	// paused the DM (LG-05), and the pause notice (LG-03), and nothing else.
 	live, resp := agent.DialAgent("orion")
 	require.NotNil(t, live, "upgrade refused: %d %s", resp.Status, resp.Body)
 	live.Welcome(wsWait)
 	for _, f := range live.Drain(300 * time.Millisecond) {
+		if f.Type == dto.AgentFrameTypeMessage {
+			var m dto.AgentMessageFrame
+			require.NoError(t, json.Unmarshal(f.Raw, &m))
+			require.Equal(t, pausing, m.Message.ID, "only the message that paused the DM")
+			continue
+		}
 		require.Equal(t, dto.AgentFrameTypeNotice, f.Type, "frame: %s", f.Raw)
 	}
 	asAtlas.Post("/api/v1/agent/rooms/"+room+"/messages", dto.PostMessageRequest{Text: "anyone there?"}).RequireStatus(http.StatusCreated)
@@ -109,9 +118,14 @@ func TestTheCreatorOfTwoAIsResumesTheirPausedDM(t *testing.T) {
 	// Delivery restarts: orion, live, gets what atlas says next. The dispatcher works on its own goroutine, so a
 	// message of the pause it was late with may come first.
 	next := testkit.Decode[dto.Message](asAtlas.Post("/api/v1/agent/rooms/"+room+"/messages", dto.PostMessageRequest{Text: "back"}).RequireStatus(http.StatusCreated))
-	pushed := live.Message(wsWait)
+	var pushed dto.AgentMessageFrame
 	for pushed.Message.ID != next.ID {
-		pushed = live.Message(wsWait)
+		f := live.Next(wsWait)
+		if f.Type == dto.AgentFrameTypeNotice {
+			continue // the pause notice, when the dispatcher was late with it
+		}
+		require.Equal(t, dto.AgentFrameTypeMessage, f.Type, "frame: %s", f.Raw)
+		require.NoError(t, json.Unmarshal(f.Raw, &pushed))
 	}
 	require.Equal(t, room, pushed.Room.ID)
 	require.Equal(t, dto.ConversationKindDM, pushed.Room.Kind)
