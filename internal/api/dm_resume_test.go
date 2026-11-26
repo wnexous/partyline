@@ -78,11 +78,15 @@ func TestTheCreatorOfTwoAIsResumesTheirPausedDM(t *testing.T) {
 	last := testkit.Decode[dto.Page[dto.Message]](alice.Get(path + "/messages?limit=1").RequireStatus(http.StatusOK))
 	require.Equal(t, dto.AuthorKindSystem, last.Items[0].AuthorKind, "the pause notice")
 
-	// Orion connects while the room is paused and gets nothing, and what atlas says meanwhile is not pushed.
+	// Orion connects while the room is paused and gets no message, and what atlas says meanwhile is not pushed.
+	// The dispatcher tells the live AIs of the pause on its own goroutine (LG-03): when orion is already live by
+	// then it gets that notice, which is no message.
 	live, resp := agent.DialAgent("orion")
 	require.NotNil(t, live, "upgrade refused: %d %s", resp.Status, resp.Body)
 	live.Welcome(wsWait)
-	live.ExpectNone(300 * time.Millisecond)
+	for _, f := range live.Drain(300 * time.Millisecond) {
+		require.Equal(t, dto.AgentFrameTypeNotice, f.Type, "frame: %s", f.Raw)
+	}
 	asAtlas.Post("/api/v1/agent/rooms/"+room+"/messages", dto.PostMessageRequest{Text: "anyone there?"}).RequireStatus(http.StatusCreated)
 	live.ExpectNone(300 * time.Millisecond)
 
