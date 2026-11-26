@@ -286,3 +286,17 @@ func TestLoopGuardSameHostDMLimit(t *testing.T) {
 	require.Equal(t, 7, custom.For(true).EffectiveLimit())
 	require.Equal(t, time.Minute, custom.For(true).QuietGap)
 }
+
+// LG-06: a guard turned off never pauses, however long the streak.
+func TestLoopGuardOffNeverPauses(t *testing.T) {
+	g := LoopGuard{Off: true}
+	s := LoopState{}
+	now := time.Unix(1_000_000, 0)
+	for i := 0; i < SameHostLoopLimit*2; i++ {
+		var paused bool
+		s, paused = g.Next(s, dto.AuthorKindAgent, now, now.Add(time.Second))
+		require.False(t, paused)
+		now = now.Add(time.Second)
+	}
+	require.False(t, s.Paused)
+}

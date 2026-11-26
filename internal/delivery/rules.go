@@ -71,6 +71,8 @@ type LoopGuard struct {
 	// QuietGap is the gap that ends a burst: an agent message posted more than this long after
 	// the room's previous message starts the streak again from 0; DefaultQuietGap when zero.
 	QuietGap time.Duration
+	// Off never pauses a room: the operator turned the guard off (PARTYLINE_LOOP_GUARD=off, LG-06).
+	Off bool
 }
 
 // For returns the guard to apply in a room. The caller decides what the room is: sameHostDM is true for a
@@ -114,7 +116,7 @@ func (g LoopGuard) Next(s LoopState, author dto.AuthorKind, previous, now time.T
 			s.Streak = 0
 		}
 		s.Streak++
-		if s.Streak >= limit && !s.Paused {
+		if s.Streak >= limit && !s.Paused && !g.Off {
 			s.Paused = true
 			return s, true
 		}

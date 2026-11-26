@@ -187,3 +187,15 @@ func TestLoadAttachmentRetention(t *testing.T) {
 		require.ErrorContains(t, err, "PARTYLINE_ATTACHMENT_RETENTION_DAYS", value)
 	}
 }
+
+// LG-06: PARTYLINE_LOOP_GUARD is on by default, off turns the guard off, anything else is refused.
+func TestLoopGuardSetting(t *testing.T) {
+	cfg, err := Load(env(nil))
+	require.NoError(t, err)
+	require.False(t, cfg.LoopGuardOff)
+	cfg, err = Load(env(map[string]string{"PARTYLINE_LOOP_GUARD": "OFF"}))
+	require.NoError(t, err)
+	require.True(t, cfg.LoopGuardOff)
+	_, err = Load(env(map[string]string{"PARTYLINE_LOOP_GUARD": "maybe"}))
+	require.ErrorContains(t, err, "PARTYLINE_LOOP_GUARD")
+}

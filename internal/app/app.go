@@ -266,6 +266,7 @@ func New(cfg *config.Config, opts Options) (*App, error) {
 	roomsSvc = rooms.New(rooms.Deps{
 		Store: st, Access: az, Bus: bus, Now: opts.Now, Blobs: blobs, Transcribe: cfg.TranscribeURL != "",
 		AttachmentRetentionDays: settingsSvc.AttachmentRetentionDays,
+		LoopGuard:               delivery.LoopGuard{Off: cfg.LoopGuardOff},
 	})
 	a := &App{
 		Config:        cfg,

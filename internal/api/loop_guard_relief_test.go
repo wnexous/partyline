@@ -33,6 +33,30 @@ func framesOf(t *testing.T, frames []testkit.AgentFrame, roomID string) (message
 	return messages, notices
 }
 
+// drainUntil reads frames until want message frames and the pause notice arrived (or IOTimeout passed), then
+// what comes within a short quiet window: a fixed drain missed frames on a slow CI runner.
+func drainUntil(t *testing.T, c *testkit.AgentConn, want int) []testkit.AgentFrame {
+	t.Helper()
+	var out []testkit.AgentFrame
+	deadline := time.Now().Add(testkit.IOTimeout)
+	for time.Now().Before(deadline) {
+		msgs, notices := 0, 0
+		for _, f := range out {
+			switch f.Type {
+			case dto.AgentFrameTypeMessage:
+				msgs++
+			case dto.AgentFrameTypeNotice:
+				notices++
+			}
+		}
+		if msgs >= want && notices >= 1 {
+			break
+		}
+		out = append(out, c.Drain(200*time.Millisecond)...)
+	}
+	return append(out, c.Drain(200*time.Millisecond)...)
+}
+
 // LG-02: an AI's post answers delivery_paused, false while the room delivers and true from the post that pauses
 // it on, on every agent post route; a person's post answers the plain message. LG-05: the 25th message still
 // reaches the other AI, the 26th does not. LG-03: both live AIs get one notice that the room was paused.
@@ -61,10 +85,10 @@ func TestAgentPostsSayWhenTheRoomIsPaused(t *testing.T) {
 		sentBy[who] = append(sentBy[who], m.ID)
 	}
 
-	got, notices := framesOf(t, f.helper.Drain(time.Second), f.room.ID)
+	got, notices := framesOf(t, drainUntil(t, f.helper, len(sentBy["builder"])), f.room.ID)
 	require.Equal(t, sentBy["builder"], got, "helper got every builder message, the 25th included (LG-05)")
 	require.Equal(t, []string{delivery.PausedNotice(delivery.DefaultLoopLimit)}, notices)
-	got, notices = framesOf(t, f.builder.Drain(time.Second), f.room.ID)
+	got, notices = framesOf(t, drainUntil(t, f.builder, len(sentBy["helper"])), f.room.ID)
 	require.Equal(t, sentBy["helper"], got)
 	require.Equal(t, []string{delivery.PausedNotice(delivery.DefaultLoopLimit)}, notices)
 
