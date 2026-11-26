@@ -236,3 +236,53 @@ func TestLoopGuardQuietGap(t *testing.T) {
 	require.False(t, paused)
 	require.Equal(t, LoopState{Streak: 1}, s, "a custom quiet gap starts the streak again")
 }
+
+// LG-01: a DM between two AIs of the same host pauses at the 200th agent message in a row, not at the 25th;
+// every other room keeps 25. The quiet gap is the same for both.
+func TestLoopGuardSameHostDMLimit(t *testing.T) {
+	require.Equal(t, 200, SameHostLoopLimit)
+	var g LoopGuard
+	require.Equal(t, DefaultLoopLimit, g.For(false).EffectiveLimit(), "a group or any other DM keeps 25")
+	require.Equal(t, SameHostLoopLimit, g.For(true).EffectiveLimit(), "a same-host DM gets 200")
+	require.Equal(t, DefaultQuietGap, func() time.Duration {
+		gap := g.For(true).QuietGap
+		if gap == 0 {
+			gap = DefaultQuietGap
+		}
+		return gap
+	}(), "the quiet gap rule stays")
+
+	run := func(g LoopGuard, n int) (LoopState, int) {
+		s, previous, pausedAt := LoopState{}, time.Time{}, 0
+		for i := 1; i <= n; i++ {
+			now := loopGuardStart.Add(time.Duration(i) * time.Second)
+			var paused bool
+			s, paused = g.Next(s, dto.AuthorKindAgent, previous, now)
+			if paused {
+				require.Zero(t, pausedAt, "pausedNow is reported once")
+				pausedAt = i
+			}
+			previous = now
+		}
+		return s, pausedAt
+	}
+	_, at := run(g.For(false), 250)
+	require.Equal(t, 25, at, "every other room pauses at the 25th")
+	s, at := run(g.For(true), 199)
+	require.Zero(t, at, "199 in a row do not pause a same-host DM")
+	require.Equal(t, LoopState{Streak: 199}, s)
+	_, at = run(g.For(true), 250)
+	require.Equal(t, 200, at, "the 200th does")
+
+	// A quiet gap still starts the streak again in a same-host DM.
+	now := loopGuardStart
+	s, paused := g.For(true).Next(LoopState{Streak: 150}, dto.AuthorKindAgent, now, now.Add(DefaultQuietGap+time.Second))
+	require.False(t, paused)
+	require.Equal(t, LoopState{Streak: 1}, s)
+
+	// Both limits are configurable, each on its own.
+	custom := LoopGuard{Limit: 3, SameHostLimit: 7, QuietGap: time.Minute}
+	require.Equal(t, 3, custom.For(false).EffectiveLimit())
+	require.Equal(t, 7, custom.For(true).EffectiveLimit())
+	require.Equal(t, time.Minute, custom.For(true).QuietGap)
+}
