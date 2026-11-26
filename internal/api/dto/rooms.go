@@ -228,6 +228,18 @@ type Message struct {
 	DeletedAt *time.Time `json:"deleted_at,omitempty"`
 }
 
+// AgentPostedMessage is the answer to an AI's post in a room: POST /agent/rooms/{room}/messages (send_message,
+// send_file, ask, request_secret), POST /agent/messages/{id}/reply and /react for a room message, and POST
+// /agent/dms. It is the stored message with DeliveryPaused (LG-02).
+type AgentPostedMessage struct {
+	Message `tstype:",extends"`
+	// DeliveryPaused is true when the loop guard holds the room's agent delivery after this message, from before
+	// it or because of it (DLV-08): the message is stored and people see it, but the other AIs do not receive it
+	// until a person who can see the room resumes it. The message that reached the limit itself is still
+	// delivered (LG-05) and carries true too.
+	DeliveryPaused bool `json:"delivery_paused"`
+}
+
 // EditMessageRequest is the body of PATCH /rooms/{id}/messages/{mid} and of PATCH /agent/messages/{id}: the new
 // text of a message its author wrote. The answer is the message (EDT-01). The same rules as a post apply to the
 // text (MSG-02), except that a message with attachments may have none (EDT-04).
