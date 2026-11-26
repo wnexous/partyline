@@ -9,6 +9,9 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/wnexous/partyline/internal/api/dto"
+	"github.com/wnexous/partyline/internal/authn"
+	"github.com/wnexous/partyline/internal/delivery"
+	"github.com/wnexous/partyline/internal/rooms"
 	"github.com/wnexous/partyline/internal/store/db"
 	"github.com/wnexous/partyline/internal/testkit"
 )
@@ -18,7 +21,7 @@ import (
 // returns the id of the room, opened by atlas's first message when roomID is empty.
 func pingPong(t *testing.T, asAtlas, asOrion *testkit.Client, orion, roomID string) string {
 	t.Helper()
-	for i := 0; i < 25; i++ {
+	for i := 0; i < delivery.DefaultLoopLimit; i++ {
 		if roomID == "" {
 			first := testkit.Decode[dto.Message](asAtlas.Post("/api/v1/agent/dms", dto.AgentDMRequest{To: orion, Text: "hello"}).RequireStatus(http.StatusCreated))
 			roomID = first.RoomID
@@ -51,11 +54,25 @@ func TestTheCreatorOfTwoAIsResumesTheirPausedDM(t *testing.T) {
 	agent := alice.Token(dto.TokenKindAgent, "laptop")
 	asAtlas, asOrion := agent.AsAgent("atlas"), agent.AsAgent("orion")
 
-	room := pingPong(t, asAtlas, asOrion, orion, "")
+	// Atlas opens the DM through the agent API; the two AIs of one host then answer each other until the guard
+	// pauses it, at 200 in a row (LG-01). The burst goes through the service: 200 posts over HTTP would meet the
+	// 30 a minute each AI may make (TOOL-08), which is not what this test is about.
+	first := testkit.Decode[dto.AgentPostedMessage](asAtlas.Post("/api/v1/agent/dms", dto.AgentDMRequest{To: orion, Text: "hello"}).RequireStatus(http.StatusCreated))
+	room := first.RoomID
+	require.False(t, first.DeliveryPaused)
+	ais := []authn.Principal{
+		{Kind: authn.KindAgent, UserID: alice.User.ID, AgentID: orion},
+		{Kind: authn.KindAgent, UserID: alice.User.ID, AgentID: atlas},
+	}
+	for i := 1; i < delivery.SameHostLoopLimit; i++ {
+		m, err := env.App.Rooms.Post(context.Background(), ais[i%2], room, rooms.PostInput{Text: "ping"})
+		require.NoError(t, err)
+		require.Equal(t, i == delivery.SameHostLoopLimit-1, m.DeliveryPaused, "message %d", i+1)
+	}
 	path := "/api/v1/rooms/" + room
 	got := roomOf(t, alice, room)
 	require.Equal(t, dto.ConversationKindDM, got.Kind)
-	require.True(t, got.AgentsPaused, "the guard paused the DM after 25 AI messages in a row")
+	require.True(t, got.AgentsPaused, "the guard paused the DM after 200 AI messages in a row")
 	require.Equal(t, dto.LevelView, got.MyLevel, "alice only views a DM she is no participant of")
 	require.True(t, got.CanResume, "and the server says she resumes it")
 	last := testkit.Decode[dto.Page[dto.Message]](alice.Get(path + "/messages?limit=1").RequireStatus(http.StatusOK))

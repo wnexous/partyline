@@ -13,6 +13,7 @@ import (
 
 	"github.com/wnexous/partyline/internal/agents"
 	"github.com/wnexous/partyline/internal/api/dto"
+	"github.com/wnexous/partyline/internal/delivery"
 	"github.com/wnexous/partyline/internal/orgs"
 	"github.com/wnexous/partyline/internal/rooms"
 	"github.com/wnexous/partyline/internal/store/db"
@@ -288,15 +289,21 @@ func TestMessagesWrittenWhileTheRoomWasPausedAreNotContext(t *testing.T) {
 	before := f.post(t, "before the burst")
 	require.Equal(t, before.ID, principal.Message(time.Minute).Message.ID)
 
-	// The loop guard (DLV-08) pauses the room at the 25th consecutive agent message: that message and the
-	// ones that follow are written while the guard holds the room.
+	// The loop guard (DLV-08) pauses the room at the 25th consecutive agent message. That message is the last
+	// one delivered (LG-05); the ones that follow are written while the guard holds the room.
 	var burst []dto.Message
 	for i := range 25 + 3 {
 		burst = append(burst, f.postFrom(t, folder, fmt.Sprintf("agent message %d", i)))
 	}
 	duringThePause := map[string]bool{}
-	for _, m := range burst[24:] {
+	for _, m := range burst[25:] {
 		duringThePause[m.ID] = true
+	}
+	// Both live sessions are told the room was paused (LG-03): a notice, not a message.
+	for _, c := range []*testkit.AgentConn{principal, parallel} {
+		n := c.Notice(time.Minute)
+		require.Equal(t, f.room.ID, n.Room.ID)
+		require.Equal(t, delivery.PausedNotice(delivery.DefaultLoopLimit), n.Text)
 	}
 	require.True(t, testkit.Decode[dto.Room](f.alice.Get("/api/v1/rooms/"+f.room.ID).RequireStatus(http.StatusOK)).AgentsPaused,
 		"the burst paused the room")
@@ -329,12 +336,12 @@ func TestMessagesWrittenWhileTheRoomWasPausedAreNotContext(t *testing.T) {
 	require.NotEmpty(t, notice.ID, "the pause notice is in the room")
 
 	want := []string{before.ID}
-	for _, m := range burst[:24] {
+	for _, m := range burst[:25] {
 		want = append(want, m.ID)
 	}
 	want = append(want, notice.ID, duringPause.ID, afterResume.ID)
 	require.Equal(t, want, got,
-		"the human messages and the agent messages of the burst before the pause are the context")
+		"the human messages and the agent messages of the burst up to the one that paused are the context")
 }
 
 // SN-03: an addressed push overrides the copy an earlier catch-up batch left on the session: the row is
