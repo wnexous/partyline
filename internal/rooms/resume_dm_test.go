@@ -9,6 +9,7 @@ import (
 	"github.com/wnexous/partyline/internal/access"
 	"github.com/wnexous/partyline/internal/api/dto"
 	"github.com/wnexous/partyline/internal/authn"
+	"github.com/wnexous/partyline/internal/delivery"
 	"github.com/wnexous/partyline/internal/events"
 	"github.com/wnexous/partyline/internal/orgs"
 	"github.com/wnexous/partyline/internal/store"
@@ -31,15 +32,16 @@ func (f *fixture) dmAIs(t *testing.T, creator authn.Principal, x, y string) stri
 	return id
 }
 
-// pingPong makes the two AIs answer each other until the loop guard pauses the room.
+// pingPong makes the two AIs of the same host answer each other until the loop guard pauses their DM, at
+// the 200th message in a row (LG-01).
 func (f *fixture) pingPong(t *testing.T, roomID string, host authn.Principal, x, y string) {
 	t.Helper()
 	ais := []authn.Principal{agentPrincipal(host, x), agentPrincipal(host, y)}
-	for i := 0; i < 25; i++ {
+	for i := 0; i < delivery.SameHostLoopLimit; i++ {
 		f.post(t, ais[i%2], roomID, "ping")
 	}
 	paused := f.count(t, "SELECT agents_paused FROM rooms WHERE id = ?", roomID)
-	require.Equal(t, 1, paused, "the guard paused the room after 25 AI messages in a row")
+	require.Equal(t, 1, paused, "the guard paused the room after 200 AI messages in a row")
 }
 
 // DLV-09, POS-03: a DM between two AIs that the loop guard paused is resumed by the user who created
@@ -83,7 +85,7 @@ func TestTheCreatorOfTwoAIsResumesTheirPausedDM(t *testing.T) {
 	require.Equal(t, 0, f.count(t, "SELECT agent_streak FROM rooms WHERE id = ?", room), "the streak starts again")
 	require.Equal(t, []events.Event{events.RoomChanged{RoomID: room}}, drain(sub))
 
-	// The guard works again: the room pauses after another 25 messages, not before.
+	// The guard works again: the room pauses after another 200 messages, not before.
 	f.post(t, agentPrincipal(alice, a1), room, "again")
 	require.Equal(t, 0, f.count(t, "SELECT agents_paused FROM rooms WHERE id = ?", room))
 }

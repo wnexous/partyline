@@ -285,8 +285,18 @@ func (s *server) postTo(w http.ResponseWriter, r *http.Request, p authn.Principa
 				"request_id", httpx.RequestID(r.Context()))
 		}
 	}
+	if p.Kind == authn.KindAgent {
+		httpx.WriteJSON(w, http.StatusCreated, agentPosted(m))
+		return nil
+	}
 	httpx.WriteJSON(w, http.StatusCreated, convert.Message(m))
 	return nil
+}
+
+// agentPosted is the answer to an AI's post in a room: the message and whether the loop guard holds the room's
+// agent delivery after it (LG-02).
+func agentPosted(m rooms.Message) dto.AgentPostedMessage {
+	return dto.AgentPostedMessage{Message: convert.Message(m), DeliveryPaused: m.DeliveryPaused}
 }
 
 // sessionLabel is the label of the session an agent principal posts from (SESS-29): the live

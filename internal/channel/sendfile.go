@@ -170,7 +170,7 @@ func (t *tools) sendFileToRoom(ctx context.Context, f localFile, room string, ms
 		return "", fileError(err, f)
 	}
 	defer func() { _ = resp.Body.Close() }()
-	var m dto.Message
+	var m dto.AgentPostedMessage
 	if err := json.NewDecoder(resp.Body).Decode(&m); err != nil {
 		return "", fmt.Errorf("partyline: unexpected answer: %w", err)
 	}
@@ -183,7 +183,7 @@ func (t *tools) postUploads(ctx context.Context, room string, msg dto.PostMessag
 	postCtx, cancel := context.WithTimeout(ctx, toolTimeout)
 	defer cancel()
 	msg.UploadIDs = []string{id}
-	var m dto.Message
+	var m dto.AgentPostedMessage
 	if err := t.api.json(postCtx, http.MethodPost, roomPath(room, "/messages"), nil, msg, &m); err != nil {
 		t.dropUpload(ctx, id)
 		return "", fileError(err, localFile{})

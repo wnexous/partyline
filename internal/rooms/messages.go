@@ -45,6 +45,9 @@ type Message struct {
 	Answers *dto.MessageAnswers
 	// Transcripts are the server's transcriptions of its voice files, by attachment id (TR-01).
 	Transcripts map[string]Transcript
+	// DeliveryPaused is set on the message Post returns when the loop guard holds the room's agent delivery
+	// after it, before or because of this message (LG-02). Other reads leave it false.
+	DeliveryPaused bool
 }
 
 // Transcript is where the server's transcription of a voice file stands, and its text once done.
@@ -350,8 +353,12 @@ func (s *Service) post(ctx context.Context, roomID string, d draft) (Message, er
 	}
 	var created []events.MessageCreated
 	var id string
+	// paused is the room's agent delivery after this message (LG-02); pausedLimit is the limit this message
+	// reached when it paused the room, 0 otherwise (LG-03).
+	var paused bool
+	var pausedLimit int
 	err := s.store.WithTx(ctx, func(q *db.Queries) error {
-		created = nil
+		created, paused, pausedLimit = nil, false, 0
 		if d.externalID != "" {
 			existing, err := q.GetMessageIDByExternalID(ctx, db.GetMessageIDByExternalIDParams{
 				RoomID: roomID, AuthorKind: string(d.authorKind), AuthorID: d.authorID,
@@ -408,19 +415,26 @@ func (s *Service) post(ctx context.Context, roomID string, d draft) (Message, er
 		created = append(created, msg)
 
 		// The quiet gap ends a burst: a message posted more than QuietGap after the room's previous
-		// one starts the streak again, so only a fast ping-pong pauses the room (DLV-08).
-		state, pausedNow := s.guard.Next(delivery.LoopState{Streak: int(room.AgentStreak), Paused: room.AgentsPaused}, d.authorKind,
+		// one starts the streak again, so only a fast ping-pong pauses the room (DLV-08). A DM between two
+		// AIs of the same host has its own, higher limit (LG-01).
+		guard := s.guard
+		if d.authorKind == dto.AuthorKindAgent {
+			same, err := sameHostDM(ctx, q, previous)
+			if err != nil {
+				return err
+			}
+			guard = guard.For(same)
+		}
+		state, pausedNow := guard.Next(delivery.LoopState{Streak: int(room.AgentStreak), Paused: room.AgentsPaused}, d.authorKind,
 			previousAt, time.UnixMilli(room.UpdatedAt))
 		if err := q.SetRoomLoopState(ctx, db.SetRoomLoopStateParams{AgentStreak: int64(state.Streak), AgentsPaused: state.Paused, ID: roomID}); err != nil {
 			return err
 		}
+		paused = state.Paused
 		if pausedNow { // DLV-08
-			// The message that tripped the guard starts the burst: it is not context either.
-			if d.authorKind == dto.AuthorKindAgent {
-				if err := q.MarkMessageDuringPause(ctx, msg.MessageID); err != nil {
-					return err
-				}
-			}
+			// The message that tripped the guard is the last one delivered (LG-05): it is not marked as written
+			// during the pause, and the dispatcher still pushes it.
+			pausedLimit = guard.EffectiveLimit()
 			_, notice, err := s.insert(ctx, q, roomID, draft{authorKind: dto.AuthorKindSystem, kind: dto.MessageKindSystem, text: PauseNotice}, 0)
 			if err != nil {
 				return err
@@ -441,7 +455,36 @@ func (s *Service) post(ctx context.Context, roomID string, d draft) (Message, er
 	if len(created) > 1 {
 		s.bus.Publish(events.RoomChanged{RoomID: roomID})
 	}
-	return s.message(ctx, id)
+	if pausedLimit > 0 {
+		s.bus.Publish(events.AgentsPaused{RoomID: roomID, Limit: pausedLimit}) // LG-03
+	}
+	m, err := s.message(ctx, id)
+	if err != nil {
+		return Message{}, err
+	}
+	m.DeliveryPaused = paused
+	return m, nil
+}
+
+// sameHostDM reports whether the room is a DM whose two participants are AIs of the same host (LG-01): the loop
+// guard gives it SameHostLoopLimit. A DM with a user or a person, a DM between AIs of two hosts and every group
+// are not.
+func sameHostDM(ctx context.Context, q *db.Queries, r db.Room) (bool, error) {
+	if r.Kind != string(dto.ConversationKindDM) || !r.DmA.Valid || !r.DmB.Valid {
+		return false, nil
+	}
+	owner := make([]string, 0, 2)
+	for _, id := range []string{r.DmA.String, r.DmB.String} {
+		a, err := q.GetAgent(ctx, id)
+		if errors.Is(err, sql.ErrNoRows) {
+			return false, nil // a user or a person
+		}
+		if err != nil {
+			return false, err
+		}
+		owner = append(owner, a.OwnerID)
+	}
+	return owner[0] != "" && owner[0] == owner[1], nil
 }
 
 // replyTarget loads the message a reply names and checks that it belongs to the room, the rule

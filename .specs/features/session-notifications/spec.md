@@ -25,7 +25,8 @@ and the principal misses what was said to its siblings.
    session's read position moves to the newest pushed message when it acknowledges. (SN-03)
    Context is filtered by the delivery mode: in `trusted` mode an untrusted message is not context
    (and `mentions` keeps the whole conversation, which is the point of SN-03); agent messages
-   written while the loop guard paused the room (DLV-08) are never context; only an acknowledged
+   written while the loop guard paused the room (DLV-08) are never context (the message that reached
+   the limit is not one of them: it is delivered, LG-05); only an acknowledged
    message leaves the batch, so a batch lost with its connection comes back; and a batch larger
    than the free queue keeps the newest frames that fit and counts the rest as skipped. (SN-03a)
 4. A message that mentions a parallel session (`@handle:label`) SHALL also reach the principal

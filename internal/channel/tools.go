@@ -190,8 +190,17 @@ func roomPath(room string, suffix string) string {
 	return "agent/rooms/" + url.PathEscape(room) + suffix
 }
 
-// sent is the result of a post.
-func sent(m dto.Message) string {
+// pausedNote is what a post tool says when the loop guard holds the room's agent delivery after the post (LG-02):
+// the message is stored and people see it, but no other AI receives it.
+const pausedNote = "but NOT delivered to the other AIs: agent delivery in this room is paused (too many AI messages in a row). " +
+	"A person who can see the room must resume it (Resume in the app)."
+
+// sent is the result of a post: "sent (message_id …)", or, in a room whose agent delivery is paused, that it was
+// posted but not delivered to the other AIs (LG-02).
+func sent(m dto.AgentPostedMessage) string {
+	if m.DeliveryPaused {
+		return "posted (message_id " + m.ID + "), " + pausedNote
+	}
 	return "sent (message_id " + m.ID + ")"
 }
 
@@ -214,13 +223,13 @@ func (t *tools) reply(ctx context.Context, args json.RawMessage) (string, error)
 	if out.Status != "" {
 		return platformSent(dto.PlatformSendResult{ID: out.ID, Status: out.Status, Error: out.Error}), nil
 	}
-	return sent(out.Message), nil
+	return sent(out.AgentPostedMessage), nil
 }
 
 // replyAnswer is what a reply is answered with: the message it created in a room or, for a message
 // that arrived on one of the AI's connections, the state of the send through it (CID-15).
 type replyAnswer struct {
-	dto.Message
+	dto.AgentPostedMessage
 	Status dto.PlatformSendStatus `json:"status"`
 	Error  string                 `json:"error"`
 }
@@ -255,6 +264,9 @@ func (t *tools) react(ctx context.Context, args json.RawMessage) (string, error)
 	}
 	if out.Status != "" {
 		return "reacted", nil
+	}
+	if out.DeliveryPaused {
+		return "reacted (message_id " + out.ID + "), " + pausedNote, nil
 	}
 	return "reacted (message_id " + out.ID + ")", nil
 }
@@ -359,13 +371,13 @@ func (t *tools) sendMessage(ctx context.Context, args json.RawMessage) (string, 
 		if err != nil {
 			return "", err
 		}
-		var m dto.Message
+		var m dto.AgentPostedMessage
 		if err := t.api.json(ctx, http.MethodPost, "agent/dms", nil, dto.AgentDMRequest{To: to, Text: text}, &m); err != nil {
 			return "", err
 		}
 		return sent(m), nil
 	}
-	var m dto.Message
+	var m dto.AgentPostedMessage
 	if err := t.api.json(ctx, http.MethodPost, roomPath(a.Room, "/messages"), nil, dto.PostMessageRequest{Text: a.Text}, &m); err != nil {
 		return "", err
 	}
@@ -473,7 +485,7 @@ func (t *tools) ask(ctx context.Context, args json.RawMessage) (string, error) {
 		}
 		return platformSent(res), nil
 	}
-	var m dto.Message
+	var m dto.AgentPostedMessage
 	err := t.api.json(ctx, http.MethodPost, roomPath(a.Room, "/messages"), nil,
 		dto.PostMessageRequest{Text: a.Text, ReplyTo: a.ReplyTo, QuickReplies: a.QuickReplies, Wizard: a.Wizard}, &m)
 	if err != nil {
@@ -528,12 +540,15 @@ func (t *tools) requestSecret(ctx context.Context, args json.RawMessage) (string
 	case utf8.RuneCountInString(text) > dto.MaxSecretReason:
 		return "", errors.New(secretLongText)
 	}
-	var m dto.Message
+	var m dto.AgentPostedMessage
 	if err := t.api.json(ctx, http.MethodPost, roomPath(room, "/messages"), nil,
 		dto.PostMessageRequest{Text: text, Secret: &dto.MessageSecret{Name: name}}, &m); err != nil {
 		return "", err
 	}
 	out := map[string]string{"message_id": m.ID, "name": name, "status": "asked: when someone who manages you saves it, the value is written to path and you get a reply saying so; read the file when you need it, never print it or paste it in a room"}
+	if m.DeliveryPaused {
+		out["delivery"] = "posted, " + pausedNote // LG-02
+	}
 	if t.secretsDir != "" && safeComponent(m.AuthorID) {
 		out["path"] = secretPath(t.secretsDir, m.AuthorID, name)
 	}

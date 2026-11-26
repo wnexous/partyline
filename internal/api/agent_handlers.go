@@ -732,7 +732,7 @@ func (s *server) agentReply(w http.ResponseWriter, r *http.Request, p authn.Prin
 	if err != nil {
 		return err
 	}
-	httpx.WriteJSON(w, http.StatusCreated, convert.Message(m))
+	httpx.WriteJSON(w, http.StatusCreated, agentPosted(m))
 	return nil
 }
 
@@ -1121,6 +1121,6 @@ func (s *server) agentReact(w http.ResponseWriter, r *http.Request, p authn.Prin
 	if err != nil {
 		return err
 	}
-	httpx.WriteJSON(w, http.StatusCreated, convert.Message(m))
+	httpx.WriteJSON(w, http.StatusCreated, agentPosted(m))
 	return nil
 }

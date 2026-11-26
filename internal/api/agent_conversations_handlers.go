@@ -3,7 +3,6 @@ package api
 import (
 	"net/http"
 
-	"github.com/wnexous/partyline/internal/api/convert"
 	"github.com/wnexous/partyline/internal/api/dto"
 	"github.com/wnexous/partyline/internal/api/httpx"
 	"github.com/wnexous/partyline/internal/authn"
@@ -37,7 +36,7 @@ func (s *server) agentDM(w http.ResponseWriter, r *http.Request, p authn.Princip
 	if err != nil {
 		return err
 	}
-	httpx.WriteJSON(w, http.StatusCreated, convert.Message(m))
+	httpx.WriteJSON(w, http.StatusCreated, agentPosted(m))
 	return nil
 }
 

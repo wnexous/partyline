@@ -116,7 +116,7 @@ internal/testkit/                apptest: boots App on temp dir + httptest serve
 ### delivery
 - `Plan(room RoomState, members []Member, msg Draft) Targets{AgentIDs, ChatMemberIDs}` - pure; implements DLV-01..05.
 - `Trusted(msgAuthorUserID, recipientOwnerID string) bool` - pure; DLV-06 (author user resolved at insert: user → itself, agent → owner, chat → identity link owner or empty).
-- `LoopGuard.Next(state, authorKind, previous, now) (state, pausedNow bool)` - pure; DLV-08/10, limit 25 within a 10-minute quiet gap.
+- `LoopGuard.Next(state, authorKind, previous, now) (state, pausedNow bool)` - pure; DLV-08/10, limit 25 within a 10-minute quiet gap. `LoopGuard.For(sameHostDM)` gives a DM between two AIs of the same host the limit 200 (LG-01); `rooms.post` decides what the room is.
 - `AgentDispatcher`: subscribes to `MessageCreated`; for each target agent online and room not paused → `Gateway.Push`.
 - `OutboxWorker`: loop woken by events or 1 s ticker; claims due rows (`status=pending AND next_attempt_at<=now`), sends via `connectors.Manager.Send`, backoff `2s * 2^(attempt-1)`, max 5 (DLV-07), publishes `OutboxChanged`.
 

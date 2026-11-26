@@ -1,5 +1,5 @@
 // Package delivery decides who receives a room message and runs the agent dispatcher. The rules
-// in this file are pure: Plan (DLV-01, DLV-02) and LoopGuard (DLV-08, DLV-10). Trust (SR2-07) is in trust.go.
+// in this file are pure: Plan (DLV-01, DLV-02) and LoopGuard (DLV-08, DLV-10, LG-01). Trust (SR2-07) is in trust.go.
 // A room delivers to intelligences only: chats are never members of a conversation and a room
 // sends nothing to a platform (CID-22).
 package delivery
@@ -44,6 +44,11 @@ func Plan(members []Member, msg Draft) []string {
 // DefaultLoopLimit is the number of consecutive agent messages that pauses agent delivery.
 const DefaultLoopLimit = 25
 
+// SameHostLoopLimit is the number of consecutive agent messages that pauses agent delivery in a DM whose two
+// participants are AIs of the same host (LG-01): two AIs of one person working together in their DM exchange
+// many messages in a row on purpose, and a real loop between them still stops.
+const SameHostLoopLimit = 200
+
 // DefaultQuietGap is the gap that ends a burst and restarts the streak; 10 minutes.
 const DefaultQuietGap = 10 * time.Minute
 
@@ -60,9 +65,34 @@ type LoopState struct {
 type LoopGuard struct {
 	// Limit is the streak that pauses agent delivery; DefaultLoopLimit when zero.
 	Limit int
+	// SameHostLimit is the Limit that For gives a DM between two AIs of the same host (LG-01);
+	// SameHostLoopLimit when zero.
+	SameHostLimit int
 	// QuietGap is the gap that ends a burst: an agent message posted more than this long after
 	// the room's previous message starts the streak again from 0; DefaultQuietGap when zero.
 	QuietGap time.Duration
+}
+
+// For returns the guard to apply in a room. The caller decides what the room is: sameHostDM is true for a
+// DM whose two participants are AIs of the same host, which gets SameHostLimit as its Limit (LG-01). Every
+// other room, groups included, keeps Limit. The quiet gap is the same for both.
+func (g LoopGuard) For(sameHostDM bool) LoopGuard {
+	if sameHostDM {
+		g.Limit = g.SameHostLimit
+		if g.Limit <= 0 {
+			g.Limit = SameHostLoopLimit
+		}
+	}
+	return g
+}
+
+// EffectiveLimit is the streak that pauses agent delivery under this guard: Limit, or DefaultLoopLimit when
+// it is zero.
+func (g LoopGuard) EffectiveLimit() int {
+	if g.Limit <= 0 {
+		return DefaultLoopLimit
+	}
+	return g.Limit
 }
 
 // Next returns the state after a message by author posted at now, whose previous message in the
@@ -73,10 +103,7 @@ type LoopGuard struct {
 // resets the streak (DLV-10) but does not resume a paused room. System messages leave the state
 // unchanged.
 func (g LoopGuard) Next(s LoopState, author dto.AuthorKind, previous, now time.Time) (next LoopState, pausedNow bool) {
-	limit := g.Limit
-	if limit <= 0 {
-		limit = DefaultLoopLimit
-	}
+	limit := g.EffectiveLimit()
 	gap := g.QuietGap
 	if gap <= 0 {
 		gap = DefaultQuietGap

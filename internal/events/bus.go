@@ -50,6 +50,13 @@ type RoomChanged struct {
 	Deleted bool
 }
 
+// AgentsPaused reports that the loop guard paused the agent delivery of a room (DLV-08) after Limit agent
+// messages in a row; the agent dispatcher tells the AI members with a live session (LG-03).
+type AgentsPaused struct {
+	RoomID string
+	Limit  int
+}
+
 // MembersChanged reports that a room's members were added, updated or removed.
 type MembersChanged struct{ RoomID string }
 
@@ -164,6 +171,7 @@ func (ReactionsChanged) isEvent()    {}
 func (MessageUpdated) isEvent()      {}
 func (MessageTranscribed) isEvent()  {}
 func (RoomChanged) isEvent()         {}
+func (AgentsPaused) isEvent()        {}
 func (MembersChanged) isEvent()      {}
 func (IntelligenceChanged) isEvent() {}
 func (AccessChanged) isEvent()       {}
