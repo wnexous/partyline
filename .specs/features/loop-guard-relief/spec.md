@@ -62,3 +62,13 @@ the limit was not delivered either, so the receiving AI never got the mock it wa
 | LG-03 | `internal/events/bus.go` (`AgentsPaused`), `internal/delivery/dispatcher.go` (`notifyPaused`, `PausedNotice`), `internal/agents/gateway.go` (`Gateway.Notice`) | `internal/delivery/dispatcher_test.go` `TestDispatchDeliversTheMessageThatPausesAndNoticesLiveAIs`; `internal/api/loop_guard_relief_test.go`; `internal/channel/loop_guard_test.go` `TestThePostThatPausesSaysSoAndTheAIGetsANotice` | Implemented |
 | LG-04 | README.md, README.pt-BR.md, docs/agents.md, docs/api.md, core-platform and ai-requests specs | Review | Implemented |
 | LG-05 | `internal/rooms/messages.go` (no `MarkMessageDuringPause` for the pausing message), `internal/delivery/dispatcher.go` (`delivered`) | `internal/delivery/dispatcher_test.go` `TestDispatchDeliversTheMessageThatPausesAndNoticesLiveAIs`; `internal/api/loop_guard_relief_test.go` | Implemented |
+
+## LG-06 (owner, 2026-11-26)
+
+The owner asked to remove the guard ("it keeps getting in my way"). The public default stays on; an operator
+can turn it off for the whole instance:
+
+6. WHERE `PARTYLINE_LOOP_GUARD=off` (default `on`) THEN no room SHALL pause, however many agent messages
+   come in a row; the streak is still counted, so turning it back on behaves as before. Any other value
+   than on/off SHALL fail startup with an error naming the variable. (LG-06) Tests:
+   delivery/rules_test.go TestLoopGuardOffNeverPauses, config/config_test.go TestLoopGuardSetting.

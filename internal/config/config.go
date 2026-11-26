@@ -31,6 +31,9 @@ type Config struct {
 	// WhatsAppMaxFileBytes bounds a WhatsApp media, sent or received (PARTYLINE_WHATSAPP_MAX_FILE_MB,
 	// 512 by default): evolution-go holds a media's base64 whole in its own memory, both ways.
 	WhatsAppMaxFileBytes int64
+	// LoopGuardOff turns the loop guard off (PARTYLINE_LOOP_GUARD=off; default on): AIs that post many
+	// messages in a row never pause a room (LG-06).
+	LoopGuardOff bool
 	// DiskReserveBytes is the free space an upload session must leave on the data disk
 	// (PARTYLINE_DISK_RESERVE_MB, LF-07).
 	DiskReserveBytes int64
@@ -98,6 +101,13 @@ func Load(getenv func(string) string) (*Config, error) {
 	cfg.MaxUploadBytes = mb << 20
 	if cfg.MaxFileBytes, err = megabytes(get("PARTYLINE_MAX_FILE_MB", "5120"), false); err != nil {
 		return nil, fmt.Errorf("PARTYLINE_MAX_FILE_MB: %w", err)
+	}
+	switch v := strings.ToLower(get("PARTYLINE_LOOP_GUARD", "on")); v {
+	case "on":
+	case "off":
+		cfg.LoopGuardOff = true
+	default:
+		return nil, fmt.Errorf("PARTYLINE_LOOP_GUARD: %q is not on or off", v)
 	}
 	if cfg.WhatsAppMaxFileBytes, err = megabytes(get("PARTYLINE_WHATSAPP_MAX_FILE_MB", "512"), false); err != nil {
 		return nil, fmt.Errorf("PARTYLINE_WHATSAPP_MAX_FILE_MB: %w", err)
