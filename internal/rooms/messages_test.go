@@ -308,7 +308,7 @@ func TestLoopGuardPauseAndResume(t *testing.T) {
 	require.Equal(t, 0, streak())
 
 	for i := 0; i < 24; i++ {
-		f.post(t, agents[i%2], r.ID, "ping")
+		require.False(t, f.post(t, agents[i%2], r.ID, "ping").DeliveryPaused)
 	}
 	got, err := f.svc.Get(ctx, alice, r.ID)
 	require.NoError(t, err)
@@ -317,6 +317,7 @@ func TestLoopGuardPauseAndResume(t *testing.T) {
 	sub, cancel := f.bus.Subscribe(16)
 	defer cancel()
 	last := f.post(t, agents[0], r.ID, "25th")
+	require.True(t, last.DeliveryPaused, "the post that pauses the room says so (LG-02)")
 	got, err = f.svc.Get(ctx, alice, r.ID)
 	require.NoError(t, err)
 	require.True(t, got.AgentsPaused)
@@ -332,10 +333,14 @@ func TestLoopGuardPauseAndResume(t *testing.T) {
 		events.MessageCreated{RoomID: r.ID, MessageID: last.ID, Seq: last.Seq},
 		events.MessageCreated{RoomID: r.ID, MessageID: notice[0].ID, Seq: last.Seq + 1},
 		events.RoomChanged{RoomID: r.ID},
+		events.AgentsPaused{RoomID: r.ID, Limit: 25}, // LG-03: the dispatcher tells the live AIs
 	}, drain(sub))
 
 	// Only one notice, even when agents keep posting.
-	f.post(t, agents[1], r.ID, "26th")
+	sixth := f.post(t, agents[1], r.ID, "26th")
+	require.True(t, sixth.DeliveryPaused, "so does every post while it is paused (LG-02)")
+	require.Equal(t, []events.Event{events.MessageCreated{RoomID: r.ID, MessageID: sixth.ID, Seq: sixth.Seq}}, drain(sub),
+		"no second AgentsPaused")
 	require.Equal(t, 1, f.count(t, "SELECT COUNT(*) FROM messages WHERE room_id = ? AND author_kind = 'system'", r.ID))
 
 	// DLV-09: a user without manage cannot resume; a manager can.
